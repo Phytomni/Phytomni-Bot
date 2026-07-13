@@ -292,6 +292,31 @@ async def test_design_mcp_failure_respects_mode(mode: str) -> None:
             )
 
 
+async def test_required_design_never_pseudo_succeeds_without_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Required mode rejects an empty external-evidence result."""
+    agent = _build_agent(
+        DesignInteropDependencies(registry=InteropRegistry.disabled())
+    )
+    monkeypatch.setattr(
+        design_agent_module,
+        "collect_design_evidence",
+        AsyncMock(return_value=None),
+    )
+
+    with pytest.raises(
+        RuntimeError, match="required Design interop produced no external"
+    ):
+        await getattr(agent, "_collect_design_external")(
+            {
+                **_task(),
+                "interop_mode": "required",
+                "interop_targets": ["design-mcp-peer"],
+            }
+        )
+
+
 def _build_agent(
     dependencies: DesignInteropDependencies | None = None,
 ) -> DigitalDesignAgents:

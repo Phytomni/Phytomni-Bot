@@ -13,6 +13,7 @@ import logging
 import operator
 from dataclasses import dataclass, field
 from json import loads
+from time import perf_counter
 from typing import Annotated, Any, cast
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -56,9 +57,14 @@ from ..shared.analysis import (
 )
 from ..shared.analysis_storage import create_output_dir
 from ..shared.interop import (
+    InteropAttempt,
     build_a2a_resume_draft,
     has_interop_target_kind,
     initial_interop_state,
+    interop_attempt_update,
+    interop_evidence_update,
+    interop_state_update,
+    make_interop_record,
     merge_a2a_pending_fields,
     project_a2a_evidence,
     require_a2a_result,
@@ -72,7 +78,9 @@ from ..shared.parallel_dispatch import (
     build_parallel_dispatch_graph,
 )
 from .interop import (
+    RESEARCH_A2A_CAPABILITY,
     RESEARCH_INTEROP_FAILURES,
+    RESEARCH_MCP_CAPABILITY,
     ResearchA2APending,
     ResearchEvidence,
     ResearchInteropDependencies,
@@ -346,6 +354,10 @@ class InSilicoResearchAgents:
                     sensitive_config=self.sensitive_config,
                 ),
             )
+        if evidence is None and task.interop.mode == "required":
+            raise RuntimeError(
+                "required Research interop produced no external evidence"
+            )
         prompt_context = task.context
         if evidence is not None:
             prompt_context = (
@@ -396,13 +408,48 @@ class InSilicoResearchAgents:
             mode=task.interop.mode,
             sensitive_config=self.sensitive_config,
         )
+        if dependencies is not None:
+            self._interop_dependencies = dependencies
         if not has_interop_target_kind(
             dependencies,
             task.interop.targets,
             "a2a",
         ):
-            return None
-        result = await collect_research_a2a(
+            result = None
+        else:
+            result = await collect_research_a2a(
+                {
+                    "goal_description": task.goal_description,
+                    "context": task.context,
+                    "data_list": task.data_list,
+                    "task_name": task.task_name,
+                },
+                mode=task.interop.mode,
+                target_ids=task.interop.targets,
+                dependencies=dependencies,
+            )
+        if result is not None:
+            if result["status"] == "input_required":
+                task_id = result.get("task_id")
+                if not task_id:
+                    raise RuntimeError(
+                        "external A2A input-required response omitted task_id"
+                    )
+                pending = merge_a2a_pending_fields(
+                    {
+                        "task_name": task.task_name,
+                        "goal_description": task.goal_description,
+                        "context": task.context,
+                        "data_list": dict(task.data_list),
+                        "output_dir": task.output_dir,
+                        "thread_id": task.thread_id,
+                    },
+                    {**result, "task_id": task_id},
+                )
+                return cast(ResearchA2APending, pending)
+            return cast(ResearchEvidence, project_a2a_evidence(result))
+
+        evidence = await collect_research_evidence(
             {
                 "goal_description": task.goal_description,
                 "context": task.context,
@@ -413,27 +460,11 @@ class InSilicoResearchAgents:
             target_ids=task.interop.targets,
             dependencies=dependencies,
         )
-        if result is None:
-            return None
-        if result["status"] == "input_required":
-            task_id = result.get("task_id")
-            if not task_id:
-                raise RuntimeError(
-                    "external A2A input-required response omitted task_id"
-                )
-            pending = merge_a2a_pending_fields(
-                {
-                    "task_name": task.task_name,
-                    "goal_description": task.goal_description,
-                    "context": task.context,
-                    "data_list": dict(task.data_list),
-                    "output_dir": task.output_dir,
-                    "thread_id": task.thread_id,
-                },
-                {**result, "task_id": task_id},
+        if evidence is None and task.interop.mode == "required":
+            raise RuntimeError(
+                "required Research interop produced no external evidence"
             )
-            return cast(ResearchA2APending, pending)
-        return cast(ResearchEvidence, project_a2a_evidence(result))
+        return evidence
 
     async def extract_goals_node(self, state: InSilicoResearchState) -> dict:
         """Extract research goals from scientific paper text.
@@ -558,6 +589,7 @@ class InSilicoResearchAgents:
                 targets=tuple(state.get("interop_targets", [])),
             ),
         )
+        started = perf_counter()
         try:
             external = await self._collect_research_external(task)
         except RESEARCH_INTEROP_FAILURES as exc:
@@ -566,13 +598,28 @@ class InSilicoResearchAgents:
                 """Re-enter the shared failure recorder for A2A errors."""
                 raise error
 
-            return await capture_analysis_result(
+            updates = await capture_analysis_result(
                 state,
                 analysis_type=task_name,
                 submit_call=failed_submit,
                 result_key=None,
                 result_list_key="evidence",
             )
+            if task.interop.mode != "off":
+                updates.update(
+                    interop_attempt_update(
+                        InteropAttempt(
+                            self._interop_dependencies,
+                            task.interop.targets,
+                            task.interop.mode,
+                            RESEARCH_MCP_CAPABILITY,
+                            RESEARCH_A2A_CAPABILITY,
+                            "failed",
+                            perf_counter() - started,
+                        )
+                    )
+                )
+            return updates
 
         if isinstance(external, dict) and "task_id" in external:
             pending = cast(ResearchA2APending, external)
@@ -581,6 +628,15 @@ class InSilicoResearchAgents:
                 update={
                     "a2a_pending": [pending],
                     "a2a_task_ids": {task_name: pending["task_id"]},
+                    **interop_state_update(
+                        make_interop_record(
+                            target_id=pending["target_id"],
+                            kind="a2a",
+                            capability=pending["capability"],
+                            status="input_required",
+                            latency_seconds=perf_counter() - started,
+                        )
+                    ),
                 },
             )
 
@@ -609,6 +665,30 @@ class InSilicoResearchAgents:
             for item in updates.get("evidence", [])
             if isinstance(item, dict) and "evidence" in item
         ]
+        if task.interop.mode != "off":
+            if external is None:
+                updates.update(
+                    interop_attempt_update(
+                        InteropAttempt(
+                            self._interop_dependencies,
+                            task.interop.targets,
+                            task.interop.mode,
+                            RESEARCH_MCP_CAPABILITY,
+                            RESEARCH_A2A_CAPABILITY,
+                            "degraded",
+                            perf_counter() - started,
+                            True,
+                        )
+                    )
+                )
+            else:
+                updates.update(
+                    interop_evidence_update(
+                        external,
+                        status="completed",
+                        latency_seconds=perf_counter() - started,
+                    )
+                )
         return updates
 
     async def resume_research_a2a(
@@ -620,6 +700,7 @@ class InSilicoResearchAgents:
         if not pending_items:
             return {}
         pending = pending_items[0]
+        started = perf_counter()
         task = ResearchTaskContext(
             goal_description=pending["goal_description"],
             context=pending["context"],
@@ -687,6 +768,13 @@ class InSilicoResearchAgents:
             for item in updates.get("evidence", [])
             if isinstance(item, dict) and "evidence" in item
         ]
+        updates.update(
+            interop_evidence_update(
+                evidence,
+                status="completed",
+                latency_seconds=perf_counter() - started,
+            )
+        )
         return updates
 
     async def arun(

@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any, Literal, TypedDict, cast
+from typing import Any, Literal, NamedTuple, TypedDict, cast
 
 from ...config.settings import SensitiveConfig
 from ...interop.planner import InteropMode
@@ -50,6 +50,158 @@ class InteropA2APending(TypedDict):
     task_id: str
     context_id: str | None
     draft: str
+
+
+class InteropRecord(TypedDict):
+    """Safe client-summary record for one external delegation attempt."""
+
+    target_id: str
+    kind: Literal["mcp", "a2a"]
+    capability: str
+    status: Literal["completed", "input_required", "degraded", "failed"]
+    latency_ms: float
+
+
+class InteropAttempt(NamedTuple):
+    """Inputs needed to summarize one external route attempt."""
+
+    dependencies: Any
+    target_ids: Sequence[str]
+    mode: InteropMode
+    mcp_capability: str
+    a2a_capability: str
+    status: Literal["completed", "input_required", "degraded", "failed"]
+    latency_seconds: float
+    degraded: bool = False
+
+
+def make_interop_record(
+    *,
+    target_id: str,
+    kind: Literal["mcp", "a2a"],
+    capability: str,
+    status: Literal["completed", "input_required", "degraded", "failed"],
+    latency_seconds: float,
+) -> InteropRecord:
+    """Create a bounded, credential-free delegation summary."""
+    return {
+        "target_id": target_id,
+        "kind": kind,
+        "capability": capability,
+        "status": status,
+        "latency_ms": round(max(0.0, latency_seconds) * 1000, 3),
+    }
+
+
+def interop_record_from_evidence(
+    evidence: Mapping[str, Any],
+    *,
+    status: Literal["completed", "input_required", "degraded", "failed"],
+    latency_seconds: float,
+) -> InteropRecord:
+    """Create a summary record from a bounded evidence DTO."""
+    kind: Literal["mcp", "a2a"] = (
+        "a2a" if str(evidence.get("kind")) == "a2a" else "mcp"
+    )
+    return make_interop_record(
+        target_id=str(evidence.get("target_id", "unknown")),
+        kind=kind,
+        capability=str(evidence.get("capability", "unknown")),
+        status=status,
+        latency_seconds=latency_seconds,
+    )
+
+
+def interop_state_update(
+    record: InteropRecord,
+    *,
+    degraded: bool = False,
+) -> dict[str, Any]:
+    """Return a reducer-safe graph update for one interop attempt."""
+    return {"interop": [record], "degraded_interop": degraded}
+
+
+def interop_attempt_update(attempt: InteropAttempt) -> dict[str, Any]:
+    """Build a reducer update for an attempted external route."""
+    if attempt.mode == "off":
+        return {}
+    kind, target_id, capability = interop_attempt_descriptor(
+        attempt.dependencies,
+        attempt.target_ids,
+        mcp_capability=attempt.mcp_capability,
+        a2a_capability=attempt.a2a_capability,
+    )
+    return interop_state_update(
+        make_interop_record(
+            target_id=target_id,
+            kind=kind,
+            capability=capability,
+            status=attempt.status,
+            latency_seconds=attempt.latency_seconds,
+        ),
+        degraded=attempt.degraded,
+    )
+
+
+def interop_evidence_update(
+    evidence: Mapping[str, Any],
+    *,
+    status: Literal["completed", "input_required", "degraded", "failed"],
+    latency_seconds: float,
+    degraded: bool = False,
+) -> dict[str, Any]:
+    """Build a reducer update from a bounded evidence DTO."""
+    return interop_state_update(
+        interop_record_from_evidence(
+            evidence,
+            status=status,
+            latency_seconds=latency_seconds,
+        ),
+        degraded=degraded,
+    )
+
+
+def interop_target_descriptor(
+    dependencies: Any,
+    target_ids: Sequence[str],
+    *,
+    kind: Literal["mcp", "a2a"],
+    capability: str,
+) -> tuple[str, str]:
+    """Return safe target/capability labels for fallback or failure records."""
+    registry = getattr(dependencies, "registry", None)
+    if registry is not None:
+        for target_id in target_ids:
+            try:
+                target = registry.require_target(target_id)
+            except InteropRegistryError:
+                continue
+            if target.kind == kind:
+                return target.id, capability
+    return (str(target_ids[0]) if target_ids else "unknown", capability)
+
+
+def interop_attempt_descriptor(
+    dependencies: Any,
+    target_ids: Sequence[str],
+    *,
+    mcp_capability: str,
+    a2a_capability: str,
+) -> tuple[Literal["mcp", "a2a"], str, str]:
+    """Return ``(kind, target_id, capability)`` for an attempted route."""
+    kind: Literal["mcp", "a2a"] = (
+        "a2a"
+        if has_interop_target_kind(dependencies, target_ids, "a2a")
+        else "mcp"
+    )
+    capability = a2a_capability if kind == "a2a" else mcp_capability
+    target_id, capability = interop_target_descriptor(
+        dependencies,
+        target_ids,
+        kind=kind,
+        capability=capability,
+    )
+    return kind, target_id, capability
 
 
 def resolve_interop_dependencies[T](
@@ -195,6 +347,8 @@ def initial_interop_state(options: Mapping[str, Any]) -> dict[str, Any]:
         "interop_targets": list(options.get("interop_targets", [])),
         "a2a_pending": [],
         "a2a_task_ids": {},
+        "interop": [],
+        "degraded_interop": False,
     }
 
 
@@ -204,7 +358,16 @@ __all__ = [
     "initial_interop_state",
     "InteropA2APending",
     "InteropA2AResult",
+    "InteropAttempt",
     "InteropEvidence",
+    "interop_attempt_descriptor",
+    "interop_attempt_update",
+    "interop_evidence_update",
+    "InteropRecord",
+    "interop_record_from_evidence",
+    "interop_target_descriptor",
+    "interop_state_update",
+    "make_interop_record",
     "merge_a2a_pending_fields",
     "project_a2a_evidence",
     "require_a2a_result",

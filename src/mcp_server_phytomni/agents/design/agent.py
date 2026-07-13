@@ -13,6 +13,7 @@ them through AnalystAgent, and returns submitted task metadata.
 import logging
 import operator
 from collections.abc import Mapping
+from time import perf_counter
 from typing import (
     Annotated,
     Any,
@@ -45,9 +46,14 @@ from ..shared.analysis import (
 )
 from ..shared.analysis_storage import get_data_list, resolve_data_list_key
 from ..shared.interop import (
+    InteropAttempt,
     build_a2a_resume_draft,
     has_interop_target_kind,
     initial_interop_state,
+    interop_attempt_update,
+    interop_evidence_update,
+    interop_state_update,
+    make_interop_record,
     merge_a2a_pending_fields,
     project_a2a_evidence,
     require_a2a_result,
@@ -60,7 +66,9 @@ from ..shared.parallel_dispatch import (
     build_parallel_dispatch_graph,
 )
 from .interop import (
+    DESIGN_A2A_CAPABILITY,
     DESIGN_INTEROP_FAILURES,
+    DESIGN_MCP_CAPABILITY,
     DesignA2APending,
     DesignEvidence,
     DesignInteropDependencies,
@@ -353,6 +361,7 @@ class DigitalDesignAgents:
         )
         if dependencies is None:
             return None
+        self._interop_dependencies = dependencies
         if has_interop_target_kind(
             dependencies,
             target_ids,
@@ -388,12 +397,17 @@ class DigitalDesignAgents:
                     )
                     return cast(DesignA2APending, pending)
                 return cast(DesignEvidence, project_a2a_evidence(result))
-        return await collect_design_evidence(
+        evidence = await collect_design_evidence(
             task,
             mode=mode,
             target_ids=target_ids,
             dependencies=dependencies,
         )
+        if evidence is None and mode == "required":
+            raise RuntimeError(
+                "required Design interop produced no external evidence"
+            )
+        return evidence
 
     async def prepare_tasks(self, state: DigitalDesignState) -> dict:
         """Prepare the list of design tasks.
@@ -442,6 +456,9 @@ class DigitalDesignAgents:
             analysis_type,
             gene_id,
         )
+        started = perf_counter()
+        mode = cast(InteropMode, interop_task["interop_mode"])
+        target_ids = tuple(interop_task["interop_targets"])
         try:
             external = await self._collect_design_external(interop_task)
         except DESIGN_INTEROP_FAILURES as exc:
@@ -450,13 +467,28 @@ class DigitalDesignAgents:
                 """Re-enter the shared failure recorder for interop errors."""
                 raise error
 
-            return await capture_analysis_result(
+            updates = await capture_analysis_result(
                 state,
                 analysis_type=analysis_type,
                 submit_call=failed_submit,
                 result_key=None,
                 result_list_key="design_task_result",
             )
+            if mode != "off":
+                updates.update(
+                    interop_attempt_update(
+                        InteropAttempt(
+                            self._interop_dependencies,
+                            target_ids,
+                            mode,
+                            DESIGN_MCP_CAPABILITY,
+                            DESIGN_A2A_CAPABILITY,
+                            "failed",
+                            perf_counter() - started,
+                        )
+                    )
+                )
+            return updates
 
         if isinstance(external, dict) and "analysis_type" in external:
             pending = cast(DesignA2APending, external)
@@ -467,6 +499,15 @@ class DigitalDesignAgents:
                     "a2a_task_ids": {
                         analysis_type: pending["task_id"],
                     },
+                    **interop_state_update(
+                        make_interop_record(
+                            target_id=pending["target_id"],
+                            kind="a2a",
+                            capability=pending["capability"],
+                            status="input_required",
+                            latency_seconds=perf_counter() - started,
+                        )
+                    ),
                 },
             )
 
@@ -493,13 +534,38 @@ class DigitalDesignAgents:
                 ),
             )
 
-        return await capture_dispatched_analysis(
+        updates = await capture_dispatched_analysis(
             state,
             analysis_type,
             "gene_id",
             _dispatch,
             ("design_task_result", "design_task_result"),
         )
+        if mode != "off":
+            if evidence is None:
+                updates.update(
+                    interop_attempt_update(
+                        InteropAttempt(
+                            self._interop_dependencies,
+                            target_ids,
+                            mode,
+                            DESIGN_MCP_CAPABILITY,
+                            DESIGN_A2A_CAPABILITY,
+                            "degraded",
+                            perf_counter() - started,
+                            True,
+                        )
+                    )
+                )
+            else:
+                updates.update(
+                    interop_evidence_update(
+                        evidence,
+                        status="completed",
+                        latency_seconds=perf_counter() - started,
+                    )
+                )
+        return updates
 
     async def resume_design_a2a(
         self,
@@ -510,6 +576,7 @@ class DigitalDesignAgents:
         if not pending_items:
             return {}
         pending = pending_items[0]
+        started = perf_counter()
         task = {
             "analysis_type": pending["analysis_type"],
             "species_code": pending["species_code"],
@@ -583,13 +650,21 @@ class DigitalDesignAgents:
             "task_ids": {},
             "design_task_result": [],
         }
-        return await capture_dispatched_analysis(
+        updates = await capture_dispatched_analysis(
             resume_state,
             pending["analysis_type"],
             "gene_id",
             _dispatch,
             ("design_task_result", "design_task_result"),
         )
+        updates.update(
+            interop_evidence_update(
+                evidence,
+                status="completed",
+                latency_seconds=perf_counter() - started,
+            )
+        )
+        return updates
 
     async def arun(
         self,

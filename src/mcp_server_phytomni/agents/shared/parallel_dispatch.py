@@ -17,6 +17,7 @@ from langgraph.graph import END, START, StateGraph
 
 from ...common.redaction import redact_secrets
 from ...runtime.langgraph_runner import make_async_router
+from .interop import InteropRecord
 
 __all__ = [
     "DegradedRecord",
@@ -149,6 +150,12 @@ class ParallelDispatchState(TypedDict):
     failures: Annotated[
         list[FailureRecord], operator.add
     ]  # Per-task failure records (concurrent-safe accumulator)
+    interop: Annotated[
+        list[InteropRecord], operator.add
+    ]  # External delegation summaries
+    degraded_interop: Annotated[
+        bool, operator.or_
+    ]  # True when auto mode fell back locally
 
 
 @dataclass(frozen=True)

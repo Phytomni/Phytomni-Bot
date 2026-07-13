@@ -12,6 +12,7 @@ Lives in its own module so :mod:`result_formatting` stays under the
 1000-line module size budget enforced by pylint C0302.
 """
 
+import math
 from collections.abc import Mapping
 from typing import Any, Literal
 
@@ -22,6 +23,7 @@ from ..agents.shared.parallel_dispatch import (
 
 __all__ = [
     "project_degraded_metadata",
+    "project_interop_metadata",
     "project_universal_failure_metadata",
     "redact_failure_message",
 ]
@@ -112,3 +114,45 @@ def project_degraded_metadata(state: Mapping[str, Any]) -> dict[str, Any]:
             "labels": degraded_labels(records),
         }
     }
+
+
+def project_interop_metadata(state: Mapping[str, Any]) -> dict[str, Any]:
+    """Project safe outbound interop summaries into formatted metadata.
+
+    Only operator target/capability labels, the transport kind, a bounded
+    status vocabulary, and a measured latency are exposed. Endpoint URLs,
+    credential references, exception text, and protocol correlations remain
+    in the sanitized raw/intermediate state (or failure channel) only.
+    """
+    raw_records = state.get("interop") or []
+    records: list[dict[str, Any]] = []
+    for record in raw_records:
+        if not isinstance(record, Mapping):
+            continue
+        kind = str(record.get("kind", ""))
+        status = str(record.get("status", ""))
+        if kind not in {"mcp", "a2a"}:
+            continue
+        if status not in {"completed", "input_required", "degraded", "failed"}:
+            continue
+        try:
+            latency_ms = float(record.get("latency_ms", 0.0))
+        except (TypeError, ValueError):
+            latency_ms = 0.0
+        if not math.isfinite(latency_ms):
+            latency_ms = 0.0
+        records.append(
+            {
+                "target_id": str(record.get("target_id", ""))[:128],
+                "kind": kind,
+                "capability": str(record.get("capability", ""))[:128],
+                "status": status,
+                "latency_ms": max(0.0, min(latency_ms, 86_400_000.0)),
+            }
+        )
+    metadata: dict[str, Any] = {}
+    if records:
+        metadata["interop"] = records
+    if bool(state.get("degraded_interop")):
+        metadata["degraded_interop"] = True
+    return metadata

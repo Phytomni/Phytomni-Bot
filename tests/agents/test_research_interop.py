@@ -485,6 +485,40 @@ async def test_worker_keeps_local_analyst_dispatch_and_attaches_evidence(
     assert cast(dict[str, Any], updates)["evidence"] == [evidence]
 
 
+async def test_required_research_never_pseudo_succeeds_without_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Required mode rejects an empty external-evidence result."""
+    analyst_stub = SimpleNamespace(arun=AsyncMock())
+    agent = InSilicoResearchAgents(
+        in_silico_config=InSilicoResearchConfig(),
+        sensitive_config=SensitiveConfig.load(),
+        analyst_agent=cast(AnalystAgent, analyst_stub),
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.research.agent.collect_research_evidence",
+        AsyncMock(return_value=None),
+    )
+
+    with pytest.raises(
+        RuntimeError, match="required Research interop produced no external"
+    ):
+        await getattr(agent, "_submit_research_task")(
+            ResearchTaskContext(
+                goal_description="Characterize PHYB",
+                context="local context",
+                data_list={},
+                output_dir="/tmp/research-out",
+                task_name="research_goal_0",
+                thread_id="thread-0",
+                interop=ResearchTaskInterop(
+                    mode="required", targets=("peer",)
+                ),
+            )
+        )
+    analyst_stub.arun.assert_not_awaited()
+
+
 async def test_a2a_stream_is_bounded_redacted_and_marked() -> None:
     """A2A text/data events become bounded untrusted Research evidence."""
     calls: list[dict[str, Any]] = []

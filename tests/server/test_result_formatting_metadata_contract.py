@@ -238,6 +238,79 @@ def test_metadata_key_set_is_exact(
 
 
 @pytest.mark.parametrize(
+    ("agent", "state", "expected"),
+    [
+        (
+            "InSilicoResearchAgent",
+            {
+                "interop": [
+                    {
+                        "target_id": "peer-a2a",
+                        "kind": "a2a",
+                        "capability": "research",
+                        "status": "completed",
+                        "latency_ms": 8.25,
+                    }
+                ]
+            },
+            {
+                "target_id": "peer-a2a",
+                "kind": "a2a",
+                "capability": "research",
+                "status": "completed",
+                "latency_ms": 8.25,
+            },
+        ),
+        (
+            "DigitalDesignAgent",
+            {
+                "interop": [
+                    {
+                        "target_id": "design-peer",
+                        "kind": "mcp",
+                        "capability": "design",
+                        "status": "degraded",
+                        "latency_ms": 0.0,
+                    }
+                ],
+                "degraded_interop": True,
+            },
+            {
+                "target_id": "design-peer",
+                "kind": "mcp",
+                "capability": "design",
+                "status": "degraded",
+                "latency_ms": 0.0,
+            },
+        ),
+    ],
+)
+def test_interop_metadata_projects_safe_delegation_summary(
+    agent: str,
+    state: dict[str, Any],
+    expected: dict[str, Any],
+) -> None:
+    """Agent formatters expose only the bounded delegation summary."""
+    payload: dict[str, Any]
+    if agent == "InSilicoResearchAgent":
+        payload = {
+            "task_ids": {"research_goal_0": "task-abc"},
+            "goals": [],
+            "phytomni_state": state,
+        }
+    else:
+        payload = {
+            "design_task_result": [],
+            "phytomni_state": state,
+        }
+
+    metadata = format_tool_result(agent, payload).metadata
+    assert metadata["interop"] == [expected]
+    if agent == "DigitalDesignAgent":
+        assert metadata["degraded_interop"] is True
+
+
+@pytest.mark.parametrize(
     "agent",
     [
         "KnowledgeAgent",

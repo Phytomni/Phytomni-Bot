@@ -11,6 +11,7 @@ from mcp_server_phytomni.mcp.result_formatting import (
 )
 from mcp_server_phytomni.mcp.universal_failures import (
     project_degraded_metadata,
+    project_interop_metadata,
     redact_failure_message,
 )
 
@@ -190,6 +191,58 @@ def test_project_degraded_metadata_ignores_failures_channel() -> None:
         ]
     }
     assert not project_degraded_metadata(state)
+
+
+def test_project_interop_metadata_is_bounded_and_secret_free() -> None:
+    """Only the safe delegation summary reaches formatted metadata."""
+    result = project_interop_metadata(
+        {
+            "interop": [
+                {
+                    "target_id": "peer",
+                    "kind": "a2a",
+                    "capability": "research",
+                    "status": "completed",
+                    "latency_ms": 12.5,
+                    "url": "https://peer.example.test/private",
+                    "token": "secret",
+                },
+                {"kind": "unknown", "status": "completed"},
+            ],
+            "degraded_interop": True,
+        }
+    )
+
+    assert result == {
+        "interop": [
+            {
+                "target_id": "peer",
+                "kind": "a2a",
+                "capability": "research",
+                "status": "completed",
+                "latency_ms": 12.5,
+            }
+        ],
+        "degraded_interop": True,
+    }
+
+
+def test_project_interop_metadata_clamps_invalid_latency() -> None:
+    """Malformed latency cannot produce non-finite client metadata."""
+    result = project_interop_metadata(
+        {
+            "interop": [
+                {
+                    "target_id": "peer",
+                    "kind": "mcp",
+                    "capability": "design",
+                    "status": "failed",
+                    "latency_ms": float("inf"),
+                }
+            ]
+        }
+    )
+    assert result["interop"][0]["latency_ms"] == 0.0
 
 
 def test_projection_redacts_message_in_failures_list() -> None:

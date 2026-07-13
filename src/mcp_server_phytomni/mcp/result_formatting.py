@@ -26,6 +26,7 @@ from ..common.reasoning_content import normalize_chat_completion_dict
 from ..runtime.terminal_artifacts import collect_terminal_artifacts
 from .universal_failures import (
     project_degraded_metadata,
+    project_interop_metadata,
     project_universal_failure_metadata,
     redact_failure_message,
 )
@@ -687,24 +688,26 @@ def _format_in_silico_result(
         else raw_legacy_error
     )
     failed = not task_ids
+    metadata = {
+        "task_id": primary_task_id,
+        "task_ids": task_ids,
+        "output_dir": output_dir,
+        "goals": goals,
+        "error": legacy_error,
+        "status": "FAILED" if failed else universal["status"],
+        "succeeded_count": universal["succeeded_count"],
+        "failed_count": universal["failed_count"],
+        "failures": universal["failures"],
+        "log_status": "sync_failed" if failed else "sync_running",
+    }
+    metadata.update(project_interop_metadata(_phytomni_state(content)))
     return FormattedToolResult(
         answer=(
             "Task submission failed: no task ids"
             if failed
             else f"Tasks created successfully: {','.join(task_ids)}"
         ),
-        metadata={
-            "task_id": primary_task_id,
-            "task_ids": task_ids,
-            "output_dir": output_dir,
-            "goals": goals,
-            "error": legacy_error,
-            "status": "FAILED" if failed else universal["status"],
-            "succeeded_count": universal["succeeded_count"],
-            "failed_count": universal["failed_count"],
-            "failures": universal["failures"],
-            "log_status": "sync_failed" if failed else "sync_running",
-        },
+        metadata=metadata,
     )
 
 
@@ -725,6 +728,7 @@ def _format_design_result(  # pylint: disable=too-many-locals
     tasks = [task for task in results_list if isinstance(task, Mapping)]
     if not tasks:
         universal = project_universal_failure_metadata(content)
+        interop_metadata = project_interop_metadata(_phytomni_state(content))
         failures = universal["failures"]
         answer = "No tasks found"
         if failures:
@@ -732,15 +736,17 @@ def _format_design_result(  # pylint: disable=too-many-locals
             answer = (
                 f"No tasks found ({universal['failed_count']} failed: {first})"
             )
+        no_task_metadata = {
+            "status": "FAILED",
+            "log_status": "sync_failed",
+            "succeeded_count": universal["succeeded_count"],
+            "failed_count": universal["failed_count"],
+            "failures": failures,
+            **interop_metadata,
+        }
         return FormattedToolResult(
             answer=answer,
-            metadata={
-                "status": "FAILED",
-                "log_status": "sync_failed",
-                "succeeded_count": universal["succeeded_count"],
-                "failed_count": universal["failed_count"],
-                "failures": failures,
-            },
+            metadata=no_task_metadata,
         )
 
     primary_task = tasks[0]
@@ -776,6 +782,7 @@ def _format_design_result(  # pylint: disable=too-many-locals
         "failed_count": universal["failed_count"],
         "failures": universal["failures"],
     }
+    metadata.update(project_interop_metadata(_phytomni_state(content)))
     return FormattedToolResult(
         answer=f"Tasks created successfully: {','.join(task_ids)}",
         metadata=metadata,
