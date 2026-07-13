@@ -16,7 +16,7 @@ import json
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.tools import BaseTool
 
@@ -26,6 +26,9 @@ from .mcp_client import (
 )
 from .models import InteropTarget
 from .registry import InteropRegistry, InteropRegistryError
+
+if TYPE_CHECKING:
+    from .cache import DiscoveryCache
 
 MAX_CAPABILITIES = 256
 MAX_DESCRIPTION_BYTES = 4096
@@ -269,6 +272,7 @@ async def discover_external_mcp_capabilities(
     sensitive_config: Any | None = None,
     resolver: Any = None,
     _client_cls: type[Any] | None = None,
+    cache: DiscoveryCache | None = None,
 ) -> DiscoveryResult:
     """Discover one MCP target and return data/errors without peer details."""
     kind = _target_kind(registry, target_id)
@@ -283,21 +287,27 @@ async def discover_external_mcp_capabilities(
         kwargs["resolver"] = resolver
     if _client_cls is not None:
         kwargs["_client_cls"] = _client_cls
-    try:
-        data = await _load_and_normalize(target_id, kind, kwargs)
-    except InteropMCPError as exc:
-        return DiscoveryResult(
-            errors=(DiscoveryError(target_id, kind, exc.code),)
-        )
-    except InteropCapabilityError as exc:
-        return DiscoveryResult(
-            errors=(DiscoveryError(target_id, kind, exc.code),)
-        )
-    except _DiscoveryFailureError:
-        return DiscoveryResult(
-            errors=(DiscoveryError(target_id, kind, "discovery_failed"),)
-        )
-    return DiscoveryResult(data=data)
+
+    async def _discover_once(_: str) -> DiscoveryResult:
+        try:
+            data = await _load_and_normalize(target_id, kind, kwargs)
+        except InteropMCPError as exc:
+            return DiscoveryResult(
+                errors=(DiscoveryError(target_id, kind, exc.code),)
+            )
+        except InteropCapabilityError as exc:
+            return DiscoveryResult(
+                errors=(DiscoveryError(target_id, kind, exc.code),)
+            )
+        except _DiscoveryFailureError:
+            return DiscoveryResult(
+                errors=(DiscoveryError(target_id, kind, "discovery_failed"),)
+            )
+        return DiscoveryResult(data=data)
+
+    if cache is not None:
+        return await cache.discover(target_id, _discover_once, kind=kind)
+    return await _discover_once(target_id)
 
 
 async def _load_and_normalize(

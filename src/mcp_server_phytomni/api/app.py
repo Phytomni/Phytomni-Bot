@@ -99,6 +99,19 @@ from ..config.defaults import (
     GeneNetworkConfig,
 )
 from ..config.settings import SensitiveConfig
+from ..interop.a2a_discovery import discover_external_a2a_capabilities
+from ..interop.cache import DiscoveryCache
+from ..interop.capabilities import (
+    DiscoveryError,
+    DiscoveryResult,
+    discover_external_mcp_capabilities,
+)
+from ..interop.models import InteropTarget
+from ..interop.registry import (
+    InteropRegistry,
+    InteropRegistryError,
+    load_interop_registry,
+)
 from ..mcp.app import invoke_tool_enveloped, invoke_tool_streamed
 from ..mcp.handler_support import chat_kwargs, load_handler_runtime
 from ..mcp.result_formatting import (
@@ -2319,6 +2332,92 @@ def _store_path_writable(raw_path: str) -> bool:
     return os.access(_nearest_existing(parent), os.W_OK)
 
 
+async def _discover_interop_target(
+    target: InteropTarget,
+    *,
+    registry: InteropRegistry,
+    sensitive_config: SensitiveConfig,
+    cache: DiscoveryCache,
+) -> DiscoveryResult:
+    """Discover one configured target through its metadata-only seam."""
+    if target.kind == "mcp":
+        return await discover_external_mcp_capabilities(
+            target.id,
+            registry=registry,
+            sensitive_config=sensitive_config,
+            cache=cache,
+        )
+    return await discover_external_a2a_capabilities(
+        target.id,
+        registry=registry,
+        sensitive_config=sensitive_config,
+        cache=cache,
+    )
+
+
+async def _discover_interop_targets(
+    registry: InteropRegistry,
+    *,
+    sensitive_config: SensitiveConfig,
+    caches: dict[str, DiscoveryCache],
+) -> DiscoveryResult:
+    """Discover every target while isolating failures per target id."""
+
+    async def _one(target_id: str) -> DiscoveryResult:
+        target = registry.require_target(target_id)
+        cache = caches.get(target.id)
+        if cache is None:
+            cache = DiscoveryCache(
+                ttl_seconds=target.discovery_ttl_seconds,
+            )
+            caches[target.id] = cache
+        return await _discover_interop_target(
+            target,
+            registry=registry,
+            sensitive_config=sensitive_config,
+            cache=cache,
+        )
+
+    results = await asyncio.gather(
+        *(_one(target_id) for target_id in registry.target_ids()),
+        return_exceptions=True,
+    )
+    data: list[Any] = []
+    errors: list[DiscoveryError] = []
+    for target_id, result in zip(registry.target_ids(), results):
+        if isinstance(result, asyncio.CancelledError):
+            raise result
+        if isinstance(result, BaseException):
+            target = registry.require_target(target_id)
+            _LOGGER.warning(
+                "interop capability discovery failed: %s",
+                result.__class__.__name__,
+            )
+            errors.append(
+                DiscoveryError(target.id, target.kind, "discovery_failed")
+            )
+            continue
+        data.extend(result.data)
+        errors.extend(result.errors)
+    return DiscoveryResult(data=tuple(data), errors=tuple(errors))
+
+
+def _interop_result_body(result: DiscoveryResult) -> dict[str, Any]:
+    """Serialize only the shared capability DTO and safe error fields."""
+    return {
+        "object": "list",
+        "data": [item.model_dump() for item in result.data],
+        "errors": [
+            {
+                "target_id": item.target_id,
+                "kind": item.kind,
+                "code": item.code,
+            }
+            for item in result.errors
+        ],
+    }
+
+
 async def _reconcile_run_task_logs(run_id: str, debug: bool) -> dict[str, Any]:
     """Reconcile task logs for every task in a run.
 
@@ -2399,6 +2498,9 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(request_context_middleware)
     rate_limit = make_rate_limiter()
+    interop_registry: InteropRegistry | None = None
+    interop_sensitive_config: SensitiveConfig | None = None
+    interop_caches: dict[str, DiscoveryCache] = {}
 
     async def authorized(
         principal: ApiPrincipal = Depends(require_principal),
@@ -2435,6 +2537,50 @@ def create_app() -> FastAPI:
             return caller
 
         return _scoped
+
+    if ApiConfig().INTEROP_ENABLED:
+
+        @app.get("/v1/interop/capabilities")
+        async def list_interop_capabilities(
+            request: Request,
+            principal: ApiPrincipal = Depends(require_scope("agents")),
+        ) -> JSONResponse:
+            """List sanitized metadata for operator-approved targets."""
+            nonlocal interop_registry, interop_sensitive_config
+            del principal
+            if request.query_params:
+                raise HTTPException(
+                    status_code=400,
+                    detail="interop capabilities accepts no query parameters",
+                )
+            if interop_registry is None:
+                try:
+                    interop_sensitive_config = SensitiveConfig.load()
+                    interop_registry = load_interop_registry(
+                        ApiConfig(), interop_sensitive_config
+                    )
+                except (
+                    InteropRegistryError,
+                    OSError,
+                    RuntimeError,
+                    TypeError,
+                    ValidationError,
+                    ValueError,
+                ) as exc:
+                    _LOGGER.warning(
+                        "interop registry unavailable: %s",
+                        exc.__class__.__name__,
+                    )
+                    return _error_response(503, "interop registry unavailable")
+            if not interop_registry.enabled:
+                return _error_response(404, "interop capabilities unavailable")
+            assert interop_sensitive_config is not None
+            result = await _discover_interop_targets(
+                interop_registry,
+                sensitive_config=interop_sensitive_config,
+                caches=interop_caches,
+            )
+            return JSONResponse(_interop_result_body(result))
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
