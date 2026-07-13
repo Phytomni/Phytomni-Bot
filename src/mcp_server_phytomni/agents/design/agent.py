@@ -12,19 +12,23 @@ them through AnalystAgent, and returns submitted task metadata.
 
 import logging
 import operator
+from collections.abc import Mapping
 from typing import (
     Annotated,
     Any,
     Literal,
     NamedTuple,
+    cast,
 )
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.types import Command, interrupt
 
 from ...common.prompts import get_prompt
 from ...config.defaults import DigitalDesignConfig
 from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
+from ...interop.planner import InteropMode
 from ...runtime.langgraph_runner import ensure_checkpointer
 from ..analyst.agent import (
     ANALYST_CONFIG_FIELD_MAP,
@@ -33,16 +37,36 @@ from ..analyst.agent import (
 from ..shared.analysis import (
     AnalysisAgentCacheSpec,
     AnalysisStateSpec,
+    capture_analysis_result,
     capture_dispatched_analysis,
     get_configured_analysis_agent,
     route_analysis_tasks,
     run_analysis_graph,
 )
 from ..shared.analysis_storage import get_data_list, resolve_data_list_key
+from ..shared.interop import (
+    build_a2a_resume_draft,
+    has_interop_target_kind,
+    initial_interop_state,
+    merge_a2a_pending_fields,
+    project_a2a_evidence,
+    require_a2a_result,
+    resolve_interop_dependencies,
+    update_a2a_pending_from_result,
+)
 from ..shared.parallel_dispatch import (
     ParallelDispatchSpec,
     ParallelDispatchState,
     build_parallel_dispatch_graph,
+)
+from .interop import (
+    DESIGN_INTEROP_FAILURES,
+    DesignA2APending,
+    DesignEvidence,
+    DesignInteropDependencies,
+    collect_design_a2a,
+    collect_design_evidence,
+    format_design_evidence,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,10 +101,13 @@ class _DispatchOptions(NamedTuple):
         output_dir: Optional pre-allocated output directory path.
         is_polling: Whether the analyst graph blocks until the submitted
             task reaches a terminal state.
+        external_evidence: Optional bounded planning evidence from an
+            operator-approved external capability.
     """
 
     output_dir: str | None = None
     is_polling: bool = False
+    external_evidence: DesignEvidence | None = None
 
 
 class DigitalDesignState(ParallelDispatchState):
@@ -106,6 +133,9 @@ class DigitalDesignState(ParallelDispatchState):
         task_ids: Mapping of task names to their corresponding task IDs.
         completed_count: Counter tracking the number of completed tasks.
         error: Error message if any task failed during execution.
+        interop_mode: External delegation policy.
+        interop_targets: Operator-registered target ids eligible for
+            planning evidence.
     """
 
     species_code: str
@@ -116,6 +146,10 @@ class DigitalDesignState(ParallelDispatchState):
     is_polling: bool
     design_task_result: Annotated[list[dict[str, Any]], operator.add]
     design_tasks: list[dict[str, Any]]  # List of design tasks
+    interop_mode: InteropMode
+    interop_targets: list[str]
+    a2a_pending: Annotated[list[DesignA2APending], operator.add]
+    a2a_task_ids: Annotated[dict[str, str], operator.or_]
 
 
 class DigitalDesignAgents:
@@ -146,6 +180,7 @@ class DigitalDesignAgents:
         analyst_agent: AnalystAgent | None = None,
         digital_design_config=DIGITAL_DESIGN_CONFIG,
         sensitive_config: SensitiveConfig | None = None,
+        interop_dependencies: DesignInteropDependencies | None = None,
     ):
         """Initialize the DigitalDesignAgents.
 
@@ -155,6 +190,8 @@ class DigitalDesignAgents:
                 omitted.
             digital_design_config: Digital design configuration object.
             sensitive_config: Sensitive configuration for credentials.
+            interop_dependencies: Optional injected discovery/transport seams
+                used by offline interoperability tests.
         """
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.digital_design_config = digital_design_config
@@ -162,6 +199,9 @@ class DigitalDesignAgents:
         self.analyst_agent = analyst_agent or AnalystAgent(
             analyst_config=digital_design_config,
             sensitive_config=self.sensitive_config,
+        )
+        self._interop_dependencies = (
+            interop_dependencies or DesignInteropDependencies()
         )
         self.app = self._build_graph()
 
@@ -176,6 +216,9 @@ class DigitalDesignAgents:
                 work_node_name="design_node",
             ),
             checkpointer=self.checkpointer,
+            post_work_nodes=(
+                ("design_a2a_resume_node", self.resume_design_a2a),
+            ),
         )
 
     def route_design_tasks(self, state: DigitalDesignState):
@@ -217,6 +260,11 @@ class DigitalDesignAgents:
             species_code,
             gene_id,
         )
+        if options.external_evidence is not None:
+            meta = (
+                f"{meta}\n\n"
+                f"{format_design_evidence(options.external_evidence)}"
+            )
         request = {
             "analysis_type": analysis_type,
             "target_id": gene_id,
@@ -265,6 +313,88 @@ class DigitalDesignAgents:
             return "medium"
         return "small"
 
+    def _design_interop_task(
+        self,
+        state: DigitalDesignState,
+        analysis_type: str,
+        gene_id: str,
+    ) -> dict[str, Any]:
+        """Build the bounded external planning payload for one task."""
+        goal, context, data_list = self._analysis_prompt_parts(
+            analysis_type,
+            state["species_code"],
+            gene_id,
+        )
+        return {
+            "analysis_type": analysis_type,
+            "species_code": state["species_code"],
+            "gene_id": gene_id,
+            "goal_description": goal,
+            "context": context,
+            "data_list": data_list,
+            "output_dir": state.get("output_dir"),
+            "thread_id": state.get("thread_id", analysis_type),
+            "is_polling": bool(state.get("is_polling", False)),
+            "interop_mode": state.get("interop_mode", "off"),
+            "interop_targets": state.get("interop_targets", []),
+        }
+
+    async def _collect_design_external(
+        self,
+        task: Mapping[str, Any],
+    ) -> DesignEvidence | DesignA2APending | None:
+        """Collect optional planning evidence before local Analyst dispatch."""
+        mode = cast(InteropMode, task.get("interop_mode", "off"))
+        target_ids = tuple(task.get("interop_targets", []))
+        dependencies = resolve_interop_dependencies(
+            self._interop_dependencies,
+            mode=mode,
+            sensitive_config=self.sensitive_config,
+        )
+        if dependencies is None:
+            return None
+        if has_interop_target_kind(
+            dependencies,
+            target_ids,
+            "a2a",
+        ):
+            result = await collect_design_a2a(
+                task,
+                mode=mode,
+                target_ids=target_ids,
+                dependencies=dependencies,
+            )
+            if result is not None:
+                if result["status"] == "input_required":
+                    task_id = result.get("task_id")
+                    if not task_id:
+                        raise RuntimeError(
+                            "external A2A input-required response "
+                            "omitted task_id"
+                        )
+                    pending = merge_a2a_pending_fields(
+                        {
+                            "analysis_type": str(task["analysis_type"]),
+                            "species_code": str(task["species_code"]),
+                            "gene_id": str(task["gene_id"]),
+                            "goal_description": str(task["goal_description"]),
+                            "context": str(task["context"]),
+                            "data_list": dict(task.get("data_list") or {}),
+                            "output_dir": str(task["output_dir"]),
+                            "thread_id": str(task.get("thread_id", "design")),
+                            "is_polling": bool(task.get("is_polling", False)),
+                        },
+                        {**result, "task_id": task_id},
+                    )
+                    return cast(DesignA2APending, pending)
+                return cast(DesignEvidence, project_a2a_evidence(result))
+        return await collect_design_evidence(
+            task,
+            mode=mode,
+            target_ids=target_ids,
+            dependencies=dependencies,
+        )
+
     async def prepare_tasks(self, state: DigitalDesignState) -> dict:
         """Prepare the list of design tasks.
 
@@ -281,7 +411,10 @@ class DigitalDesignAgents:
         ]
         return {"design_tasks": tasks, "task_ids": {}, "completed_count": 0}
 
-    async def run_design_node(self, state: DigitalDesignState) -> dict:
+    async def run_design_node(
+        self,
+        state: DigitalDesignState,
+    ) -> dict[str, Any] | Command:
         """Execute a single design task dispatched via Send API.
 
         This node is called dynamically for each task in the design_tasks list.
@@ -291,19 +424,57 @@ class DigitalDesignAgents:
 
         Returns:
             State update with submitted task metadata or error details.
+            An A2A input-required task returns a ``Command`` that persists
+            safe correlation ids before entering the resume node.
         """
-        task_index = state.get("task_index")
         gene_id = state["gene_id"]
         analysis_type = state["analysis_type"]
 
         logger.info(
             "[Design-%s] Executing: %s for %s",
-            task_index,
+            state.get("task_index"),
             analysis_type,
             gene_id,
         )
 
-        is_polling = bool(state.get("is_polling", False))
+        interop_task = self._design_interop_task(
+            state,
+            analysis_type,
+            gene_id,
+        )
+        try:
+            external = await self._collect_design_external(interop_task)
+        except DESIGN_INTEROP_FAILURES as exc:
+
+            async def failed_submit(error: Exception = exc) -> dict[str, Any]:
+                """Re-enter the shared failure recorder for interop errors."""
+                raise error
+
+            return await capture_analysis_result(
+                state,
+                analysis_type=analysis_type,
+                submit_call=failed_submit,
+                result_key=None,
+                result_list_key="design_task_result",
+            )
+
+        if isinstance(external, dict) and "analysis_type" in external:
+            pending = cast(DesignA2APending, external)
+            return Command(
+                goto="design_a2a_resume_node",
+                update={
+                    "a2a_pending": [pending],
+                    "a2a_task_ids": {
+                        analysis_type: pending["task_id"],
+                    },
+                },
+            )
+
+        evidence = (
+            external
+            if isinstance(external, dict) and "analysis_type" not in external
+            else None
+        )
 
         async def _dispatch(
             a_type: str,
@@ -315,12 +486,106 @@ class DigitalDesignAgents:
                 a_type,
                 species,
                 gene,
-                _DispatchOptions(output_dir=out_dir, is_polling=is_polling),
+                _DispatchOptions(
+                    output_dir=out_dir,
+                    is_polling=bool(interop_task["is_polling"]),
+                    external_evidence=evidence,
+                ),
             )
 
         return await capture_dispatched_analysis(
             state,
             analysis_type,
+            "gene_id",
+            _dispatch,
+            ("design_task_result", "design_task_result"),
+        )
+
+    async def resume_design_a2a(
+        self,
+        state: DigitalDesignState,
+    ) -> dict[str, Any]:
+        """Resume one paused A2A planning exchange before local dispatch."""
+        pending_items = state.get("a2a_pending", [])
+        if not pending_items:
+            return {}
+        pending = pending_items[0]
+        task = {
+            "analysis_type": pending["analysis_type"],
+            "species_code": pending["species_code"],
+            "gene_id": pending["gene_id"],
+            "goal_description": pending["goal_description"],
+            "context": pending["context"],
+            "data_list": dict(pending["data_list"]),
+            "output_dir": pending["output_dir"],
+            "thread_id": pending["thread_id"],
+            "is_polling": pending["is_polling"],
+        }
+        required_mode: InteropMode = "required"
+        dependencies = resolve_interop_dependencies(
+            self._interop_dependencies,
+            mode=required_mode,
+            sensitive_config=self.sensitive_config,
+        )
+        while True:
+            draft = build_a2a_resume_draft(
+                pending,
+                kind="external_a2a_design",
+                label_key="analysis_type",
+                extra={
+                    "species_code": pending["species_code"],
+                    "gene_id": pending["gene_id"],
+                },
+            )
+            resume_payload = interrupt(draft)
+            if not isinstance(resume_payload, dict):
+                resume_payload = {"text": str(resume_payload)}
+            result = await collect_design_a2a(
+                task,
+                mode="required",
+                target_ids=(pending["target_id"],),
+                dependencies=dependencies,
+                resume=resume_payload,
+                pending=pending,
+            )
+            result = require_a2a_result(result, "Design")
+            if result["status"] != "input_required":
+                break
+            pending = cast(
+                DesignA2APending,
+                update_a2a_pending_from_result(pending, result),
+            )
+
+        evidence = cast(DesignEvidence, project_a2a_evidence(result))
+
+        async def _dispatch(
+            analysis_type: str,
+            species_code: str,
+            gene_id: str,
+            output_dir: str | None,
+        ) -> dict[str, Any]:
+            return await self._dispatch_and_wait_analysis(
+                analysis_type,
+                species_code,
+                gene_id,
+                _DispatchOptions(
+                    output_dir=output_dir,
+                    is_polling=pending["is_polling"],
+                    external_evidence=evidence,
+                ),
+            )
+
+        resume_state = {
+            **state,
+            "species_code": pending["species_code"],
+            "gene_id": pending["gene_id"],
+            "output_dir": pending["output_dir"],
+            "task_ids": {},
+            "design_task_result": [],
+        }
+        return await capture_dispatched_analysis(
+            resume_state,
+            pending["analysis_type"],
             "gene_id",
             _dispatch,
             ("design_task_result", "design_task_result"),
@@ -346,7 +611,11 @@ class DigitalDesignAgents:
         """
         return await run_analysis_graph(
             self.app,
-            {"species_code": species_code, "gene_id": gene_id},
+            {
+                "species_code": species_code,
+                "gene_id": gene_id,
+                **initial_interop_state(kwargs),
+            },
             kwargs,
             ("design_task_result", "error", "failures"),
             AnalysisStateSpec(
@@ -396,6 +665,8 @@ async def design_module(
         user_id=user_id,
         batch=batch,
         output_dir=kwargs.get("output_dir"),
+        interop_mode=kwargs.get("interop_mode", "off"),
+        interop_targets=kwargs.get("interop_targets", []),
     )
 
 

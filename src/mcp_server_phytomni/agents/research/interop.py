@@ -43,6 +43,11 @@ from ...interop.planner import (
     plan_interop_capabilities,
 )
 from ...interop.registry import InteropRegistry, InteropRegistryError
+from ..shared.interop import (
+    InteropA2APending,
+    InteropA2AResult,
+    InteropEvidence,
+)
 
 RESEARCH_MCP_CAPABILITY = "research"
 RESEARCH_A2A_CAPABILITY = "research"
@@ -55,43 +60,14 @@ RESEARCH_INTEROP_FAILURES: tuple[type[Exception], ...] = (
 )
 
 
-class ResearchEvidence(TypedDict):
-    """Bounded, sanitized evidence returned by one external MCP tool."""
-
-    target_id: str
-    kind: str
-    capability: str
-    content: str
-    truncated: bool
+ResearchEvidence = InteropEvidence
+ResearchA2AResult = InteropA2AResult
 
 
-class ResearchA2AResult(TypedDict):
-    """Bounded result of one external A2A send/stream exchange."""
-
-    target_id: str
-    kind: Literal["a2a"]
-    capability: str
-    status: Literal["completed", "input_required", "failed"]
-    task_id: str | None
-    context_id: str | None
-    content: str
-    truncated: bool
-
-
-class ResearchA2APending(TypedDict):
+class ResearchA2APending(InteropA2APending):
     """Safe state carried from an A2A pause to the resume node."""
 
     task_name: str
-    goal_description: str
-    context: str
-    data_list: dict[str, str]
-    output_dir: str
-    thread_id: str
-    target_id: str
-    capability: str
-    task_id: str
-    context_id: str | None
-    draft: str
 
 
 class _ResearchA2AStreamRequest(TypedDict):

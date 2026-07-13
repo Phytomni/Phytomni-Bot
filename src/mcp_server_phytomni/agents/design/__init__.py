@@ -9,9 +9,23 @@ and promoter design task submission.
 """
 
 from .agent import DigitalDesignAgents, DigitalDesignState, design_module
+from .interop import (
+    DesignA2APending,
+    DesignA2AResult,
+    DesignEvidence,
+    DesignInteropDependencies,
+    collect_design_a2a,
+    collect_design_evidence,
+)
 
 __all__ = [
     "DigitalDesignAgents",
     "DigitalDesignState",
+    "DesignA2APending",
+    "DesignA2AResult",
+    "DesignEvidence",
+    "DesignInteropDependencies",
+    "collect_design_a2a",
+    "collect_design_evidence",
     "design_module",
 ]

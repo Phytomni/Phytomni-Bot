@@ -32,7 +32,6 @@ from ...graphs.chat_adapters import (
     extract_chat_response,
 )
 from ...interop.planner import InteropMode
-from ...interop.registry import InteropRegistryError, load_interop_registry
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -56,6 +55,17 @@ from ..shared.analysis import (
     run_analysis_graph,
 )
 from ..shared.analysis_storage import create_output_dir
+from ..shared.interop import (
+    build_a2a_resume_draft,
+    has_interop_target_kind,
+    initial_interop_state,
+    merge_a2a_pending_fields,
+    project_a2a_evidence,
+    require_a2a_result,
+    resolve_interop_dependencies,
+    resolve_required_interop_dependencies,
+    update_a2a_pending_from_result,
+)
 from ..shared.parallel_dispatch import (
     ParallelDispatchSpec,
     ParallelDispatchState,
@@ -64,7 +74,6 @@ from ..shared.parallel_dispatch import (
 from .interop import (
     RESEARCH_INTEROP_FAILURES,
     ResearchA2APending,
-    ResearchA2AResult,
     ResearchEvidence,
     ResearchInteropDependencies,
     collect_research_a2a,
@@ -331,8 +340,10 @@ class InSilicoResearchAgents:
                 },
                 mode=task.interop.mode,
                 target_ids=task.interop.targets,
-                dependencies=self._research_interop_dependencies(
-                    task.interop.mode
+                dependencies=resolve_interop_dependencies(
+                    self._interop_dependencies,
+                    mode=task.interop.mode,
+                    sensitive_config=self.sensitive_config,
                 ),
             )
         prompt_context = task.context
@@ -375,64 +386,17 @@ class InSilicoResearchAgents:
             task_result["evidence"] = evidence
         return task_result
 
-    def _research_interop_dependencies(
-        self,
-        mode: InteropMode,
-    ) -> ResearchInteropDependencies | None:
-        """Resolve interop dependencies lazily for an enabled request."""
-        if mode == "off":
-            return None
-        dependencies = self._interop_dependencies
-        if dependencies.registry is None:
-            dependencies = dependencies._replace(
-                registry=load_interop_registry(
-                    sensitive_config=self.sensitive_config
-                )
-            )
-        dependencies = dependencies._replace(
-            sensitive_config=self.sensitive_config
-        )
-        if dependencies.caches is None:
-            dependencies = dependencies._replace(caches={})
-        self._interop_dependencies = dependencies
-        return dependencies
-
-    @staticmethod
-    def _has_interop_target_kind(
-        dependencies: ResearchInteropDependencies | None,
-        target_ids: tuple[str, ...],
-        kind: str,
-    ) -> bool:
-        """Return whether an enabled request names a target of ``kind``."""
-        registry = dependencies.registry if dependencies is not None else None
-        if registry is None or not registry.enabled:
-            return False
-        for target_id in target_ids:
-            try:
-                if registry.require_target(target_id).kind == kind:
-                    return True
-            except InteropRegistryError:
-                continue
-        return False
-
-    @staticmethod
-    def _a2a_result_evidence(result: ResearchA2AResult) -> ResearchEvidence:
-        """Drop protocol correlation ids before prompt projection."""
-        return ResearchEvidence(
-            target_id=result["target_id"],
-            kind=result["kind"],
-            capability=result["capability"],
-            content=result["content"],
-            truncated=result["truncated"],
-        )
-
     async def _collect_research_external(
         self,
         task: ResearchTaskContext,
     ) -> ResearchEvidence | ResearchA2APending | None:
         """Resolve optional A2A evidence before the local analyst submit."""
-        dependencies = self._research_interop_dependencies(task.interop.mode)
-        if not self._has_interop_target_kind(
+        dependencies = resolve_interop_dependencies(
+            self._interop_dependencies,
+            mode=task.interop.mode,
+            sensitive_config=self.sensitive_config,
+        )
+        if not has_interop_target_kind(
             dependencies,
             task.interop.targets,
             "a2a",
@@ -457,20 +421,19 @@ class InSilicoResearchAgents:
                 raise RuntimeError(
                     "external A2A input-required response omitted task_id"
                 )
-            return ResearchA2APending(
-                task_name=task.task_name,
-                goal_description=task.goal_description,
-                context=task.context,
-                data_list=dict(task.data_list),
-                output_dir=task.output_dir,
-                thread_id=task.thread_id,
-                target_id=result["target_id"],
-                capability=result["capability"],
-                task_id=task_id,
-                context_id=result.get("context_id"),
-                draft=result["content"],
+            pending = merge_a2a_pending_fields(
+                {
+                    "task_name": task.task_name,
+                    "goal_description": task.goal_description,
+                    "context": task.context,
+                    "data_list": dict(task.data_list),
+                    "output_dir": task.output_dir,
+                    "thread_id": task.thread_id,
+                },
+                {**result, "task_id": task_id},
             )
-        return self._a2a_result_evidence(result)
+            return cast(ResearchA2APending, pending)
+        return cast(ResearchEvidence, project_a2a_evidence(result))
 
     async def extract_goals_node(self, state: InSilicoResearchState) -> dict:
         """Extract research goals from scientific paper text.
@@ -669,18 +632,16 @@ class InSilicoResearchAgents:
                 targets=(pending["target_id"],),
             ),
         )
-        dependencies = self._research_interop_dependencies("required")
+        dependencies = resolve_required_interop_dependencies(
+            self._interop_dependencies,
+            self.sensitive_config,
+        )
         while True:
-            draft = {
-                "kind": "external_a2a",
-                "status": "input_required",
-                "task_name": pending["task_name"],
-                "target_id": pending["target_id"],
-                "capability": pending["capability"],
-                "task_id": pending["task_id"],
-                "context_id": pending.get("context_id"),
-                "message": pending["draft"],
-            }
+            draft = build_a2a_resume_draft(
+                pending,
+                kind="external_a2a",
+                label_key="task_name",
+            )
             resume_payload = interrupt(draft)
             if not isinstance(resume_payload, dict):
                 resume_payload = {"text": str(resume_payload)}
@@ -697,24 +658,15 @@ class InSilicoResearchAgents:
                 resume=resume_payload,
                 pending=pending,
             )
-            if result is None:
-                raise RuntimeError(
-                    "external A2A resume unexpectedly fell back"
-                )
+            result = require_a2a_result(result, "Research")
             if result["status"] != "input_required":
                 break
             pending = cast(
                 ResearchA2APending,
-                {
-                    **pending,
-                    "draft": result["content"],
-                    "task_id": result.get("task_id") or pending["task_id"],
-                    "context_id": result.get("context_id")
-                    or pending.get("context_id"),
-                },
+                update_a2a_pending_from_result(pending, result),
             )
 
-        evidence = self._a2a_result_evidence(result)
+        evidence = cast(ResearchEvidence, project_a2a_evidence(result))
 
         async def submit_call() -> dict[str, Any]:
             """Continue through the existing local Analyst submit seam."""
@@ -762,10 +714,7 @@ class InSilicoResearchAgents:
                 "paper_text": paper_text,
                 "data_list": data_list,
                 "obs_file_list": kwargs.get("obs_file_list") or [],
-                "interop_mode": kwargs.get("interop_mode", "off"),
-                "interop_targets": list(kwargs.get("interop_targets", [])),
-                "a2a_pending": [],
-                "a2a_task_ids": {},
+                **initial_interop_state(kwargs),
             },
             kwargs,
             ("task_ids", "goals", "error", "failures", "evidence"),
