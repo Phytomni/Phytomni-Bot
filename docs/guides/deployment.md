@@ -62,7 +62,12 @@ cached in process memory per target using monotonic TTL and single-flight;
 errors are isolated to the target and not long-term negative-cached. The
 response and structured logs exclude endpoints, commands, headers, tokens, and
 peer payloads. There is no persistent interop audit database. Research/Design
-delegation is not part of this phase.
+delegation is available only when a request explicitly sets
+`interop_mode=auto|required` and names operator-registered `interop_targets`;
+the default `off` mode remains local-only. `auto` records a degraded local
+fallback when no evidence is returned, while `required` fails closed. The
+formatted response exposes only bounded target/kind/capability/status/latency
+metadata, and A2A input-required pauses use the existing run resume path.
 
 ## Distribution to Trusted Customers
 

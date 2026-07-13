@@ -73,7 +73,15 @@ Full commit range: `1f8f628..HEAD`.
   read-only `/v1/interop/capabilities` route discovers sanitized MCP tools and
   A2A skills through a hardened no-proxy/no-redirect boundary with DNS/IP
   policy, per-target TTL/single-flight caching, and target-level failure
-  isolation. Research/Design delegation is not enabled by this release.
+  isolation. The route remains discovery-only; execution requires the
+  per-request Research/Design controls documented below.
+- **Research/Design outbound delegation (opt-in)** — `InSilicoResearchAgent`
+  and `DigitalDesignAgent` accept `interop_mode=off|auto|required` plus
+  operator-registered `interop_targets`. `off` is local-only, `auto` may use
+  MCP/A2A evidence and records `degraded_interop=true` when it falls back
+  locally, and `required` fails closed when external evidence is unavailable.
+  Formatted metadata exposes only bounded target/kind/capability/status/latency
+  summaries; A2A `input-required` pauses resume through the agent graph.
 - **MCP elicitation with graceful degrade** — stdio ReviewAgent calls ask
   elicitation-capable clients for approval and auto-approve when a legacy
   client lacks that capability.

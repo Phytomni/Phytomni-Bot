@@ -97,24 +97,27 @@ bounded `INPUT_REQUIRED` data artifact for the next resume phase. Cancellation,
 and same-task `SendMessage` resume are available for that pause; A2A
 `CancelTask`, push notifications, and extended cards remain later-phase work.
 
-Phase 3 also ships the outbound MCP/A2A discovery and client foundation behind
-`PHYTOMNI_INTEROP_ENABLED=1`. Operators provide a target registry and separate
-credential references; the read-only `GET /v1/interop/capabilities` endpoint
-requires the `agents` scope and returns sanitized capability metadata. It never
-accepts a caller URL, command, or token and never invokes a remote tool or
-agent. External delegation from Research/Design and cross-session Store memory
-remain later-phase work. Enabling or changing the registry requires an API
-process restart; the flag is off by default.
+Phase 3/4 also ship outbound MCP/A2A discovery and opt-in Research/Design
+delegation behind `PHYTOMNI_INTEROP_ENABLED=1`. Operators provide a target
+registry and separate credential references; the read-only
+`GET /v1/interop/capabilities` endpoint requires the `agents` scope and
+returns sanitized capability metadata. Research and Design requests opt in
+per call with `interop_mode="auto"` or `interop_mode="required"` plus
+operator-registered `interop_targets`; the default `"off"` mode never
+discovers or invokes a peer. `auto` records a degraded local fallback when no
+external evidence is available, while `required` fails closed. Enabling or
+changing the registry requires an API process restart; the flag is off by
+default.
 
-| Capability                                | 0.1.3 status   |
-| ----------------------------------------- | -------------- |
-| A2A Agent Card and `/a2a` server          | Opt-in core    |
-| Calls to external MCP tools or A2A agents | Discovery only |
-| Cross-session LangGraph Store memory      | Not shipped    |
+| Capability                                | 0.1.3 status                         |
+| ----------------------------------------- | ------------------------------------ |
+| A2A Agent Card and `/a2a` server          | Opt-in core                          |
+| Calls to external MCP tools or A2A agents | Explicit opt-in from Research/Design |
+| Cross-session LangGraph Store memory      | Not shipped                          |
 
 Internal `phyto.progress.phase` values are stage labels, not A2A task states.
-The A2A status adapter maps task lifecycle state independently. No outbound
-delegation or memory feature is active by default in this release.
+The A2A status adapter maps task lifecycle state independently. Outbound
+delegation and memory remain inactive by default in this release.
 
 ## Available MCP Tools
 

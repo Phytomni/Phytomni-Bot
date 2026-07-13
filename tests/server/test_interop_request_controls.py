@@ -4,9 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Contract tests for the Research/Design interop request controls.
 
-The controls are request metadata only in C4.1.  They must be accepted by
-the MCP schema, projected into the OpenAI function-tool schema, and survive
-the native HTTP run seam without enabling any outbound delegation.
+The controls are explicit per-request policy in C4.7. They must be accepted
+by the MCP schema, projected into the OpenAI function-tool schema, and survive
+the native HTTP run seam without changing the default local-only behavior.
 """
 
 from __future__ import annotations
@@ -101,6 +101,9 @@ def test_openai_tool_specs_project_controls_for_research_and_design() -> None:
         assert properties["interop_targets"]["type"] == "array"
         assert "interop_mode" not in specs[tool_name].get("required", [])
         assert "interop_targets" not in specs[tool_name].get("required", [])
+        description = properties["interop_mode"]["description"]
+        assert "never discovers or invokes a peer" in description
+        assert "fails the request" in description
 
 
 async def test_native_http_runs_forward_controls_to_handler(

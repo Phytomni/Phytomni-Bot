@@ -174,14 +174,14 @@ def test_cli_reference_covers_console_scripts() -> None:
 
 
 def test_readme_matches_the_current_interoperability_boundary() -> None:
-    """README must distinguish discovery infrastructure from delegation."""
+    """README must distinguish opt-in delegation from default behavior."""
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     route_paths = {getattr(route, "path", "") for route in create_app().routes}
 
     assert "/a2a" not in route_paths
     assert re.search(
         r"\|\s*Calls to external MCP tools or A2A agents\s*\|\s*"
-        r"Discovery only\s*\|",
+        r"Explicit opt-in from Research/Design\s*\|",
         readme,
     )
     assert re.search(
@@ -197,8 +197,8 @@ def test_readme_matches_the_current_interoperability_boundary() -> None:
     public_schemas = (
         ROOT / "src/mcp_server_phytomni/mcp/schemas.py"
     ).read_text(encoding="utf-8")
-    # C4.1 exposes the opt-in request controls while delegation itself
-    # remains a later phase and is still disabled in the README boundary.
+    # C4.7 keeps the opt-in request controls aligned with the two public
+    # delegation-capable tools; the default remains local-only.
     assert (
         public_schemas.count(
             'interop_mode: Literal["off", "auto", "required"]'

@@ -69,6 +69,36 @@ clients that want the raw block read `payload["raw"]` directly.
 supports a per-request `debug` flag (see
 [HTTP API](http-api.md#response-projection)).
 
+## Research/Design outbound interop controls
+
+`InSilicoResearchAgent` and `DigitalDesignAgent` accept two optional
+request fields:
+
+```json
+{
+  "interop_mode": "auto",
+  "interop_targets": ["mcp-peer", "a2a-peer"]
+}
+```
+
+`interop_targets` contains only operator-registered ids; callers cannot
+provide a URL, command, credential, or token. The mode is deliberately
+closed to three values:
+
+| Mode       | Behavior                                                                                                                                            |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `off`      | Local Analyst execution; no external discovery or invocation.                                                                                       |
+| `auto`     | Use an eligible MCP/A2A capability when available, otherwise continue locally and set `formatted.metadata.degraded_interop=true`.                   |
+| `required` | Require bounded external evidence; discovery, timeout, transport, or empty-evidence failures are surfaced instead of becoming local pseudo-success. |
+
+When a peer returns `input-required`, the graph pauses before local Analyst
+submission and resumes with the existing run resume mechanism. The default
+formatted result may include `metadata.interop`, a list containing only
+`target_id`, `kind`, `capability`, `status`, and `latency_ms`. Endpoint URLs,
+credentials, protocol correlation ids, and peer payloads remain out of that
+projection; inspect the sanitized `raw.phytomni_state` only when debug mode
+is explicitly enabled.
+
 ## Tool Inventory
 
 | Tool                    | Kind  | Required arguments                               | Demo payload                                                                            |

@@ -36,6 +36,19 @@ capped `label: message` detail lines beneath it. `formatted.answer` often
 already carries a human failure sentence for submit-style tools — check
 answer first, then metadata.
 
+Research and Design calls may also include an `interop` summary in the
+metadata line when `interop_mode` is `auto` or `required`. It contains only
+the operator target id, transport kind (`mcp` / `a2a`), capability, status,
+and bounded latency. A `degraded_interop=true` token means `auto` could not
+obtain external evidence and continued with the local Analyst path; in
+`required` mode an unavailable or failed peer is reported as a failed
+submission. Use the same JSON controls in the CLI call as on MCP/HTTP:
+
+```bash
+phytomni call InSilicoResearchAgent \
+  '{"user_query":"Summarize the paper.","data_list":{},"obs_file_list":[],"interop_mode":"auto","interop_targets":["mcp-peer"]}'
+```
+
 DeepGenome (and other agents that continue work after returning a
 `task_id`) need a long-lived process: run `phytomni-api` or keep an MCP
 server session open, then poll with `GetTaskStatus`. A one-shot

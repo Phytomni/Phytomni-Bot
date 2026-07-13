@@ -397,6 +397,15 @@ with its configured monotonic TTL and concurrent requests share one discovery;
 error results are not long-term negative-cached, so a recovered peer can be
 retried on the next request.
 
+Research/Design execution is a separate request-level decision. Pass
+`interop_mode=off` (the default) for local-only behavior, `auto` to permit a
+best-effort MCP/A2A evidence lookup with a `degraded_interop` signal on local
+fallback, or `required` to fail closed when no external evidence is returned.
+Pass only ids in `interop_targets`. A2A `input-required` pauses before local
+Analyst submission and resumes through the normal run resume endpoint. Review
+`formatted.metadata.interop` for bounded target/kind/capability/status/latency
+records; no peer URL, credential, or protocol correlation is exposed there.
+
 The interop client is separate from the trusted backend pool. It ignores
 environment proxies, follows no redirects, performs no transparent retry,
 revalidates DNS/IP policy for each request, and injects credentials only after

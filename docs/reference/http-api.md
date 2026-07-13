@@ -340,9 +340,45 @@ arguments as code execution policy. A2A cards are structurally validated and
 allowlisted; without a configured JWS key, the service makes no signature
 verification claim.
 
-This phase supplies discovery/client infrastructure only. Research and Design
-requests do not yet delegate work to external capabilities; those controls are
-planned for Phase 4.
+The discovery route never executes a peer. Research and Design delegation is a
+separate request-level seam: each native run may opt in with
+`interop_mode=auto|required` and operator-registered `interop_targets`; the
+default `off` mode remains local-only. See the request policy below for
+fallback, failure, and A2A input-required behavior.
+
+## Research/Design outbound delegation (opt-in)
+
+`POST /v1/agents/research/runs` and `POST /v1/agents/design/runs` accept the
+same optional controls as the MCP tools. The HTTP layer validates the mode and
+forwards only target ids:
+
+```json
+{
+  "arguments": {
+    "user_query": "Summarize the uploaded paper.",
+    "data_list": {},
+    "obs_file_list": [],
+    "interop_mode": "auto",
+    "interop_targets": ["mcp-peer", "a2a-peer"]
+  }
+}
+```
+
+`off` never discovers or invokes a peer. `auto` may use one eligible MCP or
+A2A capability and continues through the local Analyst path when discovery,
+timeout, transport, or evidence collection fails; the result then carries
+`formatted.metadata.degraded_interop=true` and a bounded `status="degraded"`
+entry in `formatted.metadata.interop`. `required` must receive external
+evidence before local submission and returns a failed result when no eligible
+peer can provide it. It never turns a local fallback into a pseudo-success.
+
+An A2A `input-required` response pauses the graph before local Analyst
+submission. The native run response exposes the bounded pause draft and the
+same run resume adapter continues the remote exchange; once completed, local
+submission still uses the existing Analyst/OBS path. `metadata.interop` never
+contains endpoint URLs, credentials, peer payloads, or task/context
+correlation ids; those remain in sanitized `raw.phytomni_state` only when
+debug projection is explicitly requested.
 
 `GET /v1/runs` accepts optional `status`, `agent`, `origin`, `limit`,
 `offset`, `created_after`, `created_before`, `user_id`, `dialogue_id`,
@@ -955,12 +991,18 @@ actually-executed query, plan, or goal list without toggling
 | KnowledgeAgent / ReviewAgent / BriefGeneAgent | (cited; no extra metadata beyond stability note; BriefGeneAgent adds `degraded` on a recovered literature fault — see below) |
 | AnalystAgent                                  | `plan` (≤4 KB), `extracted_tools`, `method_context_keys`, `plan_retries`, plus task fields                                   |
 | DeepGenomeAgent                               | `task_id`, `output_dir`, `species_code`, `gene_id`, `compute_resource`, plus task fields                                     |
-| InSilicoResearchAgent                         | `task_ids`, `goals`, `output_dir`, `error`, plus task fields                                                                 |
-| DigitalDesignAgent                            | `task_ids`, `goal_description` (≤256 B), plus task fields and `output_dirs` field                                            |
+| InSilicoResearchAgent                         | `task_ids`, `goals`, `output_dir`, `error`, plus task fields and optional `interop` / `degraded_interop`                     |
+| DigitalDesignAgent                            | `task_ids`, `goal_description` (≤256 B), plus task fields, `output_dirs`, and optional `interop` / `degraded_interop`        |
 | GeneNetworkAgent                              | `goal_description` (≤256 B), plus task fields                                                                                |
 
 Text fields exceeding their byte cap are truncated with a marker
 pointing to the full document in `raw.phytomni_state.<key>`.
+
+For Research/Design opt-in runs, each `metadata.interop[]` entry contains
+only `target_id`, `kind` (`mcp` or `a2a`), `capability`, `status`
+(`completed`, `input_required`, `degraded`, or `failed`), and `latency_ms`.
+The `degraded_interop` boolean is present only when `auto` continued locally
+without external evidence.
 
 ### ReviewAgent degraded-mode metadata
 

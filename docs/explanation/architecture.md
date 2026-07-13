@@ -223,8 +223,11 @@ no persistent interop audit database.
 External A2A cards are structurally validated against A2A/JSON-RPC policy and
 operator allowlists. Unless a JWS trust key is explicitly configured, card
 handling makes no cryptographic signature-verification claim. Research and
-Design delegation are separate Phase 4 seams and must not be added to the
-discovery route or inferred from the presence of a capability DTO.
+Design delegation are separate request-level Phase 4 seams: they consume
+allowlisted capability DTOs only when `interop_mode=auto|required` is supplied,
+never by inference from the discovery route. Their evidence is bounded and
+untrusted, local Analyst/OBS submission remains the side-effect boundary, and
+`required` fails closed instead of treating local fallback as peer success.
 
 ## Caching Policy
 

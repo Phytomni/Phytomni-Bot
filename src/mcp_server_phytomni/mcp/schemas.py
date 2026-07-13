@@ -378,9 +378,11 @@ class InSilicoResearchAgent(BaseModel):
     interop_mode: Literal["off", "auto", "required"] = Field(
         default="off",
         description=(
-            "External capability delegation policy. 'off' keeps execution "
-            "local, 'auto' permits a later external-capability fallback, "
-            "and 'required' requires an eligible external capability."
+            "External capability delegation policy: 'off' keeps execution "
+            "local and never discovers or invokes a peer; 'auto' may use "
+            "an eligible registered MCP/A2A target and falls back locally "
+            "when it cannot obtain evidence; 'required' fails the request "
+            "unless an eligible target returns external evidence."
         ),
     )
     interop_targets: list[str] = Field(
@@ -508,9 +510,11 @@ class DigitalDesignAgent(BaseModel):
     interop_mode: Literal["off", "auto", "required"] = Field(
         default="off",
         description=(
-            "External capability delegation policy. 'off' keeps execution "
-            "local, 'auto' permits a later external-capability fallback, "
-            "and 'required' requires an eligible external capability."
+            "External capability delegation policy: 'off' keeps execution "
+            "local and never discovers or invokes a peer; 'auto' may use "
+            "an eligible registered MCP/A2A target and falls back locally "
+            "when it cannot obtain evidence; 'required' fails the request "
+            "unless an eligible target returns external evidence."
         ),
     )
     interop_targets: list[str] = Field(
