@@ -113,7 +113,7 @@ default.
 | ----------------------------------------- | ------------------------------------ |
 | A2A Agent Card and `/a2a` server          | Opt-in core                          |
 | Calls to external MCP tools or A2A agents | Explicit opt-in from Research/Design |
-| Cross-session LangGraph Store memory      | Not shipped                          |
+| User-scoped memory CRUD API               | Opt-in; agent recall pending         |
 
 Internal `phyto.progress.phase` values are stage labels, not A2A task states.
 The A2A status adapter maps task lifecycle state independently. Outbound

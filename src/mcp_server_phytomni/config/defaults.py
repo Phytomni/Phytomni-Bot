@@ -696,6 +696,10 @@ class ApiConfig(BaseSettings):
         API_KEYS_DB_PATH (str): Local SQLite path for the API key store.
         API_TASKS_DB_PATH (str): Shared local SQLite path for the run
             registry and backend task status (single source of truth).
+        MEMORY_ENABLED (bool): Opt-in switch for user-scoped memory CRUD
+            routes. Defaults to False so the public surface stays dark.
+        MEMORY_DB_PATH (str): Local SQLite path for memory records; opened
+            only when ``MEMORY_ENABLED`` is true.
         API_REQUEST_TIMEOUT (float): Per-request timeout in seconds.
         API_RATE_LIMIT_PER_MIN (int): Per-key request budget per minute.
         API_RUN_TTL_OK_HOURS (int): Retention for terminal successful runs.
@@ -792,6 +796,18 @@ class ApiConfig(BaseSettings):
         default="server_tasks.db",
         validation_alias=AliasChoices(
             "API_TASKS_DB_PATH", "PHYTOMNI_TASKS_DB"
+        ),
+    )
+    MEMORY_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "MEMORY_ENABLED", "PHYTOMNI_MEMORY_ENABLED"
+        ),
+    )
+    MEMORY_DB_PATH: str = Field(
+        default=str(_API_CACHE_DIR / "memory.sqlite"),
+        validation_alias=AliasChoices(
+            "MEMORY_DB_PATH", "PHYTOMNI_MEMORY_DB_PATH"
         ),
     )
     API_REQUEST_TIMEOUT: float = 600.0

@@ -44,6 +44,7 @@ Local runtime files:
 | API key store    | `.cache/phytomni/api_keys.sqlite`   | Per-user API key hashes and metadata.     |
 | Runs/tasks store | `server_tasks.db`                   | Run tracking and child task linkage.      |
 | Checkpoint store | `checkpoints.db`                    | ReviewAgent pause points for `/resume`.   |
+| Memory store     | `.cache/phytomni/memory.sqlite`     | Opt-in user-scoped memory records.        |
 | Function cache   | `.cache/phytomni/func_cache.sqlite` | Cached LLM/retrieval/database primitives. |
 
 Defaults are relative to the process working directory. In systemd or
@@ -74,6 +75,8 @@ paths through the environment.
    ```bash
    API_KEYS_DB_PATH=/var/lib/phytomni/api_keys.sqlite
    API_TASKS_DB_PATH=/var/lib/phytomni/server_tasks.db
+   MEMORY_ENABLED=0
+   MEMORY_DB_PATH=/var/lib/phytomni/memory.sqlite
    PHYTOMNI_CACHE_DB=/var/lib/phytomni/func_cache.sqlite
    ```
 
@@ -178,6 +181,11 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
 | `GET`    | `/v1/agents`                             | yes   | Native agent slug discovery; rows carry `legacy_aliases`.                                                                                          |
 | `POST`   | `/v1/agents/{agent}/runs`                | yes   | Native agent submission.                                                                                                                           |
 | `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing; one extra routing-LLM call resolves the agent per request.                                                              |
+| `GET`    | `/v1/memories`                           | yes   | Lists live owner-scoped memory records; route exists only when `MEMORY_ENABLED=1`.                                                                 |
+| `POST`   | `/v1/memories`                           | yes   | Creates one memory using the authenticated API-key namespace.                                                                                      |
+| `GET`    | `/v1/memories/{memory_id}`               | yes   | Owner-scoped live memory lookup.                                                                                                                   |
+| `PUT`    | `/v1/memories/{memory_id}`               | yes   | Replaces a memory with an `If-Match` revision check.                                                                                               |
+| `DELETE` | `/v1/memories/{memory_id}`               | yes   | Idempotent owner-scoped delete; optional `If-Match` revision check.                                                                                |
 | `GET`    | `/v1/runs/{run_id}`                      | yes   | Owner-scoped run lookup.                                                                                                                           |
 | `POST`   | `/v1/runs/{thread_id}/resume`            | yes   | Resume a ReviewAgent human-approval pause.                                                                                                         |
 | `POST`   | `/v1/runs/{run_id}/a2ui-actions`         | yes   | Resume a ChatAgent or ReviewAgent A2UI confirm pause (`input_required`).                                                                           |
@@ -206,6 +214,34 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
 | `GET`    | `/v1/relay/analysis/{task_id}/logs`      | relay | Analysis task-log relay (envelope, IAM; only the `task_name` query key is forwarded).                                                              |
 | `POST`   | `/v1/relay/analysis/{task_id}/terminate` | relay | Analysis task-terminate relay (envelope, IAM `X-Auth-Token`; task id validated).                                                                   |
 | `GET`    | `/v1/relay/spa-faq/{repo_id}`            | relay | SPA-FAQ relay (envelope, IAM `X-Auth-Token`; repo id validated; proxy-bypass; `question`/`page_size`/`page_num` only).                             |
+
+### Memory CRUD operations (opt-in)
+
+Set `MEMORY_ENABLED=1` and `MEMORY_DB_PATH` to a persistent local SQLite path
+only when the deployment is ready to expose explicit user memory. Restart the
+API after changing either value; the app mounts no memory route and opens no
+memory database while the flag is false. The path must be writable by the
+service account and must not be on a network filesystem.
+
+The authenticated API key supplies the memory namespace. Do not add a
+`user_id` field to create/update requests: it is rejected with `422`. Verify
+the isolation smoke before rollout:
+
+```bash
+curl -fsS -H "Authorization: Bearer $ALICE_KEY" \
+  -H 'content-type: application/json' \
+  -d '{"kind":"note","content":"owned by alice"}' \
+  http://127.0.0.1:8080/v1/memories
+curl -fsS -H "Authorization: Bearer $BOB_KEY" \
+  http://127.0.0.1:8080/v1/memories
+```
+
+Keep the `revision` from the create/get response and send it as
+`If-Match` on updates (and optionally deletes). Missing or malformed update
+headers are `428` / `400`; a stale revision is `409`. A `503 memory store unavailable` means the SQLite path is corrupt, inaccessible, or locked beyond
+the configured busy timeout; fix the local volume and restart rather than
+deleting the database. Back up the memory database separately from
+`server_tasks.db` and `checkpoints.db`.
 
 When a graph-agent stream (`phyto-knowledge` or `phyto-brief-gene`) is
 served with `stream: true`, the response carries AG-UI event frames.

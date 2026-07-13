@@ -2,18 +2,11 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""HTTP API request and response schemas.
-
-Public models: ApiErrorDetail, ApiErrorResponse, ChatMessage,
-    ChatCompletionRequest, AgentRunRequest, ExpertQueryRequest,
-    ResumeRequest, A2uiActionRequest, ApiKeyCreateRequest,
-    ApiKeyCreateResponse, ApiKeyRecordResponse, ApiKeyListResponse,
-    ApiKeyDeleteResponse, FileUploadResponse.
-Public aliases: UploadPurpose.
-"""
+"""HTTP API request and response schemas."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
@@ -46,6 +39,11 @@ __all__ = [
     "ChatCompletionRequest",
     "ChatMessage",
     "FileUploadResponse",
+    "MemoryCreateRequest",
+    "MemoryDeleteResponse",
+    "MemoryListResponse",
+    "MemoryResponse",
+    "MemoryUpdateRequest",
     "ResumeRequest",
     "UploadPurpose",
 ]
@@ -294,6 +292,63 @@ class ApiKeyDeleteResponse(BaseModel):
 
     object: str = "api_key.deleted"
     prefix: str
+    deleted: bool
+
+
+class _MemoryRequest(BaseModel):
+    """Shared body shape for user-scoped memory writes."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: str = Field(min_length=1)
+    content: str = Field(min_length=1)
+    tags: list[str] = Field(default_factory=list)
+    expires_at: datetime | None = None
+
+
+class MemoryCreateRequest(_MemoryRequest):
+    """Body for ``POST /v1/memories``.
+
+    The authenticated request context supplies ``user_id``. It is not
+    accepted here so a caller cannot write into another user's namespace.
+    """
+
+
+class MemoryUpdateRequest(_MemoryRequest):
+    """Body for ``PUT /v1/memories/{memory_id}``.
+
+    ``If-Match`` carries the current integer revision; identity and owner
+    fields remain server-controlled.
+    """
+
+
+class MemoryResponse(BaseModel):
+    """Persisted user-scoped memory returned by the HTTP API."""
+
+    object: str = "memory"
+    id: str
+    user_id: str
+    kind: str
+    content: str
+    tags: list[str]
+    created_at: datetime
+    updated_at: datetime
+    expires_at: datetime | None = None
+    revision: int
+
+
+class MemoryListResponse(BaseModel):
+    """Response to ``GET /v1/memories``."""
+
+    object: str = "list"
+    data: list[MemoryResponse]
+
+
+class MemoryDeleteResponse(BaseModel):
+    """Response to ``DELETE /v1/memories/{memory_id}``."""
+
+    object: str = "memory.deleted"
+    id: str
     deleted: bool
 
 

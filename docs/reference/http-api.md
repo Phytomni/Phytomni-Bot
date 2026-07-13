@@ -17,16 +17,18 @@ settings. SQLite stores are local-only because network filesystems can
 deadlock under SQLite WAL. See [Configuration](configuration.md) for the
 canonical variable matrix.
 
-| Setting              | Env                                         | Default                           |
-| -------------------- | ------------------------------------------- | --------------------------------- |
-| API bind host        | `API_HOST`                                  | `127.0.0.1`                       |
-| API bind port        | `API_PORT`                                  | `8080`                            |
-| API key store        | `API_KEYS_DB_PATH` / `PHYTOMNI_API_KEYS_DB` | `.cache/phytomni/api_keys.sqlite` |
-| Runs and tasks store | `API_TASKS_DB_PATH` / `PHYTOMNI_TASKS_DB`   | `server_tasks.db`                 |
-| Checkpoint store     | beside the runs/tasks store                 | `checkpoints.db`                  |
-| Per-key req/min      | `API_RATE_LIMIT_PER_MIN`                    | `120` (`<= 0` disables)           |
-| Succeeded-run TTL    | `API_RUN_TTL_OK_HOURS`                      | `24`                              |
-| Failed-run TTL       | `API_RUN_TTL_FAIL_DAYS`                     | `7`                               |
+| Setting              | Env                                          | Default                           |
+| -------------------- | -------------------------------------------- | --------------------------------- |
+| API bind host        | `API_HOST`                                   | `127.0.0.1`                       |
+| API bind port        | `API_PORT`                                   | `8080`                            |
+| API key store        | `API_KEYS_DB_PATH` / `PHYTOMNI_API_KEYS_DB`  | `.cache/phytomni/api_keys.sqlite` |
+| Runs and tasks store | `API_TASKS_DB_PATH` / `PHYTOMNI_TASKS_DB`    | `server_tasks.db`                 |
+| Memory CRUD flag     | `MEMORY_ENABLED` / `PHYTOMNI_MEMORY_ENABLED` | `false` (disabled)                |
+| Memory store         | `MEMORY_DB_PATH` / `PHYTOMNI_MEMORY_DB_PATH` | `.cache/phytomni/memory.sqlite`   |
+| Checkpoint store     | beside the runs/tasks store                  | `checkpoints.db`                  |
+| Per-key req/min      | `API_RATE_LIMIT_PER_MIN`                     | `120` (`<= 0` disables)           |
+| Succeeded-run TTL    | `API_RUN_TTL_OK_HOURS`                       | `24`                              |
+| Failed-run TTL       | `API_RUN_TTL_FAIL_DAYS`                      | `7`                               |
 
 The runs table and tasks table share one SQLite file so the submit-side
 writer and the run-status reader address the same source of truth.
@@ -87,6 +89,11 @@ Streaming section below.
 | `GET`    | `/v1/agents`                             | yes   | Lists native agent-run slugs; each row carries `legacy_aliases`.                                                                                                                                        |
 | `POST`   | `/v1/agents/{agent}/runs`                | yes   | Invokes one agent by slug.                                                                                                                                                                              |
 | `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing: an LLM selects the agent for a query and returns its `agent.run` envelope with the resolved slug.                                                                            |
+| `GET`    | `/v1/memories`                           | yes   | Lists live memory records in the authenticated user's namespace; route exists only when `MEMORY_ENABLED=1`.                                                                                             |
+| `POST`   | `/v1/memories`                           | yes   | Creates one memory record; `user_id` is taken from the API key context and cannot be supplied in the body.                                                                                              |
+| `GET`    | `/v1/memories/{memory_id}`               | yes   | Returns one live owner-scoped memory record.                                                                                                                                                            |
+| `PUT`    | `/v1/memories/{memory_id}`               | yes   | Replaces one memory with optimistic concurrency; requires `If-Match: <revision>`.                                                                                                                       |
+| `DELETE` | `/v1/memories/{memory_id}`               | yes   | Deletes one owner-scoped memory idempotently; an optional `If-Match` checks its revision.                                                                                                               |
 | `GET`    | `/v1/runs/{run_id}`                      | yes   | Returns one owner-isolated run state.                                                                                                                                                                   |
 | `POST`   | `/v1/runs/{thread_id}/resume`            | yes   | Resumes a ReviewAgent run paused at a human approval interrupt.                                                                                                                                         |
 | `POST`   | `/v1/runs/{run_id}/a2ui-actions`         | yes   | Resumes a ChatAgent or ReviewAgent run paused on an A2UI confirm surface (`input_required`).                                                                                                            |
@@ -126,6 +133,37 @@ agents (`brief_gene`, `design`, `network`) ship an empty list
 rather than dropping the key so the shape stays uniform and any
 future agent must declare its alias inventory explicitly rather
 than silently inherit `[]`.
+
+## User-scoped memory CRUD (opt-in)
+
+The memory routes are disabled unless `MEMORY_ENABLED=1` (or
+`PHYTOMNI_MEMORY_ENABLED=1`) is present when the API app starts. A disabled
+deployment does not mount the routes and returns `404`; it also does not open
+the configured SQLite path. The store is local-only and should use an
+absolute path on a persistent local volume in production.
+
+Every request is authenticated with the `agents` scope. The API key's bound
+`user_id` is the only namespace selector: request bodies reject `user_id`,
+and list/get/update/delete operations cannot address another user's records.
+`GET /v1/memories` supports optional `kind` and `limit` filters; the domain
+policy caps retrieval at 20 records by default and excludes expired records.
+
+Create and update bodies have this shape:
+
+```json
+{
+  "kind": "preference",
+  "content": "prefers Arabidopsis",
+  "tags": ["profile"],
+  "expires_at": null
+}
+```
+
+`PUT /v1/memories/{memory_id}` requires `If-Match` with the record's positive
+integer `revision` (quoted or unquoted). A missing header returns `428`, an
+invalid value returns `400`, and a stale revision returns `409`; successful
+updates increment the revision. Delete is idempotent and accepts the same
+header optionally, returning `deleted: false` for a missing or foreign record.
 
 ## A2A v1 server core (opt-in)
 

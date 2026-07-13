@@ -129,6 +129,15 @@ from ..runtime.langgraph_runner import (
     build_runnable_config,
     ensure_checkpointer,
 )
+from ..runtime.memory import (
+    MemoryConflictError,
+    MemoryNotFoundError,
+    MemoryPolicyError,
+    MemorySchemaError,
+    MemoryStore,
+    MemoryStoreError,
+    MemoryWrite,
+)
 from ..runtime.request_context import (
     bind_request_id,
     bind_request_user,
@@ -192,6 +201,11 @@ from .schemas import (
     ChatCompletionRequest,
     ExpertQueryRequest,
     FileUploadResponse,
+    MemoryCreateRequest,
+    MemoryDeleteResponse,
+    MemoryListResponse,
+    MemoryResponse,
+    MemoryUpdateRequest,
     ResumeRequest,
     UploadPurpose,
 )
@@ -209,6 +223,7 @@ _ERROR_TYPES = {
     404: "not_found",
     409: "conflict",
     422: "unprocessable_entity",
+    428: "precondition_required",
     429: "rate_limited",
     500: "internal_error",
     503: "unavailable",
@@ -2254,6 +2269,54 @@ def _error_response(
     )
 
 
+def _memory_response(record: Any) -> MemoryResponse:
+    """Convert a domain memory record into the public response shape."""
+    return MemoryResponse.model_validate(record.model_dump())
+
+
+def _memory_write(owner: str, payload: Any) -> MemoryWrite:
+    """Build a domain write while keeping the owner outside the body."""
+    try:
+        return MemoryWrite(
+            user_id=owner,
+            kind=payload.kind,
+            content=payload.content,
+            tags=payload.tags,
+            expires_at=payload.expires_at,
+        )
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422, detail="memory payload failed domain validation"
+        ) from exc
+
+
+def _memory_revision(value: str | None, *, required: bool) -> int | None:
+    """Parse the integer revision carried by an ``If-Match`` header."""
+    if value is None or not value.strip():
+        if required:
+            raise HTTPException(
+                status_code=428,
+                detail="If-Match is required for memory updates",
+            )
+        return None
+    candidate = value.strip()
+    if len(candidate) >= 2 and candidate[0] == candidate[-1] == '"':
+        candidate = candidate[1:-1].strip()
+    try:
+        revision = int(candidate)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="If-Match must contain a positive integer revision",
+        ) from exc
+    if revision < 1:
+        raise HTTPException(
+            status_code=400,
+            detail="If-Match must contain a positive integer revision",
+        )
+    return revision
+
+
 def request_context_middleware(app: ASGIApp) -> ASGIApp:
     """Wrap an ASGI app to bind a per-request correlation id.
 
@@ -2501,6 +2564,20 @@ def create_app() -> FastAPI:
     interop_registry: InteropRegistry | None = None
     interop_sensitive_config: SensitiveConfig | None = None
     interop_caches: dict[str, DiscoveryCache] = {}
+    memory_store: MemoryStore | None = None
+
+    def get_memory_store() -> MemoryStore:
+        """Lazily open the local memory store for an enabled deployment."""
+        nonlocal memory_store
+        if memory_store is None:
+            try:
+                memory_store = MemoryStore(ApiConfig().MEMORY_DB_PATH)
+            except (MemorySchemaError, OSError, sqlite3.Error, ValueError):
+                _LOGGER.warning("memory store unavailable")
+                raise HTTPException(
+                    status_code=503, detail="memory store unavailable"
+                ) from None
+        return memory_store
 
     async def authorized(
         principal: ApiPrincipal = Depends(require_principal),
@@ -2623,6 +2700,182 @@ def create_app() -> FastAPI:
                 ],
             }
         )
+
+    if ApiConfig().MEMORY_ENABLED:
+
+        @app.post(
+            "/v1/memories",
+            status_code=201,
+            response_model=MemoryResponse,
+        )
+        async def create_memory(
+            payload: MemoryCreateRequest,
+            principal: ApiPrincipal = Depends(require_scope("agents")),
+        ) -> MemoryResponse:
+            """Create one memory in the authenticated user's namespace."""
+            del principal
+            owner = current_request_user()
+            if not owner:
+                raise HTTPException(
+                    status_code=401, detail="user context missing"
+                )
+            write = _memory_write(owner, payload)
+            try:
+                record = get_memory_store().create(write)
+            except MemoryPolicyError as exc:
+                raise HTTPException(status_code=413, detail=str(exc)) from exc
+            except (ValidationError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=400, detail="invalid memory"
+                ) from exc
+            except (MemoryStoreError, OSError, sqlite3.Error) as exc:
+                raise HTTPException(
+                    status_code=503, detail="memory store unavailable"
+                ) from exc
+            return _memory_response(record)
+
+        @app.get(
+            "/v1/memories",
+            response_model=MemoryListResponse,
+        )
+        async def list_memories(
+            kind: str | None = None,
+            limit: int | None = None,
+            principal: ApiPrincipal = Depends(require_scope("agents")),
+        ) -> MemoryListResponse:
+            """List live memories owned by the authenticated user."""
+            del principal
+            owner = current_request_user()
+            if not owner:
+                raise HTTPException(
+                    status_code=401, detail="user context missing"
+                )
+            try:
+                records = get_memory_store().list(
+                    owner, kind=kind, limit=limit
+                )
+            except MemoryPolicyError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            except (ValidationError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=400, detail="invalid memory query"
+                ) from exc
+            except (MemoryStoreError, OSError, sqlite3.Error) as exc:
+                raise HTTPException(
+                    status_code=503, detail="memory store unavailable"
+                ) from exc
+            return MemoryListResponse(
+                data=[_memory_response(record) for record in records]
+            )
+
+        @app.get(
+            "/v1/memories/{memory_id}",
+            response_model=MemoryResponse,
+        )
+        async def get_memory(
+            memory_id: str,
+            principal: ApiPrincipal = Depends(require_scope("agents")),
+        ) -> MemoryResponse:
+            """Return one live memory only when it belongs to the caller."""
+            del principal
+            owner = current_request_user()
+            if not owner:
+                raise HTTPException(
+                    status_code=401, detail="user context missing"
+                )
+            try:
+                record = get_memory_store().get(owner, memory_id)
+            except (ValidationError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=400, detail="invalid memory id"
+                ) from exc
+            except (MemoryStoreError, OSError, sqlite3.Error) as exc:
+                raise HTTPException(
+                    status_code=503, detail="memory store unavailable"
+                ) from exc
+            if record is None:
+                raise HTTPException(status_code=404, detail="memory not found")
+            return _memory_response(record)
+
+        @app.put(
+            "/v1/memories/{memory_id}",
+            response_model=MemoryResponse,
+        )
+        async def update_memory(
+            memory_id: str,
+            payload: MemoryUpdateRequest,
+            if_match: str | None = Header(default=None, alias="If-Match"),
+            principal: ApiPrincipal = Depends(require_scope("agents")),
+        ) -> MemoryResponse:
+            """Replace one memory when ``If-Match`` is its current revision."""
+            del principal
+            owner = current_request_user()
+            if not owner:
+                raise HTTPException(
+                    status_code=401, detail="user context missing"
+                )
+            expected_revision = _memory_revision(if_match, required=True)
+            assert expected_revision is not None
+            write = _memory_write(owner, payload)
+            try:
+                record = get_memory_store().update(
+                    owner,
+                    memory_id,
+                    write,
+                    expected_revision=expected_revision,
+                )
+            except MemoryNotFoundError as exc:
+                raise HTTPException(
+                    status_code=404, detail="memory not found"
+                ) from exc
+            except MemoryConflictError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            except MemoryPolicyError as exc:
+                raise HTTPException(status_code=413, detail=str(exc)) from exc
+            except (ValidationError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=400, detail="invalid memory id"
+                ) from exc
+            except (MemoryStoreError, OSError, sqlite3.Error) as exc:
+                raise HTTPException(
+                    status_code=503, detail="memory store unavailable"
+                ) from exc
+            return _memory_response(record)
+
+        @app.delete(
+            "/v1/memories/{memory_id}",
+            response_model=MemoryDeleteResponse,
+        )
+        async def delete_memory(
+            memory_id: str,
+            if_match: str | None = Header(default=None, alias="If-Match"),
+            principal: ApiPrincipal = Depends(require_scope("agents")),
+        ) -> MemoryDeleteResponse:
+            """Delete one caller-owned memory, idempotently."""
+            del principal
+            owner = current_request_user()
+            if not owner:
+                raise HTTPException(
+                    status_code=401, detail="user context missing"
+                )
+            expected_revision = _memory_revision(if_match, required=False)
+            try:
+                deleted = get_memory_store().delete(
+                    owner,
+                    memory_id,
+                    expected_revision=expected_revision,
+                )
+            except MemoryConflictError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            except (ValidationError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=400, detail="invalid memory id"
+                ) from exc
+            except (MemoryStoreError, OSError, sqlite3.Error) as exc:
+                raise HTTPException(
+                    status_code=503, detail="memory store unavailable"
+                ) from exc
+            return MemoryDeleteResponse(id=memory_id, deleted=deleted)
 
     @app.post(
         "/v1/api-keys",

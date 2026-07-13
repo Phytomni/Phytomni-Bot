@@ -49,6 +49,28 @@ def test_interop_config_defaults_disabled_and_keeps_json_lazy(
     assert "{malformed" not in str(config.model_dump())
 
 
+def test_memory_config_defaults_disabled_and_supports_prefixed_aliases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Memory stays dark by default and accepts the PHYTOMNI aliases."""
+    monkeypatch.delenv("MEMORY_ENABLED", raising=False)
+    monkeypatch.delenv("PHYTOMNI_MEMORY_ENABLED", raising=False)
+    monkeypatch.delenv("MEMORY_DB_PATH", raising=False)
+    monkeypatch.delenv("PHYTOMNI_MEMORY_DB_PATH", raising=False)
+
+    default = ApiConfig()
+    assert default.MEMORY_ENABLED is False
+    assert str(default.MEMORY_DB_PATH).endswith(
+        ".cache/phytomni/memory.sqlite"
+    )
+
+    monkeypatch.setenv("PHYTOMNI_MEMORY_ENABLED", "1")
+    monkeypatch.setenv("PHYTOMNI_MEMORY_DB_PATH", "/tmp/memory.sqlite")
+    configured = ApiConfig()
+    assert configured.MEMORY_ENABLED is True
+    assert configured.MEMORY_DB_PATH == "/tmp/memory.sqlite"
+
+
 def test_server_config_has_expected_core_defaults():
     """Verify server config has expected core defaults."""
     config = ServerConfig()

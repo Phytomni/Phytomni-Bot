@@ -100,6 +100,9 @@ def _api_endpoint_pairs() -> set[tuple[str, str]]:
             ("GET", "/.well-known/agent-card.json"),
             ("POST", "/a2a"),
             ("GET", "/v1/interop/capabilities"),
+            ("GET", "/v1/memories"),
+            ("POST", "/v1/memories"),
+            ("GET", "/v1/memories/{memory_id}"),
         }
     )
     return pairs
@@ -185,7 +188,8 @@ def test_readme_matches_the_current_interoperability_boundary() -> None:
         readme,
     )
     assert re.search(
-        r"\|\s*Cross-session LangGraph Store memory\s*\|\s*Not shipped\s*\|",
+        r"\|\s*User-scoped memory CRUD API\s*\|\s*"
+        r"Opt-in; agent recall pending\s*\|",
         readme,
     )
     assert "PHYTOMNI_INTEROP_ENABLED" in readme
@@ -206,7 +210,6 @@ def test_readme_matches_the_current_interoperability_boundary() -> None:
         == 2
     )
     assert public_schemas.count("interop_targets: list[str]") == 2
-    # C5.1/C5.2 define the domain and local store, while the public memory
-    # surface remains intentionally unshipped until the later API steps.
+    # C5.1-C5.4 define the domain, local store, and opt-in HTTP surface.
     assert (ROOT / "src/mcp_server_phytomni/runtime/memory/models.py").exists()
     assert (ROOT / "src/mcp_server_phytomni/runtime/memory/sqlite.py").exists()
