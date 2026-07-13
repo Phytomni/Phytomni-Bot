@@ -188,5 +188,8 @@ def test_readme_matches_the_current_interoperability_boundary() -> None:
         r"\|\s*A2A Agent Card and `/a2a` server\s*\|\s*Opt-in core\s*\|",
         readme,
     )
-    assert not (ROOT / "src/mcp_server_phytomni/interop").exists()
+    public_schemas = (
+        ROOT / "src/mcp_server_phytomni/mcp/schemas.py"
+    ).read_text(encoding="utf-8")
+    assert "interop_mode" not in public_schemas
     assert not (ROOT / "src/mcp_server_phytomni/runtime/memory").exists()

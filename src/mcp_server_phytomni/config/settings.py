@@ -226,6 +226,18 @@ class SensitiveConfig(BaseSettings):
     EMBED_URL: str
     EMBED_MODEL: str
     EMBED_API_KEY: SecretStr
+    # Interop credentials are a JSON object keyed by ``credential_ref``.
+    # Keep the full JSON opaque here; the feature-gated registry reads only
+    # its keys for reference validation and never stores decrypted values.
+    INTEROP_CREDENTIALS: Annotated[
+        SecretStr,
+        Field(
+            default=SecretStr("{}"),
+            validation_alias=AliasChoices(
+                "INTEROP_CREDENTIALS", "PHYTOMNI_INTEROP_CREDENTIALS"
+            ),
+        ),
+    ] = SecretStr("{}")
     # Customer relay-mode bearer key. The child Bot authenticates to the
     # upstream relay API with this key only; it never receives the
     # operator credentials above. Optional (empty) outside relay mode.

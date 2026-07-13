@@ -742,6 +742,12 @@ class ApiConfig(BaseSettings):
         A2A_PUBLIC_BASE_URL (Optional[str]): Public URL prefix used in the
             well-known Agent Card. Required when A2A is enabled; accepts
             HTTP(S) URLs and strips trailing slashes.
+        INTEROP_ENABLED (bool): Opt-in switch for outbound MCP/A2A target
+            loading. Defaults to False so malformed interop JSON remains
+            inert until an operator enables the feature.
+        INTEROP_TARGETS (SecretStr): Operator-owned target-registry JSON.
+            Kept opaque here so disabled mode never parses it and routine
+            config repr/model dumps do not expose endpoints or commands.
         RELAY_ENABLED (bool): When True, the server exposes the
             credential-injecting relay surface and writes relay audit
             records. Defaults to False so a stock deployment ships no
@@ -829,6 +835,21 @@ class ApiConfig(BaseSettings):
             "A2A_PUBLIC_BASE_URL", "PHYTOMNI_A2A_PUBLIC_BASE_URL"
         ),
     )
+    INTEROP_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "INTEROP_ENABLED", "PHYTOMNI_INTEROP_ENABLED"
+        ),
+    )
+    INTEROP_TARGETS: Annotated[
+        SecretStr,
+        Field(
+            default=SecretStr("[]"),
+            validation_alias=AliasChoices(
+                "INTEROP_TARGETS", "PHYTOMNI_INTEROP_TARGETS"
+            ),
+        ),
+    ] = SecretStr("[]")
     RELAY_ENABLED: bool = Field(
         default=False,
         validation_alias=AliasChoices(

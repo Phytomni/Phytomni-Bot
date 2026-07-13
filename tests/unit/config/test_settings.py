@@ -114,6 +114,17 @@ def test_sensitive_config_masks_secret_repr():
     assert "**********" in repr(config)
 
 
+def test_interop_credentials_are_lazy_secret_json(monkeypatch):
+    """Interop credentials stay opaque and masked in SensitiveConfig."""
+    secret_json = '{"peer-auth":{"authorization":"Bearer hidden"}}'
+    monkeypatch.setenv("PHYTOMNI_INTEROP_CREDENTIALS", secret_json)
+
+    config = settings.SensitiveConfig.load()
+
+    assert config.INTEROP_CREDENTIALS.get_secret_value() == secret_json
+    assert "Bearer hidden" not in repr(config)
+
+
 def test_sensitive_config_prefers_uppercase_obs_env(monkeypatch):
     """Verify SensitiveConfig prefers uppercase OBS env.
 
