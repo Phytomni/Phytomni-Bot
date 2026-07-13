@@ -15,14 +15,23 @@ from .agent import (
     ResearchTaskInterop,
     in_silico_research,
 )
-from .interop import ResearchEvidence, ResearchInteropDependencies
+from .interop import (
+    ResearchA2APending,
+    ResearchA2AResult,
+    ResearchEvidence,
+    ResearchInteropDependencies,
+    collect_research_a2a,
+)
 
 __all__ = [
     "InSilicoResearchAgents",
     "InSilicoResearchState",
     "ResearchTaskContext",
     "ResearchTaskInterop",
+    "ResearchA2APending",
+    "ResearchA2AResult",
     "ResearchEvidence",
     "ResearchInteropDependencies",
+    "collect_research_a2a",
     "in_silico_research",
 ]

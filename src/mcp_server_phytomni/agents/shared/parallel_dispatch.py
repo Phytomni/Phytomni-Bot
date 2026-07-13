@@ -183,6 +183,8 @@ class ParallelDispatchSpec:
 def build_parallel_dispatch_graph(
     spec: ParallelDispatchSpec,
     checkpointer: Any | None = None,
+    *,
+    post_work_nodes: tuple[tuple[str, Callable[..., Any]], ...] = (),
 ) -> Any:
     """Compile the standard parallel-dispatch LangGraph workflow.
 
@@ -203,6 +205,10 @@ def build_parallel_dispatch_graph(
             route function, and optional extract-node prefix.
         checkpointer: Optional LangGraph checkpointer forwarded to
             ``StateGraph.compile``.
+        post_work_nodes: Optional node callables reached through a
+            ``Command(goto=...)`` returned by ``work_node``. Each tuple
+            contains the node name and callable; nodes are terminal unless
+            the callable itself routes elsewhere.
 
     Returns:
         Compiled LangGraph application ready for ``ainvoke``.
@@ -210,6 +216,8 @@ def build_parallel_dispatch_graph(
     workflow: StateGraph = StateGraph(spec.state_class)
     workflow.add_node("prepare_tasks_node", spec.prepare_node)
     workflow.add_node(spec.work_node_name, spec.work_node)
+    for node_name, node_callable in post_work_nodes:
+        workflow.add_node(node_name, node_callable)
     if spec.extract_node is not None:
         workflow.add_node(spec.extract_node_name, spec.extract_node)
         workflow.add_edge(START, spec.extract_node_name)
@@ -222,4 +230,6 @@ def build_parallel_dispatch_graph(
         [spec.work_node_name],
     )
     workflow.add_edge(spec.work_node_name, END)
+    for node_name, _node_callable in post_work_nodes:
+        workflow.add_edge(node_name, END)
     return workflow.compile(checkpointer=checkpointer)
