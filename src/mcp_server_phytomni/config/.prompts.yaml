@@ -4360,14 +4360,35 @@ user:
   promoter_design_analysis_meta: |-
     Note1: you need to using epic environment (conda activate epic);
     step1, get the promoter sequence for the gene using grep;
-    step2, designing the gene promoter sequences; (cp -r $design_result_dir
-    $output_dir)
+    step2, designing the gene promoter sequences using design_promoter.py; (conda activate af3)
     step3, get the designed promoter sequences using get_promoter_design.py
     scripts; (conda activate epic)
     step4, using smep to predict modifications for designed promoters; (conda
     activate epic)
     step5, using smoc to predict chromatin accessibility for designed
     promoters. (conda activate epic)
+    <design_promoter>
+        Tool_Usage:
+          usage: design_promoter.py [-h] --gene-id GENE_ID --species-path SPECIES_PATH --output-path OUTPUT_PATH [--species-name SPECIES_NAME]
+                          [--format {png,pdf,svg}] [--dpi DPI] [--show] [--overwrite]
+
+          Search promoter-design results by gene ID, generate an aggregate mutation-score figure, and copy the original data.
+
+          options:
+            -h, --help            show this help message and exit
+            --gene-id GENE_ID     Gene ID, for example: AT3G09255.
+            --species-path SPECIES_PATH
+                                  Species root directory containing part_*/output directories. For example: /path/to/Arabidopsis_thaliana
+            --output-path OUTPUT_PATH
+                                  Root directory used to save the figure and copied source data.
+            --species-name SPECIES_NAME
+                                  Species display name shown in the title. If omitted, it is inferred from the species directory name.
+            --format {png,pdf,svg}
+                                  Output figure format. Default: png.
+            --dpi DPI             Output resolution for raster images. Default: 300.
+            --show                Display the figure interactively after saving.
+            --overwrite           Overwrite files with the same name in the output directory. Without this option, existing files are preserved.
+    </design_promoter>
     <get_promoter_design>
         Tool_Usage:
             usage: get_promoter_design.py [-h] [--input_fasta INPUT_FASTA]
