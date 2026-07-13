@@ -9,6 +9,15 @@ hardened HTTP transport for external peers. Discovery and stdio execution are
 layered on in later phases.
 """
 
+from .cache import DiscoveryCache
+from .capabilities import (
+    DiscoveryError,
+    DiscoveryResult,
+    InteropCapability,
+    InteropCapabilityError,
+    discover_external_mcp_capabilities,
+    normalize_capabilities,
+)
 from .http_transport import httpx_client_factory
 from .mcp_client import (
     InteropMCPError,
@@ -37,7 +46,12 @@ from .security import (
 __all__ = [
     "A2ATarget",
     "AsyncDNSResolver",
+    "DiscoveryCache",
+    "DiscoveryError",
+    "DiscoveryResult",
     "EndpointSecurityError",
+    "InteropCapability",
+    "InteropCapabilityError",
     "InteropMCPError",
     "InteropMCPToolError",
     "InteropRegistry",
@@ -50,5 +64,7 @@ __all__ = [
     "invoke_external_mcp_tool",
     "load_external_mcp_tools",
     "load_interop_registry",
+    "discover_external_mcp_capabilities",
+    "normalize_capabilities",
     "validate_target_request",
 ]

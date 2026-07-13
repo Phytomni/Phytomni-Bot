@@ -97,6 +97,11 @@ class _FakeAdapter:
         self.get_tools_calls.append(server_name)
         return list(type(self).tools)
 
+    @property
+    def connection_names(self) -> tuple[str, ...]:
+        """Expose deterministic connection keys for fixture assertions."""
+        return tuple(sorted(self.connections))
+
 
 @pytest.fixture(autouse=True)
 def _reset_fake_adapter() -> None:
