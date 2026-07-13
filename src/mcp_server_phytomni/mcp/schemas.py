@@ -10,7 +10,7 @@ These schemas are the public JSON-schema surface for MCP clients.
 """
 
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -322,6 +322,9 @@ class InSilicoResearchAgent(BaseModel):
         user_query: Paper text or study context to decompose into tasks.
         data_list: OBS dataset paths mapped to role descriptions.
         obs_file_list: Optional uploaded papers or context files.
+        interop_mode: External delegation policy. Defaults to local-only.
+        interop_targets: Operator-registered target ids eligible for
+            delegation.
     """
 
     user_query: Annotated[
@@ -372,6 +375,21 @@ class InSilicoResearchAgent(BaseModel):
             },
         ),
     ]
+    interop_mode: Literal["off", "auto", "required"] = Field(
+        default="off",
+        description=(
+            "External capability delegation policy. 'off' keeps execution "
+            "local, 'auto' permits a later external-capability fallback, "
+            "and 'required' requires an eligible external capability."
+        ),
+    )
+    interop_targets: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Operator-registered external target ids eligible for this "
+            "request. Never provide a URL, command, credential, or token."
+        ),
+    )
 
 
 class DigitalDesignAgent(BaseModel):
@@ -381,6 +399,9 @@ class DigitalDesignAgent(BaseModel):
         species_code: Three-letter species code for design analysis.
         gene_id: Single target gene identifier.
         obs_file_list: Optional uploaded context files.
+        interop_mode: External delegation policy. Defaults to local-only.
+        interop_targets: Operator-registered target ids eligible for
+            delegation.
     """
 
     species_code: Annotated[
@@ -484,6 +505,21 @@ class DigitalDesignAgent(BaseModel):
             },
         ),
     ]
+    interop_mode: Literal["off", "auto", "required"] = Field(
+        default="off",
+        description=(
+            "External capability delegation policy. 'off' keeps execution "
+            "local, 'auto' permits a later external-capability fallback, "
+            "and 'required' requires an eligible external capability."
+        ),
+    )
+    interop_targets: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Operator-registered external target ids eligible for this "
+            "request. Never provide a URL, command, credential, or token."
+        ),
+    )
 
 
 class GeneNetworkAgent(BaseModel):

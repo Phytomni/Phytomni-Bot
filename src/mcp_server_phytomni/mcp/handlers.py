@@ -304,6 +304,8 @@ async def handle_in_silico_research_agent(
         user_id=current_request_user(),
         output_dir=in_silico_config.OUTPUT_DIR,
         obs_file_list=args.obs_file_list,
+        interop_mode=args.interop_mode,
+        interop_targets=args.interop_targets,
         server_dir=scratch_server_dir(in_silico_config, "research"),
         execute_code=in_silico_config.EXECUTE_CODE,
         **chat_kwargs(in_silico_config, runtime.sensitive),
@@ -332,6 +334,8 @@ async def handle_digital_design_agent(
     return await design_module(
         species_code=args.species_code,
         gene_id=args.gene_id,
+        interop_mode=args.interop_mode,
+        interop_targets=args.interop_targets,
         user_id=current_request_user() or design_config.USER_ID,
         batch=True,
         enable_auto_select=False,

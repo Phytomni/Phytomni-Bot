@@ -197,5 +197,13 @@ def test_readme_matches_the_current_interoperability_boundary() -> None:
     public_schemas = (
         ROOT / "src/mcp_server_phytomni/mcp/schemas.py"
     ).read_text(encoding="utf-8")
-    assert "interop_mode" not in public_schemas
+    # C4.1 exposes the opt-in request controls while delegation itself
+    # remains a later phase and is still disabled in the README boundary.
+    assert (
+        public_schemas.count(
+            'interop_mode: Literal["off", "auto", "required"]'
+        )
+        == 2
+    )
+    assert public_schemas.count("interop_targets: list[str]") == 2
     assert not (ROOT / "src/mcp_server_phytomni/runtime/memory").exists()
