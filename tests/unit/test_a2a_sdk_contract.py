@@ -5,11 +5,17 @@
 
 from __future__ import annotations
 
+import inspect
 from importlib.metadata import version
 
 import pytest
 from a2a import types as a2a_types
+from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
+from a2a.client.card_resolver import parse_agent_card
 from a2a.types import (
+    AgentCard,
+    AgentInterface,
+    AgentSkill,
     Artifact,
     Part,
     Role,
@@ -31,6 +37,76 @@ def test_a2a_sdk_stays_inside_the_supported_v1_window() -> None:
 
     assert int(major) == 1
     assert int(minor) >= 1
+
+
+def test_a2a_v1_card_and_client_interfaces_remain_public() -> None:
+    """Discovery keeps the SDK card/client entry points in its v1 window."""
+    assert list(AgentCard.DESCRIPTOR.fields_by_name) == [
+        "name",
+        "description",
+        "supported_interfaces",
+        "provider",
+        "version",
+        "documentation_url",
+        "capabilities",
+        "security_schemes",
+        "security_requirements",
+        "default_input_modes",
+        "default_output_modes",
+        "skills",
+        "signatures",
+        "icon_url",
+    ]
+    assert list(AgentInterface.DESCRIPTOR.fields_by_name) == [
+        "url",
+        "protocol_binding",
+        "tenant",
+        "protocol_version",
+    ]
+    assert list(AgentSkill.DESCRIPTOR.fields_by_name) == [
+        "id",
+        "name",
+        "description",
+        "tags",
+        "examples",
+        "input_modes",
+        "output_modes",
+        "security_requirements",
+    ]
+    assert list(inspect.signature(ClientConfig).parameters) == [
+        "streaming",
+        "polling",
+        "httpx_client",
+        "grpc_channel_factory",
+        "supported_protocol_bindings",
+        "use_client_preference",
+        "accepted_output_modes",
+        "push_notification_config",
+    ]
+    assert list(inspect.signature(ClientFactory).parameters) == ["config"]
+    assert list(inspect.signature(ClientFactory.create).parameters) == [
+        "self",
+        "card",
+        "interceptors",
+    ]
+    assert list(
+        inspect.signature(ClientFactory.create_from_url).parameters
+    ) == [
+        "self",
+        "url",
+        "interceptors",
+        "relative_card_path",
+        "resolver_http_kwargs",
+        "signature_verifier",
+    ]
+    assert list(inspect.signature(A2ACardResolver).parameters) == [
+        "httpx_client",
+        "base_url",
+        "agent_card_path",
+    ]
+    assert list(inspect.signature(parse_agent_card).parameters) == [
+        "agent_card_data"
+    ]
 
 
 def test_a2a_v1_role_and_task_state_enums_remain_stable() -> None:

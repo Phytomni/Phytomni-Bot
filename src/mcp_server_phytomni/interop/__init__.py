@@ -9,6 +9,11 @@ hardened HTTP transport for external peers. Discovery and stdio execution are
 layered on in later phases.
 """
 
+from .a2a_discovery import (
+    InteropA2AError,
+    discover_external_a2a_capabilities,
+    fetch_external_a2a_card,
+)
 from .cache import DiscoveryCache
 from .capabilities import (
     DiscoveryError,
@@ -50,6 +55,7 @@ __all__ = [
     "DiscoveryError",
     "DiscoveryResult",
     "EndpointSecurityError",
+    "InteropA2AError",
     "InteropCapability",
     "InteropCapabilityError",
     "InteropMCPError",
@@ -65,6 +71,8 @@ __all__ = [
     "load_external_mcp_tools",
     "load_interop_registry",
     "discover_external_mcp_capabilities",
+    "discover_external_a2a_capabilities",
+    "fetch_external_a2a_card",
     "normalize_capabilities",
     "validate_target_request",
 ]

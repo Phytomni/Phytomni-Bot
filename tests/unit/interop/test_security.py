@@ -281,6 +281,24 @@ async def test_a2a_card_must_use_the_exact_configured_path() -> None:
         )
 
 
+async def test_a2a_interface_path_may_use_an_explicit_card_origin() -> None:
+    """An operator-approved card origin may expose its RPC path separately."""
+    target = _a2a_target(
+        allowed_interface_origins=[
+            "https://card.example.test",
+            "https://rpc.example.test:9443",
+        ]
+    )
+
+    endpoint = await validate_target_request(
+        target,
+        httpx.URL("https://card.example.test/a2a"),
+        resolver=_resolver_for("8.8.8.8"),
+    )
+
+    assert endpoint.connection_url.path == "/a2a"
+
+
 async def test_a2a_interface_origin_is_operator_approved() -> None:
     """A2A may use a listed interface origin in addition to its card origin."""
     target = _a2a_target()

@@ -123,7 +123,13 @@ def _configured_path_allowed(
         return request_url.raw_path == configured.raw_path
     card = httpx.URL(target.card_base_url)
     if _origin(request_url) == _origin(card):
-        return request_url.raw_path == card.raw_path
+        if request_url.raw_path == card.raw_path:
+            return True
+        interface_origins = frozenset(
+            _origin(httpx.URL(value))
+            for value in target.allowed_interface_origins
+        )
+        return _origin(request_url) in interface_origins
     return True
 
 
