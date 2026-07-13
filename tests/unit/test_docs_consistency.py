@@ -99,6 +99,7 @@ def _api_endpoint_pairs() -> set[tuple[str, str]]:
         {
             ("GET", "/.well-known/agent-card.json"),
             ("POST", "/a2a"),
+            ("GET", "/v1/interop/capabilities"),
         }
     )
     return pairs
@@ -173,17 +174,22 @@ def test_cli_reference_covers_console_scripts() -> None:
 
 
 def test_readme_matches_the_current_interoperability_boundary() -> None:
-    """README must not advertise protocol surfaces that are not mounted."""
+    """README must distinguish discovery infrastructure from delegation."""
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     route_paths = {getattr(route, "path", "") for route in create_app().routes}
 
     assert "/a2a" not in route_paths
-    for capability in (
-        "Calls to external MCP tools or A2A agents",
-        "Cross-session LangGraph Store memory",
-    ):
-        pattern = rf"\|\s*{re.escape(capability)}\s*\|\s*Not shipped\s*\|"
-        assert re.search(pattern, readme)
+    assert re.search(
+        r"\|\s*Calls to external MCP tools or A2A agents\s*\|\s*"
+        r"Discovery only\s*\|",
+        readme,
+    )
+    assert re.search(
+        r"\|\s*Cross-session LangGraph Store memory\s*\|\s*Not shipped\s*\|",
+        readme,
+    )
+    assert "PHYTOMNI_INTEROP_ENABLED" in readme
+    assert "/v1/interop/capabilities" in readme
     assert re.search(
         r"\|\s*A2A Agent Card and `/a2a` server\s*\|\s*Opt-in core\s*\|",
         readme,

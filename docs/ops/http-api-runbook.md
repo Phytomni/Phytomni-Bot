@@ -15,6 +15,8 @@ Covered:
 - Backup and restore of local SQLite stores.
 - Triage for 401, 429, stuck runs, Analyst dedup hits, and startup
   failures.
+- Enabling, testing, and disabling the opt-in outbound MCP/A2A discovery
+  boundary.
 
 Out of scope:
 
@@ -164,45 +166,46 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
 
 ## Endpoint Inventory
 
-| Method   | Path                                     | Auth  | Operational use                                                                                                                           |
-| -------- | ---------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/healthz`                               | no    | Process liveness.                                                                                                                         |
-| `GET`    | `/readyz`                                | no    | Store-directory writability check.                                                                                                        |
-| `GET`    | `/.well-known/agent-card.json`           | no\*  | Opt-in A2A v1 Agent Card; only present when `A2A_ENABLED=1`.                                                                              |
-| `POST`   | `/a2a`                                   | yes\* | Opt-in A2A v1 `SendMessage` / `SendStreamingMessage` / `GetTask`; requires `A2A-Version: 1.0` and the `agents` scope.                     |
-| `GET`    | `/v1/models`                             | yes   | Authenticated liveness and model map check.                                                                                               |
-| `POST`   | `/v1/chat/completions`                   | yes   | OpenAI-compatible chat-like agents.                                                                                                       |
-| `GET`    | `/v1/agents`                             | yes   | Native agent slug discovery; rows carry `legacy_aliases`.                                                                                 |
-| `POST`   | `/v1/agents/{agent}/runs`                | yes   | Native agent submission.                                                                                                                  |
-| `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing; one extra routing-LLM call resolves the agent per request.                                                     |
-| `GET`    | `/v1/runs/{run_id}`                      | yes   | Owner-scoped run lookup.                                                                                                                  |
-| `POST`   | `/v1/runs/{thread_id}/resume`            | yes   | Resume a ReviewAgent human-approval pause.                                                                                                |
-| `POST`   | `/v1/runs/{run_id}/a2ui-actions`         | yes   | Resume a ChatAgent or ReviewAgent A2UI confirm pause (`input_required`).                                                                  |
-| `GET`    | `/v1/runs/{run_id}/logs`                 | yes   | Reconciled task logs for a run.                                                                                                           |
-| `GET`    | `/v1/runs`                               | yes   | Owner-scoped + service-token delegated listing.                                                                                           |
-| `POST`   | `/v1/files`                              | yes   | Per-user multipart upload (25 MiB ceiling).                                                                                               |
-| `POST`   | `/v1/api-keys`                           | svc   | Mint a per-user `ptm_...` API key (service tok).                                                                                          |
-| `GET`    | `/v1/api-keys`                           | svc   | List per-user keys (metadata only).                                                                                                       |
-| `DELETE` | `/v1/api-keys/{prefix}`                  | svc   | Revoke the key with the given public prefix.                                                                                              |
-| `GET`    | `/v1/relay/audit`                        | svc   | List relay audit records (service token); filter by user, key prefix, service, status, time.                                              |
-| `GET`    | `/v1/relay/audit/{request_id}`           | svc   | Fetch relay audit records by request id (service token).                                                                                  |
-| `GET`    | `/v1/relay/healthz`                      | yes   | Liveness probe for the relay; returns `{"status": "ok"}` when relay is enabled.                                                           |
-| `POST`   | `/v1/relay/llm/chat/completions`         | relay | Chat LLM relay (transparent, Bearer-injected).                                                                                            |
-| `POST`   | `/v1/relay/coder/chat/completions`       | relay | Coder model relay (transparent, Bearer-injected).                                                                                         |
-| `POST`   | `/v1/relay/embed/embeddings`             | relay | Embedding relay (transparent, Bearer-injected; OQ-001).                                                                                   |
-| `POST`   | `/v1/relay/retrieve/search`              | relay | Knowledge retrieve relay (envelope, no credential).                                                                                       |
-| `POST`   | `/v1/relay/rerank/rank`                  | relay | Knowledge rerank relay (envelope, no credential).                                                                                         |
-| `POST`   | `/v1/relay/database/nl2sql`              | relay | NL2SQL relay (envelope, IAM `X-Auth-Token`).                                                                                              |
-| `POST`   | `/v1/relay/bi/query`                     | relay | BI relay (envelope); server-side-terminated, no credential forwarded.                                                                     |
-| `GET`    | `/v1/relay/obs/object`                   | relay | OBS object download relay (operator OBS credentials; streamed under a response-size budget, key confined to the caller tenant namespace). |
-| `GET`    | `/v1/relay/obs/list`                     | relay | OBS object list relay (operator OBS credentials; prefix confined to the caller tenant output root).                                       |
-| `PUT`    | `/v1/relay/obs/object`                   | relay | OBS object upload relay (operator OBS credentials; key confined to the caller tenant namespace).                                          |
-| `PUT`    | `/v1/relay/obs/dir`                      | relay | OBS dir-marker relay (operator OBS credentials; key confined to the caller tenant namespace).                                             |
-| `POST`   | `/v1/relay/analysis/tasks`               | relay | Analysis-platform submit relay (envelope, IAM `X-Auth-Token`).                                                                            |
-| `GET`    | `/v1/relay/analysis/{task_id}`           | relay | Analysis task-status relay (envelope, IAM `X-Auth-Token`; task id validated).                                                             |
-| `GET`    | `/v1/relay/analysis/{task_id}/logs`      | relay | Analysis task-log relay (envelope, IAM; only the `task_name` query key is forwarded).                                                     |
-| `POST`   | `/v1/relay/analysis/{task_id}/terminate` | relay | Analysis task-terminate relay (envelope, IAM `X-Auth-Token`; task id validated).                                                          |
-| `GET`    | `/v1/relay/spa-faq/{repo_id}`            | relay | SPA-FAQ relay (envelope, IAM `X-Auth-Token`; repo id validated; proxy-bypass; `question`/`page_size`/`page_num` only).                    |
+| Method   | Path                                     | Auth  | Operational use                                                                                                                                    |
+| -------- | ---------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/healthz`                               | no    | Process liveness.                                                                                                                                  |
+| `GET`    | `/readyz`                                | no    | Store-directory writability check.                                                                                                                 |
+| `GET`    | `/.well-known/agent-card.json`           | no\*  | Opt-in A2A v1 Agent Card; only present when `A2A_ENABLED=1`.                                                                                       |
+| `POST`   | `/a2a`                                   | yes\* | Opt-in A2A v1 `SendMessage` / `SendStreamingMessage` / `GetTask`; requires `A2A-Version: 1.0` and the `agents` scope.                              |
+| `GET`    | `/v1/interop/capabilities`               | yes   | Opt-in sanitized MCP/A2A capability discovery; only present when `INTEROP_ENABLED=1`, accepts no query overrides, and requires the `agents` scope. |
+| `GET`    | `/v1/models`                             | yes   | Authenticated liveness and model map check.                                                                                                        |
+| `POST`   | `/v1/chat/completions`                   | yes   | OpenAI-compatible chat-like agents.                                                                                                                |
+| `GET`    | `/v1/agents`                             | yes   | Native agent slug discovery; rows carry `legacy_aliases`.                                                                                          |
+| `POST`   | `/v1/agents/{agent}/runs`                | yes   | Native agent submission.                                                                                                                           |
+| `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing; one extra routing-LLM call resolves the agent per request.                                                              |
+| `GET`    | `/v1/runs/{run_id}`                      | yes   | Owner-scoped run lookup.                                                                                                                           |
+| `POST`   | `/v1/runs/{thread_id}/resume`            | yes   | Resume a ReviewAgent human-approval pause.                                                                                                         |
+| `POST`   | `/v1/runs/{run_id}/a2ui-actions`         | yes   | Resume a ChatAgent or ReviewAgent A2UI confirm pause (`input_required`).                                                                           |
+| `GET`    | `/v1/runs/{run_id}/logs`                 | yes   | Reconciled task logs for a run.                                                                                                                    |
+| `GET`    | `/v1/runs`                               | yes   | Owner-scoped + service-token delegated listing.                                                                                                    |
+| `POST`   | `/v1/files`                              | yes   | Per-user multipart upload (25 MiB ceiling).                                                                                                        |
+| `POST`   | `/v1/api-keys`                           | svc   | Mint a per-user `ptm_...` API key (service tok).                                                                                                   |
+| `GET`    | `/v1/api-keys`                           | svc   | List per-user keys (metadata only).                                                                                                                |
+| `DELETE` | `/v1/api-keys/{prefix}`                  | svc   | Revoke the key with the given public prefix.                                                                                                       |
+| `GET`    | `/v1/relay/audit`                        | svc   | List relay audit records (service token); filter by user, key prefix, service, status, time.                                                       |
+| `GET`    | `/v1/relay/audit/{request_id}`           | svc   | Fetch relay audit records by request id (service token).                                                                                           |
+| `GET`    | `/v1/relay/healthz`                      | yes   | Liveness probe for the relay; returns `{"status": "ok"}` when relay is enabled.                                                                    |
+| `POST`   | `/v1/relay/llm/chat/completions`         | relay | Chat LLM relay (transparent, Bearer-injected).                                                                                                     |
+| `POST`   | `/v1/relay/coder/chat/completions`       | relay | Coder model relay (transparent, Bearer-injected).                                                                                                  |
+| `POST`   | `/v1/relay/embed/embeddings`             | relay | Embedding relay (transparent, Bearer-injected; OQ-001).                                                                                            |
+| `POST`   | `/v1/relay/retrieve/search`              | relay | Knowledge retrieve relay (envelope, no credential).                                                                                                |
+| `POST`   | `/v1/relay/rerank/rank`                  | relay | Knowledge rerank relay (envelope, no credential).                                                                                                  |
+| `POST`   | `/v1/relay/database/nl2sql`              | relay | NL2SQL relay (envelope, IAM `X-Auth-Token`).                                                                                                       |
+| `POST`   | `/v1/relay/bi/query`                     | relay | BI relay (envelope); server-side-terminated, no credential forwarded.                                                                              |
+| `GET`    | `/v1/relay/obs/object`                   | relay | OBS object download relay (operator OBS credentials; streamed under a response-size budget, key confined to the caller tenant namespace).          |
+| `GET`    | `/v1/relay/obs/list`                     | relay | OBS object list relay (operator OBS credentials; prefix confined to the caller tenant output root).                                                |
+| `PUT`    | `/v1/relay/obs/object`                   | relay | OBS object upload relay (operator OBS credentials; key confined to the caller tenant namespace).                                                   |
+| `PUT`    | `/v1/relay/obs/dir`                      | relay | OBS dir-marker relay (operator OBS credentials; key confined to the caller tenant namespace).                                                      |
+| `POST`   | `/v1/relay/analysis/tasks`               | relay | Analysis-platform submit relay (envelope, IAM `X-Auth-Token`).                                                                                     |
+| `GET`    | `/v1/relay/analysis/{task_id}`           | relay | Analysis task-status relay (envelope, IAM `X-Auth-Token`; task id validated).                                                                      |
+| `GET`    | `/v1/relay/analysis/{task_id}/logs`      | relay | Analysis task-log relay (envelope, IAM; only the `task_name` query key is forwarded).                                                              |
+| `POST`   | `/v1/relay/analysis/{task_id}/terminate` | relay | Analysis task-terminate relay (envelope, IAM `X-Auth-Token`; task id validated).                                                                   |
+| `GET`    | `/v1/relay/spa-faq/{repo_id}`            | relay | SPA-FAQ relay (envelope, IAM `X-Auth-Token`; repo id validated; proxy-bypass; `question`/`page_size`/`page_num` only).                             |
 
 When a graph-agent stream (`phyto-knowledge` or `phyto-brief-gene`) is
 served with `stream: true`, the response carries AG-UI event frames.
@@ -347,6 +350,64 @@ path-traversal segments collapse to the basename
 characters rewrite to `-` (`my report (final).pdf` →
 `my-report-final.pdf`, response `201`). Only empty bodies and
 empty / `.` / `..` filenames return `400`.
+
+## Outbound Interop Operations
+
+The outbound MCP/A2A boundary is disabled by default. It is mounted when
+`INTEROP_ENABLED=1` (or `PHYTOMNI_INTEROP_ENABLED=1`) is present while the API
+application starts; changing the flag, target registry, or credential envelope
+requires a restart. This is intentionally different from the relay flag,
+which is re-read on every request. While disabled,
+`GET /v1/interop/capabilities` is absent and returns `404`.
+
+Configure targets and credentials separately. A target registry entry may name
+an HTTPS MCP URL, an absolute operator-owned stdio binary, or an A2A card base
+and its allowlists. It must not contain headers, tokens, passwords, or
+credential-shaped stdio args. `INTEROP_CREDENTIALS` is sensitive JSON mapping
+`credential_ref` values to headers and belongs in the encrypted customer
+envelope, not in the registry:
+
+```dotenv
+INTEROP_ENABLED=1
+INTEROP_TARGETS='[{"id":"mcp-peer","kind":"mcp","transport":"streamable_http","url":"https://mcp.example.test/mcp","allowed_tools":["search"]}]'
+INTEROP_CREDENTIALS='{"peer-token":{"headers":{"Authorization":"Bearer <operator-secret>"}}}'
+```
+
+Review stdio targets as code-execution grants to the service account. Use an
+absolute fixed command, fixed args, and only the minimal environment allowlist;
+do not let a request choose a binary or inherit the operator's full secret
+environment. Keep the API behind a TLS-terminating edge and run it as a
+dedicated unprivileged account.
+
+Smoke the route with an `agents`-scoped key after restart:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer $KEY" \
+  "$HOST/v1/interop/capabilities"
+```
+
+The response is metadata-only: `data` contains bounded capability DTOs and
+`errors` contains only `target_id`, `kind`, and a stable `code`. A failed target
+does not fail the other targets. The endpoint accepts no query parameters and
+never executes a tool or agent. `503 interop registry unavailable` means the
+operator registry or credential envelope failed local validation; fix the
+configuration and restart. A successful target is cached in process memory
+with its configured monotonic TTL and concurrent requests share one discovery;
+error results are not long-term negative-cached, so a recovered peer can be
+retried on the next request.
+
+The interop client is separate from the trusted backend pool. It ignores
+environment proxies, follows no redirects, performs no transparent retry,
+revalidates DNS/IP policy for each request, and injects credentials only after
+the configured origin/path/TLS checks pass. HTTPS is required unless a target
+explicitly permits HTTP. Private or special-use addresses require an explicit
+CIDR allowlist. A2A cards are structurally validated and origin/skill
+allowlisted; without a JWS trust key, only structural validation is claimed.
+Only safe structured events are logged, and there is no persistent interop
+audit DB. If an external peer is unavailable, use the stable target error code
+and retry after correcting the peer or TTL; do not add a caller URL or command
+override.
 
 ## Relay Operations
 

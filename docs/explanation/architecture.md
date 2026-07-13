@@ -27,6 +27,17 @@ src/mcp_server_phytomni/
     file_upload.py           Handler for POST /v1/files multipart upload
     schemas.py               HTTP API request and response schemas
     relay/                   Credential-injecting customer relay subpackage
+  interop/
+    models.py                Immutable operator-owned MCP/A2A target policy
+    registry.py              Feature-gated target and credential-ref loader
+    security.py              Endpoint, DNS, IP, and origin/path policy
+    http_transport.py        Hardened HTTPX transport for external peers
+    mcp_client.py            Official external MCP adapter boundary
+    capabilities.py          Sanitized, non-executable capability DTOs
+    cache.py                 Monotonic TTL and per-target single-flight cache
+    a2a_discovery.py         External A2A Agent Card discovery
+    a2a_client.py            External A2A send/stream client
+    a2a_mapping.py           Bounded external A2A event mapping
   agents/
     chat/                    Chat service workflow
     knowledge/               Retrieval, reranking, and synthesis workflow
@@ -177,6 +188,43 @@ The bundled static datasets (`species_data_list.json`, `region_map.json`,
 `.prompts.yaml`) are validated by Pydantic schemas in `config/defaults.py`
 and consumed through `config/data_loaders.py`. If their shape changes,
 adjust the schema and data together.
+
+## Outbound Interoperability Boundary
+
+Outbound interop is an operator-owned, opt-in boundary, not a second public
+agent-dispatch path. `interop/registry.py` parses the target registry only
+when `INTEROP_ENABLED=1`; requests can carry a target id but never a URL,
+command, args, header, token, or credential reference. Target policy and
+credential values are deliberately separate: immutable target models hold
+origins, paths, allowlists, timeouts, and capability names, while
+`SensitiveConfig.INTEROP_CREDENTIALS` resolves a `credential_ref` only after
+the endpoint passes the security policy.
+
+The existing `common.httpx_client.get_async_client` pool remains the boundary
+for trusted, configured platform backends. External MCP and A2A peers must use
+the separate interop transport, which disables environment proxies,
+redirects, and transparent retries; resolves and validates DNS/IP results;
+pins the connection to the validated address while preserving Host/SNI; and
+applies response, idle, and total-time budgets. HTTPS is the default, and
+private or special-use addresses require an explicit target CIDR allowlist.
+Stdio is an explicit operator trust decision: only absolute fixed binaries,
+fixed arguments, and a minimal environment allowlist are accepted.
+
+Discovery produces immutable `InteropCapability` DTOs containing only target
+id/kind, remote name, qualified name, description, and bounded JSON input
+schema. `DiscoveryCache` stores successful DTO results with a monotonic
+per-target TTL and coalesces concurrent misses; failures are shared with the
+current waiters but are not retained as long-term negative cache entries. The
+HTTP `/v1/interop/capabilities` route is read-only and returns deterministic
+partial errors, so it never starts a tool or agent run. The cache holds no
+client, transport, executable tool, credential, or peer payload, and there is
+no persistent interop audit database.
+
+External A2A cards are structurally validated against A2A/JSON-RPC policy and
+operator allowlists. Unless a JWS trust key is explicitly configured, card
+handling makes no cryptographic signature-verification claim. Research and
+Design delegation are separate Phase 4 seams and must not be added to the
+discovery route or inferred from the presence of a capability DTO.
 
 ## Caching Policy
 

@@ -118,9 +118,10 @@ async def _client_bundle(
         .create(user_id="interop-user", scopes=["agents"])
         .api_key
     )
+    app = create_app()
     client = httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=create_app()),
         base_url="http://api.test",
+        transport=httpx.ASGITransport(app=app),
     )
     try:
         yield client, key
@@ -131,7 +132,7 @@ async def _client_bundle(
 async def test_flag_off_does_not_register_capability_route(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The opt-in route is absent, so disabled mode returns a plain 404."""
+    """Disabled mode does not register the opt-in route."""
     monkeypatch.setenv("PHYTOMNI_INTEROP_ENABLED", "0")
     monkeypatch.setattr(httpx.AsyncClient, "request", _REAL_ASYNC_REQUEST)
     async with httpx.AsyncClient(

@@ -67,6 +67,13 @@ Full commit range: `1f8f628..HEAD`.
   A2UI-backed Chat pauses project `INPUT_REQUIRED` schemas and same-task
   `SendMessage` resumes validate generation through the shared kernel;
   push and extended-card methods remain explicitly unsupported.
+- **Outbound interop foundation (opt-in)** — `PHYTOMNI_INTEROP_ENABLED` loads
+  an operator-owned MCP/A2A target registry with credentials kept in the
+  separate encrypted settings surface. The authenticated,
+  read-only `/v1/interop/capabilities` route discovers sanitized MCP tools and
+  A2A skills through a hardened no-proxy/no-redirect boundary with DNS/IP
+  policy, per-target TTL/single-flight caching, and target-level failure
+  isolation. Research/Design delegation is not enabled by this release.
 - **MCP elicitation with graceful degrade** — stdio ReviewAgent calls ask
   elicitation-capable clients for approval and auto-approve when a legacy
   client lacks that capability.

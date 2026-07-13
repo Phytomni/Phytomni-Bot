@@ -19,6 +19,51 @@ accepted legacy aliases, and runtime-only customer license key behavior.
 Never commit `.env`, API keys, OBS credentials, model keys, generated cache
 databases, local SQLite registries, or local virtual environments.
 
+## Outbound Interoperability Trust Boundary
+
+Outbound MCP/A2A discovery is an operator feature and is disabled by default.
+Enable it explicitly in the API environment, then restart the API process:
+
+```dotenv
+INTEROP_ENABLED=1
+INTEROP_TARGETS='[{"id":"mcp-peer","kind":"mcp","transport":"streamable_http","url":"https://mcp.example.test/mcp","allowed_tools":["search"]}]'
+```
+
+Keep `INTEROP_TARGETS` and the sensitive `INTEROP_CREDENTIALS` mapping
+separate. The registry may contain fixed origins or absolute stdio command
+paths plus policy, but never a header, token, password, or secret-shaped
+argument. Store the credential mapping in the encrypted customer envelope (or
+the local developer secret source), refer to it by `credential_ref`, and
+restart after rotation. Requests can name only a configured target id; callers
+cannot supply a URL, command, args, or credential.
+
+Treat each stdio target as an explicit code-execution grant to the service
+account. Review the absolute binary, fixed arguments, file permissions, and
+minimal environment allowlist (`LANG`, `LC_ALL`, `PATH`, `TMPDIR`) before
+enabling it. Run the API under a dedicated unprivileged account and keep
+`NoNewPrivileges=true` / a restricted `ReadWritePaths` policy in systemd or
+the equivalent container sandbox.
+
+HTTP/A2A targets use a separate hardened client rather than the trusted
+backend connection pool. It ignores environment proxy variables, follows no
+redirects, performs no transparent retry, pins each request to a freshly
+validated DNS address while preserving Host/SNI, and injects credentials only
+after origin/path/TLS checks pass. HTTPS is required unless the target opts
+into HTTP. Loopback, private, link-local, special-use, and IPv4-mapped IPv6
+addresses are rejected; a private address is usable only through an explicit
+target CIDR allowlist. A2A cards are structurally validated and origin/skill
+allowlisted. Without a JWS trust key, do not describe the card as
+cryptographically signed or verified.
+
+The read-only `GET /v1/interop/capabilities` endpoint requires an API key with
+the `agents` scope and is mounted only while the flag is enabled. It performs
+discovery but never executes a remote tool or agent. Successful metadata is
+cached in process memory per target using monotonic TTL and single-flight;
+errors are isolated to the target and not long-term negative-cached. The
+response and structured logs exclude endpoints, commands, headers, tokens, and
+peer payloads. There is no persistent interop audit database. Research/Design
+delegation is not part of this phase.
+
 ## Distribution to Trusted Customers
 
 Phytomni-Bot ships to trusted customers as a Docker image that consumes the

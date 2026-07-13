@@ -123,28 +123,30 @@ The aliasing matches the existing `PHYTOMNI_TLS_VERIFY` / `PHYTOMNI_CA_BUNDLE` c
 
 ## HTTP API Variables
 
-| Variable                     | Default                           | Sensitive? | Purpose                                                                                                                                                                             |
-| ---------------------------- | --------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `API_HOST`                   | `127.0.0.1`                       | no         | Uvicorn bind address.                                                                                                                                                               |
-| `API_PORT`                   | `8080`                            | no         | Uvicorn bind port.                                                                                                                                                                  |
-| `API_GRACEFUL_SHUTDOWN`      | `30`                              | no         | Uvicorn graceful-shutdown drain window in seconds; kept shorter than systemd's `TimeoutStopSec`.                                                                                    |
-| `API_KEYS_DB_PATH`           | `.cache/phytomni/api_keys.sqlite` | no         | Per-user API key SQLite store.                                                                                                                                                      |
-| `PHYTOMNI_API_KEYS_DB`       | unset                             | no         | Backward-compatible API key store alias.                                                                                                                                            |
-| `API_TASKS_DB_PATH`          | `server_tasks.db`                 | no         | Runs and tasks SQLite store.                                                                                                                                                        |
-| `PHYTOMNI_TASKS_DB`          | unset                             | no         | Backward-compatible runs/tasks store alias.                                                                                                                                         |
-| `API_SERVICE_TOKEN`          | unset                             | yes        | Service-to-service token gating `/v1/api-keys` admin routes; unset disables them with `503 admin path not enabled`.                                                                 |
-| `PHYTOMNI_API_SERVICE_TOKEN` | unset                             | yes        | Backward-compatible service token alias.                                                                                                                                            |
-| `API_UPLOAD_MAX_BYTES`       | `26214400`                        | no         | Per-file ceiling for `POST /v1/files`, in bytes (25 MiB); oversize uploads return `413`.                                                                                            |
-| `API_UPLOAD_PREFIX`          | `agent_data/uploads`              | no         | OBS object-key prefix below the bucket root for `POST /v1/files` upload outputs.                                                                                                    |
-| `API_REQUEST_TIMEOUT`        | `600.0`                           | no         | Per-request timeout in seconds.                                                                                                                                                     |
-| `API_RATE_LIMIT_PER_MIN`     | `120`                             | no         | Per-key request budget per minute; `<= 0` disables.                                                                                                                                 |
-| `API_RUN_TTL_OK_HOURS`       | `24`                              | no         | Retention for succeeded runs.                                                                                                                                                       |
-| `API_RUN_TTL_FAIL_DAYS`      | `7`                               | no         | Retention for failed runs.                                                                                                                                                          |
-| `STREAM_ANSWER_MAX_BYTES`    | `1048576`                         | no         | Soft UTF-8 byte cap for ChatAgent streamed-answer persistence in the run registry (1 MiB); the live SSE wire stream is never truncated. Accepts `PHYTOMNI_STREAM_ANSWER_MAX_BYTES`. |
-| `A2UI_ENABLED`               | `false`                           | no         | When true, ChatAgent streamed chat may emit A2UI confirm surfaces and accept actions on `POST /v1/runs/{run_id}/a2ui-actions`. Accepts `PHYTOMNI_A2UI_ENABLED`.                     |
-| `A2UI_TOOL_CALL`             | `false`                           | no         | Reserved for future A2UI tool-call emit on the chat path; unused in the default P4-1 confirm slice. Accepts `PHYTOMNI_A2UI_TOOL_CALL`.                                              |
-| `A2A_ENABLED`                | `false`                           | no         | Feature flag for the A2A v1 JSON-RPC surface; disabled by default and requires `A2A_PUBLIC_BASE_URL` when enabled. Accepts `PHYTOMNI_A2A_ENABLED`.                                  |
-| `A2A_PUBLIC_BASE_URL`        | `unset`                           | no         | Absolute HTTP(S) public URL prefix used to build the A2A Agent Card and `/a2a` interface; trailing slashes are removed. Accepts `PHYTOMNI_A2A_PUBLIC_BASE_URL`.                     |
+| Variable                     | Default                           | Sensitive? | Purpose                                                                                                                                                                                                  |
+| ---------------------------- | --------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `API_HOST`                   | `127.0.0.1`                       | no         | Uvicorn bind address.                                                                                                                                                                                    |
+| `API_PORT`                   | `8080`                            | no         | Uvicorn bind port.                                                                                                                                                                                       |
+| `API_GRACEFUL_SHUTDOWN`      | `30`                              | no         | Uvicorn graceful-shutdown drain window in seconds; kept shorter than systemd's `TimeoutStopSec`.                                                                                                         |
+| `API_KEYS_DB_PATH`           | `.cache/phytomni/api_keys.sqlite` | no         | Per-user API key SQLite store.                                                                                                                                                                           |
+| `PHYTOMNI_API_KEYS_DB`       | unset                             | no         | Backward-compatible API key store alias.                                                                                                                                                                 |
+| `API_TASKS_DB_PATH`          | `server_tasks.db`                 | no         | Runs and tasks SQLite store.                                                                                                                                                                             |
+| `PHYTOMNI_TASKS_DB`          | unset                             | no         | Backward-compatible runs/tasks store alias.                                                                                                                                                              |
+| `API_SERVICE_TOKEN`          | unset                             | yes        | Service-to-service token gating `/v1/api-keys` admin routes; unset disables them with `503 admin path not enabled`.                                                                                      |
+| `PHYTOMNI_API_SERVICE_TOKEN` | unset                             | yes        | Backward-compatible service token alias.                                                                                                                                                                 |
+| `API_UPLOAD_MAX_BYTES`       | `26214400`                        | no         | Per-file ceiling for `POST /v1/files`, in bytes (25 MiB); oversize uploads return `413`.                                                                                                                 |
+| `API_UPLOAD_PREFIX`          | `agent_data/uploads`              | no         | OBS object-key prefix below the bucket root for `POST /v1/files` upload outputs.                                                                                                                         |
+| `API_REQUEST_TIMEOUT`        | `600.0`                           | no         | Per-request timeout in seconds.                                                                                                                                                                          |
+| `API_RATE_LIMIT_PER_MIN`     | `120`                             | no         | Per-key request budget per minute; `<= 0` disables.                                                                                                                                                      |
+| `API_RUN_TTL_OK_HOURS`       | `24`                              | no         | Retention for succeeded runs.                                                                                                                                                                            |
+| `API_RUN_TTL_FAIL_DAYS`      | `7`                               | no         | Retention for failed runs.                                                                                                                                                                               |
+| `STREAM_ANSWER_MAX_BYTES`    | `1048576`                         | no         | Soft UTF-8 byte cap for ChatAgent streamed-answer persistence in the run registry (1 MiB); the live SSE wire stream is never truncated. Accepts `PHYTOMNI_STREAM_ANSWER_MAX_BYTES`.                      |
+| `A2UI_ENABLED`               | `false`                           | no         | When true, ChatAgent streamed chat may emit A2UI confirm surfaces and accept actions on `POST /v1/runs/{run_id}/a2ui-actions`. Accepts `PHYTOMNI_A2UI_ENABLED`.                                          |
+| `A2UI_TOOL_CALL`             | `false`                           | no         | Reserved for future A2UI tool-call emit on the chat path; unused in the default P4-1 confirm slice. Accepts `PHYTOMNI_A2UI_TOOL_CALL`.                                                                   |
+| `A2A_ENABLED`                | `false`                           | no         | Feature flag for the A2A v1 JSON-RPC surface; disabled by default and requires `A2A_PUBLIC_BASE_URL` when enabled. Accepts `PHYTOMNI_A2A_ENABLED`.                                                       |
+| `A2A_PUBLIC_BASE_URL`        | `unset`                           | no         | Absolute HTTP(S) public URL prefix used to build the A2A Agent Card and `/a2a` interface; trailing slashes are removed. Accepts `PHYTOMNI_A2A_PUBLIC_BASE_URL`.                                          |
+| `INTEROP_ENABLED`            | `false`                           | no         | Feature flag for outbound MCP/A2A target loading and the read-only `/v1/interop/capabilities` route; disabled by default. Accepts `PHYTOMNI_INTEROP_ENABLED`.                                            |
+| `INTEROP_TARGETS`            | `[]`                              | yes        | JSON array of operator-owned target definitions. It may contain fixed URLs or absolute stdio commands, but never headers/tokens; requests may name only a target id. Accepts `PHYTOMNI_INTEROP_TARGETS`. |
 
 SQLite store defaults are relative to the service working directory. In
 systemd or container deployments, set absolute paths or pin the service
@@ -155,6 +157,51 @@ requires an API key with the `agents` scope plus `A2A-Version: 1.0`. Phase 2
 advertises `SendMessage`, `SendStreamingMessage`, and owner-scoped `GetTask`;
 the flag remains off by default so existing deployments keep their previous
 route surface.
+
+## Outbound Interoperability (opt-in)
+
+Outbound MCP/A2A discovery is disabled unless `INTEROP_ENABLED=1` (or
+`PHYTOMNI_INTEROP_ENABLED=1`) is present when the API application starts.
+Changing the flag, target registry, or credential envelope requires an API
+process restart; unlike the relay kill-switch, this flag is not re-read on
+each request. The first request lazily validates the registry, and a registry
+failure returns `503` without exposing the parser or secret error text.
+
+The target registry and credentials are separate. `INTEROP_TARGETS` contains
+only operator-approved target policy, while the sensitive
+`INTEROP_CREDENTIALS` JSON maps a `credential_ref` to a header mapping and is
+loaded from `SensitiveConfig` (normally the encrypted customer envelope):
+
+```dotenv
+INTEROP_ENABLED=1
+INTEROP_TARGETS='[{"id":"mcp-peer","kind":"mcp","transport":"streamable_http","url":"https://mcp.example.test/mcp","allowed_tools":["search"]}]'
+INTEROP_CREDENTIALS='{"peer-token":{"headers":{"Authorization":"Bearer <operator-secret>"}}}'
+```
+
+The example is a shape, not a credential to copy. Never put a token, header,
+password, or secret-shaped argument in `INTEROP_TARGETS`; stdio targets are
+trusted operator-owned absolute binaries with fixed arguments and a minimal
+environment allowlist. A request can supply neither a URL nor a command or
+args — it can only refer to a configured target id.
+
+The hardened interop HTTP client does not use environment proxies, follows no
+redirects, performs no transparent retry, and injects credentials only after
+the configured origin, path, TLS mode, DNS result, and IP/CIDR policy pass.
+HTTPS is required unless a target explicitly opts into HTTP. Loopback,
+private, link-local, special-use, and IPv4-mapped IPv6 addresses are rejected;
+an explicitly configured private CIDR allowlist is the only exception. A2A
+Agent Cards are structurally validated and allowlisted; without a configured
+JWS trust key the service does not claim cryptographic card-signature
+verification.
+
+`INTEROP_CREDENTIALS` is intentionally absent from `ApiConfig` because it is
+secret material. Rotate it by replacing the encrypted envelope (or the local
+developer secret source) and restarting the process. Discovery caches keep
+only sanitized capability metadata, use a monotonic per-target TTL and
+single-flight concurrent requests, and do not persist an interop audit DB.
+Only structured events containing target id/kind, capability, status, latency,
+and stable error code are emitted; peer URLs, commands, headers, tokens, and
+peer payloads are excluded.
 
 ## Relay Variables
 

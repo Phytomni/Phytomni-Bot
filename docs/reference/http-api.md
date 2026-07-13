@@ -81,6 +81,7 @@ Streaming section below.
 | `GET`    | `/readyz`                                | no    | Readiness, checks local store directories without creating files.                                                                                                                                       |
 | `GET`    | `/.well-known/agent-card.json`           | no\*  | Opt-in A2A v1 Agent Card; route exists only when `A2A_ENABLED=1`.                                                                                                                                       |
 | `POST`   | `/a2a`                                   | yes\* | Opt-in A2A v1 JSON-RPC `SendMessage` / `SendStreamingMessage` / `GetTask`; requires `A2A-Version: 1.0` and the `agents` scope.                                                                          |
+| `GET`    | `/v1/interop/capabilities`               | yes   | Opt-in sanitized MCP/A2A capability discovery; route exists only when `INTEROP_ENABLED=1`, accepts no query overrides, and requires the `agents` scope.                                                 |
 | `GET`    | `/v1/models`                             | yes   | Lists OpenAI-compatible model ids.                                                                                                                                                                      |
 | `POST`   | `/v1/chat/completions`                   | yes   | OpenAI-compatible chat endpoint.                                                                                                                                                                        |
 | `GET`    | `/v1/agents`                             | yes   | Lists native agent-run slugs; each row carries `legacy_aliases`.                                                                                                                                        |
@@ -275,6 +276,73 @@ approved/edit or form/choice fields in a data part. The server validates the
 owner, context, generation, and pause state before calling the shared
 `aresume_graph` kernel; stale, repeated, or mismatched resumes are deterministic
 JSON-RPC invalid-params errors.
+
+## Outbound interop capability discovery (opt-in)
+
+`GET /v1/interop/capabilities` is a metadata-only discovery surface for
+operator-configured external MCP and A2A targets. It is mounted only when
+`INTEROP_ENABLED=1` (or `PHYTOMNI_INTEROP_ENABLED=1`) was enabled when the API
+application started. It requires an API key with the `agents` scope and the
+normal `API_RATE_LIMIT_PER_MIN` budget. With the flag off, the route does not
+exist and returns the ordinary `404`; enabling or disabling it requires a
+process restart.
+
+The request has no body and accepts no query parameters. URLs, commands, args,
+headers, tokens, and credential references are all operator configuration, not
+caller input. The endpoint reads the immutable registry and discovery caches;
+it never invokes a remote tool, starts an external agent run, or returns an
+executable tool/client object.
+
+Successful and partial responses have this shape:
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "target_id": "mcp-peer",
+      "kind": "mcp",
+      "remote_name": "search",
+      "qualified_name": "mcp-peer__search",
+      "description": "Search plant literature",
+      "input_schema": {"type": "object", "properties": {}}
+    }
+  ],
+  "errors": [
+    {"target_id": "a2a-peer", "kind": "a2a", "code": "discovery_failed"}
+  ]
+}
+```
+
+`data` contains only bounded, deterministic capability DTOs. `errors` is
+target-level and stable: one failed target does not hide successful targets,
+and it contains only `target_id`, `kind`, and a safe `code`. Endpoint URLs,
+stdio commands/args, credential references, headers, tokens, peer payloads,
+and exception text are never returned. The same sanitized error shape is used
+for registry/discovery failures; a registry that cannot be loaded returns
+`503` with the generic `interop registry unavailable` error.
+
+Discovery uses a per-target monotonic TTL and single-flight cache. Successful
+metadata is reused until that target's `discovery_ttl_seconds` expires;
+concurrent requests share one in-flight discovery. Results containing errors
+are deliberately not long-term cached, so a transient failed peer can recover
+on the next request. The cache lives in process memory and stores no executable
+tools, transport, credential, or peer response. Structured interop events are
+safe operational signals only; there is no persistent interop audit database.
+
+The outbound client boundary is separate from the trusted backend client pool:
+HTTP targets use no environment proxy, no redirects, and no transparent retry;
+credentials are injected only after origin/path/TLS and DNS/IP policy pass.
+HTTPS is required unless a target explicitly permits HTTP, and private or
+special-use addresses require an explicit private CIDR allowlist. Stdio means
+the operator has authorized a fixed absolute local binary; review its path and
+arguments as code execution policy. A2A cards are structurally validated and
+allowlisted; without a configured JWS key, the service makes no signature
+verification claim.
+
+This phase supplies discovery/client infrastructure only. Research and Design
+requests do not yet delegate work to external capabilities; those controls are
+planned for Phase 4.
 
 `GET /v1/runs` accepts optional `status`, `agent`, `origin`, `limit`,
 `offset`, `created_after`, `created_before`, `user_id`, `dialogue_id`,
