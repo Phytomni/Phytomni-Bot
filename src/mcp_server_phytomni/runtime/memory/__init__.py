@@ -12,6 +12,8 @@ from .models import (
     DEFAULT_MEMORY_MAX_TAGS,
     DEFAULT_MEMORY_MAX_TOTAL_BYTES,
     DEFAULT_MEMORY_POLICY,
+    MemoryAuditOperation,
+    MemoryAuditRecord,
     MemoryCreate,
     MemoryId,
     MemoryItem,
@@ -29,6 +31,7 @@ from .sqlite import (
     MemorySchemaError,
     MemoryStore,
     MemoryStoreError,
+    memory_audit_context,
 )
 
 __all__ = [
@@ -39,6 +42,8 @@ __all__ = [
     "DEFAULT_MEMORY_MAX_TAGS",
     "DEFAULT_MEMORY_MAX_TOTAL_BYTES",
     "DEFAULT_MEMORY_POLICY",
+    "MemoryAuditOperation",
+    "MemoryAuditRecord",
     "MemoryCreate",
     "MemoryConflictError",
     "MemoryId",
@@ -54,4 +59,5 @@ __all__ = [
     "MemoryTag",
     "MemoryUserId",
     "MemoryWrite",
+    "memory_audit_context",
 ]

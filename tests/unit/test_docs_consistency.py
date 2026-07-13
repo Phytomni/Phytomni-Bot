@@ -102,6 +102,7 @@ def _api_endpoint_pairs() -> set[tuple[str, str]]:
             ("GET", "/v1/interop/capabilities"),
             ("GET", "/v1/memories"),
             ("POST", "/v1/memories"),
+            ("GET", "/v1/memories/audit"),
             ("GET", "/v1/memories/{memory_id}"),
         }
     )

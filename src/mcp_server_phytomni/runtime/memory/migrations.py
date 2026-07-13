@@ -16,7 +16,7 @@ import json
 import sqlite3
 from collections.abc import Iterable
 
-MEMORY_SCHEMA_VERSION = 1
+MEMORY_SCHEMA_VERSION = 2
 MEMORY_SCHEMA_VERSION_TABLE = "memory_schema_version"
 
 _CREATE_MEMORIES_DDL = """
@@ -39,6 +39,21 @@ CREATE TABLE IF NOT EXISTS memory_schema_version (
     version INTEGER NOT NULL
 )
 """
+_CREATE_AUDIT_DDL = """
+CREATE TABLE IF NOT EXISTS memory_mutation_audit (
+    audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    operation TEXT NOT NULL CHECK(operation IN ('create', 'update', 'delete')),
+    memory_id TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    request_id TEXT,
+    before_digest TEXT,
+    after_digest TEXT,
+    revision_before INTEGER,
+    revision_after INTEGER
+)
+"""
 _MEMORY_REQUIRED_COLUMNS = frozenset(
     {
         "id",
@@ -50,6 +65,21 @@ _MEMORY_REQUIRED_COLUMNS = frozenset(
         "updated_at",
         "expires_at",
         "revision",
+    }
+)
+_AUDIT_REQUIRED_COLUMNS = frozenset(
+    {
+        "audit_id",
+        "user_id",
+        "actor",
+        "operation",
+        "memory_id",
+        "occurred_at",
+        "request_id",
+        "before_digest",
+        "after_digest",
+        "revision_before",
+        "revision_after",
     }
 )
 
@@ -126,6 +156,26 @@ def _ensure_indexes(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_memories_expires "
         "ON memories(expires_at)"
     )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_memory_audit_user_time "
+        "ON memory_mutation_audit(user_id, occurred_at DESC, audit_id DESC)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_memory_audit_memory_time "
+        "ON memory_mutation_audit(memory_id, occurred_at DESC, audit_id DESC)"
+    )
+
+
+def _ensure_audit_table(conn: sqlite3.Connection) -> None:
+    """Create or validate the append-only mutation audit table."""
+    columns = _table_columns(conn, "memory_mutation_audit")
+    if not columns:
+        conn.execute(_CREATE_AUDIT_DDL)
+        return
+    missing = _AUDIT_REQUIRED_COLUMNS - columns
+    if missing:
+        names = ", ".join(sorted(missing))
+        raise MemorySchemaError(f"audit columns missing: {names}")
 
 
 def _read_version(conn: sqlite3.Connection) -> int | None:
@@ -163,6 +213,7 @@ def ensure_memory_schema(conn: sqlite3.Connection) -> None:
         if version is not None and version < 0:
             raise MemorySchemaError("memory schema version is negative")
         columns = _validate_memory_columns(conn)
+        _ensure_audit_table(conn)
         if (
             version is None
             or version < MEMORY_SCHEMA_VERSION

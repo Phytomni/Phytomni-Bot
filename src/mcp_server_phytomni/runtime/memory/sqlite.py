@@ -14,10 +14,12 @@ to expose this local store.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
-from collections.abc import Generator
+from collections.abc import Generator, Sequence
 from contextlib import contextmanager
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,25 +30,37 @@ from ...storage.path_policy import IdFactory
 from .migrations import MemorySchemaError, ensure_memory_schema
 from .models import (
     DEFAULT_MEMORY_POLICY,
+    MemoryAuditOperation,
+    MemoryAuditRecord,
     MemoryId,
     MemoryKind,
     MemoryPolicy,
+    MemoryPolicyError,
     MemoryRecord,
     MemoryWrite,
 )
 
 __all__ = [
     "MemoryConflictError",
+    "MemoryAuditRecord",
     "MemoryNotFoundError",
     "MemorySchemaError",
     "MemoryStore",
     "MemoryStoreError",
+    "memory_audit_context",
 ]
 
 _CONNECT_TIMEOUT_SECONDS = 10.0
 _BUSY_TIMEOUT_MILLISECONDS = 5000
 _MEMORY_ID_ADAPTER = TypeAdapter(MemoryId)
 _MEMORY_KIND_ADAPTER = TypeAdapter(MemoryKind)
+_AUDIT_OPERATION_ADAPTER: TypeAdapter[MemoryAuditOperation] = TypeAdapter(
+    MemoryAuditOperation
+)
+_MAX_AUDIT_LIMIT = 500
+_MEMORY_AUDIT_CONTEXT: ContextVar[tuple[str | None, str | None] | None] = (
+    ContextVar("phytomni_memory_audit_context", default=None)
+)
 
 
 class MemoryStoreError(RuntimeError):
@@ -99,6 +113,31 @@ def _decode_tags(raw: str) -> list[str]:
     ):
         raise MemoryStoreError("memory row tags must be a JSON string list")
     return decoded
+
+
+def _record_digest(record: MemoryRecord) -> str:
+    """Return a stable digest without persisting the record's content."""
+    canonical = json.dumps(
+        record.model_dump(mode="json"),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+@contextmanager
+def memory_audit_context(
+    actor: str | None, request_id: str | None
+) -> Generator[None, None, None]:
+    """Bind actor/request metadata for one atomic memory mutation."""
+    token: Token[tuple[str | None, str | None] | None] = (
+        _MEMORY_AUDIT_CONTEXT.set((actor, request_id))
+    )
+    try:
+        yield
+    finally:
+        _MEMORY_AUDIT_CONTEXT.reset(token)
 
 
 class MemoryStore:
@@ -257,6 +296,65 @@ class MemoryStore:
             record.size_bytes,
         )
 
+    @staticmethod
+    def _audit_row_to_record(row: sqlite3.Row) -> MemoryAuditRecord:
+        """Hydrate and validate one digest-only audit row."""
+        try:
+            return MemoryAuditRecord(
+                audit_id=row["audit_id"],
+                user_id=row["user_id"],
+                actor=row["actor"],
+                operation=row["operation"],
+                memory_id=row["memory_id"],
+                occurred_at=datetime.fromisoformat(row["occurred_at"]),
+                request_id=row["request_id"],
+                before_digest=row["before_digest"],
+                after_digest=row["after_digest"],
+                revision_before=row["revision_before"],
+                revision_after=row["revision_after"],
+            )
+        except (KeyError, TypeError, ValueError, ValidationError) as exc:
+            raise MemoryStoreError(
+                "memory audit row failed domain validation"
+            ) from exc
+
+    @staticmethod
+    def _insert_audit(
+        conn: sqlite3.Connection,
+        *,
+        operation: MemoryAuditOperation,
+        before: MemoryRecord | None,
+        after: MemoryRecord | None,
+    ) -> None:
+        """Append one digest-only audit row inside the caller transaction."""
+        reference = after or before
+        if reference is None:
+            raise MemoryStoreError("memory audit requires a record")
+        bound_context = _MEMORY_AUDIT_CONTEXT.get()
+        bound_actor = bound_context[0] if bound_context else None
+        request_id = bound_context[1] if bound_context else None
+        resolved_actor = (bound_actor or reference.user_id).strip()
+        if not resolved_actor:
+            raise MemoryStoreError("memory audit actor must not be blank")
+        conn.execute(
+            "INSERT INTO memory_mutation_audit ("
+            "user_id, actor, operation, memory_id, occurred_at, request_id, "
+            "before_digest, after_digest, revision_before, revision_after"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                reference.user_id,
+                resolved_actor,
+                operation,
+                reference.id,
+                _iso(datetime.now(UTC)),
+                request_id,
+                _record_digest(before) if before else None,
+                _record_digest(after) if after else None,
+                before.revision if before else None,
+                after.revision if after else None,
+            ),
+        )
+
     def create(
         self,
         write: MemoryWrite,
@@ -295,6 +393,12 @@ class MemoryStore:
                 "updated_at, expires_at, revision, size_bytes"
                 ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 self._insert_values(record),
+            )
+            self._insert_audit(
+                conn,
+                operation="create",
+                before=None,
+                after=record,
             )
         return record
 
@@ -456,6 +560,12 @@ class MemoryStore:
                     timestamp=timestamp,
                 ),
             )
+            self._insert_audit(
+                conn,
+                operation="update",
+                before=current,
+                after=updated,
+            )
         return updated
 
     def delete(
@@ -470,20 +580,67 @@ class MemoryStore:
         identifier = self._validate_id(memory_id)
         with self._transaction() as conn:
             row = conn.execute(
-                "SELECT revision FROM memories WHERE user_id = ? AND id = ?",
+                "SELECT * FROM memories WHERE user_id = ? AND id = ?",
                 (owner, identifier),
             ).fetchone()
             if row is None:
                 return False
-            if expected_revision is not None and row["revision"] != (
-                expected_revision
+            current = self._row_to_record(row)
+            if (
+                expected_revision is not None
+                and current.revision != expected_revision
             ):
                 raise MemoryConflictError("memory revision is stale")
             cursor = conn.execute(
                 "DELETE FROM memories WHERE user_id = ? AND id = ?",
                 (owner, identifier),
             )
+            if cursor.rowcount == 1:
+                self._insert_audit(
+                    conn,
+                    operation="delete",
+                    before=current,
+                    after=None,
+                )
         return cursor.rowcount == 1
+
+    def list_audit(
+        self,
+        *,
+        user_id: str | None = None,
+        operation: str | None = None,
+        memory_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Sequence[MemoryAuditRecord]:
+        """List digest-only mutation records for a trusted admin caller."""
+        if limit < 1 or limit > _MAX_AUDIT_LIMIT:
+            raise MemoryPolicyError(
+                f"audit limit must be between 1 and {_MAX_AUDIT_LIMIT}"
+            )
+        if offset < 0:
+            raise MemoryPolicyError("audit offset must not be negative")
+        clauses: list[str] = []
+        params: list[object] = []
+        if user_id is not None:
+            clauses.append("user_id = ?")
+            params.append(self._validate_user_id(user_id))
+        if operation is not None:
+            clauses.append("operation = ?")
+            params.append(_AUDIT_OPERATION_ADAPTER.validate_python(operation))
+        if memory_id is not None:
+            clauses.append("memory_id = ?")
+            params.append(self._validate_id(memory_id))
+        where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.extend((limit, offset))
+        query = (
+            "SELECT * FROM memory_mutation_audit"
+            + where
+            + " ORDER BY occurred_at DESC, audit_id DESC LIMIT ? OFFSET ?"
+        )
+        with self._connect() as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+        return [self._audit_row_to_record(row) for row in rows]
 
     def purge_expired(self, *, now: datetime | None = None) -> int:
         """Delete all expired rows and return the number removed."""

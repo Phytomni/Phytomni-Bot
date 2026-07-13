@@ -10,6 +10,9 @@ from pathlib import Path
 
 import pytest
 
+from mcp_server_phytomni.runtime.memory.migrations import (
+    MEMORY_SCHEMA_VERSION,
+)
 from mcp_server_phytomni.runtime.memory.sqlite import (
     MemorySchemaError,
     MemoryStore,
@@ -64,8 +67,14 @@ def test_empty_database_gets_version_table_and_indexes(tmp_path: Path) -> None:
             row[1] for row in conn.execute("PRAGMA index_list(memories)")
         }
 
-    assert version == (1,)
+    assert version == (MEMORY_SCHEMA_VERSION,)
     assert "idx_memories_user_updated" in memory_indexes
+    with sqlite3.connect(store.db_path) as conn:
+        audit_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(memory_mutation_audit)")
+        }
+    assert "before_digest" in audit_columns
 
 
 def test_existing_unversioned_schema_is_migrated_and_repeatable(
@@ -104,6 +113,53 @@ def test_migration_backfills_missing_size_column(tmp_path: Path) -> None:
         ).fetchone()
     assert "size_bytes" in columns
     assert size == (len(b"Arabidopsis") + len("plant"),)
+
+
+def test_version_one_database_gets_audit_table(tmp_path: Path) -> None:
+    """C5.3 databases gain the append-only audit table additively."""
+    path = tmp_path / "memory.sqlite"
+    _legacy_db(path, with_size=True)
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            "CREATE TABLE memory_schema_version ("
+            "id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO memory_schema_version(id, version) VALUES (1, 1)"
+        )
+
+    MemoryStore(str(path))
+
+    with sqlite3.connect(path) as conn:
+        version = conn.execute(
+            "SELECT version FROM memory_schema_version WHERE id = 1"
+        ).fetchone()
+        audit_count = conn.execute(
+            "SELECT COUNT(*) FROM memory_mutation_audit"
+        ).fetchone()
+    assert version == (MEMORY_SCHEMA_VERSION,)
+    assert audit_count == (0,)
+
+
+def test_malformed_audit_table_fails_closed(tmp_path: Path) -> None:
+    """A versioned database with an incompatible audit table is rejected."""
+    path = tmp_path / "memory.sqlite"
+    _legacy_db(path, with_size=True)
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            "CREATE TABLE memory_schema_version ("
+            "id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)"
+        )
+        conn.execute(
+            "INSERT INTO memory_schema_version(id, version) VALUES (1, 2)"
+        )
+        conn.execute(
+            "CREATE TABLE memory_mutation_audit ("
+            "audit_id INTEGER PRIMARY KEY)"
+        )
+
+    with pytest.raises(MemorySchemaError, match="audit columns"):
+        MemoryStore(str(path))
 
 
 def test_unknown_schema_version_fails_closed(tmp_path: Path) -> None:

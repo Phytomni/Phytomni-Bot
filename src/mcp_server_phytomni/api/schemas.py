@@ -41,6 +41,8 @@ __all__ = [
     "FileUploadResponse",
     "MemoryCreateRequest",
     "MemoryDeleteResponse",
+    "MemoryAuditListResponse",
+    "MemoryAuditRecordResponse",
     "MemoryListResponse",
     "MemoryResponse",
     "MemoryUpdateRequest",
@@ -350,6 +352,30 @@ class MemoryDeleteResponse(BaseModel):
     object: str = "memory.deleted"
     id: str
     deleted: bool
+
+
+class MemoryAuditRecordResponse(BaseModel):
+    """Digest-only view of one audited memory mutation."""
+
+    object: str = "memory.audit"
+    audit_id: int
+    user_id: str
+    actor: str
+    operation: Literal["create", "update", "delete"]
+    memory_id: str
+    occurred_at: datetime
+    request_id: str | None = None
+    before_digest: str | None = None
+    after_digest: str | None = None
+    revision_before: int | None = None
+    revision_after: int | None = None
+
+
+class MemoryAuditListResponse(BaseModel):
+    """Response to the service-token-gated memory audit query."""
+
+    object: str = "list"
+    data: list[MemoryAuditRecordResponse]
 
 
 class FileUploadResponse(BaseModel):

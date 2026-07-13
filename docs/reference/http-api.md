@@ -91,6 +91,7 @@ Streaming section below.
 | `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing: an LLM selects the agent for a query and returns its `agent.run` envelope with the resolved slug.                                                                            |
 | `GET`    | `/v1/memories`                           | yes   | Lists live memory records in the authenticated user's namespace; route exists only when `MEMORY_ENABLED=1`.                                                                                             |
 | `POST`   | `/v1/memories`                           | yes   | Creates one memory record; `user_id` is taken from the API key context and cannot be supplied in the body.                                                                                              |
+| `GET`    | `/v1/memories/audit`                     | svc   | Lists digest-only memory mutation records; requires the configured service token and exists only when `MEMORY_ENABLED=1`.                                                                               |
 | `GET`    | `/v1/memories/{memory_id}`               | yes   | Returns one live owner-scoped memory record.                                                                                                                                                            |
 | `PUT`    | `/v1/memories/{memory_id}`               | yes   | Replaces one memory with optimistic concurrency; requires `If-Match: <revision>`.                                                                                                                       |
 | `DELETE` | `/v1/memories/{memory_id}`               | yes   | Deletes one owner-scoped memory idempotently; an optional `If-Match` checks its revision.                                                                                                               |
@@ -164,6 +165,9 @@ integer `revision` (quoted or unquoted). A missing header returns `428`, an
 invalid value returns `400`, and a stale revision returns `409`; successful
 updates increment the revision. Delete is idempotent and accepts the same
 header optionally, returning `deleted: false` for a missing or foreign record.
+The service-token-only `GET /v1/memories/audit` endpoint returns operation,
+actor, request id, revision, and SHA-256 before/after digests; it never returns
+memory content or tags.
 
 ## A2A v1 server core (opt-in)
 

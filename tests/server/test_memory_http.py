@@ -29,6 +29,7 @@ async def _memory_bundle(
     monkeypatch.setenv(
         "PHYTOMNI_MEMORY_DB_PATH", str(tmp_path / "memories.sqlite")
     )
+    monkeypatch.setenv("PHYTOMNI_API_SERVICE_TOKEN", "audit-service-token")
     key_db = str(tmp_path / "keys.sqlite")
     monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", key_db)
     key_store = ApiKeyStore(key_db)
@@ -175,3 +176,58 @@ async def test_memory_delete_is_idempotent_and_owner_scoped(
     repeated = await client.delete(delete_url, headers=_auth(alice))
     assert repeated.status_code == 200
     assert repeated.json()["deleted"] is False
+
+
+async def test_memory_audit_is_service_gated_and_digest_only(
+    memory_bundle: MemoryBundle,
+) -> None:
+    """The admin view exposes mutation metadata but never memory content."""
+    client, alice, _bob = memory_bundle
+    created = await client.post(
+        "/v1/memories",
+        json={"kind": "note", "content": "secret-ish text"},
+        headers=_auth(alice),
+    )
+    memory_id = created.json()["id"]
+    await client.put(
+        f"/v1/memories/{memory_id}",
+        json={"kind": "note", "content": "changed text"},
+        headers={**_auth(alice), "If-Match": "1"},
+    )
+    await client.delete(
+        f"/v1/memories/{memory_id}",
+        headers={**_auth(alice), "If-Match": "2"},
+    )
+
+    assert (await client.get("/v1/memories/audit")).status_code == 401
+    denied = await client.get(
+        "/v1/memories/audit",
+        headers={"X-Service-Token": "wrong"},
+    )
+    assert denied.status_code == 401
+    response = await client.get(
+        "/v1/memories/audit",
+        headers={"X-Service-Token": "audit-service-token"},
+    )
+    assert response.status_code == 200
+    records = response.json()["data"]
+    assert [item["operation"] for item in records] == [
+        "delete",
+        "update",
+        "create",
+    ]
+    assert all(item["user_id"] == "alice" for item in records)
+    assert all(item["request_id"] for item in records)
+    assert all("content" not in item for item in records)
+    assert all(
+        len(item["before_digest"] or item["after_digest"]) == 64
+        for item in records
+    )
+
+    filtered = await client.get(
+        "/v1/memories/audit?operation=update&limit=1",
+        headers={"X-Service-Token": "audit-service-token"},
+    )
+    assert [item["operation"] for item in filtered.json()["data"]] == [
+        "update"
+    ]

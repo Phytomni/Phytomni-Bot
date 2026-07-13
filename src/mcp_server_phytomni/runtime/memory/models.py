@@ -14,7 +14,7 @@ timezone-aware, and optimistic-concurrency revisions start at one.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Annotated, Self
+from typing import Annotated, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -230,6 +230,39 @@ class MemoryRecord(_MemoryPayload):
         return self
 
 
+MemoryAuditOperation = Literal["create", "update", "delete"]
+
+
+class MemoryAuditRecord(BaseModel):
+    """Digest-only record of one explicit memory mutation."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        hide_input_in_errors=True,
+    )
+
+    audit_id: int = Field(ge=1)
+    user_id: MemoryUserId
+    actor: str = Field(min_length=1, max_length=_MAX_USER_ID_BYTES)
+    operation: MemoryAuditOperation
+    memory_id: MemoryId
+    occurred_at: datetime
+    request_id: str | None = None
+    before_digest: str | None = None
+    after_digest: str | None = None
+    revision_before: int | None = Field(default=None, ge=1)
+    revision_after: int | None = Field(default=None, ge=1)
+
+    @field_validator("occurred_at", mode="after")
+    @classmethod
+    def _validate_occurred_at(cls, value: datetime) -> datetime:
+        """Normalize the audit timestamp to aware UTC."""
+        normalized = _aware_utc(value, label="occurred_at")
+        assert normalized is not None
+        return normalized
+
+
 class MemoryPolicy(BaseModel):
     """Per-user bounds shared by the future SQLite store and graph reads.
 
@@ -365,6 +398,8 @@ __all__ = [
     "MemoryPolicy",
     "MemoryPolicyError",
     "MemoryRecord",
+    "MemoryAuditOperation",
+    "MemoryAuditRecord",
     "MemoryTag",
     "MemoryUserId",
     "MemoryWrite",

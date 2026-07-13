@@ -183,6 +183,7 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
 | `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing; one extra routing-LLM call resolves the agent per request.                                                              |
 | `GET`    | `/v1/memories`                           | yes   | Lists live owner-scoped memory records; route exists only when `MEMORY_ENABLED=1`.                                                                 |
 | `POST`   | `/v1/memories`                           | yes   | Creates one memory using the authenticated API-key namespace.                                                                                      |
+| `GET`    | `/v1/memories/audit`                     | svc   | Lists digest-only memory mutations for service-token operators.                                                                                    |
 | `GET`    | `/v1/memories/{memory_id}`               | yes   | Owner-scoped live memory lookup.                                                                                                                   |
 | `PUT`    | `/v1/memories/{memory_id}`               | yes   | Replaces a memory with an `If-Match` revision check.                                                                                               |
 | `DELETE` | `/v1/memories/{memory_id}`               | yes   | Idempotent owner-scoped delete; optional `If-Match` revision check.                                                                                |
@@ -242,6 +243,9 @@ headers are `428` / `400`; a stale revision is `409`. A `503 memory store unavai
 the configured busy timeout; fix the local volume and restart rather than
 deleting the database. Back up the memory database separately from
 `server_tasks.db` and `checkpoints.db`.
+The service-token-only `GET /v1/memories/audit` view exposes operation,
+actor, request id, revision, and before/after SHA-256 digests only. It is
+intended for incident correlation and retention checks, not content recovery.
 
 When a graph-agent stream (`phyto-knowledge` or `phyto-brief-gene`) is
 served with `stream: true`, the response carries AG-UI event frames.

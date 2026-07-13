@@ -19,6 +19,7 @@ from mcp_server_phytomni.runtime.memory.sqlite import (
     MemoryConflictError,
     MemoryNotFoundError,
     MemoryStore,
+    memory_audit_context,
 )
 
 pytestmark = pytest.mark.unit
@@ -84,6 +85,49 @@ def test_create_and_get_round_trip_is_user_scoped(tmp_path: Path) -> None:
     assert created.revision == 1
     assert store.get("alice", "mem-1") == created
     assert store.get("bob", "mem-1") is None
+
+
+def test_mutations_append_digest_only_audit_records(tmp_path: Path) -> None:
+    """Create/update/delete audit rows never persist memory content."""
+    store = _store(tmp_path)
+    with memory_audit_context("alice", "req-1"):
+        created = store.create(
+            _write(content="before"), memory_id="mem-1", now=_now(10)
+        )
+    with memory_audit_context("alice", "req-2"):
+        updated = store.update(
+            "alice",
+            "mem-1",
+            _write(content="after"),
+            expected_revision=created.revision,
+            now=_now(11),
+        )
+    with memory_audit_context("alice", "req-3"):
+        assert store.delete(
+            "alice", "mem-1", expected_revision=updated.revision
+        )
+
+    audits = store.list_audit(memory_id="mem-1")
+    assert [item.operation for item in reversed(audits)] == [
+        "create",
+        "update",
+        "delete",
+    ]
+    assert all(
+        len(item.after_digest or item.before_digest or "") == 64
+        for item in audits
+    )
+    assert all(item.request_id is not None for item in audits)
+    with sqlite3.connect(store.db_path) as conn:
+        raw = conn.execute(
+            "SELECT before_digest, after_digest FROM memory_mutation_audit"
+        ).fetchall()
+    assert all(
+        "before" not in value and "after" not in value
+        for row in raw
+        for value in row
+        if value
+    )
 
 
 def test_list_filters_kind_expiry_and_retrieval_bound(tmp_path: Path) -> None:

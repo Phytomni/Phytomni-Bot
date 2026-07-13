@@ -137,6 +137,7 @@ from ..runtime.memory import (
     MemoryStore,
     MemoryStoreError,
     MemoryWrite,
+    memory_audit_context,
 )
 from ..runtime.request_context import (
     bind_request_id,
@@ -201,6 +202,8 @@ from .schemas import (
     ChatCompletionRequest,
     ExpertQueryRequest,
     FileUploadResponse,
+    MemoryAuditListResponse,
+    MemoryAuditRecordResponse,
     MemoryCreateRequest,
     MemoryDeleteResponse,
     MemoryListResponse,
@@ -2274,6 +2277,11 @@ def _memory_response(record: Any) -> MemoryResponse:
     return MemoryResponse.model_validate(record.model_dump())
 
 
+def _memory_audit_response(record: Any) -> MemoryAuditRecordResponse:
+    """Convert one digest-only audit record into its public shape."""
+    return MemoryAuditRecordResponse.model_validate(record.model_dump())
+
+
 def _memory_write(owner: str, payload: Any) -> MemoryWrite:
     """Build a domain write while keeping the owner outside the body."""
     try:
@@ -2721,7 +2729,8 @@ def create_app() -> FastAPI:
                 )
             write = _memory_write(owner, payload)
             try:
-                record = get_memory_store().create(write)
+                with memory_audit_context(owner, current_request_id()):
+                    record = get_memory_store().create(write)
             except MemoryPolicyError as exc:
                 raise HTTPException(status_code=413, detail=str(exc)) from exc
             except (ValidationError, ValueError) as exc:
@@ -2766,6 +2775,38 @@ def create_app() -> FastAPI:
                 ) from exc
             return MemoryListResponse(
                 data=[_memory_response(record) for record in records]
+            )
+
+        @app.get(
+            "/v1/memories/audit",
+            response_model=MemoryAuditListResponse,
+        )
+        async def list_memory_audit(
+            user_id: str | None = None,
+            operation: str | None = None,
+            memory_id: str | None = None,
+            limit: int = 100,
+            offset: int = 0,
+            _admin: None = Depends(require_service_principal),
+        ) -> MemoryAuditListResponse:
+            """List digest-only memory mutations for service operators."""
+            del _admin
+            try:
+                records = get_memory_store().list_audit(
+                    user_id=user_id,
+                    operation=operation,
+                    memory_id=memory_id,
+                    limit=limit,
+                    offset=offset,
+                )
+            except (MemoryPolicyError, ValidationError, ValueError) as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            except (MemoryStoreError, OSError, sqlite3.Error) as exc:
+                raise HTTPException(
+                    status_code=503, detail="memory store unavailable"
+                ) from exc
+            return MemoryAuditListResponse(
+                data=[_memory_audit_response(record) for record in records]
             )
 
         @app.get(
@@ -2818,12 +2859,13 @@ def create_app() -> FastAPI:
             assert expected_revision is not None
             write = _memory_write(owner, payload)
             try:
-                record = get_memory_store().update(
-                    owner,
-                    memory_id,
-                    write,
-                    expected_revision=expected_revision,
-                )
+                with memory_audit_context(owner, current_request_id()):
+                    record = get_memory_store().update(
+                        owner,
+                        memory_id,
+                        write,
+                        expected_revision=expected_revision,
+                    )
             except MemoryNotFoundError as exc:
                 raise HTTPException(
                     status_code=404, detail="memory not found"
@@ -2860,11 +2902,12 @@ def create_app() -> FastAPI:
                 )
             expected_revision = _memory_revision(if_match, required=False)
             try:
-                deleted = get_memory_store().delete(
-                    owner,
-                    memory_id,
-                    expected_revision=expected_revision,
-                )
+                with memory_audit_context(owner, current_request_id()):
+                    deleted = get_memory_store().delete(
+                        owner,
+                        memory_id,
+                        expected_revision=expected_revision,
+                    )
             except MemoryConflictError as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
             except (ValidationError, ValueError) as exc:
