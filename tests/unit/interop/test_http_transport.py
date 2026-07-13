@@ -423,11 +423,14 @@ class _SpyStream(httpx.AsyncByteStream):
 class _LeakyCloseStream(_SpyStream):
     """Overflow stream whose close failure contains unsafe peer text."""
 
+    @property
+    def close_error(self) -> str:
+        """Return the unsafe fixture text raised by ``aclose``."""
+        return "https://peer.test Authorization Bearer close-secret"
+
     async def aclose(self) -> None:
         self.closed = True
-        raise RuntimeError(
-            "https://peer.test Authorization Bearer close-secret"
-        )
+        raise RuntimeError(self.close_error)
 
 
 class _LeakyReadStream(httpx.AsyncByteStream):

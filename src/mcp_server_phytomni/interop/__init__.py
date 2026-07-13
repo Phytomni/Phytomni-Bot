@@ -10,6 +10,12 @@ layered on in later phases.
 """
 
 from .http_transport import httpx_client_factory
+from .mcp_client import (
+    InteropMCPError,
+    InteropMCPToolError,
+    invoke_external_mcp_tool,
+    load_external_mcp_tools,
+)
 from .models import (
     A2ATarget,
     InteropTarget,
@@ -32,6 +38,8 @@ __all__ = [
     "A2ATarget",
     "AsyncDNSResolver",
     "EndpointSecurityError",
+    "InteropMCPError",
+    "InteropMCPToolError",
     "InteropRegistry",
     "InteropRegistryError",
     "InteropTarget",
@@ -39,6 +47,8 @@ __all__ = [
     "MCPStreamableHttpTarget",
     "ValidatedEndpoint",
     "httpx_client_factory",
+    "invoke_external_mcp_tool",
+    "load_external_mcp_tools",
     "load_interop_registry",
     "validate_target_request",
 ]
