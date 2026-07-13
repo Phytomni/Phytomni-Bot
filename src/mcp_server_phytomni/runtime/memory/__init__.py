@@ -23,6 +23,12 @@ from .models import (
     MemoryUserId,
     MemoryWrite,
 )
+from .sqlite import (
+    MemoryConflictError,
+    MemoryNotFoundError,
+    MemoryStore,
+    MemoryStoreError,
+)
 
 __all__ = [
     "DEFAULT_MEMORY_MAX_CONTENT_BYTES",
@@ -33,12 +39,16 @@ __all__ = [
     "DEFAULT_MEMORY_MAX_TOTAL_BYTES",
     "DEFAULT_MEMORY_POLICY",
     "MemoryCreate",
+    "MemoryConflictError",
     "MemoryId",
     "MemoryItem",
     "MemoryKind",
     "MemoryPolicy",
     "MemoryPolicyError",
+    "MemoryNotFoundError",
     "MemoryRecord",
+    "MemoryStore",
+    "MemoryStoreError",
     "MemoryTag",
     "MemoryUserId",
     "MemoryWrite",

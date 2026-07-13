@@ -1,0 +1,523 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+"""Local SQLite persistence for explicit user-scoped memory.
+
+This store is deliberately a small single-instance boundary.  It uses one
+table, short-lived connections for file-backed databases, WAL, a busy timeout,
+parameterized SQL, and explicit transactions around capacity checks plus
+writes.  It does not claim that a network filesystem or multiple processes
+provide a distributed consistency guarantee; the later API layer decides when
+to expose this local store.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from collections.abc import Generator
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+
+from pydantic import TypeAdapter, ValidationError
+
+from ...storage.path_policy import IdFactory
+from .models import (
+    DEFAULT_MEMORY_POLICY,
+    MemoryId,
+    MemoryKind,
+    MemoryPolicy,
+    MemoryRecord,
+    MemoryWrite,
+)
+
+__all__ = [
+    "MemoryConflictError",
+    "MemoryNotFoundError",
+    "MemoryStore",
+    "MemoryStoreError",
+]
+
+_CONNECT_TIMEOUT_SECONDS = 10.0
+_BUSY_TIMEOUT_MILLISECONDS = 5000
+_MEMORY_ID_ADAPTER = TypeAdapter(MemoryId)
+_MEMORY_KIND_ADAPTER = TypeAdapter(MemoryKind)
+
+_CREATE_MEMORIES_DDL = """
+CREATE TABLE IF NOT EXISTS memories (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    content TEXT NOT NULL,
+    tags_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT,
+    revision INTEGER NOT NULL,
+    size_bytes INTEGER NOT NULL
+)
+"""
+
+
+class MemoryStoreError(RuntimeError):
+    """Base error for local memory store operations."""
+
+
+class MemoryNotFoundError(MemoryStoreError):
+    """Raised when an update targets no record in the caller namespace."""
+
+
+class MemoryConflictError(MemoryStoreError):
+    """Raised when an optimistic-concurrency revision is stale."""
+
+
+@dataclass(frozen=True)
+class _MemoryUpdateContext:
+    """Validated values needed to atomically replace one memory row."""
+
+    owner: str
+    identifier: str
+    expected_revision: int
+    current: MemoryRecord
+    payload: MemoryWrite
+    timestamp: datetime
+
+
+def _now_utc(value: datetime | None = None) -> datetime:
+    """Return an aware UTC timestamp, rejecting ambiguous naive values."""
+    timestamp = value or datetime.now(UTC)
+    if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+        raise ValueError("memory timestamps must include a timezone")
+    return timestamp.astimezone(UTC)
+
+
+def _iso(value: datetime) -> str:
+    """Serialize an aware timestamp in the canonical UTC representation."""
+    return _now_utc(value).isoformat()
+
+
+def _decode_tags(raw: str) -> list[str]:
+    """Decode the JSON tag list and reject malformed database rows."""
+    try:
+        decoded = json.loads(raw)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise MemoryStoreError(
+            "memory row contains invalid tags JSON"
+        ) from exc
+    if not isinstance(decoded, list) or not all(
+        isinstance(item, str) for item in decoded
+    ):
+        raise MemoryStoreError("memory row tags must be a JSON string list")
+    return decoded
+
+
+class MemoryStore:
+    """Single-instance local SQLite store for explicit memory records.
+
+    A file-backed operation opens a fresh connection so reads and writes do
+    not retain stale transactions.  ``":memory:"`` is supported for focused
+    tests by retaining one connection for the lifetime of this object.
+
+    Attributes:
+        db_path: Local SQLite path, or ``":memory:"`` for an ephemeral store.
+        policy: Per-user limits enforced before every write and read bound.
+    """
+
+    def __init__(
+        self,
+        db_path: str,
+        *,
+        policy: MemoryPolicy | None = None,
+    ) -> None:
+        """Initialize the local database and create its indexes.
+
+        Args:
+            db_path: Local filesystem path.  Parent directories are created.
+            policy: Optional explicit bounds; defaults to the domain policy.
+        """
+        if not db_path:
+            raise ValueError("memory db_path must not be empty")
+        self.db_path = str(db_path)
+        self.policy = policy or DEFAULT_MEMORY_POLICY
+        self._memory_connection: sqlite3.Connection | None = None
+        if self.db_path == ":memory:":
+            self._memory_connection = sqlite3.connect(
+                self.db_path,
+                timeout=_CONNECT_TIMEOUT_SECONDS,
+                isolation_level=None,
+            )
+            self._configure_connection(self._memory_connection)
+        else:
+            Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        self._init_db()
+
+    @staticmethod
+    def _configure_connection(conn: sqlite3.Connection) -> None:
+        """Apply WAL/busy-timeout settings to one SQLite connection."""
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MILLISECONDS}")
+        conn.row_factory = sqlite3.Row
+
+    @contextmanager
+    def _connect(self) -> Generator[sqlite3.Connection, None, None]:
+        """Yield a configured connection without leaking it on errors."""
+        if self._memory_connection is not None:
+            yield self._memory_connection
+            return
+        conn = sqlite3.connect(
+            self.db_path,
+            timeout=_CONNECT_TIMEOUT_SECONDS,
+            isolation_level=None,
+        )
+        self._configure_connection(conn)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    @contextmanager
+    def _transaction(self) -> Generator[sqlite3.Connection, None, None]:
+        """Yield an IMMEDIATE transaction and roll it back on any error."""
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield conn
+            except BaseException:
+                conn.rollback()
+                raise
+            conn.commit()
+
+    def _init_db(self) -> None:
+        """Create the memory table and user/expiry query indexes."""
+        with self._connect() as conn:
+            conn.execute(_CREATE_MEMORIES_DDL)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memories_user_updated "
+                "ON memories(user_id, updated_at DESC, id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memories_user_kind_updated "
+                "ON memories(user_id, kind, updated_at DESC, id)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memories_expires "
+                "ON memories(expires_at)"
+            )
+
+    @staticmethod
+    def _validate_user_id(user_id: str) -> str:
+        """Reuse the domain model's namespace validation."""
+        return MemoryWrite(
+            user_id=user_id,
+            kind="context",
+            content="validation",
+        ).user_id
+
+    @staticmethod
+    def _validate_kind(kind: str) -> str:
+        """Validate an optional list kind without constructing a record."""
+        return _MEMORY_KIND_ADAPTER.validate_python(kind)
+
+    @staticmethod
+    def _validate_id(memory_id: str) -> str:
+        """Validate an explicit id used by deterministic tests or imports."""
+        return _MEMORY_ID_ADAPTER.validate_python(memory_id)
+
+    @staticmethod
+    def _row_to_record(row: sqlite3.Row) -> MemoryRecord:
+        """Hydrate and revalidate one SQLite row as a domain record."""
+        try:
+            return MemoryRecord(
+                id=row["id"],
+                user_id=row["user_id"],
+                kind=row["kind"],
+                content=row["content"],
+                tags=_decode_tags(row["tags_json"]),
+                created_at=datetime.fromisoformat(row["created_at"]),
+                updated_at=datetime.fromisoformat(row["updated_at"]),
+                expires_at=(
+                    datetime.fromisoformat(row["expires_at"])
+                    if row["expires_at"] is not None
+                    else None
+                ),
+                revision=row["revision"],
+            )
+        except (KeyError, TypeError, ValueError, ValidationError) as exc:
+            raise MemoryStoreError(
+                "memory row failed domain validation"
+            ) from exc
+
+    @staticmethod
+    def _capacity(conn: sqlite3.Connection, user_id: str) -> tuple[int, int]:
+        """Return current record count and policy-counted bytes."""
+        row = conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(size_bytes), 0) "
+            "FROM memories WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        assert row is not None
+        return int(row[0]), int(row[1])
+
+    @staticmethod
+    def _insert_values(record: MemoryRecord) -> tuple[object, ...]:
+        """Build the parameter tuple for an INSERT statement."""
+        return (
+            record.id,
+            record.user_id,
+            record.kind,
+            record.content,
+            json.dumps(record.tags, ensure_ascii=False, separators=(",", ":")),
+            _iso(record.created_at),
+            _iso(record.updated_at),
+            _iso(record.expires_at) if record.expires_at else None,
+            record.revision,
+            record.size_bytes,
+        )
+
+    def create(
+        self,
+        write: MemoryWrite,
+        *,
+        memory_id: str | None = None,
+        now: datetime | None = None,
+    ) -> MemoryRecord:
+        """Create one record after an atomic per-user capacity check."""
+        payload = MemoryWrite.model_validate(write)
+        self.policy.validate_write(payload)
+        timestamp = _now_utc(now)
+        record = MemoryRecord(
+            id=self._validate_id(
+                memory_id or IdFactory().new_id("memory", current=timestamp)
+            ),
+            user_id=payload.user_id,
+            kind=payload.kind,
+            content=payload.content,
+            tags=payload.tags,
+            created_at=timestamp,
+            updated_at=timestamp,
+            expires_at=payload.expires_at,
+            revision=1,
+        )
+        self.policy.validate_record(record)
+        with self._transaction() as conn:
+            item_count, total_bytes = self._capacity(conn, record.user_id)
+            self.policy.ensure_capacity(
+                item_count=item_count,
+                total_bytes=total_bytes,
+                incoming_bytes=record.size_bytes,
+            )
+            conn.execute(
+                "INSERT INTO memories ("
+                "id, user_id, kind, content, tags_json, created_at, "
+                "updated_at, expires_at, revision, size_bytes"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                self._insert_values(record),
+            )
+        return record
+
+    def get(
+        self,
+        user_id: str,
+        memory_id: str,
+        *,
+        now: datetime | None = None,
+        include_expired: bool = False,
+    ) -> MemoryRecord | None:
+        """Return one record only when it belongs to ``user_id``."""
+        owner = self._validate_user_id(user_id)
+        identifier = self._validate_id(memory_id)
+        sql = "SELECT * FROM memories WHERE user_id = ? AND id = ?"
+        params: list[object] = [owner, identifier]
+        if not include_expired:
+            sql += " AND (expires_at IS NULL OR expires_at > ?)"
+            params.append(_iso(_now_utc(now)))
+        with self._connect() as conn:
+            row = conn.execute(sql, tuple(params)).fetchone()
+        return None if row is None else self._row_to_record(row)
+
+    def list(
+        self,
+        user_id: str,
+        *,
+        kind: str | None = None,
+        limit: int | None = None,
+        now: datetime | None = None,
+        include_expired: bool = False,
+    ) -> list[MemoryRecord]:
+        """List a user's live records newest-first within the read bound."""
+        owner = self._validate_user_id(user_id)
+        bounded_limit = self.policy.bounded_retrieval_limit(limit)
+        clauses = ["user_id = ?"]
+        params: list[object] = [owner]
+        if kind is not None:
+            clauses.append("kind = ?")
+            params.append(self._validate_kind(kind))
+        if not include_expired:
+            clauses.append("(expires_at IS NULL OR expires_at > ?)")
+            params.append(_iso(_now_utc(now)))
+        params.append(bounded_limit)
+        query = (
+            "SELECT * FROM memories WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY updated_at DESC, id ASC LIMIT ?"
+        )
+        with self._connect() as conn:
+            rows = conn.execute(query, tuple(params)).fetchall()
+        return [self._row_to_record(row) for row in rows]
+
+    @staticmethod
+    def _current_for_update(
+        conn: sqlite3.Connection,
+        owner: str,
+        identifier: str,
+        expected_revision: int,
+    ) -> MemoryRecord:
+        """Load a record and enforce its expected revision in one helper."""
+        row = conn.execute(
+            "SELECT * FROM memories WHERE user_id = ? AND id = ?",
+            (owner, identifier),
+        ).fetchone()
+        if row is None:
+            raise MemoryNotFoundError("memory record was not found")
+        current = MemoryStore._row_to_record(row)
+        if current.revision != expected_revision:
+            raise MemoryConflictError("memory revision is stale")
+        return current
+
+    def _persist_update(
+        self,
+        conn: sqlite3.Connection,
+        context: _MemoryUpdateContext,
+    ) -> MemoryRecord:
+        """Build, validate, capacity-check, and persist one replacement."""
+        current = context.current
+        payload = context.payload
+        updated = MemoryRecord(
+            id=current.id,
+            user_id=context.owner,
+            kind=payload.kind,
+            content=payload.content,
+            tags=payload.tags,
+            created_at=current.created_at,
+            updated_at=context.timestamp,
+            expires_at=payload.expires_at,
+            revision=current.revision + 1,
+        )
+        self.policy.validate_record(updated)
+        item_count, total_bytes = self._capacity(conn, context.owner)
+        self.policy.ensure_capacity(
+            item_count=item_count,
+            total_bytes=total_bytes,
+            incoming_bytes=updated.size_bytes,
+            replacing=True,
+            existing_bytes=current.size_bytes,
+        )
+        cursor = conn.execute(
+            "UPDATE memories SET kind = ?, content = ?, tags_json = ?, "
+            "updated_at = ?, expires_at = ?, revision = ?, size_bytes = ? "
+            "WHERE user_id = ? AND id = ? AND revision = ?",
+            (
+                updated.kind,
+                updated.content,
+                json.dumps(
+                    updated.tags,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ),
+                _iso(updated.updated_at),
+                _iso(updated.expires_at) if updated.expires_at else None,
+                updated.revision,
+                updated.size_bytes,
+                context.owner,
+                context.identifier,
+                context.expected_revision,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise MemoryConflictError("memory revision changed concurrently")
+        return updated
+
+    def update(
+        self,
+        user_id: str,
+        memory_id: str,
+        write: MemoryWrite,
+        *,
+        expected_revision: int,
+        now: datetime | None = None,
+    ) -> MemoryRecord:
+        """Replace one record when the caller presents its current revision."""
+        owner = self._validate_user_id(user_id)
+        identifier = self._validate_id(memory_id)
+        payload = MemoryWrite.model_validate(write)
+        if payload.user_id != owner:
+            raise MemoryStoreError(
+                "memory update namespace does not match user"
+            )
+        if expected_revision < 1:
+            raise MemoryConflictError("memory revision must be positive")
+        self.policy.validate_write(payload)
+        timestamp = _now_utc(now)
+        with self._transaction() as conn:
+            current = self._current_for_update(
+                conn, owner, identifier, expected_revision
+            )
+            updated = self._persist_update(
+                conn,
+                _MemoryUpdateContext(
+                    owner=owner,
+                    identifier=identifier,
+                    expected_revision=expected_revision,
+                    current=current,
+                    payload=payload,
+                    timestamp=timestamp,
+                ),
+            )
+        return updated
+
+    def delete(
+        self,
+        user_id: str,
+        memory_id: str,
+        *,
+        expected_revision: int | None = None,
+    ) -> bool:
+        """Delete one record idempotently, optionally checking its revision."""
+        owner = self._validate_user_id(user_id)
+        identifier = self._validate_id(memory_id)
+        with self._transaction() as conn:
+            row = conn.execute(
+                "SELECT revision FROM memories WHERE user_id = ? AND id = ?",
+                (owner, identifier),
+            ).fetchone()
+            if row is None:
+                return False
+            if expected_revision is not None and row["revision"] != (
+                expected_revision
+            ):
+                raise MemoryConflictError("memory revision is stale")
+            cursor = conn.execute(
+                "DELETE FROM memories WHERE user_id = ? AND id = ?",
+                (owner, identifier),
+            )
+        return cursor.rowcount == 1
+
+    def purge_expired(self, *, now: datetime | None = None) -> int:
+        """Delete all expired rows and return the number removed."""
+        cutoff = _iso(_now_utc(now))
+        with self._transaction() as conn:
+            cursor = conn.execute(
+                "DELETE FROM memories WHERE expires_at IS NOT NULL "
+                "AND expires_at <= ?",
+                (cutoff,),
+            )
+        return cursor.rowcount
+
+    def close(self) -> None:
+        """Close the retained in-memory connection, if one exists."""
+        if self._memory_connection is not None:
+            self._memory_connection.close()
+            self._memory_connection = None
