@@ -312,6 +312,7 @@ async def invoke_external_mcp_tool(
     arguments: Mapping[str, Any],
     *,
     registry: InteropRegistry,
+    **options: Any,
 ) -> Any:
     """Invoke one allowlisted external tool without accepting a URL.
 
@@ -328,6 +329,13 @@ async def invoke_external_mcp_tool(
     tools = await load_external_mcp_tools(
         target_id,
         registry=registry,
+        sensitive_config=cast(
+            SensitiveConfig | None, options.get("sensitive_config")
+        ),
+        resolver=cast(
+            AsyncDNSResolver, options.get("resolver") or resolve_host
+        ),
+        _client_cls=cast(type[Any] | None, options.get("_client_cls")),
     )
     for tool in tools:
         if _remote_name(tool.name, target_id) == remote_tool_name:

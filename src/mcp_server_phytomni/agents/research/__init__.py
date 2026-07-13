@@ -12,12 +12,17 @@ from .agent import (
     InSilicoResearchAgents,
     InSilicoResearchState,
     ResearchTaskContext,
+    ResearchTaskInterop,
     in_silico_research,
 )
+from .interop import ResearchEvidence, ResearchInteropDependencies
 
 __all__ = [
     "InSilicoResearchAgents",
     "InSilicoResearchState",
     "ResearchTaskContext",
+    "ResearchTaskInterop",
+    "ResearchEvidence",
+    "ResearchInteropDependencies",
     "in_silico_research",
 ]

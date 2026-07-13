@@ -10,9 +10,10 @@ Functions: in_silico_research, extract_goals_node, prepare_tasks,
 """
 
 import logging
-from dataclasses import dataclass
+import operator
+from dataclasses import dataclass, field
 from json import loads
-from typing import Any
+from typing import Annotated, Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Send
@@ -30,6 +31,8 @@ from ...graphs.chat_adapters import (
     build_chat_kwargs_for,
     extract_chat_response,
 )
+from ...interop.planner import InteropMode
+from ...interop.registry import load_interop_registry
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -58,6 +61,12 @@ from ..shared.parallel_dispatch import (
     ParallelDispatchState,
     build_parallel_dispatch_graph,
 )
+from .interop import (
+    ResearchEvidence,
+    ResearchInteropDependencies,
+    collect_research_evidence,
+    format_research_evidence,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +92,14 @@ _RESEARCH_GOALS_RESPONSE_FORMAT: dict[str, Any] = {
 
 
 @dataclass(frozen=True)
+class ResearchTaskInterop:
+    """Per-task opt-in controls for external Research evidence."""
+
+    mode: InteropMode = "off"
+    targets: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class ResearchTaskContext:
     """Resolved context for submitting one in-silico research task.
 
@@ -101,6 +118,7 @@ class ResearchTaskContext:
     output_dir: str
     task_name: str
     thread_id: str
+    interop: ResearchTaskInterop = field(default_factory=ResearchTaskInterop)
 
 
 class InSilicoResearchState(ParallelDispatchState):
@@ -137,6 +155,9 @@ class InSilicoResearchState(ParallelDispatchState):
     context: str
     task_name: str
     thread_id: str
+    interop_mode: InteropMode
+    interop_targets: list[str]
+    evidence: Annotated[list[ResearchEvidence], operator.add]
 
 
 class InSilicoResearchAgents:
@@ -160,6 +181,7 @@ class InSilicoResearchAgents:
         analyst_agent: AnalystAgent | None = None,
         in_silico_config=IN_SILICO_CONFIG,
         sensitive_config: SensitiveConfig | None = None,
+        interop_dependencies: ResearchInteropDependencies | None = None,
     ):
         """Initialize the InSilicoResearchAgents.
 
@@ -176,6 +198,9 @@ class InSilicoResearchAgents:
         self.analyst_agent = analyst_agent or AnalystAgent(
             analyst_config=in_silico_config,
             sensitive_config=self.sensitive_config,
+        )
+        self._interop_dependencies = (
+            interop_dependencies or ResearchInteropDependencies()
         )
         self.app = self._build_graph()
 
@@ -211,6 +236,8 @@ class InSilicoResearchAgents:
                     "task_index": i,
                     "data_list": state.get("data_list", {}),
                     "output_dir": state.get("output_dir"),
+                    "interop_mode": state.get("interop_mode", "off"),
+                    "interop_targets": state.get("interop_targets", []),
                     **task,
                 },
             )
@@ -282,6 +309,25 @@ class InSilicoResearchAgents:
             "Submitting research task via AnalystAgent: %s", task.task_name
         )
 
+        evidence = await collect_research_evidence(
+            {
+                "goal_description": task.goal_description,
+                "context": task.context,
+                "data_list": task.data_list,
+                "task_name": task.task_name,
+            },
+            mode=task.interop.mode,
+            target_ids=task.interop.targets,
+            dependencies=self._research_interop_dependencies(
+                task.interop.mode
+            ),
+        )
+        prompt_context = task.context
+        if evidence is not None:
+            prompt_context = (
+                f"{task.context}\n\n{format_research_evidence(evidence)}"
+            )
+
         result = await submit_analyst_via_subgraph(
             self.analyst_agent,
             self.in_silico_config,
@@ -292,7 +338,7 @@ class InSilicoResearchAgents:
                 "output_dir": task.output_dir,
                 "prompt_parts": (
                     task.goal_description,
-                    task.context,
+                    prompt_context,
                     task.data_list,
                 ),
                 "compute_resource": "medium",
@@ -308,7 +354,33 @@ class InSilicoResearchAgents:
         task_id = result.get("task_id")
         logger.info("%s task completed (task_id: %s)", task.task_name, task_id)
 
-        return {"task_id": task_id, "output_dir": result.get("output_dir")}
+        task_result: dict[str, Any] = {
+            "task_id": task_id,
+            "output_dir": result.get("output_dir"),
+        }
+        if evidence is not None:
+            task_result["evidence"] = evidence
+        return task_result
+
+    def _research_interop_dependencies(
+        self,
+        mode: InteropMode,
+    ) -> ResearchInteropDependencies | None:
+        """Resolve interop dependencies lazily for an enabled request."""
+        if mode == "off":
+            return None
+        dependencies = self._interop_dependencies
+        if dependencies.registry is None:
+            dependencies = dependencies._replace(
+                registry=load_interop_registry(
+                    sensitive_config=self.sensitive_config
+                )
+            )
+        dependencies = dependencies._replace(
+            sensitive_config=self.sensitive_config
+        )
+        self._interop_dependencies = dependencies
+        return dependencies
 
     async def extract_goals_node(self, state: InSilicoResearchState) -> dict:
         """Extract research goals from scientific paper text.
@@ -430,15 +502,26 @@ class InSilicoResearchAgents:
                     output_dir=output_dir,
                     task_name=task_name,
                     thread_id=state.get("thread_id", task_name),
+                    interop=ResearchTaskInterop(
+                        mode=state.get("interop_mode", "off"),
+                        targets=tuple(state.get("interop_targets", [])),
+                    ),
                 )
             )
 
-        return await capture_analysis_result(
+        updates = await capture_analysis_result(
             state,
             analysis_type=task_name,
             submit_call=submit_call,
             result_key=None,
+            result_list_key="evidence",
         )
+        updates["evidence"] = [
+            item["evidence"]
+            for item in updates.get("evidence", [])
+            if isinstance(item, dict) and "evidence" in item
+        ]
+        return updates
 
     async def arun(
         self,
@@ -465,12 +548,14 @@ class InSilicoResearchAgents:
                 "paper_text": paper_text,
                 "data_list": data_list,
                 "obs_file_list": kwargs.get("obs_file_list") or [],
+                "interop_mode": kwargs.get("interop_mode", "off"),
+                "interop_targets": list(kwargs.get("interop_targets", [])),
             },
             kwargs,
-            ("task_ids", "goals", "error", "failures"),
+            ("task_ids", "goals", "error", "failures", "evidence"),
             AnalysisStateSpec(
                 tasks_key="research_tasks",
-                result_inits={"goals": []},
+                result_inits={"goals": [], "evidence": []},
             ),
         )
 
@@ -528,4 +613,6 @@ async def in_silico_research(
         user_id=user_id,
         obs_file_list=obs_file_list or [],
         output_dir=output_dir,
+        interop_mode=kwargs.get("interop_mode", "off"),
+        interop_targets=kwargs.get("interop_targets", []),
     )

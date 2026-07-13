@@ -86,6 +86,10 @@ def test_off_mode_does_not_iterate_capabilities() -> None:
         def __iter__(self) -> Iterator[InteropCapability]:
             raise AssertionError("off mode must not inspect capabilities")
 
+        def __len__(self) -> int:
+            """Expose the second protocol method for a complete iterable."""
+            return 0
+
     plan = plan_interop_capabilities(
         _task("query"),
         mode="off",
