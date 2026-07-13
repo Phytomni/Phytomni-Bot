@@ -26,6 +26,7 @@ from .models import (
 from .sqlite import (
     MemoryConflictError,
     MemoryNotFoundError,
+    MemorySchemaError,
     MemoryStore,
     MemoryStoreError,
 )
@@ -46,6 +47,7 @@ __all__ = [
     "MemoryPolicy",
     "MemoryPolicyError",
     "MemoryNotFoundError",
+    "MemorySchemaError",
     "MemoryRecord",
     "MemoryStore",
     "MemoryStoreError",

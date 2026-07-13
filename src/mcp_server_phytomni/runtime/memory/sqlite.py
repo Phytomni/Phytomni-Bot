@@ -25,6 +25,7 @@ from pathlib import Path
 from pydantic import TypeAdapter, ValidationError
 
 from ...storage.path_policy import IdFactory
+from .migrations import MemorySchemaError, ensure_memory_schema
 from .models import (
     DEFAULT_MEMORY_POLICY,
     MemoryId,
@@ -37,6 +38,7 @@ from .models import (
 __all__ = [
     "MemoryConflictError",
     "MemoryNotFoundError",
+    "MemorySchemaError",
     "MemoryStore",
     "MemoryStoreError",
 ]
@@ -45,21 +47,6 @@ _CONNECT_TIMEOUT_SECONDS = 10.0
 _BUSY_TIMEOUT_MILLISECONDS = 5000
 _MEMORY_ID_ADAPTER = TypeAdapter(MemoryId)
 _MEMORY_KIND_ADAPTER = TypeAdapter(MemoryKind)
-
-_CREATE_MEMORIES_DDL = """
-CREATE TABLE IF NOT EXISTS memories (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    kind TEXT NOT NULL,
-    content TEXT NOT NULL,
-    tags_json TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    expires_at TEXT,
-    revision INTEGER NOT NULL,
-    size_bytes INTEGER NOT NULL
-)
-"""
 
 
 class MemoryStoreError(RuntimeError):
@@ -152,7 +139,12 @@ class MemoryStore:
             self._configure_connection(self._memory_connection)
         else:
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        self._init_db()
+        try:
+            self._init_db()
+        except MemorySchemaError:
+            raise
+        except sqlite3.DatabaseError as exc:
+            raise MemorySchemaError("memory database is not usable") from exc
 
     @staticmethod
     def _configure_connection(conn: sqlite3.Connection) -> None:
@@ -172,8 +164,8 @@ class MemoryStore:
             timeout=_CONNECT_TIMEOUT_SECONDS,
             isolation_level=None,
         )
-        self._configure_connection(conn)
         try:
+            self._configure_connection(conn)
             yield conn
         finally:
             conn.close()
@@ -191,21 +183,9 @@ class MemoryStore:
             conn.commit()
 
     def _init_db(self) -> None:
-        """Create the memory table and user/expiry query indexes."""
+        """Initialize or migrate the memory schema transactionally."""
         with self._connect() as conn:
-            conn.execute(_CREATE_MEMORIES_DDL)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_memories_user_updated "
-                "ON memories(user_id, updated_at DESC, id)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_memories_user_kind_updated "
-                "ON memories(user_id, kind, updated_at DESC, id)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_memories_expires "
-                "ON memories(expires_at)"
-            )
+            ensure_memory_schema(conn)
 
     @staticmethod
     def _validate_user_id(user_id: str) -> str:
