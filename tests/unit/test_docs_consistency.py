@@ -206,4 +206,9 @@ def test_readme_matches_the_current_interoperability_boundary() -> None:
         == 2
     )
     assert public_schemas.count("interop_targets: list[str]") == 2
-    assert not (ROOT / "src/mcp_server_phytomni/runtime/memory").exists()
+    # C5.1 defines storage-neutral domain types, while the SQLite store and
+    # public memory surface remain intentionally unshipped until later steps.
+    assert (ROOT / "src/mcp_server_phytomni/runtime/memory/models.py").exists()
+    assert not (
+        ROOT / "src/mcp_server_phytomni/runtime/memory/sqlite.py"
+    ).exists()
