@@ -51,6 +51,13 @@ from .models import (
     MCPStdioTarget,
     MCPStreamableHttpTarget,
 )
+from .planner import (
+    InteropMode,
+    InteropPlan,
+    InteropPlanningError,
+    InteropTaskSpec,
+    plan_interop_capabilities,
+)
 from .registry import (
     InteropRegistry,
     InteropRegistryError,
@@ -80,8 +87,12 @@ __all__ = [
     "InteropCapabilityError",
     "InteropMCPError",
     "InteropMCPToolError",
+    "InteropMode",
+    "InteropPlan",
+    "InteropPlanningError",
     "InteropRegistry",
     "InteropRegistryError",
+    "InteropTaskSpec",
     "InteropTarget",
     "MCPStdioTarget",
     "MCPStreamableHttpTarget",
@@ -100,5 +111,6 @@ __all__ = [
     "send_external_a2a_task",
     "stream_external_a2a",
     "stream_external_a2a_task",
+    "plan_interop_capabilities",
     "validate_target_request",
 ]
