@@ -4,11 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """State-reduction tests for the in-silico research dispatch graph.
 
-The single-goal test exercises the production happy path. The xfail
-second test documents that multi-goal extraction breaks LangGraph's
-parallel merge because InSilicoResearchState lacks Annotated reducers
-on task_ids and completed_count - a pre-existing schema gap unchanged
-by the parallel_dispatch builder migration.
+The tests cover both single-goal and multi-goal extraction. The latter
+locks the reducer contract for ``task_ids`` and ``completed_count`` so
+parallel dispatch merges remain deterministic.
 """
 
 from __future__ import annotations
