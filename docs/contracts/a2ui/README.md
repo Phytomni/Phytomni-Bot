@@ -60,6 +60,14 @@ Downlink values arrive wrapped in an AG-UI `Custom` frame:
 
 See `chat_confirm/downlink.json` for the canonical confirm `value` payload.
 
+## Implemented widget goldens
+
+Review confirm, form, and choice goldens are implemented in this repository,
+as are the corresponding Chat confirm, form, and choice goldens. These files
+lock the Bot-side downlink, uplink, success, and cancel shapes for offline
+consumers. Web/Go passthrough behavior and end-to-end gateway acceptance remain
+external evidence; this repository does not claim that integration is complete.
+
 ## File index
 
 | File                                 | Purpose                             |

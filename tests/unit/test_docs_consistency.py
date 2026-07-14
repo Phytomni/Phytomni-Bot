@@ -178,6 +178,16 @@ def test_async_report_docs_distinguish_ack_status_and_terminal_report() -> (
     assert "does not prove live backend acceptance" in e2e
 
 
+def test_streaming_docs_use_the_narrowed_contract() -> None:
+    """Keep streaming docs aligned with the currently emitted event set."""
+    http = (ROOT / "docs/reference/http-api.md").read_text(encoding="utf-8")
+    a2ui = (ROOT / "docs/contracts/a2ui/README.md").read_text(encoding="utf-8")
+    assert "ToolCallStart" not in http
+    assert "ReasoningStart" not in http
+    assert "Review confirm, form, and choice" in a2ui
+    assert "opened-stream failure projection remains pending" in http
+
+
 def test_agent_card_interface_matches_enabled_http_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

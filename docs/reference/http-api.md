@@ -776,15 +776,24 @@ curl -s http://127.0.0.1:8080/v1/chat/completions \
 `POST /v1/chat/completions` accepts an optional boolean `stream`.
 Default is `false`. When `true`, the response switches from a single
 JSON `chat.completion` envelope to an OpenAI-compatible
-`text/event-stream`. For `phyto-chat` each frame carries one
-`data: {chat.completion.chunk JSON}\n\n` line per provider chunk; for
-`phyto-knowledge` / `phyto-brief-gene` the stream carries AG-UI event
-frames (`event: RunStarted`, one `event: StepStarted` per graph stage,
-`event: Custom` frames for `phyto.progress` / `phyto.references` /
-`phyto.follow_up`, a one-shot `event: TextMessageContent` answer, then
-`event: RunFinished`). Both shapes end with a terminating
+`text/event-stream`. Streaming-capable models emit AG-UI event frames:
+`phyto-chat` carries provider content deltas in `TextMessage*` frames,
+while `phyto-knowledge` / `phyto-brief-gene` add one `StepStarted` per
+graph stage and `Custom` frames for `phyto.progress` /
+`phyto.references` / `phyto.follow_up` around a one-shot answer. Successful
+streams end with a terminating
 `data: [DONE]\n\n` so the client closes its `EventSource` on the first
-match instead of waiting for the read timeout.
+match instead of waiting for the read timeout; the pending opened-stream
+failure projection does not promise a terminal frame after a transport error.
+
+The current server intentionally exposes a narrowed AG-UI vocabulary:
+`RunStarted`, `StepStarted`, `TextMessageStart` / `TextMessageContent` /
+`TextMessageEnd` (collectively `TextMessage*`), `Custom`, and
+`RunFinished`. The richer `ToolCall*`, `Reasoning*`, and `StepFinished`
+events from the earlier handoff are superseded and are not emitted. The
+opened-stream failure projection remains pending: the planned single,
+sanitized `RunError` frame after an already-open stream fails is not yet a
+durable HTTP contract.
 
 Streaming is wired on `phyto-chat`, `phyto-knowledge`, and
 `phyto-brief-gene`: ChatAgent token-streams provider deltas, while
@@ -794,7 +803,8 @@ terminal answer + citations). `phyto-review` with `stream: true` returns
 `400` when `A2UI_ENABLED` is off because human-in-the-loop review
 pauses resume through the non-stream flow plus `/resume`. When
 `A2UI_ENABLED` is on, `phyto-review` with `stream: true` emits a
-minimal pause stream: `RunStarted` → one `phyto.a2ui` confirm frame →
+minimal pause stream: `RunStarted` → one `phyto.a2ui` confirm/form/choice
+frame →
 `RunFinished` → `data: [DONE]`, settling `input_required` with
 `interrupt.draft.a2ui` (no post-resume SSE — resume via `/resume` or
 `/a2ui-actions` as for non-stream pauses). Every other chat-like model with
@@ -854,7 +864,8 @@ empty `text/event-stream`. After the stream drains, the run record is settled fr
   (default 1 MiB). The SSE wire stream is never truncated.
   `truncated` is true when the stored blob hit the cap; `partial` is
   true when the run settled `failed` (client disconnect before
-  `RunFinished`, or a mid-stream `RunError`).
+  `RunFinished`, or an observed mid-stream `RunError`). The separate
+  opened-stream `RunError` projection remains pending as described above.
 - **ChatAgent A2UI short-circuit** (`phyto-chat`, `A2UI_ENABLED` on,
   heuristic match): when `select_chat_a2ui_widget(user_query)` returns
   `confirm`, `form`, or `choice` (confirm: `请确认` / `是否确认` /
@@ -888,10 +899,12 @@ empty `text/event-stream`. After the stream drains, the run record is settled fr
   until a follow-up change persists their answers the same way.
 
 Open-stream transport failures (`ConnectError` / `TimeoutException`)
-are retried once before raising; once the iterator returns, any
-mid-stream failure propagates immediately (a silent retry would
-re-emit chunks the client already received and corrupt the SSE
-timeline). See `agents/chat/service.py:MAX_OPEN_STREAM_RETRIES`.
+are retried once before raising. The opened-stream failure projection
+remains pending, so callers must not assume that a post-open `RunError` is
+already a stable HTTP guarantee. Once the iterator returns, any mid-stream
+failure propagates immediately (a silent retry would re-emit chunks the
+client already received and corrupt the SSE timeline). See
+`agents/chat/service.py:MAX_OPEN_STREAM_RETRIES`.
 
 ### Resolver flags: `resolve_gene_id` and `resolve_to_id`
 
