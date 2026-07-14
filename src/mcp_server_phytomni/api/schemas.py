@@ -41,6 +41,7 @@ __all__ = [
     "FileUploadResponse",
     "MemoryCreateRequest",
     "MemoryDeleteResponse",
+    "MemoryExportResponse",
     "MemoryAuditListResponse",
     "MemoryAuditRecordResponse",
     "MemoryListResponse",
@@ -343,6 +344,13 @@ class MemoryListResponse(BaseModel):
     """Response to ``GET /v1/memories``."""
 
     object: str = "list"
+    data: list[MemoryResponse]
+
+
+class MemoryExportResponse(BaseModel):
+    """Response to ``GET /v1/memories/export``."""
+
+    object: str = "memory.export"
     data: list[MemoryResponse]
 
 

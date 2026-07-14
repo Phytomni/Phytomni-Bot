@@ -165,6 +165,80 @@ def test_list_filters_kind_expiry_and_retrieval_bound(tmp_path: Path) -> None:
     assert store.get("alice", "expires", now=_now(13), include_expired=True)
 
 
+def test_purge_expired_is_audited_and_preserves_live_records(
+    tmp_path: Path,
+) -> None:
+    """TTL deletion is auditable and never removes a live record."""
+    store = _store(tmp_path)
+    with memory_audit_context("alice", "req-create"):
+        store.create(
+            _write(
+                content="sensitive expired payload",
+                expires_at=_now(11),
+            ),
+            memory_id="expired",
+            now=_now(10),
+        )
+        store.create(
+            _write(content="live", expires_at=_now(20)),
+            memory_id="live",
+            now=_now(10),
+        )
+
+    with memory_audit_context("retention", "req-purge"):
+        assert store.purge_expired(now=_now(12)) == 1
+
+    assert store.get("alice", "expired", include_expired=True) is None
+    live = store.get("alice", "live", now=_now(12))
+    assert live is not None
+    assert live.content == "live"
+    expired_audits = store.list_audit(memory_id="expired")
+    assert [item.operation for item in expired_audits] == [
+        "delete",
+        "create",
+    ]
+    assert expired_audits[0].actor == "retention"
+    with sqlite3.connect(store.db_path) as conn:
+        raw_audit = conn.execute(
+            "SELECT * FROM memory_mutation_audit WHERE memory_id = ?",
+            ("expired",),
+        ).fetchall()
+    assert "sensitive expired payload" not in repr(raw_audit)
+
+
+def test_export_is_user_scoped_live_only_and_not_retrieval_capped(
+    tmp_path: Path,
+) -> None:
+    """Export returns all live owned rows without exposing another user."""
+    policy = MemoryPolicy(
+        max_items=3,
+        max_content_bytes=100,
+        max_total_bytes=500,
+        max_retrieval=1,
+    )
+    store = _store(tmp_path, policy)
+    store.create(_write(content="old"), memory_id="old", now=_now(10))
+    store.create(_write(content="new"), memory_id="new", now=_now(11))
+    store.create(
+        _write(content="expired", expires_at=_now(11)),
+        memory_id="expired",
+        now=_now(10),
+    )
+    store.create(
+        _write(user_id="bob", content="bob"),
+        memory_id="bob-memory",
+        now=_now(11),
+    )
+
+    assert [item.id for item in store.export("alice", now=_now(12))] == [
+        "new",
+        "old",
+    ]
+    assert [item.id for item in store.export("bob", now=_now(12))] == [
+        "bob-memory"
+    ]
+
+
 def test_update_requires_revision_and_preserves_creation(
     tmp_path: Path,
 ) -> None:

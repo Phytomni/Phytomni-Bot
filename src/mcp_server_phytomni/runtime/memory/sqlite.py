@@ -452,6 +452,32 @@ class MemoryStore:
             rows = conn.execute(query, tuple(params)).fetchall()
         return [self._row_to_record(row) for row in rows]
 
+    def export(
+        self,
+        user_id: str,
+        *,
+        now: datetime | None = None,
+    ) -> Sequence[MemoryRecord]:
+        """Export all live records owned by one user namespace.
+
+        Export is intentionally separate from graph retrieval: it uses the
+        per-user item bound rather than the smaller prompt-read bound, never
+        includes expired rows, and does not accept a caller-supplied owner.
+        """
+        owner = self._validate_user_id(user_id)
+        cutoff = _iso(_now_utc(now))
+        query = (
+            "SELECT * FROM memories WHERE user_id = ? "
+            "AND (expires_at IS NULL OR expires_at > ?) "
+            "ORDER BY updated_at DESC, id ASC LIMIT ?"
+        )
+        with self._connect() as conn:
+            rows = conn.execute(
+                query,
+                (owner, cutoff, self.policy.max_items),
+            ).fetchall()
+        return [self._row_to_record(row) for row in rows]
+
     @staticmethod
     def _current_for_update(
         conn: sqlite3.Connection,
@@ -643,15 +669,30 @@ class MemoryStore:
         return [self._audit_row_to_record(row) for row in rows]
 
     def purge_expired(self, *, now: datetime | None = None) -> int:
-        """Delete all expired rows and return the number removed."""
+        """Delete all expired rows and audit each retention deletion."""
         cutoff = _iso(_now_utc(now))
         with self._transaction() as conn:
-            cursor = conn.execute(
-                "DELETE FROM memories WHERE expires_at IS NOT NULL "
+            rows = conn.execute(
+                "SELECT * FROM memories WHERE expires_at IS NOT NULL "
                 "AND expires_at <= ?",
                 (cutoff,),
-            )
-        return cursor.rowcount
+            ).fetchall()
+            removed = 0
+            for row in rows:
+                record = self._row_to_record(row)
+                cursor = conn.execute(
+                    "DELETE FROM memories WHERE id = ?",
+                    (record.id,),
+                )
+                if cursor.rowcount == 1:
+                    self._insert_audit(
+                        conn,
+                        operation="delete",
+                        before=record,
+                        after=None,
+                    )
+                    removed += 1
+        return removed
 
     def close(self) -> None:
         """Close the retained in-memory connection, if one exists."""

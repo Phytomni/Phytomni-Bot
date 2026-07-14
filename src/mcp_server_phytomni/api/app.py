@@ -206,6 +206,7 @@ from .schemas import (
     MemoryAuditRecordResponse,
     MemoryCreateRequest,
     MemoryDeleteResponse,
+    MemoryExportResponse,
     MemoryListResponse,
     MemoryResponse,
     MemoryUpdateRequest,
@@ -2774,6 +2775,34 @@ def create_app() -> FastAPI:
                     status_code=503, detail="memory store unavailable"
                 ) from exc
             return MemoryListResponse(
+                data=[_memory_response(record) for record in records]
+            )
+
+        @app.get(
+            "/v1/memories/export",
+            response_model=MemoryExportResponse,
+        )
+        async def export_memories(
+            principal: ApiPrincipal = Depends(require_scope("agents")),
+        ) -> MemoryExportResponse:
+            """Export live memories owned by the authenticated user."""
+            del principal
+            owner = current_request_user()
+            if not owner:
+                raise HTTPException(
+                    status_code=401, detail="user context missing"
+                )
+            try:
+                records = get_memory_store().export(owner)
+            except (ValidationError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=400, detail="invalid memory export"
+                ) from exc
+            except (MemoryStoreError, OSError, sqlite3.Error) as exc:
+                raise HTTPException(
+                    status_code=503, detail="memory store unavailable"
+                ) from exc
+            return MemoryExportResponse(
                 data=[_memory_response(record) for record in records]
             )
 

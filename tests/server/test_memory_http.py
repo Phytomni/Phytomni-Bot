@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 import httpx
 import pytest
@@ -18,6 +19,7 @@ pytestmark = pytest.mark.server
 
 _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 type MemoryBundle = tuple[httpx.AsyncClient, str, str]
+type DisabledMemoryBundle = tuple[httpx.AsyncClient, str, Path]
 
 
 @pytest.fixture(name="memory_bundle")
@@ -46,12 +48,11 @@ async def _memory_bundle(
 @pytest.fixture(name="disabled_memory_client")
 async def _disabled_memory_client(
     tmp_path, monkeypatch: pytest.MonkeyPatch
-) -> AsyncIterator[tuple[httpx.AsyncClient, str]]:
+) -> AsyncIterator[DisabledMemoryBundle]:
     """Build the default-off app and verify it never mounts memory routes."""
     monkeypatch.setenv("PHYTOMNI_MEMORY_ENABLED", "0")
-    monkeypatch.setenv(
-        "PHYTOMNI_MEMORY_DB_PATH", str(tmp_path / "memories.sqlite")
-    )
+    memory_path = tmp_path / "memories.sqlite"
+    monkeypatch.setenv("PHYTOMNI_MEMORY_DB_PATH", str(memory_path))
     key_db = str(tmp_path / "keys.sqlite")
     monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", key_db)
     key = ApiKeyStore(key_db).create(user_id="alice").api_key
@@ -60,7 +61,7 @@ async def _disabled_memory_client(
     async with httpx.AsyncClient(
         transport=transport, base_url="http://api.test"
     ) as client:
-        yield client, key
+        yield client, key, memory_path
 
 
 def _auth(key: str) -> dict[str, str]:
@@ -69,14 +70,15 @@ def _auth(key: str) -> dict[str, str]:
 
 
 async def test_memory_routes_are_hidden_when_disabled(
-    disabled_memory_client: tuple[httpx.AsyncClient, str],
+    disabled_memory_client: DisabledMemoryBundle,
 ) -> None:
     """The feature flag removes the route instead of returning a soft 403."""
-    client, key = disabled_memory_client
+    client, key, memory_path = disabled_memory_client
 
     response = await client.get("/v1/memories", headers=_auth(key))
 
     assert response.status_code == 404
+    assert not memory_path.exists()
 
 
 async def test_memory_create_list_and_namespace_isolation(
@@ -176,6 +178,71 @@ async def test_memory_delete_is_idempotent_and_owner_scoped(
     repeated = await client.delete(delete_url, headers=_auth(alice))
     assert repeated.status_code == 200
     assert repeated.json()["deleted"] is False
+
+
+async def test_memory_export_is_live_and_owner_scoped(
+    memory_bundle: MemoryBundle,
+) -> None:
+    """Export returns only the authenticated user's explicit memories."""
+    client, alice, bob = memory_bundle
+    alice_first = await client.post(
+        "/v1/memories",
+        json={"kind": "note", "content": "alice first"},
+        headers=_auth(alice),
+    )
+    alice_second = await client.post(
+        "/v1/memories",
+        json={"kind": "note", "content": "alice second"},
+        headers=_auth(alice),
+    )
+    bob_record = await client.post(
+        "/v1/memories",
+        json={"kind": "note", "content": "bob only"},
+        headers=_auth(bob),
+    )
+
+    exported = await client.get("/v1/memories/export", headers=_auth(alice))
+    assert exported.status_code == 200
+    assert exported.json()["object"] == "memory.export"
+    assert [item["id"] for item in exported.json()["data"]] == [
+        alice_second.json()["id"],
+        alice_first.json()["id"],
+    ]
+    assert bob_record.json()["id"] not in {
+        item["id"] for item in exported.json()["data"]
+    }
+
+
+async def test_memory_store_failure_is_fail_closed_and_redacted(
+    tmp_path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A broken DB returns generic 503s without exposing its path."""
+    monkeypatch.setenv("PHYTOMNI_MEMORY_ENABLED", "1")
+    memory_path = tmp_path / "secret-memory.sqlite"
+    memory_path.mkdir()
+    monkeypatch.setenv("PHYTOMNI_MEMORY_DB_PATH", str(memory_path))
+    key_db = str(tmp_path / "keys.sqlite")
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", key_db)
+    key = ApiKeyStore(key_db).create(user_id="alice").api_key
+    monkeypatch.setattr(httpx.AsyncClient, "request", _REAL_ASYNC_REQUEST)
+    transport = httpx.ASGITransport(app=create_app())
+    caplog.set_level("WARNING")
+
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://api.test"
+    ) as client:
+        write = await client.post(
+            "/v1/memories",
+            json={"kind": "note", "content": "private"},
+            headers=_auth(key),
+        )
+        read = await client.get("/v1/memories", headers=_auth(key))
+
+    assert write.status_code == 503
+    assert read.status_code == 503
+    assert "secret-memory.sqlite" not in write.text
+    assert "secret-memory.sqlite" not in read.text
+    assert "secret-memory.sqlite" not in caplog.text
 
 
 async def test_memory_audit_is_service_gated_and_digest_only(
