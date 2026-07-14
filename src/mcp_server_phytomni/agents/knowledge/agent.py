@@ -14,6 +14,7 @@ from typing import Any, Literal
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.runtime import Runtime
 
 from ...common.docs import (
     format_retrieved_doc_context,
@@ -49,6 +50,7 @@ from ..shared.chat_subgraph import (
     make_chat_node_wrapper,
 )
 from ..shared.intermediate_state import merge_intermediate_state
+from ..shared.memory_context import memory_context_for_graph
 from .retrieval import multi_retrieve, rerank, retrieve
 from .state import (
     KnowledgeAgentState,
@@ -303,7 +305,9 @@ class KnowledgeAgent:
         }
 
     async def generate_prep_node(
-        self, state: KnowledgeAgentState
+        self,
+        state: KnowledgeAgentState,
+        runtime: Runtime[MemoryGraphContext] | None = None,
     ) -> dict[str, Any]:
         """Build the chat payload for the primary generate call.
 
@@ -344,6 +348,12 @@ class KnowledgeAgent:
                     "user_query": user_query,
                 },
             )
+
+        memory_context = memory_context_for_graph(
+            runtime.context if runtime is not None else None
+        )
+        if memory_context:
+            chat_query = f"{memory_context}\n\n{chat_query}"
 
         chat_kwargs = build_chat_kwargs_for(
             self.knowledge_config, self.sensitive_config
@@ -411,7 +421,9 @@ class KnowledgeAgent:
         }
 
     async def follow_up_prep_node(
-        self, state: KnowledgeAgentState
+        self,
+        state: KnowledgeAgentState,
+        runtime: Runtime[MemoryGraphContext] | None = None,
     ) -> dict[str, Any]:
         """Build the chat payload for the follow-up questions call.
 
@@ -441,6 +453,11 @@ class KnowledgeAgent:
                 "system_response": system_response_text,
             },
         )
+        memory_context = memory_context_for_graph(
+            runtime.context if runtime is not None else None
+        )
+        if memory_context:
+            follow_up_query = f"{memory_context}\n\n{follow_up_query}"
 
         chat_kwargs = build_chat_kwargs_for(
             self.knowledge_config, self.sensitive_config

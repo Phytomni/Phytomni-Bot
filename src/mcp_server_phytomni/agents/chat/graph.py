@@ -16,11 +16,15 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from langgraph.runtime import Runtime
+
 from ...common.responses import (
     first_message,
     message_content,
     parse_follow_up_questions,
 )
+from ...runtime.memory import MemoryGraphContext
+from ..shared.memory_context import memory_context_for_graph
 from . import service
 from .service import (
     CHAT_CONFIG,
@@ -55,7 +59,10 @@ async def prepare_context_node(state: ChatState) -> dict[str, Any]:
     return {"user_query": rewritten, "upload_context": rewritten}
 
 
-async def generate_node(state: ChatState) -> dict[str, Any]:
+async def generate_node(
+    state: ChatState,
+    runtime: Runtime[MemoryGraphContext] | None = None,
+) -> dict[str, Any]:
     """Issue the primary LLM completion using the chat service helpers.
 
     Mirrors the message-assembly + ``_run_phyto_chat`` dispatch shape
@@ -67,12 +74,18 @@ async def generate_node(state: ChatState) -> dict[str, Any]:
     """
     chat_kwargs = dict(state.get("chat_kwargs") or {})
     options = _chat_options(chat_kwargs)
+    system_prompt = service.get_prompt(
+        options["prompt_file"], options["prompt_path"]
+    )
+    memory_context = memory_context_for_graph(
+        runtime.context if runtime is not None else None
+    )
+    if memory_context:
+        system_prompt = f"{system_prompt}\n\n{memory_context}"
     messages = [
         {
             "role": "system",
-            "content": service.get_prompt(
-                options["prompt_file"], options["prompt_path"]
-            ),
+            "content": system_prompt,
         },
         {"role": "user", "content": state["user_query"]},
     ]
@@ -85,7 +98,10 @@ async def generate_node(state: ChatState) -> dict[str, Any]:
     return {"response": response}
 
 
-async def follow_up_node(state: ChatState) -> dict[str, Any]:
+async def follow_up_node(
+    state: ChatState,
+    runtime: Runtime[MemoryGraphContext] | None = None,
+) -> dict[str, Any]:
     """Generate follow-up questions and embed them into the response.
 
     Mirrors the second-LLM-call shape inside
@@ -108,6 +124,11 @@ async def follow_up_node(state: ChatState) -> dict[str, Any]:
             "system_response": message_content(response),
         },
     )
+    memory_context = memory_context_for_graph(
+        runtime.context if runtime is not None else None
+    )
+    if memory_context:
+        follow_query = f"{memory_context}\n\n{follow_query}"
     follow_kwargs = {**chat_kwargs, "prompt_file": prompt_file}
     follow_response = await service.phyto_chat(follow_query, **follow_kwargs)
     follow_list = parse_follow_up_questions(message_content(follow_response))

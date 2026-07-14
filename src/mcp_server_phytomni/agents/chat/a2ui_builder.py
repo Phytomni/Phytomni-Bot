@@ -19,6 +19,7 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 
 from ...runtime.langgraph_runner import make_async_router
+from ...runtime.memory import MemoryGraphContext
 from .a2ui_graph import (
     ChatA2uiOutput,
     ChatA2uiState,
@@ -53,6 +54,7 @@ def build_chat_a2ui_graph(checkpointer: Any | None = None) -> Any:
     """
     workflow = StateGraph(
         state_schema=ChatA2uiState,
+        context_schema=MemoryGraphContext,
         input_schema=ChatInput,
         output_schema=ChatA2uiOutput,
     )
