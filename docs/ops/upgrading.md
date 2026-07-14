@@ -14,6 +14,13 @@ secret or environment variable** for this upgrade. `A2UI_ENABLED` /
 `PHYTOMNI_A2UI_ENABLED` remains false unless an operator explicitly enables
 it.
 
+The release also adds bounded, default-safe API limits for explicit memory,
+outbound interop, and A2A projections. They are optional tuning knobs, not
+schema migrations: an unchanged environment keeps the previous behavior, and
+an out-of-range override fails configuration validation before the service
+starts. See [Configuration](../reference/configuration.md) for the defaults
+and hard ranges.
+
 The service creates a local `checkpoints.db` beside the configured task/run
 database when a persistent graph checkpoint is needed. The directory must be
 writable by the service user and must stay on local storage; SQLite WAL is not
@@ -65,6 +72,46 @@ To roll back, reinstall 0.1.2 and restart. The 0.1.2 process ignores
 paused through the 0.1.3 Review/A2UI workflow cannot be resumed by 0.1.2;
 complete or abandon them before rollback. No existing task/run schema is
 destructively migrated by this release.
+
+### Operator compatibility matrix
+
+The following matrix is the rollout contract for the opt-in surfaces. “Restart”
+means restart each API worker after the environment change; the relay flag is
+the one exception because it is evaluated per request.
+
+| Surface          | 0.1.3 default | Persistent state                            | Flag-off rollback                                                     | Multi-worker limitation                                          |
+| ---------------- | ------------- | ------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| A2UI Chat/Review | Off           | `server_tasks.db`, `checkpoints.db`         | Disable and restart; drain or abandon paused A2UI runs first.         | Checkpoint file is local; pin resume traffic to one worker.      |
+| A2A server       | Off           | Run/task registry and checkpoints           | Disable and restart; card and `/a2a` disappear without deleting rows. | A2A correlations and checkpoints are process/local-store scoped. |
+| Outbound interop | Off           | None (discovery cache is in-process)        | Disable and restart; no external call or discovery route remains.     | Each worker has its own cache and target registry instance.      |
+| Explicit memory  | Off           | `MEMORY_DB_PATH` SQLite plus mutation audit | Disable and restart; routes vanish and the file remains untouched.    | One local SQLite instance is not a shared multi-worker store.    |
+| Credential relay | Off           | Relay audit SQLite                          | Disable immediately; routes return `404` on the next request.         | Rate/concurrency/audit-retention state is per worker.            |
+
+The C6.4 limit knobs are projection/admission controls only. Changing them does
+not rewrite existing memory rows, run answers, A2A artifacts, or checkpoints;
+it changes future writes and response projections after restart. There is no
+operator-authored database migration in 0.1.3. Back up local SQLite files
+before a rollout and retain the previous wheel for a reinstall-and-restart
+rollback.
+
+### Staged rollout and flag-off rollback
+
+1. Back up `API_KEYS_DB_PATH`, `API_TASKS_DB_PATH`, `MEMORY_DB_PATH` (when
+   enabled), and `checkpoints.db` while the service is stopped; use the
+   [HTTP API backup procedure](http-api-runbook.md#backup-and-restore).
+1. Deploy the 0.1.3 wheel with all opt-in flags unchanged (off), then run
+   `/healthz`, `/readyz`, and an authenticated `/v1/models` check.
+1. Enable one surface at a time on a canary worker. For A2A, configure and
+   verify `A2A_PUBLIC_BASE_URL`; for interop, validate the target registry and
+   encrypted credentials; for memory, use a persistent local SQLite path.
+1. Run the surface-specific smoke checks in the [operator runbook](http-api-runbook.md),
+   observe logs and resource usage, and only then roll the same environment to
+   the remaining workers.
+1. To roll a surface back, set its flag off and restart (or set
+   `RELAY_ENABLED=0` for the immediate relay kill-switch). Confirm the route or
+   request control is absent, keep the state files, and leave the rest of the
+   service on 0.1.3. If the whole release must be reverted, reinstall 0.1.2,
+   restart, and do not delete 0.1.3 state files.
 
 ## 0.1.1 → 0.1.2
 

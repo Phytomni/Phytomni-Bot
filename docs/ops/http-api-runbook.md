@@ -15,8 +15,8 @@ Covered:
 - Backup and restore of local SQLite stores.
 - Triage for 401, 429, stuck runs, Analyst dedup hits, and startup
   failures.
-- Enabling, testing, and disabling the opt-in outbound MCP/A2A discovery
-  boundary.
+- Enabling, testing, and disabling the opt-in A2A server, outbound MCP/A2A
+  discovery, explicit memory, and credential relay boundaries.
 
 Out of scope:
 
@@ -317,6 +317,70 @@ After the ChatAgent A2UI gates above are green, extend the same
 1. Rollback: disable `PHYTOMNI_A2UI_ENABLED`; `/resume` remains for
    Review pauses and `phyto-review` `stream: true` returns `400`.
 
+### A2A server cutover checklist
+
+The A2A server is an opt-in protocol facade. It does not change the MCP tool
+surface or make outbound calls to other agents. Enable it on one canary first:
+
+1. Set `A2A_ENABLED=1` (or `PHYTOMNI_A2A_ENABLED=1`) and an absolute public
+   `A2A_PUBLIC_BASE_URL` (for example `https://bot.example.com`). The base URL
+   must not contain credentials, a query, or a fragment.
+
+1. Restart the API worker. A missing or malformed public URL is a startup
+   configuration error; do not work around it by exposing the loopback URL.
+
+1. Fetch the public card and verify that it advertises exactly one JSON-RPC v1
+   interface ending in `/a2a`:
+
+   ```bash
+   curl -fsS "$HOST/.well-known/agent-card.json" \
+     | jq -e '(.supportedInterfaces | length) == 1 and (.supportedInterfaces[0].url | endswith("/a2a"))'
+   ```
+
+1. Use a key with the `agents` scope and send a small `SendMessage` smoke with
+   `A2A-Version: 1.0`:
+
+   ```bash
+   curl -fsS -X POST "$HOST/a2a" \
+     -H "Authorization: Bearer $KEY" \
+     -H "A2A-Version: 1.0" \
+     -H 'Content-Type: application/a2a+json' \
+     -d '{"jsonrpc":"2.0","id":"smoke-1","method":"SendMessage","params":{"message":{"messageId":"msg-1","contextId":"smoke","role":"ROLE_USER","parts":[{"text":"Reply with one sentence."}]}}}'
+   ```
+
+   A successful business response is HTTP 200 with a JSON-RPC result. A 400
+   means the version header or request shape is wrong; a 403 means the key is
+   missing the `agents` scope.
+
+1. For streaming, repeat the smoke with `SendStreamingMessage` and verify the
+   SSE stream ends in one terminal status. For `INPUT_REQUIRED`, use the same
+   task/context plus the returned generation token; a repeated or stale resume
+   is rejected and must not submit the local Analyst work twice.
+
+To roll A2A back without removing state, set `A2A_ENABLED=0`, restart, and
+verify both `/.well-known/agent-card.json` and `/a2a` return `404`. Keep
+`server_tasks.db` and `checkpoints.db`; a later forward deployment can still
+inspect those rows. Drain or explicitly abandon `INPUT_REQUIRED` tasks before
+the rollback because a disabled A2A client cannot send their resume payload.
+
+### Bounded resource-limit checklist
+
+The following C6.4 settings are admission or projection limits. They are read
+from `ApiConfig` and should be changed one worker at a time, followed by a
+restart and a focused smoke. The hard ranges prevent an accidental unbounded
+override.
+
+| Surface                | Settings and safe defaults                                                                                                                            | Operator symptom when exceeded                                                            |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Memory writes/recall   | `MEMORY_MAX_ITEMS=100`, `MEMORY_MAX_CONTENT_BYTES=16384`, `MEMORY_MAX_TOTAL_BYTES=1048576`, `MEMORY_MAX_RETRIEVAL=20`, `MEMORY_GRAPH_MAX_BYTES=65536` | API writes reject the policy violation; graph recall is bounded/truncated.                |
+| Interop registry/cache | `INTEROP_MAX_TARGETS=64`, `INTEROP_CACHE_MAX_ENTRIES=256`                                                                                             | An over-sized registry fails closed; successful discovery entries evict oldest-first.     |
+| A2A projections        | `A2A_MAX_HISTORY_MESSAGES=32`, `A2A_MAX_ARTIFACT_BYTES=262144`                                                                                        | `GetTask` history and local answer artifacts are capped; the underlying run is unchanged. |
+
+Do not raise these values to hide a slow or memory-heavy backend. Check worker
+RSS, SQLite disk growth, and request latency first. The interop cache and A2A
+history are process-local; a restart clears cache contents but not persistent
+run, checkpoint, memory, or audit files.
+
 The OBS relay rows confine each object key to the caller's tenant namespace
 (`agent_data/{user_data,uploads}/<user_id>/`), with one read-only exception:
 `GET /v1/relay/obs/object` also serves the content-addressed
@@ -471,6 +535,23 @@ audit DB. If an external peer is unavailable, use the stable target error code
 and retry after correcting the peer or TTL; do not add a caller URL or command
 override.
 
+### Interop rollback and capacity
+
+To disable outbound discovery or delegation, set `INTEROP_ENABLED=0` (or
+`PHYTOMNI_INTEROP_ENABLED=0`) and restart every API worker. Confirm
+`GET /v1/interop/capabilities` is absent (`404`) and that Research/Design
+requests with `interop_mode=auto|required` no longer attempt an external
+target. Keep the registry and encrypted credential material available for a
+later forward rollout; the process cache is intentionally disposable.
+
+The registry accepts at most `INTEROP_MAX_TARGETS` entries (default `64`, hard
+range `1..256`) and each worker retains at most `INTEROP_CACHE_MAX_ENTRIES`
+successful discovery projections (default `256`, hard range `1..4096`). A
+`503 interop registry unavailable` after restart indicates local configuration
+validation, not a peer business error: inspect the target count, JSON shape,
+credential references, and endpoint allowlist before retrying. Never fix the
+error by adding a caller-supplied URL or command.
+
 ## Relay Operations
 
 The credential-injecting relay (`/v1/relay/*`) is off unless
@@ -580,6 +661,10 @@ mkdir -p "/backup/$(date +%F)"
 sqlite3 "$API_KEYS_DB_PATH" ".backup /backup/$(date +%F)/api_keys.sqlite"
 sqlite3 "$API_TASKS_DB_PATH" ".backup /backup/$(date +%F)/server_tasks.db"
 sqlite3 "$MEMORY_DB_PATH" ".backup /backup/$(date +%F)/memory.sqlite"
+[ -f checkpoints.db ] && sqlite3 checkpoints.db \
+  ".backup /backup/$(date +%F)/checkpoints.db"
+[ -f "$RELAY_AUDIT_DB_PATH" ] && sqlite3 "$RELAY_AUDIT_DB_PATH" \
+  ".backup /backup/$(date +%F)/relay_audit.sqlite"
 ```
 
 Do not copy a WAL-mode SQLite file directly while the service is running;
@@ -589,7 +674,8 @@ Restore:
 
 1. Stop the service.
 1. Copy backup files into the configured paths, including `MEMORY_DB_PATH` when
-   memory is enabled.
+   memory is enabled and `checkpoints.db` when paused Review/A2UI runs must be
+   recoverable.
 1. Start the service.
 1. Run `/readyz` and `/v1/models` smoke checks.
 
@@ -606,7 +692,9 @@ journalctl -u phytomni-api -n 50 -f
 ```
 
 A restart clears in-memory rate-limit counters. It does not clear API keys,
-runs, tasks, ReviewAgent pause checkpoints, or on-disk function-cache rows.
+runs, tasks, ReviewAgent pause checkpoints, or on-disk function-cache rows. A
+restart is required after changing A2A, interop, memory, or any C6.4 limit
+setting; `RELAY_ENABLED` is the exception and is re-read per request.
 
 Upgrade one host:
 
@@ -618,6 +706,12 @@ Upgrade one host:
 1. Return the host to service.
 
 For multi-host deployments, roll one host at a time.
+
+When a rollout changes a flag or limit, keep the old value on the remaining
+hosts until the canary health, route, and resource checks pass. Do not mix
+different A2A public base URLs or interop registries behind one load balancer:
+clients cache the Agent Card, and each worker otherwise has an independent
+discovery cache.
 
 ## Triage SOPs
 
@@ -645,6 +739,34 @@ rotate among them.
 
 The limiter is per process. Restarting the service clears the current
 counter.
+
+### A2A card or endpoint is unavailable
+
+`404` for both `/.well-known/agent-card.json` and `/a2a` is the expected
+flag-off state. If the flag is on, check that `A2A_PUBLIC_BASE_URL` is an
+absolute HTTP(S) URL, restart the process, and fetch the card directly from
+the configured public host. A card URL must end in `/a2a`; a reverse-proxy
+path prefix is allowed and must be present in the configured base URL. A `400`
+from `/a2a` usually means a missing or incorrect `A2A-Version: 1.0`; a `403`
+usually means the API key lacks the `agents` scope.
+
+### Interop registry unavailable or limit reached
+
+`503 interop registry unavailable` is a local validation failure. Check the
+JSON registry, `INTEROP_MAX_TARGETS`, credential references, and endpoint
+allowlist, then restart. A peer timeout or malformed peer response is reported
+inside the bounded `errors` list and does not expose its URL, command, headers,
+or payload. If latency or memory rises after enabling interop, lower the
+target/cache limits or disable the flag while investigating rather than
+adding a request-level override.
+
+### Memory write or recall is unexpectedly bounded
+
+Check the effective `MEMORY_MAX_*` values in the service environment. A write
+that exceeds content, item, or namespace policy is rejected; graph recall may
+return fewer records because of the item/byte budget. These limits do not
+delete existing rows. If the values are correct but writes still fail, check
+the local SQLite path, free disk, and `/readyz` before changing the limits.
 
 ### Run Is Stuck
 

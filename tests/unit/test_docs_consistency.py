@@ -10,11 +10,13 @@ import re
 import subprocess
 import tomllib
 from pathlib import Path
-from urllib.parse import unquote
+from urllib.parse import unquote, urlsplit
 
 import pytest
 
+from mcp_server_phytomni.api.a2a.card import build_agent_card
 from mcp_server_phytomni.api.app import create_app
+from mcp_server_phytomni.config.defaults import ApiConfig
 from mcp_server_phytomni.mcp.schemas import PhytomniAgents
 
 pytestmark = pytest.mark.unit
@@ -161,6 +163,57 @@ def test_http_docs_list_public_fastapi_routes() -> None:
         _documented_endpoint_pairs(ROOT / "docs/ops/http-api-runbook.md")
         == route_pairs
     )
+
+
+def test_agent_card_interface_matches_enabled_http_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The advertised Agent Card URL has a mounted, real A2A endpoint."""
+    monkeypatch.setenv("PHYTOMNI_A2A_ENABLED", "1")
+    monkeypatch.setenv(
+        "PHYTOMNI_A2A_PUBLIC_BASE_URL", "https://public.example/base"
+    )
+
+    app = create_app()
+    route_paths = {getattr(route, "path", "") for route in app.routes}
+    assert {
+        "/.well-known/agent-card.json",
+        "/a2a",
+    }.issubset(route_paths)
+
+    config = ApiConfig()
+    assert config.A2A_PUBLIC_BASE_URL is not None
+    card = build_agent_card(config.A2A_PUBLIC_BASE_URL)
+    assert len(card.supported_interfaces) == 1
+    interface_url = card.supported_interfaces[0].url
+
+    base = urlsplit(config.A2A_PUBLIC_BASE_URL)
+    advertised = urlsplit(interface_url)
+    assert advertised.scheme == base.scheme
+    assert advertised.netloc == base.netloc
+    assert advertised.path == f"{base.path.rstrip('/')}/a2a"
+
+
+def test_configuration_docs_cover_bounded_api_limits() -> None:
+    """Every C6.4 limit has a documented canonical and prefixed alias."""
+    configuration = (ROOT / "docs/reference/configuration.md").read_text(
+        encoding="utf-8"
+    )
+    names = (
+        "MEMORY_MAX_ITEMS",
+        "MEMORY_MAX_CONTENT_BYTES",
+        "MEMORY_MAX_TOTAL_BYTES",
+        "MEMORY_MAX_RETRIEVAL",
+        "MEMORY_GRAPH_MAX_BYTES",
+        "INTEROP_MAX_TARGETS",
+        "INTEROP_CACHE_MAX_ENTRIES",
+        "A2A_MAX_HISTORY_MESSAGES",
+        "A2A_MAX_ARTIFACT_BYTES",
+    )
+
+    for name in names:
+        assert f"`{name}`" in configuration
+        assert f"`PHYTOMNI_{name}`" in configuration
 
 
 def test_cli_reference_covers_console_scripts() -> None:

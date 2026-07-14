@@ -149,6 +149,15 @@ The aliasing matches the existing `PHYTOMNI_TLS_VERIFY` / `PHYTOMNI_CA_BUNDLE` c
 | `A2A_PUBLIC_BASE_URL`        | `unset`                           | no         | Absolute HTTP(S) public URL prefix used to build the A2A Agent Card and `/a2a` interface; trailing slashes are removed. Accepts `PHYTOMNI_A2A_PUBLIC_BASE_URL`.                                                                                          |
 | `INTEROP_ENABLED`            | `false`                           | no         | Feature flag for outbound MCP/A2A target loading, the read-only `/v1/interop/capabilities` route, and request-level Research/Design delegation; each request still opts in with `interop_mode`; disabled by default. Accepts `PHYTOMNI_INTEROP_ENABLED`. |
 | `INTEROP_TARGETS`            | `[]`                              | yes        | JSON array of operator-owned target definitions. It may contain fixed URLs or absolute stdio commands, but never headers/tokens; requests may name only a target id. Accepts `PHYTOMNI_INTEROP_TARGETS`.                                                 |
+| `MEMORY_MAX_ITEMS`           | `100`                             | no         | Maximum live records retained per user namespace; bounded to `1..10000`. Accepts `PHYTOMNI_MEMORY_MAX_ITEMS`.                                                                                                                                            |
+| `MEMORY_MAX_CONTENT_BYTES`   | `16384`                           | no         | Maximum UTF-8 bytes in one memory record; bounded to `1..16384`. Accepts `PHYTOMNI_MEMORY_MAX_CONTENT_BYTES`.                                                                                                                                            |
+| `MEMORY_MAX_TOTAL_BYTES`     | `1048576`                         | no         | Maximum policy-counted bytes in one user namespace; bounded to `1..16777216`. Accepts `PHYTOMNI_MEMORY_MAX_TOTAL_BYTES`.                                                                                                                                 |
+| `MEMORY_MAX_RETRIEVAL`       | `20`                              | no         | Maximum records returned to one graph recall; bounded to `1..1000` and cannot exceed `MEMORY_MAX_ITEMS`. Accepts `PHYTOMNI_MEMORY_MAX_RETRIEVAL`.                                                                                                        |
+| `MEMORY_GRAPH_MAX_BYTES`     | `65536`                           | no         | Maximum UTF-8 bytes returned to one graph recall; bounded to `1..1048576`. Accepts `PHYTOMNI_MEMORY_GRAPH_MAX_BYTES`.                                                                                                                                    |
+| `INTEROP_MAX_TARGETS`        | `64`                              | no         | Maximum operator registry entries accepted at startup/lazy load; bounded to `1..256`, with excess entries rejected. Accepts `PHYTOMNI_INTEROP_MAX_TARGETS`.                                                                                              |
+| `INTEROP_CACHE_MAX_ENTRIES`  | `256`                             | no         | Maximum successful discovery projections kept per process; bounded to `1..4096`, with oldest insertion evicted first. Accepts `PHYTOMNI_INTEROP_CACHE_MAX_ENTRIES`.                                                                                      |
+| `A2A_MAX_HISTORY_MESSAGES`   | `32`                              | no         | Maximum messages projected by `GetTask`; bounded to `0..256`, where `0` disables history projection. Accepts `PHYTOMNI_A2A_MAX_HISTORY_MESSAGES`.                                                                                                        |
+| `A2A_MAX_ARTIFACT_BYTES`     | `262144`                          | no         | Maximum UTF-8 bytes in one local A2A answer artifact; bounded to `1024..16777216`. Accepts `PHYTOMNI_A2A_MAX_ARTIFACT_BYTES`.                                                                                                                            |
 
 SQLite store defaults are relative to the service working directory. In
 systemd or container deployments, set absolute paths or pin the service
@@ -159,6 +168,39 @@ requires an API key with the `agents` scope plus `A2A-Version: 1.0`. Phase 2
 advertises `SendMessage`, `SendStreamingMessage`, and owner-scoped `GetTask`;
 the flag remains off by default so existing deployments keep their previous
 route surface.
+
+### Feature flags and flag-off rollback
+
+All feature flags default to off. Treat a flag change as a deployment change:
+update the environment, restart the API process, run the relevant smoke test,
+and only then expose the route or request option to clients. Disabling a flag
+removes the new surface but does not delete its local SQLite data or in-memory
+run rows.
+
+| Surface          | Enable                                                      | Disable / rollback                                                                     | State retained while disabled                                                |
+| ---------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| A2UI Chat/Review | `A2UI_ENABLED=1`                                            | Set `A2UI_ENABLED=0`, restart, and stop sending new A2UI actions.                      | `server_tasks.db` and `checkpoints.db`; inspect paused runs before rollback. |
+| A2A server       | `A2A_ENABLED=1` plus `A2A_PUBLIC_BASE_URL`                  | Set `A2A_ENABLED=0`, restart, and verify the card and `/a2a` return `404`.             | Run/task rows and checkpoints; no new A2A requests are accepted.             |
+| Outbound interop | `INTEROP_ENABLED=1` plus registry/credentials               | Set `INTEROP_ENABLED=0`, restart, and verify `/v1/interop/capabilities` returns `404`. | No persistent discovery state; the process cache is discarded on restart.    |
+| Explicit memory  | `MEMORY_ENABLED=1` plus a persistent local `MEMORY_DB_PATH` | Set `MEMORY_ENABLED=0`, restart, and verify memory routes return `404`.                | The memory SQLite file and audit rows; agents stop opening the store.        |
+| Credential relay | `RELAY_ENABLED=1`                                           | Set `RELAY_ENABLED=0`; this kill-switch is re-read per request.                        | Relay audit SQLite rows; no new relay call is admitted.                      |
+
+The flag-off path is the compatibility fallback for every opt-in surface. A
+rollback must not remove or rename the corresponding database file: a later
+forward upgrade may need it, and the additive migrations are designed to leave
+older data readable.
+
+### Bounded resource limits
+
+The C6.4 limits above are safety bounds, not performance guarantees. A memory
+write that would exceed the item/content/namespace policy is rejected; graph
+recall is truncated to both the record and byte budgets; an oversized interop
+registry is rejected; discovery cache entries are evicted oldest-first; and A2A
+history/artifacts are projection caps (the underlying run answer is not
+rewritten). Increasing a value requires a process restart and should be paired
+with load testing and disk/RAM review. The hard ranges are enforced by
+`ApiLimitsConfig`, so an out-of-range override fails startup rather than
+silently weakening the boundary.
 
 ## Outbound Interoperability (opt-in)
 
