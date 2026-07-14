@@ -123,7 +123,9 @@ uv run ruff check .
 uv run flake8 src tests e2e scripts --count --statistics
 uv run mypy src tests e2e scripts
 pyright src scripts
-PYTHONPATH=src uv run pylint --persistent=no $(git ls-files '*.py')
+PYTHONPATH=src uv run pylint --persistent=no --disable=R0801,R0903 \
+  $(git ls-files '*.py')
+uv run python scripts/check_pylint_baseline.py
 uv run yamllint .
 ```
 
@@ -131,8 +133,11 @@ In restricted local sandboxes, `uv run --no-sync ...` can reuse an already
 installed environment when plain `uv run` tries to rebuild the package or
 access a read-only uv cache.
 
-Pylint runs without global rule disables. Local Pylint waivers are guarded by
-style tests and are reserved for documented framework boundaries.
+Pylint's ordinary rules run without global project configuration disables. The
+two cross-file/test-fake rules `R0801` and `R0903` are disabled on the main
+invocation and checked separately by `scripts/check_pylint_baseline.py`; local
+waivers remain guarded by style tests and are reserved for documented
+framework boundaries.
 
 ## Local Quality Gate
 
@@ -151,8 +156,8 @@ style tests and are reserved for documented framework boundaries.
 - `demo_data/` idempotency
 - offline pytest
 
-The pre-push hook invokes the same script. Passing it locally should match
-the CI and hook gate:
+The pre-push hook invokes the same script. Passing it locally should match the
+CI Pylint semantics and the local hook gate:
 
 ```bash
 ./scripts/validate_local.sh
@@ -205,9 +210,10 @@ Three workflows live under `.github/workflows/`:
   `normalize_json.py --check`. The matrix covers Python 3.12, 3.13, and
   3.14 for the type checkers and pytest; the remaining tools run on 3.12.
   A separate Python 3.12 `dependency-floor` job installs direct dependencies
-  with uv's `lowest-direct` resolution and runs the complete offline test
-  suite. The regular jobs use uv's default highest-compatible resolution,
-  so CI exercises both ends of the declared dependency window.
+  with uv's `lowest-direct` resolution, checks the environment, and runs the
+  complete offline test suite. The regular jobs use uv's default
+  highest-compatible resolution for lint, type, coverage, and structural
+  checks, so CI exercises both ends of the declared dependency window.
 - `secret-scan.yml` runs `scripts/scan_secrets.py` over tracked files and
   over each pushed commit range.
 - `e2e-nightly.yml` runs the live `e2e/` suite on a nightly cron and on

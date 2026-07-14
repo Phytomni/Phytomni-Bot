@@ -118,9 +118,18 @@ def test_ci_exercises_minimum_and_latest_dependency_resolution() -> None:
     workflow = (_project_root() / ".github/workflows/lint.yml").read_text(
         encoding="utf-8"
     )
+    floor_job = workflow.split("\n  dependency-floor:", 1)[1].split(
+        "\n  black:", 1
+    )[0]
+    pylint_job = workflow.split("\n  pylint:", 1)[1].split("\n  pytest:", 1)[0]
 
     assert "dependency-floor:" in workflow
     assert "--resolution lowest-direct" in workflow
     assert "Run offline tests at dependency floors" in workflow
+    assert "uv pip check --system" in floor_job
+    assert "pytest" in floor_job
+    assert "validate_local.sh" not in floor_job
     assert 'python-version: ["3.12", "3.13", "3.14"]' in workflow
     assert 'uv pip install --system -e ".[dev]"' in workflow
+    assert "--disable=R0801,R0903" in pylint_job
+    assert "scripts/check_pylint_baseline.py" in pylint_job

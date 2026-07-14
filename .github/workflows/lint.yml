@@ -166,7 +166,13 @@ jobs:
           git ls-files -z '*.py' \
             | PYTHONPATH=src xargs -0 -r pylint \
               --py-version=${{ matrix.python-version }} \
-              --persistent=no
+              --persistent=no \
+              --disable=R0801,R0903
+      - name: Check pylint baselines
+        run: |
+          uv run python scripts/check_pylint_baseline.py \
+            --pylint-cmd "uv run pylint --persistent=no \
+              --py-version=${{ matrix.python-version }}"
 
   pytest:
     runs-on: ubuntu-latest
