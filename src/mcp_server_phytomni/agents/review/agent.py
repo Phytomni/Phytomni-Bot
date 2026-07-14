@@ -48,8 +48,10 @@ from ...runtime.langgraph_runner import (
     ensure_checkpointer,
     make_async_router,
 )
+from ...runtime.memory import MemoryGraphContext
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
+from ..knowledge.state import KnowledgeInput, KnowledgeOutput, KnowledgeState
 from ..shared.a2ui.loop import A2UI_MAX_ROUNDS, next_a2ui_round
 from ..shared.analysis import _compute_traceback_digest
 from ..shared.chat_subgraph import (
@@ -143,7 +145,15 @@ class DeepResearchAgent(
             knowledge_config=review_config,
             sensitive_config=self.sensitive_config,
         )
-        self._knowledge_app: CompiledStateGraph | None
+        self._knowledge_app: (
+            CompiledStateGraph[
+                KnowledgeState,
+                MemoryGraphContext,
+                KnowledgeInput,
+                KnowledgeOutput,
+            ]
+            | None
+        )
         self._knowledge_app = build_knowledge_app(
             knowledge_config=self.review_config,
             sensitive_config=self.sensitive_config,
@@ -857,6 +867,8 @@ class DeepResearchAgent(
             "completed_count": 0,
             "error": None,
             "failures": [],
+            "interop": [],
+            "degraded_interop": False,
             # Single-shot chat-mount fields (Step 6.2 pattern)
             "chat_payload": None,
             "chat_response": None,

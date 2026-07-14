@@ -30,7 +30,9 @@ from ...runtime.langgraph_runner import (
     ensure_checkpointer,
     make_async_router,
 )
+from ...runtime.memory import MemoryGraphContext
 from ..knowledge.agent import KnowledgeAgent
+from ..knowledge.state import KnowledgeInput, KnowledgeOutput, KnowledgeState
 from ..shared.chat_subgraph import (
     make_chat_after_router,
     make_chat_node_wrapper,
@@ -181,7 +183,12 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             knowledge_config=brief_config,
             sensitive_config=self.sensitive_config,
         )
-        self._knowledge_app: CompiledStateGraph = build_knowledge_app(
+        self._knowledge_app: CompiledStateGraph[
+            KnowledgeState,
+            MemoryGraphContext,
+            KnowledgeInput,
+            KnowledgeOutput,
+        ] = build_knowledge_app(
             knowledge_config=self.brief_config,
             sensitive_config=self.sensitive_config,
         )

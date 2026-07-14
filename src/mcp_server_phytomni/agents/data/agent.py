@@ -45,6 +45,8 @@ from ...runtime.langgraph_runner import (
     ensure_checkpointer,
     make_async_router,
 )
+from ...runtime.memory import MemoryGraphContext
+from ..knowledge.state import KnowledgeInput, KnowledgeOutput, KnowledgeState
 from ..shared.chat_subgraph import make_chat_node_wrapper
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import (
@@ -216,7 +218,15 @@ class DataAgent:
         self.data_config = data_config
         self.sensitive_config = sensitive_config or get_sensitive_config()
         self.checkpointer = ensure_checkpointer(checkpointer)
-        self._knowledge_app: CompiledStateGraph | None
+        self._knowledge_app: (
+            CompiledStateGraph[
+                KnowledgeState,
+                MemoryGraphContext,
+                KnowledgeInput,
+                KnowledgeOutput,
+            ]
+            | None
+        )
         self._knowledge_app = build_knowledge_app(
             knowledge_config=self.data_config,
             sensitive_config=self.sensitive_config,

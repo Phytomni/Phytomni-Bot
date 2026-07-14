@@ -14,17 +14,21 @@ it.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 
 from langgraph.graph.state import CompiledStateGraph
 
+from ...runtime.memory import MemoryGraphContext
 from ..knowledge.agent import KnowledgeAgent
+from ..knowledge.state import KnowledgeInput, KnowledgeOutput, KnowledgeState
 
 
 def build_knowledge_app(
     knowledge_config: Any,
     sensitive_config: Any | None = None,
-) -> CompiledStateGraph:
+) -> CompiledStateGraph[
+    KnowledgeState, MemoryGraphContext, KnowledgeInput, KnowledgeOutput
+]:
     """Compile a KnowledgeAgent subgraph for the given config.
 
     Each consumer agent should call this once at ``__init__`` time
@@ -42,7 +46,7 @@ def build_knowledge_app(
 
 def make_knowledge_node_wrapper(
     *,
-    knowledge_app: CompiledStateGraph,
+    knowledge_app: CompiledStateGraph[Any, Any, Any, Any],
     build_input_fn: Callable[[Any], dict[str, Any]],
     extract_output_fn: Callable[[dict[str, Any]], Any],
     response_key: str,
@@ -70,7 +74,7 @@ def make_knowledge_node_wrapper(
     """
 
     async def _knowledge_node(state: Any) -> dict[str, Any]:
-        ki = build_input_fn(state)
+        ki = cast(KnowledgeInput, build_input_fn(state))
         ko = await knowledge_app.ainvoke(ki)
         return {response_key: extract_output_fn(ko)}
 

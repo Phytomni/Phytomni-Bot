@@ -16,6 +16,7 @@ from typing import get_type_hints
 import pytest
 
 from mcp_server_phytomni.agents.review import DeepResearchState
+from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 from mcp_server_phytomni.agents.review.state import (
     DeepResearchInput,
     DeepResearchOutput,
@@ -84,3 +85,12 @@ def test_review_state_carries_full_legacy_field_set() -> None:
         "final_response",
     }
     assert set(get_type_hints(DeepResearchState).keys()) >= expected
+
+
+def test_review_initial_state_seeds_interop_channels() -> None:
+    """Seed inherited interop reducers before the graph starts."""
+    agent = DeepResearchAgent.__new__(DeepResearchAgent)
+    state = agent.initial_state("plant stress review")
+
+    assert not state["interop"]
+    assert state["degraded_interop"] is False
