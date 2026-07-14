@@ -19,6 +19,7 @@ from collections.abc import (
 from typing import Any, Literal, NamedTuple, TypedDict, cast
 
 from ...common.redaction import redact_secrets
+from ...config.defaults import ApiConfig
 from ...config.settings import SensitiveConfig
 from ...interop.a2a_client import (
     InteropA2AClientError,
@@ -237,7 +238,10 @@ async def _discover_target(
         return DiscoveryResult()
     cache = caches.get(target.id)
     if cache is None:
-        cache = DiscoveryCache(ttl_seconds=target.discovery_ttl_seconds)
+        cache = DiscoveryCache(
+            ttl_seconds=target.discovery_ttl_seconds,
+            max_entries=ApiConfig().INTEROP_CACHE_MAX_ENTRIES,
+        )
         caches[target.id] = cache
     return await discover(
         target.id,
@@ -301,7 +305,10 @@ async def _discover_a2a_capabilities(
             continue
         cache = caches.get(target.id)
         if cache is None:
-            cache = DiscoveryCache(ttl_seconds=target.discovery_ttl_seconds)
+            cache = DiscoveryCache(
+                ttl_seconds=target.discovery_ttl_seconds,
+                max_entries=ApiConfig().INTEROP_CACHE_MAX_ENTRIES,
+            )
             caches[target.id] = cache
         try:
             result = await discover(

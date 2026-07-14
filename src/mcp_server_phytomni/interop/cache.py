@@ -22,6 +22,7 @@ from typing import Any
 from .capabilities import DiscoveryError, DiscoveryResult
 
 DiscoveryLoader = Callable[[str], Awaitable[DiscoveryResult]]
+DEFAULT_MAX_ENTRIES = 256
 
 
 class _LoaderFailureError(Exception):
@@ -43,12 +44,20 @@ class DiscoveryCache:
         self,
         *,
         ttl_seconds: float = 300.0,
+        max_entries: int = DEFAULT_MAX_ENTRIES,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        """Create an empty cache with a positive monotonic TTL."""
+        """Create an empty cache with bounded entries and a positive TTL."""
         if not math.isfinite(ttl_seconds) or ttl_seconds <= 0:
             raise ValueError("ttl_seconds must be a finite positive number")
+        if (
+            not isinstance(max_entries, int)
+            or isinstance(max_entries, bool)
+            or max_entries <= 0
+        ):
+            raise ValueError("max_entries must be a positive integer")
         self._ttl_seconds = ttl_seconds
+        self._max_entries = max_entries
         self._clock = clock
         self._entries: dict[str, _CacheEntry] = {}
         self._inflight: dict[str, asyncio.Task[DiscoveryResult]] = {}
@@ -128,6 +137,12 @@ class DiscoveryCache:
                 )
             if not result.errors:
                 async with self._lock:
+                    if (
+                        target_id not in self._entries
+                        and len(self._entries) >= self._max_entries
+                    ):
+                        oldest_target_id = next(iter(self._entries))
+                        self._entries.pop(oldest_target_id, None)
                     self._entries[target_id] = _CacheEntry(
                         expires_at=self._clock() + self._ttl_seconds,
                         result=result,
@@ -159,4 +174,8 @@ def _validate_key(target_id: Any) -> None:
         raise ValueError("target_id must be a non-empty string")
 
 
-__all__ = ["DiscoveryCache", "DiscoveryLoader"]
+__all__ = [
+    "DEFAULT_MAX_ENTRIES",
+    "DiscoveryCache",
+    "DiscoveryLoader",
+]

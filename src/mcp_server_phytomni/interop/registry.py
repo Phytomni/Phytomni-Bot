@@ -73,7 +73,7 @@ class InteropRegistry:
             ) from exc
 
 
-def _parse_targets(raw: SecretStr) -> list[InteropTarget]:
+def _parse_targets(raw: SecretStr, *, max_targets: int) -> list[InteropTarget]:
     """Parse and validate target JSON with redacted failure messages."""
     try:
         payload = json.loads(raw.get_secret_value())
@@ -82,11 +82,16 @@ def _parse_targets(raw: SecretStr) -> list[InteropTarget]:
             "INTEROP_TARGETS must be valid JSON"
         ) from None
     try:
-        return _TARGETS_ADAPTER.validate_python(payload)
+        targets = _TARGETS_ADAPTER.validate_python(payload)
     except ValidationError:
         raise InteropRegistryError(
             "INTEROP_TARGETS contains an invalid target"
         ) from None
+    if len(targets) > max_targets:
+        raise InteropRegistryError(
+            "INTEROP_TARGETS exceeds the configured target limit"
+        )
+    return targets
 
 
 def _credential_references(secret_json: SecretStr) -> frozenset[str]:
@@ -144,7 +149,10 @@ def load_interop_registry(
     if not resolved_api_config.INTEROP_ENABLED:
         return InteropRegistry.disabled()
     resolved_sensitive_config = sensitive_config or SensitiveConfig.load()
-    targets = _parse_targets(resolved_api_config.INTEROP_TARGETS)
+    targets = _parse_targets(
+        resolved_api_config.INTEROP_TARGETS,
+        max_targets=resolved_api_config.INTEROP_MAX_TARGETS,
+    )
     credential_refs = _credential_references(
         resolved_sensitive_config.INTEROP_CREDENTIALS
     )

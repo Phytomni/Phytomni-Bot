@@ -5,18 +5,20 @@
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict, cast
 
 import pytest
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 
+from mcp_server_phytomni.config.defaults import ApiConfig
 from mcp_server_phytomni.runtime.langgraph_runner import ainvoke_graph
 from mcp_server_phytomni.runtime.memory.accessor import (
     MemoryAccessor,
     MemoryGraphContext,
     current_memory_accessor,
     memory_accessor_context,
+    memory_policy_from_config,
     resolve_memory_accessor,
 )
 from mcp_server_phytomni.runtime.memory.models import MemoryWrite
@@ -38,6 +40,27 @@ def _write(content: str, *, user_id: str = "alice") -> MemoryWrite:
         kind="preference",
         content=content,
     )
+
+
+def test_memory_policy_from_config_keeps_store_and_graph_bounds_aligned() -> (
+    None
+):
+    """The API knobs produce one shared policy for writes and graph reads."""
+    config_cls = cast(Any, ApiConfig)
+    config = config_cls(
+        _env_file=None,
+        MEMORY_MAX_ITEMS=3,
+        MEMORY_MAX_CONTENT_BYTES=1024,
+        MEMORY_MAX_TOTAL_BYTES=4096,
+        MEMORY_MAX_RETRIEVAL=2,
+    )
+
+    policy = memory_policy_from_config(config)
+
+    assert policy.max_items == 3
+    assert policy.max_content_bytes == 1024
+    assert policy.max_total_bytes == 4096
+    assert policy.max_retrieval == 2
 
 
 def test_anonymous_or_disabled_reads_never_open_store() -> None:

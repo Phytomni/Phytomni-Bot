@@ -31,6 +31,11 @@ def test_api_config_defaults() -> None:
     assert str(_CACHE_DIR / "api_keys.sqlite") == config.API_KEYS_DB_PATH
     assert config.API_TASKS_DB_PATH == "server_tasks.db"
     assert not hasattr(config, "API_RUNS_DB_PATH")
+    assert config.MEMORY_MAX_ITEMS == 100
+    assert config.MEMORY_MAX_CONTENT_BYTES == 16 * 1024
+    assert config.MEMORY_MAX_TOTAL_BYTES == 1024 * 1024
+    assert config.MEMORY_MAX_RETRIEVAL == 20
+    assert config.MEMORY_GRAPH_MAX_BYTES == 64 * 1024
     assert config.API_REQUEST_TIMEOUT == 600.0
     assert config.API_RATE_LIMIT_PER_MIN == 120
     assert config.API_RUN_TTL_OK_HOURS == 24
@@ -43,6 +48,10 @@ def test_api_config_defaults() -> None:
     assert config.A2UI_TOOL_CALL is False
     assert config.A2A_ENABLED is False
     assert config.A2A_PUBLIC_BASE_URL is None
+    assert config.INTEROP_MAX_TARGETS == 64
+    assert config.INTEROP_CACHE_MAX_ENTRIES == 256
+    assert config.A2A_MAX_HISTORY_MESSAGES == 32
+    assert config.A2A_MAX_ARTIFACT_BYTES == 256 * 1024
     assert config.RELAY_ENABLED is False
     assert str(_CACHE_DIR / "relay_audit.sqlite") == config.RELAY_AUDIT_DB_PATH
     assert config.RELAY_AUDIT_RETENTION_DAYS == 90
@@ -76,6 +85,44 @@ def test_stream_answer_max_bytes_env_override(
     monkeypatch.setenv("PHYTOMNI_STREAM_ANSWER_MAX_BYTES", "4096")
     config = ApiConfig()
     assert config.STREAM_ANSWER_MAX_BYTES == 4096
+
+
+def test_memory_and_interop_limits_accept_prefixed_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bounded stores and registries use explicit operator knobs."""
+    monkeypatch.setenv("PHYTOMNI_MEMORY_MAX_ITEMS", "12")
+    monkeypatch.setenv("PHYTOMNI_MEMORY_MAX_CONTENT_BYTES", "2048")
+    monkeypatch.setenv("PHYTOMNI_MEMORY_MAX_TOTAL_BYTES", "8192")
+    monkeypatch.setenv("PHYTOMNI_MEMORY_MAX_RETRIEVAL", "5")
+    monkeypatch.setenv("PHYTOMNI_MEMORY_GRAPH_MAX_BYTES", "4096")
+    monkeypatch.setenv("PHYTOMNI_INTEROP_MAX_TARGETS", "7")
+    monkeypatch.setenv("PHYTOMNI_INTEROP_CACHE_MAX_ENTRIES", "9")
+    monkeypatch.setenv("PHYTOMNI_A2A_MAX_HISTORY_MESSAGES", "3")
+    monkeypatch.setenv("PHYTOMNI_A2A_MAX_ARTIFACT_BYTES", "2048")
+
+    config = ApiConfig()
+
+    assert config.MEMORY_MAX_ITEMS == 12
+    assert config.MEMORY_MAX_CONTENT_BYTES == 2048
+    assert config.MEMORY_MAX_TOTAL_BYTES == 8192
+    assert config.MEMORY_MAX_RETRIEVAL == 5
+    assert config.MEMORY_GRAPH_MAX_BYTES == 4096
+    assert config.INTEROP_MAX_TARGETS == 7
+    assert config.INTEROP_CACHE_MAX_ENTRIES == 9
+    assert config.A2A_MAX_HISTORY_MESSAGES == 3
+    assert config.A2A_MAX_ARTIFACT_BYTES == 2048
+
+
+def test_memory_retrieval_limit_cannot_exceed_item_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A retrieval bound larger than namespace capacity fails closed."""
+    monkeypatch.setenv("PHYTOMNI_MEMORY_MAX_ITEMS", "2")
+    monkeypatch.setenv("PHYTOMNI_MEMORY_MAX_RETRIEVAL", "3")
+
+    with pytest.raises(ValidationError, match="MEMORY_MAX_RETRIEVAL"):
+        ApiConfig()
 
 
 def test_a2ui_flags_env_override(

@@ -100,6 +100,28 @@ async def test_send_message_projects_text_and_data_artifacts() -> None:
     assert data["metadata"]["tool"] == "ChatAgent"
 
 
+async def test_send_message_caps_local_answer_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A2A artifact projection cannot retain an unbounded answer blob."""
+    monkeypatch.setenv("PHYTOMNI_A2A_MAX_ARTIFACT_BYTES", "1024")
+    handler = _handler(
+        {
+            "id": "run-large",
+            "agent": "chat",
+            "status": "succeeded",
+            "result": {"formatted": {"answer": "x" * 4096}},
+        }
+    )
+
+    task = await handler.on_message_send(_request(), ServerCallContext())
+
+    assert isinstance(task, Task)
+    answer = task.artifacts[0].parts[0].text
+    assert len(answer.encode("utf-8")) <= 1024
+    assert answer.endswith("<artifact-truncated>")
+
+
 async def test_remote_running_run_is_not_marked_completed() -> None:
     """A 202 submission remains WORKING until a later task method exists."""
     handler = _handler(

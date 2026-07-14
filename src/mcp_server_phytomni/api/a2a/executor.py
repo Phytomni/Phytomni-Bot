@@ -47,6 +47,7 @@ from a2a.types import (
 from google.protobuf import json_format
 
 from ...agents.expert.router import ToolSelection
+from ...config.defaults import ApiConfig
 from ...mcp.result_formatting import AguiEvent
 from ...runtime.run_registry import (
     A2ACorrelation,
@@ -76,6 +77,22 @@ A2AResumeInvoker = Callable[
     Awaitable[tuple[dict[str, Any], int] | None],
 ]
 _ID_FACTORY = IdFactory()
+
+
+def _bound_artifact_text(value: str) -> str:
+    """Keep one local A2A text artifact within the configured byte cap."""
+    max_bytes = ApiConfig().A2A_MAX_ARTIFACT_BYTES
+    encoded = value.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return value
+    marker = "\n<artifact-truncated>"
+    marker_bytes = marker.encode("utf-8")
+    if len(marker_bytes) >= max_bytes:
+        return encoded[:max_bytes].decode("utf-8", errors="ignore")
+    prefix = encoded[: max_bytes - len(marker_bytes)].decode(
+        "utf-8", errors="ignore"
+    )
+    return f"{prefix}{marker}"
 
 
 @dataclass(frozen=True)
@@ -119,7 +136,9 @@ def _text_artifact_update(
         context_id,
         Artifact(
             artifact_id=f"{task_id}-answer",
-            parts=[Part(text=text, media_type="text/plain")],
+            parts=[
+                Part(text=_bound_artifact_text(text), media_type="text/plain")
+            ],
         ),
         options=ArtifactUpdateOptions(
             append=append,
@@ -215,7 +234,7 @@ def _artifact_updates_for_event(
                     )
                 )
                 state.emitted_text = True
-            state.pending_text = delta
+            state.pending_text = _bound_artifact_text(delta)
     elif event.type == "TextMessageEnd":
         if state.pending_text is not None:
             updates.append(
@@ -286,7 +305,7 @@ def _result_artifacts(
             Artifact(
                 artifact_id=f"{task_id}-answer",
                 name="answer",
-                parts=[Part(text=answer)],
+                parts=[Part(text=_bound_artifact_text(answer))],
             )
         )
     structured = {
@@ -340,7 +359,10 @@ def task_from_run_record(record: RunRecord, history_length: int) -> Task:
                 },
             )
         )
-    if history_length != 0:
+    bounded_history_length = min(
+        max(history_length, 0), ApiConfig().A2A_MAX_HISTORY_MESSAGES
+    )
+    if bounded_history_length != 0:
         message_json = record.request_info.request_json
         if isinstance(message_json, str):
             try:
@@ -352,8 +374,8 @@ def task_from_run_record(record: RunRecord, history_length: int) -> Task:
                     task.history.append(message)
             except (TypeError, ValueError):
                 pass
-    if 0 < history_length < len(task.history):
-        del task.history[:-history_length]
+    if 0 < bounded_history_length < len(task.history):
+        del task.history[:-bounded_history_length]
     return task
 
 

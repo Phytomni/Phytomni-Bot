@@ -34,13 +34,20 @@ def _target(target_id: str = "mcp-http") -> dict[str, object]:
     }
 
 
-def _api_config(*, enabled: bool, targets: str) -> ApiConfig:
+def _api_config(
+    *, enabled: bool, targets: str, max_targets: int | None = None
+) -> ApiConfig:
     """Build an ApiConfig isolated from the developer dotenv file."""
     config_cls = cast(Any, ApiConfig)
+    values: dict[str, object] = {
+        "_env_file": None,
+        "INTEROP_ENABLED": enabled,
+        "INTEROP_TARGETS": targets,
+    }
+    if max_targets is not None:
+        values["INTEROP_MAX_TARGETS"] = max_targets
     return config_cls(
-        _env_file=None,
-        INTEROP_ENABLED=enabled,
-        INTEROP_TARGETS=targets,
+        **values,
     )
 
 
@@ -97,6 +104,24 @@ def test_enabled_registry_rejects_duplicate_target_ids(
     )
 
     with pytest.raises(InteropRegistryError, match="duplicate target id"):
+        load_interop_registry(config)
+
+
+def test_enabled_registry_rejects_target_count_over_configured_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The registry rejects an oversized operator target list early."""
+    monkeypatch.setenv(
+        "PHYTOMNI_INTEROP_CREDENTIALS",
+        '{"peer-auth": {"headers": {"X-Peer-Key": "x"}}}',
+    )
+    config = _api_config(
+        enabled=True,
+        targets=json.dumps([_target("mcp-http"), _target("mcp-http-2")]),
+        max_targets=1,
+    )
+
+    with pytest.raises(InteropRegistryError, match="target limit"):
         load_interop_registry(config)
 
 

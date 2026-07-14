@@ -138,6 +138,7 @@ from ..runtime.memory import (
     MemoryStoreError,
     MemoryWrite,
     memory_audit_context,
+    memory_policy_from_config,
 )
 from ..runtime.request_context import (
     bind_request_id,
@@ -2441,6 +2442,7 @@ async def _discover_interop_targets(
         if cache is None:
             cache = DiscoveryCache(
                 ttl_seconds=target.discovery_ttl_seconds,
+                max_entries=ApiConfig().INTEROP_CACHE_MAX_ENTRIES,
             )
             caches[target.id] = cache
         return await _discover_interop_target(
@@ -2580,7 +2582,11 @@ def create_app() -> FastAPI:
         nonlocal memory_store
         if memory_store is None:
             try:
-                memory_store = MemoryStore(ApiConfig().MEMORY_DB_PATH)
+                config = ApiConfig()
+                memory_store = MemoryStore(
+                    config.MEMORY_DB_PATH,
+                    policy=memory_policy_from_config(config),
+                )
             except (MemorySchemaError, OSError, sqlite3.Error, ValueError):
                 _LOGGER.warning("memory store unavailable")
                 raise HTTPException(

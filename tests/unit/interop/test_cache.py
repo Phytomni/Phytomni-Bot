@@ -34,15 +34,15 @@ class _Clock:
         self.now += seconds
 
 
-def _result() -> DiscoveryResult:
+def _result(target_id: str = "peer-cache") -> DiscoveryResult:
     """Build one cacheable metadata-only result."""
     return DiscoveryResult(
         data=(
             InteropCapability(
-                target_id="peer-cache",
+                target_id=target_id,
                 kind="mcp",
                 remote_name="lookup",
-                qualified_name="peer-cache__lookup",
+                qualified_name=f"{target_id}__lookup",
                 description="metadata",
                 input_schema={"type": "object", "properties": {}},
             ),
@@ -148,9 +148,29 @@ async def test_unexpected_loader_error_is_redacted_and_retried() -> None:
     assert calls == 2
 
 
+async def test_cache_evicts_oldest_successful_entry_at_capacity() -> None:
+    """A bounded cache evicts insertion-oldest metadata and retries it."""
+    cache = DiscoveryCache(max_entries=2)
+    calls: dict[str, int] = {}
+
+    async def loader(target_id: str) -> DiscoveryResult:
+        calls[target_id] = calls.get(target_id, 0) + 1
+        return _result(target_id)
+
+    await cache.discover("peer-a", loader)
+    await cache.discover("peer-b", loader)
+    await cache.discover("peer-c", loader)
+    await cache.discover("peer-b", loader)
+    await cache.discover("peer-a", loader)
+
+    assert calls == {"peer-a": 2, "peer-b": 1, "peer-c": 1}
+
+
 def test_invalid_ttl_and_clear_are_deterministic() -> None:
     """TTL validation and explicit invalidation do not accept unsafe keys."""
     with pytest.raises(ValueError, match="positive"):
         DiscoveryCache(ttl_seconds=0)
+    with pytest.raises(ValueError, match="max_entries"):
+        DiscoveryCache(max_entries=0)
     with pytest.raises(ValueError, match="target_id"):
         DiscoveryCache().clear("")

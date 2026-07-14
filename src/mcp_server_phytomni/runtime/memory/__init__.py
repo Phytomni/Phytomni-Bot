@@ -10,6 +10,7 @@ from .accessor import (
     current_memory_accessor,
     get_default_memory_accessor,
     memory_accessor_context,
+    memory_policy_from_config,
     resolve_memory_accessor,
 )
 from .models import (
@@ -73,5 +74,6 @@ __all__ = [
     "current_memory_accessor",
     "get_default_memory_accessor",
     "memory_accessor_context",
+    "memory_policy_from_config",
     "resolve_memory_accessor",
 ]

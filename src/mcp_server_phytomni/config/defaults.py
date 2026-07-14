@@ -25,6 +25,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings
 
+from .api_limits import ApiLimitsConfig
 from .relay_mode import relay_mode_enabled
 
 
@@ -679,7 +680,7 @@ class EnvironmentConfig(AnalystConfig):
 _API_CACHE_DIR = Path(".cache") / "phytomni"
 
 
-class ApiConfig(BaseSettings):
+class ApiConfig(ApiLimitsConfig):
     """Non-secret configuration for the external HTTP API service.
 
     The SQLite store paths stay local-only on purpose: network
@@ -700,6 +701,16 @@ class ApiConfig(BaseSettings):
             routes. Defaults to False so the public surface stays dark.
         MEMORY_DB_PATH (str): Local SQLite path for memory records; opened
             only when ``MEMORY_ENABLED`` is true.
+        MEMORY_MAX_ITEMS (int): Maximum records retained per user namespace.
+            Defaults to 100 and is bounded to prevent an unsafe override.
+        MEMORY_MAX_CONTENT_BYTES (int): Maximum UTF-8 bytes in one memory
+            record. Defaults to 16 KiB, matching the domain hard ceiling.
+        MEMORY_MAX_TOTAL_BYTES (int): Maximum policy-counted bytes per user
+            namespace. Defaults to 1 MiB.
+        MEMORY_MAX_RETRIEVAL (int): Maximum memories returned to one graph
+            read. Defaults to 20 and cannot exceed ``MEMORY_MAX_ITEMS``.
+        MEMORY_GRAPH_MAX_BYTES (int): Maximum UTF-8 bytes returned to a graph
+            read. Defaults to 64 KiB.
         API_REQUEST_TIMEOUT (float): Per-request timeout in seconds.
         API_RATE_LIMIT_PER_MIN (int): Per-key request budget per minute.
         API_RUN_TTL_OK_HOURS (int): Retention for terminal successful runs.
@@ -752,6 +763,14 @@ class ApiConfig(BaseSettings):
         INTEROP_TARGETS (SecretStr): Operator-owned target-registry JSON.
             Kept opaque here so disabled mode never parses it and routine
             config repr/model dumps do not expose endpoints or commands.
+        INTEROP_MAX_TARGETS (int): Maximum operator-configured MCP/A2A
+            targets accepted by the registry. Defaults to 64.
+        INTEROP_CACHE_MAX_ENTRIES (int): Maximum successful target discovery
+            results retained in each in-process cache. Defaults to 256.
+        A2A_MAX_HISTORY_MESSAGES (int): Maximum request messages projected
+            by ``GetTask``. Defaults to 32; zero disables history projection.
+        A2A_MAX_ARTIFACT_BYTES (int): Maximum UTF-8 bytes in one local A2A
+            answer artifact. Defaults to 256 KiB.
         RELAY_ENABLED (bool): When True, the server exposes the
             credential-injecting relay surface and writes relay audit
             records. Defaults to False so a stock deployment ships no

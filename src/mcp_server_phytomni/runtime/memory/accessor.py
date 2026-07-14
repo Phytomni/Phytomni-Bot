@@ -39,6 +39,7 @@ __all__ = [
     "current_memory_accessor",
     "get_default_memory_accessor",
     "memory_accessor_context",
+    "memory_policy_from_config",
     "resolve_memory_accessor",
 ]
 
@@ -54,6 +55,19 @@ class MemoryGraphContext(TypedDict, total=False):
     """Typed LangGraph runtime context for an explicit memory accessor."""
 
     memory_accessor: MemoryAccessor
+
+
+def memory_policy_from_config(
+    config: ApiConfig | None = None,
+) -> MemoryPolicy:
+    """Build the bounded memory policy from non-secret API settings."""
+    resolved = config if config is not None else ApiConfig()
+    return MemoryPolicy(
+        max_items=resolved.MEMORY_MAX_ITEMS,
+        max_content_bytes=resolved.MEMORY_MAX_CONTENT_BYTES,
+        max_total_bytes=resolved.MEMORY_MAX_TOTAL_BYTES,
+        max_retrieval=resolved.MEMORY_MAX_RETRIEVAL,
+    )
 
 
 class MemoryAccessor:
@@ -213,22 +227,44 @@ def memory_accessor_context(
 def _build_default_memory_accessor(
     enabled: bool,
     db_path: str,
+    policy_values: tuple[int, int, int, int],
+    graph_max_bytes: int,
 ) -> MemoryAccessor:
     """Build one cached accessor for a concrete settings pair."""
+    policy = MemoryPolicy(
+        max_items=policy_values[0],
+        max_content_bytes=policy_values[1],
+        max_total_bytes=policy_values[2],
+        max_retrieval=policy_values[3],
+    )
     if not enabled:
-        return MemoryAccessor(enabled=False)
+        return MemoryAccessor(enabled=False, policy=policy)
 
     def _factory() -> MemoryStore:
-        return MemoryStore(db_path)
+        return MemoryStore(db_path, policy=policy)
 
-    return MemoryAccessor(enabled=True, store_factory=_factory)
+    return MemoryAccessor(
+        enabled=True,
+        store_factory=_factory,
+        policy=policy,
+        max_bytes=graph_max_bytes,
+    )
 
 
 def get_default_memory_accessor() -> MemoryAccessor:
     """Return the process-local lazy accessor for current API settings."""
     config = ApiConfig()
+    policy = memory_policy_from_config(config)
     return _build_default_memory_accessor(
-        bool(config.MEMORY_ENABLED), str(config.MEMORY_DB_PATH)
+        bool(config.MEMORY_ENABLED),
+        str(config.MEMORY_DB_PATH),
+        (
+            policy.max_items,
+            policy.max_content_bytes,
+            policy.max_total_bytes,
+            policy.max_retrieval,
+        ),
+        config.MEMORY_GRAPH_MAX_BYTES,
     )
 
 

@@ -106,3 +106,29 @@ def test_task_projection_bounds_history_and_hides_raw_payload(
     assert len(task.history) == 1
     assert task.artifacts[0].parts[0].text == "done"
     assert "secret" not in str(task)
+
+
+def test_task_projection_honors_configured_history_cap(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GetTask can disable history projection with the operator cap."""
+    monkeypatch.setenv("PHYTOMNI_A2A_MAX_HISTORY_MESSAGES", "0")
+    registry = RunRegistry(str(tmp_path / "tasks.db"))
+    registry.create_run(
+        RunSpec("run-history-cap", "alice", "chat", "local"),
+        outcome=RunOutcome(status="succeeded"),
+        request_info=RunRequestInfo(
+            request_json=(
+                '{"message":{"messageId":"m1","contextId":"c1",'
+                '"role":"ROLE_USER","parts":[{"text":"hello"}]}}'
+            ),
+        ),
+        a2a=A2ACorrelation(task_id="task-history-cap", context_id="c1"),
+    )
+    record = registry.get_run("run-history-cap", owner="alice")
+    assert record is not None
+
+    task = task_from_run_record(record, history_length=100)
+
+    assert not task.history
