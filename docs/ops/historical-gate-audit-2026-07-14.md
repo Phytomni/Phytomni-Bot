@@ -32,11 +32,11 @@ historical full-gate run.
 - The remote release branch later advanced by one config-only commit,
   `f2da19e` (`Update promoter design species configuration`). The local branch
   was rebased onto that commit without conflicts; the resulting tree is clean
-  and the implementation baseline is `7f15f5b`.
+  and the final pushed baseline is `8806f1d`.
 - The SSH transport is now reachable through the authorized local proxy route:
   key authentication and `git ls-remote` both succeed. A non-writing push
-  probe passed the 503-item scoped gate before the rebase; the final `make push`
-  remains a separate release-evidence action.
+  probe passed the 503-item scoped gate before the rebase, and the final
+  post-rebase `make push` completed successfully at `8806f1d`.
 
 ## Phase 0 — version, dependency, and CI calibration
 
@@ -188,7 +188,13 @@ historical full-gate run.
   their histories were rebased onto remote commit `f2da19e` without conflicts.
 - The first proxy-backed push probe reached the remote but was rejected as
   non-fast-forward because the remote had advanced; no merge or force-push was
-  performed. The final `make push` follows the rebase.
+  performed. The rebase was followed by `make push`, whose full gate passed with
+  `2493 passed, 1 deselected`, 88.00% coverage, and all 110 module floors green;
+  the remote now points at `8806f1d`.
+- `e0e9e4a`, `21a0c69`, `37ded86`, and `8806f1d` record the rebased evidence,
+  remote-config formatting repairs, prompt-render golden refresh, and final
+  pushable test baseline. Their scoped gates passed; the final `make push`
+  passed the full gate and updated the remote without merge or force-push.
 
 These four commits were locally reworded before push to keep the public subject/body
 convention and contain no local planning labels. Their message-only rewrites do not
@@ -198,6 +204,6 @@ change the code tree or prior gate results.
 
 The historical record is now explicit and auditable, but it is not a claim that
 every earlier commit passed a reproducible full gate. Relay audit remediation and
-source-of-truth refresh are complete. The rebase and SSH transport verification
-are complete; the release remains blocked until an authorized environment
-supplies a real live E2E verdict and the post-rebase `make push` succeeds.
+source-of-truth refresh are complete. The rebase, SSH transport verification,
+and post-rebase push are complete; the release remains blocked only by the
+missing authorized-environment live E2E verdict.
