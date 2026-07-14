@@ -25,9 +25,9 @@ historical full-gate run.
 - The CI-equivalent Pylint invocation now passes with
   `--disable=R0801,R0903`; the independent baseline check reports
   `R0801=124, R0903=28` at baseline.
-- Commit `d025005` passed `make scoped`: secret scan, Python tooling, workflow
+- Commit `d1aabe6` passed `make scoped`: secret scan, Python tooling, workflow
   checks, Markdown checks, and 467 focused/regression tests.
-- A full gate after `d025005` remains a final release-evidence task; it is not
+- A full gate after `d1aabe6` remains a final release-evidence task; it is not
   backdated to any historical commit.
 
 ## Phase 0 — version, dependency, and CI calibration
@@ -161,9 +161,24 @@ historical full-gate run.
 - C6.6: no code commit. Wheel/version smoke passed, but live E2E and push remain
   unverified; `Needs Verification`.
 
+## Current audit-remediation commits
+
+- `d1aabe6`: CI Pylint parity and dependency-floor job semantics; `make scoped`
+  passed with 467 focused/regression tests.
+- `bea0293`: tracked historical gate evidence summary; document checks and scoped
+  gate passed. Historical rows remain `Needs Verification` where raw output is absent.
+- `574cc9d`: relay audit body redaction, credential filtering, caps, route/store
+  defense-in-depth, and regression coverage; `make scoped` passed with 501 tests.
+- `aa189a4`: source-of-truth refresh and stale reducer test documentation;
+  `make scoped` passed with 503 tests.
+
+These four commits were locally reworded before push to keep the public subject/body
+convention and contain no local planning labels. Their message-only rewrites do not
+change the code tree or prior gate results.
+
 ## Decision
 
 The historical record is now explicit and auditable, but it is not a claim that
-every earlier commit passed a reproducible full gate. The release remains
-blocked until the relay audit remediation, source-of-truth refresh, final full
-gate, authorized live E2E, and `make push` are complete.
+every earlier commit passed a reproducible full gate. Relay audit remediation and
+source-of-truth refresh are complete. The release remains blocked until the final
+full gate, authorized live E2E, and successful `make push` are complete.
