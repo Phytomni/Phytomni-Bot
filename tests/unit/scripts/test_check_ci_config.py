@@ -11,6 +11,11 @@ from pathlib import Path
 
 import pytest
 
+from mcp_server_phytomni.config.required_env import (
+    REQUIRED_DEPLOYMENT_FIELDS,
+    REQUIRED_OPERATOR_SECRET_FIELDS,
+)
+
 pytestmark = pytest.mark.unit
 
 SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "check_ci_config.py"
@@ -22,6 +27,31 @@ def test_lint_workflow_uses_gauss_test_dsn_without_retired_bi_token() -> None:
     assert "BI_TOKEN" not in text
     assert text.count("GAUSS_DSN: postgresql://pytest") == 2
     assert 'PHYTOMNI_TESTING: "1"' in text
+
+
+def test_nightly_declares_current_runtime_inputs() -> None:
+    """Nightly CI declares every current runtime input by source name."""
+    text = Path(".github/workflows/e2e-nightly.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "BI_TOKEN" not in text
+    assert "GAUSS_DSN: ${{ secrets.GAUSS_DSN }}" in text
+    for name in REQUIRED_DEPLOYMENT_FIELDS:
+        assert f"{name}: ${{{{ vars.{name} }}}}" in text
+    for name in REQUIRED_OPERATOR_SECRET_FIELDS:
+        assert f"{name}: ${{{{ secrets.{name} }}}}" in text
+    assert "python scripts/check_ci_config.py" in text
+
+
+def test_nightly_remains_manual_and_scheduled_only() -> None:
+    """Nightly CI cannot be activated by pushes or pull requests."""
+    text = Path(".github/workflows/e2e-nightly.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "workflow_dispatch:" in text
+    assert "schedule:" in text
+    assert "pull_request:" not in text
+    assert "push:" not in text
 
 
 def _run(

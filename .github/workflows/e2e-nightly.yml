@@ -13,12 +13,13 @@ name: E2E nightly
 # -> Actions -> Repository secrets):
 #   DOMAIN_NAME, USER_NAME, USER_PASSWORD, ACCESS_KEY_ID,
 #   SECRET_ACCESS_KEY, BASE_URL, MODEL_ID, API_KEY, CODER_URL,
-#   CODER_MODEL, CODER_API_KEY, EMBED_URL, EMBED_MODEL, EMBED_API_KEY,
-#   BI_TOKEN
-# These mirror src/mcp_server_phytomni/config/.env.example exactly so
-# operators can copy the secret names one-to-one. The workflow does
-# NOT attempt to read .env files; every secret flows through env: so
-# GitHub's secret-masking still applies to log output.
+#   CODER_MODEL, CODER_API_KEY, GAUSS_DSN, EMBED_URL, EMBED_MODEL,
+#   EMBED_API_KEY
+# Required repository variables contain the sixteen deployment endpoint
+# fields listed in src/mcp_server_phytomni/config/required_env.py.
+# These mirror the operator configuration contract so operators can copy
+# names one-to-one. The workflow does NOT attempt to read .env files; every
+# value flows through env: so GitHub's secret-masking still applies to logs.
 "on":
   schedule:
     - cron: "0 3 * * *"
@@ -39,15 +40,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install uv
           uv pip install --system -e ".[dev,demo]"
-      - name: Run live e2e suite
+      - name: Validate required CI configuration
         env:
-          # Live-mode flags read by tests/conftest.py to skip the
-          # "block_external_http" / "integration deselect" guards.
-          PHYTOMNI_RUN_INTEGRATION: "1"
-          PHYTOMNI_ALLOW_NETWORK: "1"
-          # Backend secrets. Each value is a GitHub repo secret; the
-          # job fails fast at SensitiveConfig.load() during pytest
-          # collection if any required value is missing.
+          TOKEN_URL: ${{ vars.TOKEN_URL }}
+          RETRIEVE_URL: ${{ vars.RETRIEVE_URL }}
+          RERANK_URL: ${{ vars.RERANK_URL }}
+          SPA_FAQ_URL: ${{ vars.SPA_FAQ_URL }}
+          DATABASE_URL: ${{ vars.DATABASE_URL }}
+          ANALYSIS_URL: ${{ vars.ANALYSIS_URL }}
+          OBS_SERVER: ${{ vars.OBS_SERVER }}
+          REPO_ID: ${{ vars.REPO_ID }}
+          REPO_ID_DICT: ${{ vars.REPO_ID_DICT }}
+          WORKSPACE_ID: ${{ vars.WORKSPACE_ID }}
+          SUBJECT_ID: ${{ vars.SUBJECT_ID }}
+          DATA_REPO_ID: ${{ vars.DATA_REPO_ID }}
+          TOOL_REPO_ID: ${{ vars.TOOL_REPO_ID }}
+          PROTOCOL_REPO_ID: ${{ vars.PROTOCOL_REPO_ID }}
+          SPA_REPO_ID: ${{ vars.SPA_REPO_ID }}
+          APP_ID: ${{ vars.APP_ID }}
           DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
           USER_NAME: ${{ secrets.USER_NAME }}
           USER_PASSWORD: ${{ secrets.USER_PASSWORD }}
@@ -56,13 +66,64 @@ jobs:
           BASE_URL: ${{ secrets.BASE_URL }}
           MODEL_ID: ${{ secrets.MODEL_ID }}
           API_KEY: ${{ secrets.API_KEY }}
+          GAUSS_DSN: ${{ secrets.GAUSS_DSN }}
           CODER_URL: ${{ secrets.CODER_URL }}
           CODER_MODEL: ${{ secrets.CODER_MODEL }}
           CODER_API_KEY: ${{ secrets.CODER_API_KEY }}
           EMBED_URL: ${{ secrets.EMBED_URL }}
           EMBED_MODEL: ${{ secrets.EMBED_MODEL }}
           EMBED_API_KEY: ${{ secrets.EMBED_API_KEY }}
-          BI_TOKEN: ${{ secrets.BI_TOKEN }}
+        run: |
+          python scripts/check_ci_config.py \
+            TOKEN_URL RETRIEVE_URL RERANK_URL SPA_FAQ_URL \
+            DATABASE_URL ANALYSIS_URL OBS_SERVER REPO_ID REPO_ID_DICT \
+            WORKSPACE_ID SUBJECT_ID DATA_REPO_ID TOOL_REPO_ID \
+            PROTOCOL_REPO_ID SPA_REPO_ID APP_ID \
+            DOMAIN_NAME USER_NAME USER_PASSWORD ACCESS_KEY_ID \
+            SECRET_ACCESS_KEY BASE_URL MODEL_ID API_KEY GAUSS_DSN \
+            CODER_URL CODER_MODEL CODER_API_KEY EMBED_URL EMBED_MODEL \
+            EMBED_API_KEY
+      - name: Run live e2e suite
+        env:
+          # Live-mode flags read by tests/conftest.py to skip the
+          # "block_external_http" / "integration deselect" guards.
+          PHYTOMNI_RUN_INTEGRATION: "1"
+          PHYTOMNI_ALLOW_NETWORK: "1"
+          # Deployment fields. Each value is a GitHub repository variable;
+          # the preflight above checks that none are missing or blank.
+          TOKEN_URL: ${{ vars.TOKEN_URL }}
+          RETRIEVE_URL: ${{ vars.RETRIEVE_URL }}
+          RERANK_URL: ${{ vars.RERANK_URL }}
+          SPA_FAQ_URL: ${{ vars.SPA_FAQ_URL }}
+          DATABASE_URL: ${{ vars.DATABASE_URL }}
+          ANALYSIS_URL: ${{ vars.ANALYSIS_URL }}
+          OBS_SERVER: ${{ vars.OBS_SERVER }}
+          REPO_ID: ${{ vars.REPO_ID }}
+          REPO_ID_DICT: ${{ vars.REPO_ID_DICT }}
+          WORKSPACE_ID: ${{ vars.WORKSPACE_ID }}
+          SUBJECT_ID: ${{ vars.SUBJECT_ID }}
+          DATA_REPO_ID: ${{ vars.DATA_REPO_ID }}
+          TOOL_REPO_ID: ${{ vars.TOOL_REPO_ID }}
+          PROTOCOL_REPO_ID: ${{ vars.PROTOCOL_REPO_ID }}
+          SPA_REPO_ID: ${{ vars.SPA_REPO_ID }}
+          APP_ID: ${{ vars.APP_ID }}
+          # Backend secrets. Each value is a GitHub repository secret;
+          # the preflight above checks that none are missing or blank.
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+          USER_NAME: ${{ secrets.USER_NAME }}
+          USER_PASSWORD: ${{ secrets.USER_PASSWORD }}
+          ACCESS_KEY_ID: ${{ secrets.ACCESS_KEY_ID }}
+          SECRET_ACCESS_KEY: ${{ secrets.SECRET_ACCESS_KEY }}
+          BASE_URL: ${{ secrets.BASE_URL }}
+          MODEL_ID: ${{ secrets.MODEL_ID }}
+          API_KEY: ${{ secrets.API_KEY }}
+          GAUSS_DSN: ${{ secrets.GAUSS_DSN }}
+          CODER_URL: ${{ secrets.CODER_URL }}
+          CODER_MODEL: ${{ secrets.CODER_MODEL }}
+          CODER_API_KEY: ${{ secrets.CODER_API_KEY }}
+          EMBED_URL: ${{ secrets.EMBED_URL }}
+          EMBED_MODEL: ${{ secrets.EMBED_MODEL }}
+          EMBED_API_KEY: ${{ secrets.EMBED_API_KEY }}
         run: |
           uv run pytest e2e/ -v --tb=short
       - name: Upload e2e output artifacts
