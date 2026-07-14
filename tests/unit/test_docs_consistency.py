@@ -165,6 +165,19 @@ def test_http_docs_list_public_fastapi_routes() -> None:
     )
 
 
+def test_async_report_docs_distinguish_ack_status_and_terminal_report() -> (
+    None
+):
+    """Keep async submit, polling, and terminal report wording aligned."""
+    mcp = (ROOT / "docs/reference/mcp-tools.md").read_text(encoding="utf-8")
+    http = (ROOT / "docs/reference/http-api.md").read_text(encoding="utf-8")
+    e2e = (ROOT / "e2e/README.md").read_text(encoding="utf-8")
+    for text in (mcp, http, e2e):
+        assert "submission acknowledgement" in text
+        assert "final_report" in text
+    assert "does not prove live backend acceptance" in e2e
+
+
 def test_agent_card_interface_matches_enabled_http_endpoint(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

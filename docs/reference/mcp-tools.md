@@ -161,6 +161,13 @@ this same preamble verbatim above its `## Bioinformatic Analysis` body.
 
 ## Async Tools
 
+The submit response is a submission acknowledgement, not a completed report.
+Use `GetTaskStatus` or `GET /v1/runs/{run_id}` for one non-blocking lookup. At
+the terminal HTTP run aggregate, a succeeded analyst-class task exposes
+`final_report`; Design and Network also expose their real artifact/output
+paths. Offline mocks validate the shape; this does not prove live backend
+acceptance.
+
 ### `AnalystAgent`
 
 Use for bioinformatics workflow planning and task submission from a

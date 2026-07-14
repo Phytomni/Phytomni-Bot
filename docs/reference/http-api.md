@@ -1125,6 +1125,12 @@ respond `202` with `status: "running"` and `task_ids` listing every child
 task registered by the submit path. Poll `/v1/runs/{run_id}` for live
 status.
 
+The submit response is a submission acknowledgement, not a completed report.
+Use `GetTaskStatus` or `GET /v1/runs/{run_id}` for one non-blocking lookup. A
+succeeded analyst-class task exposes `final_report`; Design and Network also
+expose their real artifact/output paths. Offline mocks validate the shape; this
+does not prove live backend acceptance.
+
 `deep_genome` runs the whole report workflow in-process in the
 background, so unlike the other remote agents its terminal product is a
 local markdown report rather than an upstream-platform artifact. The
@@ -1134,7 +1140,8 @@ returns it as `formatted.answer` (instead of the bare
 `Task <id>: <status>` status line), and `GET /v1/runs/{run_id}` lifts
 the first child report to `result.final_report` at the payload top level
 (also present per-child under `result.task_results[].final_report`).
-Every other agent leaves `final_report` `null`.
+Analyst-class terminal reports follow the same `result.final_report` contract
+described below; synchronous agent results leave it `null`.
 
 A `deep_genome` report whose mounted sub-analysis degraded mid-run (its
 brief_gene gene-profile, evolution, or digital-design step) still

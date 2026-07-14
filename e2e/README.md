@@ -57,6 +57,12 @@ parse the same envelope from the wire:
   display view, `body["result"]["raw"][...]` for the same
   raw block.
 
+The submit response is a submission acknowledgement, not a completed report.
+Use `GetTaskStatus` or `GET /v1/runs/{run_id}` for one non-blocking lookup. A
+succeeded analyst-class task exposes `final_report`; Design and Network also
+expose their real artifact/output paths. Offline mocks validate the shape; this
+does not prove live backend acceptance.
+
 See [`../docs/reference/http-api.md`](../docs/reference/http-api.md) for the full
 envelope contract and [`../docs/reference/mcp-tools.md`](../docs/reference/mcp-tools.md)
 for the per-tool formatted view.
