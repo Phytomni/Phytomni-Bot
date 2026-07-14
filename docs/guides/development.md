@@ -174,6 +174,11 @@ make scoped      # alias of prepush
 make push        # git push with SSH keepalive; hook still runs
 ```
 
+If the remote branch advances and Git rejects a push as non-fast-forward,
+fetch the target branch and rebase the local commits onto it. Do not merge or
+force-push without explicit authorization; after resolving any conflict, run
+`make scoped` and then `make push` again.
+
 The scoped gate runs the same tools and flags but only over the active
 change region when practical. It always runs structural tests
 (`test_style_naming`, `test_pytest_layers`, `test_package_boundaries`) when
