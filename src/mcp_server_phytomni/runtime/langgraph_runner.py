@@ -23,6 +23,11 @@ from pydantic import SecretStr
 
 from ..storage.path_policy import IdFactory
 from .checkpoint_backend import build_default_checkpointer
+from .memory import (
+    MemoryAccessor,
+    current_memory_accessor,
+    memory_accessor_context,
+)
 
 # Workflow boundary: every non-system failure produced inside a LangGraph
 # action must be converted to a structured failure state rather than
@@ -130,6 +135,7 @@ async def ainvoke_graph(
     app: Any,
     initial_state: Any,
     thread_id: str | None = None,
+    memory_accessor: MemoryAccessor | None = None,
 ) -> Any:
     """Invoke a compiled graph with a standard RunnableConfig.
 
@@ -137,14 +143,23 @@ async def ainvoke_graph(
         app: Compiled LangGraph application.
         initial_state: Initial state dict to pass to the graph.
         thread_id: Optional thread ID for checkpointing continuity.
+        memory_accessor: Optional graph-facing accessor.  When omitted, the
+            configured lazy accessor is injected at runtime.
 
     Returns:
         Any: Final state after graph invocation.
     """
-    return await app.ainvoke(
-        initial_state,
-        config=build_runnable_config(thread_id),
-    )
+    accessor = memory_accessor or current_memory_accessor()
+    with memory_accessor_context(accessor):
+        invoke_kwargs: dict[str, Any] = {
+            "config": build_runnable_config(thread_id),
+        }
+        if getattr(app, "context_schema", None) is not None:
+            invoke_kwargs["context"] = {"memory_accessor": accessor}
+        return await app.ainvoke(
+            initial_state,
+            **invoke_kwargs,
+        )
 
 
 async def capture_workflow_boundary(

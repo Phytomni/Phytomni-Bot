@@ -42,6 +42,7 @@ from ...runtime.langgraph_runner import (
     ensure_checkpointer,
     make_async_router,
 )
+from ...runtime.memory import MemoryGraphContext
 from ...storage.downloads import download_list_convert
 from ..shared.chat_subgraph import (
     make_chat_after_router,
@@ -146,6 +147,7 @@ class KnowledgeAgent:
         """
         workflow = StateGraph(
             state_schema=KnowledgeState,
+            context_schema=MemoryGraphContext,
             input_schema=KnowledgeInput,
             output_schema=KnowledgeOutput,
         )

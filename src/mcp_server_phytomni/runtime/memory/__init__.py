@@ -4,6 +4,14 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Explicit, user-scoped cross-session memory domain types."""
 
+from .accessor import (
+    MemoryAccessor,
+    MemoryGraphContext,
+    current_memory_accessor,
+    get_default_memory_accessor,
+    memory_accessor_context,
+    resolve_memory_accessor,
+)
 from .models import (
     DEFAULT_MEMORY_MAX_CONTENT_BYTES,
     DEFAULT_MEMORY_MAX_ITEMS,
@@ -41,6 +49,8 @@ __all__ = [
     "DEFAULT_MEMORY_MAX_TAG_BYTES",
     "DEFAULT_MEMORY_MAX_TAGS",
     "DEFAULT_MEMORY_MAX_TOTAL_BYTES",
+    "MemoryAccessor",
+    "MemoryGraphContext",
     "DEFAULT_MEMORY_POLICY",
     "MemoryAuditOperation",
     "MemoryAuditRecord",
@@ -60,4 +70,8 @@ __all__ = [
     "MemoryUserId",
     "MemoryWrite",
     "memory_audit_context",
+    "current_memory_accessor",
+    "get_default_memory_accessor",
+    "memory_accessor_context",
+    "resolve_memory_accessor",
 ]
