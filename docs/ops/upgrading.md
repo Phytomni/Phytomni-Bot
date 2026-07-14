@@ -221,11 +221,19 @@ contract, including the authoritative `GAUSS_DSN` row.
 wheel never reads it and `SensitiveConfig` ignores unknown keys in the
 shared `.env`, so there is no need to unset it when rolling back.
 
-To roll back: reinstall the 0.1.1 wheel and restore `BI_URL` /
-`BI_TOKEN` in the environment. That returns the host to full 0.1.1
-behavior. No data migration occurred in this release (the BI query path
-change is stateless), so rollback is a plain reinstall-and-restart with
-no backfill or schema step.
+To roll back, deploy the prior wheel or image before restoring the legacy
+environment after the prior binary is installed. Use this order:
+
+1. Stop the Bot service and block new requests.
+1. Deploy the prior wheel or image.
+1. restore the legacy environment after the prior binary is installed; do not
+   set variables that the current binary would interpret differently.
+1. Start the prior service and verify its health and one read-only BI query.
+1. Keep the pre-change environment and database backup until verification ends.
+
+For the 0.1.1 prior binary, the legacy environment includes `BI_URL` and
+`BI_TOKEN`. No data migration occurred in this release (the BI query path
+change is stateless), so no backfill or schema step is required.
 
 ### Optional Reliability Knobs
 

@@ -33,6 +33,10 @@ Common variables:
 | `EMBED_API_KEY`     | yes      | Embedding service API key.                                                                                                                              |
 | `GAUSS_DSN`         | yes      | Direct GaussDB DSN for the BI query path. Required outside relay mode; sealed in the encrypted envelope. URL-encode special characters in the password. |
 
+`GAUSS_DSN` is the current direct BI path. No runtime flag re-enables the
+removed BI HTTP client; a legacy deployment must install the prior binary and
+restore the environment expected by that binary.
+
 Legacy `AccessKeyID` and `SecretAccessKey` aliases are still accepted for
 compatibility. New local configuration should use `ACCESS_KEY_ID` and
 `SECRET_ACCESS_KEY`.

@@ -178,6 +178,21 @@ def test_async_report_docs_distinguish_ack_status_and_terminal_report() -> (
     assert "does not prove live backend acceptance" in e2e
 
 
+def test_direct_gauss_rollback_uses_prior_binary_not_fake_switch() -> None:
+    """Keep direct-Gauss rollback tied to the prior binary's environment."""
+    upgrading = (ROOT / "docs/ops/upgrading.md").read_text(encoding="utf-8")
+    config = (ROOT / "docs/reference/configuration.md").read_text(
+        encoding="utf-8"
+    )
+    combined = upgrading + config
+    assert "BI_LEGACY_HTTP" not in combined
+    assert "deploy the prior wheel or image" in upgrading
+    assert (
+        "restore the legacy environment after the prior binary is installed"
+        in upgrading
+    )
+
+
 def test_streaming_docs_use_the_narrowed_contract() -> None:
     """Keep streaming docs aligned with the currently emitted event set."""
     http = (ROOT / "docs/reference/http-api.md").read_text(encoding="utf-8")
