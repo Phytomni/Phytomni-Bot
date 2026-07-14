@@ -18,6 +18,7 @@ from pydantic import AliasChoices, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .relay_mode import relay_mode_enabled
+from .required_env import REQUIRED_OPERATOR_SECRET_FIELDS
 from .secret_envelope import decrypt_env_blob
 
 _current_dir = Path(__file__).parent
@@ -139,23 +140,7 @@ def load_env_file() -> bool:
 # authenticates to the upstream relay with ``RELAY_API_KEY`` and never
 # receives these credentials. Adding a new required secret means adding
 # it here so a relay-mode boot does not raise on its absence.
-_RELAY_OPTIONAL_SECRET_FIELDS = (
-    "DOMAIN_NAME",
-    "USER_NAME",
-    "USER_PASSWORD",
-    "ACCESS_KEY_ID",
-    "SECRET_ACCESS_KEY",
-    "BASE_URL",
-    "MODEL_ID",
-    "API_KEY",
-    "GAUSS_DSN",
-    "CODER_URL",
-    "CODER_MODEL",
-    "CODER_API_KEY",
-    "EMBED_URL",
-    "EMBED_MODEL",
-    "EMBED_API_KEY",
-)
+_RELAY_OPTIONAL_SECRET_FIELDS = REQUIRED_OPERATOR_SECRET_FIELDS
 
 
 class SensitiveConfig(BaseSettings):
@@ -268,7 +253,7 @@ class SensitiveConfig(BaseSettings):
     def _relax_required_secrets_in_relay_mode(cls, data: Any) -> Any:
         """Make operator secrets optional when relay mode is active.
 
-        The 14 operator credentials are normally truly-required fields
+        The 15 operator credentials are normally truly-required fields
         (no default), so an absent one raises ``field required`` before
         any field validator runs. A relay-mode child Bot has none of
         them, so inject empty defaults for the missing ones into the

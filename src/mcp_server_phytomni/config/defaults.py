@@ -27,6 +27,12 @@ from pydantic_settings import BaseSettings
 
 from .api_limits import ApiLimitsConfig
 from .relay_mode import relay_mode_enabled
+from .required_env import (
+    ANALYST_REQUIRED_ENDPOINT_FIELDS,
+    DATA_REQUIRED_ENDPOINT_FIELDS,
+    DEEP_GENOME_REQUIRED_ENDPOINT_FIELDS,
+    SERVER_REQUIRED_ENDPOINT_FIELDS,
+)
 
 
 def _require_non_empty_endpoint(value, info: ValidationInfo):
@@ -68,23 +74,6 @@ def _require_non_empty_endpoint(value, info: ValidationInfo):
         )
     return value
 
-
-# Single source of truth for the ``ServerConfig`` env-required field
-# set; the field_validator below and ``tests/unit/config/test_defaults``
-# both consume this tuple so adding a new required field updates the
-# validator and the negative-test parametrize in one place.
-SERVER_REQUIRED_ENDPOINT_FIELDS = (
-    "TOKEN_URL",
-    "RETRIEVE_URL",
-    "RERANK_URL",
-    "DATABASE_URL",
-    "ANALYSIS_URL",
-    "REPO_ID",
-    "REPO_ID_DICT",
-    "WORKSPACE_ID",
-    "SUBJECT_ID",
-    "OBS_SERVER",
-)
 
 _MAX_TOKENS = 65536
 PARENT_PATH = Path(__file__).parent.parent
@@ -464,9 +453,10 @@ class DataConfig(KnowledgeConfig):
     DATA_PAGE_SIZE: int = 3
 
     # Deployment-specific UUID; required as an env var (no default).
-    _validate_data_repo_id = field_validator("DATA_REPO_ID", mode="after")(
-        _require_non_empty_endpoint
-    )
+    _validate_data_repo_id = field_validator(
+        *DATA_REQUIRED_ENDPOINT_FIELDS,
+        mode="after",
+    )(_require_non_empty_endpoint)
 
 
 class AnalystConfig(KnowledgeConfig):
@@ -508,9 +498,10 @@ class AnalystConfig(KnowledgeConfig):
     TOOL_PAGE_SIZE: int = 2
 
     # Deployment-specific UUID; required as an env var (no default).
-    _validate_tool_repo_id = field_validator("TOOL_REPO_ID", mode="after")(
-        _require_non_empty_endpoint
-    )
+    _validate_tool_repo_id = field_validator(
+        *ANALYST_REQUIRED_ENDPOINT_FIELDS,
+        mode="after",
+    )(_require_non_empty_endpoint)
     OUTPUT_DIR: str = "/obs/phytomni/agent_data/test/output"
     COMPUTE_RESOURCE: Literal["small", "medium", "large"] = "small"
     TASK_NAME: str = "analyst-agents-task"
@@ -637,9 +628,7 @@ class DeepGenomeConfig(DataConfig, AnalystConfig):
     # as env vars so a customer image never ships with another
     # tenant's URL or repo id baked in as a default.
     _validate_dg_endpoints = field_validator(
-        "SPA_FAQ_URL",
-        "PROTOCOL_REPO_ID",
-        "SPA_REPO_ID",
+        *DEEP_GENOME_REQUIRED_ENDPOINT_FIELDS,
         mode="after",
     )(_require_non_empty_endpoint)
 

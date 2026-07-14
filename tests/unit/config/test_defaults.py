@@ -28,6 +28,7 @@ from mcp_server_phytomni.config.defaults import (
     ServerConfig,
 )
 from mcp_server_phytomni.config.relay_mode import relay_mode_enabled
+from mcp_server_phytomni.config.required_env import REQUIRED_DEPLOYMENT_FIELDS
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
 pytestmark = pytest.mark.unit
@@ -92,6 +93,13 @@ def test_config_inheritance_keeps_agent_defaults_available():
     assert knowledge_config.SCOPE == "both"
     assert data_config.DATA_PAGE_SIZE == 3
     assert data_config.SIMPLIFY_RESPONSE is True
+
+
+def test_defaults_reexports_server_required_endpoint_fields() -> None:
+    """Existing defaults imports keep the centralized tuple unchanged."""
+    assert set(SERVER_REQUIRED_ENDPOINT_FIELDS) <= set(
+        REQUIRED_DEPLOYMENT_FIELDS
+    )
 
 
 @pytest.mark.parametrize("field", SERVER_REQUIRED_ENDPOINT_FIELDS)
