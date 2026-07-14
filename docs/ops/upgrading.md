@@ -52,8 +52,13 @@ no operator-authored migration.
 0.1.3 exposes an opt-in A2A Agent Card and authenticated `/a2a` endpoint only
 when `PHYTOMNI_A2A_ENABLED=1` and a public base URL are configured. The flag
 remains off by default. This release does not call external MCP/A2A peers or
-provide cross-session LangGraph Store memory; do not configure or advertise
-those outbound and memory surfaces.
+provide a cross-session LangGraph Store. It does provide an independent,
+opt-in explicit user-memory surface: set `MEMORY_ENABLED=1` to mount
+authenticated CRUD/export/audit routes backed by local SQLite and to enable
+bounded read-only Chat/Knowledge recall. Memory writes remain explicit; there
+is no autonomous `langmem` writer, embedding store, or semantic index. Keep
+both outbound interop and explicit memory disabled unless the deployment has
+reviewed their separate operator contracts.
 
 To roll back, reinstall 0.1.2 and restart. The 0.1.2 process ignores
 `checkpoints.db`, so it may remain on disk for a later forward upgrade. Runs

@@ -82,6 +82,13 @@ Full commit range: `1f8f628..HEAD`.
   locally, and `required` fails closed when external evidence is unavailable.
   Formatted metadata exposes only bounded target/kind/capability/status/latency
   summaries; A2A `input-required` pauses resume through the agent graph.
+- **Explicit user memory lifecycle (opt-in)** — `MEMORY_ENABLED` gates
+  user-scoped CRUD, live-record export, digest-only mutation audit, TTL-aware
+  purge, and bounded read-only Chat/Knowledge recall. Writes derive the
+  namespace from the authenticated API key; expired/foreign records are not
+  returned, failed writes fail closed, and graph read failures degrade to an
+  observable empty result. The store is local single-instance SQLite only;
+  there is no autonomous `langmem` writer, embedding store, or semantic index.
 - **MCP elicitation with graceful degrade** — stdio ReviewAgent calls ask
   elicitation-capable clients for approval and auto-approve when a legacy
   client lacks that capability.

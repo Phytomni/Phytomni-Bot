@@ -91,6 +91,7 @@ Streaming section below.
 | `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing: an LLM selects the agent for a query and returns its `agent.run` envelope with the resolved slug.                                                                            |
 | `GET`    | `/v1/memories`                           | yes   | Lists live memory records in the authenticated user's namespace; route exists only when `MEMORY_ENABLED=1`.                                                                                             |
 | `POST`   | `/v1/memories`                           | yes   | Creates one memory record; `user_id` is taken from the API key context and cannot be supplied in the body.                                                                                              |
+| `GET`    | `/v1/memories/export`                    | yes   | Exports all live records owned by the authenticated user, subject to the per-user item bound; expired or foreign records are excluded.                                                                  |
 | `GET`    | `/v1/memories/audit`                     | svc   | Lists digest-only memory mutation records; requires the configured service token and exists only when `MEMORY_ENABLED=1`.                                                                               |
 | `GET`    | `/v1/memories/{memory_id}`               | yes   | Returns one live owner-scoped memory record.                                                                                                                                                            |
 | `PUT`    | `/v1/memories/{memory_id}`               | yes   | Replaces one memory with optimistic concurrency; requires `If-Match: <revision>`.                                                                                                                       |
@@ -165,9 +166,34 @@ integer `revision` (quoted or unquoted). A missing header returns `428`, an
 invalid value returns `400`, and a stale revision returns `409`; successful
 updates increment the revision. Delete is idempotent and accepts the same
 header optionally, returning `deleted: false` for a missing or foreign record.
-The service-token-only `GET /v1/memories/audit` endpoint returns operation,
-actor, request id, revision, and SHA-256 before/after digests; it never returns
-memory content or tags.
+`GET /v1/memories/export` returns `{"object":"memory.export","data":[...]}`
+for the current user's live records. It is a portability read, not an admin
+query, and does not expose another user's namespace or expired content.
+
+## Explicit memory lifecycle and boundaries
+
+Memory writes are explicit: `POST`, `PUT`, and `DELETE` are the only public
+mutation paths. Chat and Knowledge graphs use a lazy, read-only accessor only
+when `MEMORY_ENABLED=1` and an authenticated request user is bound. Graph
+recall is newest-first, capped by the policy retrieval count and a 64 KiB
+UTF-8 prefix budget; memory content is untrusted reference context, not an
+instruction source. There is no autonomous `langmem` writer, embedding store,
+or semantic index in this release.
+
+`expires_at` is a per-record TTL. List, get, export, and graph recall exclude
+expired rows. The local retention operation `MemoryStore.purge_expired()` may
+physically delete expired rows; each such deletion is recorded as a
+digest-only `delete` row in `memory_mutation_audit`. The service-token-only
+audit endpoint exposes actor, operation, request id, revisions, and SHA-256
+digests, never raw content or tags.
+
+The memory store is one local SQLite instance, not a multi-worker or shared
+network-filesystem consistency layer. With the flag off, routes return `404`
+and agents do not open SQLite. A failed API write returns `503` without a
+partial mutation; a graph read degrades to an empty, observable result and
+logs only a sanitized error class. Back up and restore this database with
+SQLite's `.backup` command while the API is stopped, separately from
+`server_tasks.db` and `checkpoints.db`.
 
 ## A2A v1 server core (opt-in)
 

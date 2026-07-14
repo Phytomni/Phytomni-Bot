@@ -102,6 +102,7 @@ def _api_endpoint_pairs() -> set[tuple[str, str]]:
             ("GET", "/v1/interop/capabilities"),
             ("GET", "/v1/memories"),
             ("POST", "/v1/memories"),
+            ("GET", "/v1/memories/export"),
             ("GET", "/v1/memories/audit"),
             ("GET", "/v1/memories/{memory_id}"),
         }
@@ -190,7 +191,7 @@ def test_readme_matches_the_current_interoperability_boundary() -> None:
     )
     assert re.search(
         r"\|\s*User-scoped memory CRUD API\s*\|\s*"
-        r"Opt-in; agent recall pending\s*\|",
+        r"Opt-in; bounded read-only recall\s*\|",
         readme,
     )
     assert "PHYTOMNI_INTEROP_ENABLED" in readme
@@ -214,3 +215,38 @@ def test_readme_matches_the_current_interoperability_boundary() -> None:
     # C5.1-C5.4 define the domain, local store, and opt-in HTTP surface.
     assert (ROOT / "src/mcp_server_phytomni/runtime/memory/models.py").exists()
     assert (ROOT / "src/mcp_server_phytomni/runtime/memory/sqlite.py").exists()
+
+
+def test_memory_lifecycle_docs_cover_privacy_and_retention_boundaries() -> (
+    None
+):
+    """Memory docs state the explicit-write and local-retention contract."""
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    http_api = (ROOT / "docs/reference/http-api.md").read_text(
+        encoding="utf-8"
+    )
+    runbook = (ROOT / "docs/ops/http-api-runbook.md").read_text(
+        encoding="utf-8"
+    )
+    architecture = (ROOT / "docs/explanation/architecture.md").read_text(
+        encoding="utf-8"
+    )
+    upgrading = (ROOT / "docs/ops/upgrading.md").read_text(encoding="utf-8")
+    combined = "\n".join((readme, http_api, runbook, architecture, upgrading))
+
+    for phrase in (
+        "read-only recall",
+        "TTL",
+        "memory_mutation_audit",
+        "no autonomous",
+        "no embedding",
+        "local SQLite",
+        "MEMORY_ENABLED",
+        "explicit user memory",
+    ):
+        assert phrase.lower() in combined.lower()
+
+    assert (
+        "do not configure or advertise those outbound and memory surfaces"
+        not in upgrading
+    )

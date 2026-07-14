@@ -183,6 +183,7 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
 | `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing; one extra routing-LLM call resolves the agent per request.                                                              |
 | `GET`    | `/v1/memories`                           | yes   | Lists live owner-scoped memory records; route exists only when `MEMORY_ENABLED=1`.                                                                 |
 | `POST`   | `/v1/memories`                           | yes   | Creates one memory using the authenticated API-key namespace.                                                                                      |
+| `GET`    | `/v1/memories/export`                    | yes   | Exports all live records in the authenticated owner's namespace; expired and foreign rows are excluded.                                            |
 | `GET`    | `/v1/memories/audit`                     | svc   | Lists digest-only memory mutations for service-token operators.                                                                                    |
 | `GET`    | `/v1/memories/{memory_id}`               | yes   | Owner-scoped live memory lookup.                                                                                                                   |
 | `PUT`    | `/v1/memories/{memory_id}`               | yes   | Replaces a memory with an `If-Match` revision check.                                                                                               |
@@ -243,9 +244,21 @@ headers are `428` / `400`; a stale revision is `409`. A `503 memory store unavai
 the configured busy timeout; fix the local volume and restart rather than
 deleting the database. Back up the memory database separately from
 `server_tasks.db` and `checkpoints.db`.
+Use `GET /v1/memories/export` for a user-owned portability snapshot; it uses
+the per-user item bound rather than the smaller graph prompt-read bound and
+never exports expired rows. `expires_at` is the record TTL: list/get/export
+and graph recall filter expired rows, while `MemoryStore.purge_expired()` is
+the local cleanup operation. Retention deletions appear in
+`memory_mutation_audit` as digest-only delete records.
 The service-token-only `GET /v1/memories/audit` view exposes operation,
 actor, request id, revision, and before/after SHA-256 digests only. It is
 intended for incident correlation and retention checks, not content recovery.
+Agents never write memory autonomously: graph recall is read-only, bounded,
+and limited to the authenticated namespace. This release has no `langmem`
+writer, embedding store, or semantic index. When the feature is disabled, no
+memory route is mounted and no SQLite connection is opened; a graph read
+failure degrades to an empty result with a sanitized warning, while API
+writes fail closed with `503`.
 
 When a graph-agent stream (`phyto-knowledge` or `phyto-brief-gene`) is
 served with `stream: true`, the response carries AG-UI event frames.
@@ -566,6 +579,7 @@ Back up SQLite stores with SQLite's `.backup` command:
 mkdir -p "/backup/$(date +%F)"
 sqlite3 "$API_KEYS_DB_PATH" ".backup /backup/$(date +%F)/api_keys.sqlite"
 sqlite3 "$API_TASKS_DB_PATH" ".backup /backup/$(date +%F)/server_tasks.db"
+sqlite3 "$MEMORY_DB_PATH" ".backup /backup/$(date +%F)/memory.sqlite"
 ```
 
 Do not copy a WAL-mode SQLite file directly while the service is running;
@@ -574,7 +588,8 @@ the copy may miss uncheckpointed transactions.
 Restore:
 
 1. Stop the service.
-1. Copy backup files into the configured paths.
+1. Copy backup files into the configured paths, including `MEMORY_DB_PATH` when
+   memory is enabled.
 1. Start the service.
 1. Run `/readyz` and `/v1/models` smoke checks.
 

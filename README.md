@@ -113,11 +113,14 @@ default.
 | ----------------------------------------- | ------------------------------------ |
 | A2A Agent Card and `/a2a` server          | Opt-in core                          |
 | Calls to external MCP tools or A2A agents | Explicit opt-in from Research/Design |
-| User-scoped memory CRUD API               | Opt-in; agent recall pending         |
+| User-scoped memory CRUD API               | Opt-in; bounded read-only recall     |
 
 Internal `phyto.progress.phase` values are stage labels, not A2A task states.
 The A2A status adapter maps task lifecycle state independently. Outbound
-delegation and memory remain inactive by default in this release.
+delegation and explicit memory remain inactive by default in this release.
+When memory is enabled, its agents receive bounded read-only recall from the
+authenticated user's namespace; only the explicit CRUD API writes memory.
+There is no autonomous `langmem` writer and no embedding or semantic index.
 
 ## Available MCP Tools
 

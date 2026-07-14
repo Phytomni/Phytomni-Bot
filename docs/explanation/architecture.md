@@ -67,6 +67,7 @@ src/mcp_server_phytomni/
     langgraph_runner.py      Shared LangGraph invocation helpers
     agent_registry.py        Reusable agent registry keyed by safe config
     request_context.py       Per-request user, run, and recorder-degraded contextvars
+    memory/                   Explicit user memory models, local SQLite store, and read accessor
     run_registry.py          HTTP API parent-run registry
     submit_recorder.py       Submit-handler chokepoint: persists run + task rows; logs and flags degraded_tracking on SQLite write failure
     task_manager.py          Task lifecycle helper
@@ -188,6 +189,29 @@ The bundled static datasets (`species_data_list.json`, `region_map.json`,
 `.prompts.yaml`) are validated by Pydantic schemas in `config/defaults.py`
 and consumed through `config/data_loaders.py`. If their shape changes,
 adjust the schema and data together.
+
+## Explicit Memory Boundary
+
+`runtime/memory/models.py` defines storage-neutral, bounded memory records and
+the per-user policy. `runtime/memory/sqlite.py` is a single-instance local
+SQLite store with additive schema migration, WAL, optimistic revisions, TTL
+filtering, digest-only mutation audit, and user-scoped export/purge helpers.
+It is not a distributed store and must not be placed on a network filesystem.
+
+The HTTP API is the only memory write surface. `POST`, `PUT`, and `DELETE`
+derive the namespace from the authenticated API key and reject caller-supplied
+owners. `GET /v1/memories/export` is a live, owner-scoped portability read;
+`GET /v1/memories/audit` is service-token-only and exposes metadata/digests, not
+content. `expires_at` is the retention boundary, and purge deletions reuse the
+digest-only delete audit record.
+
+`runtime/memory/accessor.py` is the only graph-facing seam. It lazily opens
+SQLite only when the feature flag and authenticated request namespace permit
+it, returns bounded newest-first records, and degrades failed reads to an
+observable empty result without logging user ids or content. Agents do not
+write memory autonomously: there is no `langmem` writer, embedding store, or
+semantic index. Memory text is untrusted reference context injected into
+prompts, never instruction authority.
 
 ## Outbound Interoperability Boundary
 
