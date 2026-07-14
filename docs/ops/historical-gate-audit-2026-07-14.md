@@ -158,8 +158,10 @@ historical full-gate run.
   `Current-tree evidence` only.
 - Gate repair `f7ad495`: Pylint baseline documentation → current-tree full gate
   passed before `d025005`; it does not prove earlier commits.
-- C6.6: no code commit. Wheel/version smoke passed, but live E2E and push remain
-  unverified; `Needs Verification`.
+- C6.6: no code commit. Wheel/version smoke passed. Live E2E was attempted with the
+  integration/network flags and collected 33 items: `31 errors, 1 failed, 1 skipped`;
+  local socket permission, backend DNS, and rerank network failures prevented a product
+  verdict. Push remains unverified; `Needs Verification`.
 
 ## Current audit-remediation commits
 
@@ -171,6 +173,8 @@ historical full-gate run.
   defense-in-depth, and regression coverage; `make scoped` passed with 501 tests.
 - `aa189a4`: source-of-truth refresh and stale reducer test documentation;
   `make scoped` passed with 503 tests.
+- `d0d2dc8`: current commit IDs and the live-E2E environment failure classification;
+  the code tree is unchanged by this evidence-only update.
 
 These four commits were locally reworded before push to keep the public subject/body
 convention and contain no local planning labels. Their message-only rewrites do not
