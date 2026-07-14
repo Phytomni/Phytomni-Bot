@@ -6,9 +6,11 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal, NamedTuple, TypedDict, cast
 
+from ...common.redaction import redact_secrets
 from ...config.settings import SensitiveConfig
 from ...interop.planner import InteropMode
 from ...interop.registry import InteropRegistryError, load_interop_registry
@@ -75,6 +77,28 @@ class InteropAttempt(NamedTuple):
     degraded: bool = False
 
 
+_SAFE_TARGET_ID = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
+_SAFE_CAPABILITY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
+
+
+def _safe_label(value: object, pattern: re.Pattern[str]) -> str:
+    """Keep only bounded operator-style labels in state and metadata."""
+    if isinstance(value, str) and pattern.fullmatch(value):
+        return value
+    return "unknown"
+
+
+def _safe_target_ids(value: object) -> list[str]:
+    """Filter request target labels before copying them into graph state."""
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        return []
+    return [
+        item
+        for item in value
+        if isinstance(item, str) and _SAFE_TARGET_ID.fullmatch(item)
+    ]
+
+
 def make_interop_record(
     *,
     target_id: str,
@@ -85,9 +109,9 @@ def make_interop_record(
 ) -> InteropRecord:
     """Create a bounded, credential-free delegation summary."""
     return {
-        "target_id": target_id,
+        "target_id": _safe_label(target_id, _SAFE_TARGET_ID),
         "kind": kind,
-        "capability": capability,
+        "capability": _safe_label(capability, _SAFE_CAPABILITY),
         "status": status,
         "latency_ms": round(max(0.0, latency_seconds) * 1000, 3),
     }
@@ -104,9 +128,9 @@ def interop_record_from_evidence(
         "a2a" if str(evidence.get("kind")) == "a2a" else "mcp"
     )
     return make_interop_record(
-        target_id=str(evidence.get("target_id", "unknown")),
+        target_id=_safe_label(evidence.get("target_id"), _SAFE_TARGET_ID),
         kind=kind,
-        capability=str(evidence.get("capability", "unknown")),
+        capability=_safe_label(evidence.get("capability"), _SAFE_CAPABILITY),
         status=status,
         latency_seconds=latency_seconds,
     )
@@ -178,7 +202,7 @@ def interop_target_descriptor(
                 continue
             if target.kind == kind:
                 return target.id, capability
-    return (str(target_ids[0]) if target_ids else "unknown", capability)
+    return "unknown", _safe_label(capability, _SAFE_CAPABILITY)
 
 
 def interop_attempt_descriptor(
@@ -245,10 +269,10 @@ def has_interop_target_kind(
 def project_a2a_evidence(result: Mapping[str, Any]) -> dict[str, Any]:
     """Keep only safe evidence fields, dropping protocol correlations."""
     return {
-        "target_id": str(result["target_id"]),
-        "kind": str(result["kind"]),
-        "capability": str(result["capability"]),
-        "content": str(result["content"]),
+        "target_id": _safe_label(result.get("target_id"), _SAFE_TARGET_ID),
+        "kind": "a2a",
+        "capability": _safe_label(result.get("capability"), _SAFE_CAPABILITY),
+        "content": redact_secrets(str(result.get("content", ""))),
         "truncated": bool(result["truncated"]),
     }
 
@@ -265,11 +289,11 @@ def build_a2a_resume_draft(
         "kind": kind,
         "status": "input_required",
         label_key: pending[label_key],
-        "target_id": pending["target_id"],
-        "capability": pending["capability"],
+        "target_id": _safe_label(pending.get("target_id"), _SAFE_TARGET_ID),
+        "capability": _safe_label(pending.get("capability"), _SAFE_CAPABILITY),
         "task_id": pending["task_id"],
         "context_id": pending.get("context_id"),
-        "message": pending["draft"],
+        "message": redact_secrets(str(pending["draft"])),
     }
     if extra:
         draft.update(extra)
@@ -306,7 +330,7 @@ def update_a2a_pending(
     """Carry the latest bounded draft and correlation ids across pauses."""
     return {
         **pending,
-        "draft": content,
+        "draft": redact_secrets(content),
         "task_id": task_id or pending["task_id"],
         "context_id": context_id or pending.get("context_id"),
     }
@@ -332,11 +356,11 @@ def merge_a2a_pending_fields(
     """Add safe result correlations to a domain-specific pending mapping."""
     return {
         **fields,
-        "target_id": str(result["target_id"]),
-        "capability": str(result["capability"]),
+        "target_id": _safe_label(result.get("target_id"), _SAFE_TARGET_ID),
+        "capability": _safe_label(result.get("capability"), _SAFE_CAPABILITY),
         "task_id": str(result["task_id"]),
         "context_id": result.get("context_id"),
-        "draft": str(result["content"]),
+        "draft": redact_secrets(str(result["content"])),
     }
 
 
@@ -344,7 +368,9 @@ def initial_interop_state(options: Mapping[str, Any]) -> dict[str, Any]:
     """Return shared graph-state fields for an interop-enabled run."""
     return {
         "interop_mode": options.get("interop_mode", "off"),
-        "interop_targets": list(options.get("interop_targets", [])),
+        "interop_targets": _safe_target_ids(
+            options.get("interop_targets", [])
+        ),
         "a2a_pending": [],
         "a2a_task_ids": {},
         "interop": [],
