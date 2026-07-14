@@ -175,6 +175,9 @@ historical full-gate run.
   `make scoped` passed with 503 tests.
 - `d0d2dc8`: current commit IDs and the live-E2E environment failure classification;
   the code tree is unchanged by this evidence-only update.
+- The final `make push` attempt from the current clean tree reached the configured
+  remote but failed with `Connection closed by 198.18.0.49 port 443` and
+  `Could not read from remote repository`; no merge or remote update occurred.
 
 These four commits were locally reworded before push to keep the public subject/body
 convention and contain no local planning labels. Their message-only rewrites do not
@@ -184,5 +187,6 @@ change the code tree or prior gate results.
 
 The historical record is now explicit and auditable, but it is not a claim that
 every earlier commit passed a reproducible full gate. Relay audit remediation and
-source-of-truth refresh are complete. The release remains blocked until the final
-full gate, authorized live E2E, and successful `make push` are complete.
+source-of-truth refresh are complete. The final local full gate is green, but the
+release remains blocked until an authorized environment supplies a real live E2E
+verdict and a successful `make push`.
