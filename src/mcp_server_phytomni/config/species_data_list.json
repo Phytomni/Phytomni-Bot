@@ -2725,8 +2725,8 @@
     "tae": {
       "/obs/phytomni/agent_data/raw_data/02.genome/triticum_aestivum/Triticum_aestivum.IWGSC.dna_sm.AllPrompter.upper.fa": "All gene prompter sequences for Triticum aestivum, you can use gene_id to find a specific gene prompter sequence for $gene_id, the command line could be \"grep -A1 $gene_id Triticum_aestivum.IWGSC.dna_sm.AllPrompter.upper.fa > $out_file\"",
       "/obs/phytomni/agent_data/raw_data/12.promoter_design/08.promoterdesign/Triticum_aestivum": "The promoter design results for triticum_aestivum genes",
-      "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence.",
       "/obs/phytomni/agent_data/scripts/design_promoter.py": "A script to design gene promoter sequence.",
+      "/obs/phytomni/agent_data/scripts/get_promoter_design.py": "A script to generate mutation promoter sequence.",
       "/obs/phytomni/agent_data/scripts/summary_scripts/summary_all.py": "A script to summary the result file."
     },
     "tca": {
