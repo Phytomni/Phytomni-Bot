@@ -32,12 +32,14 @@ historical full-gate run.
 - The remote release branch later advanced by one config-only commit,
   `f2da19e` (`Update promoter design species configuration`). The local branch
   was rebased onto that commit without conflicts; the resulting tree is clean
-  and the implementation baseline is `8806f1d`; the final docs-synchronized
-  pushed baseline is `9318969`.
+  and the implementation baseline is `8806f1d`; the docs-synchronized
+  evidence baseline is `9318969`, followed by the final SHA-alignment docs
+  commit `6c02ca6`.
 - The SSH transport is now reachable through the authorized local proxy route:
   key authentication and `git ls-remote` both succeed. A non-writing push
   probe passed the 503-item scoped gate before the rebase, and the final
-  post-rebase `make push` completed successfully at `9318969`.
+  post-rebase `make push` completed successfully at `9318969`, and the final
+  SHA-alignment docs push completed successfully at `6c02ca6`.
 
 ## Phase 0 — version, dependency, and CI calibration
 
@@ -191,12 +193,12 @@ historical full-gate run.
   non-fast-forward because the remote had advanced; no merge or force-push was
   performed. The rebase was followed by `make push`, whose full gate passed with
   `2493 passed, 1 deselected`, 88.00% coverage, and all 110 module floors green;
-  the remote now points at `9318969`.
-- `e0e9e4a`, `21a0c69`, `37ded86`, `8806f1d`, and `9318969` record the rebased
-  evidence, remote-config formatting repairs, prompt-render golden refresh, and
-  final audit-document synchronization. Their scoped gates passed; the final
-  `make push` passed the full gate and updated the remote without merge or
-  force-push.
+  the remote now points at `6c02ca6`.
+- `e0e9e4a`, `21a0c69`, `37ded86`, `8806f1d`, `9318969`, and `6c02ca6` record
+  the rebased evidence, remote-config formatting repairs, prompt-render golden
+  refresh, and final audit-document synchronization. Their scoped gates passed;
+  the final `make push` passed the full gate and updated the remote without
+  merge or force-push.
 
 These four commits were locally reworded before push to keep the public subject/body
 convention and contain no local planning labels. Their message-only rewrites do not
