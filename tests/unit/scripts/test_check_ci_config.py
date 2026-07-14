@@ -16,6 +16,14 @@ pytestmark = pytest.mark.unit
 SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "check_ci_config.py"
 
 
+def test_lint_workflow_uses_gauss_test_dsn_without_retired_bi_token() -> None:
+    """Offline lint jobs use a test DSN instead of the retired BI token."""
+    text = Path(".github/workflows/lint.yml").read_text(encoding="utf-8")
+    assert "BI_TOKEN" not in text
+    assert text.count("GAUSS_DSN: postgresql://pytest") == 2
+    assert 'PHYTOMNI_TESTING: "1"' in text
+
+
 def _run(
     *names: str, env: dict[str, str] | None = None
 ) -> subprocess.CompletedProcess:

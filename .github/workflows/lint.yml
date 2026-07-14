@@ -51,7 +51,7 @@ jobs:
           EMBED_URL: https://example.invalid/embed
           EMBED_MODEL: pytest-embed-model
           EMBED_API_KEY: pytest-embed-api-key
-          BI_TOKEN: pytest-bi-token
+          GAUSS_DSN: postgresql://pytest:pytest@localhost:5432/pytest
         run: pytest
 
   black:
@@ -215,7 +215,7 @@ jobs:
           EMBED_URL: https://example.invalid/embed
           EMBED_MODEL: pytest-embed-model
           EMBED_API_KEY: pytest-embed-api-key
-          BI_TOKEN: pytest-bi-token
+          GAUSS_DSN: postgresql://pytest:pytest@localhost:5432/pytest
         run: |
           pytest \
             --cov=mcp_server_phytomni \
