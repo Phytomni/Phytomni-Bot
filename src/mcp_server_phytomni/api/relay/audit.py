@@ -7,7 +7,7 @@
 Models: RelayAuditRecord, RelayAuditQuery. Class: RelayAuditStore.
 Function: get_audit_store.
 
-Persists relay request/response metadata and verbatim bodies by request
+Persists relay request/response metadata and redacted bodies by request
 id. No key hash, salt, or plaintext key is stored, only the public
 prefix; the DB stays local because SQLite WAL deadlocks on network FS.
 """
@@ -22,6 +22,8 @@ from functools import cache
 from pathlib import Path
 
 from pydantic import BaseModel
+
+from .audit_filter import redact_body_text
 
 __all__ = [
     "RelayAuditRecord",
@@ -51,8 +53,8 @@ class RelayAuditRecord(BaseModel):
         operation: Optional sub-operation label.
         status_code: Upstream HTTP status, or None on transport error.
         duration_ms: Wall-clock forwarding latency in milliseconds.
-        request_body: Verbatim request body (never redacted).
-        response_body: Verbatim response body (never redacted).
+        request_body: Redacted request body, capped by the forwarding path.
+        response_body: Redacted response body, capped by the forwarding path.
         error_type: Exception type name when forwarding failed.
         created_at: ISO-8601 creation timestamp (None before insert).
     """
@@ -89,8 +91,8 @@ class RelayAuditRecord(BaseModel):
             operation=row["operation"],
             status_code=row["status_code"],
             duration_ms=row["duration_ms"],
-            request_body=row["request_body"],
-            response_body=row["response_body"],
+            request_body=redact_body_text(row["request_body"]),
+            response_body=redact_body_text(row["response_body"]),
             error_type=row["error_type"],
             created_at=row["created_at"],
         )
@@ -204,6 +206,8 @@ class RelayAuditStore:
             The autoincrement id of the inserted row.
         """
         created_at = entry.created_at or _now_iso()
+        request_body = redact_body_text(entry.request_body)
+        response_body = redact_body_text(entry.response_body)
         with self._connect() as conn:
             cursor = conn.execute(
                 """
@@ -221,8 +225,8 @@ class RelayAuditStore:
                     entry.operation,
                     entry.status_code,
                     entry.duration_ms,
-                    entry.request_body,
-                    entry.response_body,
+                    request_body,
+                    response_body,
                     entry.error_type,
                     created_at,
                 ),

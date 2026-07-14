@@ -46,7 +46,7 @@ def test_init_creates_empty_db(tmp_path: Path) -> None:
 
 
 def test_record_returns_row_id_and_round_trips(tmp_path: Path) -> None:
-    """A recorded row is fetchable by request id with fields intact."""
+    """A recorded row is fetchable with body credentials already redacted."""
     store = _make_store(tmp_path)
 
     row_id = store.record(
@@ -58,7 +58,7 @@ def test_record_returns_row_id_and_round_trips(tmp_path: Path) -> None:
             operation="chat.completions",
             status_code=200,
             duration_ms=42,
-            request_body='{"q": "hi"}',
+            request_body='{"q": "hi", "api_key": "ptm-secret"}',
             response_body='{"a": "hello"}',
         )
     )
@@ -73,7 +73,7 @@ def test_record_returns_row_id_and_round_trips(tmp_path: Path) -> None:
     assert record.service == "llm"
     assert record.status_code == 200
     assert record.duration_ms == 42
-    assert record.request_body == '{"q": "hi"}'
+    assert record.request_body == '{"q":"hi","api_key":"[REDACTED]"}'
     assert record.response_body == '{"a": "hello"}'
     assert record.created_at
 

@@ -190,6 +190,7 @@ from .openai_mapping import (
 )
 from .ratelimit import make_rate_limiter
 from .relay import RelayAuditQuery, create_relay_router, get_audit_store
+from .relay.audit_filter import redact_body_text
 from .schemas import (
     A2uiActionRequest,
     AgentRunRequest,
@@ -442,6 +443,20 @@ def _run_record_to_dict(record: Any) -> dict[str, Any]:
         "a2a_message_id": record.a2a.message_id,
         "answer": _extract_answer(record.result),
     }
+
+
+def _relay_audit_record_to_dict(
+    record: Any, config: ApiConfig
+) -> dict[str, Any]:
+    """Project a relay audit row with defense-in-depth body redaction."""
+    payload = record.model_dump()
+    payload["request_body"] = redact_body_text(
+        payload.get("request_body"), config.RELAY_REQUEST_AUDIT_MAX_BYTES
+    )
+    payload["response_body"] = redact_body_text(
+        payload.get("response_body"), config.RELAY_RESPONSE_AUDIT_MAX_BYTES
+    )
+    return payload
 
 
 @lru_cache(maxsize=1)
@@ -3049,7 +3064,8 @@ def create_app() -> FastAPI:
         hash, salt, or plaintext key, only the public ``key_prefix``.
         """
         del _admin  # Auth side-effect only.
-        store = get_audit_store(ApiConfig().RELAY_AUDIT_DB_PATH)
+        config = ApiConfig()
+        store = get_audit_store(config.RELAY_AUDIT_DB_PATH)
         records = store.query(
             RelayAuditQuery(
                 user_id=user_id,
@@ -3065,7 +3081,10 @@ def create_app() -> FastAPI:
         return JSONResponse(
             {
                 "object": "list",
-                "data": [record.model_dump() for record in records],
+                "data": [
+                    _relay_audit_record_to_dict(record, config)
+                    for record in records
+                ],
             }
         )
 
@@ -3076,13 +3095,17 @@ def create_app() -> FastAPI:
     ) -> JSONResponse:
         """Fetch relay audit records by request id, service-token gated."""
         del _admin  # Auth side-effect only.
-        store = get_audit_store(ApiConfig().RELAY_AUDIT_DB_PATH)
+        config = ApiConfig()
+        store = get_audit_store(config.RELAY_AUDIT_DB_PATH)
         records = store.get_by_request_id(request_id)
         return JSONResponse(
             {
                 "object": "list",
                 "request_id": request_id,
-                "data": [record.model_dump() for record in records],
+                "data": [
+                    _relay_audit_record_to_dict(record, config)
+                    for record in records
+                ],
             }
         )
 

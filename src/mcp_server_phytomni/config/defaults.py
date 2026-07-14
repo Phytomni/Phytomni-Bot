@@ -782,6 +782,9 @@ class ApiConfig(ApiLimitsConfig):
             audit records become eligible for retention cleanup.
         RELAY_REQUEST_MAX_BYTES (int): Maximum relayed request body size
             in bytes accepted before the relay rejects the call.
+        RELAY_REQUEST_AUDIT_MAX_BYTES (int): Maximum UTF-8 bytes retained in
+            the sanitized request-body audit copy. This is separate from the
+            client-facing request limit.
         RELAY_TIMEOUT_SECONDS (float): Per-request upstream timeout in
             seconds for relayed calls. Also reused as the wall-clock
             ceiling for a streamed forward so a drip-feeding upstream
@@ -948,6 +951,13 @@ class ApiConfig(ApiLimitsConfig):
         default=10_485_760,
         validation_alias=AliasChoices(
             "RELAY_REQUEST_MAX_BYTES", "PHYTOMNI_RELAY_REQUEST_MAX_BYTES"
+        ),
+    )
+    RELAY_REQUEST_AUDIT_MAX_BYTES: int = Field(
+        default=65_536,
+        validation_alias=AliasChoices(
+            "RELAY_REQUEST_AUDIT_MAX_BYTES",
+            "PHYTOMNI_RELAY_REQUEST_AUDIT_MAX_BYTES",
         ),
     )
     RELAY_TIMEOUT_SECONDS: float = Field(

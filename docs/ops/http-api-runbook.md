@@ -580,13 +580,14 @@ The credential-injecting relay (`/v1/relay/*`) is off unless
 - **Query the audit.** Every relay call is recorded in the local audit
   store (`RELAY_AUDIT_DB_PATH`). Query it with the service token:
   `GET /v1/relay/audit?service=llm&user_id=<customer>` and
-  `GET /v1/relay/audit/{request_id}`. Rows hold the verbatim
-  request/response bodies (response capped at
-  `RELAY_RESPONSE_AUDIT_MAX_BYTES`) and the public key prefix — never the
-  key hash or an injected credential header. Treat the audit DB as
-  sensitive (it can contain raw customer payloads): restrict file
-  permissions and keep it on a local disk (SQLite WAL deadlocks on
-  network filesystems).
+  `GET /v1/relay/audit/{request_id}`. Rows hold redacted request/response
+  bodies (request capped at `RELAY_REQUEST_AUDIT_MAX_BYTES`, response capped
+  at `RELAY_RESPONSE_AUDIT_MAX_BYTES`) and the public key prefix — never the
+  key hash or an injected credential header. Credential-shaped JSON and
+  key/value fields are replaced with `[REDACTED]`. Treat the audit DB as
+  sensitive: restrict file permissions, keep it on a local disk (SQLite WAL
+  deadlocks on network filesystems), and purge any pre-existing raw-body rows
+  before enabling the redaction policy in an existing deployment.
 - **Retention.** Audit rows are eligible for cleanup after
   `RELAY_AUDIT_RETENTION_DAYS` (default 90). Purge expired rows on a
   schedule by calling `RelayAuditStore.purge_expired(retention_days)`

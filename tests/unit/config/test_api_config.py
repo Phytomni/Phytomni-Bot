@@ -56,6 +56,7 @@ def test_api_config_defaults() -> None:
     assert str(_CACHE_DIR / "relay_audit.sqlite") == config.RELAY_AUDIT_DB_PATH
     assert config.RELAY_AUDIT_RETENTION_DAYS == 90
     assert config.RELAY_REQUEST_MAX_BYTES == 10_485_760
+    assert config.RELAY_REQUEST_AUDIT_MAX_BYTES == 65_536
     assert config.RELAY_TIMEOUT_SECONDS == 600.0
     assert config.RELAY_RESPONSE_AUDIT_MAX_BYTES == 10_485_760
     assert config.RELAY_RESPONSE_MAX_BYTES == 1024 * 1024 * 1024
@@ -219,6 +220,7 @@ def test_relay_config_prefixed_env_override(
     )
     monkeypatch.setenv("PHYTOMNI_RELAY_AUDIT_RETENTION_DAYS", "30")
     monkeypatch.setenv("PHYTOMNI_RELAY_REQUEST_MAX_BYTES", "2048")
+    monkeypatch.setenv("PHYTOMNI_RELAY_REQUEST_AUDIT_MAX_BYTES", "1024")
     monkeypatch.setenv("PHYTOMNI_RELAY_TIMEOUT_SECONDS", "12.5")
     monkeypatch.setenv("PHYTOMNI_RELAY_RESPONSE_AUDIT_MAX_BYTES", "4096")
     monkeypatch.setenv("PHYTOMNI_RELAY_RESPONSE_MAX_BYTES", "8192")
@@ -231,6 +233,7 @@ def test_relay_config_prefixed_env_override(
     assert config.RELAY_AUDIT_DB_PATH == "/tmp/relay_audit.sqlite"
     assert config.RELAY_AUDIT_RETENTION_DAYS == 30
     assert config.RELAY_REQUEST_MAX_BYTES == 2048
+    assert config.RELAY_REQUEST_AUDIT_MAX_BYTES == 1024
     assert config.RELAY_TIMEOUT_SECONDS == 12.5
     assert config.RELAY_RESPONSE_AUDIT_MAX_BYTES == 4096
     assert config.RELAY_RESPONSE_MAX_BYTES == 8192
@@ -244,6 +247,7 @@ def test_relay_config_unprefixed_env_override(
     """Verify the unprefixed RELAY_ aliases also override relay knobs."""
     monkeypatch.setenv("RELAY_ENABLED", "true")
     monkeypatch.setenv("RELAY_AUDIT_RETENTION_DAYS", "7")
+    monkeypatch.setenv("RELAY_REQUEST_AUDIT_MAX_BYTES", "2048")
     monkeypatch.setenv("RELAY_RATE_LIMIT_PER_MIN", "9")
     monkeypatch.setenv("RELAY_MAX_CONCURRENT_PER_KEY", "2")
     monkeypatch.setenv("RELAY_RESPONSE_MAX_BYTES", "65536")
@@ -252,6 +256,7 @@ def test_relay_config_unprefixed_env_override(
 
     assert config.RELAY_ENABLED is True
     assert config.RELAY_AUDIT_RETENTION_DAYS == 7
+    assert config.RELAY_REQUEST_AUDIT_MAX_BYTES == 2048
     assert config.RELAY_RATE_LIMIT_PER_MIN == 9
     assert config.RELAY_MAX_CONCURRENT_PER_KEY == 2
     assert config.RELAY_RESPONSE_MAX_BYTES == 65536

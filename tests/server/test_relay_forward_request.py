@@ -160,6 +160,37 @@ async def test_transparent_2xx_streams_with_upstream_status(
     assert records[0].service == "llm"
 
 
+async def test_request_audit_redacts_credentials_and_caps_body(
+    monkeypatch: pytest.MonkeyPatch, store: RelayAuditStore
+) -> None:
+    """Request audit copies do not retain credential-shaped payload fields."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_REQUEST_AUDIT_MAX_BYTES", "64")
+
+    def handler(_req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"{}")
+
+    _patch_client(monkeypatch, handler)
+
+    response = await _forward(
+        store,
+        _make_request({}),
+        _upstream(RelayErrorMode.TRANSPARENT),
+        body=(
+            b'{"prompt":"'
+            + b"x" * 200
+            + b'","api_key":"ptm-secret","password":"letmein"}'
+        ),
+    )
+    assert isinstance(response, StreamingResponse)
+    async for _ in response.body_iterator:
+        pass
+
+    request_body = store.query()[0].request_body or ""
+    assert "ptm-secret" not in request_body
+    assert "letmein" not in request_body
+    assert "<truncated:" in request_body
+
+
 async def test_transparent_upstream_500_seen_as_500(
     monkeypatch: pytest.MonkeyPatch, store: RelayAuditStore
 ) -> None:
@@ -176,6 +207,32 @@ async def test_transparent_upstream_500_seen_as_500(
 
     assert response.status_code == 500
     assert store.query()[0].status_code == 500
+
+
+async def test_response_audit_redacts_credentials(
+    monkeypatch: pytest.MonkeyPatch, store: RelayAuditStore
+) -> None:
+    """Buffered response audit copies redact credential-shaped fields."""
+
+    def handler(_req: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            content=b'{"answer":"ok","access_token":"oauth-secret"}',
+        )
+
+    _patch_client(monkeypatch, handler)
+
+    response = await _forward(
+        store,
+        _make_request({}),
+        _upstream(RelayErrorMode.ENVELOPE, service="retrieve"),
+    )
+
+    assert response.status_code == 200
+    response_body = store.query()[0].response_body or ""
+    assert "oauth-secret" not in response_body
+    assert '"access_token":"[REDACTED]"' in response_body
 
 
 async def test_transparent_non2xx_scrubs_injected_secret(

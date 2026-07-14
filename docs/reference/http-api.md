@@ -703,10 +703,12 @@ the operator-credentialed call. Each key is bounded to
 `RELAY_MAX_CONCURRENT_PER_KEY` in-flight forwards (excess returns `503`),
 and a forward's total wall-clock lifetime is capped at
 `RELAY_TIMEOUT_SECONDS`. Every call is audited best-effort (a failed
-audit write never fails a successful relay); audit rows store the
-verbatim request/response bodies (capped for the response by
-`RELAY_RESPONSE_AUDIT_MAX_BYTES`) and the public key prefix, never the
-key hash or any injected credential header. Query audits with the
+audit write never fails a successful relay); audit rows store redacted
+request/response bodies. Request copies are capped by
+`RELAY_REQUEST_AUDIT_MAX_BYTES`, response copies by
+`RELAY_RESPONSE_AUDIT_MAX_BYTES`, and credential-shaped JSON/key-value
+fields are replaced with `[REDACTED]`. The public key prefix is retained,
+never the key hash or any injected credential header. Query audits with the
 service-token `GET /v1/relay/audit` routes.
 
 See *Relay Variables* in `docs/reference/configuration.md` for the knobs and the

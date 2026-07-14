@@ -44,7 +44,7 @@ def _audit_db_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
             key_prefix="ptm_alice01",
             service="llm",
             status_code=200,
-            request_body="hello",
+            request_body='{"prompt":"hello","api_key":"ptm-secret"}',
             response_body="world",
         )
     )
@@ -162,4 +162,7 @@ async def test_get_by_request_id_returns_match(
     assert body["request_id"] == "req-a"
     assert len(body["data"]) == 1
     assert body["data"][0]["user_id"] == "alice"
-    assert body["data"][0]["request_body"] == "hello"
+    request_body = body["data"][0]["request_body"]
+    assert request_body is not None
+    assert request_body == '{"prompt":"hello","api_key":"[REDACTED]"}'
+    assert "ptm-secret" not in request_body

@@ -40,7 +40,11 @@ from ...config.defaults import ApiConfig
 from ...runtime.request_context import current_request_id
 from ..auth import ApiPrincipal
 from .audit import RelayAuditRecord, RelayAuditStore
-from .audit_filter import CREDENTIAL_HEADERS, decode_body
+from .audit_filter import (
+    CREDENTIAL_HEADERS,
+    redact_body_text,
+    sanitize_audit_body,
+)
 
 __all__ = [
     "prepare_forward_headers",
@@ -372,9 +376,7 @@ async def _buffered_relay_response(
     """
     raw = await upstream.aread()
     status = upstream.status_code
-    audit_body = decode_body(raw[:cap])
-    if len(raw) > cap:
-        audit_body += f"<truncated: {len(raw) - cap} bytes>"
+    audit_body = sanitize_audit_body(raw, cap)
     record(status_code=status, response_body=audit_body, error_type=None)
     if error_mode is RelayErrorMode.TRANSPARENT:
         return Response(
@@ -408,10 +410,13 @@ def _streaming_relay_response(
     status = upstream.status_code
 
     async def _on_complete(outcome: TeeOutcome) -> None:
-        body_text = decode_body(outcome.body)
+        body_text = sanitize_audit_body(outcome.body, cap)
         if outcome.truncated:
             dropped = outcome.total_bytes - len(outcome.body)
-            body_text += f"<truncated: {dropped} bytes>"
+            body_text = (
+                redact_body_text(body_text + f"<truncated: {dropped} bytes>")
+                or ""
+            )
         error_type = outcome.error_type
         if (
             error_type is None
@@ -581,7 +586,10 @@ async def forward_relay_request(
     """
     started = time.monotonic()
     request_id = current_request_id() or ""
-    request_body = decode_body(body)
+    config = ApiConfig()
+    request_body = sanitize_audit_body(
+        body, config.RELAY_REQUEST_AUDIT_MAX_BYTES
+    )
 
     def record(
         *,
@@ -608,7 +616,6 @@ async def forward_relay_request(
                 "relay audit write failed for request %s", request_id
             )
 
-    config = ApiConfig()
     stack = AsyncExitStack()
     _acquire_key_slot(
         principal.key_prefix, config.RELAY_MAX_CONCURRENT_PER_KEY, stack

@@ -280,6 +280,7 @@ is no relay-specific secret. Every variable accepts an unprefixed or
 | `RELAY_AUDIT_DB_PATH`            | `.cache/phytomni/relay_audit.sqlite` | no         | Local relay audit SQLite store; keep on a local disk (WAL deadlocks on network filesystems).                    |
 | `RELAY_AUDIT_RETENTION_DAYS`     | `90`                                 | no         | Age in days after which audit rows are eligible for cleanup.                                                    |
 | `RELAY_REQUEST_MAX_BYTES`        | `10485760`                           | no         | Max relayed request body in bytes; over-limit returns `413` without buffering the whole body.                   |
+| `RELAY_REQUEST_AUDIT_MAX_BYTES`  | `65536`                              | no         | Max UTF-8 bytes retained in the sanitized request-body audit copy; separate from the client-facing request cap. |
 | `RELAY_RESPONSE_AUDIT_MAX_BYTES` | `10485760`                           | no         | Max upstream response bytes copied into the audit; the client-facing response is never truncated.               |
 | `RELAY_RESPONSE_MAX_BYTES`       | `1073741824`                         | no         | Max OBS object size the download relay streams back before returning `413`; distinct from the request-body cap. |
 | `RELAY_TIMEOUT_SECONDS`          | `600.0`                              | no         | Per-request upstream timeout and the total wall-clock ceiling for a streamed forward.                           |
