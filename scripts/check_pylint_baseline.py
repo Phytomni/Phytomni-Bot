@@ -46,13 +46,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # stays exempt-here-instead-of-refactored lives in
 # ``docs/development/lint-exemptions.md``.
 RULE_BASELINES: dict[str, int] = {
-    # Bumped 97 -> 106 for the A2UI review dual-transport surface (HTTP
-    # pause projection mirrors chat confirm stubs) plus early-issues P0
-    # formatter/reconcile test harness parallels.
-    "R0801": 106,  # duplicate-code: cross-file similar blocks
-    # too-few-public-methods: prior set (24) plus A2UI review stream
-    # fakes and early-issues CLI/reconcile test stubs.
-    "R0903": 27,
+    # Bumped 106 -> 124 for the Phase-6 A2A/interop/memory rollout:
+    # parallel design/research delegation paths, cross-surface protocol
+    # tests, relay route mirrors, and memory export/migration fixtures.
+    "R0801": 124,  # duplicate-code: cross-file similar blocks
+    # Bumped 27 -> 28 for the local fake-peer MCP server used by the
+    # offline interop end-to-end suite.
+    "R0903": 28,
 }
 
 
