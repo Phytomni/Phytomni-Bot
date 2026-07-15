@@ -227,6 +227,65 @@ async def test_a2ui_action_flag_off_returns_403(
     assert response.json()["error"]["message"] == "a2ui disabled"
 
 
+async def test_a2ui_action_oversized_body_returns_413(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Direct A2UI callers cannot send a body above the Web-compatible cap."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    response = await api_client.post(
+        "/v1/runs/run-a2ui-oversized/a2ui-actions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "surface_id": "surface-1",
+            "widget": "form",
+            "action_id": "action-1",
+            "run_id": "run-a2ui-oversized",
+            "payload": {
+                "fields": {
+                    f"field-{index}": "x" * 4_096 for index in range(16)
+                }
+            },
+        },
+    )
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == 413
+
+
+async def test_a2ui_action_oversized_response_returns_413(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A2UI resume responses are capped before they reach the wire."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    run_id = _seed_a2ui_run(
+        tasks_db_path,
+        run_id="run-a2ui-large-response",
+        surface_id="sfc-large-response",
+    )
+
+    async def _large_resume(**_kwargs: Any) -> tuple[dict[str, Any], int]:
+        return {"answer": "x" * (1_048_576 + 1)}, 200
+
+    monkeypatch.setattr(api_app_module, "_resume_a2ui_run", _large_resume)
+    response = await api_client.post(
+        f"/v1/runs/{run_id}/a2ui-actions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json=_action_body(
+            run_id=run_id,
+            surface_id="sfc-large-response",
+            accepted=True,
+        ),
+    )
+
+    assert response.status_code == 413
+    assert response.json()["error"]["code"] == 413
+
+
 async def test_a2ui_action_wrong_widget_returns_400(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

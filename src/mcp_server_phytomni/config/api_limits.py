@@ -62,6 +62,27 @@ class ApiLimitsConfig(BaseSettings):
         le=16 * 1024 * 1024,
         env_name="A2A_MAX_ARTIFACT_BYTES",
     )
+    A2UI_MAX_BODY_BYTES: int = _api_bounded_int(
+        65_536, ge=1024, le=65_536, env_name="A2UI_MAX_BODY_BYTES"
+    )
+    A2UI_MAX_RESPONSE_BYTES: int = _api_bounded_int(
+        1_048_576,
+        ge=1024,
+        le=1_048_576,
+        env_name="A2UI_MAX_RESPONSE_BYTES",
+    )
+    A2UI_MAX_IDENTIFIER_RUNES: int = _api_bounded_int(
+        256, ge=1, le=256, env_name="A2UI_MAX_IDENTIFIER_RUNES"
+    )
+    A2UI_MAX_FORM_FIELDS: int = _api_bounded_int(
+        20, ge=1, le=20, env_name="A2UI_MAX_FORM_FIELDS"
+    )
+    A2UI_MAX_SCALAR_CHARS: int = _api_bounded_int(
+        4096, ge=1, le=4096, env_name="A2UI_MAX_SCALAR_CHARS"
+    )
+    A2UI_MAX_CHOICES: int = _api_bounded_int(
+        100, ge=1, le=100, env_name="A2UI_MAX_CHOICES"
+    )
 
     @model_validator(mode="after")
     def _validate_memory_bounds(self) -> "ApiLimitsConfig":

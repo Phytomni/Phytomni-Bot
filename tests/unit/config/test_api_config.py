@@ -52,6 +52,12 @@ def test_api_config_defaults() -> None:
     assert config.INTEROP_CACHE_MAX_ENTRIES == 256
     assert config.A2A_MAX_HISTORY_MESSAGES == 32
     assert config.A2A_MAX_ARTIFACT_BYTES == 256 * 1024
+    assert config.A2UI_MAX_BODY_BYTES == 65_536
+    assert config.A2UI_MAX_RESPONSE_BYTES == 1_048_576
+    assert config.A2UI_MAX_IDENTIFIER_RUNES == 256
+    assert config.A2UI_MAX_FORM_FIELDS == 20
+    assert config.A2UI_MAX_SCALAR_CHARS == 4096
+    assert config.A2UI_MAX_CHOICES == 100
     assert config.RELAY_ENABLED is False
     assert str(_CACHE_DIR / "relay_audit.sqlite") == config.RELAY_AUDIT_DB_PATH
     assert config.RELAY_AUDIT_RETENTION_DAYS == 90
@@ -135,6 +141,50 @@ def test_a2ui_flags_env_override(
     config = ApiConfig()
     assert config.A2UI_ENABLED is True
     assert config.A2UI_TOOL_CALL is True
+
+
+def test_a2ui_limits_accept_prefixed_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A2UI shape limits accept their PHYTOMNI aliases."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_MAX_BODY_BYTES", "32768")
+    monkeypatch.setenv("PHYTOMNI_A2UI_MAX_RESPONSE_BYTES", "524288")
+    monkeypatch.setenv("PHYTOMNI_A2UI_MAX_IDENTIFIER_RUNES", "128")
+    monkeypatch.setenv("PHYTOMNI_A2UI_MAX_FORM_FIELDS", "10")
+    monkeypatch.setenv("PHYTOMNI_A2UI_MAX_SCALAR_CHARS", "2048")
+    monkeypatch.setenv("PHYTOMNI_A2UI_MAX_CHOICES", "50")
+
+    config = ApiConfig()
+
+    assert config.A2UI_MAX_BODY_BYTES == 32768
+    assert config.A2UI_MAX_RESPONSE_BYTES == 524288
+    assert config.A2UI_MAX_IDENTIFIER_RUNES == 128
+    assert config.A2UI_MAX_FORM_FIELDS == 10
+    assert config.A2UI_MAX_SCALAR_CHARS == 2048
+    assert config.A2UI_MAX_CHOICES == 50
+
+
+@pytest.mark.parametrize(
+    ("env_name", "value"),
+    [
+        ("A2UI_MAX_BODY_BYTES", "65537"),
+        ("A2UI_MAX_RESPONSE_BYTES", "1048577"),
+        ("A2UI_MAX_IDENTIFIER_RUNES", "257"),
+        ("A2UI_MAX_FORM_FIELDS", "21"),
+        ("A2UI_MAX_SCALAR_CHARS", "4097"),
+        ("A2UI_MAX_CHOICES", "101"),
+    ],
+)
+def test_a2ui_limits_reject_unsafe_upper_bounds(
+    monkeypatch: pytest.MonkeyPatch,
+    env_name: str,
+    value: str,
+) -> None:
+    """Operators cannot widen the Web-compatible A2UI safety boundary."""
+    monkeypatch.setenv(env_name, value)
+
+    with pytest.raises(ValidationError, match=env_name):
+        ApiConfig()
 
 
 def test_a2a_config_env_aliases_and_url_normalization(

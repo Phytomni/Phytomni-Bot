@@ -187,6 +187,12 @@ from .a2a.executor import (
     A2ARequestHandler,
     task_from_run_record,
 )
+from .a2ui_limits import (
+    A2uiPayloadError,
+    A2uiPayloadTooLargeError,
+    ensure_a2ui_response_size,
+    read_a2ui_action_request,
+)
 from .admin_auth import is_service_token_valid, require_service_principal
 from .auth import (
     ApiPrincipal,
@@ -3525,17 +3531,34 @@ def create_app() -> FastAPI:
     @app.post("/v1/runs/{run_id}/a2ui-actions")
     async def post_a2ui_action(
         run_id: str,
-        body: A2uiActionRequest,
+        request: Request,
         principal: ApiPrincipal = Depends(require_scope("agents")),
         debug: bool = False,
     ) -> JSONResponse:
         """Resume a paused Chat A2UI run from a Web action envelope."""
         del principal
+        if not ApiConfig().A2UI_ENABLED:
+            raise HTTPException(status_code=403, detail="a2ui disabled")
+        try:
+            body = await read_a2ui_action_request(request)
+        except A2uiPayloadTooLargeError as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        except A2uiPayloadError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         response_body, status_code = await _resume_a2ui_run(
             run_id=run_id,
             body=body,
             debug=resolve_debug(debug),
         )
+        try:
+            ensure_a2ui_response_size(
+                response_body,
+                max_bytes=ApiConfig().A2UI_MAX_RESPONSE_BYTES,
+            )
+        except A2uiPayloadTooLargeError as exc:
+            raise HTTPException(status_code=413, detail=str(exc)) from exc
+        except A2uiPayloadError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
         return JSONResponse(response_body, status_code=status_code)
 
     @app.post("/v1/runs/{thread_id}/resume")
