@@ -9,6 +9,8 @@ extraction, DataAgent tabular field shape, envelope construction, and
 credential-pattern sanitization at the MCP boundary.
 """
 
+from typing import Any
+
 import pytest
 
 from mcp_server_phytomni.mcp.result_formatting import (
@@ -164,6 +166,32 @@ def test_get_task_status_surfaces_final_report_as_answer() -> None:
     assert result.metadata["artifacts"] == [
         {"task_id": "dg-1", "output_dir": "/obs/run/output", "paths": []},
     ]
+
+
+def test_get_task_status_prefers_final_then_intermediate_report() -> None:
+    """Prefer final Markdown, then fall back to intermediate Markdown."""
+    base = {"final_report": "# final", "intermediate_report": "# interim"}
+    assert format_tool_result("GetTaskStatus", base).answer == "# final"
+    intermediate = {**base, "final_report": None}
+    assert (
+        format_tool_result("GetTaskStatus", intermediate).answer == "# interim"
+    )
+
+
+def test_failed_task_can_surface_intermediate_report() -> None:
+    """Keep an intermediate report readable after umbrella failure."""
+    raw: dict[str, Any] = {
+        "task_id": "dg-1",
+        "status": "failed",
+        "intermediate_report": "# profile",
+        "degraded": True,
+        "degraded_reason": "12 of 12 optional analyses unavailable",
+    }
+    result = format_tool_result("GetTaskStatus", raw)
+    assert result.answer == "# profile"
+    assert result.metadata["status"] == "failed"
+    assert result.metadata["report_stage"] == "intermediate"
+    assert result.metadata["degraded_reason"] == raw["degraded_reason"]
 
 
 def test_get_task_status_blank_final_report_keeps_status_line() -> None:

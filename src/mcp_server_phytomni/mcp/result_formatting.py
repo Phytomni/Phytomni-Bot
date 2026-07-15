@@ -35,6 +35,25 @@ _CITATION_PATTERN = re.compile(r"\[(?:[A-Za-z]+[:\s]*)?(\d+(?:,\s*\d+)*)\]")
 
 _PHYTOMNI_STATE_KEY = "phytomni_state"
 _METADATA_TEXT_TRUNCATE_BYTES = 4096
+_DEEP_GENOME_PROGRESS_KEYS = (
+    "planning_complete",
+    "brief_gene_status",
+    "total",
+    "planned",
+    "submitted",
+    "pending",
+    "running",
+    "succeeded",
+    "failed",
+    "cancelled",
+    "timed_out",
+)
+_DEEP_GENOME_FAILURE_MESSAGES = {
+    "succeeded": "analysis task unavailable",
+    "failed": "analysis task failed",
+    "cancelled": "analysis task cancelled",
+    "timed_out": "analysis task timed out",
+}
 
 
 @dataclass(frozen=True)
@@ -803,9 +822,10 @@ def _format_task_status_result(
 
     When the reconciled row carries a ``final_report`` (the assembled
     markdown DeepGenome persists in the background), that report becomes
-    the answer so a polling client reads the finished report directly;
-    every other agent leaves the field empty and keeps the bare
-    ``Task <id>: <status>`` status line.
+    the answer so a polling client reads the finished report directly.
+    A non-blank ``intermediate_report`` is the next fallback, allowing a
+    running or failed umbrella to remain report-readable while optional
+    analysis work is still settling.
 
     A ``degraded`` flag plus the already-redacted ``degraded_reason``
     surface a background report that finished but lost its brief_gene
@@ -816,11 +836,20 @@ def _format_task_status_result(
     status = _string_or_none(content.get("status")) or "unknown"
     output_dir = _string_or_none(content.get("output_dir"))
     artifacts = collect_terminal_artifacts([dict(content)])
-    final_report = content.get("final_report")
-    answer = (
-        final_report
-        if isinstance(final_report, str) and final_report
-        else f"Task {task_id or '?'}: {status}"
+    final_report = _nonblank_report(content.get("final_report"))
+    intermediate_report = _nonblank_report(content.get("intermediate_report"))
+    answer = final_report or intermediate_report
+    if answer is None:
+        answer = f"Task {task_id or '?'}: {status}"
+    report_stage = _report_stage(
+        content.get("report_stage"),
+        final_report=final_report,
+        intermediate_report=intermediate_report,
+    )
+    report_completeness = _report_completeness(
+        content.get("report_completeness"),
+        final_report=final_report,
+        intermediate_report=intermediate_report,
     )
     return FormattedToolResult(
         answer=answer,
@@ -831,10 +860,117 @@ def _format_task_status_result(
             "analysis_id": _string_or_none(content.get("analysis_id")),
             "live_status": content.get("live_status"),
             "artifacts": artifacts,
-            "degraded": bool(content.get("degraded")),
+            "report_stage": report_stage,
+            "report_completeness": report_completeness,
+            "report_revision": _nonnegative_int(
+                content.get("report_revision")
+            ),
+            "report_updated_at": _string_or_none(
+                content.get("report_updated_at")
+            ),
+            "progress": _deep_genome_progress(content.get("progress")),
+            "degraded": content.get("degraded") is True,
             "degraded_reason": _string_or_none(content.get("degraded_reason")),
+            "failures": _deep_genome_failures(content.get("failures")),
         },
     )
+
+
+def _nonblank_report(value: Any) -> str | None:
+    """Return report Markdown unchanged; whitespace-only text is absent."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value
+
+
+def _report_stage(
+    value: Any,
+    *,
+    final_report: str | None,
+    intermediate_report: str | None,
+) -> str | None:
+    """Return a bounded report-stage value with a report-derived fallback."""
+    stage = _string_or_none(value)
+    if stage in {"waiting_for_brief_gene", "intermediate", "final"}:
+        return stage
+    if final_report is not None:
+        return "final"
+    if intermediate_report is not None:
+        return "intermediate"
+    return None
+
+
+def _report_completeness(
+    value: Any,
+    *,
+    final_report: str | None,
+    intermediate_report: str | None,
+) -> str | None:
+    """Return a bounded report-completeness value with a safe fallback."""
+    completeness = _string_or_none(value)
+    if completeness in {"none", "partial", "complete"}:
+        return completeness
+    if final_report is not None:
+        return "complete"
+    if intermediate_report is not None:
+        return "partial"
+    return None
+
+
+def _nonnegative_int(value: Any) -> int:
+    """Return a non-negative integer, excluding booleans and invalid values."""
+    return (
+        value
+        if isinstance(value, int)
+        and not isinstance(value, bool)
+        and value >= 0
+        else 0
+    )
+
+
+def _deep_genome_progress(value: Any) -> dict[str, Any]:
+    """Copy only the public DeepGenome progress counters."""
+    if not isinstance(value, Mapping):
+        return {}
+    progress: dict[str, Any] = {}
+    for key in _DEEP_GENOME_PROGRESS_KEYS:
+        raw = value.get(key)
+        if key == "planning_complete":
+            progress[key] = raw if isinstance(raw, bool) else False
+        elif key == "brief_gene_status":
+            progress[key] = (
+                raw.strip().lower()
+                if isinstance(raw, str) and raw.strip()
+                else "unknown"
+            )
+        else:
+            progress[key] = _nonnegative_int(raw)
+    return progress
+
+
+def _deep_genome_failures(value: Any) -> list[dict[str, str]]:
+    """Copy terminal failures with fixed, non-sensitive public messages."""
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    failures: list[dict[str, str]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        work_item_key = _string_or_none(item.get("work_item_key"))
+        status = _string_or_none(item.get("status"))
+        if (
+            work_item_key is None
+            or status not in _DEEP_GENOME_FAILURE_MESSAGES
+        ):
+            continue
+        failures.append(
+            {
+                "work_item_key": work_item_key,
+                "status": status,
+                "message": _DEEP_GENOME_FAILURE_MESSAGES[status],
+            }
+        )
+    return failures
 
 
 def _network_task_payload(content: Mapping[str, Any]) -> Mapping[str, Any]:
