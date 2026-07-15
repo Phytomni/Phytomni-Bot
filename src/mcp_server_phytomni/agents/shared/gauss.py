@@ -36,21 +36,29 @@ _GAUSS_POOL_STATE: WeakKeyDictionary[
 
 
 async def _gauss_reset(_conn: asyncpg.Connection) -> None:
-    """Reset a pooled connection without issuing ``UNLISTEN``.
+    """Reset pooled session settings without issuing ``UNLISTEN``.
 
-    GaussDB lacks ``UNLISTEN``, but asyncpg's default connection reset
-    (``Connection.reset`` -> ``get_reset_query`` -> ``UNLISTEN *``) runs
-    it on every pool release and raises ``FeatureNotSupportedError``,
-    discarding rows already fetched. Supplying this coroutine makes
-    asyncpg take its custom-reset branch, which still rolls back any
-    open transaction and clears listeners via ``Connection._reset`` but
-    skips the ``UNLISTEN`` query. ``gauss_query`` is read-only and
-    single-statement, so no session GUCs or cursors accumulate and a
-    no-op reset is safe. If a writer path is added later, issue an
-    explicit ``RESET ALL`` here -- GaussDB supports that; only
-    ``UNLISTEN`` is missing.
+    GaussDB rejects asyncpg's default ``UNLISTEN *`` reset query. The
+    custom callback therefore executes the one supported session reset,
+    ``RESET ALL``, and lets failures propagate to the pool lifecycle.
+    Diagnostics contain only the exception type; cancellation remains
+    untouched.
     """
-    return None
+    try:
+        await _conn.execute("RESET ALL")
+    except (
+        asyncpg.PostgresError,
+        asyncpg.InterfaceError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        _LOGGER.error(
+            "GaussDB session reset failed exception_type=%s",
+            type(exc).__name__,
+        )
+        raise
 
 
 async def _gauss_pool() -> asyncpg.Pool:

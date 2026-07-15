@@ -16,7 +16,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import asyncpg
@@ -26,6 +26,7 @@ from mcp.shared.exceptions import McpError
 from mcp_server_phytomni.agents.shared import gauss as gauss_mod
 from mcp_server_phytomni.agents.shared.gauss import (
     _GAUSS_POOL_STATE,
+    _gauss_reset,
     aclose_gauss_pool,
     gauss_query,
 )
@@ -326,6 +327,8 @@ class _ResetModelingPool:
         """Store rows and the ``reset`` coroutine create_pool received."""
         self._rows = rows
         self._reset = reset
+        self.executed: list[str] = []
+        self.reset_error: BaseException | None = None
         self.closed = False
 
     @asynccontextmanager
@@ -345,6 +348,11 @@ class _ResetModelingPool:
         async def transaction(**_kwargs: Any) -> AsyncIterator[None]:
             yield None
 
+        async def execute(sql: str) -> None:
+            self.executed.append(sql)
+            if self.reset_error is not None:
+                raise self.reset_error
+
         async def default_reset() -> None:
             # Models conn.reset() -> get_reset_query() -> UNLISTEN * on
             # a server that lacks UNLISTEN (GaussDB).
@@ -352,7 +360,11 @@ class _ResetModelingPool:
                 "UNLISTEN is not yet supported."
             )
 
-        conn = SimpleNamespace(fetch=fetch, transaction=transaction)
+        conn = SimpleNamespace(
+            fetch=fetch,
+            transaction=transaction,
+            execute=execute,
+        )
         try:
             yield conn
         finally:
@@ -379,7 +391,12 @@ def _patch_reset_modeling_pool(
 
     async def fake_create_pool(*_a: Any, **kwargs: Any) -> _ResetModelingPool:
         captured.update(kwargs)
-        return _ResetModelingPool(rows, kwargs.get("reset"))
+        pool = _ResetModelingPool(rows, kwargs.get("reset"))
+        reset_error = captured.get("reset_error")
+        if isinstance(reset_error, BaseException):
+            pool.reset_error = reset_error
+        captured["pool"] = pool
+        return pool
 
     monkeypatch.setattr(gauss_mod.asyncpg, "create_pool", fake_create_pool)
     _GAUSS_POOL_STATE.clear()
@@ -405,6 +422,74 @@ async def test_gauss_query_survives_pool_release_without_unlisten(
     assert result == {"message": "ok", "data": [{"n": 1}]}
 
 
+async def test_gauss_reset_executes_only_reset_all() -> None:
+    """The pool reset clears session state without issuing UNLISTEN."""
+    connection = AsyncMock()
+
+    await _gauss_reset(connection)
+
+    connection.execute.assert_awaited_once_with("RESET ALL")
+    assert "UNLISTEN" not in str(connection.execute.await_args)
+
+
+async def test_reset_failure_never_reclassifies_query_as_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reset error propagates through the sanitized query failure path."""
+    captured = _patch_reset_modeling_pool(monkeypatch, [{"n": 1}])
+    captured["reset_error"] = asyncpg.PostgresError("reset body")
+
+    with pytest.raises(McpError, match="GaussDB query failed"):
+        await gauss_query("SELECT 1")
+
+    pool = cast(_ResetModelingPool, captured["pool"])
+    assert pool.executed == ["RESET ALL"]
+
+
+class _SingleConnectionPool:
+    """Minimal one-connection pool used to model borrower GUC isolation."""
+
+    def __init__(self) -> None:
+        """Start with no session settings."""
+        self.settings: dict[str, str] = {}
+
+    @asynccontextmanager
+    async def acquire(self) -> AsyncIterator[Any]:
+        """Yield one connection and reset it when the borrower returns it."""
+
+        async def execute(sql: str) -> None:
+            """Apply the only session commands used by this fake."""
+            normalized = sql.strip().upper()
+            if normalized == "RESET ALL":
+                self.settings.clear()
+                return
+            key, _, value = sql[4:].partition("=")
+            self.settings[key.strip()] = value.strip().strip("'")
+
+        connection = SimpleNamespace(execute=execute)
+        yield connection
+        await _gauss_reset(cast(asyncpg.Connection, connection))
+
+    async def borrow_and_set(self, key: str, value: str) -> None:
+        """Set a session value for one borrower."""
+        async with self.acquire() as connection:
+            await connection.execute(f"SET {key} = '{value}'")
+
+    async def borrow_and_show(self, key: str) -> str | None:
+        """Read a session value for the next borrower."""
+        async with self.acquire():
+            return self.settings.get(key)
+
+
+async def test_second_borrower_does_not_see_first_guc() -> None:
+    """RESET ALL prevents one connection borrower inheriting a GUC."""
+    pool = _SingleConnectionPool()
+
+    await pool.borrow_and_set("application_name", "borrower-one")
+
+    assert await pool.borrow_and_show("application_name") != "borrower-one"
+
+
 async def test_gauss_pool_supplies_non_unlisten_reset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -428,6 +513,5 @@ async def test_gauss_pool_supplies_non_unlisten_reset(
 
     await reset(SimpleNamespace(execute=record_execute))
 
-    assert not any(
-        "UNLISTEN" in stmt.upper() for stmt in executed
-    ), f"reset issued UNLISTEN: {executed}"
+    assert executed == ["RESET ALL"]
+    assert not any("UNLISTEN" in stmt.upper() for stmt in executed)
