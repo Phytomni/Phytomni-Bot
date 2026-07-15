@@ -1,0 +1,13 @@
+{
+  "acceptance_id": "RC-DB-002",
+  "owner": "dba-reviewer",
+  "state": "Evidence Returned",
+  "commit": "8b31cae",
+  "environment": "authorized-staging",
+  "command_or_request": "compare_gauss_queries.py (redacted)",
+  "expected": "matched=18 and mismatched=0",
+  "observed": "matched=18 and mismatched=0",
+  "artifact": "e2e/output/gauss_query_comparison.redacted.json",
+  "redaction": "credentials and result rows removed",
+  "recorded_at": "2026-07-16T00:00:00Z"
+}

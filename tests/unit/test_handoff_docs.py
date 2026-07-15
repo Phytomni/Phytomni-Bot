@@ -24,6 +24,8 @@ OPS_HANDOFF = (
 )
 MATRIX = ROOT / "docs/handoffs/2026-07-15-handoff-disposition-matrix.md"
 EVIDENCE_TEMPLATE = ROOT / "docs/handoffs/evidence/record-template.json"
+VALID_EVIDENCE = ROOT / "tests/fixtures/handoff/valid-evidence-record.json"
+INVALID_EVIDENCE = ROOT / "tests/fixtures/handoff/invalid-evidence-record.json"
 ORIGINAL_HANDOFF_NAMES = [
     "2026-05-23-python-service-consolidation.md",
     "2026-06-09-web-gateway-cutover-bot-asks.md",
@@ -285,6 +287,52 @@ def test_evidence_credential_shape_is_rejected_by_contract() -> None:
     }
     serialized = json.dumps(bad_record)
     assert re.search(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{24,}", serialized)
+
+
+def _assert_evidence_record(record: dict[str, Any]) -> None:
+    """Apply the offline evidence contract used by the fixtures."""
+    required = {
+        "acceptance_id",
+        "owner",
+        "state",
+        "commit",
+        "environment",
+        "command_or_request",
+        "expected",
+        "observed",
+        "artifact",
+        "redaction",
+        "recorded_at",
+    }
+    assert set(record) == required
+    assert record["acceptance_id"] in ACCEPTANCE_IDS
+    assert record["owner"]
+    assert record["state"] in {
+        "Prepared",
+        "External Pending",
+        "Evidence Returned",
+        "Accepted",
+        "Blocked",
+    }
+    if record["state"] == "Closed":
+        assert record["artifact"] not in {"", "not-returned"}
+    serialized = json.dumps(record)
+    assert not re.search(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{24,}", serialized)
+
+
+def test_valid_evidence_fixture_satisfies_contract() -> None:
+    """Accept a fully populated synthetic owner record."""
+    _assert_evidence_record(
+        json.loads(VALID_EVIDENCE.read_text(encoding="utf-8"))
+    )
+
+
+def test_invalid_evidence_fixture_cannot_close_unknown_item() -> None:
+    """Reject unknown IDs, missing owners, and closed records without proof."""
+    with pytest.raises(AssertionError):
+        _assert_evidence_record(
+            json.loads(INVALID_EVIDENCE.read_text(encoding="utf-8"))
+        )
 
 
 def test_matrix_bot_commit_evidence_exists_in_git() -> None:
