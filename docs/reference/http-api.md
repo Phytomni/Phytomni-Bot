@@ -1207,11 +1207,8 @@ The coordinator is intentionally in-process. A service restart does not
 resume after process restart; the read path marks an orphaned nonterminal
 umbrella failed with `workflow interrupted by service restart` while retaining
 the last intermediate snapshot. This release makes no durable-worker,
-production-migration, live-acceptance, or Web/Go-completion claim. See the
-[Web and Go handoff](../handoffs/2026-07-15-deep-genome-web-go-handoff.md),
-[Operations handoff](../handoffs/2026-07-15-bot-operations-acceptance-handoff.md),
-and [disposition matrix](../handoffs/2026-07-15-handoff-disposition-matrix.md)
-for the evidence boundary.
+production-migration, live-acceptance, or Web/Go-completion claim. The
+evidence boundary is kept in the local-only `.codex/handoff/` packets.
 
 A `deep_genome` report whose optional mounted sub-analysis degraded mid-run
 (its evolution or digital-design step) can still settle as `succeeded` while

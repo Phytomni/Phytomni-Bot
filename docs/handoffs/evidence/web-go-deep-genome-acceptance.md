@@ -2,7 +2,7 @@
 
 Owner: Phytomni-Web and Go gateway\
 Bot contract: `docs/reference/http-api.md` and
-`docs/handoffs/2026-07-15-deep-genome-web-go-handoff.md`\
+`.codex/handoff/2026-07-15-deep-genome-web-go-handoff.md`\
 Current state: `External Pending`\
 Evidence: `Not returned`
 

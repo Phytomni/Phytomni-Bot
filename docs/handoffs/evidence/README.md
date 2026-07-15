@@ -38,4 +38,5 @@ Required keys are:
 1. Missing owner output remains `External Pending`.
 
 Evidence records are release artifacts only after the owner returns them and a
-reviewer links them from `docs/handoffs/2026-07-15-handoff-disposition-matrix.md`.
+reviewer links them from the local-only
+`.codex/handoff/2026-07-15-handoff-disposition-matrix.md`.

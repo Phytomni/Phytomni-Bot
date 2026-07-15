@@ -146,8 +146,7 @@ umbrella at the fixed restart-failure boundary while retaining its latest
 intermediate report. This release has no cross-process durable worker, no
 DataAgent HTTP streaming surface, and no claim that production migration or
 Web/Go acceptance is complete. Operational rollback and external evidence are
-tracked in the [Operations handoff](../handoffs/2026-07-15-bot-operations-acceptance-handoff.md)
-and [disposition matrix](../handoffs/2026-07-15-handoff-disposition-matrix.md).
+kept in the local-only `.codex/handoff/` packets.
 
 ## MCP Boundary
 

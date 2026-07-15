@@ -811,10 +811,10 @@ operator has approved the consequence may the command add
 ticket. Restore the prior wheel or image before restoring a database backup,
 then run `/readyz`, `/v1/models`, and one owner-scoped status smoke. Do not
 claim production migration, Web/Go acceptance, Gauss role proof, or service
-retirement from these offline checks. Return evidence through the [Operations
-acceptance handoff](../handoffs/2026-07-15-bot-operations-acceptance-handoff.md)
-and track all fourteen source handoffs in the [disposition
-matrix](../handoffs/2026-07-15-handoff-disposition-matrix.md).
+retirement from these offline checks. Return evidence through the local-only
+`.codex/handoff/2026-07-15-bot-operations-acceptance-handoff.md` and track all
+fourteen source handoffs in the local-only
+`.codex/handoff/2026-07-15-handoff-disposition-matrix.md`.
 
 ## Restart and Upgrade
 

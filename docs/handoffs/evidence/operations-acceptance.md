@@ -1,7 +1,7 @@
 # Operations, DBA, and GitHub acceptance packet
 
 Owners: Operations, DBA, GitHub administrator, and release owner\
-Bot contract: `docs/handoffs/2026-07-15-bot-operations-acceptance-handoff.md`\
+Bot contract: `.codex/handoff/2026-07-15-bot-operations-acceptance-handoff.md`\
 Current state: `External Pending`\
 Evidence: `Not returned`
 

@@ -81,11 +81,9 @@ restart does not resume after process restart: the orphan is settled at the
 documented failure boundary, with its last intermediate report preserved.
 This release does not ship a cross-process durable worker for DeepGenome,
 does not expose DataAgent over HTTP streaming, and has no production/live
-integration acceptance. See the [Web and Go
-handoff](docs/handoffs/2026-07-15-deep-genome-web-go-handoff.md), [Operations
-handoff](docs/handoffs/2026-07-15-bot-operations-acceptance-handoff.md), and
-[disposition matrix](docs/handoffs/2026-07-15-handoff-disposition-matrix.md)
-for owner-returned evidence status. The [release closure evidence
+integration acceptance. The local-only Web/Go handoff, Operations handoff,
+and disposition matrix are kept under `.codex/handoff/` for owner transfer.
+The tracked [release closure evidence
 packet](docs/handoffs/evidence/README.md) provides the redacted record
 contract and owner packet index; local Bot gates do not close external Web,
 Go, DBA, GitHub, live-backend, or production obligations.
