@@ -1,0 +1,128 @@
+[
+  {
+    "label": "brief_gene.query_judge.exact_multispecies",
+    "source": "src/mcp_server_phytomni/agents/brief_gene/core.py:query_judge_node",
+    "sql": "SELECT * FROM id2multispecies WHERE query_id = 'Os01g0100100'",
+    "tables": ["id2multispecies"],
+    "expected_columns": ["gene_id", "species_code", "id_type"]
+  },
+  {
+    "label": "brief_gene.query_judge.symbol_multispecies",
+    "source": "src/mcp_server_phytomni/agents/brief_gene/core.py:query_judge_node",
+    "sql": "SELECT * FROM id2multispecies WHERE query_id = 'RBCS1'",
+    "tables": ["id2multispecies"],
+    "expected_columns": ["gene_id", "species_code", "id_type"]
+  },
+  {
+    "label": "brief_gene.query_judge.species",
+    "source": "src/mcp_server_phytomni/agents/brief_gene/core.py:query_judge_node",
+    "sql": "SELECT * FROM species WHERE species_code = 'osa'",
+    "tables": ["species"],
+    "expected_columns": ["species_scientific_name", "species_name_eng"]
+  },
+  {
+    "label": "brief_gene.annotation.id",
+    "source": "src/mcp_server_phytomni/agents/brief_gene/core.py:fetch_annotation_node",
+    "sql": "SELECT * FROM id_table WHERE gene_id = 'Os01g0100100'",
+    "tables": ["id_table"],
+    "expected_columns": ["symbol"]
+  },
+  {
+    "label": "brief_gene.annotation.structure",
+    "source": "src/mcp_server_phytomni/agents/brief_gene/core.py:fetch_annotation_node",
+    "sql": "SELECT * FROM annotation_gene_structure_col WHERE gene_id = 'Os01g0100100' AND sequence_type = 'gene'",
+    "tables": ["annotation_gene_structure_col"],
+    "expected_columns": ["sequence_type"]
+  },
+  {
+    "label": "brief_gene.annotation.ontology",
+    "source": "src/mcp_server_phytomni/agents/brief_gene/core.py:fetch_annotation_node",
+    "sql": "SELECT * FROM annotation_gene_ontology WHERE gene_id = 'Os01g0100100' LIMIT 50",
+    "tables": ["annotation_gene_ontology"],
+    "expected_columns": ["go_id", "go_name"]
+  },
+  {
+    "label": "brief_gene.annotation.mapman",
+    "source": "src/mcp_server_phytomni/agents/brief_gene/core.py:fetch_annotation_node",
+    "sql": "SELECT * FROM annotation_gene_mapman WHERE gene_id = 'Os01g0100100'",
+    "tables": ["annotation_gene_mapman"],
+    "expected_columns": ["mapman", "mapman_description"]
+  },
+  {
+    "label": "brief_gene.annotation.interpro",
+    "source": "src/mcp_server_phytomni/agents/brief_gene/core.py:fetch_annotation_node",
+    "sql": "SELECT * FROM annotation_gene_interpro WHERE gene_id = 'Os01g0100100'",
+    "tables": ["annotation_gene_interpro"],
+    "expected_columns": ["interpro_id", "interpro_name"]
+  },
+  {
+    "label": "brief_gene.annotation.description",
+    "source": "src/mcp_server_phytomni/agents/brief_gene/core.py:fetch_annotation_node",
+    "sql": "SELECT description FROM annotation_gene_description WHERE gene_id = 'Os01g0100100' AND species_code = 'osa'",
+    "tables": ["annotation_gene_description"],
+    "expected_columns": ["description"]
+  },
+  {
+    "label": "brief_gene.homology.homologs",
+    "source": "src/mcp_server_phytomni/agents/brief_gene/homology.py:_run_fetch_homology_interactions_node",
+    "sql": "SELECT query_gene_id, query_species, homology_gene_id, homology_species FROM homology_gene WHERE query_gene_id = 'Os01g0100100'",
+    "tables": ["homology_gene"],
+    "expected_columns": ["query_gene_id", "query_species", "homology_gene_id", "homology_species"]
+  },
+  {
+    "label": "brief_gene.homology.interactions",
+    "source": "src/mcp_server_phytomni/agents/brief_gene/homology.py:_run_fetch_homology_interactions_node",
+    "sql": "SELECT query_gene_id, query_protein, interact_gene_id, interact_protein FROM protein_interaction_col WHERE query_gene_id = 'Os01g0100100' OR interact_gene_id = 'Os01g0100100'",
+    "tables": ["protein_interaction_col"],
+    "expected_columns": ["query_gene_id", "query_protein", "interact_gene_id", "interact_protein"]
+  },
+  {
+    "label": "deep_genome.profile.id",
+    "source": "src/mcp_server_phytomni/agents/deep_genome/profile.py:_cached_gene_symbol_lookup",
+    "sql": "SELECT * FROM id_table WHERE gene_id = 'Os01g0100100' AND species_code = 'osa'",
+    "tables": ["id_table"],
+    "expected_columns": ["symbol"]
+  },
+  {
+    "label": "deep_genome.profile.description",
+    "source": "src/mcp_server_phytomni/agents/deep_genome/profile.py:_cached_gene_annotation_lookup",
+    "sql": "SELECT description FROM annotation_gene_description WHERE gene_id = 'Os01g0100100' AND species_code = 'osa'",
+    "tables": ["annotation_gene_description"],
+    "expected_columns": ["description"]
+  },
+  {
+    "label": "deep_genome.profile.ontology",
+    "source": "src/mcp_server_phytomni/agents/deep_genome/profile.py:_cached_gene_annotation_lookup",
+    "sql": "SELECT go_id, go_name FROM annotation_gene_ontology WHERE gene_id = 'Os01g0100100' AND species_code = 'osa'",
+    "tables": ["annotation_gene_ontology"],
+    "expected_columns": ["go_id", "go_name"]
+  },
+  {
+    "label": "deep_genome.profile.interpro",
+    "source": "src/mcp_server_phytomni/agents/deep_genome/profile.py:_cached_gene_annotation_lookup",
+    "sql": "SELECT interpro_id, interpro_name FROM annotation_gene_interpro WHERE gene_id = 'Os01g0100100' AND species_code = 'osa'",
+    "tables": ["annotation_gene_interpro"],
+    "expected_columns": ["interpro_id", "interpro_name"]
+  },
+  {
+    "label": "deep_genome.profile.mapman",
+    "source": "src/mcp_server_phytomni/agents/deep_genome/profile.py:_cached_gene_annotation_lookup",
+    "sql": "SELECT mapman, mapman_description FROM annotation_gene_mapman WHERE gene_id = 'Os01g0100100' AND species_code = 'osa'",
+    "tables": ["annotation_gene_mapman"],
+    "expected_columns": ["mapman", "mapman_description"]
+  },
+  {
+    "label": "deep_genome.dispatch.rice_remap",
+    "source": "src/mcp_server_phytomni/agents/deep_genome/dispatch.py:_prepare_analysis_tasks",
+    "sql": "SELECT * FROM id_table WHERE gene_id = 'Os01g0100100' AND species_code = 'osa'",
+    "tables": ["id_table"],
+    "expected_columns": ["msu_gene_id"]
+  },
+  {
+    "label": "deep_genome.dispatch.maize_remap",
+    "source": "src/mcp_server_phytomni/agents/deep_genome/dispatch.py:_prepare_analysis_tasks",
+    "sql": "SELECT * FROM id_table WHERE gene_id = 'Zm00001eb000010' AND species_code = 'zma'",
+    "tables": ["id_table"],
+    "expected_columns": ["v4_id"]
+  }
+]
