@@ -313,6 +313,11 @@ above is green (P4-0): ChatAgent streamed-answer persistence must already
 be live so non-A2UI traffic is safe. Additional gates:
 
 1. Coordinate the flag with Web so both sides enable A2UI together.
+1. Confirm the Bot safety settings remain at or below the Web contract:
+   `A2UI_MAX_BODY_BYTES=65536`, `A2UI_MAX_RESPONSE_BYTES=1048576`,
+   `A2UI_MAX_IDENTIFIER_RUNES=256`, `A2UI_MAX_FORM_FIELDS=20`,
+   `A2UI_MAX_SCALAR_CHARS=4096`, and `A2UI_MAX_CHOICES=100` (each accepts a
+   `PHYTOMNI_` alias). The settings permit lower values only.
 1. Web must retain action transport and `run_id` while a run stays
    `input_required`, even after the SSE stream emits `RunFinished` and
    the session `finally` block would normally clear bindings; restore
@@ -321,6 +326,11 @@ be live so non-A2UI traffic is safe. Additional gates:
    `GET /v1/runs/{id}` shows `input_required` →
    `POST /v1/runs/{id}/a2ui-actions` with accept → run `succeeded` with
    real `formatted.answer` and `result.a2ui` `status: submitted`.
+1. Negative smoke with a temporary scoped API key: send a local JSON body
+   larger than 65,536 bytes to `/v1/runs/<paused-run>/a2ui-actions` and
+   confirm the unified response is `413` with `error.code=413`; do not use a
+   production key or external service. Delete the temporary body and revoke
+   the key after the check.
 
 ### A2UI cutover checklist (ReviewAgent)
 
@@ -440,10 +450,13 @@ Requires `A2UI_ENABLED` / `PHYTOMNI_A2UI_ENABLED`
 (`403 a2ui disabled` when off). Body mirrors the Web envelope
 (`surface_id`, `widget`, `action_id`, `run_id`, `payload`). Expect
 `404` for unknown runs, `400` for path/body `run_id` mismatch or invalid
-payload, `409` for non-paused runs / surface mismatch / missing
-checkpoint / duplicate POST after success. Success settles `succeeded`
-with `result.formatted.answer` and `result.a2ui` marked
-`props.status: submitted`.
+payload, `413` for a request/response over the configured A2UI byte caps,
+and `409` for non-paused runs / surface mismatch / missing checkpoint /
+duplicate POST after success. The parser rejects duplicate keys, trailing
+JSON, untrimmed or oversized identifiers, more than 20 form fields, more than
+100 choices, and scalar strings over 4,096 characters before graph entry.
+Success settles `succeeded` with `result.formatted.answer` and `result.a2ui`
+marked `props.status: submitted`.
 
 The stdio MCP path collects the same approval payload through client
 elicitation. Clients that advertise elicitation support see the draft

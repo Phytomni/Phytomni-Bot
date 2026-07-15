@@ -532,6 +532,20 @@ Chat and Review A2UI are bounded to **N=2** rounds per run
 (`a2ui_round`); a second pause remints a fresh `surface_id`. The path
 `run_id` must match `body.run_id` or the call returns `400 run_id mismatch`.
 
+Direct HTTP A2UI parsing is bounded before the resume graph runs. The request
+body is capped at 65,536 bytes (both advertised `Content-Length` and streamed
+bytes), identifiers are limited to 256 runes and must be nonblank/trimmed,
+form actions carry at most 20 fields, scalar strings are at most 4,096
+characters, and choice selections are capped at 100 items. Duplicate JSON
+keys and trailing JSON are rejected; the raw body is not logged. Successful
+and `input_required` responses are serialized under a 1,048,576-byte cap.
+Operators may lower these values with the `A2UI_MAX_*` or
+`PHYTOMNI_A2UI_MAX_*` settings, but cannot raise them above these ceilings.
+Oversized requests or responses use the unified `413` error envelope;
+duplicate, malformed, or over-shape actions use the unified `400` envelope.
+Web still owns end-user identity and tenant selection; these Bot-side limits
+are an additional boundary, not an ownership substitute.
+
 Copyable A2UI downlink / uplink / success / error goldens live under
 [`docs/contracts/a2ui/`](../contracts/a2ui/README.md) for Web and Go
 gateway consumers: `chat_confirm`, `review_confirm`, `chat_form`,
@@ -551,7 +565,9 @@ authoritative for runtime behavior.
 | `surface_id` ≠ draft         | `409` | `surface_id mismatch`              |
 | Missing LangGraph checkpoint | `409` | `no pause point for run`           |
 | Second POST after success    | `409` | terminal run                       |
-| Malformed body               | `422` | FastAPI validation                 |
+| Body above 65,536 bytes      | `413` | `a2ui request body too large`      |
+| Response above 1 MiB         | `413` | `a2ui response body too large`     |
+| Malformed or over-shape body | `400` | `invalid a2ui action envelope`     |
 
 On success the run settles `succeeded` and the response carries the
 normal `agent.run` envelope with `result.formatted.answer` (the real
