@@ -1673,7 +1673,7 @@ def _list_owner_runs(
     )
     return {
         "object": "list",
-        "data": [_run_record_to_dict(record) for record in records],
+        "data": [_project_public_run_record(record) for record in records],
     }
 
 
@@ -2041,6 +2041,15 @@ def _project_deep_genome_run(
     return payload
 
 
+def _project_public_run_record(
+    record: RunRecord, *, debug: bool = False
+) -> dict[str, Any]:
+    """Project one owner-scoped run through its public read contract."""
+    if record.spec.agent == "deep_genome":
+        return _project_deep_genome_run(record, debug=debug)
+    return _run_record_to_dict(record)
+
+
 async def _fetch_owner_run(
     run_id: str, *, debug: bool = False
 ) -> dict[str, Any]:
@@ -2061,11 +2070,11 @@ async def _fetch_owner_run(
     if record is None:
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
     if record.spec.agent == "deep_genome":
-        return _project_deep_genome_run(record, debug=debug)
+        return _project_public_run_record(record, debug=debug)
     record = await registry.reconcile(run_id, owner=owner)
     if record is None:
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
-    return _run_record_to_dict(record)
+    return _project_public_run_record(record, debug=debug)
 
 
 def _record_sync_run(

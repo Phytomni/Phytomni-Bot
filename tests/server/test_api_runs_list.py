@@ -20,6 +20,10 @@ import httpx
 import pytest
 
 from mcp_server_phytomni import server
+from mcp_server_phytomni.agents.deep_genome.work_items import (
+    build_work_item_plan,
+)
+from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
@@ -28,6 +32,63 @@ from mcp_server_phytomni.runtime.run_registry import (
 )
 
 pytestmark = pytest.mark.server
+
+
+def _seed_partial_deep_genome_run(db_path: str) -> str:
+    """Seed one owner-scoped DeepGenome snapshot without a coordinator."""
+    store = DeepGenomeStore(db_path)
+    reservation = store.reserve_run(
+        run_id="run-dg-u1",
+        umbrella_task_id="dg-u1",
+        owner="u1",
+        output_dir="/obs/deep-genome",
+    )
+    store.apply_brief_gene_transition(
+        "dg-u1",
+        status="succeeded",
+        summary_markdown="BriefGene profile",
+    )
+    plan = build_work_item_plan("osa", "Os01g0100100", "Os01g0100100")
+    store.seed_plan(reservation, plan)
+    store.apply_work_item_transition(
+        "dg-u1",
+        work_item_key="protein_design",
+        status="failed",
+    )
+    store.apply_work_item_transition(
+        "dg-u1",
+        work_item_key="smep_analysis",
+        status="succeeded",
+        summary_markdown="SMEP summary",
+    )
+    return reservation.run_id
+
+
+async def test_list_deep_genome_projects_intermediate_snapshot(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """The list path returns the current local DeepGenome report snapshot."""
+    run_id = _seed_partial_deep_genome_run(tasks_db_path)
+
+    response = await api_client.get(
+        "/v1/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    row = next(
+        item for item in response.json()["data"] if item["run_id"] == run_id
+    )
+    assert row["status"] == "running"
+    assert row["result"]["intermediate_report"].startswith("#")
+    assert row["result"]["final_report"] is None
+    assert row["result"]["report_revision"] == 3
+    assert row["answer"] == row["result"]["intermediate_report"]
+    assert "task_results" not in row["result"]
+    assert "live_status" not in row["result"]
+    assert "raw" not in row["result"]
 
 
 def _seed(registry: RunRegistry, **kwargs: str) -> str:
