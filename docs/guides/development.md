@@ -256,6 +256,18 @@ package needs a documented compatibility pin. Because CI does not use a
 committed lock file, dependency upgrades must update the relevant lower
 bounds in `pyproject.toml`.
 
+### Parse-only SQL policy
+
+The direct GaussDB seam uses `sqlglot>=30.12,<31` to parse PostgreSQL
+statements before a connection is acquired. The policy accepts exactly one
+read-only query and rejects DDL, DML, transaction/control, `INTO`, and lock
+nodes, including those nested inside a CTE. `sqlglot` is used as a pure
+Python parser; it is not an ORM, query builder, or runtime database client.
+The major-version cap keeps the inspected AST contracts stable while the
+minimum bound is exercised by CI's dependency-floor job. Keep `uv.lock`
+local and ignored, as required above; do not commit a lockfile to record this
+dependency.
+
 `langgraph` is intentionally constrained to `>=1.2.0,<1.3`. The repository
 depends on the 1.2 public contracts for runtime context, node-local stream
 writers, interrupt/resume, and compilation with a checkpointer and store.
