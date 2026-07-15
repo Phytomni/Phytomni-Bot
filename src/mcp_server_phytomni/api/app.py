@@ -139,6 +139,7 @@ from ..mcp.stream_lifecycle import (
 )
 from ..runtime.deep_genome_store import (
     DeepGenomeStore,
+    snapshot_to_formatted_report_metadata,
     snapshot_to_public_dict,
 )
 from ..runtime.langgraph_runner import (
@@ -2042,6 +2043,18 @@ def _project_deep_genome_run(
         return payload
 
     merged.update(snapshot_to_public_dict(snapshot))
+    formatted = merged.get("formatted")
+    if isinstance(formatted, Mapping):
+        formatted_copy = dict(formatted)
+        existing_metadata = formatted_copy.get("metadata")
+        metadata = (
+            dict(existing_metadata)
+            if isinstance(existing_metadata, Mapping)
+            else {}
+        )
+        metadata["report"] = snapshot_to_formatted_report_metadata(snapshot)
+        formatted_copy["metadata"] = metadata
+        merged["formatted"] = formatted_copy
     payload["status"] = snapshot.status
     payload["result"] = merged
     best_report = merged.get("final_report") or merged.get(

@@ -12,6 +12,7 @@ stays bounded under listing-heavy workloads.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -66,6 +67,24 @@ def _seed_partial_deep_genome_run(db_path: str, *, owner: str = "u1") -> str:
         summary_markdown="SMEP summary",
     )
     return reservation.run_id
+
+
+def _attach_formatted_result(db_path: str, run_id: str) -> None:
+    """Add a legacy-compatible formatted block to one seeded run."""
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT result_json FROM runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        assert row is not None
+        result = json.loads(row[0])
+        result["formatted"] = {
+            "answer": "stored DeepGenome answer",
+            "metadata": {"consumer": "artifact-ui"},
+        }
+        conn.execute(
+            "UPDATE runs SET result_json = ? WHERE run_id = ?",
+            (json.dumps(result), run_id),
+        )
 
 
 def _seed_terminal_deep_genome_run(
@@ -137,6 +156,34 @@ async def test_list_deep_genome_projects_intermediate_snapshot(
     assert "task_results" not in row["result"]
     assert "live_status" not in row["result"]
     assert "raw" not in row["result"]
+
+
+async def test_list_deep_genome_adds_report_metadata_to_formatted_result(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """The list projection uses the same report metadata adapter as status."""
+    run_id = _seed_partial_deep_genome_run(tasks_db_path)
+    _attach_formatted_result(tasks_db_path, run_id)
+
+    response = await api_client.get(
+        "/v1/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    row = next(
+        item for item in response.json()["data"] if item["run_id"] == run_id
+    )
+    result = row["result"]
+    report = result["formatted"]["metadata"]["report"]
+    assert report["stage"] == "intermediate"
+    assert report["completeness"] == "partial"
+    assert report["revision"] == 3
+    assert report["degraded"] is True
+    assert report["failure_count"] == len(result["failures"])
+    assert result["formatted"]["metadata"]["consumer"] == "artifact-ui"
 
 
 async def test_list_deep_genome_debug_preserves_private_snapshot_fields(

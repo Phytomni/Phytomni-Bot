@@ -28,6 +28,7 @@ from mcp_server_phytomni.runtime.deep_genome_store import (
     DeepGenomeTrackingError,
     DeepGenomeTransitionError,
     RemoteSubmission,
+    snapshot_to_formatted_report_metadata,
 )
 
 pytestmark = pytest.mark.unit
@@ -264,6 +265,100 @@ def test_store_exports_frozen_contract_models() -> None:
         reservation.owner = "bob"  # type: ignore[misc]
     with pytest.raises(AttributeError):
         snapshot.status = "failed"  # type: ignore[misc]
+
+
+def test_snapshot_to_formatted_report_metadata_covers_report_states() -> None:
+    """The additive metadata adapter mirrors every public report state."""
+    waiting = DeepGenomeSnapshot(
+        umbrella_task_id="task-waiting",
+        status="running",
+        intermediate_report=None,
+        final_report=None,
+        report_stage="waiting_for_brief_gene",
+        report_completeness="none",
+        report_revision=0,
+        report_updated_at=None,
+        progress={"planning_complete": False},
+        degraded=False,
+        degraded_reason=None,
+        failures=(),
+    )
+    intermediate = replace(
+        waiting,
+        umbrella_task_id="task-intermediate",
+        report_stage="intermediate",
+        report_completeness="partial",
+        report_revision=2,
+        report_updated_at="2026-07-16T00:00:00+00:00",
+        progress={"planning_complete": True, "succeeded": 1},
+    )
+    partial_final = replace(
+        intermediate,
+        umbrella_task_id="task-partial-final",
+        status="succeeded",
+        report_stage="final",
+        report_revision=7,
+        degraded=True,
+        failures=(
+            {
+                "work_item_key": "analysis-1",
+                "status": "failed",
+                "failure_reason": "private upstream detail",
+            },
+        ),
+    )
+    complete_final = replace(
+        partial_final,
+        umbrella_task_id="task-complete-final",
+        degraded=False,
+        failures=(),
+    )
+    all_failed = replace(
+        intermediate,
+        umbrella_task_id="task-all-failed",
+        status="failed",
+        degraded=True,
+        failures=(
+            {
+                "work_item_key": "analysis-1",
+                "status": "failed",
+                "failure_reason": "private upstream detail",
+            },
+            {"work_item_key": "analysis-2", "status": "timed_out"},
+        ),
+    )
+
+    waiting_metadata = snapshot_to_formatted_report_metadata(waiting)
+    assert waiting_metadata == {
+        "stage": "waiting_for_brief_gene",
+        "completeness": "none",
+        "revision": 0,
+        "updated_at": None,
+        "progress": {
+            "planning_complete": False,
+            "brief_gene_status": "unknown",
+            "total": 0,
+            "planned": 0,
+            "submitted": 0,
+            "pending": 0,
+            "running": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "cancelled": 0,
+            "timed_out": 0,
+        },
+        "degraded": False,
+        "failure_count": 0,
+    }
+    intermediate_metadata = snapshot_to_formatted_report_metadata(intermediate)
+    partial_metadata = snapshot_to_formatted_report_metadata(partial_final)
+    complete_metadata = snapshot_to_formatted_report_metadata(complete_final)
+    failed_metadata = snapshot_to_formatted_report_metadata(all_failed)
+    assert intermediate_metadata["revision"] == 2
+    assert partial_metadata["degraded"] is True
+    assert partial_metadata["failure_count"] == 1
+    assert complete_metadata["failure_count"] == 0
+    assert failed_metadata["failure_count"] == 2
 
 
 def test_remote_submission_has_one_canonical_definition() -> None:

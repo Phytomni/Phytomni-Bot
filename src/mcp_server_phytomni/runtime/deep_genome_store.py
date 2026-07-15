@@ -45,6 +45,7 @@ __all__ = [
     "DeepGenomeTrackingError",
     "DeepGenomeTransitionError",
     "RemoteSubmission",
+    "snapshot_to_formatted_report_metadata",
     "snapshot_to_public_dict",
 ]
 
@@ -295,6 +296,27 @@ def snapshot_to_public_dict(
         "degraded": bool(snapshot.degraded),
         "degraded_reason": _public_degraded_reason(snapshot.degraded_reason),
         "failures": _public_failures(snapshot.failures),
+    }
+
+
+def snapshot_to_formatted_report_metadata(
+    snapshot: DeepGenomeSnapshot,
+) -> dict[str, Any]:
+    """Return the additive structured report metadata for one snapshot.
+
+    The adapter deliberately derives every value from
+    :func:`snapshot_to_public_dict` so the formatted envelope cannot expose
+    a less-sanitized view than the established top-level projection.
+    """
+    public = snapshot_to_public_dict(snapshot)
+    return {
+        "stage": public["report_stage"],
+        "completeness": public["report_completeness"],
+        "revision": public["report_revision"],
+        "updated_at": public["report_updated_at"],
+        "progress": public["progress"],
+        "degraded": public["degraded"],
+        "failure_count": len(public["failures"]),
     }
 
 

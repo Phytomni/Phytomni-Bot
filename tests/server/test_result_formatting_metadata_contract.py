@@ -344,6 +344,7 @@ def test_cited_agents_metadata_all_success(agent: str) -> None:
     }
     result = format_tool_result(agent, payload)
     assert result.metadata == {}
+    assert "report" not in result.metadata
     assert result.answer == "Evidence [1]."
 
 

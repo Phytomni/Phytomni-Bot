@@ -12,6 +12,8 @@ settles the run as terminal when all children are success-like.
 
 from __future__ import annotations
 
+import json
+import sqlite3
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -67,6 +69,24 @@ def _seed_partial_deep_genome_run(db_path: str, *, owner: str = "u1") -> str:
         summary_markdown="SMEP summary",
     )
     return run_id
+
+
+def _attach_formatted_result(db_path: str, run_id: str) -> None:
+    """Add a legacy-compatible formatted block to one seeded run."""
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT result_json FROM runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        assert row is not None
+        result = json.loads(row[0])
+        result["formatted"] = {
+            "answer": "stored DeepGenome answer",
+            "metadata": {"consumer": "artifact-ui"},
+        }
+        conn.execute(
+            "UPDATE runs SET result_json = ? WHERE run_id = ?",
+            (json.dumps(result), run_id),
+        )
 
 
 async def test_get_run_returns_terminal_record(
@@ -282,6 +302,32 @@ async def test_get_deep_genome_run_refreshes_intermediate_snapshot(
     assert debug_response.status_code == 200
     assert "task_results" in debug_response.json()["result"]
     remote_status_mock.assert_not_awaited()
+
+
+async def test_get_deep_genome_run_adds_report_metadata_to_formatted_result(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """The single-run projection adds metadata without replacing data."""
+    run_id = _seed_partial_deep_genome_run(tasks_db_path)
+    _attach_formatted_result(tasks_db_path, run_id)
+
+    response = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    result = response.json()["result"]
+    report = result["formatted"]["metadata"]["report"]
+    assert report["stage"] == "intermediate"
+    assert report["completeness"] == "partial"
+    assert report["revision"] == 3
+    assert report["degraded"] is True
+    assert report["failure_count"] == len(result["failures"])
+    assert result["formatted"]["metadata"]["consumer"] == "artifact-ui"
+    assert result["report_revision"] == report["revision"]
 
 
 async def test_foreign_owner_cannot_probe_deep_genome_snapshot(
