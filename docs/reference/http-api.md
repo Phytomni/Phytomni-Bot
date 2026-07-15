@@ -463,6 +463,15 @@ fields; `answer` is sourced from `result.formatted.answer`. The
 `debug=true` flag keeps the full `result.raw` block (default mode
 strips it, see *Response Projection* below).
 
+DeepGenome rows are the exception to the generic formatted-answer shortcut:
+the list route and `GET /v1/runs/{run_id}` use the same owner-scoped public
+snapshot projection. `answer` prefers a nonblank `final_report` and falls
+back to `intermediate_report`; the report stage, completeness, revision,
+progress, degraded state, and sanitized failure list are returned from the
+local SQLite snapshot. A list read never reconciles or probes concrete remote
+children. Default mode removes `task_results`, `live_status`, `artifacts`, and
+`raw`; `debug=true` retains those registry fields for authorized diagnostics.
+
 `GET /v1/runs?user_id=<other-user>` lets an upstream operator list
 any tenant's runs. The user key in `Authorization: Bearer ptm_...`
 still authenticates the caller for rate-limit + audit, but the
