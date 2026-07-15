@@ -103,6 +103,9 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "tests/server/test_a2ui_chat_streaming.py": {
         "import-error",
     },
+    "tests/server/test_a2ui_review_http.py": {
+        "import-error",
+    },
     # conftest.py installs deployment env vars BEFORE importing any
     # project module — several agents construct ``ServerConfig()`` at
     # import time and the per-deployment endpoints are required-via-

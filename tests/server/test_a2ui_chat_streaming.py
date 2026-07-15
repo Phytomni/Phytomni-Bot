@@ -129,6 +129,51 @@ async def test_stream_a2ui_confirm_settles_input_required(
     assert "[streamed]" not in json.dumps(result)
 
 
+async def test_stream_a2ui_runtime_failure_emits_error_and_fails_run(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Chat A2UI fault emits one error and settles the run failed."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+
+    class _FailingA2UIApp:
+        async def ainvoke(
+            self,
+            _state: dict[str, Any],
+            *,
+            config: dict[str, Any],
+        ) -> dict[str, Any]:
+            """Raise a backend failure after the opening event."""
+            del config
+            raise RuntimeError("backend token=hidden a2ui failure")
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.api.app._chat_a2ui_stream_app",
+        _FailingA2UIApp,
+    )
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="请确认是否继续分析",
+    )
+
+    assert response.status_code == 200
+    body = response.text
+    assert body.count("event: RunError\n") == 1
+    assert "event: RunFinished\n" not in body
+    assert body.count("data: [DONE]") == 1
+    run_id = _extract_run_started_id(body)
+    fetched = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert fetched.status_code == 200
+    assert fetched.json()["status"] == "failed"
+
+
 async def test_stream_a2ui_form_settles_input_required(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

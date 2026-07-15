@@ -737,31 +737,29 @@ async def _resume_a2ui_run(  # pylint: disable=too-many-locals
 
 def _stream_setup_error(exc: Exception, *, priming: bool) -> HTTPException:
     """Map stream setup/prime failures to fixed pre-header HTTP errors."""
+    if isinstance(exc, HTTPException):
+        return exc
+    status_code = 500
+    detail = "stream setup failed"
     if isinstance(exc, ConnectError):
-        return HTTPException(
-            status_code=502, detail="stream upstream unavailable"
-        )
-    if isinstance(exc, TimeoutException):
-        return HTTPException(
-            status_code=504, detail="stream upstream timed out"
-        )
-    if not priming and isinstance(exc, NotImplementedError):
-        return HTTPException(
-            status_code=400,
-            detail="streaming is not supported for this model",
-        )
-    if (
+        status_code = 502
+        detail = "stream upstream unavailable"
+    elif isinstance(exc, TimeoutException):
+        status_code = 504
+        detail = "stream upstream timed out"
+    elif not priming and isinstance(exc, NotImplementedError):
+        status_code = 400
+        detail = "streaming is not supported for this model"
+    elif (
         not priming
         and isinstance(exc, McpError)
         and exc.error.code == (INVALID_PARAMS)
     ):
-        return HTTPException(
-            status_code=400,
-            detail="invalid streaming request",
-        )
-    if isinstance(exc, EmptyStreamError):
-        return HTTPException(status_code=500, detail="stream produced no data")
-    return HTTPException(status_code=500, detail="stream setup failed")
+        status_code = 400
+        detail = "invalid streaming request"
+    elif isinstance(exc, EmptyStreamError):
+        detail = "stream produced no data"
+    return HTTPException(status_code=status_code, detail=detail)
 
 
 def _failed_stream_result() -> dict[str, Any]:
@@ -802,6 +800,23 @@ async def _project_primed_stream(
         request_id=current_request_id() or "unknown",
     ):
         yield event
+
+
+def _settle_a2ui_stream_failure(
+    run_id: str,
+    owner: str,
+    settled_terminal: list[bool],
+) -> None:
+    """Settle an A2UI stream failed when no domain terminal was committed."""
+    if settled_terminal[0]:
+        return
+    _settle_stream_run(
+        run_id,
+        owner,
+        "failed",
+        _failed_stream_result(),
+    )
+    settled_terminal[0] = True
 
 
 async def _stream_chat_a2ui_confirm(
@@ -857,9 +872,10 @@ async def _stream_chat_a2ui_confirm(
             yield custom(A2UI_CUSTOM_NAME, a2ui_value)
         yield run_finished(run_id)
 
-    settled_input_required = [False]
+    lifecycle_state = StreamLifecycleState()
+    settled_terminal = [False]
     try:
-        primed = await prime_agui_stream(_agui_events(settled_input_required))
+        primed = await prime_agui_stream(_agui_events(settled_terminal))
     except Exception as exc:  # pylint: disable=broad-exception-caught
         _settle_stream_run(run_id, owner, "failed", _failed_stream_result())
         raise _stream_setup_error(exc, priming=True) from exc
@@ -868,41 +884,25 @@ async def _stream_chat_a2ui_confirm(
         """Forward SSE; settle failed only when pause was not recorded."""
         try:
             async for line in to_chat_completion_chunks(
-                _project_primed_stream(primed, run_id=run_id),
+                _project_primed_stream(
+                    primed,
+                    run_id=run_id,
+                    lifecycle_state=lifecycle_state,
+                ),
                 payload.model,
             ):
                 yield line
         finally:
-            if not settled_input_required[0]:
-                already_paused = False
-                try:
-                    record = RunRegistry(resolve_tasks_db_path()).get_run(
-                        run_id,
-                        owner=owner,
-                    )
-                    already_paused = (
-                        record is not None
-                        and record.status == "input_required"
-                    )
-                except (sqlite3.Error, OSError):
-                    pass
-                if not already_paused:
-                    _settle_stream_run(
-                        run_id,
-                        owner,
-                        "failed",
-                        {
-                            "formatted": {"answer": ""},
-                            "raw": None,
-                            "stream": True,
-                            "partial": True,
-                        },
-                    )
+            _settle_a2ui_stream_failure(
+                run_id,
+                owner,
+                settled_terminal,
+            )
 
     return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
-async def _stream_review_a2ui_pause(
+async def _stream_review_a2ui_pause(  # pylint: disable=too-many-locals
     *,
     arguments: dict[str, Any],
     payload: ChatCompletionRequest,
@@ -960,9 +960,10 @@ async def _stream_review_a2ui_pause(
             settled[0] = True
         yield run_finished(run_id)
 
-    settled_input_required = [False]
+    lifecycle_state = StreamLifecycleState()
+    settled_terminal = [False]
     try:
-        primed = await prime_agui_stream(_agui_events(settled_input_required))
+        primed = await prime_agui_stream(_agui_events(settled_terminal))
     except Exception as exc:  # pylint: disable=broad-exception-caught
         _settle_stream_run(run_id, owner, "failed", _failed_stream_result())
         raise _stream_setup_error(exc, priming=True) from exc
@@ -970,36 +971,20 @@ async def _stream_review_a2ui_pause(
     async def _wrapped() -> AsyncIterator[str]:
         try:
             async for line in to_chat_completion_chunks(
-                _project_primed_stream(primed, run_id=run_id),
+                _project_primed_stream(
+                    primed,
+                    run_id=run_id,
+                    lifecycle_state=lifecycle_state,
+                ),
                 payload.model,
             ):
                 yield line
         finally:
-            if not settled_input_required[0]:
-                already_paused = False
-                try:
-                    record = RunRegistry(resolve_tasks_db_path()).get_run(
-                        run_id,
-                        owner=owner,
-                    )
-                    already_paused = (
-                        record is not None
-                        and record.status == "input_required"
-                    )
-                except (sqlite3.Error, OSError):
-                    pass
-                if not already_paused:
-                    _settle_stream_run(
-                        run_id,
-                        owner,
-                        "failed",
-                        {
-                            "formatted": {"answer": ""},
-                            "raw": None,
-                            "stream": True,
-                            "partial": True,
-                        },
-                    )
+            _settle_a2ui_stream_failure(
+                run_id,
+                owner,
+                settled_terminal,
+            )
 
     return StreamingResponse(_wrapped(), media_type="text/event-stream")
 

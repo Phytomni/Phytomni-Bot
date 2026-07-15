@@ -12,10 +12,16 @@ from typing import Any
 
 import httpx
 import pytest
+from fastapi import HTTPException
+
+# Pytest resolves this namespace-package helper; standalone pylint does not.
+# pylint: disable=import-error
 from tests.server.test_api_chat_streaming import _extract_run_started_id
 
+# pylint: enable=import-error
 from mcp_server_phytomni.agents.shared.a2ui import A2UI_CUSTOM_NAME
 from mcp_server_phytomni.api import app as api_app_module
+from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
 
 pytestmark = pytest.mark.server
 
@@ -131,6 +137,50 @@ async def test_review_pause_flag_on_projects_a2ui(
     assert stored["a2ui"]["surface_id"] == draft["a2ui"]["surface_id"]
 
 
+async def test_review_stream_runtime_failure_emits_error_and_fails_run(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Review A2UI fault after RunStarted emits one error and fails."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+
+    class _FailingReviewApp:
+        async def ainvoke(
+            self,
+            _state: dict[str, Any],
+            *,
+            config: dict[str, Any],
+        ) -> dict[str, Any]:
+            """Raise a backend failure after the opening event."""
+            del config
+            raise RuntimeError("backend token=hidden review failure")
+
+    _patch_review_app(monkeypatch, _FailingReviewApp())
+    response = await api_client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "model": "phyto-review",
+            "stream": True,
+            "messages": [{"role": "user", "content": "Review this."}],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.text
+    assert body.count("event: RunError\n") == 1
+    assert "event: RunFinished\n" not in body
+    assert body.count("data: [DONE]") == 1
+    run_id = _extract_run_started_id(body)
+    fetched = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert fetched.status_code == 200
+    assert fetched.json()["status"] == "failed"
+
+
 async def test_review_chat_completion_pause_projects_a2ui(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -151,6 +201,29 @@ async def test_review_chat_completion_pause_projects_a2ui(
     )
     assert response.status_code == 200
     assert "a2ui" in response.json()["interrupt"]["draft"]
+
+
+async def test_review_stream_validation_fails_before_sse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid Review stream arguments remain a pre-header 400."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    payload = ChatCompletionRequest(
+        model="phyto-review",
+        messages=[ChatMessage(role="user", content="Review this.")],
+        stream=True,
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        stream_pause = getattr(api_app_module, "_stream_review_a2ui_pause")
+        await stream_pause(
+            arguments={},
+            payload=payload,
+            user_query="Review this.",
+        )
+
+    assert caught.value.status_code == 400
+    assert caught.value.detail == "invalid ReviewAgent arguments"
 
 
 class _FakeReviewAppRejectReinterrupt(_FakeReviewAppPause):

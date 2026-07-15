@@ -506,14 +506,14 @@ handler by design.
 
 ______________________________________________________________________
 
-### `tests/server/test_a2ui_chat_streaming.py` — shared namespace-package helper
+### A2UI HTTP tests — shared namespace-package helper
 
 **Rule(s)**: E0401 import-error on the shared API streaming test helper.
 
 **Mechanism**: a bracketed `# pylint: disable=import-error` / `enable`
-pair around the `tests.server.test_api_chat_streaming` import, registered under
-`tests/server/test_a2ui_chat_streaming.py` in
-`tests/unit/test_style_naming.py`.
+pair around the `tests.server.test_api_chat_streaming` imports, registered
+under `tests/server/test_a2ui_chat_streaming.py` and
+`tests/server/test_a2ui_review_http.py` in `tests/unit/test_style_naming.py`.
 
 **Why refactor is net-negative**: pytest deliberately keeps `tests/` as a
 namespace package so test collection uses one repository-level conftest. The
