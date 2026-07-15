@@ -1,9 +1,9 @@
 # Web/Go Expert and history cutover acceptance packet
 
-Owner: Phytomni-Web, Go gateway, and release Operations  
+Owner: Phytomni-Web, Go gateway, and release Operations\
 Bot contract: `POST /v1/query/route`, `GET /v1/runs`, and the Web cutover
-checklist  
-Current state: `External Pending`  
+checklist\
+Current state: `External Pending`\
 Evidence: `Not returned`
 
 This packet covers `RC-WEB-007`. It is an additive, reversible deployment
@@ -26,15 +26,15 @@ retirement.
 1. Add the Web history `mode` column through the deployment tool using an
    additive, idempotent migration. Verify existing rows read as `instant` and
    record row counts before and after.
-2. Deploy the gateway with `bot.expert_enabled=false`. Prove that no
+1. Deploy the gateway with `bot.expert_enabled=false`. Prove that no
    production request is routed to Expert while dark and that the flag-off
    path still serves the old route.
-3. In a non-production environment, call `POST /v1/query/route` with a
+1. In a non-production environment, call `POST /v1/query/route` with a
    synthetic request. Assert the resolved canonical slug, the `formatted`
    envelope, and normal `202` polling for remote slugs.
-4. Run Web history and Go gateway tests, including the mode-column read,
+1. Run Web history and Go gateway tests, including the mode-column read,
    route selection, and fallback cases.
-5. Enable the flag only after the migration and smoke artifacts are attached.
+1. Enable the flag only after the migration and smoke artifacts are attached.
    Keep an immediate flag-off rollback and record the first live request ID.
 
 Return the migration record, dark-launch result, resolved-slug fixture, and

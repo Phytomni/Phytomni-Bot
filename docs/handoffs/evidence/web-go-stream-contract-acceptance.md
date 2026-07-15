@@ -1,9 +1,9 @@
 # Web/Go stream and A2UI acceptance packet
 
-Owner: Go gateway and Phytomni-Web  
+Owner: Go gateway and Phytomni-Web\
 Bot contract: `docs/reference/http-api.md` and
-`docs/contracts/a2ui/`  
-Current state: `External Pending`  
+`docs/contracts/a2ui/`\
+Current state: `External Pending`\
 Evidence: `Not returned`
 
 This packet covers `RC-WEB-006` and the stream portions of `RC-WEB-004` and

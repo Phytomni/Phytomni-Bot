@@ -1,8 +1,8 @@
 # Operations, DBA, and GitHub acceptance packet
 
-Owners: Operations, DBA, GitHub administrator, and release owner  
-Bot contract: `docs/handoffs/2026-07-15-bot-operations-acceptance-handoff.md`  
-Current state: `External Pending`  
+Owners: Operations, DBA, GitHub administrator, and release owner\
+Bot contract: `docs/handoffs/2026-07-15-bot-operations-acceptance-handoff.md`\
+Current state: `External Pending`\
 Evidence: `Not returned`
 
 This packet covers `RC-OPS-001` through `RC-OPS-003` and `RC-DB-001` through
@@ -55,11 +55,11 @@ and must not be edited to hide a mismatch.
 Use the existing Operations handoff for the ordered procedures:
 
 1. quiesce the API before task DB backup/restore;
-2. verify SQLite integrity and immutable backup;
-3. stage and validate citation data, then direct/relay smoke;
-4. atomically rename the citation table while retaining the previous table;
-5. capture configuration backups before nginx/unit retirement;
-6. run syntax, listener, and readiness checks before traffic returns.
+1. verify SQLite integrity and immutable backup;
+1. stage and validate citation data, then direct/relay smoke;
+1. atomically rename the citation table while retaining the previous table;
+1. capture configuration backups before nginx/unit retirement;
+1. run syntax, listener, and readiness checks before traffic returns.
 
 Return change IDs, counts, smoke request IDs, rollback result, and owner
 approval. Do not drop a canonical table, delete a backup, loosen grants, or

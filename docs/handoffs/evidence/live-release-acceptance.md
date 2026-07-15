@@ -1,7 +1,7 @@
 # Live release and remote-ref acceptance packet
 
-Owners: Operations, Bot/Web/Go maintainers, and release owner  
-Current state: `External Pending`  
+Owners: Operations, Bot/Web/Go maintainers, and release owner\
+Current state: `External Pending`\
 Evidence: `Not returned`
 
 This packet covers `RC-LIVE-001`, `RC-REL-001`, and `RC-REL-002`. It separates
@@ -58,10 +58,10 @@ rejects the push. A local `ahead N` status is not a remote acceptance record.
 The release owner reviews the tracked disposition matrix and verifies that:
 
 1. every required `RC-*` row links to a reviewed evidence record;
-2. no external row is closed from a plan checkbox or offline mock;
-3. approved blockers identify an owner, mitigation, and next review date;
-4. the remote ref points to the reviewed commit;
-5. rollback references exist for every migration, key rotation, and retirement
+1. no external row is closed from a plan checkbox or offline mock;
+1. approved blockers identify an owner, mitigation, and next review date;
+1. the remote ref points to the reviewed commit;
+1. rollback references exist for every migration, key rotation, and retirement
    action.
 
 Return the signed or attributable review record. Until then, the overall

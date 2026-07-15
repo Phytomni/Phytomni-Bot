@@ -1,9 +1,9 @@
 # Web/Go DeepGenome lifecycle acceptance packet
 
-Owner: Phytomni-Web and Go gateway  
+Owner: Phytomni-Web and Go gateway\
 Bot contract: `docs/reference/http-api.md` and
-`docs/handoffs/2026-07-15-deep-genome-web-go-handoff.md`  
-Current state: `External Pending`  
+`docs/handoffs/2026-07-15-deep-genome-web-go-handoff.md`\
+Current state: `External Pending`\
 Evidence: `Not returned`
 
 This packet is the live acceptance sequence for `RC-WEB-001` through
@@ -47,12 +47,12 @@ Return the ordered response samples and the renderer assertion.
 Run four synthetic backend cases and compare the public projection with the
 copyable examples:
 
-| Case | Required result |
-| --- | --- |
-| BriefGene failure | `failed`; both reports null; `report_stage=waiting_for_brief_gene`; no optional submissions. |
-| All optional analyses unavailable | `failed`; BriefGene-derived intermediate report retained; final report null. |
-| Optional partial success | `succeeded`; final report present; `degraded=true`; failure count and chapters visible. |
-| Final synthesis failure | `failed`; last intermediate report retained; final report null. |
+| Case                              | Required result                                                                              |
+| --------------------------------- | -------------------------------------------------------------------------------------------- |
+| BriefGene failure                 | `failed`; both reports null; `report_stage=waiting_for_brief_gene`; no optional submissions. |
+| All optional analyses unavailable | `failed`; BriefGene-derived intermediate report retained; final report null.                 |
+| Optional partial success          | `succeeded`; final report present; `degraded=true`; failure count and chapters visible.      |
+| Final synthesis failure           | `failed`; last intermediate report retained; final report null.                              |
 
 Return one redacted fixture per case and link each to its `RC-WEB-003` record.
 

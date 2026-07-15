@@ -292,11 +292,11 @@ explicitly out of scope for this cutover.
 The ETL trigger is a Web schema-slimming milestone; it is not a Bot release
 phase or an indication that the migration has started.
 
-| Item                                  | Owner  | Trigger                     |
-| ------------------------------------- | ------ | --------------------------- |
+| Item                                  | Owner  | Trigger                       |
+| ------------------------------------- | ------ | ----------------------------- |
 | ETL `s_question_agent_logs` → `runs`  | joint  | Web schema-slimming milestone |
-| Per-real-user rate limiting           | Web Go | when load thresholds emerge |
-| Multi-key Bot client (purpose-routed) | both   | first multi-bucket need     |
+| Per-real-user rate limiting           | Web Go | when load thresholds emerge   |
+| Multi-key Bot client (purpose-routed) | both   | first multi-bucket need       |
 
 ## Sign-Off Procedure
 
