@@ -6,7 +6,8 @@
 
 The package re-exports `PhytomniMcpClient`, `PhytomniToolRouter`, response
 models, command helpers, and tool-result deserialization helpers for
-applications that call Phytomni MCP tools over stdio.
+applications that call Phytomni MCP tools over stdio, plus the key-safe HTTP
+run client for asynchronous API submissions.
 """
 
 from .client import (
@@ -19,6 +20,13 @@ from .client import (
     parse_tool_payload,
     server_command_from_target,
 )
+from .http_client import (
+    HttpClientError,
+    PhytomniHttpClient,
+    RunProtocolError,
+    RunSnapshot,
+    SubmittedRun,
+)
 from .tool_result_formatters import (
     FormattedToolResult,
     format_tool_result,
@@ -26,11 +34,16 @@ from .tool_result_formatters import (
 
 __all__ = [
     "FormattedToolResult",
+    "HttpClientError",
     "McpToolResponse",
     "PhytomniMcpClient",
+    "PhytomniHttpClient",
     "PhytomniToolRouter",
+    "RunProtocolError",
+    "RunSnapshot",
     "RoutedQueryResult",
     "ServerCommand",
+    "SubmittedRun",
     "ToolCallError",
     "format_tool_result",
     "parse_tool_payload",
