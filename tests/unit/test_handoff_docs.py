@@ -16,6 +16,9 @@ pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
 HANDOFF = ROOT / "docs/handoffs/2026-07-15-deep-genome-web-go-handoff.md"
+OPS_HANDOFF = (
+    ROOT / "docs/handoffs/2026-07-15-bot-operations-acceptance-handoff.md"
+)
 EXAMPLE_PATHS = tuple(
     ROOT / "docs/handoffs/examples" / name
     for name in (
@@ -125,3 +128,18 @@ def test_deep_genome_failure_examples_pin_report_semantics() -> None:
     assert result["final_report"] is None
     assert result["report_stage"] == "waiting_for_brief_gene"
     assert result["report_completeness"] == "none"
+
+
+def test_operations_handoff_has_safe_commands_and_rollbacks() -> None:
+    """Keep production procedures staged, key-safe, and reversible."""
+    text = OPS_HANDOFF.read_text(encoding="utf-8")
+    assert (
+        "phytomni-api-key create --user-id web --name production-web "
+        "--expires-days 90 --scope agents"
+    ) in text
+    assert "phytomni-task-db prepare-deep-genome-rollback --db" in text
+    assert "scripts/gauss_live_probe.py" in text
+    assert "scripts/compare_gauss_queries.py" in text
+    assert "staging table" in text and "atomic rename" in text
+    assert "BI_LEGACY_HTTP" not in text
+    assert "Evidence: Not returned" in text
