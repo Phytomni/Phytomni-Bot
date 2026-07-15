@@ -27,6 +27,10 @@ Out of scope: per-endpoint operations (see runbook); MCP stdio
 surface (unchanged by this cutover); Web-side migration of
 `s_question_agent_logs` (deferred until joint schema-slimming work).
 
+The live Expert and history sequence is in the
+[Web/Go Expert and history acceptance packet](../handoffs/evidence/web-go-expert-history-acceptance.md).
+Bot-side delivery remains separate from Web/Go migration and release evidence.
+
 ## Consumer Model (candidate A)
 
 Bot is operated as a single-tenant backend behind Web Go:
@@ -285,9 +289,12 @@ explicitly out of scope for this cutover.
 
 ## Deferred Items (post-cutover)
 
+The ETL trigger is a Web schema-slimming milestone; it is not a Bot release
+phase or an indication that the migration has started.
+
 | Item                                  | Owner  | Trigger                     |
 | ------------------------------------- | ------ | --------------------------- |
-| ETL `s_question_agent_logs` → `runs`  | joint  | Web Phase X3 schema slim    |
+| ETL `s_question_agent_logs` → `runs`  | joint  | Web schema-slimming milestone |
 | Per-real-user rate limiting           | Web Go | when load thresholds emerge |
 | Multi-key Bot client (purpose-routed) | both   | first multi-bucket need     |
 
@@ -305,10 +312,10 @@ Web-team T3 sign-off requires confirmation that:
 1. chat-ai's vite proxy targets Web Go (`/query` → :8082), NOT
    Bot.
 
-Bot-team sign-off is "all 12 items delivered + rollback verified
-
-- live e2e suite green" (per `e2e/test_api_http_e2e.py`, run with
-  `PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1`).
+Bot-team sign-off covers the Bot-side endpoint and rollback prerequisites.
+External release sign-off additionally requires the returned Web/Go live E2E
+record, history migration evidence, and the Expert flag rollback smoke. A
+local offline gate does not close those external rows.
 
 ## Rollback
 
