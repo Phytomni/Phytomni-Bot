@@ -43,10 +43,12 @@ from ..shared.analysis_storage import (
 )
 from ..shared.sql import gauss_query, relay_bi_query, sql_literal
 from .coordinator import (
+    DeepGenomeWorkflowError,
     RemoteSubmission,
     WorkItemOutcome,
     normalize_submission,
     poll_work_item,
+    workflow_outcome_for_state,
 )
 from .summary import build_design_work_item_summary, build_sub_summary
 from .work_items import build_work_item_plan, section_keys
@@ -209,40 +211,36 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         return "experiment_node"
 
     def _route_synthesize_barrier(self: Any, state: DeepGenomeState):
-        """Route back to synthesize_node while waiting for analysis tasks.
-
-        Args:
-            state: Current workflow state.
-
-        Returns:
-            "synthesize_node" to re-enter the barrier check,
-            or END/"experiment_node" when synthesis is complete.
-        """
-        if state.get("synthesis_waiting"):
-            return "synthesize_node"
-        if state.get("synthesize_report"):
+        """Route from concrete outcomes and require usable synthesis."""
+        if state.get("skip_synthesize"):
+            if not state.get("synthesize_report"):
+                raise DeepGenomeWorkflowError("final synthesis unavailable")
             return "experiment_node"
-        return END
+        outcome = workflow_outcome_for_state(state)
+        if not outcome.all_terminal:
+            return "synthesize_node"
+        if not outcome.may_synthesize:
+            raise DeepGenomeWorkflowError("no usable analysis result")
+        if not state.get("synthesize_report"):
+            raise DeepGenomeWorkflowError("final synthesis unavailable")
+        return "experiment_node"
 
     def _route_experiment_barrier(self: Any, state: DeepGenomeState):
-        """Route back to experiment_node while waiting for both branches.
-
-        Args:
-            state: Current workflow state.
-
-        Returns:
-            "experiment_node" to re-enter the barrier check,
-            or "protocol_node" / "discussion_node" when the report is ready.
-        """
-        if state.get("experiment_waiting"):
+        """Route only after BriefGene and synthesis are available."""
+        use_analyst = state.get("config_params", {}).get(
+            "use_analyst_agent", True
+        )
+        if not use_analyst:
+            return (
+                "discussion_node"
+                if state.get("report_triggered")
+                else "experiment_node"
+            )
+        if not state.get("preamble") or not state.get("synthesize_report"):
             return "experiment_node"
         if state.get("report_triggered"):
-            if not state.get("config_params", {}).get(
-                "use_analyst_agent", True
-            ):
-                return "discussion_node"
             return "protocol_node"
-        return END
+        return "experiment_node"
 
     def _route_analyst_tasks(self: Any, state: DeepGenomeState):
         """Dispatch analysis tasks in parallel using the Send API.
@@ -250,8 +248,9 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         The evolution task fans to the dedicated ``evolution_node`` and
         the digital_design task to the mounted ``design_node`` (both
         mounted standalone subgraphs); every other task fans to the
-        generic ``analyst_node``. Both stay entries in ``analysis_tasks``
-        so the synthesize barrier's ``total_expected`` count is unchanged.
+        generic ``analyst_node``. The logical branch list stays in
+        ``analysis_tasks`` while the barrier derives readiness from the
+        twelve concrete ``work_items`` rows.
 
         Args:
             state: Current workflow state containing analysis_tasks.

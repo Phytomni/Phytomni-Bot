@@ -14,7 +14,10 @@ import pytest
 from mcp_server_phytomni.agents.deep_genome.coordinator import (
     RemoteSubmission,
     SubmissionProtocolError,
+    WorkflowOutcome,
     WorkItemOutcome,
+    concrete_work_item_outcomes,
+    derive_workflow_outcome,
     normalize_submission,
     poll_work_item,
 )
@@ -29,6 +32,106 @@ def _submission() -> RemoteSubmission:
         poll_task_id="source-1",
         output_dir="obs://bucket/out",
     )
+
+
+def _terminal_outcomes(
+    *, succeeded: int = 0, failed: int = 0, running: int = 0
+) -> list[WorkItemOutcome]:
+    """Build a concrete-outcome matrix for the workflow barrier tests."""
+    return [
+        *(
+            WorkItemOutcome("succeeded", "# usable result", None)
+            for _ in range(succeeded)
+        ),
+        *(
+            WorkItemOutcome("failed", None, "analysis task failed")
+            for _ in range(failed)
+        ),
+        *(WorkItemOutcome("running", None, None) for _ in range(running)),
+    ]
+
+
+def test_terminal_outcome_requires_one_usable_item() -> None:
+    """All terminal failures cannot unlock synthesis."""
+    outcome = derive_workflow_outcome(_terminal_outcomes(failed=12))
+
+    assert outcome == WorkflowOutcome(
+        all_terminal=True,
+        usable_count=0,
+        unusable_count=12,
+        may_synthesize=False,
+        degraded=True,
+    )
+
+
+def test_partial_outcome_waits_for_every_concrete_item() -> None:
+    """One usable item plus running siblings is not synthesis-ready."""
+    waiting = derive_workflow_outcome(
+        _terminal_outcomes(succeeded=1, running=11)
+    )
+    terminal = derive_workflow_outcome(
+        _terminal_outcomes(succeeded=1, failed=11)
+    )
+
+    assert waiting.all_terminal is False
+    assert waiting.may_synthesize is False
+    assert waiting.usable_count == 1
+    assert terminal.all_terminal is True
+    assert terminal.may_synthesize is True
+    assert terminal.degraded is True
+
+
+def test_canonical_success_without_markdown_is_not_usable() -> None:
+    """A canonical success needs nonblank local Markdown to count."""
+    outcome = derive_workflow_outcome(
+        [WorkItemOutcome("succeeded", "   ", None)]
+    )
+
+    assert outcome.usable_count == 0
+    assert outcome.unusable_count == 1
+    assert outcome.may_synthesize is False
+
+
+def test_concrete_adapter_fans_design_failure_to_both_jobs() -> None:
+    """A mount-level design failure settles protein and promoter together."""
+    work_items = [
+        {
+            "section_key": "digital_design",
+            "work_item_key": "protein_design",
+            "analysis_type": "protein_design_analysis",
+        },
+        {
+            "section_key": "digital_design",
+            "work_item_key": "promoter_design",
+            "analysis_type": "promoter_design_analysis",
+        },
+        {
+            "section_key": "single_cell_analysis",
+            "work_item_key": "single_cell_analysis",
+            "analysis_type": "single_cell_analysis",
+        },
+    ]
+
+    aligned = concrete_work_item_outcomes(
+        work_items,
+        {
+            "task_10": {
+                "analysis_type": "digital_design",
+                "status": "failed",
+            }
+        },
+    )
+
+    assert [row["work_item_key"] for row in aligned] == [
+        "protein_design",
+        "promoter_design",
+        "single_cell_analysis",
+    ]
+    assert [row["status"] for row in aligned] == [
+        "failed",
+        "failed",
+        "pending",
+    ]
 
 
 async def _run_poll_fixture(

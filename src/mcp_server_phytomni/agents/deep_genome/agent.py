@@ -163,6 +163,7 @@ class DeepGenomeState(TypedDict):
         discussion_report: Report discussion section.
         summary_report: Report summary and conclusion section.
         follow_up_questions: List of suggested follow-up research questions.
+        final_report: Assembled terminal report Markdown.
         part1_completed_branches: Counter for part1 barrier (target: 4)
         analysis_completed_branches: Counter for the analysis barrier.
         experiment_completed_branches: Counter for the experiment barrier.
@@ -194,6 +195,7 @@ class DeepGenomeState(TypedDict):
     discussion_report: str | None
     summary_report: str | None
     follow_up_questions: list[str] | None
+    final_report: str | None
     # brief_gene owns the entire preamble: the mount projects its
     # rendered answer (title swapped to deep_genome) into ``preamble``,
     # which report.py consumes verbatim as the report's pre-analysis

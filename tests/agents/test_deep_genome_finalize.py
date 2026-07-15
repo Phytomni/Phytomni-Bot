@@ -22,6 +22,9 @@ import pytest
 
 from mcp_server_phytomni.agents.deep_genome import agent as agent_module
 from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
+from mcp_server_phytomni.agents.deep_genome.coordinator import (
+    DeepGenomeWorkflowError,
+)
 from mcp_server_phytomni.runtime.live_tasks import (
     is_live_running,
     register_live_task,
@@ -42,6 +45,12 @@ def _boom_manager(_db_path: str) -> Any:
 def _succeeded_task() -> Any:
     """Return a fake completed task reporting success (no exception)."""
     return SimpleNamespace(cancelled=lambda: False, exception=lambda: None)
+
+
+def _failed_task() -> Any:
+    """Return a fake task carrying the all-failed workflow error."""
+    error = DeepGenomeWorkflowError("no usable analysis result")
+    return SimpleNamespace(cancelled=lambda: False, exception=lambda: error)
 
 
 class _FinalizeProbe(DeepGenomeAgents):
@@ -110,6 +119,27 @@ def test_finalize_workflow_deregisters_umbrella(
     )
 
     assert is_live_running("dg-dereg") is False
+
+
+def test_finalize_workflow_marks_no_usable_result_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The concrete-outcome failure reaches the terminal task status."""
+    updates: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(
+        agent_module,
+        "TaskManager",
+        lambda _p: SimpleNamespace(
+            update_task=lambda *args: updates.append(args)
+        ),
+    )
+    agent = _FinalizeProbe(knowledge_agent=None, analyst_agent=None)
+
+    agent.run_finalize(
+        _failed_task(), umbrella_id="dg-no-usable", output_dir="/obs/o"
+    )
+
+    assert updates == [("dg-no-usable", "failed", "", "/obs/o")]
 
 
 async def test_arun_registers_umbrella_in_live_set(

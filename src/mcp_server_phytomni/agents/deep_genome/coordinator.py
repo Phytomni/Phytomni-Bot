@@ -15,16 +15,21 @@ from __future__ import annotations
 import asyncio
 import inspect
 import time
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 __all__ = [
     "RemoteSubmission",
     "SubmissionProtocolError",
+    "DeepGenomeWorkflowError",
+    "WorkflowOutcome",
     "WorkItemOutcome",
+    "concrete_work_item_outcomes",
+    "derive_workflow_outcome",
     "normalize_submission",
     "poll_work_item",
+    "workflow_outcome_for_state",
 ]
 
 
@@ -67,6 +72,148 @@ class WorkItemOutcome:
     def summary_markdown(self) -> str | None:
         """Expose the persistence-facing name used by later store code."""
         return self.summary
+
+
+class DeepGenomeWorkflowError(RuntimeError):
+    """Raised when a DeepGenome workflow cannot produce a usable report."""
+
+
+@dataclass(frozen=True)
+class WorkflowOutcome:
+    """Derived readiness and degradation state for concrete work items."""
+
+    all_terminal: bool
+    usable_count: int
+    unusable_count: int
+    may_synthesize: bool
+    degraded: bool
+
+
+_SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed"})
+_NONTERMINAL_STATUSES = frozenset(
+    {"pending", "running", "submitted", "queued", "waiting", "in_progress"}
+)
+
+
+def _outcome_status_and_summary(
+    value: WorkItemOutcome | Mapping[str, Any] | str,
+) -> tuple[str, str | None]:
+    """Return a normalized status and optional summary from one row."""
+    if isinstance(value, WorkItemOutcome):
+        return value.status.strip().lower(), value.summary_markdown
+    if isinstance(value, Mapping):
+        status = value.get("status")
+        summary = value.get("summary_markdown")
+        if summary is None:
+            summary = value.get("summary")
+        return (
+            status.strip().lower() if isinstance(status, str) else "",
+            summary if isinstance(summary, str) else None,
+        )
+    return value.strip().lower(), None
+
+
+def derive_workflow_outcome(
+    outcomes: Iterable[WorkItemOutcome | Mapping[str, Any] | str],
+) -> WorkflowOutcome:
+    """Derive terminal readiness from concrete work-item outcomes.
+
+    ``success`` / ``completed`` are retained as legacy producer statuses and
+    count as usable because those producers store their summary in the
+    sibling ``analyst_summaries`` channel. Canonical ``succeeded`` rows must
+    carry nonblank local Markdown, matching :func:`poll_work_item`'s contract.
+    Any other nonblank status is terminal and unusable; a blank status is
+    treated as not yet observed so a missing outcome cannot unlock synthesis.
+    """
+    normalized = list(outcomes)
+    usable_count = 0
+    unusable_count = 0
+    terminal_flags: list[bool] = []
+    for outcome in normalized:
+        status, summary = _outcome_status_and_summary(outcome)
+        if not status:
+            terminal_flags.append(False)
+            continue
+        if status in _NONTERMINAL_STATUSES:
+            terminal_flags.append(False)
+            continue
+        terminal_flags.append(True)
+        usable = status in _SUCCESS_STATUSES - {"succeeded"} or (
+            status == "succeeded" and bool(summary and summary.strip())
+        )
+        if usable:
+            usable_count += 1
+        else:
+            unusable_count += 1
+    all_terminal = bool(normalized) and all(terminal_flags)
+    return WorkflowOutcome(
+        all_terminal=all_terminal,
+        usable_count=usable_count,
+        unusable_count=unusable_count,
+        may_synthesize=all_terminal and usable_count > 0,
+        degraded=unusable_count > 0,
+    )
+
+
+def concrete_work_item_outcomes(
+    work_items: Iterable[Mapping[str, Any]],
+    raw_analyst_data: Mapping[str, Any] | None,
+) -> tuple[Mapping[str, Any], ...]:
+    """Align heterogeneous raw rows to the planned concrete work items.
+
+    The legacy graph emits one ``digital_design`` row for a mount-level
+    failure, while the canonical plan contains independent protein and
+    promoter jobs. That one row is deliberately projected onto both planned
+    keys so a failed mount cannot make the twelve-item barrier appear ready
+    after only eleven observations. Missing rows become ``pending``.
+    """
+    planned = list(work_items)
+    records = [
+        record
+        for record in (raw_analyst_data or {}).values()
+        if isinstance(record, Mapping)
+    ]
+    if not planned:
+        return tuple(records)
+
+    aligned: list[Mapping[str, Any]] = []
+    for item in planned:
+        work_item_key = item.get("work_item_key")
+        analysis_type = item.get("analysis_type")
+        section_key = item.get("section_key")
+        match = next(
+            (
+                record
+                for record in reversed(records)
+                if record.get("work_item_key") == work_item_key
+                or record.get("analysis_type") == work_item_key
+                or record.get("analysis_type") == analysis_type
+                or (
+                    section_key == "digital_design"
+                    and record.get("analysis_type") == "digital_design"
+                )
+            ),
+            None,
+        )
+        if match is None:
+            aligned.append(
+                {"work_item_key": work_item_key, "status": "pending"}
+            )
+            continue
+        projected = dict(match)
+        projected.setdefault("work_item_key", work_item_key)
+        aligned.append(projected)
+    return tuple(aligned)
+
+
+def workflow_outcome_for_state(state: Mapping[str, Any]) -> WorkflowOutcome:
+    """Derive the barrier outcome from DeepGenome's concrete state rows."""
+    return derive_workflow_outcome(
+        concrete_work_item_outcomes(
+            state.get("work_items") or (),
+            state.get("raw_analyst_data"),
+        )
+    )
 
 
 StatusReader = Callable[[str, float], Awaitable[Any] | Any]

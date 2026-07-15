@@ -37,6 +37,10 @@ from ..shared.parallel_dispatch import (
     degraded_labels,
     redact_failure_message,
 )
+from .coordinator import (
+    DeepGenomeWorkflowError,
+    workflow_outcome_for_state,
+)
 from .formatting import SPECIES_CODE_MAP
 
 if TYPE_CHECKING:
@@ -365,9 +369,6 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
 
     async def _run_report_synthesizer(self: Any, state: DeepGenomeState):
         """Generate the report after all analysis branches finish."""
-        completed = state.get("analysis_completed_branches", 0)
-        total_expected = len(state.get("analysis_tasks", []))
-
         # Test mode: skip synthesize_node and use mock data directly
         if state.get("skip_synthesize", False):
             logger.info(
@@ -376,17 +377,20 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             )
             return {"experiment_completed_branches": 1}
 
-        if total_expected > 0 and completed < total_expected:
+        outcome = workflow_outcome_for_state(state)
+        if not outcome.all_terminal:
             logger.info(
-                "[Barrier] Waiting for analysis completion: %s/%s",
-                completed,
-                total_expected,
+                "[Barrier] Waiting for concrete analysis outcomes: "
+                "%s usable, %s unusable",
+                outcome.usable_count,
+                outcome.unusable_count,
             )
-            return {"synthesis_waiting": True}
+            return {}
+        if not outcome.may_synthesize:
+            raise DeepGenomeWorkflowError("no usable analysis result")
         logger.info(
-            "[Barrier] All analysis completed (%s/%s), starting synthesis",
-            completed,
-            total_expected,
+            "[Barrier] All concrete analysis outcomes settled; "
+            "starting synthesis"
         )
 
         gene_results_data = state.get("analyst_summaries", {})
@@ -398,6 +402,8 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             f"## Bioinformatic Analysis and Molecular Design\n\n"
             f"{gene_results_body}"
         )
+        if not gene_results_body.strip():
+            raise DeepGenomeWorkflowError("final synthesis unavailable")
         run_identity = RunIdentity.create(
             user_id=self.deep_genome_config.USER_ID,
             scope="report",
@@ -442,13 +448,12 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
                 "report_triggered": True,
             }
 
-        # Barrier 3: Ultimate convergence - wait for part1 and synthesize
-        if state.get("experiment_completed_branches", 0) < 2:
+        # Barrier 3: Ultimate convergence - wait for BriefGene + synthesis.
+        if not state.get("preamble") or not state.get("synthesize_report"):
             logger.info(
-                "[Ultimate Barrier] Waiting for both branches: %s/2",
-                state.get("experiment_completed_branches", 0),
+                "[Ultimate Barrier] Waiting for BriefGene and synthesis"
             )
-            return {"experiment_waiting": True}
+            return {}
 
         # Prevent duplicate execution - already done, let workflow proceed
         if state.get("report_triggered", False):
@@ -696,6 +701,8 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
 
         gene_id = state["gene_id"]
         part0145_str = _assemble_final_report(state)
+        if not part0145_str.strip():
+            raise DeepGenomeWorkflowError("final report unavailable")
 
         follow_up_response = await self._dispatch_chat(
             get_prompt(
@@ -717,11 +724,13 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         for follow_up in follow_up_list:
             final_report += follow_up
             final_report += "\n"
+        if not final_report.strip():
+            raise DeepGenomeWorkflowError("final report unavailable")
         await _write_async(results_path, final_report)
         self._persist_final_report(state.get("task_id"), final_report)
         self._persist_degraded(state.get("task_id"), state)
         return {
-            "final_report": part0145_str,
+            "final_report": final_report,
             "follow_up_questions": follow_up_list,
         }
 

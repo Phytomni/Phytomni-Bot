@@ -27,6 +27,7 @@ import pytest
 
 from mcp_server_phytomni.agents.deep_genome import dispatch as dispatch_module
 from mcp_server_phytomni.agents.deep_genome.coordinator import (
+    DeepGenomeWorkflowError,
     RemoteSubmission,
     WorkItemOutcome,
 )
@@ -196,6 +197,79 @@ def test_route_experiment_skips_protocol_when_analyst_disabled() -> None:
     route = dispatch_module.DeepGenomeDispatchMixin._route_experiment_barrier
 
     assert route(object(), state) == "discussion_node"
+
+
+def test_route_synthesize_waits_for_every_concrete_work_item() -> None:
+    """The synthesis route uses twelve concrete rows, not a branch count."""
+    state: Any = {
+        "work_items": [
+            {
+                "work_item_key": "evolution_analysis",
+                "analysis_type": "evolution_analysis",
+            },
+            {
+                "work_item_key": "promoter_design",
+                "analysis_type": "promoter_design_analysis",
+                "section_key": "digital_design",
+            },
+        ],
+        "raw_analyst_data": {
+            "task_0:evolution_analysis": {
+                "analysis_type": "evolution_analysis",
+                "status": "success",
+            }
+        },
+    }
+
+    route = dispatch_module.DeepGenomeDispatchMixin._route_synthesize_barrier
+
+    assert route(object(), state) == "synthesize_node"
+
+
+def test_route_synthesize_rejects_all_terminal_failures() -> None:
+    """The all-failed concrete matrix raises instead of reaching END."""
+    state: Any = {
+        "work_items": [
+            {
+                "work_item_key": "evolution_analysis",
+                "analysis_type": "evolution_analysis",
+            },
+            {
+                "work_item_key": "promoter_design",
+                "analysis_type": "promoter_design_analysis",
+                "section_key": "digital_design",
+            },
+        ],
+        "raw_analyst_data": {
+            "task_0:evolution_analysis": {
+                "analysis_type": "evolution_analysis",
+                "status": "failed",
+            },
+            "task_10": {
+                "analysis_type": "digital_design",
+                "status": "failed",
+            },
+        },
+    }
+
+    route = dispatch_module.DeepGenomeDispatchMixin._route_synthesize_barrier
+
+    with pytest.raises(
+        DeepGenomeWorkflowError, match="^no usable analysis result$"
+    ):
+        route(object(), state)
+
+
+def test_route_synthesize_preserves_skip_fixture() -> None:
+    """Pre-rendered test-mode synthesis bypasses concrete task rows."""
+    state: Any = {
+        "skip_synthesize": True,
+        "synthesize_report": "pre-rendered synthesis",
+    }
+
+    route = dispatch_module.DeepGenomeDispatchMixin._route_synthesize_barrier
+
+    assert route(object(), state) == "experiment_node"
 
 
 def test_route_analyst_tasks_sends_design_to_design_node() -> None:

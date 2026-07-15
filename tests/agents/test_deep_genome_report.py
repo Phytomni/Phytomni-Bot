@@ -22,6 +22,9 @@ import pytest
 
 from mcp_server_phytomni.agents.deep_genome import report as report_module
 from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeState
+from mcp_server_phytomni.agents.deep_genome.coordinator import (
+    DeepGenomeWorkflowError,
+)
 from mcp_server_phytomni.agents.deep_genome.report import (
     DeepGenomeReportMixin,
     _state_gene_string,
@@ -61,6 +64,10 @@ class _ReportProbe(DeepGenomeReportMixin):
     async def run_experiment(self, state: DeepGenomeState) -> dict[str, Any]:
         """Public proxy for the experiment barrier node."""
         return await self._run_report_experiment(state)
+
+    async def run_synthesizer(self, state: DeepGenomeState) -> dict[str, Any]:
+        """Public proxy for the concrete-outcome synthesis barrier."""
+        return await self._run_report_synthesizer(state)
 
 
 def _state(**overrides: Any) -> DeepGenomeState:
@@ -205,6 +212,97 @@ async def test_experiment_barrier_skips_analyst_work_when_disabled() -> None:
     assert result["report_triggered"] is True
 
 
+async def test_synthesizer_rejects_all_terminal_failures() -> None:
+    """No usable concrete result raises a fixed workflow error."""
+    state = _state(
+        work_items=[
+            {
+                "work_item_key": "evolution_analysis",
+                "analysis_type": "evolution_analysis",
+            },
+            {
+                "work_item_key": "promoter_design",
+                "analysis_type": "promoter_design_analysis",
+                "section_key": "digital_design",
+            },
+        ],
+        raw_analyst_data={
+            "task_0:evolution_analysis": {
+                "analysis_type": "evolution_analysis",
+                "status": "failed",
+            },
+            "task_10": {
+                "analysis_type": "digital_design",
+                "status": "failed",
+            },
+        },
+    )
+
+    with pytest.raises(
+        DeepGenomeWorkflowError, match="^no usable analysis result$"
+    ):
+        await _ReportProbe().run_synthesizer(state)
+
+
+async def test_synthesizer_waits_for_missing_concrete_outcome() -> None:
+    """Missing planned rows keep synthesis pending without a sticky flag."""
+    state = _state(
+        work_items=[
+            {
+                "work_item_key": "evolution_analysis",
+                "analysis_type": "evolution_analysis",
+            },
+            {
+                "work_item_key": "promoter_design",
+                "analysis_type": "promoter_design_analysis",
+                "section_key": "digital_design",
+            },
+        ],
+        raw_analyst_data={
+            "task_0:evolution_analysis": {
+                "analysis_type": "evolution_analysis",
+                "status": "success",
+            }
+        },
+    )
+
+    assert await _ReportProbe().run_synthesizer(state) == {}
+
+
+async def test_synthesizer_rejects_missing_final_synthesis() -> None:
+    """Terminal outcomes without renderable sections cannot complete."""
+    state = _state(
+        synthesize_report=None,
+        analyst_summaries={},
+        work_items=[
+            {
+                "work_item_key": "evolution_analysis",
+                "analysis_type": "evolution_analysis",
+            },
+            {
+                "work_item_key": "promoter_design",
+                "analysis_type": "promoter_design_analysis",
+                "section_key": "digital_design",
+            },
+        ],
+        raw_analyst_data={
+            "task_0:evolution_analysis": {
+                "analysis_type": "evolution_analysis",
+                "status": "success",
+            },
+            "task_10": {
+                "analysis_type": "digital_design",
+                "status": "failed",
+            },
+        },
+    )
+
+    with pytest.raises(
+        DeepGenomeWorkflowError, match="^final synthesis unavailable$"
+    ):
+        await _ReportProbe().run_synthesizer(state)
+
+
 class _FollowUpProbe(DeepGenomeReportMixin):
     """Report mixin host with a canned chat dispatch + public node proxy.
 
@@ -283,6 +381,22 @@ def test_run_follow_up_node_persists_assembled_report_to_task_row(
     mgr.update_task("dg-task-1", "succeeded", "", "/obs/run")
     assert mgr.get_task_final_report("dg-task-1") == persisted
     assert out["follow_up_questions"] == ["Q1?", "Q2?"]
+    assert "Q1?" in out["final_report"]
+
+
+async def test_follow_up_rejects_empty_final_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The graph cannot complete with an empty final Markdown payload."""
+    monkeypatch.setattr(report_module, "_assemble_final_report", lambda _: "")
+    report_dir = tmp_path / "report"
+    report_dir.mkdir()
+    state = _state(report_dir=str(report_dir))
+
+    with pytest.raises(
+        DeepGenomeWorkflowError, match="^final report unavailable$"
+    ):
+        await _FollowUpProbe().run_follow_up_node(state)
 
 
 def test_run_follow_up_node_skips_persist_without_task_id(
