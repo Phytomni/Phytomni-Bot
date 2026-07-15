@@ -18,7 +18,11 @@ from mcp.shared.exceptions import McpError
 
 from ..agents.analyst.agent import task_log, task_status
 from ..config.defaults import AnalystConfig
-from .deep_genome_store import DeepGenomeStore, DeepGenomeTransitionError
+from .deep_genome_store import (
+    DeepGenomeStore,
+    DeepGenomeTransitionError,
+    snapshot_to_public_dict,
+)
 from .live_tasks import is_live_running
 from .task_manager import TaskManager, resolve_tasks_db_path
 
@@ -33,23 +37,10 @@ _RESTART_ORPHAN_REASON = "workflow interrupted by service restart"
 def _project_deep_genome_snapshot(
     result: dict[str, Any], snapshot: Any
 ) -> dict[str, Any]:
-    """Merge one sanitized local DeepGenome snapshot into a task result."""
-    result.update(
-        {
-            "status": snapshot.status,
-            "intermediate_report": snapshot.intermediate_report,
-            "final_report": snapshot.final_report,
-            "report_stage": snapshot.report_stage,
-            "report_completeness": snapshot.report_completeness,
-            "report_revision": snapshot.report_revision,
-            "report_updated_at": snapshot.report_updated_at,
-            "progress": dict(snapshot.progress),
-            "degraded": snapshot.degraded,
-            "degraded_reason": snapshot.degraded_reason,
-            "failures": [dict(item) for item in snapshot.failures],
-        }
-    )
-    if result["status"] in _NON_TERMINAL_STATUSES and snapshot.final_report:
+    """Merge one public local DeepGenome snapshot into a task result."""
+    result["status"] = snapshot.status
+    result.update(snapshot_to_public_dict(snapshot))
+    if result["status"] in _NON_TERMINAL_STATUSES and result["final_report"]:
         result["status"] = "succeeded"
     return result
 

@@ -405,7 +405,8 @@ async def handle_get_task_status(args: GetTaskStatus) -> HandlerResult:
         args: Validated GetTaskStatus request schema (task_id).
 
     Returns:
-        ``{task_id, status, output_dir, analysis_id, live_status}``;
-        status is ``"unknown"`` for an unrecorded id.
+        ``{task_id, status, output_dir, analysis_id, live_status}`` plus
+        the public DeepGenome report/progress snapshot when the id is an
+        umbrella task; status is ``"unknown"`` for an unrecorded id.
     """
     return await reconcile_task(args.task_id)

@@ -12,6 +12,7 @@ can be scheduled.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -44,7 +45,44 @@ __all__ = [
     "DeepGenomeTrackingError",
     "DeepGenomeTransitionError",
     "RemoteSubmission",
+    "snapshot_to_public_dict",
 ]
+
+_PUBLIC_PROGRESS_KEYS = (
+    "planning_complete",
+    "brief_gene_status",
+    "total",
+    "planned",
+    "submitted",
+    "pending",
+    "running",
+    "succeeded",
+    "failed",
+    "cancelled",
+    "timed_out",
+)
+_PUBLIC_FAILURE_MESSAGES = {
+    "failed": "analysis task failed",
+    "cancelled": "analysis task cancelled",
+    "timed_out": "analysis task timed out",
+}
+_PUBLIC_FINAL_REASONS = frozenset(
+    {
+        "brief gene profile failed",
+        "final synthesis failed",
+        "final report unavailable",
+        "final report publication failed",
+        "no usable analysis result",
+        "workflow interrupted by service restart",
+        "local coordinator failed to start",
+        "submission tracking failed",
+        "remote analysis tracking failed",
+    }
+)
+_PUBLIC_GENERATED_REASON = re.compile(
+    r"^[0-9]+ of 12 optional analyses unavailable$"
+)
+_PUBLIC_REASON_FALLBACK = "analysis results are partially unavailable"
 
 _WORK_ITEM_STATUS_SQL = ", ".join(
     f"'{status}'" for status in _WORK_ITEM_STATUSES
@@ -139,6 +177,125 @@ class _SnapshotHealth:
 @dataclass(frozen=True)
 class DeepGenomeSnapshot(_SnapshotIdentity, _SnapshotReport, _SnapshotHealth):
     """Public-shaped local snapshot DTO used by later read paths."""
+
+
+def _public_progress(
+    progress: Mapping[str, int | bool | str],
+) -> dict[str, int | bool | str]:
+    """Project only the stable ordered progress counters."""
+    planning_complete = progress.get("planning_complete")
+    brief_gene_status = progress.get("brief_gene_status")
+    if not isinstance(planning_complete, bool):
+        planning_complete = False
+    if not isinstance(brief_gene_status, str):
+        brief_gene_status = "unknown"
+    else:
+        brief_gene_status = brief_gene_status.strip().lower() or "unknown"
+    projected: dict[str, int | bool | str] = {
+        "planning_complete": planning_complete,
+        "brief_gene_status": brief_gene_status,
+    }
+    for key in _PUBLIC_PROGRESS_KEYS[2:]:
+        value = progress.get(key)
+        projected[key] = (
+            value
+            if isinstance(value, int)
+            and not isinstance(value, bool)
+            and value >= 0
+            else 0
+        )
+    return projected
+
+
+def _public_failures(
+    failures: tuple[Mapping[str, str], ...],
+) -> list[dict[str, str]]:
+    """Project failures without internal reason keys or arbitrary text."""
+    terminal_states = {"succeeded", "failed", "cancelled", "timed_out"}
+    projected: list[dict[str, str]] = []
+    for failure in failures:
+        work_item_key = failure.get("work_item_key")
+        status = failure.get("status")
+        if (
+            not isinstance(work_item_key, str)
+            or not work_item_key.strip()
+            or status not in terminal_states
+        ):
+            continue
+        projected.append(
+            {
+                "work_item_key": work_item_key.strip(),
+                "status": status,
+                "message": _PUBLIC_FAILURE_MESSAGES.get(
+                    status, "analysis task unavailable"
+                ),
+            }
+        )
+    return projected
+
+
+def _public_degraded_reason(value: str | None) -> str | None:
+    """Keep fixed reasons and replace unexpected legacy text."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    normalized = value.strip()
+    if _PUBLIC_GENERATED_REASON.fullmatch(normalized):
+        return normalized
+    if normalized in _PUBLIC_FINAL_REASONS:
+        return normalized
+    return _PUBLIC_REASON_FALLBACK
+
+
+def _public_timestamp(value: str | None) -> str | None:
+    """Return one valid timestamp in canonical UTC form, or ``None``."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def snapshot_to_public_dict(
+    snapshot: DeepGenomeSnapshot,
+) -> dict[str, Any]:
+    """Serialize one DeepGenome snapshot for MCP and HTTP consumers."""
+    stage = snapshot.report_stage
+    if stage not in {"waiting_for_brief_gene", "intermediate", "final"}:
+        stage = "waiting_for_brief_gene"
+    completeness = snapshot.report_completeness
+    if completeness not in {"none", "partial", "complete"}:
+        completeness = "none"
+    revision = snapshot.report_revision
+    if (
+        not isinstance(revision, int)
+        or isinstance(revision, bool)
+        or revision < 0
+    ):
+        revision = 0
+    return {
+        "intermediate_report": (
+            snapshot.intermediate_report
+            if isinstance(snapshot.intermediate_report, str)
+            else None
+        ),
+        "final_report": (
+            snapshot.final_report
+            if isinstance(snapshot.final_report, str)
+            else None
+        ),
+        "report_stage": stage,
+        "report_completeness": completeness,
+        "report_revision": revision,
+        "report_updated_at": _public_timestamp(snapshot.report_updated_at),
+        "progress": _public_progress(snapshot.progress),
+        "degraded": bool(snapshot.degraded),
+        "degraded_reason": _public_degraded_reason(snapshot.degraded_reason),
+        "failures": _public_failures(snapshot.failures),
+    }
 
 
 @dataclass(frozen=True)

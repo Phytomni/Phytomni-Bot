@@ -18,11 +18,51 @@ import pytest
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
+from mcp_server_phytomni.agents.deep_genome.work_items import (
+    build_work_item_plan,
+)
 from mcp_server_phytomni.mcp.handlers import handle_get_task_status
 from mcp_server_phytomni.mcp.schemas import GetTaskStatus
+from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 from mcp_server_phytomni.runtime.task_manager import TaskManager
 
 pytestmark = pytest.mark.server
+
+
+def _seed_partial_deep_genome_snapshot(db_path: str) -> None:
+    """Create one live-looking owner with one usable and one failed item."""
+    store = DeepGenomeStore(db_path)
+    reservation = store.reserve_run(
+        run_id="run-public",
+        umbrella_task_id="task-public",
+        owner="alice",
+        output_dir="/obs/public",
+    )
+    store.apply_brief_gene_transition(
+        reservation.umbrella_task_id,
+        status="succeeded",
+        summary_markdown="# BriefGene profile",
+    )
+    store.seed_plan(
+        reservation,
+        build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"),
+    )
+    store.apply_work_item_transition(
+        reservation.umbrella_task_id,
+        work_item_key="smep_analysis",
+        status="running",
+    )
+    store.apply_work_item_transition(
+        reservation.umbrella_task_id,
+        work_item_key="smep_analysis",
+        status="succeeded",
+        summary_markdown="# SMEP summary",
+    )
+    store.apply_work_item_transition(
+        reservation.umbrella_task_id,
+        work_item_key="smoc_analysis",
+        status="failed",
+    )
 
 
 async def test_unknown_task_returns_unknown(tasks_db_path: str) -> None:
@@ -41,6 +81,38 @@ async def test_unknown_task_returns_unknown(tasks_db_path: str) -> None:
     assert result is not None
     assert result["status"] == "unknown"
     assert result["live_status"] is None
+
+
+async def test_deep_genome_snapshot_projects_public_shape(
+    tasks_db_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GetTaskStatus exposes the additive report contract for an umbrella."""
+    _seed_partial_deep_genome_snapshot(tasks_db_path)
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.is_live_running",
+        lambda _task_id: True,
+    )
+
+    result = await handle_get_task_status(GetTaskStatus(task_id="task-public"))
+
+    assert result["status"] == "running"
+    assert result["intermediate_report"].startswith("#")
+    assert result["final_report"] is None
+    assert result["report_stage"] == "intermediate"
+    assert result["report_completeness"] == "partial"
+    assert result["report_revision"] == 4
+    assert result["progress"]["total"] == 12
+    assert result["degraded"] is True
+    assert result["degraded_reason"] == (
+        "1 of 12 optional analyses unavailable"
+    )
+    assert result["failures"] == [
+        {
+            "work_item_key": "smoc_analysis",
+            "status": "failed",
+            "message": "analysis task failed",
+        }
+    ]
 
 
 async def test_recorded_task_merges_live_status(

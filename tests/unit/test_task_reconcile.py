@@ -28,7 +28,11 @@ from mcp.types import INTERNAL_ERROR, ErrorData
 from mcp_server_phytomni.agents.deep_genome.work_items import (
     build_work_item_plan,
 )
-from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
+from mcp_server_phytomni.runtime.deep_genome_store import (
+    DeepGenomeSnapshot,
+    DeepGenomeStore,
+    snapshot_to_public_dict,
+)
 from mcp_server_phytomni.runtime.live_tasks import (
     deregister_live_task,
     register_live_task,
@@ -108,6 +112,75 @@ def _reserve_deep_genome(
         summary_markdown="SMEP summary",
     )
     return store, task_id
+
+
+def test_snapshot_public_serializer_whitelists_report_fields() -> None:
+    """The public DTO hides internal failure keys and arbitrary legacy text."""
+    snapshot = DeepGenomeSnapshot(
+        umbrella_task_id="task-public",
+        status="running",
+        intermediate_report="# profile",
+        final_report=None,
+        report_stage="intermediate",
+        report_completeness="partial",
+        report_revision=4,
+        report_updated_at="2026-07-15T12:00:00+00:00",
+        progress={
+            "planning_complete": True,
+            "brief_gene_status": "succeeded",
+            "total": 12,
+            "failed": 1,
+            "secret": "must not cross boundary",
+        },
+        degraded=True,
+        degraded_reason="secret DSN and legacy response",
+        failures=(
+            {
+                "work_item_key": "smoc_analysis",
+                "status": "failed",
+                "reason": "secret upstream body",
+            },
+        ),
+    )
+
+    payload = snapshot_to_public_dict(snapshot)
+
+    assert list(payload) == [
+        "intermediate_report",
+        "final_report",
+        "report_stage",
+        "report_completeness",
+        "report_revision",
+        "report_updated_at",
+        "progress",
+        "degraded",
+        "degraded_reason",
+        "failures",
+    ]
+    assert list(payload["progress"]) == [
+        "planning_complete",
+        "brief_gene_status",
+        "total",
+        "planned",
+        "submitted",
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "timed_out",
+    ]
+    assert payload["report_updated_at"] == "2026-07-15T12:00:00Z"
+    assert payload["degraded_reason"] == (
+        "analysis results are partially unavailable"
+    )
+    assert payload["failures"] == [
+        {
+            "work_item_key": "smoc_analysis",
+            "status": "failed",
+            "message": "analysis task failed",
+        }
+    ]
 
 
 def test_reconcile_task_log_returns_cached_payload_without_remote(
