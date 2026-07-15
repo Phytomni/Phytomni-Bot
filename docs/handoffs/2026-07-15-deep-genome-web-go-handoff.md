@@ -1,6 +1,6 @@
 # Web and Go integration handoff: DeepGenome reports
 
-**Date:** 2026-07-15\
+**Date:** 2026-07-16\
 **Bot owner:** Phytomni-Bot maintainer\
 **External owners:** Phytomni-Web, Go gateway, and release operations\
 **Overall status:** External Pending\
@@ -32,6 +32,11 @@ Every external acceptance item below has four fields:
 
 Local `pytest`, static checks, and the Bot `make scoped` gate are not a
 substitute for the returned external evidence.
+
+The live lifecycle sequence is in the
+[DeepGenome acceptance packet](evidence/web-go-deep-genome-acceptance.md).
+It covers `RC-WEB-001` through `RC-WEB-005`; the packet is prepared locally
+but remains `External Pending` until Web/Go returns redacted records.
 
 ## DeepGenome submit and polling
 
