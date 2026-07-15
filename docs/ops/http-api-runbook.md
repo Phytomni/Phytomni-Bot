@@ -654,11 +654,36 @@ which GaussDB does not support. A reset or query failure is surfaced
 with fixed public text; logs contain only the request correlation id and
 exception class, never SQL, DSNs, response bodies, or driver messages.
 
+### Authorized GaussDB live probe
+
+Run the probe only from an operator-controlled host after approving the
+target table and column. Both explicit live-run flags are required; the
+default (and every offline invocation) refuses before loading credentials.
+
+```bash
+PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
+  uv run python scripts/gauss_live_probe.py \
+  --table <approved_table> --column <approved_column> \
+  --environment-class production \
+  --output e2e/output/gauss_live_probe.json
+```
+
+The statement is a validated zero-row write: it changes no rows, but proves
+that the Bot read-only transaction returns SQLSTATE `25006` and the deployed
+role returns SQLSTATE `42501` outside that transaction. The probe also checks
+`transaction_read_only` and that a one-connection pool clears a marker after
+`RESET ALL`. Its JSON evidence contains only the commit label, environment
+class, pass/fail checks, and those two SQLSTATEs; it never records a DSN,
+SQL statement, identifier, row, or raw exception. Exit `2` means authorization
+or input validation failed, exit `1` means a check or output write failed, and
+exit `0` means all checks passed.
+
 The role grant, `default_transaction_read_only` setting, denied-write check,
-and connection-reuse probe are external Operations evidence. **External Pending until the authorized probe**: do not mark production cutover complete
+and connection-reuse probe remain external Operations evidence. **External Pending until the authorized probe**:
+do not mark production cutover complete
 from offline policy, unit tests, or a successful health check alone. Record the
-probe command, sanitized result, operator, timestamp, and rollback reference in
-the Phase 7 Operations handoff before enabling customer traffic.
+sanitized result, operator, timestamp, and rollback reference in the Phase 7
+Operations handoff before enabling customer traffic.
 
 ## Health Checks
 
