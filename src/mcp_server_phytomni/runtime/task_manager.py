@@ -101,7 +101,13 @@ CREATE TABLE IF NOT EXISTS tasks (
     task_log TEXT,
     final_report TEXT,
     degraded_reason TEXT,
-    source_task_id TEXT
+    source_task_id TEXT,
+    intermediate_report TEXT,
+    report_revision INTEGER,
+    report_stage TEXT,
+    report_completeness TEXT,
+    report_updated_at TEXT,
+    progress_json TEXT
 )
 """
 
@@ -129,6 +135,30 @@ _TASK_ADD_COLUMN_STATEMENTS: tuple[tuple[str, str], ...] = (
     (
         "source_task_id",
         "ALTER TABLE tasks ADD COLUMN source_task_id TEXT",
+    ),
+    (
+        "intermediate_report",
+        "ALTER TABLE tasks ADD COLUMN intermediate_report TEXT",
+    ),
+    (
+        "report_revision",
+        "ALTER TABLE tasks ADD COLUMN report_revision INTEGER",
+    ),
+    (
+        "report_stage",
+        "ALTER TABLE tasks ADD COLUMN report_stage TEXT",
+    ),
+    (
+        "report_completeness",
+        "ALTER TABLE tasks ADD COLUMN report_completeness TEXT",
+    ),
+    (
+        "report_updated_at",
+        "ALTER TABLE tasks ADD COLUMN report_updated_at TEXT",
+    ),
+    (
+        "progress_json",
+        "ALTER TABLE tasks ADD COLUMN progress_json TEXT",
     ),
 )
 

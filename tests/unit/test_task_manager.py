@@ -26,6 +26,14 @@ from mcp_server_phytomni.runtime.task_manager import (
 
 pytestmark = pytest.mark.unit
 
+EXISTING_GET_TASK_KEYS = {
+    "task_id",
+    "status",
+    "analysis_id",
+    "output_dir",
+    "source_task_id",
+}
+
 
 def _mgr(tmp_path: Path) -> TaskManager:
     """Return a TaskManager backed by an isolated temp database.
@@ -97,6 +105,14 @@ def test_get_task_missing_returns_none(tmp_path: Path) -> None:
         None after the missing-id assertion passes.
     """
     assert _mgr(tmp_path).get_task("does-not-exist") is None
+
+
+def test_legacy_get_task_shape_is_unchanged(tmp_path: Path) -> None:
+    """Additive report columns do not leak into task status reads."""
+    manager = _mgr(tmp_path)
+    task_id = manager.create_task()
+
+    assert set(manager.get_task(task_id) or {}) == EXISTING_GET_TASK_KEYS
 
 
 def test_get_task_agent_returns_tag(tmp_path: Path) -> None:

@@ -42,6 +42,12 @@ _EXPECTED_COLUMNS = {
     "final_report",
     "degraded_reason",
     "source_task_id",
+    "intermediate_report",
+    "report_revision",
+    "report_stage",
+    "report_completeness",
+    "report_updated_at",
+    "progress_json",
 }
 
 
