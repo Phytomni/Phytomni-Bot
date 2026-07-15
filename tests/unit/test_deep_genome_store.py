@@ -6,15 +6,25 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from mcp_server_phytomni.agents.deep_genome.coordinator import (
+    RemoteSubmission as CoordinatorRemoteSubmission,
+)
+from mcp_server_phytomni.agents.deep_genome.work_items import (
+    WorkItemSpec,
+    build_work_item_plan,
+)
 from mcp_server_phytomni.runtime.deep_genome_store import (
     DeepGenomeReservation,
     DeepGenomeSnapshot,
     DeepGenomeStore,
+    DeepGenomeTransitionError,
+    RemoteSubmission,
 )
 
 pytestmark = pytest.mark.unit
@@ -60,6 +70,43 @@ def _reservation_counts(tmp_path: Path) -> tuple[int, int, int]:
                 "SELECT COUNT(*) FROM deep_genome_sections",
             )
         )
+
+
+def _seeded_store(
+    tmp_path: Path,
+) -> tuple[DeepGenomeStore, DeepGenomeReservation]:
+    """Reserve a run, mark BriefGene successful, and seed its plan."""
+    store = _store(tmp_path)
+    reservation = store.reserve_run(
+        run_id="run-1",
+        umbrella_task_id="task-1",
+        owner="alice",
+        output_dir="/tmp/task-1",
+    )
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        conn.execute(
+            "UPDATE deep_genome_sections SET status = 'succeeded', "
+            "summary_markdown = 'BriefGene' "
+            "WHERE umbrella_task_id = ? AND section_key = 'brief_gene'",
+            (reservation.umbrella_task_id,),
+        )
+    store.seed_plan(
+        reservation,
+        build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"),
+    )
+    return store, reservation
+
+
+def _invalid_plan_items(kind: str) -> list[WorkItemSpec]:
+    """Return a valid plan with one selected malformed field."""
+    items = list(build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"))
+    if kind == "work_item_key":
+        items[0] = replace(items[0], work_item_key="")
+    elif kind == "target_gene":
+        items[0] = replace(items[0], target_gene=" ")
+    else:
+        items[0] = replace(items[0], display_order=-1)
+    return items
 
 
 class _FailingStore(DeepGenomeStore):
@@ -167,6 +214,11 @@ def test_store_exports_frozen_contract_models() -> None:
         reservation.owner = "bob"  # type: ignore[misc]
     with pytest.raises(AttributeError):
         snapshot.status = "failed"  # type: ignore[misc]
+
+
+def test_remote_submission_has_one_canonical_definition() -> None:
+    """Coordinator and persistence layers share one immutable type."""
+    assert CoordinatorRemoteSubmission is RemoteSubmission
 
 
 def test_reserve_run_commits_all_three_rows(tmp_path: Path) -> None:
@@ -281,3 +333,209 @@ def test_compensate_launch_failure_clears_seeded_profile(
     assert run == ("failed", "local coordinator failed to start")
     assert task == ("failed", None, "local coordinator failed to start")
     assert sections == 0
+
+
+def test_seed_plan_creates_eleven_sections_and_twelve_work_items(
+    tmp_path: Path,
+) -> None:
+    """Seeding persists every logical section and concrete optional job."""
+    store, reservation = _seeded_store(tmp_path)
+
+    snapshot = store.get_snapshot(reservation.umbrella_task_id)
+    assert snapshot is not None
+    assert snapshot.progress["planning_complete"] is True
+    assert snapshot.progress["total"] == 12
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        analysis_sections = conn.execute(
+            "SELECT COUNT(*) FROM deep_genome_sections "
+            "WHERE umbrella_task_id = ? AND section_kind = 'analysis'",
+            (reservation.umbrella_task_id,),
+        ).fetchone()[0]
+        work_items = conn.execute(
+            "SELECT COUNT(*) FROM deep_genome_remote_tasks "
+            "WHERE umbrella_task_id = ?",
+            (reservation.umbrella_task_id,),
+        ).fetchone()[0]
+
+    assert analysis_sections == 11
+    assert work_items == 12
+    assert _reservation_counts(tmp_path) == (1, 1, 12)
+
+
+def test_seed_plan_requires_brief_gene_success(tmp_path: Path) -> None:
+    """Planning cannot expose optional work before the required profile."""
+    store = _store(tmp_path)
+    reservation = store.reserve_run(
+        run_id="run-1",
+        umbrella_task_id="task-1",
+        owner="alice",
+        output_dir="/tmp/task-1",
+    )
+
+    with pytest.raises(DeepGenomeTransitionError, match="BriefGene"):
+        store.seed_plan(
+            reservation,
+            build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"),
+        )
+
+    assert _reservation_counts(tmp_path) == (1, 1, 1)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("work_item_key", "", "work_item_key"),
+        ("target_gene", " ", "target_gene"),
+        ("display_order", -1, "display_order"),
+    ],
+)
+def test_seed_plan_rejects_malformed_item_fields(
+    tmp_path: Path,
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    """Malformed work-item metadata cannot enter the durable plan."""
+    store, reservation = _seeded_store(tmp_path)
+    del value
+    items = _invalid_plan_items(field)
+
+    with pytest.raises(DeepGenomeTransitionError, match=message):
+        store.seed_plan(reservation, items)
+
+
+def test_seed_plan_rejects_terminal_umbrella(tmp_path: Path) -> None:
+    """A terminal owner cannot be replanned after completion or failure."""
+    store, reservation = _seeded_store(tmp_path)
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        conn.execute(
+            "UPDATE tasks SET status = 'failed' WHERE task_id = ?",
+            (reservation.umbrella_task_id,),
+        )
+        conn.execute(
+            "UPDATE runs SET status = 'failed' WHERE run_id = ?",
+            (reservation.run_id,),
+        )
+
+    with pytest.raises(DeepGenomeTransitionError, match="terminal"):
+        store.seed_plan(
+            reservation,
+            build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"),
+        )
+
+
+def test_seed_plan_is_idempotent_for_identical_items(tmp_path: Path) -> None:
+    """Retrying the same plan does not duplicate or rewrite child rows."""
+    store, reservation = _seeded_store(tmp_path)
+    items = build_work_item_plan("osa", "Os01g0100100", "Os01g0100100")
+
+    store.seed_plan(reservation, items)
+
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        counts = (
+            conn.execute(
+                "SELECT COUNT(*) FROM deep_genome_sections "
+                "WHERE umbrella_task_id = ?",
+                (reservation.umbrella_task_id,),
+            ).fetchone()[0],
+            conn.execute(
+                "SELECT COUNT(*) FROM deep_genome_remote_tasks "
+                "WHERE umbrella_task_id = ?",
+                (reservation.umbrella_task_id,),
+            ).fetchone()[0],
+        )
+
+    assert counts == (12, 12)
+
+
+def test_remote_identity_cannot_be_rebound(tmp_path: Path) -> None:
+    """Accepted caller and polling ids remain immutable across retries."""
+    store, reservation = _seeded_store(tmp_path)
+    submission = RemoteSubmission("caller-1", "source-1", "obs://out")
+
+    store.accept_remote_submission(
+        reservation.umbrella_task_id,
+        work_item_key="smep_analysis",
+        submission=submission,
+    )
+    store.accept_remote_submission(
+        reservation.umbrella_task_id,
+        work_item_key="smep_analysis",
+        submission=submission,
+    )
+
+    with pytest.raises(
+        DeepGenomeTransitionError, match="identity is immutable"
+    ):
+        store.accept_remote_submission(
+            reservation.umbrella_task_id,
+            work_item_key="smep_analysis",
+            submission=RemoteSubmission("caller-2", "source-1", "obs://out"),
+        )
+
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        row = conn.execute(
+            "SELECT status, submitted_task_id, poll_task_id "
+            "FROM deep_genome_remote_tasks WHERE umbrella_task_id = ? "
+            "AND work_item_key = ?",
+            (reservation.umbrella_task_id, "smep_analysis"),
+        ).fetchone()
+
+    assert row == ("submitted", "caller-1", "source-1")
+
+
+def test_remote_identity_rejects_blank_pre_acceptance(tmp_path: Path) -> None:
+    """Invalid acceptance leaves a planned item with both ids unset."""
+    store, reservation = _seeded_store(tmp_path)
+
+    with pytest.raises(DeepGenomeTransitionError, match="nonblank"):
+        store.accept_remote_submission(
+            reservation.umbrella_task_id,
+            work_item_key="smoc_analysis",
+            submission=RemoteSubmission("", "source-1", "obs://out"),
+        )
+
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        row = conn.execute(
+            "SELECT status, submitted_task_id, poll_task_id "
+            "FROM deep_genome_remote_tasks WHERE umbrella_task_id = ? "
+            "AND work_item_key = ?",
+            (reservation.umbrella_task_id, "smoc_analysis"),
+        ).fetchone()
+
+    assert row == ("planned", None, None)
+
+
+def test_remote_identity_rejects_blank_output_dir(tmp_path: Path) -> None:
+    """A submission needs a usable result directory as well as ids."""
+    store, reservation = _seeded_store(tmp_path)
+
+    with pytest.raises(DeepGenomeTransitionError, match="output_dir"):
+        store.accept_remote_submission(
+            reservation.umbrella_task_id,
+            work_item_key="smoc_analysis",
+            submission=RemoteSubmission("caller-1", "source-1", ""),
+        )
+
+
+def test_remote_identity_rejects_terminal_umbrella(
+    tmp_path: Path,
+) -> None:
+    """A terminal umbrella cannot accept a late remote identity."""
+    store, reservation = _seeded_store(tmp_path)
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        conn.execute(
+            "UPDATE tasks SET status = 'failed' WHERE task_id = ?",
+            (reservation.umbrella_task_id,),
+        )
+        conn.execute(
+            "UPDATE runs SET status = 'failed' WHERE run_id = ?",
+            (reservation.run_id,),
+        )
+
+    with pytest.raises(DeepGenomeTransitionError, match="terminal"):
+        store.accept_remote_submission(
+            reservation.umbrella_task_id,
+            work_item_key="smoc_analysis",
+            submission=RemoteSubmission("caller-1", "source-1", "obs://out"),
+        )

@@ -19,6 +19,8 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from ...runtime.deep_genome_store import RemoteSubmission
+
 __all__ = [
     "RemoteSubmission",
     "SubmissionProtocolError",
@@ -35,22 +37,6 @@ __all__ = [
 
 class SubmissionProtocolError(ValueError):
     """Raised when an analysis submission acknowledgement is malformed."""
-
-
-@dataclass(frozen=True)
-class RemoteSubmission:
-    """Normalized caller and effective remote identities.
-
-    Attributes:
-        submitted_task_id: Task id owned by the caller that submitted the
-            request.  This remains distinct from any reused remote id.
-        poll_task_id: Remote task id that should be used for status polling.
-        output_dir: Output directory returned by the analysis platform.
-    """
-
-    submitted_task_id: str
-    poll_task_id: str
-    output_dir: str
 
 
 @dataclass(frozen=True)
