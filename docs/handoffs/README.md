@@ -17,6 +17,11 @@ modify another repository, a production database, or a deployment.
 Bot-side contract only; they do not prove a live Web, Go, database, or
 production deployment path.
 
+The copyable owner packet index is
+[here](evidence/owner-packet-index.md). It maps each `RC-*` acceptance ID to
+the external action and the artifact that must be returned. The packet index
+does not close an item by itself.
+
 ## Evidence rule
 
 An owner may replace `Evidence: Not returned` only with an attached command
