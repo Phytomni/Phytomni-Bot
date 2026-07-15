@@ -1,0 +1,32 @@
+{
+  "run_id": "run-demo-deep-genome-001",
+  "agent": "deep_genome",
+  "origin": "remote",
+  "status": "running",
+  "task_ids": ["dg-demo-umbrella-001"],
+  "answer": "# DeepGenome intermediate report\n\nBriefGene profile is ready; optional analyses are still running.\n",
+  "result": {
+    "intermediate_report": "# DeepGenome intermediate report\n\nBriefGene profile is ready; optional analyses are still running.\n",
+    "final_report": null,
+    "report_stage": "intermediate",
+    "report_completeness": "partial",
+    "report_revision": 3,
+    "report_updated_at": "2026-07-15T08:00:00Z",
+    "progress": {
+      "planning_complete": true,
+      "brief_gene_status": "succeeded",
+      "total": 12,
+      "planned": 12,
+      "submitted": 12,
+      "pending": 3,
+      "running": 2,
+      "succeeded": 7,
+      "failed": 0,
+      "cancelled": 0,
+      "timed_out": 0
+    },
+    "degraded": false,
+    "degraded_reason": null,
+    "failures": []
+  }
+}

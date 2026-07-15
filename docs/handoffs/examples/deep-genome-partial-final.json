@@ -1,0 +1,43 @@
+{
+  "run_id": "run-demo-deep-genome-002",
+  "agent": "deep_genome",
+  "origin": "remote",
+  "status": "succeeded",
+  "task_ids": ["dg-demo-umbrella-002"],
+  "answer": "# DeepGenome final report\n\nThe required profile and available analyses were assembled.\n",
+  "result": {
+    "intermediate_report": "# DeepGenome intermediate report\n\nThe required profile and available analyses were assembled.\n",
+    "final_report": "# DeepGenome final report\n\nThe required profile and available analyses were assembled.\n",
+    "report_stage": "final",
+    "report_completeness": "partial",
+    "report_revision": 15,
+    "report_updated_at": "2026-07-15T08:12:00Z",
+    "progress": {
+      "planning_complete": true,
+      "brief_gene_status": "succeeded",
+      "total": 12,
+      "planned": 12,
+      "submitted": 12,
+      "pending": 0,
+      "running": 0,
+      "succeeded": 10,
+      "failed": 2,
+      "cancelled": 0,
+      "timed_out": 0
+    },
+    "degraded": true,
+    "degraded_reason": "2 of 12 optional analyses unavailable",
+    "failures": [
+      {
+        "work_item_key": "protein_design",
+        "status": "failed",
+        "message": "analysis task failed"
+      },
+      {
+        "work_item_key": "gene_network",
+        "status": "timed_out",
+        "message": "analysis task timed out"
+      }
+    ]
+  }
+}

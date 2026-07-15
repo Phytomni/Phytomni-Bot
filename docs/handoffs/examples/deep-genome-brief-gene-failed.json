@@ -1,0 +1,32 @@
+{
+  "run_id": "run-demo-deep-genome-004",
+  "agent": "deep_genome",
+  "origin": "remote",
+  "status": "failed",
+  "task_ids": ["dg-demo-umbrella-004"],
+  "answer": null,
+  "result": {
+    "intermediate_report": null,
+    "final_report": null,
+    "report_stage": "waiting_for_brief_gene",
+    "report_completeness": "none",
+    "report_revision": 1,
+    "report_updated_at": "2026-07-15T08:30:00Z",
+    "progress": {
+      "planning_complete": false,
+      "brief_gene_status": "failed",
+      "total": 0,
+      "planned": 0,
+      "submitted": 0,
+      "pending": 0,
+      "running": 0,
+      "succeeded": 0,
+      "failed": 0,
+      "cancelled": 0,
+      "timed_out": 0
+    },
+    "degraded": false,
+    "degraded_reason": "brief gene profile failed",
+    "failures": []
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "run_id": "run-demo-deep-genome-003",
+  "agent": "deep_genome",
+  "origin": "remote",
+  "status": "failed",
+  "task_ids": ["dg-demo-umbrella-003"],
+  "answer": "# DeepGenome intermediate report\n\nThe required profile was available before final synthesis failed.\n",
+  "result": {
+    "intermediate_report": "# DeepGenome intermediate report\n\nThe required profile was available before final synthesis failed.\n",
+    "final_report": null,
+    "report_stage": "intermediate",
+    "report_completeness": "partial",
+    "report_revision": 11,
+    "report_updated_at": "2026-07-15T08:20:00Z",
+    "progress": {
+      "planning_complete": true,
+      "brief_gene_status": "succeeded",
+      "total": 12,
+      "planned": 12,
+      "submitted": 12,
+      "pending": 0,
+      "running": 0,
+      "succeeded": 8,
+      "failed": 4,
+      "cancelled": 0,
+      "timed_out": 0
+    },
+    "degraded": true,
+    "degraded_reason": "final synthesis failed",
+    "failures": [
+      {
+        "work_item_key": "final_synthesis",
+        "status": "failed",
+        "message": "analysis task failed"
+      }
+    ]
+  }
+}
