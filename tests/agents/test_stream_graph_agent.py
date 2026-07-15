@@ -356,3 +356,43 @@ async def test_graph_stream_projects_progress_and_filters_child_ns() -> None:
     assert progress[0].data["value"]["phase"] == "retrieving"
     assert progress[0].data["value"]["current"] == 3
     assert types[0] == "RunStarted" and types[-1] == "RunFinished"
+
+
+async def test_graph_stream_propagates_runtime_failure() -> None:
+    """Raw graph streams leave runtime failures for the outer projector."""
+
+    class FailingStreamApp:
+        """Fake graph that fails after opening the run."""
+
+        async def astream(
+            self,
+            _state: Mapping[str, Any],
+            stream_mode: list[str],
+            config: Mapping[str, Any] | None = None,
+            *,
+            subgraphs: bool = False,
+        ) -> AsyncIterator[tuple[tuple[str, ...], str, dict[str, Any]]]:
+            """Raise a raw runtime error after validating stream options."""
+            del config
+            assert stream_mode == ["custom", "updates", "values"]
+            assert subgraphs is True
+            if stream_mode:
+                raise RuntimeError("graph backend failed")
+            yield (), "values", {}
+
+    stream = _stream_graph_agent(
+        FailingStreamApp(),
+        {},
+        "KnowledgeAgent",
+        "KnowledgeAgent",
+        run_id="run-fail",
+        dialogue_id=None,
+    )
+
+    async def drain() -> None:
+        """Consume the raw stream until its backend error is raised."""
+        async for _event in stream:
+            pass
+
+    with pytest.raises(RuntimeError, match="graph backend failed"):
+        await drain()

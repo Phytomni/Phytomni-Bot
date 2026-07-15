@@ -9,7 +9,6 @@ to the domain-specific tool handler layer while keeping public tool names
 stable for existing clients.
 """
 
-import logging
 from collections.abc import (
     AsyncIterator,
     Awaitable,
@@ -26,7 +25,6 @@ from typing import (
     cast,
 )
 
-from httpx import ConnectError, TimeoutException
 from mcp.server import Server
 from mcp.server.lowlevel.server import request_ctx
 from mcp.server.stdio import stdio_server
@@ -44,7 +42,6 @@ from ..agents.shared.gauss import aclose_gauss_pool
 from ..agents.shared.intermediate_state import merge_intermediate_state
 from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
-from ..common.redaction import redact_secrets
 from ..config.defaults import ChatConfig
 from ..runtime.langgraph_runner import build_runnable_config
 from ..runtime.resume import (
@@ -77,7 +74,6 @@ from .result_formatting import (
     custom,
     is_cited_tool,
     resolve_debug,
-    run_error,
     run_finished,
     run_started,
     step_started,
@@ -101,8 +97,6 @@ from .schemas import (
     ReviewAgent,
 )
 from .streaming_phases import phase_for
-
-logger = logging.getLogger(__name__)
 
 ToolHandler = Callable[[Any], Awaitable[Any]]
 
@@ -293,32 +287,20 @@ def _raw_doc_list(raw: Any) -> list[dict[str, Any]]:
     return [doc for doc in docs if isinstance(doc, dict)]
 
 
-async def invoke_tool_streamed(
+def prepare_tool_stream(
     name: Any,
     arguments: dict[str, Any],
     *,
     run_id: str,
     dialogue_id: str | None,
 ) -> AsyncIterator[AguiEvent]:
-    """Stream a tool's response as AG-UI event frames through a typed seam.
+    """Validate and prepare a raw AG-UI event iterator synchronously.
 
-    Fourth invocation seam, parallel to :func:`invoke_tool_raw` /
-    :func:`invoke_tool_formatted` / :func:`invoke_tool_enveloped`.
-    :class:`ChatAgent` token-streams provider deltas via
-    :func:`stream_phyto_chat_chunks`; :class:`KnowledgeAgent`,
-    :class:`ReviewAgent`, and :class:`BriefGeneAgent` drive their
-    compiled graphs through :func:`_stream_graph_agent`, emitting
-    stage ``StepStarted`` frames then a one-shot terminal answer plus
-    citation ``Custom`` frames. Every other registered tool raises
-    :class:`NotImplementedError` so callers receive a clear "streaming
-    not supported for X" signal instead of a silent fallback to
-    non-streaming aggregation.
-
-    The function is an async generator — argument validation,
-    unknown-tool detection, and the not-implemented branch all raise
-    on the first ``__anext__`` call, not when the generator object is
-    constructed. Callers must iterate (or call ``__anext__`` once) to
-    surface those errors.
+    This is the eager setup seam for streamed tools. It performs public tool
+    lookup and Pydantic validation, resolves the supported streaming branch,
+    and builds graph targets before returning an async iterator. Runtime
+    failures from the returned iterator are intentionally not caught here;
+    the HTTP boundary owns their protocol projection.
 
     Args:
         name: Raw tool name supplied by the caller.
@@ -327,19 +309,14 @@ async def invoke_tool_streamed(
         dialogue_id: Optional chat-ai conversation id carried on
             ``RunStarted``.
 
-    Yields:
-        ``RunStarted``, then a ``TextMessageStart`` /
-        ``TextMessageContent`` / ``TextMessageEnd`` sequence around
-        the provider's content deltas, then ``RunFinished``.
-        ``TextMessageStart`` fires only once a non-empty delta
-        arrives, so empty keep-alive chunks never open a message.
+    Returns:
+        A raw async iterator for the selected supported streaming primitive.
 
     Raises:
         McpError: When the tool name is unknown or schema validation
             fails (mirrors :func:`invoke_tool_raw`).
         NotImplementedError: When the tool is registered but lacks a
-            streaming primitive (every tool except ChatAgent /
-            KnowledgeAgent / ReviewAgent / BriefGeneAgent).
+            streaming primitive.
     """
     tool_name = _tool_name(name)
     model = TOOL_ARGUMENT_MODELS.get(tool_name)
@@ -352,43 +329,71 @@ async def invoke_tool_streamed(
             _format_validation_error(tool_name, exc)
         ) from exc
     if tool_name == PhytomniAgents.CHAT_AGENT.value:
-        yield run_started(run_id, dialogue_id)
-        message_id = IdFactory().new_id("msg")
-        started = False
-        try:
-            async for chunk in _stream_chat_agent(cast(ChatAgent, args)):
-                delta = _chunk_content_delta(chunk)
-                if not delta:
-                    continue
-                if not started:
-                    yield text_message_start(message_id)
-                    started = True
-                yield text_message_content(message_id, delta)
-        except (McpError, ConnectError, TimeoutException) as exc:
-            logger.exception("chat stream failed mid-flight")
-            yield run_error("agent_execution_failed", redact_secrets(str(exc)))
-            return
-        if started:
-            yield text_message_end(message_id)
-        yield run_finished(run_id)
-        return
+        return _stream_chat_events(
+            cast(ChatAgent, args),
+            run_id=run_id,
+            dialogue_id=dialogue_id,
+        )
     if tool_name in {
         PhytomniAgents.KNOWLEDGE_AGENT.value,
         PhytomniAgents.REVIEW_AGENT.value,
         PhytomniAgents.BRIEF_GENE_AGENT.value,
     }:
         app, initial_state = _build_graph_stream_target(tool_name, args)
-        async for event in _stream_graph_agent(
+        return _stream_graph_agent(
             app,
             initial_state,
             tool_name,
             tool_name,
             run_id=run_id,
             dialogue_id=dialogue_id,
-        ):
-            yield event
-        return
+        )
     raise NotImplementedError(f"streaming not supported for tool {tool_name}")
+
+
+def invoke_tool_streamed(
+    name: Any,
+    arguments: dict[str, Any],
+    *,
+    run_id: str,
+    dialogue_id: str | None,
+) -> AsyncIterator[AguiEvent]:
+    """Return an eagerly prepared AG-UI stream without awaiting it.
+
+    The public call shape remains ``async for event in
+    invoke_tool_streamed(...)``. Setup errors therefore surface before an
+    HTTP response body is opened, while runtime errors remain in the raw
+    iterator for the shared stream lifecycle projector.
+    """
+    return prepare_tool_stream(
+        name,
+        arguments,
+        run_id=run_id,
+        dialogue_id=dialogue_id,
+    )
+
+
+async def _stream_chat_events(
+    args: ChatAgent,
+    *,
+    run_id: str,
+    dialogue_id: str | None,
+) -> AsyncIterator[AguiEvent]:
+    """Project provider chat deltas into raw AG-UI event frames."""
+    yield run_started(run_id, dialogue_id)
+    message_id = IdFactory().new_id("msg")
+    started = False
+    async for chunk in _stream_chat_agent(args):
+        delta = _chunk_content_delta(chunk)
+        if not delta:
+            continue
+        if not started:
+            yield text_message_start(message_id)
+            started = True
+        yield text_message_content(message_id, delta)
+    if started:
+        yield text_message_end(message_id)
+    yield run_finished(run_id)
 
 
 def _build_graph_stream_target(

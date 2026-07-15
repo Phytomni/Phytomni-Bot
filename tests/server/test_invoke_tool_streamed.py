@@ -16,6 +16,7 @@ import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from mcp.shared.exceptions import McpError
@@ -158,6 +159,35 @@ async def test_invoke_tool_streamed_reaches_primitive_with_standard_kwargs(
     assert "access_key_id" in captured[0]  # from obs_kwargs
 
 
+def test_prepare_tool_stream_rejects_unknown_tool_before_iteration() -> None:
+    """Unknown tools fail while the stream is being prepared."""
+    with pytest.raises(McpError):
+        mcp_app.prepare_tool_stream(
+            "UnknownAgent",
+            {},
+            run_id="run-1",
+            dialogue_id=None,
+        )
+
+
+def test_prepare_tool_stream_builds_graph_target_before_iteration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Graph target construction is eager, before ``__anext__``."""
+    build = Mock(return_value=(object(), {}))
+    monkeypatch.setattr(mcp_app, "_build_graph_stream_target", build)
+
+    events = mcp_app.prepare_tool_stream(
+        PhytomniAgents.KNOWLEDGE_AGENT.value,
+        {"user_query": "hi", "obs_file_list": []},
+        run_id="run-1",
+        dialogue_id=None,
+    )
+
+    assert hasattr(events, "__aiter__")
+    build.assert_called_once()
+
+
 async def test_invoke_tool_streamed_raises_mcperror_for_unknown_tool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -170,15 +200,13 @@ async def test_invoke_tool_streamed_raises_mcperror_for_unknown_tool(
     """
     _patch_stream(monkeypatch, [])
 
-    stream = mcp_app.invoke_tool_streamed(
-        "NoSuchAgent",
-        {"user_query": "hi", "obs_file_list": []},
-        run_id="run-1",
-        dialogue_id=None,
-    )
-
     with pytest.raises(McpError) as excinfo:
-        await _drain(stream)
+        mcp_app.invoke_tool_streamed(
+            "NoSuchAgent",
+            {"user_query": "hi", "obs_file_list": []},
+            run_id="run-1",
+            dialogue_id=None,
+        )
 
     assert "Unknown tool" in excinfo.value.error.message
 
@@ -195,15 +223,13 @@ async def test_invoke_tool_streamed_raises_mcperror_on_validation_error(
     """
     _patch_stream(monkeypatch, [])
 
-    stream = mcp_app.invoke_tool_streamed(
-        PhytomniAgents.CHAT_AGENT.value,
-        {"obs_file_list": []},
-        run_id="run-1",
-        dialogue_id=None,
-    )
-
     with pytest.raises(McpError) as excinfo:
-        await _drain(stream)
+        mcp_app.invoke_tool_streamed(
+            PhytomniAgents.CHAT_AGENT.value,
+            {"obs_file_list": []},
+            run_id="run-1",
+            dialogue_id=None,
+        )
 
     assert "Invalid arguments" in excinfo.value.error.message
     assert "user_query" in excinfo.value.error.message
@@ -235,24 +261,22 @@ async def test_invoke_tool_streamed_raises_not_implemented_for_non_chat(
     args_by_tool: dict[str, dict[str, Any]] = {
         PhytomniAgents.GET_TASK_STATUS.value: {"task_id": "t-1"},
     }
-    stream = mcp_app.invoke_tool_streamed(
-        tool_name,
-        args_by_tool[tool_name],
-        run_id="run-1",
-        dialogue_id=None,
-    )
-
     with pytest.raises(NotImplementedError) as excinfo:
-        await _drain(stream)
+        mcp_app.invoke_tool_streamed(
+            tool_name,
+            args_by_tool[tool_name],
+            run_id="run-1",
+            dialogue_id=None,
+        )
 
     assert "streaming not supported" in str(excinfo.value)
     assert tool_name in str(excinfo.value)
 
 
-async def test_chat_stream_emits_run_error_on_midstream_failure(
+async def test_chat_stream_propagates_midstream_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A raise after opening yields RunError, not an unhandled crash."""
+    """A raw raise after opening remains available to the projector."""
 
     async def boom(**_kwargs):
         yield {"choices": [{"delta": {"content": "Hi"}}]}
@@ -265,19 +289,15 @@ async def test_chat_stream_emits_run_error_on_midstream_failure(
 
     monkeypatch.setattr(mcp_app, "stream_phyto_chat_chunks", boom)
 
-    events = [
-        e
-        async for e in mcp_app.invoke_tool_streamed(
-            "ChatAgent",
-            {"user_query": "x", "obs_file_list": []},
-            run_id="run-e",
-            dialogue_id=None,
+    with pytest.raises(McpError, match="upstream 502"):
+        await _drain(
+            mcp_app.invoke_tool_streamed(
+                "ChatAgent",
+                {"user_query": "x", "obs_file_list": []},
+                run_id="run-e",
+                dialogue_id=None,
+            )
         )
-    ]
-    assert events[-1].type == "RunError"
-    assert events[-1].data["code"] == "agent_execution_failed"
-    assert "secret.internal" not in events[-1].data["message"]
-    assert "RunFinished" not in [e.type for e in events]
 
 
 def test_format_tool_chunk_preserves_payload_verbatim() -> None:
