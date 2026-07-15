@@ -16,6 +16,8 @@ from typing import Any
 
 from mcp_server_phytomni.common.responses import assert_no_citation_residue
 
+from .polling import TaskState
+
 PHOTOSYNTHESIS_KEYWORDS = ("photosynthesis", "c3", "calvin", "rubisco")
 WHEAT_DROUGHT_KEYWORDS = (
     "drought",
@@ -254,3 +256,75 @@ def assert_remote_run_terminal_payload(result: dict[str, Any]) -> None:
     assert any(
         item.get("paths") for item in artifacts
     ), f"terminal remote run populated no artifact paths; got: {artifacts!r}"
+
+
+def assert_deep_genome_terminal(state: TaskState) -> None:
+    """Assert the DeepGenome terminal report state machine.
+
+    BriefGene is the required profile. Its failure legitimately produces no
+    report; every later failure must preserve the latest intermediate report.
+    A successful umbrella requires a final report and a positive revision.
+
+    Args:
+        state: Sanitized state returned by the E2E polling helper.
+
+    Raises:
+        AssertionError: When the state violates the public report contract.
+    """
+    status = state.status.lower()
+    assert status in {
+        "succeeded",
+        "failed",
+    }, f"DeepGenome did not reach a terminal status: {state!r}"
+    assert (
+        state.report_revision >= 1
+    ), f"DeepGenome terminal state had no report revision: {state!r}"
+    if status == "succeeded":
+        assert (
+            state.final_report and state.final_report.strip()
+        ), f"DeepGenome success carried no final report: {state!r}"
+        assert state.report_stage == "final", state
+        assert state.report_completeness in {"partial", "complete"}, state
+        return
+
+    if state.brief_gene_status.lower() == "failed":
+        assert state.intermediate_report is None, state
+        assert state.final_report is None, state
+        assert state.report_stage == "waiting_for_brief_gene", state
+        assert state.report_completeness == "none", state
+        return
+
+    assert state.final_report is None, state
+    assert state.intermediate_report and state.intermediate_report.strip(), (
+        "post-profile DeepGenome failure lost its intermediate report: "
+        f"{state!r}"
+    )
+    assert state.report_stage == "intermediate", state
+    assert state.report_completeness == "partial", state
+
+
+def assert_terminal_report_and_artifacts(
+    state: TaskState, *, needs_artifacts: bool
+) -> None:
+    """Assert terminal reports and, when required, concrete output paths.
+
+    Args:
+        state: Sanitized task snapshot from a live poll.
+        needs_artifacts: Whether the agent contract requires output paths.
+
+    Raises:
+        AssertionError: When the task is not successful or lacks required
+            report/artifact evidence.
+    """
+    assert state.succeeded, f"task did not succeed: {state!r}"
+    assert (
+        state.final_report and state.final_report.strip()
+    ), f"successful task carried no final report: {state!r}"
+    if not needs_artifacts:
+        return
+    has_artifact_paths = any(
+        bool(item.get("paths")) for item in state.artifacts
+    )
+    assert (
+        has_artifact_paths or state.output_dirs
+    ), f"successful task carried no artifact/output paths: {state!r}"

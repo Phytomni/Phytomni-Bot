@@ -20,6 +20,7 @@ import pytest
 
 from mcp_client_phytomni import PhytomniMcpClient
 
+from .helpers.assertions import assert_terminal_report_and_artifacts
 from .helpers.polling import submit_and_poll_to_success
 
 pytestmark = pytest.mark.live
@@ -41,7 +42,4 @@ async def test_in_silico_research_agent_e2e_polls_to_success(
         mcp_client, "InSilicoResearchAgent", payload
     )
 
-    assert state.output_dir and state.output_dir != "unupdated", (
-        f"InSilicoResearchAgent task {state.task_id} succeeded but "
-        f"reported no output directory; state={state!r}"
-    )
+    assert_terminal_report_and_artifacts(state, needs_artifacts=False)

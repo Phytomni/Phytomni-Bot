@@ -26,20 +26,27 @@ through the MCP client.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
 import sqlite3
 import time
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from mcp_client_phytomni import McpToolResponse, PhytomniMcpClient
 from mcp_server_phytomni.runtime.task_reconcile import reconcile_task
 
 from .client import call_tool, submit_timeout_seconds
 
+# The live contract intentionally mirrors every public report/progress field.
+# Splitting it into nested models would diverge from the HTTP result shape.
+# pylint: disable=too-many-instance-attributes
 _logger = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = "server_tasks.db"
@@ -49,11 +56,12 @@ TERMINAL_STATUSES = frozenset(
     {"succeeded", "success", "completed", "done", "failed", "error"}
 )
 SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
+HTTP_TERMINAL_STATUSES = frozenset({"input_required", "succeeded", "failed"})
 
 
 @dataclass(frozen=True)
 class TaskState:
-    """One row from the local ``tasks`` table.
+    """One sanitized task snapshot used by live acceptance tests.
 
     Attributes:
         task_id: Task id originally returned by the submission call.
@@ -62,9 +70,23 @@ class TaskState:
             the agent's poller fills it in).
         output_dir: Remote output directory (``"unupdated"`` until the
             agent's poller fills it in).
+        intermediate_report: Best report snapshot currently available;
+            it may remain present after a degraded terminal failure.
         final_report: Assembled report markdown persisted by
             deep_genome's report node; ``None`` for every other agent
             and until that node runs.
+        report_stage: Stable report lifecycle label.
+        report_completeness: ``none``, ``partial``, or ``complete``.
+        report_revision: Monotonic report revision observed by the poller.
+        report_updated_at: Sanitized UTC timestamp, when available.
+        progress: Public progress counters and BriefGene status.
+        degraded: Whether the terminal/report state is degraded.
+        degraded_reason: Fixed public degradation reason, if any.
+        brief_gene_status: Required-profile status copied from progress.
+        failures: Sanitized optional-work failure descriptors.
+        artifacts: Public artifact descriptors, when a run-level surface
+            provides them.
+        output_dirs: Output directory paths published by a task result.
     """
 
     task_id: str
@@ -72,6 +94,18 @@ class TaskState:
     analysis_id: str
     output_dir: str
     final_report: str | None = None
+    intermediate_report: str | None = None
+    report_stage: str = "waiting_for_brief_gene"
+    report_completeness: str = "none"
+    report_revision: int = 0
+    report_updated_at: str | None = None
+    progress: Mapping[str, int | bool | str] = field(default_factory=dict)
+    degraded: bool = False
+    degraded_reason: str | None = None
+    brief_gene_status: str = "unknown"
+    failures: tuple[Mapping[str, str], ...] = ()
+    artifacts: tuple[Mapping[str, Any], ...] = ()
+    output_dirs: tuple[str, ...] = ()
 
     @property
     def succeeded(self) -> bool:
@@ -85,6 +119,88 @@ class TaskState:
 
 class TaskPollingTimeoutError(TimeoutError):
     """Raised when ``poll_until_done`` exceeds its deadline."""
+
+
+@dataclass(frozen=True)
+class HttpRunTerminal:
+    """Terminal HTTP run result plus the revisions observed on the way."""
+
+    status: str
+    result: dict[str, Any]
+    revisions: tuple[int, ...]
+
+
+async def poll_http_run_to_terminal(
+    client: httpx.AsyncClient,
+    run_id: str,
+    *,
+    headers: Mapping[str, str],
+    timeout_seconds: float = 1800.0,
+    poll_interval_seconds: float = 10.0,
+) -> HttpRunTerminal:
+    """Poll one long-lived HTTP run and return its terminal result.
+
+    The helper performs only non-blocking ``GET /v1/runs/{id}`` lookups,
+    records each distinct report revision, and rejects revision regression.
+    It deliberately returns the JSON result mapping rather than a client
+    model so the live test can assert the exact run-level envelope.
+
+    Args:
+        client: Authenticated HTTP client bound to the live API.
+        run_id: Owner-scoped run id returned by a submit endpoint.
+        headers: Authentication headers for the status route.
+        timeout_seconds: Monotonic local polling budget.
+        poll_interval_seconds: Delay between non-terminal reads.
+
+    Returns:
+        Terminal status, result mapping, and distinct report revisions.
+
+    Raises:
+        AssertionError: For malformed status responses or a regressing
+            report revision.
+        TaskPollingTimeoutError: If the local deadline expires.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    revisions: list[int] = []
+    while time.monotonic() < deadline:
+        response = await client.get(
+            f"/v1/runs/{run_id}", headers=dict(headers)
+        )
+        assert (
+            response.status_code == 200
+        ), f"run status returned HTTP {response.status_code}"
+        body = response.json()
+        assert isinstance(body, dict), "run status response was not an object"
+        status = str(body.get("status", "")).lower()
+        result = body.get("result")
+        if not isinstance(result, dict):
+            result = {}
+        revision = result.get("report_revision")
+        if isinstance(revision, int) and not isinstance(revision, bool):
+            if revisions and revision < revisions[-1]:
+                raise AssertionError("run report revision regressed")
+            if not revisions or revision != revisions[-1]:
+                revisions.append(revision)
+        if status in HTTP_TERMINAL_STATUSES:
+            _logger.info(
+                "live run terminal status=%s revisions=%s artifacts=%s",
+                status,
+                len(revisions),
+                (
+                    len(result.get("artifacts", []))
+                    if isinstance(result.get("artifacts"), list)
+                    else 0
+                ),
+            )
+            return HttpRunTerminal(
+                status=status,
+                result=result,
+                revisions=tuple(revisions),
+            )
+        await asyncio.sleep(poll_interval_seconds)
+    raise TaskPollingTimeoutError(
+        "HTTP run did not reach a terminal status before the deadline"
+    )
 
 
 def resolve_timeout_seconds() -> float:
@@ -152,14 +268,132 @@ async def _reconciled_task_state(
     status = reconciled.get("status", "unknown")
     if status == "unknown":
         return _read_task_state(resolved_db, task_id)
-    report = reconciled.get("final_report")
+    return task_state_from_mapping(reconciled, task_id=task_id)
+
+
+def task_state_from_mapping(
+    payload: Mapping[str, Any], *, task_id: str
+) -> TaskState:
+    """Project one public payload into the sanitized E2E state model."""
+    progress = _mapping_progress(payload.get("progress"))
+    brief_gene_status = (
+        _nonblank_text(payload.get("brief_gene_status"))
+        or _nonblank_text(progress.get("brief_gene_status"))
+        or "unknown"
+    )
+    output_dir = str(payload.get("output_dir", "") or "")
+    output_dirs = _string_tuple(payload.get("output_dirs"))
+    if not output_dirs and output_dir not in {"", "unupdated"}:
+        output_dirs = (output_dir,)
     return TaskState(
         task_id=task_id,
-        status=str(status),
-        analysis_id=str(reconciled.get("analysis_id", "") or ""),
-        output_dir=str(reconciled.get("output_dir", "") or ""),
-        final_report=report if isinstance(report, str) else None,
+        status=str(payload.get("status", "unknown")),
+        analysis_id=str(payload.get("analysis_id", "") or ""),
+        output_dir=output_dir,
+        intermediate_report=_optional_text(payload.get("intermediate_report")),
+        final_report=_optional_text(payload.get("final_report")),
+        report_stage=_choice(
+            payload.get("report_stage"),
+            {"waiting_for_brief_gene", "intermediate", "final"},
+            "waiting_for_brief_gene",
+        ),
+        report_completeness=_choice(
+            payload.get("report_completeness"),
+            {"none", "partial", "complete"},
+            "none",
+        ),
+        report_revision=_nonnegative_int(payload.get("report_revision")),
+        report_updated_at=_optional_text(payload.get("report_updated_at")),
+        progress=progress,
+        degraded=bool(payload.get("degraded", False)),
+        degraded_reason=_optional_text(payload.get("degraded_reason")),
+        brief_gene_status=brief_gene_status,
+        failures=_failure_tuple(payload.get("failures")),
+        artifacts=_artifact_tuple(payload.get("artifacts")),
+        output_dirs=output_dirs,
     )
+
+
+def _optional_text(value: Any) -> str | None:
+    """Return nonblank text without retaining arbitrary payload objects."""
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
+
+
+def _nonblank_text(value: Any) -> str | None:
+    """Return normalized nonblank text for one public status field."""
+    text = _optional_text(value)
+    return text.strip().lower() if text is not None else None
+
+
+def _choice(value: Any, allowed: set[str], default: str) -> str:
+    """Return one value from a closed public vocabulary."""
+    return value if isinstance(value, str) and value in allowed else default
+
+
+def _nonnegative_int(value: Any) -> int:
+    """Return a nonnegative integer, rejecting booleans and floats."""
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return 0
+
+
+def _mapping_progress(value: Any) -> dict[str, int | bool | str]:
+    """Copy only scalar progress values from a reconciled mapping."""
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        str(key): item
+        for key, item in value.items()
+        if isinstance(key, str)
+        and isinstance(item, (int, bool, str))
+        and not isinstance(item, (bytes, bytearray))
+    }
+
+
+def _failure_tuple(value: Any) -> tuple[Mapping[str, str], ...]:
+    """Retain only string fields in public failure descriptors."""
+    if not isinstance(value, (list, tuple)):
+        return ()
+    projected: list[Mapping[str, str]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        fields = {
+            str(key): field
+            for key, field in item.items()
+            if isinstance(key, str) and isinstance(field, str)
+        }
+        if fields:
+            projected.append(fields)
+    return tuple(projected)
+
+
+def _artifact_tuple(value: Any) -> tuple[Mapping[str, Any], ...]:
+    """Project artifact descriptors without preserving arbitrary objects."""
+    if not isinstance(value, (list, tuple)):
+        return ()
+    projected: list[Mapping[str, Any]] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        output_dir = item.get("output_dir")
+        paths = item.get("paths")
+        descriptor: dict[str, Any] = {}
+        if isinstance(output_dir, str) and output_dir.strip():
+            descriptor["output_dir"] = output_dir
+        descriptor["paths"] = _string_tuple(paths)
+        if descriptor["paths"] or "output_dir" in descriptor:
+            projected.append(descriptor)
+    return tuple(projected)
+
+
+def _string_tuple(value: Any) -> tuple[str, ...]:
+    """Return nonblank string members from a public sequence."""
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(item for item in value if isinstance(item, str) and item)
 
 
 async def poll_until_done(
@@ -332,16 +566,36 @@ def _read_task_state(
     if not db_path.exists():
         return None
     with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(tasks)").fetchall()
+        }
+        selected = ["task_id", "status", "analysis_id", "output_dir"]
+        optional = (
+            "intermediate_report",
+            "final_report",
+            "report_stage",
+            "report_completeness",
+            "report_revision",
+            "report_updated_at",
+            "progress_json",
+            "degraded_reason",
+        )
+        selected.extend(name for name in optional if name in columns)
         row = conn.execute(
-            "SELECT task_id, status, analysis_id, output_dir "
-            "FROM tasks WHERE task_id = ?",
+            f"SELECT {', '.join(selected)} FROM tasks WHERE task_id = ?",
             (task_id,),
         ).fetchone()
     if row is None:
         return None
-    return TaskState(
-        task_id=row[0],
-        status=row[1],
-        analysis_id=row[2],
-        output_dir=row[3],
-    )
+    payload: dict[str, Any] = dict(row)
+    progress_json = payload.pop("progress_json", None)
+    if isinstance(progress_json, str):
+        try:
+            payload["progress"] = json.loads(progress_json)
+        except (TypeError, ValueError):
+            payload["progress"] = {}
+    if payload.get("degraded_reason"):
+        payload["degraded"] = True
+    return task_state_from_mapping(payload, task_id=str(payload["task_id"]))

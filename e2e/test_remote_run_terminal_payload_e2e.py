@@ -17,8 +17,6 @@ against a live backend.
 
 from __future__ import annotations
 
-import asyncio
-import time
 from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any
 
@@ -28,19 +26,14 @@ import pytest_asyncio
 
 from .helpers.api_server import (
     ApiServer,
+    auth_header,
     boot_phytomni_api,
     make_async_client,
-    service_auth_header,
 )
 from .helpers.assertions import assert_remote_run_terminal_payload
+from .helpers.polling import poll_http_run_to_terminal
 
 pytestmark = pytest.mark.live
-
-_TERMINAL_STATUSES = frozenset(
-    {"succeeded", "success", "completed", "done", "failed", "error"}
-)
-_POLL_TIMEOUT_SECONDS = 1800.0
-_POLL_INTERVAL_SECONDS = 10.0
 
 
 @pytest.fixture(scope="session", name="terminal_api_server")
@@ -76,44 +69,6 @@ async def terminal_api_client_fixture(
         yield client
 
 
-async def _poll_run_to_terminal(
-    client: httpx.AsyncClient,
-    server: ApiServer,
-    run_id: str,
-) -> dict[str, Any]:
-    """Poll ``GET /v1/runs/{id}`` until terminal and return its ``result``.
-
-    Args:
-        client: Bound async HTTP client.
-        server: Running API details (for the service auth header).
-        run_id: Run id returned by the remote submit.
-
-    Returns:
-        The terminal run's ``result`` object (empty dict if absent).
-
-    Raises:
-        AssertionError: On a non-200 poll or if the run never settles
-            within ``_POLL_TIMEOUT_SECONDS``.
-    """
-    deadline = time.monotonic() + _POLL_TIMEOUT_SECONDS
-    while time.monotonic() < deadline:
-        resp = await client.get(
-            f"/v1/runs/{run_id}", headers=service_auth_header(server)
-        )
-        assert (
-            resp.status_code == 200
-        ), f"/v1/runs/{run_id} returned {resp.status_code}: {resp.text}"
-        body = resp.json()
-        if str(body.get("status", "")).lower() in _TERMINAL_STATUSES:
-            result = body.get("result")
-            return result if isinstance(result, dict) else {}
-        await asyncio.sleep(_POLL_INTERVAL_SECONDS)
-    raise AssertionError(
-        f"run {run_id} did not reach a terminal state within "
-        f"{_POLL_TIMEOUT_SECONDS}s"
-    )
-
-
 async def test_remote_run_terminal_payload_e2e(
     terminal_api_client: httpx.AsyncClient,
     terminal_api_server: ApiServer,
@@ -130,8 +85,8 @@ async def test_remote_run_terminal_payload_e2e(
 
     submit = await terminal_api_client.post(
         "/v1/agents/network/runs",
-        json=payload,
-        headers=service_auth_header(terminal_api_server),
+        json={"arguments": payload},
+        headers=auth_header(terminal_api_server),
     )
     assert submit.status_code in (
         200,
@@ -140,7 +95,9 @@ async def test_remote_run_terminal_payload_e2e(
     run_id = submit.json().get("id")
     assert run_id, f"network submit returned no run id: {submit.text}"
 
-    result = await _poll_run_to_terminal(
-        terminal_api_client, terminal_api_server, str(run_id)
+    terminal = await poll_http_run_to_terminal(
+        terminal_api_client,
+        str(run_id),
+        headers=auth_header(terminal_api_server),
     )
-    assert_remote_run_terminal_payload(result)
+    assert_remote_run_terminal_payload(terminal.result)
