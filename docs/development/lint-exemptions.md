@@ -445,8 +445,8 @@ R0914 (20 at 275, 19 at 764, 16 at 1093), W0718 broad-exception-caught
 `# pylint: disable=too-many-lines` at the top of `api/app.py`, plus
 function-level
 `# pylint: disable=too-many-arguments,too-many-locals,too-many-statements`
-on `create_app`, `_resolve_remote_run`, and the route handlers at
-lines 275, 443, 764, 1093. Allowlist entry under
+on `create_app`, `_resolve_remote_run`, `_stream_chat_completion`, and the
+route handlers at lines 275, 443, 764, 1093. Allowlist entry under
 `src/mcp_server_phytomni/api/app.py`.
 
 **Why refactor is net-negative**: `create_app` is the FastAPI

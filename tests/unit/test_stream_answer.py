@@ -22,6 +22,7 @@ from mcp_server_phytomni.mcp.result_formatting import (
     run_started,
     text_message_content,
 )
+from mcp_server_phytomni.mcp.stream_lifecycle import StreamLifecycleState
 
 pytestmark = pytest.mark.unit
 
@@ -100,6 +101,28 @@ async def test_accumulator_marks_partial_on_run_error() -> None:
     assert snap.answer == "Hi"
     assert snap.saw_error is True
     assert snap.reached_finish is False
+
+
+@pytest.mark.asyncio
+async def test_accumulator_reuses_shared_lifecycle_state() -> None:
+    """The HTTP settle state is the accumulator's lifecycle source."""
+    lifecycle = StreamLifecycleState()
+    acc = StreamAnswerAccumulator(
+        _events(
+            text_message_content("m1", "Hi"),
+            run_error("agent_execution_failed", "boom"),
+        ),
+        max_bytes=1024,
+        lifecycle_state=lifecycle,
+    )
+
+    await _drain(acc)
+
+    snap = acc.snapshot
+    assert snap.saw_error is True
+    assert snap.reached_finish is False
+    assert lifecycle.saw_error is True
+    assert lifecycle.reached_finish is False
 
 
 @pytest.mark.asyncio

@@ -787,11 +787,17 @@ async def _project_primed_stream(
     primed: PrimedAguiStream,
     *,
     run_id: str,
+    lifecycle_state: StreamLifecycleState | None = None,
 ) -> AsyncIterator[AguiEvent]:
     """Project a primed raw stream through one typed lifecycle state."""
+    state = (
+        lifecycle_state
+        if lifecycle_state is not None
+        else StreamLifecycleState()
+    )
     async for event in project_stream_failures(
         _replay_primed_stream(primed),
-        state=StreamLifecycleState(),
+        state=state,
         run_id=run_id,
         request_id=current_request_id() or "unknown",
     ):
@@ -998,7 +1004,7 @@ async def _stream_review_a2ui_pause(
     return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
-async def _stream_chat_completion(
+async def _stream_chat_completion(  # pylint: disable=too-many-locals
     *,
     tool_name: str,
     arguments: dict[str, Any],
@@ -1012,8 +1018,8 @@ async def _stream_chat_completion(
     twice: a ``running`` row before the first frame so ``RunStarted``
     carries a real, persisted registry id, then a terminal
     ``succeeded``/``failed`` settle from the ``finally`` block keyed
-    on whether the stream actually reached ``RunFinished``. A client
-    that disconnects right after ``RunFinished`` still settles
+    on the shared typed lifecycle state (finish observed and no error). A
+    client that disconnects right after ``RunFinished`` still settles
     succeeded — the answer was produced regardless of whether the
     socket stayed open to see it. ChatAgent settle persists the
     accumulated answer under a soft byte cap; other streamed agents keep
@@ -1068,29 +1074,37 @@ async def _stream_chat_completion(
             )
         raise _stream_setup_error(exc, priming=True) from exc
 
-    events = _project_primed_stream(primed, run_id=run_id)
+    lifecycle_state = StreamLifecycleState()
+    events = _project_primed_stream(
+        primed,
+        run_id=run_id,
+        lifecycle_state=lifecycle_state,
+    )
     accumulator: StreamAnswerAccumulator | None = None
     if tool_name == "ChatAgent":
         accumulator = StreamAnswerAccumulator(
             events,
             max_bytes=_stream_answer_max_bytes(),
+            lifecycle_state=lifecycle_state,
         )
         events = accumulator
     sse_lines = to_chat_completion_chunks(events, payload.model)
 
     async def _wrapped() -> AsyncIterator[str]:
         """Forward each SSE line, then settle the run from ``finally``."""
-        reached_finish = False
         try:
             async for line in sse_lines:
-                if "event: RunFinished\n" in line:
-                    reached_finish = True
                 yield line
         finally:
             # Stage 2: settle terminal keyed on reaching RunFinished,
             # not on connection close.
             if agent_slug is not None:
-                status = "succeeded" if reached_finish else "failed"
+                status = (
+                    "succeeded"
+                    if lifecycle_state.reached_finish
+                    and not lifecycle_state.saw_error
+                    else "failed"
+                )
                 if accumulator is not None:
                     snap = accumulator.snapshot
                     result: dict[str, Any] = {
@@ -1105,6 +1119,7 @@ async def _stream_chat_completion(
                         "formatted": {"answer": "[streamed]"},
                         "raw": None,
                         "stream": True,
+                        "partial": status == "failed",
                     }
                 _settle_stream_run(run_id, owner, status, result)
 

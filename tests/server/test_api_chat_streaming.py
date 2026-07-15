@@ -273,6 +273,62 @@ async def test_stream_priming_empty_returns_json_and_fails_run(
     assert records[-1].status == "failed"
 
 
+@pytest.mark.parametrize(
+    ("model", "tool_name"),
+    [
+        ("phyto-chat", "ChatAgent"),
+        ("phyto-knowledge", "KnowledgeAgent"),
+        ("phyto-review", "ReviewAgent"),
+        ("phyto-brief-gene", "BriefGeneAgent"),
+    ],
+)
+async def test_opened_agent_failure_emits_one_error_and_settles_failed(
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+    model: str,
+    tool_name: str,
+) -> None:
+    """Every supported streamed model closes opened failures consistently."""
+
+    async def failing_prepare(
+        _tool_name: str,
+        _arguments: dict[str, Any],
+        *,
+        run_id: str,
+        dialogue_id: str | None,
+    ) -> AsyncIterator[Any]:
+        """Yield a partial prefix, then fail before RunFinished."""
+        yield run_started(run_id, dialogue_id)
+        yield text_message_content("m-failure", "partial")
+        raise RuntimeError("backend token=hidden failure")
+
+    monkeypatch.setattr(api_app, "prepare_tool_stream", failing_prepare)
+    payload = ChatCompletionRequest(
+        model=model,
+        messages=[ChatMessage(role="user", content="failure")],
+        stream=True,
+    )
+    with request_context("u1", f"req-{model}"):
+        response = await _stream_chat_completion(
+            tool_name=tool_name,
+            arguments={"user_query": "failure", "obs_file_list": []},
+            payload=payload,
+            user_query="failure",
+        )
+        body_iterator = cast(AsyncGenerator[str, None], response.body_iterator)
+        body = "".join([line async for line in body_iterator])
+
+    assert body.count("event: RunError\n") == 1
+    assert "event: RunFinished\n" not in body
+    assert body.count("data: [DONE]") == 1
+    run_id = _extract_run_started_id(body)
+    record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
+    assert record is not None
+    assert record.status == "failed"
+    assert record.result is not None
+    assert record.result["partial"] is True
+
+
 async def test_stream_run_settles_succeeded_after_finish(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

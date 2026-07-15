@@ -17,6 +17,7 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
 from ..mcp.result_formatting import AguiEvent
+from ..mcp.stream_lifecycle import StreamLifecycleState
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ class StreamAnswerAccumulator:
         events: AsyncIterator[AguiEvent],
         *,
         max_bytes: int,
+        lifecycle_state: StreamLifecycleState | None = None,
     ) -> None:
         """Bind the upstream event iterator and storage cap.
 
@@ -87,13 +89,18 @@ class StreamAnswerAccumulator:
             events: Upstream ``AguiEvent`` stream (already typed).
             max_bytes: Soft cap for registry storage (must be >= 1;
                 callers should run ``resolve_stream_answer_max_bytes``).
+            lifecycle_state: Shared typed lifecycle state used by the
+                opened-stream projector and the HTTP settle path.
         """
         self._events = events
         self.max_bytes = max_bytes
+        self._lifecycle_state = (
+            lifecycle_state
+            if lifecycle_state is not None
+            else StreamLifecycleState()
+        )
         self._answer = ""
         self._truncated = False
-        self._reached_finish = False
-        self._saw_error = False
 
     @property
     def snapshot(self) -> StreamAnswerSnapshot:
@@ -101,8 +108,8 @@ class StreamAnswerAccumulator:
         return StreamAnswerSnapshot(
             answer=self._answer,
             truncated=self._truncated,
-            reached_finish=self._reached_finish,
-            saw_error=self._saw_error,
+            reached_finish=self._lifecycle_state.reached_finish,
+            saw_error=self._lifecycle_state.saw_error,
         )
 
     def _append_delta(self, delta: str) -> None:
@@ -129,10 +136,7 @@ class StreamAnswerAccumulator:
             delta = event.data.get("delta")
             if isinstance(delta, str):
                 self._append_delta(delta)
-        elif event_type == "RunFinished":
-            self._reached_finish = True
-        elif event_type == "RunError":
-            self._saw_error = True
+        self._lifecycle_state.observe(event)
         return event
 
 

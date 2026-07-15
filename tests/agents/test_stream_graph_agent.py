@@ -19,6 +19,10 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.mcp.app import _stream_graph_agent
+from mcp_server_phytomni.mcp.stream_lifecycle import (
+    StreamLifecycleState,
+    project_stream_failures,
+)
 
 from ._network_escape import install_network_escape_guard
 
@@ -396,3 +400,24 @@ async def test_graph_stream_propagates_runtime_failure() -> None:
 
     with pytest.raises(RuntimeError, match="graph backend failed"):
         await drain()
+
+    lifecycle = StreamLifecycleState()
+    projected = [
+        event
+        async for event in project_stream_failures(
+            _stream_graph_agent(
+                FailingStreamApp(),
+                {},
+                "KnowledgeAgent",
+                "KnowledgeAgent",
+                run_id="run-projected-fail",
+                dialogue_id=None,
+            ),
+            state=lifecycle,
+            run_id="run-projected-fail",
+            request_id="req-projected-fail",
+        )
+    ]
+    assert [event.type for event in projected] == ["RunStarted", "RunError"]
+    assert lifecycle.reached_finish is False
+    assert lifecycle.saw_error is True
