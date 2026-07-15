@@ -21,6 +21,9 @@ import pytest
 
 from mcp_server_phytomni.agents.analyst import planning as analyst_planning
 from mcp_server_phytomni.agents.analyst.agent import retrieve_plan_submit
+from mcp_server_phytomni.agents.deep_genome.coordinator import (
+    normalize_submission,
+)
 from mcp_server_phytomni.runtime.task_dedup import analyst_task_fingerprint
 from mcp_server_phytomni.runtime.task_manager import (
     Submission,
@@ -148,6 +151,9 @@ async def test_retrieve_plan_submit_reuses_in_flight_prior(
     assert result["task_id"] != "prior-running"
     assert result["source_task_id"] == "prior-running"
     assert result["output_dir"] == "/out/prior"
+    normalized = normalize_submission(result)
+    assert normalized.submitted_task_id == result["task_id"]
+    assert normalized.poll_task_id == result["source_task_id"]
     assert result["input_fingerprint"] == fingerprint
     # compute_resource echoes back the caller's tier even though the
     # fingerprint ignores it.

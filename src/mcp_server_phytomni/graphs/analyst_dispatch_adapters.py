@@ -14,6 +14,7 @@ can opt into subgraph composition without bypassing OBS layout.
 
 from __future__ import annotations
 
+import importlib
 import logging
 from collections.abc import Mapping
 from typing import Any
@@ -189,6 +190,7 @@ async def submit_analyst_via_subgraph(
         fingerprint, require_terminal_success=is_polling
     )
     if reused is not None:
+        reused = _normalize_reused_submission(reused)
         logger.info(
             "Reusing prior %s task via fingerprint dedup "
             "(caller task_id: %s, source_task_id: %s)",
@@ -197,10 +199,10 @@ async def submit_analyst_via_subgraph(
             reused["source_task_id"],
         )
         record_dispatch_submission(
-            str(reused["task_id"]),
-            str(reused["output_dir"] or ""),
+            reused["task_id"],
+            reused["output_dir"],
             fingerprint,
-            source_task_id=str(reused["source_task_id"]),
+            source_task_id=reused["source_task_id"],
         )
         return reused
     enriched_request = {**request, "output_dir": context.output_dir}
@@ -251,6 +253,25 @@ def _dispatch_fingerprint(request: Mapping[str, Any]) -> str:
         data_list=data_list,
         obs_file_list=None,
     )
+
+
+def _normalize_reused_submission(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate a reuse result while retaining its adapter mapping shape."""
+    # ``deep_genome`` exports this adapter and imports it during package
+    # initialization, so importing the coordinator at module load time would
+    # create a cycle.  The helper runs only after initialization is complete.
+    coordinator = importlib.import_module(
+        "mcp_server_phytomni.agents.deep_genome.coordinator"
+    )
+    normalized = coordinator.normalize_submission(payload)
+    return {
+        **payload,
+        "task_id": normalized.submitted_task_id,
+        "source_task_id": normalized.poll_task_id,
+        "output_dir": normalized.output_dir,
+    }
 
 
 async def _reuse_prior_dispatch(
