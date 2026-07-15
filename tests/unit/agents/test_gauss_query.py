@@ -40,31 +40,58 @@ class _FakePool:
         boom: bool,
         timeout_boom: bool = False,
         error_message: str = "bad sql",
+        transaction_error: BaseException | None = None,
     ) -> None:
         """Store rows and flags; start with closed=False."""
         self._rows = rows
         self._boom = boom
         self._timeout_boom = timeout_boom
         self._error_message = error_message
+        self._transaction_error = transaction_error
         self.closed = False
+        self.last_connection: Any | None = None
 
     @asynccontextmanager
     async def acquire(self) -> AsyncIterator[Any]:
         """Yield a connection stub that returns rows or raises on a flag."""
         rows, boom, timeout_boom = self._rows, self._boom, self._timeout_boom
+        events: list[str] = []
+        transaction_calls: list[dict[str, Any]] = []
 
         async def fetch(_sql: str) -> list[dict[str, Any]]:
+            events.append("fetch")
             if timeout_boom:
                 raise TimeoutError("command timeout")
             if boom:
                 raise asyncpg.PostgresError(self._error_message)
             return rows
 
-        yield SimpleNamespace(fetch=fetch)
+        @asynccontextmanager
+        async def transaction(**kwargs: Any) -> AsyncIterator[None]:
+            transaction_calls.append(kwargs)
+            if self._transaction_error is not None:
+                raise self._transaction_error
+            events.append("transaction_enter")
+            try:
+                yield None
+            finally:
+                events.append("transaction_exit")
+
+        self.last_connection = SimpleNamespace(
+            fetch=fetch,
+            transaction=transaction,
+            events=events,
+            transaction_calls=transaction_calls,
+        )
+        yield self.last_connection
 
     async def close(self) -> None:
         """Mark pool as closed."""
         self.closed = True
+
+    def set_transaction_error(self, error: BaseException) -> None:
+        """Configure a transaction error for a focused failure test."""
+        self._transaction_error = error
 
 
 def _patch_pool(
@@ -81,6 +108,9 @@ def _patch_pool(
     async def fake_create_pool(*_a: Any, **kwargs: Any) -> _FakePool:
         captured.update(kwargs)
         pool = _FakePool(rows, boom, timeout_boom, error_message)
+        transaction_error = captured.get("transaction_error")
+        if isinstance(transaction_error, BaseException):
+            pool.set_transaction_error(transaction_error)
         made.append(pool)
         return pool
 
@@ -178,6 +208,55 @@ async def test_driver_error_does_not_leak_sql_or_dsn(
     assert "PostgresError" in caplog.text
 
 
+async def test_gauss_query_fetches_inside_read_only_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Validated queries enter a read-only transaction before fetch."""
+    made, _captured = _patch_pool(monkeypatch, [{"x": 1}])
+
+    result = await gauss_query("SELECT 1 AS x")
+
+    connection = made[0].last_connection
+    assert connection is not None
+    assert result == {"message": "ok", "data": [{"x": 1}]}
+    assert connection.transaction_calls == [{"readonly": True}]
+    assert connection.events == [
+        "transaction_enter",
+        "fetch",
+        "transaction_exit",
+    ]
+
+
+async def test_read_only_transaction_failure_never_fetches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A transaction setup failure is sanitized and prevents fetch."""
+    made, captured = _patch_pool(monkeypatch, [])
+    captured["transaction_error"] = RuntimeError("unsupported")
+
+    with pytest.raises(McpError, match="GaussDB query failed"):
+        await gauss_query("SELECT 1")
+
+    connection = made[0].last_connection
+    assert connection is not None
+    assert "fetch" not in connection.events
+
+
+async def test_gauss_query_preserves_cancellation_during_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cancellation during transaction setup propagates unchanged."""
+    made, captured = _patch_pool(monkeypatch, [])
+    captured["transaction_error"] = asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        await gauss_query("SELECT 1")
+
+    connection = made[0].last_connection
+    assert connection is not None
+    assert "fetch" not in connection.events
+
+
 def test_pool_is_per_event_loop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -262,6 +341,10 @@ class _ResetModelingPool:
         async def fetch(_sql: str) -> list[dict[str, Any]]:
             return rows
 
+        @asynccontextmanager
+        async def transaction(**_kwargs: Any) -> AsyncIterator[None]:
+            yield None
+
         async def default_reset() -> None:
             # Models conn.reset() -> get_reset_query() -> UNLISTEN * on
             # a server that lacks UNLISTEN (GaussDB).
@@ -269,7 +352,7 @@ class _ResetModelingPool:
                 "UNLISTEN is not yet supported."
             )
 
-        conn = SimpleNamespace(fetch=fetch)
+        conn = SimpleNamespace(fetch=fetch, transaction=transaction)
         try:
             yield conn
         finally:

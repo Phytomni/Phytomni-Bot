@@ -100,9 +100,16 @@ async def gauss_query(sql: str) -> dict[str, Any]:
 
     try:
         pool = await _gauss_pool()
-        async with pool.acquire() as conn:
+        async with pool.acquire() as conn, conn.transaction(readonly=True):
             rows = await conn.fetch(sql)
-    except (asyncpg.PostgresError, OSError) as exc:
+    except (
+        asyncpg.PostgresError,
+        asyncpg.InterfaceError,
+        OSError,
+        RuntimeError,
+        TypeError,
+        ValueError,
+    ) as exc:
         _LOGGER.error(
             "GaussDB query failed request_id=%s exception_type=%s",
             current_request_id() or "unknown",
