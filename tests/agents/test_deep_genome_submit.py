@@ -19,8 +19,10 @@ from typing import Any, cast
 
 import pytest
 
+from mcp_server_phytomni.agents.deep_genome import agent as agent_module
 from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
 from mcp_server_phytomni.config.defaults import DeepGenomeConfig
+from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 from mcp_server_phytomni.runtime.task_manager import (
     Submission,
     TaskManager,
@@ -125,6 +127,58 @@ async def test_arun_returns_immediately_with_submit_envelope(
     assert envelope["compute_resource"] == "deep-genome"
     assert envelope["output_dir"].startswith(str(tmp_path))
     assert envelope["output_dir"].endswith(envelope["task_id"])
+    await _drain_background_tasks()
+
+
+async def test_arun_reserves_before_binding_and_launching(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Durable reservation precedes every coordinator launch side effect."""
+    _patch_db(monkeypatch, tmp_path)
+    fake_app = _FakeApp(result={"final_report": "ok"})
+    agent = _build_agent(fake_app, tmp_path)
+    events: list[str] = []
+
+    original_reserve = DeepGenomeStore.reserve_run
+    original_bind = agent_module.bind_run_id
+    original_create_task = agent_module.asyncio.create_task
+    original_register = agent_module.register_live_task
+
+    def reserve(*args: Any, **kwargs: Any) -> Any:
+        result = original_reserve(*args, **kwargs)
+        events.append("reserve_commit")
+        return result
+
+    def bind(run_id: str | None) -> Any:
+        events.append("bind_run")
+        return original_bind(run_id)
+
+    def create_task(coroutine: Any) -> asyncio.Task[Any]:
+        events.append("create_task")
+        return original_create_task(coroutine)
+
+    def register(task_id: str, task: asyncio.Task[Any]) -> None:
+        events.append("register_live")
+        original_register(task_id, task)
+
+    monkeypatch.setattr(DeepGenomeStore, "reserve_run", reserve)
+    monkeypatch.setattr(agent_module, "bind_run_id", bind)
+    monkeypatch.setattr(agent_module.asyncio, "create_task", create_task)
+    monkeypatch.setattr(agent_module, "register_live_task", register)
+
+    await agent.arun(
+        species_code="osa",
+        gene_id="Os01g0177400",
+        user_id="alice",
+    )
+
+    assert events == [
+        "reserve_commit",
+        "bind_run",
+        "create_task",
+        "register_live",
+    ]
     await _drain_background_tasks()
 
 

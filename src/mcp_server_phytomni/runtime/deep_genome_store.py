@@ -3,10 +3,10 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Transactional SQLite storage contracts for DeepGenome reporting.
 
-This module owns only the additive schema and read DTOs at this stage. Later
-workflow tasks add reservation and transition methods on the same store; the
-schema initializer is deliberately complete and repeatable before those
-writers are introduced.
+The store owns the additive schema, the immutable read DTOs, and the first
+durable launch barrier. Reservation writes the owner run, umbrella task, and
+required BriefGene section in one SQLite transaction before the coordinator
+can be scheduled.
 """
 
 from __future__ import annotations
@@ -15,7 +15,9 @@ import json
 import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
+from .run_registry import RunRegistry
 from .task_manager import _CREATE_TASKS_DDL, _TASK_ADD_COLUMN_STATEMENTS
 
 __all__ = [
@@ -205,6 +207,142 @@ class DeepGenomeStore:
             raise
         finally:
             conn.close()
+
+    def _reservation_execute(
+        self,
+        connection: sqlite3.Connection,
+        stage: str,
+        statement: str,
+        parameters: tuple[object, ...],
+    ) -> None:
+        """Execute one named reservation statement.
+
+        The small seam keeps the transaction statements explicit and gives
+        tests a deterministic way to inject a SQLite failure at each write.
+        Production callers always use the ordinary connection execution.
+        """
+        _ = stage
+        connection.execute(statement, parameters)
+
+    def reserve_run(
+        self,
+        *,
+        run_id: str,
+        umbrella_task_id: str,
+        owner: str,
+        output_dir: str,
+    ) -> DeepGenomeReservation:
+        """Atomically reserve a DeepGenome owner run and profile section.
+
+        The run registry schema is initialized before the transaction, while
+        the three reservation rows themselves are inserted with plain
+        ``INSERT`` statements under one ``BEGIN IMMEDIATE``. Identity
+        collisions therefore raise and roll back instead of replacing an
+        existing owner's rows.
+        """
+        # ``RunRegistry`` owns the runs DDL and its additive columns. It is
+        # initialized before opening the reservation connection so schema
+        # setup cannot be mistaken for a partially committed reservation.
+        RunRegistry(self.db_path)
+        now = datetime.now(UTC).isoformat()
+        placeholder = {
+            "task_id": umbrella_task_id,
+            "status": "running",
+            "output_dir": output_dir,
+        }
+        initial_result = {
+            "task_results": [placeholder],
+            "live_status": [placeholder],
+            "artifacts": [],
+        }
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("BEGIN IMMEDIATE")
+            self._reservation_execute(
+                conn,
+                "run",
+                """
+                INSERT INTO runs (
+                    run_id, user_id, agent, origin, status, result_json,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    run_id,
+                    owner,
+                    "deep_genome",
+                    "remote",
+                    "running",
+                    json.dumps(initial_result),
+                    now,
+                    now,
+                ),
+            )
+            self._reservation_execute(
+                conn,
+                "task",
+                """
+                INSERT INTO tasks (
+                    task_id, status, analysis_id, output_dir,
+                    run_id, user_id, agent, origin, created_at, updated_at,
+                    intermediate_report, report_revision, report_stage,
+                    report_completeness, report_updated_at, progress_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    umbrella_task_id,
+                    "running",
+                    "",
+                    output_dir,
+                    run_id,
+                    owner,
+                    "deep_genome",
+                    "remote",
+                    now,
+                    now,
+                    None,
+                    0,
+                    "waiting_for_brief_gene",
+                    "none",
+                    now,
+                    json.dumps({}),
+                ),
+            )
+            self._reservation_execute(
+                conn,
+                "brief_gene",
+                """
+                INSERT INTO deep_genome_sections (
+                    umbrella_task_id, section_key, section_kind,
+                    display_order, status, summary_markdown, failure_reason,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    umbrella_task_id,
+                    "brief_gene",
+                    "brief_gene",
+                    0,
+                    "planned",
+                    None,
+                    None,
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+        except sqlite3.Error:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return DeepGenomeReservation(
+            run_id=run_id,
+            umbrella_task_id=umbrella_task_id,
+            owner=owner,
+            output_dir=output_dir,
+        )
 
     def get_snapshot(self, umbrella_task_id: str) -> DeepGenomeSnapshot | None:
         """Read the additive report fields without changing legacy shape."""

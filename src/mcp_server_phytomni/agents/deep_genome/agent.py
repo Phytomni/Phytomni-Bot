@@ -32,6 +32,7 @@ from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
 )
+from ...runtime.deep_genome_store import DeepGenomeStore
 from ...runtime.langgraph_runner import (
     ainvoke_graph,
     ensure_checkpointer,
@@ -41,6 +42,7 @@ from ...runtime.live_tasks import (
     deregister_live_task,
     register_live_task,
 )
+from ...runtime.request_context import bind_run_id
 from ...runtime.task_manager import TaskManager, resolve_tasks_db_path
 from ...storage.path_policy import IdFactory
 from ..analyst.agent import (
@@ -498,9 +500,12 @@ class DeepGenomeAgents(
         DeepGenome is wired into the submit-style chokepoint
         (``runtime.submit_recorder.records_submission("deep_genome")``)
         and the HTTP run-aggregate path (``api/app.py``). To match that
-        contract, ``arun`` mints an umbrella ``task_id`` synchronously,
+        contract, ``arun`` mints an owner ``run_id`` and umbrella
+        ``task_id`` synchronously, reserves their local rows plus the
+        required BriefGene section in one transaction,
         derives a placeholder ``output_dir`` under
-        ``deep_genome_config.DEEPGENOME_OUT``, spawns the LangGraph
+        ``deep_genome_config.DEEPGENOME_OUT``, binds the run id, then spawns
+        the LangGraph
         workflow on the running event loop via
         ``asyncio.create_task`` (best-effort: a process exit before
         terminal loses the workflow), and returns the submit envelope
@@ -571,6 +576,7 @@ class DeepGenomeAgents(
                 "skip_synthesize: %s", initial_state["skip_synthesize"]
             )
 
+        run_id = IdFactory().new_id("run", "deep_genome")
         umbrella_id = IdFactory().new_id("task", "deep_genome")
         output_root = (
             self.deep_genome_config.DEEPGENOME_OUT
@@ -580,6 +586,14 @@ class DeepGenomeAgents(
         umbrella_output_dir = f"{output_root.rstrip('/')}/{umbrella_id}"
         initial_state["task_id"] = umbrella_id
         initial_state["output_dir"] = umbrella_output_dir
+
+        reservation = DeepGenomeStore(resolve_tasks_db_path()).reserve_run(
+            run_id=run_id,
+            umbrella_task_id=umbrella_id,
+            owner=str(kwargs.get("user_id") or "anonymous"),
+            output_dir=umbrella_output_dir,
+        )
+        bind_run_id(reservation.run_id)
 
         workflow_task = asyncio.create_task(
             ainvoke_graph(
@@ -733,6 +747,7 @@ async def gene_function(
     return await agent.arun(
         species_code=species_code,
         gene_id=gene_id,
+        user_id=user_id,
         config_params=kwargs.get("config_params"),
         thread_id=kwargs.get("thread_id"),
     )
