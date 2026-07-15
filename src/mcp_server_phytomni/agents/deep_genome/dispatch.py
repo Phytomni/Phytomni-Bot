@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
+from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -40,6 +41,7 @@ from ..shared.analysis_storage import (
 )
 from ..shared.sql import gauss_query, relay_bi_query, sql_literal
 from .summary import build_sub_summary
+from .work_items import build_work_item_plan, section_keys
 
 if TYPE_CHECKING:
     from .agent import DeepGenomeState
@@ -506,17 +508,18 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
     async def _prepare_analysis_tasks(self: Any, state: DeepGenomeState):
         """Initialize analysis tasks for parallel execution.
 
-        This method prepares the deep genome analysis tasks: evolution
-        analysis, expression analysis across
-        tissues/cultivars/treatments/genotypes, single-cell analysis,
-        promoter analysis, SMEP, SMOC, protein structure prediction, and
-        digital design (mounted via design_node).
+        The immutable work-item plan owns the concrete analysis universe.
+        ``analysis_tasks`` remains the eleven-entry logical branch list used
+        by the existing LangGraph barrier, while ``work_items`` carries all
+        twelve serialized concrete jobs (protein and promoter design are two
+        jobs under the one ``digital_design`` section).
 
         Args:
             state: Current workflow state containing gene_id and species_code.
 
         Returns:
-            Dict with analysis_tasks list.
+            Dict with the legacy logical ``analysis_tasks`` list and the
+            serialized concrete ``work_items`` list.
         """
         gene_id = state["gene_id"]
         species_code = state.get("species_code", "")
@@ -537,102 +540,36 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 gene_idv2 = gene_id.replace("_", "")
             case _:
                 gene_idv2 = gene_id
-        tasks = [
-            {
-                "target_gene": gene_id,
-                "species_code": species_code,
-                "analysis_type": "evolution_analysis",
-                "compute": "medium",
-                "func_name": "evolution_analysis",
-            },
-            {
-                "target_gene": (
-                    gene_idv2
-                    if species_code in ["osa", "zma", "gma"]
-                    else gene_id
-                ),
-                "species_code": species_code,
-                "analysis_type": "gene_expression_tissues",
-                "compute": "small",
-                "func_name": "gene_expression_tissues",
-            },
-            {
-                "target_gene": (
-                    gene_idv2
-                    if species_code in ["osa", "zma", "gma"]
-                    else gene_id
-                ),
-                "species_code": species_code,
-                "analysis_type": "gene_expression_cultivars",
-                "compute": "small",
-                "func_name": "gene_expression_cultivars",
-            },
-            {
-                "target_gene": (
-                    gene_idv2
-                    if species_code in ["osa", "zma", "gma"]
-                    else gene_id
-                ),
-                "species_code": species_code,
-                "analysis_type": "gene_expression_treatments",
-                "compute": "small",
-                "func_name": "gene_expression_treatments",
-            },
-            {
-                "target_gene": (
-                    gene_idv2
-                    if species_code in ["osa", "zma", "gma"]
-                    else gene_id
-                ),
-                "species_code": species_code,
-                "analysis_type": "gene_expression_genotypes",
-                "compute": "small",
-                "func_name": "gene_expression_genotypes",
-            },
-            {
-                "target_gene": gene_id,
-                "species_code": species_code,
-                "analysis_type": "single_cell_analysis",
-                "compute": "small",
-                "func_name": "single_cell_analysis",
-            },
-            {
-                "target_gene": gene_id,
-                "species_code": species_code,
-                "analysis_type": "promoter_analysis",
-                "compute": "small",
-                "func_name": "promoter_analysis",
-            },
-            {
-                "target_gene": gene_id,
-                "species_code": species_code,
-                "analysis_type": "smep_analysis",
-                "compute": "small",
-                "func_name": "smep_analysis",
-            },
-            {
-                "target_gene": gene_id,
-                "species_code": species_code,
-                "analysis_type": "smoc_analysis",
-                "compute": "small",
-                "func_name": "smoc_analysis",
-            },
-            {
-                "target_gene": gene_id,
-                "species_code": species_code,
-                "analysis_type": "protein_structure_analysis",
-                "compute": "medium",
-                "func_name": "protein_structure_analysis",
-            },
-            {
-                "target_gene": gene_id,
-                "species_code": species_code,
-                "analysis_type": "digital_design",
-                "compute": "medium",
-                "func_name": "digital_design",
-            },
-        ]
-        return {"analysis_tasks": tasks}
+        plan = build_work_item_plan(species_code, gene_id, gene_idv2)
+        concrete_items = [asdict(item) for item in plan]
+        logical_tasks = []
+        for section_key in section_keys(plan):
+            section_items = [
+                item for item in plan if item.section_key == section_key
+            ]
+            representative = section_items[0]
+            analysis_type = (
+                "digital_design"
+                if section_key == "digital_design"
+                else representative.analysis_type
+            )
+            logical_tasks.append(
+                {
+                    "target_gene": (
+                        gene_id
+                        if section_key == "digital_design"
+                        else representative.target_gene
+                    ),
+                    "species_code": species_code,
+                    "analysis_type": analysis_type,
+                    "compute": representative.compute_resource,
+                    "func_name": analysis_type,
+                }
+            )
+        return {
+            "analysis_tasks": logical_tasks,
+            "work_items": concrete_items,
+        }
 
     async def _dispatch_and_wait_analysis(
         self: Any,

@@ -151,6 +151,10 @@ class DeepGenomeState(TypedDict):
         paralogs_summary: Formatted string summarizing paralog gene network.
         interaction_summary: Formatted string summarizing interaction network.
         analysis_tasks: Analysis task dictionaries for parallel execution.
+        work_items: Serialized concrete work-item specifications for the
+            twelve analysis jobs. Unlike ``analysis_tasks``, this channel
+            preserves both independent digital-design jobs even though they
+            share one logical report section.
         raw_analyst_data: Raw data from analyst tasks.
         analyst_summaries: Processed summaries from analyst tasks.
         synthesize_report: Aggregated deep analysis synthesis report.
@@ -181,6 +185,7 @@ class DeepGenomeState(TypedDict):
     interaction_summary: str | None
     task_submit_sleep: int
     analysis_tasks: list[dict[str, Any]]
+    work_items: list[dict[str, Any]]
     raw_analyst_data: Annotated[dict[str, Any], update_dict]
     analyst_summaries: Annotated[dict, update_dict]
     synthesize_report: str | None
