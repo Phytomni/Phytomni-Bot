@@ -685,6 +685,32 @@ from offline policy, unit tests, or a successful health check alone. Record the
 sanitized result, operator, timestamp, and rollback reference in the Phase 7
 Operations handoff before enabling customer traffic.
 
+### Authorized eighteen-query compatibility comparison
+
+After an owner supplies an archived old-path manifest, compare the direct
+GaussDB seam from an operator-controlled host. The baseline is an external
+JSON document with one `queries` record per corpus label:
+`{"label": "...", "row_count": 0, "columns": [], "sha256": "<64-hex>"}`.
+It must contain every label in `tests/fixtures/gauss_query_corpus.json`
+exactly once; the runner rejects missing, duplicate, or extra labels.
+
+```bash
+PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
+  uv run python scripts/compare_gauss_queries.py \
+  --baseline /secure/operator/gauss-query-baseline.json \
+  --environment-class production \
+  --output e2e/output/gauss_query_comparison.json
+```
+
+The runner calls only the hardened direct `gauss_query` seam. It writes commit,
+environment class, per-label row counts, sorted column names, SHA-256
+fingerprints, and match totals; it never writes SQL, DSNs, result rows, or
+driver messages. Exit `2` means the live flags or owner baseline are missing
+or invalid (`External Pending`), exit `1` means a query or fingerprint
+mismatch, and exit `0` means all eighteen fingerprints match. A missing old
+service may use an owner-approved archived manifest, but it does not turn
+offline comparison tests into production compatibility evidence.
+
 ## Health Checks
 
 Liveness:
