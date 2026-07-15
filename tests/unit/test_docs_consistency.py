@@ -204,6 +204,27 @@ def test_direct_gauss_rollback_uses_prior_binary_not_fake_switch() -> None:
     )
 
 
+def test_gauss_docs_require_all_three_read_only_layers() -> None:
+    """Keep Gauss controls and external operator evidence explicit."""
+    runbook = (ROOT / "docs/ops/http-api-runbook.md").read_text(
+        encoding="utf-8"
+    )
+    configuration = (ROOT / "docs/reference/configuration.md").read_text(
+        encoding="utf-8"
+    )
+    for phrase in (
+        "parse-based validation",
+        "transaction(readonly=True)",
+        "read-only deployment role",
+        "RESET ALL",
+        "does not use UNLISTEN",
+    ):
+        assert phrase in runbook
+    assert "External Pending until the authorized probe" in runbook
+    for name in ("TIMEOUT", "MAX_POLL", "ANALYSIS_JOB_TIMEOUT"):
+        assert f"`{name}`" in configuration
+
+
 def test_streaming_docs_use_the_narrowed_contract() -> None:
     """Keep streaming docs aligned with the currently emitted event set."""
     http = (ROOT / "docs/reference/http-api.md").read_text(encoding="utf-8")

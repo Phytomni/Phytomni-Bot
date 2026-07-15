@@ -636,6 +636,30 @@ The credential-injecting relay (`/v1/relay/*`) is off unless
   different replica can see the run row in `input_required` but miss the
   LangGraph checkpoint and return `409 no pause point for run`.
 
+## Direct GaussDB / BI Safety
+
+The server-side BI path has three independent read-only layers:
+
+- **Application:** parse-based validation accepts exactly one PostgreSQL
+  read-only query and walks CTEs/nested nodes before a pool is created.
+- **Transaction:** every validated fetch enters
+  `transaction(readonly=True)`; transaction setup failures are fail-closed and
+  never fall back to an unrestricted fetch.
+- **Deployment:** the database credential must use a read-only deployment role
+  with connect, schema usage, and select privileges only; it must not create,
+  write, or alter data, and `default_transaction_read_only=on` should be set.
+
+Pool return executes `RESET ALL` to clear session settings and does not use UNLISTEN,
+which GaussDB does not support. A reset or query failure is surfaced
+with fixed public text; logs contain only the request correlation id and
+exception class, never SQL, DSNs, response bodies, or driver messages.
+
+The role grant, `default_transaction_read_only` setting, denied-write check,
+and connection-reuse probe are external Operations evidence. **External Pending until the authorized probe**: do not mark production cutover complete
+from offline policy, unit tests, or a successful health check alone. Record the
+probe command, sanitized result, operator, timestamp, and rollback reference in
+the Phase 7 Operations handoff before enabling customer traffic.
+
 ## Health Checks
 
 Liveness:

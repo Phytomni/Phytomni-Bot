@@ -268,6 +268,14 @@ minimum bound is exercised by CI's dependency-floor job. Keep `uv.lock`
 local and ignored, as required above; do not commit a lockfile to record this
 dependency.
 
+The execution boundary is defense in depth: `gauss_query` validates the AST
+before creating or acquiring a pool, enters `transaction(readonly=True)` before
+`fetch`, and maps driver/setup failures to fixed public text. The asyncpg pool
+reset callback executes one `RESET ALL` statement and does not use `UNLISTEN`,
+because GaussDB rejects that default asyncpg reset query. Keep the deployment
+role and authorized live probe as separate Operations evidence; offline tests
+must not imply that external permissions have been verified.
+
 `langgraph` is intentionally constrained to `>=1.2.0,<1.3`. The repository
 depends on the 1.2 public contracts for runtime context, node-local stream
 writers, interrupt/resume, and compilation with a checkpointer and store.

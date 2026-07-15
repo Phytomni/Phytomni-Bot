@@ -349,6 +349,9 @@ real CA bundle instead.
 
 | Variable                | Default | Sensitive? | Purpose                                                                                       |
 | ----------------------- | ------- | ---------- | --------------------------------------------------------------------------------------------- |
+| `TIMEOUT`               | `600.0` | no         | General agent/provider request timeout; separate from local polling and remote job ceilings.  |
+| `MAX_POLL`              | `86400` | no         | Maximum local polling duration for long-running Analyst/DeepGenome work.                      |
+| `ANALYSIS_JOB_TIMEOUT`  | `86400` | no         | Maximum duration sent to the remote analysis platform for one submitted job.                  |
 | `GAUSS_COMMAND_TIMEOUT` | `30.0`  | no         | Per-query timeout in seconds for the direct GaussDB pool (`agents/shared/gauss.py`).          |
 | `HTTP_MAX_CONNECTIONS`  | `100`   | no         | Max total connections for the shared `httpx.AsyncClient` pool (`common/httpx_client.py`).     |
 | `HTTP_MAX_KEEPALIVE`    | `50`    | no         | Max keepalive connections for the shared `httpx.AsyncClient` pool (`common/httpx_client.py`). |
