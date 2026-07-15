@@ -791,6 +791,11 @@ pre-created run row as `failed`, rather than returning an empty SSE body.
 The wire framing is AG-UI event data, not provider `chat.completion.chunk`
 objects.
 
+Web/Go live stream, A2UI passthrough, timeout, and error-equivalence evidence
+is collected through the
+[stream contract packet](../handoffs/evidence/web-go-stream-contract-acceptance.md),
+not inferred from these offline contract tests.
+
 The current server intentionally exposes a narrowed AG-UI vocabulary:
 `RunStarted`, `StepStarted`, `TextMessageStart` / `TextMessageContent` /
 `TextMessageEnd` (collectively `TextMessage*`), `Custom`, and
