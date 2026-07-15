@@ -234,11 +234,15 @@ persists its report on the task row); other agents keep the bare
 `Task <id>: <status>` status line and surface their products through
 `metadata.output_dir` / `metadata.artifacts`.
 
-A degraded `DeepGenomeAgent` report (a mounted sub-analysis failed
-mid-run — its brief_gene gene-profile, evolution, or digital-design
-step) keeps surfacing the report but adds `metadata.degraded` (bool) and
+A degraded `DeepGenomeAgent` report (an optional evolution or digital-design
+sub-analysis failed mid-run) keeps surfacing the report but adds
+`metadata.degraded` (bool) and
 `metadata.degraded_reason` (a redacted string, or `null`); healthy and
 non-DeepGenome rows read `false` / `null`.
+
+BriefGene is a required pre-launch branch. If it fails, DeepGenome fails with
+the fixed public error `brief gene profile failed`, emits no report, and does
+not submit any remote analysis jobs; no degraded success banner is emitted.
 
 A `DeepGenomeAgent` umbrella whose background run died without persisting
 a report — a lost best-effort terminal-status write, or a process

@@ -166,8 +166,8 @@ class DeepGenomeState(TypedDict):
         part1_completed_branches: Counter for part1 barrier (target: 4)
         analysis_completed_branches: Counter for the analysis barrier.
         experiment_completed_branches: Counter for the experiment barrier.
-        failures: Recoverable per-node failures (e.g. a brief_gene mount
-            fault) used to surface a degraded report signal.
+        failures: Recoverable analysis-branch failures used to surface a
+            degraded report signal. BriefGene failure aborts the workflow.
         literature_degraded: Recoverable per-symbol literature retrieve
             degradations rolled up from the brief_gene mount; drives the
             status-independent degraded signal without flipping status.
@@ -202,12 +202,11 @@ class DeepGenomeState(TypedDict):
     part1_completed_branches: Annotated[int, operator.add]
     analysis_completed_branches: Annotated[int, operator.add]
     experiment_completed_branches: Annotated[int, operator.add]
-    # General failure channel: a node that catches a recoverable fault
-    # appends a FailureRecord here (operator.add merges concurrent
-    # writes) so the report node can persist a degraded signal. The
-    # brief_gene, evolution, and design mounts each produce records here.
+    # General failure channel: recoverable analysis nodes append a
+    # FailureRecord here (operator.add merges concurrent writes) so the
+    # report node can persist a degraded signal. BriefGene failure aborts.
     failures: Annotated[list[FailureRecord], operator.add]
-    # Status-independent literature degradation rolled up from the
+    # Status-independent literature degradation rolled up from a successful
     # brief_gene mount. Never feeds project_universal_failure_metadata —
     # only _persist_degraded's status-independent set_task_degraded path.
     literature_degraded: Annotated[list[DegradedRecord], operator.add]
@@ -422,13 +421,16 @@ class DeepGenomeAgents(
         workflow.add_conditional_edges(
             START,
             make_async_router(self._route_start),
-            ["brief_gene_node", "prepare_tasks_node"],
+            ["brief_gene_node"],
         )
-        # brief_gene mount writes all the preamble fields plus the
-        # experiment_completed_branches +1 contribution, so the
-        # post-mount path goes directly to experiment_node (which
-        # waits for the synthesize_node contribution too).
-        workflow.add_edge("brief_gene_node", "experiment_node")
+        # BriefGene success is the launch barrier: only then may local task
+        # preparation fan out to remote analysis, while the experiment branch
+        # receives its required profile contribution in parallel.
+        workflow.add_conditional_edges(
+            "brief_gene_node",
+            make_async_router(self._route_after_brief_gene),
+            ["prepare_tasks_node", "experiment_node"],
+        )
 
         workflow.add_conditional_edges(
             "prepare_tasks_node",
@@ -470,7 +472,7 @@ class DeepGenomeAgents(
         workflow.add_conditional_edges(
             "experiment_node",
             make_async_router(self._route_experiment_barrier),
-            ["experiment_node", "protocol_node"],
+            ["experiment_node", "protocol_node", "discussion_node"],
         )
         # protocol → discussion → summary → follow_up (introduction_node
         # removed; the introduction is part of the verbatim ``preamble``

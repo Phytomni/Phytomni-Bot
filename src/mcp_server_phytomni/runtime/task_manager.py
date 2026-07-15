@@ -556,9 +556,10 @@ class TaskManager:
     def set_task_degraded(self, task_id: str, reason: str) -> bool:
         """Persist a redacted degraded reason on the task row.
 
-        DeepGenome runs its report workflow in the background; when the
-        brief_gene mount degrades, the final report node writes the
-        redacted reason here so the non-blocking poll path
+        DeepGenome runs its report workflow in the background; when an
+        optional analysis branch or successful literature retrieval
+        degrades, the final report node writes the redacted reason here so
+        the non-blocking poll path
         (GetTaskStatus / run-aggregate) can surface ``degraded`` without
         re-running the workflow. A single targeted ``UPDATE`` (never the
         ``record`` upsert) so a later ``update_task`` status flip cannot

@@ -160,6 +160,44 @@ def test_route_analyst_tasks_sends_evolution_to_evolution_node() -> None:
     assert evo.arg["task_index"] == 0
 
 
+def test_route_start_waits_for_brief_gene_before_task_preparation() -> None:
+    """The initial route launches only the required BriefGene mount."""
+    state: Any = {"config_params": {"use_analyst_agent": True}}
+
+    sends = dispatch_module.DeepGenomeDispatchMixin._route_start(
+        object(), state
+    )
+
+    assert sends == ["brief_gene_node"]
+
+
+def test_route_after_brief_gene_reaches_preparation_only_when_enabled() -> (
+    None
+):
+    """Successful BriefGene gates optional analyst preparation."""
+    route = dispatch_module.DeepGenomeDispatchMixin._route_after_brief_gene
+
+    enabled_state: Any = {"config_params": {"use_analyst_agent": True}}
+    disabled_state: Any = {"config_params": {"use_analyst_agent": False}}
+    assert route(object(), enabled_state) == [
+        "prepare_tasks_node",
+        "experiment_node",
+    ]
+    assert route(object(), disabled_state) == "experiment_node"
+
+
+def test_route_experiment_skips_protocol_when_analyst_disabled() -> None:
+    """The analyst-off path proceeds to discussion without looping."""
+    state: Any = {
+        "config_params": {"use_analyst_agent": False},
+        "report_triggered": True,
+    }
+
+    route = dispatch_module.DeepGenomeDispatchMixin._route_experiment_barrier
+
+    assert route(object(), state) == "discussion_node"
+
+
 def test_route_analyst_tasks_sends_design_to_design_node() -> None:
     """The digital_design task fans to the mounted ``design_node``."""
     state: Any = {

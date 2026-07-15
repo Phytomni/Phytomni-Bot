@@ -8,19 +8,21 @@ Covers ``make_brief_gene_mount_node`` IO projection from
 BriefGeneOutput's flat-string annotation surface into deep_genome's
 nested ``gene_annotation`` + ``knowledge_context`` shape, the
 ``user_query`` synthesis from ``gene_id``, the ``is_follow_up=False``
-opt-out passed to brief_gene, and the exception fallback that lets
-deep_genome advance past the part1 barrier on brief_gene faults.
+opt-out passed to brief_gene, and the required-branch failure raised when
+brief_gene cannot produce the mandatory profile.
 """
 
 from __future__ import annotations
 
 from typing import Any, TypedDict, cast
+from unittest.mock import AsyncMock
 
 import pytest
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from mcp_server_phytomni.agents.deep_genome.brief_gene_mount import (
+    RequiredBriefGeneError,
     make_brief_gene_mount_node,
 )
 
@@ -240,20 +242,16 @@ async def test_brief_gene_mount_synthesises_user_query_from_gene_id() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Exception fallback: deep_genome still advances past the part1 barrier.
+# Required branch: a profile failure aborts before downstream work starts.
 # ---------------------------------------------------------------------------
 
 
-async def test_brief_gene_mount_fallback_on_brief_gene_exception() -> None:
-    """Mount catches brief_gene failures and emits empty annotation + barrier.
+async def test_brief_gene_mount_raises_required_error_on_failure() -> None:
+    """Mount raises a fixed public error instead of a degraded fallback.
 
     If brief_gene fails (network, BI outage, model error), the
-    mount node MUST NOT propagate the exception — that would wedge
-    the part1 barrier waiting forever. Instead the mount logs the
-    exception, emits an empty annotation + empty literature delta,
-    and still writes the barrier increment so the deep_genome
-    workflow advances past the barrier and downstream report nodes
-    see a degraded but well-formed state.
+    mount node MUST fail the required branch. The fixed public message
+    is stable and does not copy an upstream exception into graph state.
     """
 
     async def _raising_ainvoke(_input: Any) -> Any:
@@ -265,35 +263,39 @@ async def test_brief_gene_mount_fallback_on_brief_gene_exception() -> None:
     mount = make_brief_gene_mount_node(cast(CompiledStateGraph, _BrokenApp()))
     state = _deep_genome_state(gene_id="AT1G01010")
 
-    delta = await mount(cast(Any, state))
+    with pytest.raises(
+        RequiredBriefGeneError, match="^brief gene profile failed$"
+    ):
+        await mount(cast(Any, state))
 
-    # Empty annotation but well-formed: every key present, all empty
-    # strings rather than missing keys. The gene_string falls back to
-    # the requested gene_id so downstream prompts still have a token
-    # to display.
-    annotation = delta["gene_annotation"]
-    assert annotation["gene_string"] == "AT1G01010"
-    assert annotation["description"] == ""
-    assert annotation["go"] == ""
-    assert annotation["interpro"] == ""
-    assert annotation["mapman"] == ""
-    assert delta["knowledge_context"]["literature"] == []
-    # M11 — Experiment-side barrier counter still emitted so the
-    # downstream experiment_node 2-source barrier advances.
-    assert delta["experiment_completed_branches"] == 1
-    # Degraded signal — machine-readable FailureRecord on the new
-    # ``failures`` channel so the report node can persist it.
-    failures = delta["failures"]
-    assert len(failures) == 1
-    record = failures[0]
-    assert record["task_label"] == "brief_gene_preamble"
-    assert record["kind"] == "execute"
-    assert "brief_gene exploded" in record["message"]
-    # Human-readable banner — the report's pre-analysis block now carries
-    # a titled degradation notice instead of an empty string.
-    preamble = delta["preamble"]
-    assert preamble.startswith("# Deep Genome Analysis of AT1G01010")
-    assert "Gene profile unavailable" in preamble
+
+async def test_brief_gene_failure_does_not_invoke_downstream_submit() -> None:
+    """A failed required mount prevents the downstream submit node."""
+    submits = AsyncMock()
+
+    async def _remote_submit(_state: Any) -> dict[str, Any]:
+        await submits()
+        return {}
+
+    async def _raising_ainvoke(_input: Any) -> Any:
+        raise RuntimeError("brief_gene exploded")
+
+    class _BrokenApp:
+        ainvoke = staticmethod(_raising_ainvoke)
+
+    workflow: StateGraph = StateGraph(_FakeBriefGeneState)
+    workflow.add_node(
+        "brief", make_brief_gene_mount_node(cast(Any, _BrokenApp()))
+    )
+    workflow.add_node("remote", cast(Any, _remote_submit))
+    workflow.add_edge(START, "brief")
+    workflow.add_edge("brief", "remote")
+    workflow.add_edge("remote", END)
+    app = workflow.compile()
+
+    with pytest.raises(RequiredBriefGeneError):
+        await app.ainvoke(cast(Any, _deep_genome_state()))
+    submits.assert_not_awaited()
 
 
 async def test_brief_gene_mount_success_emits_no_failures() -> None:

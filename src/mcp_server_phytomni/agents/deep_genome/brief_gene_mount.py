@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, Any
 from langgraph.graph.state import CompiledStateGraph
 
 from ...common.responses import message_content
-from ..shared.parallel_dispatch import FailureRecord, redact_failure_message
 
 if TYPE_CHECKING:
     from .agent import DeepGenomeState
@@ -31,6 +30,10 @@ else:
 logger = logging.getLogger(__name__)
 
 _BRIEF_TITLE_PREFIX = "# Brief Gene Analysis of"
+
+
+class RequiredBriefGeneError(RuntimeError):
+    """Raised when the mandatory BriefGene profile cannot be produced."""
 
 
 def _deep_genome_preamble(brief_output: dict[str, Any], gene_id: str) -> str:
@@ -51,67 +54,33 @@ def _deep_genome_preamble(brief_output: dict[str, Any], gene_id: str) -> str:
     return raw
 
 
-# Broad exception catch tuple used by the brief_gene mount node.
-# Module-level constant lifts the pylint ``broad-except`` (W0718)
-# report once at module load instead of silencing it at every
-# ``except`` site; downstream readers can grep this constant to find
-# the catch scope. Matches the W0718 mitigation pattern other consumer
-# agents use (analyst / review / brief_gene).
+# Module-level tuple documents the ordinary-error boundary; cancellation
+# inherits BaseException and therefore remains outside the catch.
 _BRIEF_GENE_MOUNT_CAUGHT: tuple[type[BaseException], ...] = (Exception,)
 
 
-_DEGRADED_BANNER = (
-    "> ⚠️ **Gene profile unavailable** — the gene-overview step did "
-    "not complete\n> for this run, so the introduction and gene-profile "
-    "section are omitted.\n> The bioinformatic analysis below proceeded "
-    "without them."
-)
-
-
-def _degraded_preamble_banner(gene_id: str) -> str:
-    """Return a titled preamble carrying a visible degradation banner.
-
-    Used when the brief_gene mount catches a fault: the report still
-    gets an H1 title plus a blockquote that flags the missing profile,
-    so a human reading the persisted markdown sees the degradation
-    rather than a headless document.
-    """
-    return f"# Deep Genome Analysis of {gene_id}\n\n{_DEGRADED_BANNER}"
-
-
-def _degraded_mount_delta(gene_id: str, exc: BaseException) -> dict[str, Any]:
-    """Return the deep_genome state delta for a failed brief_gene mount.
-
-    Carries a ``FailureRecord`` on the ``failures`` channel (machine
-    signal), a banner ``preamble`` (human signal), an empty but
-    well-formed annotation / literature delta, and the experiment
-    barrier increment so the workflow advances past the part1 barrier
-    instead of wedging. ``traceback_digest`` is ``None``: a single mount
-    record needs no cross-record correlation, and ``logger.exception``
-    already records the full traceback. The message is redacted at
-    creation (``redact_failure_message``) so no secret rides it into the
-    ``raw.phytomni_state`` debug envelope.
-    """
+def _project_brief_gene_output(
+    brief_output: dict[str, Any], gene_id: str
+) -> dict[str, Any]:
+    """Project one validated BriefGene output into DeepGenome state."""
+    gene_string = str(brief_output.get("gene_id", "") or gene_id)
     return {
-        "failures": [
-            FailureRecord(
-                task_label="brief_gene_preamble",
-                message=redact_failure_message(str(exc)),
-                kind="execute",
-                traceback_digest=None,
-            )
-        ],
         "gene_annotation": {
-            "gene_string": gene_id,
-            "description": "",
-            "go": "",
-            "interpro": "",
-            "mapman": "",
-            "gene_structure": "",
+            "gene_string": gene_string,
+            "description": str(brief_output.get("description_string", "")),
+            "go": str(brief_output.get("go_string", "")),
+            "interpro": str(brief_output.get("interpro_string", "")),
+            "mapman": str(brief_output.get("kegg_string", "")),
+            "gene_structure": str(
+                brief_output.get("gene_structure_string", "")
+            ),
         },
-        "knowledge_context": {"literature": []},
-        "preamble": _degraded_preamble_banner(gene_id),
+        "knowledge_context": {
+            "literature": list(brief_output.get("retrieved_docs", []) or [])
+        },
+        "preamble": _deep_genome_preamble(brief_output, gene_id),
         "experiment_completed_branches": 1,
+        "literature_degraded": brief_output.get("literature_degraded", []),
     }
 
 
@@ -153,12 +122,9 @@ def make_brief_gene_mount_node(
     block — and writes ``experiment_completed_branches: 1`` so the
     experiment_node 2-source barrier still fires.
 
-    On brief_gene failure, the closure logs the exception and returns a
-    degraded delta (a ``FailureRecord`` on the ``failures`` channel, a
-    visible banner ``preamble``, and an empty annotation / literature
-    delta) plus the barrier increment, so the deep_genome workflow
-    continues past the part1 barrier rather than wedging on a transient
-    brief_gene fault while still flagging the missing gene profile.
+    On brief_gene failure, the closure logs only the sanitized exception
+    class and raises ``RequiredBriefGeneError``. The graph therefore stops
+    before task preparation or any remote analysis submission.
 
     Args:
         brief_gene_app: Compiled BriefGeneAgent subgraph for this
@@ -176,50 +142,17 @@ def make_brief_gene_mount_node(
             "is_follow_up": False,
         }
         try:
-            brief_output: dict[str, Any] = await brief_gene_app.ainvoke(
-                brief_input
-            )
+            brief_output = await brief_gene_app.ainvoke(brief_input)
+            if not isinstance(brief_output, dict):
+                raise TypeError("BriefGene output is not an object")
+            return _project_brief_gene_output(brief_output, gene_id)
         except _BRIEF_GENE_MOUNT_CAUGHT as exc:
-            logger.exception(
-                "brief_gene mount failed for gene_id=%s; emitting a "
-                "degraded preamble + FailureRecord so the part1 barrier "
-                "advances and the report flags the missing gene profile",
+            logger.error(
+                "brief_gene mount failed for gene_id=%s; error_type=%s",
                 gene_id,
+                type(exc).__name__,
             )
-            return _degraded_mount_delta(gene_id, exc)
-
-        gene_string = str(brief_output.get("gene_id", "") or gene_id)
-        return {
-            "gene_annotation": {
-                "gene_string": gene_string,
-                "description": str(brief_output.get("description_string", "")),
-                "go": str(brief_output.get("go_string", "")),
-                "interpro": str(brief_output.get("interpro_string", "")),
-                "mapman": str(brief_output.get("kegg_string", "")),
-                "gene_structure": str(
-                    brief_output.get("gene_structure_string", "")
-                ),
-            },
-            "knowledge_context": {
-                "literature": list(
-                    brief_output.get("retrieved_docs", []) or []
-                ),
-            },
-            # brief_gene owns the entire preamble: its rendered answer
-            # is the report's pre-analysis block verbatim (only the H1
-            # title is swapped). deep_genome appends its
-            # ``## Bioinformatic Analysis`` body from synthesize_node
-            # onward, so the section / introduction / homology fields
-            # brief_gene uses internally are no longer projected.
-            "preamble": _deep_genome_preamble(brief_output, gene_id),
-            # Preamble convergence — the brief_gene mount substitutes for
-            # the legacy 4-branch preamble + part1_node aggregator
-            # entirely, so we satisfy the experiment_node barrier
-            # contribution that part1_node used to write (the analyst
-            # synthesize_node contributes the other +1).
-            "experiment_completed_branches": 1,
-            "literature_degraded": brief_output.get("literature_degraded", []),
-        }
+            raise RequiredBriefGeneError("brief gene profile failed") from None
 
     return _brief_gene_mount
 

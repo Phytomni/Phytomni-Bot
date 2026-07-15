@@ -7,13 +7,13 @@
     },
     {
       "conditional": true,
-      "source": "__start__",
-      "target": "prepare_tasks_node"
-    },
-    {
-      "conditional": false,
       "source": "brief_gene_node",
       "target": "experiment_node"
+    },
+    {
+      "conditional": true,
+      "source": "brief_gene_node",
+      "target": "prepare_tasks_node"
     },
     {
       "conditional": true,
@@ -29,6 +29,11 @@
       "conditional": true,
       "source": "evolution_node",
       "target": "__end__"
+    },
+    {
+      "conditional": true,
+      "source": "experiment_node",
+      "target": "discussion_node"
     },
     {
       "conditional": true,

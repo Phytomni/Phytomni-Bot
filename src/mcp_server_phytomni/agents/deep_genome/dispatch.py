@@ -195,25 +195,18 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
     """Routing, dispatch, and analysis-task nodes for DeepGenome."""
 
     def _route_start(self: Any, state: DeepGenomeState):
-        """Determine initial nodes to execute based on config_params.
+        """Return BriefGene as the only initial node and launch barrier."""
+        del state
+        return ["brief_gene_node"]
 
-        This routing function decides which initial nodes to wake up based on
-        the use_analyst_agent and use_data_agent configuration flags.
-
-        Args:
-            state: Current workflow state containing config_params.
-
-        Returns:
-            List of node names to execute. When both flags are True, run
-            brief_gene_node, data_node, and prepare_tasks_node.
-        """
-        # M11: brief_gene mount replaces data_node and its legacy fan-out.
+    def _route_after_brief_gene(self: Any, state: DeepGenomeState):
+        """Gate analyst preparation on successful BriefGene completion."""
         use_analyst = state.get("config_params", {}).get(
             "use_analyst_agent", True
         )
         if use_analyst:
-            return ["brief_gene_node", "prepare_tasks_node"]
-        return ["brief_gene_node"]
+            return ["prepare_tasks_node", "experiment_node"]
+        return "experiment_node"
 
     def _route_synthesize_barrier(self: Any, state: DeepGenomeState):
         """Route back to synthesize_node while waiting for analysis tasks.
@@ -239,11 +232,15 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
 
         Returns:
             "experiment_node" to re-enter the barrier check,
-            or "protocol_node" when experiment report is ready.
+            or "protocol_node" / "discussion_node" when the report is ready.
         """
         if state.get("experiment_waiting"):
             return "experiment_node"
         if state.get("report_triggered"):
+            if not state.get("config_params", {}).get(
+                "use_analyst_agent", True
+            ):
+                return "discussion_node"
             return "protocol_node"
         return END
 

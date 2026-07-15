@@ -1,22 +1,24 @@
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
-"""deep_genome mount-fault failure strings are redacted at creation.
+"""deep_genome mount-fault failure strings are safe at creation.
 
-A subgraph fault feeds ``str(exc)`` into the FailureRecord ``message``
-and the failed ``raw_analyst_data`` entry, both of which can ride the
-``raw.phytomni_state`` debug envelope when ``PHYTOMNI_DEBUG`` is on.
-Each deep_genome mount redacts the exception text at creation so no URL
-/ bearer token / credential fragment reaches that envelope; the
-unredacted stack stays only in the ``logger.exception`` log line.
+Optional analysis mounts redact exception text before writing FailureRecords.
+The mandatory BriefGene mount instead aborts with a fixed public error and
+logs only the exception class, so no URL, bearer token, or credential
+fragment reaches graph state or the public error.
 """
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
+from langgraph.graph.state import CompiledStateGraph
 
 from mcp_server_phytomni.agents.deep_genome.brief_gene_mount import (
-    _degraded_mount_delta,
+    RequiredBriefGeneError,
+    make_brief_gene_mount_node,
 )
 from mcp_server_phytomni.agents.deep_genome.mount_common import (
     degraded_analysis_delta,
@@ -60,7 +62,24 @@ def test_mount_delta_redacts_message_and_raw_error(
     _assert_scrubbed(delta["raw_analyst_data"][raw_key]["error"])
 
 
-def test_brief_gene_mount_delta_redacts_message() -> None:
-    """The brief_gene mount scrubs its FailureRecord message."""
-    delta = _degraded_mount_delta("g1", _SECRET_EXC)
-    _assert_scrubbed(delta["failures"][0]["message"])
+async def test_brief_gene_mount_uses_fixed_public_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The required BriefGene mount never exposes upstream exception text."""
+
+    async def _raising_ainvoke(_input: Any) -> Any:
+        raise _SECRET_EXC
+
+    class _BrokenApp:
+        ainvoke = staticmethod(_raising_ainvoke)
+
+    mount = make_brief_gene_mount_node(cast(CompiledStateGraph, _BrokenApp()))
+
+    with pytest.raises(
+        RequiredBriefGeneError, match="^brief gene profile failed$"
+    ):
+        await mount({"gene_id": "g1"})
+
+    assert "deadbeef" not in caplog.text
+    assert "internal.host" not in caplog.text
+    assert "abc.def123" not in caplog.text

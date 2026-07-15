@@ -902,9 +902,9 @@ def _first_final_report(live: list[dict[str, Any]]) -> str | None:
 def _any_degraded(live: list[dict[str, Any]]) -> bool:
     """Return True when any reconciled child task is degraded.
 
-    DeepGenome flags a degraded report (brief_gene mount fault) on its
-    reconciled row; rolling the flag up to the run aggregate lets a
-    client polling /v1/runs/{id} learn a child degraded without walking
+    DeepGenome flags optional analysis or literature degradation on its
+    reconciled row; rolling the flag up to the run aggregate lets a client
+    polling /v1/runs/{id} learn a child degraded without walking
     ``task_results`` (which still carries the per-task ``degraded_reason``).
     """
     return any(bool(row.get("degraded")) for row in live)

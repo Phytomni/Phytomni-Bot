@@ -432,8 +432,16 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
 
         Returns:
             Dict with experiment_report, part12_combined, and
-            report_triggered flag, or empty dict if blocked.
+            report_triggered flag, or empty dict if blocked. The
+            analyst-disabled compatibility layout bypasses the two-branch
+            wait and routes the assembled profile directly to discussion.
         """
+        if not state.get("config_params", {}).get("use_analyst_agent", True):
+            return {
+                "part12_combined": self._preamble_and_analysis(state),
+                "report_triggered": True,
+            }
+
         # Barrier 3: Ultimate convergence - wait for part1 and synthesize
         if state.get("experiment_completed_branches", 0) < 2:
             logger.info(

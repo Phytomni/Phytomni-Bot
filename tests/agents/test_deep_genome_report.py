@@ -58,6 +58,10 @@ class _ReportProbe(DeepGenomeReportMixin):
         """Public proxy for ``_summary_source_content``."""
         return self._summary_source_content(state)
 
+    async def run_experiment(self, state: DeepGenomeState) -> dict[str, Any]:
+        """Public proxy for the experiment barrier node."""
+        return await self._run_report_experiment(state)
+
 
 def _state(**overrides: Any) -> DeepGenomeState:
     """Build a DeepGenomeState-shaped mapping with overridable keys."""
@@ -181,6 +185,24 @@ def test_summary_source_content_defaults_to_analyst_layout_when_unset() -> (
 
     assert "## Recommended experiments" in result
     assert "## Discussion" in result
+
+
+async def test_experiment_barrier_skips_analyst_work_when_disabled() -> None:
+    """The analyst-off layout bypasses the two-branch experiment barrier."""
+    state = _state(
+        config_params={"use_analyst_agent": False},
+        experiment_completed_branches=1,
+        analysis_tasks=[],
+    )
+
+    result = await _ReportProbe().run_experiment(state)
+
+    assert result["part12_combined"] == (
+        "# Deep Genome Analysis of Os01g0177400\n\n"
+        "## Gene Profiles\n\nprofile-body\n\n"
+        "## Bioinformatic Analysis and Molecular Design\n\nanalysis-body"
+    )
+    assert result["report_triggered"] is True
 
 
 class _FollowUpProbe(DeepGenomeReportMixin):
@@ -356,10 +378,10 @@ def test_run_follow_up_node_persists_degraded_reason(
 ) -> None:
     """A failures channel persists a redacted degraded reason on the row.
 
-    When the brief_gene mount degraded earlier in the run, ``failures``
-    carries a record; the final report node must redact its message and
-    write it to the umbrella task row so the poll surface can flag
-    ``degraded``. A backend URL in the message is scrubbed before persist.
+    When an optional analysis branch degrades, ``failures`` carries a
+    record; the final report node must redact its message and write it to
+    the umbrella task row so the poll surface can flag ``degraded``. A
+    backend URL in the message is scrubbed before persist.
     """
     db_path = str(tmp_path / "tasks.db")
     monkeypatch.setattr(
@@ -379,7 +401,7 @@ def test_run_follow_up_node_persists_degraded_reason(
         follow_up_questions=[],
         failures=[
             {
-                "task_label": "brief_gene_preamble",
+                "task_label": "evolution_analysis",
                 "message": "boom at https://bi.internal:9000/q",
                 "kind": "execute",
                 "traceback_digest": None,

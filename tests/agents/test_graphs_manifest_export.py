@@ -380,3 +380,23 @@ def test_export_real_deep_genome_subgraph_node_set() -> None:
         "follow_up_node",
     }
     assert documented <= names
+
+
+def test_export_real_deep_genome_preserves_brief_gene_launch_barrier() -> None:
+    """The exported DeepGenome edges keep the BriefGene launch barrier.
+
+    The committed graph manifest is a structural snapshot used by the
+    declarative-loader and visualization paths. Pin the critical edges so a
+    future graph edit cannot leave the snapshot claiming that remote task
+    preparation starts before the required profile succeeds.
+    """
+    manifest = export_manifest(_build_deep_genome_app())
+    edges = {
+        (edge.source, edge.target, edge.conditional) for edge in manifest.edges
+    }
+
+    assert ("__start__", "brief_gene_node", True) in edges
+    assert ("brief_gene_node", "prepare_tasks_node", True) in edges
+    assert ("brief_gene_node", "experiment_node", True) in edges
+    assert ("__start__", "prepare_tasks_node", True) not in edges
+    assert ("experiment_node", "discussion_node", True) in edges

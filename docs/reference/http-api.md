@@ -1156,11 +1156,9 @@ the first child report to `result.final_report` at the payload top level
 Analyst-class terminal reports follow the same `result.final_report` contract
 described below; synchronous agent results leave it `null`.
 
-A `deep_genome` report whose mounted sub-analysis degraded mid-run (its
-brief_gene gene-profile, evolution, or digital-design step) still
-settles as `succeeded` but flags the gap: a brief_gene gene-profile
-failure adds a visible "Gene profile unavailable" banner to the report
-markdown, and any degraded branch adds machine-readable keys —
+A `deep_genome` report whose optional mounted sub-analysis degraded mid-run
+(its evolution or digital-design step) can still settle as `succeeded` while
+flagging the gap through machine-readable keys —
 `GetTaskStatus` exposes
 `formatted.metadata.degraded` (bool) and
 `formatted.metadata.degraded_reason` (a redacted string, or `null`),
@@ -1168,6 +1166,12 @@ while `GET /v1/runs/{run_id}` exposes `result.degraded` (true when any
 child degraded; the per-task `degraded_reason` rides
 `result.task_results[]`). Healthy and non-`deep_genome` rows read
 `degraded: false` / `degraded_reason: null`.
+
+BriefGene is required before any remote analysis launch. A BriefGene failure
+therefore fails the DeepGenome workflow with the fixed public error
+`brief gene profile failed`, produces no intermediate or final report, and
+submits zero remote analysis jobs; it is not represented as a degraded
+success or a visible fallback banner.
 
 For terminal remote analyst-class runs (`analyst`, `research`, `design`,
 and `network`), a successful response exposes both a long-form report
