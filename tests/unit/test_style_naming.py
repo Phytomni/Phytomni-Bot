@@ -78,6 +78,20 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
     "src/mcp_server_phytomni/agents/deep_genome/coordinator.py": {
         "too-many-arguments",
     },
+    # DeepGenome's coordinator mixin keeps submission, polling, and
+    # owner-scoped transition projection in one boundary; see the catalog.
+    "src/mcp_server_phytomni/agents/deep_genome/dispatch.py": {
+        "too-many-lines",
+        "too-many-arguments",
+        "too-many-positional-arguments",
+        "too-many-locals",
+    },
+    # Lifecycle tests intentionally exercise protected coordinator seams and
+    # Pydantic-style uppercase config fields on lightweight fakes.
+    "tests/agents/test_deep_genome_lifecycle.py": {
+        "protected-access",
+        "too-many-locals",
+    },
     # conftest.py installs deployment env vars BEFORE importing any
     # project module — several agents construct ``ServerConfig()`` at
     # import time and the per-deployment endpoints are required-via-

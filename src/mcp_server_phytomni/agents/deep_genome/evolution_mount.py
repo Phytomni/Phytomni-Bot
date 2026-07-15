@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from langgraph.graph.state import CompiledStateGraph
 
+from ...runtime.deep_genome_store import DeepGenomeTrackingError
 from .coordinator import RemoteSubmission, normalize_submission
 from .mount_common import degraded_analysis_delta
 
@@ -42,11 +43,13 @@ FinalizeFn = Callable[
     [RemoteSubmission, "DeepGenomeState"],
     Awaitable[dict[str, Any]],
 ]
+FailureFn = Callable[["DeepGenomeState", tuple[str, ...]], Awaitable[None]]
 
 
 def make_evolution_mount_node(
     evolution_app: CompiledStateGraph,
     finalize_fn: FinalizeFn,
+    failure_fn: FailureFn | None = None,
 ) -> Any:
     """Return a node body that mounts the evolution graph as a subgraph.
 
@@ -95,7 +98,11 @@ def make_evolution_mount_node(
                 raise ValueError("evolution submission is not an object")
             submission = normalize_submission(task)
             return await finalize_fn(submission, state)
+        except DeepGenomeTrackingError:
+            raise
         except _EVOLUTION_MOUNT_CAUGHT as exc:
+            if failure_fn is not None:
+                await failure_fn(state, ("evolution_analysis",))
             logger.exception(
                 "evolution mount failed for gene_id=%s; emitting a "
                 "FailureRecord + failed branch so the analysis barrier "

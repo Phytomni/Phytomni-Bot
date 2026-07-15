@@ -10,10 +10,16 @@ LangGraph branches, prepares Analyst task prompts, dispatches deep analyses,
 downloads OBS results, and builds analyst sub-summaries.
 """
 
+# The dispatch mixin is the single DeepGenome coordinator boundary; keeping
+# routing, submission, polling, and result projection together preserves one
+# owner-scoped transition seam. See the lint-exemption catalog.
+# pylint: disable=too-many-lines
+
 from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
 from collections import deque
 from collections.abc import Callable
 from dataclasses import asdict
@@ -26,13 +32,19 @@ from langgraph.types import Send
 from ...common.prompts import get_prompt
 from ...config.relay_mode import relay_mode_enabled
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
-from ...runtime.langgraph_runner import capture_workflow_boundary
+from ...runtime.deep_genome_store import (
+    DeepGenomeReservation,
+    DeepGenomeStore,
+    DeepGenomeTrackingError,
+    DeepGenomeTransitionError,
+)
+from ...runtime.task_manager import resolve_tasks_db_path
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.obs_storage import normalize_obs_object_key, obsfs_path_for
 from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
 from ..analyst.storage import download_obs_out, download_obs_out_via_relay
-from ..analyst.task_ops import task_status
+from ..analyst.task_ops import task_delete, task_status
 from ..design.agent import (
     promoter_design_for_gene,
     protein_structure_for_gene,
@@ -59,6 +71,14 @@ else:
     DeepGenomeState = dict[str, Any]
 
 logger = logging.getLogger(__name__)
+
+_TRACKING_ERRORS: tuple[type[Exception], ...] = (
+    DeepGenomeTrackingError,
+    DeepGenomeTransitionError,
+    sqlite3.Error,
+    OSError,
+)
+_BEST_EFFORT_ERRORS: tuple[type[Exception], ...] = (Exception,)
 
 ANALYSIS_GOAL_TEMPLATE_MAP = {
     "haplotypes_analysis": "user/haplotypes_analysis",
@@ -196,6 +216,173 @@ class AnalysisDispatchContext(NamedTuple):
 class DeepGenomeDispatchMixin(WorkflowMixinBase):
     """Routing, dispatch, and analysis-task nodes for DeepGenome."""
 
+    def _lifecycle_store(
+        self: Any, state: DeepGenomeState | None
+    ) -> tuple[DeepGenomeStore | None, str | None]:
+        """Resolve durable DeepGenome tracking for one graph state."""
+        task_id = state.get("task_id") if state is not None else None
+        if not isinstance(task_id, str) or not task_id.strip():
+            return None, None
+        return DeepGenomeStore(resolve_tasks_db_path()), task_id
+
+    def _analysis_request_kwargs(self: Any) -> dict[str, Any]:
+        """Build bounded platform kwargs for status and cancellation calls."""
+        values: dict[str, Any] = {}
+        for config_name, argument_name in (
+            ("ANALYSIS_URL", "analysis_url"),
+            ("ANALYSIS_REGION", "region"),
+            ("RETRIABLE_CODES", "retriable_codes"),
+            ("MAX_RETRIES", "max_retries"),
+        ):
+            value = getattr(self.deep_genome_config, config_name, None)
+            if value is not None:
+                values[argument_name] = value
+        return values
+
+    async def _cancel_submission(
+        self: Any, submission: RemoteSubmission
+    ) -> None:
+        """Best-effort terminate the caller-owned job after tracking loss.
+
+        A deduplicated ``poll_task_id`` can point at another tenant's source
+        job.  It is intentionally never cancelled from this owner-scoped
+        failure path; only the accepted caller-owned id is eligible.
+        """
+        try:
+            await task_delete(
+                submission.submitted_task_id,
+                timeout=getattr(self.deep_genome_config, "TIMEOUT", 600.0),
+                **DeepGenomeDispatchMixin._analysis_request_kwargs(self),
+            )
+        except _BEST_EFFORT_ERRORS as exc:
+            logger.warning(
+                "DeepGenome cancellation unavailable; error_type=%s",
+                type(exc).__name__,
+            )
+
+    async def _fail_tracking(
+        self: Any,
+        store: DeepGenomeStore | None,
+        umbrella_task_id: str | None,
+        submission: RemoteSubmission | None,
+        cause: Exception,
+    ) -> None:
+        """Cancel accepted work and fail the umbrella after tracking loss."""
+        if submission is not None:
+            await DeepGenomeDispatchMixin._cancel_submission(self, submission)
+        if store is not None and umbrella_task_id is not None:
+            try:
+                store.fail_umbrella(
+                    umbrella_task_id,
+                    reason="remote analysis tracking failed",
+                )
+            except _TRACKING_ERRORS as exc:
+                logger.warning(
+                    "DeepGenome tracking failure settlement unavailable; "
+                    "error_type=%s",
+                    type(exc).__name__,
+                )
+        raise DeepGenomeTrackingError(
+            "remote analysis tracking failed"
+        ) from cause
+
+    async def _accept_remote_submission(
+        self: Any,
+        store: DeepGenomeStore | None,
+        umbrella_task_id: str | None,
+        work_item_key: str,
+        submission: RemoteSubmission,
+    ) -> None:
+        """Persist an accepted remote identity before polling starts."""
+        if store is None or umbrella_task_id is None:
+            return
+        try:
+            store.accept_remote_submission(
+                umbrella_task_id,
+                work_item_key=work_item_key,
+                submission=submission,
+            )
+        except _TRACKING_ERRORS as exc:
+            await DeepGenomeDispatchMixin._fail_tracking(
+                self,
+                store,
+                umbrella_task_id,
+                submission,
+                exc,
+            )
+
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
+    async def _persist_work_item_transition(
+        self: Any,
+        store: DeepGenomeStore | None,
+        umbrella_task_id: str | None,
+        work_item_key: str,
+        submission: RemoteSubmission,
+        status: str,
+        summary: str | None,
+        failure_reason: str | None,
+    ) -> WorkItemOutcome:
+        """Persist one poll observation, aborting on local tracking loss."""
+        if store is None or umbrella_task_id is None:
+            return WorkItemOutcome(status, summary, failure_reason)
+        try:
+            store.apply_work_item_transition(
+                umbrella_task_id,
+                work_item_key=work_item_key,
+                status=status,
+                summary_markdown=summary,
+                failure_reason=failure_reason,
+            )
+        except _TRACKING_ERRORS as exc:
+            await DeepGenomeDispatchMixin._fail_tracking(
+                self,
+                store,
+                umbrella_task_id,
+                submission,
+                exc,
+            )
+        return WorkItemOutcome(status, summary, failure_reason)
+
+    # pylint: enable=too-many-arguments,too-many-positional-arguments
+
+    async def _record_work_item_failure(
+        self: Any,
+        state: DeepGenomeState,
+        work_item_key: str,
+    ) -> None:
+        """Persist an optional item that failed before remote acceptance."""
+        store, umbrella_task_id = DeepGenomeDispatchMixin._lifecycle_store(
+            self, state
+        )
+        if store is None or umbrella_task_id is None:
+            return
+        try:
+            store.apply_work_item_transition(
+                umbrella_task_id,
+                work_item_key=work_item_key,
+                status="failed",
+                failure_reason="analysis task failed",
+            )
+        except _TRACKING_ERRORS as exc:
+            await DeepGenomeDispatchMixin._fail_tracking(
+                self,
+                store,
+                umbrella_task_id,
+                None,
+                exc,
+            )
+
+    async def _record_mount_failure(
+        self: Any,
+        state: DeepGenomeState,
+        work_item_keys: tuple[str, ...],
+    ) -> None:
+        """Persist every concrete item when a mounted producer fails."""
+        for work_item_key in work_item_keys:
+            await DeepGenomeDispatchMixin._record_work_item_failure(
+                self, state, work_item_key
+            )
+
     def _route_start(self: Any, state: DeepGenomeState):
         """Return BriefGene as the only initial node and launch barrier."""
         del state
@@ -273,6 +460,12 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 "task_submit_sleep": i * sleep_time,
                 **task,
             }
+            # ``Send`` receives a fresh partial state rather than inheriting
+            # the parent state. Carry the reserved owner identity into every
+            # branch so submission and poll transitions stay scoped to the
+            # same DeepGenome umbrella.
+            for identity_key in ("task_id", "run_id", "owner", "output_dir"):
+                send_payload[identity_key] = state.get(identity_key)
             work_item = next(
                 (
                     item
@@ -357,6 +550,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 analysis_type=analysis_type,
                 species_code=species_code,
                 gene_id=gene_id,
+                state=state,
             )
 
             sub_summary = self._generate_sub_summary(
@@ -392,7 +586,12 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 "analysis_completed_branches": 1,
             }
 
-        return await capture_workflow_boundary(run_analysis, failure_state)
+        try:
+            return await run_analysis()
+        except DeepGenomeTrackingError:
+            raise
+        except _BEST_EFFORT_ERRORS as exc:
+            return failure_state(exc)
 
     async def finalize_evolution_result(
         self: Any,
@@ -418,10 +617,23 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 gene_id=gene_id,
                 output_dir=task.output_dir,
             )
+            store, umbrella_task_id = DeepGenomeDispatchMixin._lifecycle_store(
+                self, state
+            )
+            await DeepGenomeDispatchMixin._accept_remote_submission(
+                self,
+                store,
+                umbrella_task_id,
+                "evolution_analysis",
+                task,
+            )
             outcome, results_dir = await self._poll_remote_submission(
                 task,
                 context,
                 run_identity,
+                store=store,
+                umbrella_task_id=umbrella_task_id,
+                work_item_key="evolution_analysis",
             )
             summary_data = None
             if outcome.status == "succeeded" and results_dir is not None:
@@ -474,6 +686,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             "analysis_completed_branches": 1,
         }
 
+    # pylint: disable=too-many-locals
     async def _poll_design_work_item(
         self: Any,
         work_item_key: str,
@@ -482,7 +695,29 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Poll one independent Design item and return raw/report deltas."""
         task_key = f"task_{state.get('task_index')}:{work_item_key}"
+        persist_transition = (
+            DeepGenomeDispatchMixin._persist_work_item_transition
+        )
+        store, umbrella_task_id = DeepGenomeDispatchMixin._lifecycle_store(
+            self, state
+        )
         if submission is None:
+            if store is not None and umbrella_task_id is not None:
+                try:
+                    store.apply_work_item_transition(
+                        umbrella_task_id,
+                        work_item_key=work_item_key,
+                        status="failed",
+                        failure_reason="analysis task failed",
+                    )
+                except _TRACKING_ERRORS as exc:
+                    await DeepGenomeDispatchMixin._fail_tracking(
+                        self,
+                        store,
+                        umbrella_task_id,
+                        None,
+                        exc,
+                    )
             return (
                 {
                     task_key: {
@@ -510,6 +745,13 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             user_id=self.deep_genome_config.USER_ID,
             scope=work_item_key,
         )
+        await DeepGenomeDispatchMixin._accept_remote_submission(
+            self,
+            store,
+            umbrella_task_id,
+            work_item_key,
+            submission,
+        )
         outcome, results_dir = await self._poll_remote_submission(
             submission,
             context,
@@ -517,6 +759,9 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             summary_builder=lambda path: build_design_work_item_summary(
                 work_item_key, path
             ),
+            store=store,
+            umbrella_task_id=umbrella_task_id,
+            work_item_key=work_item_key,
         )
         summary_data: dict[str, Any] = {}
         if outcome.status == "succeeded" and results_dir is not None:
@@ -537,7 +782,12 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                     display_order_override=display_order,
                 )
             except _DESIGN_SUMMARY_ERRORS:
-                outcome = WorkItemOutcome(
+                outcome = await persist_transition(
+                    self,
+                    store,
+                    umbrella_task_id,
+                    work_item_key,
+                    submission,
                     "failed",
                     None,
                     "analysis summary generation failed",
@@ -550,6 +800,8 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             summary_data=summary_data or None,
         )
         return delta["raw_analyst_data"], summary_data
+
+    # pylint: enable=too-many-locals
 
     async def _finalize_design_submissions(
         self: Any,
@@ -691,6 +943,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             return await relay_bi_query(sql, message="BI query failed")
         return await gauss_query(sql)
 
+    # pylint: disable=too-many-locals
     async def _prepare_analysis_tasks(self: Any, state: DeepGenomeState):
         """Initialize analysis tasks for parallel execution.
 
@@ -727,6 +980,29 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             case _:
                 gene_idv2 = gene_id
         plan = build_work_item_plan(species_code, gene_id, gene_idv2)
+        task_id = state.get("task_id")
+        run_id = state.get("run_id")
+        if (
+            isinstance(task_id, str)
+            and isinstance(run_id, str)
+            and task_id.strip()
+            and run_id.strip()
+        ):
+            store = DeepGenomeStore(resolve_tasks_db_path())
+            store.seed_plan(
+                DeepGenomeReservation(
+                    run_id=run_id,
+                    umbrella_task_id=task_id,
+                    owner=str(
+                        state.get("owner")
+                        or getattr(
+                            self.deep_genome_config, "USER_ID", "anonymous"
+                        )
+                    ),
+                    output_dir=str(state.get("output_dir") or ""),
+                ),
+                plan,
+            )
         concrete_items = [asdict(item) for item in plan]
         logical_tasks = []
         for section_key in section_keys(plan):
@@ -757,6 +1033,10 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             "work_items": concrete_items,
         }
 
+    # pylint: enable=too-many-locals
+
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
+    # pylint: disable=too-many-locals
     async def _poll_remote_submission(
         self: Any,
         submission: RemoteSubmission,
@@ -764,25 +1044,23 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         run_identity: RunIdentity,
         *,
         summary_builder: Callable[[str], str] | None = None,
+        store: DeepGenomeStore | None = None,
+        umbrella_task_id: str | None = None,
+        work_item_key: str | None = None,
     ) -> tuple[WorkItemOutcome, str | None]:
         """Poll and resolve one accepted submission through the coordinator."""
         resolved_results_dir: str | None = None
+        tracked_work_item = work_item_key or context.analysis_type
 
         async def read_remote_status(
             poll_task_id: str,
             request_timeout: float,
         ) -> Any:
             """Read one remote status through the shared task seam."""
-            status_kwargs: dict[str, Any] = {"timeout": request_timeout}
-            for config_name, argument_name in (
-                ("ANALYSIS_URL", "analysis_url"),
-                ("ANALYSIS_REGION", "region"),
-                ("RETRIABLE_CODES", "retriable_codes"),
-                ("MAX_RETRIES", "max_retries"),
-            ):
-                value = getattr(self.deep_genome_config, config_name, None)
-                if value is not None:
-                    status_kwargs[argument_name] = value
+            status_kwargs: dict[str, Any] = {
+                "timeout": request_timeout,
+                **DeepGenomeDispatchMixin._analysis_request_kwargs(self),
+            }
             return await task_status(poll_task_id, **status_kwargs)
 
         async def resolve_remote_result(
@@ -818,8 +1096,17 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             summary: str | None,
             failure_reason: str | None,
         ) -> WorkItemOutcome:
-            """Return an in-memory transition until storage is added."""
-            return WorkItemOutcome(status, summary, failure_reason)
+            """Persist one local transition before continuing the poll."""
+            return await DeepGenomeDispatchMixin._persist_work_item_transition(
+                self,
+                store,
+                umbrella_task_id,
+                tracked_work_item,
+                submission,
+                status,
+                summary,
+                failure_reason,
+            )
 
         request_timeout = float(
             getattr(self.deep_genome_config, "TIMEOUT", 600.0)
@@ -841,12 +1128,17 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         )
         return outcome, resolved_results_dir
 
+    # pylint: enable=too-many-arguments,too-many-positional-arguments
+    # pylint: enable=too-many-locals
+
+    # pylint: disable=too-many-locals
     async def _dispatch_and_wait_analysis(
         self: Any,
         analysis_type: str,
         species_code: str,
         gene_id: str,
         output_dir: str | None = None,
+        state: DeepGenomeState | None = None,
     ) -> dict:
         """Submit an analysis task, poll it, and download its result."""
         run_identity = RunIdentity.create(
@@ -859,14 +1151,44 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             gene_id=gene_id,
             output_dir=output_dir or "",
         )
+        store, umbrella_task_id = DeepGenomeDispatchMixin._lifecycle_store(
+            self, state
+        )
+        work_item_value = (
+            state.get("work_item_key") if state is not None else None
+        )
+        work_item_key = (
+            work_item_value
+            if isinstance(work_item_value, str)
+            else analysis_type
+        )
         logger.info("Submitting %s task via AnalystAgent", analysis_type)
 
-        result = await self._submit_analysis_task(context)
+        try:
+            result = await self._submit_analysis_task(context)
+        except DeepGenomeTrackingError:
+            raise
+        except _BEST_EFFORT_ERRORS:
+            if state is not None:
+                await DeepGenomeDispatchMixin._record_work_item_failure(
+                    self, state, work_item_key
+                )
+            raise
         if isinstance(result, RemoteSubmission):
+            await DeepGenomeDispatchMixin._accept_remote_submission(
+                self,
+                store,
+                umbrella_task_id,
+                work_item_key,
+                result,
+            )
             outcome, resolved_results_dir = await self._poll_remote_submission(
                 result,
                 context,
                 run_identity,
+                store=store,
+                umbrella_task_id=umbrella_task_id,
+                work_item_key=work_item_key,
             )
             if outcome.status != "succeeded":
                 raise RuntimeError(
@@ -896,6 +1218,8 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             "results_dir": results_dir,
             "status": "completed",
         }
+
+    # pylint: enable=too-many-locals
 
     def _analysis_prompt_parts(
         self: Any,

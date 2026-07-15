@@ -35,6 +35,8 @@ from ...runtime.agent_registry import (
 from ...runtime.deep_genome_store import (
     DeepGenomeReservation,
     DeepGenomeStore,
+    DeepGenomeTrackingError,
+    DeepGenomeTransitionError,
 )
 from ...runtime.langgraph_runner import (
     ainvoke_graph,
@@ -63,7 +65,10 @@ from ..evolution.builder import build_evolution_graph
 from ..knowledge.agent import KnowledgeAgent
 from ..shared.knowledge_subgraph import build_knowledge_app
 from ..shared.parallel_dispatch import DegradedRecord, FailureRecord
-from .brief_gene_mount import DeepGenomeBriefGeneMountMixin
+from .brief_gene_mount import (
+    DeepGenomeBriefGeneMountMixin,
+    RequiredBriefGeneError,
+)
 from .design_mount import make_design_mount_node
 from .dispatch import (
     GENERIC_ANALYSIS_NODE_TYPES,
@@ -80,6 +85,39 @@ from .profile import (
 from .report import DeepGenomeReportMixin
 
 logger = logging.getLogger(__name__)
+
+_FINALIZATION_FAILURE_REASONS = frozenset(
+    {
+        "brief gene profile failed",
+        "final synthesis failed",
+        "final report unavailable",
+        "final report publication failed",
+        "no usable analysis result",
+        "workflow interrupted by service restart",
+        "local coordinator failed to start",
+        "submission tracking failed",
+        "remote analysis tracking failed",
+    }
+)
+
+
+def _finalization_failure_reason(
+    exc: BaseException | None,
+    *,
+    cancelled: bool = False,
+) -> str:
+    """Map one workflow exception to fixed, local terminal wording."""
+    if cancelled:
+        return "workflow interrupted by service restart"
+    if isinstance(exc, RequiredBriefGeneError):
+        return "brief gene profile failed"
+    if isinstance(exc, (DeepGenomeTrackingError, DeepGenomeTransitionError)):
+        return "remote analysis tracking failed"
+    message = str(exc).strip() if exc is not None else ""
+    if message in _FINALIZATION_FAILURE_REASONS:
+        return message
+    return "final synthesis failed"
+
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
 __all__ = [
@@ -242,6 +280,8 @@ class DeepGenomeState(TypedDict):
     analysis_type: str
     part12_combined: str | None
     task_id: str | None
+    run_id: str | None
+    owner: str | None
     output_dir: str | None
     report_dir: str | None
     error: str | None
@@ -409,10 +449,17 @@ class DeepGenomeAgents(
         # ``part1_node`` used to write so the experiment_node 2-source
         # barrier still fires once ``synthesize_node`` adds the
         # analyst-side +1).
-        workflow.add_node(
-            "brief_gene_node",
-            self.make_brief_gene_mount_node(self._agents.brief_gene_app),
+        brief_gene_mount = self.make_brief_gene_mount_node(
+            self._agents.brief_gene_app
         )
+
+        async def tracked_brief_gene(state: DeepGenomeState) -> dict[str, Any]:
+            """Persist the required profile before optional planning."""
+            return await self._persist_brief_gene_result(
+                brief_gene_mount, state
+            )
+
+        workflow.add_node("brief_gene_node", tracked_brief_gene)
 
         workflow.add_node("prepare_tasks_node", self._prepare_analysis_tasks)
         workflow.add_node("synthesize_node", self._run_report_synthesizer)
@@ -428,6 +475,7 @@ class DeepGenomeAgents(
             make_design_mount_node(
                 self._agents.design_app,
                 self.finalize_design_result,
+                self._record_mount_failure,
             ),
         )
         workflow.add_node(
@@ -435,6 +483,7 @@ class DeepGenomeAgents(
             make_evolution_mount_node(
                 self._agents.evolution_app,
                 self.finalize_evolution_result,
+                self._record_mount_failure,
             ),
         )
 
@@ -511,6 +560,24 @@ class DeepGenomeAgents(
 
         return workflow.compile(checkpointer=self.checkpointer)
 
+    async def _persist_brief_gene_result(
+        self,
+        brief_gene_mount: Any,
+        state: DeepGenomeState,
+    ) -> dict[str, Any]:
+        """Persist a successful required profile before graph fan-out."""
+        projected = await brief_gene_mount(state)
+        task_id = state.get("task_id")
+        if isinstance(task_id, str) and task_id.strip():
+            DeepGenomeStore(
+                resolve_tasks_db_path()
+            ).apply_brief_gene_transition(
+                task_id,
+                status="succeeded",
+                summary_markdown=projected.get("preamble"),
+            )
+        return projected
+
     async def arun(
         self,
         species_code: str,
@@ -571,6 +638,8 @@ class DeepGenomeAgents(
             "follow_up_questions": [],
             "final_report": None,
             "report_triggered": False,
+            "run_id": None,
+            "owner": None,
         }
 
         mock_analyst_data = kwargs.get("mock_analyst_data")
@@ -616,6 +685,8 @@ class DeepGenomeAgents(
             owner=str(kwargs.get("user_id") or "anonymous"),
             output_dir=umbrella_output_dir,
         )
+        initial_state["run_id"] = reservation.run_id
+        initial_state["owner"] = reservation.owner
         bind_run_id(reservation.run_id)
 
         self._launch_reserved_workflow(
@@ -717,12 +788,14 @@ class DeepGenomeAgents(
         """
         if task.cancelled():
             status = "failed"
+            failure_reason = _finalization_failure_reason(None, cancelled=True)
             logger.warning(
                 "DeepGenome background workflow cancelled for %s",
                 umbrella_id,
             )
         elif (exc := task.exception()) is not None:
             status = "failed"
+            failure_reason = _finalization_failure_reason(exc)
             logger.error(
                 "DeepGenome background workflow failed for %s: %s",
                 umbrella_id,
@@ -731,20 +804,49 @@ class DeepGenomeAgents(
             )
         else:
             status = "succeeded"
+            failure_reason = ""
 
+        terminal_persisted = False
         try:
-            TaskManager(resolve_tasks_db_path()).update_task(
-                umbrella_id, status, "", output_dir
-            )
-        except (sqlite3.Error, OSError) as exc:
+            store = DeepGenomeStore(resolve_tasks_db_path())
+            snapshot = store.get_snapshot(umbrella_id)
+            if snapshot is not None and snapshot.status in {
+                "succeeded",
+                "failed",
+            }:
+                terminal_persisted = True
+            if (
+                status == "failed"
+                and not terminal_persisted
+                and snapshot is not None
+                and snapshot.status == "running"
+            ):
+                store.fail_umbrella(
+                    umbrella_id,
+                    reason=failure_reason,
+                )
+                terminal_persisted = True
+        except (sqlite3.Error, OSError, RuntimeError) as exc:
             logger.warning(
-                "DeepGenome failed to persist terminal status %s for "
-                "%s: %s",
-                status,
-                umbrella_id,
-                exc,
+                "DeepGenome failed to settle workflow error; error_type=%s",
+                type(exc).__name__,
             )
-        finally:
+
+        if not terminal_persisted:
+            try:
+                TaskManager(resolve_tasks_db_path()).update_task(
+                    umbrella_id, status, "", output_dir
+                )
+                terminal_persisted = True
+            except (sqlite3.Error, OSError) as exc:
+                logger.warning(
+                    "DeepGenome failed to persist terminal status %s for "
+                    "%s: %s",
+                    status,
+                    umbrella_id,
+                    exc,
+                )
+        if terminal_persisted:
             deregister_live_task(umbrella_id)
 
 

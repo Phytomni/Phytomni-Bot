@@ -387,6 +387,13 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
             )
             return {}
         if not outcome.may_synthesize:
+            task_id = state.get("task_id")
+            if isinstance(task_id, str) and task_id.strip():
+                self._fail_finalization(
+                    DeepGenomeStore(resolve_tasks_db_path()),
+                    task_id,
+                    "no usable analysis result",
+                )
             raise DeepGenomeWorkflowError("no usable analysis result")
         logger.info(
             "[Barrier] All concrete analysis outcomes settled; "

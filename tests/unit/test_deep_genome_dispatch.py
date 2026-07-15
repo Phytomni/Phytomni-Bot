@@ -91,10 +91,10 @@ async def test_dispatch_polls_normalized_submit_ack_before_download(
 ) -> None:
     """The coordinator polls the effective id before resolving results."""
     harness = DispatchHarness(str(tmp_path / "deep-out"))
-    harness.deep_genome_config.USER_ID = "alice"
-    harness.deep_genome_config.TIMEOUT = 4.0
-    harness.deep_genome_config.POLL_INTERVAL = 2.0
-    harness.deep_genome_config.MAX_POLL = 10.0
+    setattr(harness.deep_genome_config, "USER_ID", "alice")
+    setattr(harness.deep_genome_config, "TIMEOUT", 4.0)
+    setattr(harness.deep_genome_config, "POLL_INTERVAL", 2.0)
+    setattr(harness.deep_genome_config, "MAX_POLL", 10.0)
     submission = RemoteSubmission(
         submitted_task_id="caller-1",
         poll_task_id="remote-1",

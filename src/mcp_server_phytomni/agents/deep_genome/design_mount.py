@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from langgraph.graph.state import CompiledStateGraph
 
+from ...runtime.deep_genome_store import DeepGenomeTrackingError
 from .coordinator import RemoteSubmission, normalize_submission
 from .mount_common import degraded_analysis_delta
 
@@ -41,6 +42,7 @@ FinalizeFn = Callable[
     [dict[str, RemoteSubmission | None], "DeepGenomeState"],
     Awaitable[dict[str, Any]],
 ]
+FailureFn = Callable[["DeepGenomeState", tuple[str, ...]], Awaitable[None]]
 
 
 def _work_item_key(payload: dict[str, Any], task_ids: dict[str, Any]) -> str:
@@ -93,6 +95,7 @@ def _normalize_design_submissions(
 def make_design_mount_node(
     design_app: CompiledStateGraph,
     finalize_fn: FinalizeFn,
+    failure_fn: FailureFn | None = None,
 ) -> Any:
     """Return a node body that mounts the digital-design graph.
 
@@ -136,7 +139,14 @@ def make_design_mount_node(
             )
             submissions = _normalize_design_submissions(design_output)
             return await finalize_fn(submissions, state)
+        except DeepGenomeTrackingError:
+            raise
         except _DESIGN_MOUNT_CAUGHT as exc:
+            if failure_fn is not None:
+                await failure_fn(
+                    state,
+                    ("protein_design", "promoter_design"),
+                )
             logger.exception(
                 "design mount failed for gene_id=%s; emitting a "
                 "FailureRecord + failed branch so the analysis barrier "

@@ -211,7 +211,22 @@ def derive_degraded_reason(
 ) -> str | None:
     """Keep a sanitized reason or derive a fixed unavailable-count reason."""
     if isinstance(existing_reason, str) and existing_reason.strip():
-        return existing_reason.strip()
+        normalized_existing = existing_reason.strip()
+        tokens = normalized_existing.split()
+        generated = (
+            len(tokens) == 6
+            and tokens[0].isdigit()
+            and tokens[1:]
+            == [
+                "of",
+                "12",
+                "optional",
+                "analyses",
+                "unavailable",
+            ]
+        )
+        if not generated:
+            return normalized_existing
     normalized = _coerce_rows(rows, work_items)
     unavailable = sum(_is_unusable(row) for row in normalized.work_items)
     if unavailable == 0:

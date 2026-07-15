@@ -39,6 +39,7 @@ _FIXED_FAILURE_REASONS = {
 }
 _FINAL_FAILURE_REASONS = frozenset(
     {
+        "brief gene profile failed",
         "final synthesis failed",
         "final report unavailable",
         "final report publication failed",
@@ -711,11 +712,12 @@ class DeepGenomeTransitionMixin:
                 None,
                 True,
             )
+            degraded_reason = parent[3] or failure_reason
             task_cursor = connection.execute(
                 "UPDATE tasks SET status = 'failed', final_report = NULL, "
                 "degraded_reason = ?, updated_at = ? "
                 "WHERE task_id = ? AND run_id = ? AND status = 'running'",
-                (failure_reason, now, umbrella_task_id, parent[1]),
+                (degraded_reason, now, umbrella_task_id, parent[1]),
             )
             if task_cursor.rowcount != 1:
                 raise DeepGenomeTrackingError(

@@ -394,6 +394,29 @@ deterministic clock/sleep control in its contract.
 
 ______________________________________________________________________
 
+### `agents/deep_genome/dispatch.py` — DeepGenome coordinator boundary
+
+**Rule(s)**: C0302 too-many-lines on the dispatch mixin; R0913/R0917
+too-many-arguments on the transition and polling seams; R0914
+too-many-locals on the fan-out, polling, and submission methods.
+
+**Mechanism**: File-level `too-many-lines` and function-level argument/local
+waivers sit beside the owner-scoped submission/polling boundary. The rules and
+file path are registered in `tests/unit/test_style_naming.py`.
+
+**Why refactor is net-negative**: these methods form one coordinator-owned
+ordering contract: accepted identities are persisted before polling, every
+poll observation goes through the same transition sink, and a tracking loss
+can cancel caller-owned work before failing the umbrella. Splitting the
+methods across generic helpers would make the ordering and cancellation
+ownership harder to audit and would duplicate the transition seam.
+
+**Sunset condition**: the DeepGenome coordinator gains a dedicated typed
+submission/polling service with an independently testable transition contract;
+then the mixin can delegate without duplicating owner and cancellation rules.
+
+______________________________________________________________________
+
 ### `mcp/result_formatting.py` — dispatch-boundary formatters
 
 **Rule(s)**: C0302 too-many-lines (file-level), R0914 too-many-locals
@@ -560,6 +583,23 @@ API.
 **Sunset condition**: pylint adds a configuration knob like
 `acceptable-protected-access-paths = ["tests/**/test_*.py"]` so the
 exemption is project-wide-conditional instead of per-file.
+
+______________________________________________________________________
+
+### `tests/agents/test_deep_genome_lifecycle.py` — lifecycle fakes
+
+**Rule(s)**: W0212 protected-access and R0914 too-many-locals.
+
+**Mechanism**: File-level local disables are registered under the test path
+in `tests/unit/test_style_naming.py`.
+
+**Why refactor is net-negative**: the tests deliberately call the internal
+coordinator seams to prove ordering. Keeping the fake setup in one scenario
+makes the SQLite/event-order assertions readable; extracting every value
+would obscure the lifecycle under test.
+
+**Sunset condition**: the coordinator exposes a typed public test harness and
+the config fake no longer needs to mirror uppercase runtime settings.
 
 ______________________________________________________________________
 
