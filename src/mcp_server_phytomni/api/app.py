@@ -141,6 +141,7 @@ from ..runtime.memory import (
     memory_policy_from_config,
 )
 from ..runtime.request_context import (
+    bind_pre_recorded_task_id,
     bind_request_id,
     bind_request_user,
     bind_run_id,
@@ -2371,6 +2372,7 @@ def request_context_middleware(app: ASGIApp) -> ASGIApp:
         id_token = bind_request_id(request_id)
         user_token = bind_request_user(None)
         run_token = bind_run_id(None)
+        pre_recorded_token = bind_pre_recorded_task_id(None)
 
         async def send_with_header(message: Message) -> None:
             """Attach X-Request-Id on the response start event."""
@@ -2382,6 +2384,7 @@ def request_context_middleware(app: ASGIApp) -> ASGIApp:
         try:
             await app(scope, receive, send_with_header)
         finally:
+            reset_request_var(pre_recorded_token)
             reset_request_var(run_token)
             reset_request_var(user_token)
             reset_request_var(id_token)

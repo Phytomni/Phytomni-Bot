@@ -20,9 +20,18 @@ from typing import Any, cast
 import pytest
 
 from mcp_server_phytomni.agents.deep_genome import agent as agent_module
-from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
+from mcp_server_phytomni.agents.deep_genome.agent import (
+    DeepGenomeAgents,
+    DeepGenomeSubmissionError,
+)
 from mcp_server_phytomni.config.defaults import DeepGenomeConfig
 from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
+from mcp_server_phytomni.runtime.request_context import (
+    bind_pre_recorded_task_id,
+    bind_run_id,
+)
+from mcp_server_phytomni.runtime.run_registry import RunRegistry, RunSpec
+from mcp_server_phytomni.runtime.submit_recorder import record_submitted_task
 from mcp_server_phytomni.runtime.task_manager import (
     Submission,
     TaskManager,
@@ -180,6 +189,79 @@ async def test_arun_reserves_before_binding_and_launching(
         "register_live",
     ]
     await _drain_background_tasks()
+
+
+async def test_create_task_failure_is_compensated(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A coordinator launch failure settles the reservation.
+
+    No task id is returned to the caller.
+    """
+    db_path = _patch_db(monkeypatch, tmp_path)
+    fake_app = _FakeApp(result={"final_report": "unreachable"})
+    agent = _build_agent(fake_app, tmp_path)
+
+    def raising_create_task(coroutine: Any) -> asyncio.Task[Any]:
+        """Reject local scheduling before any graph node can run."""
+        coroutine.close()
+        raise RuntimeError("event loop launch failed")
+
+    monkeypatch.setattr(
+        agent_module.asyncio, "create_task", raising_create_task
+    )
+
+    with pytest.raises(
+        DeepGenomeSubmissionError,
+        match="submission tracking failed",
+    ):
+        await agent.arun(
+            species_code="osa",
+            gene_id="Os01g0100100",
+            user_id="alice",
+        )
+
+    with sqlite3.connect(db_path) as conn:
+        run = conn.execute(
+            "SELECT status, error FROM runs",
+        ).fetchone()
+        task = conn.execute(
+            "SELECT status, degraded_reason FROM tasks",
+        ).fetchone()
+        section_count = conn.execute(
+            "SELECT COUNT(*) FROM deep_genome_sections",
+        ).fetchone()[0]
+
+    assert run == ("failed", "local coordinator failed to start")
+    assert task == ("failed", "local coordinator failed to start")
+    assert section_count == 0
+    assert not fake_app.invocations
+
+
+def test_pre_recorded_deep_genome_submission_does_not_mint_second_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The generic recorder recognizes the reserved DeepGenome row."""
+    db_path = str(tmp_path / "tasks.db")
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.submit_recorder.resolve_tasks_db_path",
+        lambda: db_path,
+    )
+    registry = RunRegistry(db_path)
+    registry.create_run(RunSpec("run-1", "anonymous", "deep_genome", "remote"))
+
+    bind_run_id("run-1")
+    bind_pre_recorded_task_id("task-1")
+    record_submitted_task(
+        {"task_id": "task-1", "output_dir": "/tmp/x"},
+        agent="deep_genome",
+    )
+
+    assert [
+        record.spec.run_id for record in registry.list_runs(owner="anonymous")
+    ] == ["run-1"]
 
 
 async def test_arun_background_writes_succeeded_terminal(

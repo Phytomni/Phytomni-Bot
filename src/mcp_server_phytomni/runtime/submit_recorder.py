@@ -23,7 +23,9 @@ from ..storage.path_policy import IdFactory
 from .request_context import (
     bind_recorder_degraded,
     bind_run_id,
+    current_pre_recorded_task_id,
     current_request_user,
+    current_run_id,
 )
 from .run_registry import RunOutcome, RunRegistry, RunSpec
 from .task_manager import (
@@ -183,6 +185,14 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
         return
     submissions = extract_task_submissions(result, agent)
     if not submissions:
+        return
+    if (
+        agent == "deep_genome"
+        and current_run_id() is not None
+        and current_pre_recorded_task_id() is not None
+        and len(submissions) == 1
+        and submissions[0][0] == current_pre_recorded_task_id()
+    ):
         return
     user_id = current_request_user() or "anonymous"
     run_id = IdFactory().new_id("run", agent)

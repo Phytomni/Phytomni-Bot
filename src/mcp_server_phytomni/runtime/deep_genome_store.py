@@ -17,7 +17,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from .run_registry import RunRegistry
+from .run_registry import RunRegistry, _expires_at_for
 from .task_manager import _CREATE_TASKS_DDL, _TASK_ADD_COLUMN_STATEMENTS
 
 __all__ = [
@@ -179,6 +179,8 @@ class DeepGenomeRemoteTaskRow(_RemoteIdentity, _RemoteContent):
 
 class DeepGenomeStore:
     """Own the additive DeepGenome schema in one SQLite database."""
+
+    LOCAL_COORDINATOR_FAILURE = "local coordinator failed to start"
 
     def __init__(self, db_path: str):
         """Initialize the schema using one transactional migration."""
@@ -343,6 +345,72 @@ class DeepGenomeStore:
             owner=owner,
             output_dir=output_dir,
         )
+
+    def compensate_launch_failure(
+        self,
+        reservation: DeepGenomeReservation,
+    ) -> None:
+        """Fail a reserved launch and remove its seeded profile section."""
+        now = datetime.now(UTC).isoformat()
+        reason = self.LOCAL_COORDINATOR_FAILURE
+        expires_at = _expires_at_for("failed", now)
+        placeholder = {
+            "task_id": reservation.umbrella_task_id,
+            "status": "failed",
+            "output_dir": reservation.output_dir,
+        }
+        failed_result = {
+            "task_results": [placeholder],
+            "live_status": [placeholder],
+            "artifacts": [],
+        }
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                """
+                UPDATE runs SET status = ?, result_json = ?, error = ?,
+                       updated_at = ?, expires_at = ?
+                WHERE run_id = ? AND user_id = ?
+                """,
+                (
+                    "failed",
+                    json.dumps(failed_result),
+                    reason,
+                    now,
+                    expires_at,
+                    reservation.run_id,
+                    reservation.owner,
+                ),
+            )
+            conn.execute(
+                """
+                UPDATE tasks SET status = ?, final_report = NULL,
+                       degraded_reason = ?, updated_at = ?
+                WHERE task_id = ? AND run_id = ?
+                """,
+                (
+                    "failed",
+                    reason,
+                    now,
+                    reservation.umbrella_task_id,
+                    reservation.run_id,
+                ),
+            )
+            conn.execute(
+                """
+                DELETE FROM deep_genome_sections
+                WHERE umbrella_task_id = ? AND section_key = ?
+                """,
+                (reservation.umbrella_task_id, "brief_gene"),
+            )
+            conn.commit()
+        except sqlite3.Error:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def get_snapshot(self, umbrella_task_id: str) -> DeepGenomeSnapshot | None:
         """Read the additive report fields without changing legacy shape."""

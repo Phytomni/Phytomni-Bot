@@ -17,10 +17,14 @@ from typing import cast
 
 import httpx
 import pytest
+from starlette.types import Message, Receive, Scope, Send
 
+from mcp_server_phytomni.api.app import request_context_middleware
 from mcp_server_phytomni.config.defaults import ServerConfig
 from mcp_server_phytomni.mcp import handlers as mcp_handlers
 from mcp_server_phytomni.runtime.request_context import (
+    bind_pre_recorded_task_id,
+    current_pre_recorded_task_id,
     current_request_id,
     current_request_user,
     request_context,
@@ -110,3 +114,31 @@ async def test_error_envelope_carries_request_id(
     body_id = response.json()["error"]["request_id"]
     assert body_id is not None
     assert body_id == header_id
+
+
+async def test_http_middleware_resets_pre_recorded_task_marker() -> None:
+    """A task marker bound by one HTTP request cannot leak to its caller."""
+    observed: list[str | None] = []
+
+    async def downstream(scope: Scope, receive: Receive, send: Send) -> None:
+        del scope, receive
+        observed.append(current_pre_recorded_task_id())
+        bind_pre_recorded_task_id("task-request")
+        await send(
+            {"type": "http.response.start", "status": 200, "headers": []}
+        )
+
+    async def receive() -> Message:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    sent: list[Message] = []
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    scope = cast(Scope, {"type": "http", "method": "GET", "path": "/"})
+    await request_context_middleware(downstream)(scope, receive, send)
+
+    assert observed == [None]
+    assert sent[0]["type"] == "http.response.start"
+    assert current_pre_recorded_task_id() is None

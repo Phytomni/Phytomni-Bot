@@ -23,10 +23,12 @@ __all__ = [
     "bind_recorder_degraded",
     "bind_request_id",
     "bind_request_user",
+    "bind_pre_recorded_task_id",
     "bind_run_id",
     "current_recorder_degraded",
     "current_request_id",
     "current_request_user",
+    "current_pre_recorded_task_id",
     "current_run_id",
     "request_context",
     "reset_request_var",
@@ -40,6 +42,9 @@ _request_id: ContextVar[str | None] = ContextVar(
 )
 _request_run_id: ContextVar[str | None] = ContextVar(
     "phytomni_request_run_id", default=None
+)
+_pre_recorded_task_id: ContextVar[str | None] = ContextVar(
+    "phytomni_pre_recorded_task_id", default=None
 )
 _recorder_degraded: ContextVar[bool] = ContextVar(
     "phytomni_recorder_degraded", default=False
@@ -67,6 +72,11 @@ def current_run_id() -> str | None:
     return _request_run_id.get()
 
 
+def current_pre_recorded_task_id() -> str | None:
+    """Return the DeepGenome task reserved before generic recording."""
+    return _pre_recorded_task_id.get()
+
+
 def bind_request_user(user_id: str | None) -> Token[str | None]:
     """Bind the request user id and return a reset token."""
     return _request_user.set(user_id)
@@ -85,6 +95,11 @@ def bind_run_id(run_id: str | None) -> Token[str | None]:
     written by one handler never leaks into the next request.
     """
     return _request_run_id.set(run_id)
+
+
+def bind_pre_recorded_task_id(task_id: str | None) -> Token[str | None]:
+    """Bind the task id already persisted by a submit agent."""
+    return _pre_recorded_task_id.set(task_id)
 
 
 def current_recorder_degraded() -> bool:
@@ -119,9 +134,8 @@ def reset_request_var(token: Token[Any]) -> None:
     """Reset a request contextvar to its prior value.
 
     Args:
-        token: A token returned by ``bind_request_user``,
-            ``bind_request_id``, ``bind_run_id``, or
-            ``bind_recorder_degraded``.
+        token: A token returned by one of the request-context bind
+            functions.
     """
     token.var.reset(token)
 
@@ -143,7 +157,7 @@ def request_context(
             by the chokepoint inside the block.
 
     Yields:
-        None while all four contextvars are bound. The
+        None while all five contextvars are bound. The
         recorder-degraded flag is always seeded to ``False`` at entry
         so a chokepoint failure can only flag the current request,
         never inherit a stale ``True`` from an earlier one.
@@ -151,11 +165,13 @@ def request_context(
     user_token = bind_request_user(user_id)
     id_token = bind_request_id(request_id)
     run_token = bind_run_id(run_id)
+    pre_recorded_token = bind_pre_recorded_task_id(None)
     degraded_token = bind_recorder_degraded(False)
     try:
         yield
     finally:
         reset_request_var(degraded_token)
+        reset_request_var(pre_recorded_token)
         reset_request_var(run_token)
         reset_request_var(id_token)
         reset_request_var(user_token)

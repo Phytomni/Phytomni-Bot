@@ -246,3 +246,38 @@ def test_reserve_run_rejects_identity_collision(tmp_path: Path) -> None:
         store.reserve_run(**arguments)
 
     assert _reservation_counts(tmp_path) == (1, 1, 1)
+
+
+def test_compensate_launch_failure_clears_seeded_profile(
+    tmp_path: Path,
+) -> None:
+    """A failed local launch settles both parents and removes BriefGene."""
+    store = _store(tmp_path)
+    reservation = store.reserve_run(
+        run_id="run-1",
+        umbrella_task_id="task-1",
+        owner="alice",
+        output_dir="/tmp/task-1",
+    )
+
+    store.compensate_launch_failure(reservation)
+
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        run = conn.execute(
+            "SELECT status, error FROM runs WHERE run_id = ?",
+            ("run-1",),
+        ).fetchone()
+        task = conn.execute(
+            "SELECT status, final_report, degraded_reason FROM tasks "
+            "WHERE task_id = ?",
+            ("task-1",),
+        ).fetchone()
+        sections = conn.execute(
+            "SELECT COUNT(*) FROM deep_genome_sections "
+            "WHERE umbrella_task_id = ?",
+            ("task-1",),
+        ).fetchone()[0]
+
+    assert run == ("failed", "local coordinator failed to start")
+    assert task == ("failed", None, "local coordinator failed to start")
+    assert sections == 0

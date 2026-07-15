@@ -32,7 +32,10 @@ from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
 )
-from ...runtime.deep_genome_store import DeepGenomeStore
+from ...runtime.deep_genome_store import (
+    DeepGenomeReservation,
+    DeepGenomeStore,
+)
 from ...runtime.langgraph_runner import (
     ainvoke_graph,
     ensure_checkpointer,
@@ -42,7 +45,10 @@ from ...runtime.live_tasks import (
     deregister_live_task,
     register_live_task,
 )
-from ...runtime.request_context import bind_run_id
+from ...runtime.request_context import (
+    bind_pre_recorded_task_id,
+    bind_run_id,
+)
 from ...runtime.task_manager import TaskManager, resolve_tasks_db_path
 from ...storage.path_policy import IdFactory
 from ..analyst.agent import (
@@ -78,6 +84,7 @@ logger = logging.getLogger(__name__)
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
 __all__ = [
     "DeepGenomeAgents",
+    "DeepGenomeSubmissionError",
     "gene_function",
     "network_to_string",
     "_cached_gene_annotation_lookup",
@@ -112,6 +119,21 @@ DEEP_GENOME_CONFIG_FIELD_MAP = {
 DEEP_GENOME_SECRET_FIELD_MAP = {
     **ANALYST_SECRET_FIELD_MAP,
 }
+
+
+class DeepGenomeSubmissionError(RuntimeError):
+    """Raised when a reserved coordinator cannot be launched safely."""
+
+
+class _DeepGenomeLaunch(NamedTuple):
+    """Inputs needed to launch one durably reserved coordinator."""
+
+    store: DeepGenomeStore
+    reservation: DeepGenomeReservation
+    initial_state: dict[str, Any]
+    thread_id: str | None
+    umbrella_id: str
+    output_dir: str
 
 
 def update_dict(left: dict, right: dict) -> dict:
@@ -587,7 +609,8 @@ class DeepGenomeAgents(
         initial_state["task_id"] = umbrella_id
         initial_state["output_dir"] = umbrella_output_dir
 
-        reservation = DeepGenomeStore(resolve_tasks_db_path()).reserve_run(
+        store = DeepGenomeStore(resolve_tasks_db_path())
+        reservation = store.reserve_run(
             run_id=run_id,
             umbrella_task_id=umbrella_id,
             owner=str(kwargs.get("user_id") or "anonymous"),
@@ -595,27 +618,59 @@ class DeepGenomeAgents(
         )
         bind_run_id(reservation.run_id)
 
-        workflow_task = asyncio.create_task(
-            ainvoke_graph(
-                self.app,
-                initial_state,
+        self._launch_reserved_workflow(
+            _DeepGenomeLaunch(
+                store=store,
+                reservation=reservation,
+                initial_state=initial_state,
                 thread_id=kwargs.get("thread_id"),
-            )
-        )
-        workflow_task.add_done_callback(
-            lambda task: self._finalize_workflow(
-                task,
                 umbrella_id=umbrella_id,
                 output_dir=umbrella_output_dir,
             )
         )
-        register_live_task(umbrella_id, workflow_task)
 
         return {
             "task_id": umbrella_id,
             "output_dir": umbrella_output_dir,
             "compute_resource": "deep-genome",
         }
+
+    def _launch_reserved_workflow(
+        self,
+        launch: _DeepGenomeLaunch,
+    ) -> None:
+        """Launch and register a coordinator after its reservation commits."""
+        bind_pre_recorded_task_id(launch.reservation.umbrella_task_id)
+        workflow_coroutine = ainvoke_graph(
+            self.app,
+            launch.initial_state,
+            thread_id=launch.thread_id,
+        )
+        try:
+            workflow_task = asyncio.create_task(workflow_coroutine)
+        except Exception as exc:
+            workflow_coroutine.close()
+            try:
+                launch.store.compensate_launch_failure(launch.reservation)
+            except (sqlite3.Error, OSError) as compensation_error:
+                logger.error(
+                    "DeepGenome launch compensation failed (%s; run=%s; "
+                    "task=%s)",
+                    type(compensation_error).__name__,
+                    launch.reservation.run_id,
+                    launch.reservation.umbrella_task_id,
+                )
+            raise DeepGenomeSubmissionError(
+                "submission tracking failed"
+            ) from exc
+        workflow_task.add_done_callback(
+            lambda task: self._finalize_workflow(
+                task,
+                umbrella_id=launch.umbrella_id,
+                output_dir=launch.output_dir,
+            )
+        )
+        register_live_task(launch.umbrella_id, workflow_task)
 
     def _finalize_workflow(
         self,
