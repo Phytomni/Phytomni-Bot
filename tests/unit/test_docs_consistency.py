@@ -211,7 +211,21 @@ def test_streaming_docs_use_the_narrowed_contract() -> None:
     assert "ToolCallStart" not in http
     assert "ReasoningStart" not in http
     assert "Review confirm, form, and choice" in a2ui
-    assert "opened-stream failure projection remains pending" in http
+    assert "opened-stream failure projection remains pending" not in http
+    assert "exactly one `RunError`" in http
+
+
+def test_stream_docs_describe_preopen_and_opened_failure_boundaries() -> None:
+    """Document the typed lifecycle boundary exercised by HTTP streams."""
+    http = (ROOT / "docs/reference/http-api.md").read_text(encoding="utf-8")
+    for phrase in (
+        "first event is primed",
+        "ordinary JSON error",
+        "exactly one `RunError`",
+        "does not emit `RunFinished`",
+        "client cancellation",
+    ):
+        assert phrase in http
 
 
 def test_agent_card_interface_matches_enabled_http_endpoint(

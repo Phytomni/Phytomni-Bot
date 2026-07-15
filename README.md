@@ -87,6 +87,17 @@ A2UI goldens for Web/Go consumers (`chat_confirm`, `review_confirm`,
 `multi_turn`) live under
 [docs/contracts/a2ui/](docs/contracts/a2ui/README.md).
 
+HTTP streaming has two explicit failure boundaries. The API eagerly prepares
+the tool and primes the first AG-UI event before committing SSE response
+headers; setup or priming failures are ordinary JSON errors and settle a
+pre-created run as `failed`. Once the first event is primed, an ordinary
+producer failure emits exactly one sanitized `RunError`, does not emit
+`RunFinished`, and closes with one `[DONE]`. Client cancellation propagates
+for cleanup: disconnecting before `RunFinished` settles `failed` without a
+synthetic frame, while disconnecting after `RunFinished` preserves success.
+See [SSE Streaming](docs/reference/http-api.md#sse-streaming) for the
+redaction and operator-smoke contract.
+
 ### Capability Boundary in 0.1.3
 
 The 2026 capability audit is closed for all 14 dependency-underutilization

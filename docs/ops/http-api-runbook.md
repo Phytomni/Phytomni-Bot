@@ -274,6 +274,26 @@ With `A2UI_ENABLED` on, `phyto-review` `stream: true` emits a minimal
 `phyto.a2ui` pause stream (settle `input_required`; resume via
 `/resume` or `/a2ui-actions`).
 
+### Streaming failure smoke
+
+Use one valid `stream: true` request and one deliberately invalid request
+before enabling a client rollout. Authentication, argument validation,
+stream construction, and first-event priming all happen before SSE headers:
+the invalid request must be an ordinary JSON error (`400`, `401`, or `429`)
+and must not return an empty `text/event-stream`. Once the first AG-UI event
+is primed, inject or wait for a backend fault and verify the response has
+exactly one `RunError`, does not emit `RunFinished`, and ends with one
+`data: [DONE]`. Query `GET /v1/runs/{run_id}` and confirm the row is
+`failed` with `partial: true` when a Chat answer had started.
+
+Check service logs using the request id. They may contain the exception class
+and source location, but must not contain bearer tokens, credential-bearing
+URLs/DSNs, SQL statements, or raw exception text. A client cancellation before
+`RunFinished` must settle `failed` without writing a synthetic frame; a
+cancellation after `RunFinished` keeps the terminal success. Treat any
+duplicate `RunError`, `RunFinished` after an error, missing `[DONE]`, or
+unredacted secret as a rollout blocker.
+
 ### Streaming cutover checklist (ChatAgent / Instant)
 
 Before flipping Web `bot.stream_enabled` + `VITE_STREAM_ENABLED` on:

@@ -783,17 +783,27 @@ graph stage and `Custom` frames for `phyto.progress` /
 `phyto.references` / `phyto.follow_up` around a one-shot answer. Successful
 streams end with a terminating
 `data: [DONE]\n\n` so the client closes its `EventSource` on the first
-match instead of waiting for the read timeout; the pending opened-stream
-failure projection does not promise a terminal frame after a transport error.
+match instead of waiting for the read timeout. Before the response headers
+are committed, the API eagerly validates/builds the tool stream and the
+first event is primed. A setup or priming failure therefore returns an
+ordinary JSON error (with the fixed HTTP status mapping) and settles any
+pre-created run row as `failed`, rather than returning an empty SSE body.
+The wire framing is AG-UI event data, not provider `chat.completion.chunk`
+objects.
 
 The current server intentionally exposes a narrowed AG-UI vocabulary:
 `RunStarted`, `StepStarted`, `TextMessageStart` / `TextMessageContent` /
 `TextMessageEnd` (collectively `TextMessage*`), `Custom`, and
 `RunFinished`. The richer `ToolCall*`, `Reasoning*`, and `StepFinished`
 events from the earlier handoff are superseded and are not emitted. The
-opened-stream failure projection remains pending: the planned single,
-sanitized `RunError` frame after an already-open stream fails is not yet a
-durable HTTP contract.
+opened-stream lifecycle is also a durable contract: an ordinary producer
+failure is projected as exactly one `RunError` with a fixed or redacted
+message, does not emit `RunFinished`, and still closes the SSE response with
+one `data: [DONE]`. Existing `RunError` frames suppress duplicate errors;
+`CancelledError` and generator shutdown propagate for cleanup instead of
+being converted into a protocol frame. Credential fragments, private URLs,
+SQL statements, and raw unexpected exception text are absent from frames,
+public errors, and captured logs.
 
 Streaming is wired on `phyto-chat`, `phyto-knowledge`, and
 `phyto-brief-gene`: ChatAgent token-streams provider deltas, while
@@ -864,8 +874,11 @@ empty `text/event-stream`. After the stream drains, the run record is settled fr
   (default 1 MiB). The SSE wire stream is never truncated.
   `truncated` is true when the stored blob hit the cap; `partial` is
   true when the run settled `failed` (client disconnect before
-  `RunFinished`, or an observed mid-stream `RunError`). The separate
-  opened-stream `RunError` projection remains pending as described above.
+  `RunFinished`, or an observed mid-stream `RunError`). A client
+  cancellation before `RunFinished` settles failed without attempting to
+  write a synthetic frame to the disconnected client; cancellation after
+  `RunFinished` preserves the succeeded settlement.
+  The client cancellation contract is also enforced for A2UI pause streams.
 - **ChatAgent A2UI short-circuit** (`phyto-chat`, `A2UI_ENABLED` on,
   heuristic match): when `select_chat_a2ui_widget(user_query)` returns
   `confirm`, `form`, or `choice` (confirm: `请确认` / `是否确认` /
@@ -899,11 +912,10 @@ empty `text/event-stream`. After the stream drains, the run record is settled fr
   until a follow-up change persists their answers the same way.
 
 Open-stream transport failures (`ConnectError` / `TimeoutException`)
-are retried once before raising. The opened-stream failure projection
-remains pending, so callers must not assume that a post-open `RunError` is
-already a stable HTTP guarantee. Once the iterator returns, any mid-stream
-failure propagates immediately (a silent retry would re-emit chunks the
-client already received and corrupt the SSE timeline). See
+are retried once before raising. Once the first event is primed, any
+ordinary mid-stream failure becomes the single sanitized `RunError` described
+above; a silent retry would re-emit chunks the client already received and
+corrupt the SSE timeline. See
 `agents/chat/service.py:MAX_OPEN_STREAM_RETRIES`.
 
 ### Resolver flags: `resolve_gene_id` and `resolve_to_id`
