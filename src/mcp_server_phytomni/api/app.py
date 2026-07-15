@@ -125,6 +125,10 @@ from ..mcp.result_formatting import (
     strip_chat_completion,
 )
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
+from ..runtime.deep_genome_store import (
+    DeepGenomeStore,
+    snapshot_to_public_dict,
+)
 from ..runtime.langgraph_runner import (
     build_runnable_config,
     ensure_checkpointer,
@@ -1878,7 +1882,57 @@ def _stream_chat_response(
     )
 
 
-async def _fetch_owner_run(run_id: str) -> dict[str, Any]:
+def _project_deep_genome_run(
+    record: RunRecord, *, debug: bool = False
+) -> dict[str, Any]:
+    """Merge the owner-scoped DeepGenome snapshot into one run envelope.
+
+    ``runs.task_ids`` contains exactly one umbrella id for DeepGenome. The
+    coordinator owns every concrete remote id, so this read follows only the
+    owner-checked umbrella and never accepts a child id from the request.
+    Public snapshot serialization removes raw child rows from the default
+    result while retaining the existing formatted answer when one exists.
+    """
+    payload = _run_record_to_dict(record)
+    result = payload.get("result")
+    merged = dict(result) if isinstance(result, Mapping) else {}
+    if not debug:
+        for private_key in (
+            "task_results",
+            "live_status",
+            "artifacts",
+            "raw",
+        ):
+            merged.pop(private_key, None)
+        payload["result"] = merged
+    if len(record.task_ids) != 1:
+        return payload
+    try:
+        snapshot = DeepGenomeStore(resolve_tasks_db_path()).get_snapshot(
+            record.task_ids[0]
+        )
+    except sqlite3.Error:
+        _LOGGER.warning(
+            "deep_genome run snapshot unavailable for owner-scoped run"
+        )
+        return payload
+    if snapshot is None:
+        return payload
+
+    merged.update(snapshot_to_public_dict(snapshot))
+    payload["status"] = snapshot.status
+    payload["result"] = merged
+    best_report = merged.get("final_report") or merged.get(
+        "intermediate_report"
+    )
+    if isinstance(best_report, str) and best_report.strip():
+        payload["answer"] = best_report
+    return payload
+
+
+async def _fetch_owner_run(
+    run_id: str, *, debug: bool = False
+) -> dict[str, Any]:
     """Reconcile + flatten one ``GET /v1/runs/{run_id}`` request body.
 
     Args:
@@ -1892,6 +1946,11 @@ async def _fetch_owner_run(run_id: str) -> dict[str, Any]:
     """
     owner = current_request_user() or "anonymous"
     registry = RunRegistry(resolve_tasks_db_path())
+    record = registry.get_run(run_id, owner=owner)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+    if record.spec.agent == "deep_genome":
+        return _project_deep_genome_run(record, debug=debug)
     record = await registry.reconcile(run_id, owner=owner)
     if record is None:
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
@@ -3330,7 +3389,7 @@ def create_app() -> FastAPI:
         pass ``debug=true`` to include it.
         """
         del principal
-        record = await _fetch_owner_run(run_id)
+        record = await _fetch_owner_run(run_id, debug=resolve_debug(debug))
         if not resolve_debug(debug) and isinstance(record.get("result"), dict):
             record = {
                 **record,
