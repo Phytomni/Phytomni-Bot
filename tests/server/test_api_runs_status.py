@@ -293,6 +293,7 @@ async def test_get_deep_genome_run_refreshes_intermediate_snapshot(
     assert "raw" not in body["result"]
     assert "task_results" not in body["result"]
     assert "live_status" not in body["result"]
+    assert "formatted" not in body["result"]
     remote_status_mock.assert_not_awaited()
 
     debug_response = await api_client.get(

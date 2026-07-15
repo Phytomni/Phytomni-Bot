@@ -128,6 +128,7 @@ def _seed_terminal_deep_genome_run(
             final_report="# Final report\n",
             expected_revision=snapshot.report_revision,
         )
+    _attach_formatted_result(db_path, run_id)
     return run_id
 
 
@@ -156,6 +157,7 @@ async def test_list_deep_genome_projects_intermediate_snapshot(
     assert "task_results" not in row["result"]
     assert "live_status" not in row["result"]
     assert "raw" not in row["result"]
+    assert "formatted" not in row["result"]
 
 
 async def test_list_deep_genome_adds_report_metadata_to_formatted_result(
@@ -234,6 +236,11 @@ async def test_list_deep_genome_projects_degraded_final_snapshot(
     assert row["result"]["final_report"] == "# Final report\n"
     assert row["result"]["report_completeness"] == "partial"
     assert row["result"]["degraded"] is True
+    report = row["result"]["formatted"]["metadata"]["report"]
+    assert report["stage"] == "final"
+    assert report["completeness"] == "partial"
+    assert report["degraded"] is True
+    assert report["failure_count"] == len(row["result"]["failures"])
     assert row["answer"] == row["result"]["final_report"]
 
 
@@ -262,6 +269,11 @@ async def test_list_deep_genome_preserves_all_failed_intermediate_snapshot(
     assert row["result"]["final_report"] is None
     assert row["result"]["intermediate_report"].startswith("#")
     assert row["result"]["degraded"] is True
+    report = row["result"]["formatted"]["metadata"]["report"]
+    assert report["stage"] == "intermediate"
+    assert report["completeness"] == "partial"
+    assert report["degraded"] is True
+    assert report["failure_count"] == len(row["result"]["failures"])
     assert row["answer"] == row["result"]["intermediate_report"]
 
 
