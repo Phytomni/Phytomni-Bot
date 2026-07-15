@@ -178,6 +178,17 @@ def test_async_report_docs_distinguish_ack_status_and_terminal_report() -> (
     assert "does not prove live backend acceptance" in e2e
 
 
+def test_async_cli_docs_lock_transport_and_exit_codes() -> None:
+    """Keep the HTTP CLI contract visible and key-safe."""
+    cli = (ROOT / "docs/reference/cli.md").read_text(encoding="utf-8")
+    for command in ("submit <agent>", "status <run_id>", "follow <run_id>"):
+        assert command in cli
+    assert "PHYTOMNI_API_KEY" in cli
+    assert "--api-key" not in cli
+    assert "0 success, 1 task failure, 2 client error, 3 local timeout" in cli
+    assert "does not cancel the remote run" in cli
+
+
 def test_direct_gauss_rollback_uses_prior_binary_not_fake_switch() -> None:
     """Keep direct-Gauss rollback tied to the prior binary's environment."""
     upgrading = (ROOT / "docs/ops/upgrading.md").read_text(encoding="utf-8")

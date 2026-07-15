@@ -225,14 +225,24 @@ registry state and output directory. Remote analysis-platform child
 tasks (and DeepGenome rows that carry a `source_task_id`) also receive
 one live platform status probe when available. A `DeepGenomeAgent`
 umbrella without `source_task_id` is local-only: reconcile skips the
-remote jobs probe and uses the in-process live registry plus any
-persisted `final_report` (see the liveness note below).
+remote jobs probe and uses the in-process coordinator plus the persisted
+local snapshot (including its latest `intermediate_report` and
+`final_report`).
 
-For a succeeded `DeepGenomeAgent` task, `formatted.answer` carries the
-assembled report markdown (the workflow runs in the background and
-persists its report on the task row); other agents keep the bare
-`Task <id>: <status>` status line and surface their products through
-`metadata.output_dir` / `metadata.artifacts`.
+For a `DeepGenomeAgent` task, `formatted.answer` chooses the final report,
+then the latest intermediate report, then the `Task <id>: <status>` line. The
+workflow runs in the background and persists each report revision on the
+umbrella row; other agents keep the bare status line and surface their
+products through `metadata.output_dir` / `metadata.artifacts`.
+
+The DeepGenome status metadata carries `report_stage`,
+`report_completeness`, `report_revision`, `report_updated_at`, ordered
+`progress` counts, fixed-message `failures`, `degraded`, and sanitized
+`degraded_reason`. Optional analyses may fail independently. BriefGene is
+required; a BriefGene failure fails the umbrella without a report. Once
+BriefGene succeeds, a failed or still-running optional analysis leaves the
+best intermediate report visible, while a final report appears only after
+synthesis succeeds.
 
 A degraded `DeepGenomeAgent` report (an optional evolution or digital-design
 sub-analysis failed mid-run) keeps surfacing the report but adds

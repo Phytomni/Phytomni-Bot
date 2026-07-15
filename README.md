@@ -61,6 +61,15 @@ submit tools need a long-lived `phytomni-api` or MCP server session —
 a one-shot `phytomni call` exits the server subprocess and cancels
 in-process background work. Details: [CLI Reference](docs/reference/cli.md).
 
+For asynchronous HTTP runs, set `PHYTOMNI_API_URL` and
+`PHYTOMNI_API_KEY`, then use the report-safe `submit`, `status`, and `follow`
+commands. `follow` prints the final or latest intermediate Markdown to stdout
+and progress to stderr:
+
+```bash
+phytomni --api-url http://127.0.0.1:8080 follow run-1
+```
+
 The HTTP API runs as a separate process:
 
 ```bash

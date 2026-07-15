@@ -1135,8 +1135,10 @@ answer even on partial failure.
 
 Remote agents (`analyst`, `deep_genome`, `research`, `design`, `network`)
 respond `202` with `status: "running"` and `task_ids` listing every child
-task registered by the submit path. Poll `/v1/runs/{run_id}` for live
-status.
+task registered by the submit path. Poll `/v1/runs/{run_id}` for live status;
+the owner-scoped GET reads the local run/snapshot store and does not poll the
+remote analysis platform. The long-lived coordinator owns remote polling and
+persists each report revision.
 
 The submit response is a submission acknowledgement, not a completed report.
 Use `GetTaskStatus` or `GET /v1/runs/{run_id}` for one non-blocking lookup. A
@@ -1144,17 +1146,25 @@ succeeded analyst-class task exposes `final_report`; Design and Network also
 expose their real artifact/output paths. Offline mocks validate the shape; this
 does not prove live backend acceptance.
 
-`deep_genome` runs the whole report workflow in-process in the
-background, so unlike the other remote agents its terminal product is a
-local markdown report rather than an upstream-platform artifact. The
-last report node persists the assembled markdown on its task row; on a
-succeeded poll the report surfaces in two places: `GetTaskStatus`
-returns it as `formatted.answer` (instead of the bare
-`Task <id>: <status>` status line), and `GET /v1/runs/{run_id}` lifts
-the first child report to `result.final_report` at the payload top level
-(also present per-child under `result.task_results[].final_report`).
-Analyst-class terminal reports follow the same `result.final_report` contract
-described below; synchronous agent results leave it `null`.
+`deep_genome` runs the whole report workflow in-process in the background, so
+unlike the other remote agents its terminal product is a local markdown report
+rather than an upstream-platform artifact. The coordinator persists a public
+snapshot after BriefGene and after each optional analysis transition. While
+the run is active, `GetTaskStatus.formatted.answer` and
+the `answer` field of `GET /v1/runs/{run_id}` select the latest nonblank
+`intermediate_report`; after successful synthesis they select `final_report`.
+Failed umbrellas retain their last intermediate report and leave
+`final_report` null. Analyst-class terminal reports follow the same
+`result.final_report` contract described below; synchronous agent results
+leave it `null`.
+
+The DeepGenome snapshot fields are shared across MCP, HTTP, and the HTTP-backed
+CLI: `report_stage`, `report_completeness`, monotonic `report_revision`, UTC
+`report_updated_at`, ordered `progress` counts, `degraded`, sanitized
+`degraded_reason`, and fixed-message `failures`. Optional analysis rows may
+fail independently. BriefGene failure fails the umbrella; after BriefGene
+succeeds, partial analysis failure is represented in the snapshot and does not
+hide the best report. A final report is published only after synthesis succeeds.
 
 A `deep_genome` report whose optional mounted sub-analysis degraded mid-run
 (its evolution or digital-design step) can still settle as `succeeded` while

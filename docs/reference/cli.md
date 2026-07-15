@@ -55,6 +55,38 @@ server session open, then poll with `GetTaskStatus`. A one-shot
 `phytomni call` starts the server as a subprocess and exits after the
 tool returns, which cancels in-process background workflows.
 
+### HTTP asynchronous runs
+
+The HTTP run commands use the long-lived `phytomni-api` service. Set the API
+base URL and the per-user API key in the environment; the key is deliberately
+not accepted as a command-line option:
+
+```bash
+export PHYTOMNI_API_URL=http://127.0.0.1:8080
+export PHYTOMNI_API_KEY=ptm_...
+```
+
+The `--api-url` option overrides `PHYTOMNI_API_URL` for one invocation:
+
+```text
+phytomni [--api-url URL] submit <agent> '<arguments-json>'
+phytomni [--api-url URL] status <run_id>
+phytomni [--api-url URL] follow <run_id> [--poll-interval 5.0] [--wait-timeout 3600.0]
+```
+
+`submit` writes only the accepted run id to stdout. Accepted task ids and the
+initial status go to stderr. `status` and `follow` write the best available
+Markdown to stdout, choosing `final_report`, then `intermediate_report`, and
+finally a status line. Their one-line status/progress and sanitized
+`degraded_reason` metadata goes to stderr, so stdout remains safe to pipe into
+a Markdown file. A failed run still prints its last intermediate report.
+
+Exit codes are **0 success, 1 task failure, 2 client error, 3 local timeout**.
+`follow` uses a local monotonic deadline, does not cancel the remote run, and
+prints progress only when the `(status, report_revision)` pair changes. A
+restart of the API process does not resume a coordinator; use the persisted
+local snapshot for reads and an operator recovery procedure for orphaned work.
+
 For full response models, use `mcp_client_phytomni.client.PhytomniMcpClient`
 from Python.
 
