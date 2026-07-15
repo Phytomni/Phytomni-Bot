@@ -22,6 +22,17 @@ The copyable owner packet index is
 the external action and the artifact that must be returned. The packet index
 does not close an item by itself.
 
+## Release closure packet
+
+The [evidence record contract](evidence/README.md), [owner packet
+index](evidence/owner-packet-index.md), and [disposition
+matrix](2026-07-15-handoff-disposition-matrix.md) are the local 0.1.3 closure
+packet. The matrix records the current Bot branch, commit, remote-ref
+observation, and scoped-gate result; it does not claim that the 63 local
+commits have been pushed. Every `RC-*` row remains `External Pending` until an
+owner returns a redacted artifact and the release owner links it from the
+matrix.
+
 ## Evidence rule
 
 An owner may replace `Evidence: Not returned` only with an attached command

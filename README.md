@@ -85,7 +85,10 @@ integration acceptance. See the [Web and Go
 handoff](docs/handoffs/2026-07-15-deep-genome-web-go-handoff.md), [Operations
 handoff](docs/handoffs/2026-07-15-bot-operations-acceptance-handoff.md), and
 [disposition matrix](docs/handoffs/2026-07-15-handoff-disposition-matrix.md)
-for owner-returned evidence status.
+for owner-returned evidence status. The [release closure evidence
+packet](docs/handoffs/evidence/README.md) provides the redacted record
+contract and owner packet index; local Bot gates do not close external Web,
+Go, DBA, GitHub, live-backend, or production obligations.
 
 The HTTP API runs as a separate process:
 

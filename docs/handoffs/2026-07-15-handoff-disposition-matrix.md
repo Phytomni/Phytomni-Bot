@@ -11,14 +11,15 @@ directory\
 This observation is local evidence for the Bot side only and must be refreshed
 when the release owner reviews the matrix:
 
-| Fact                   | Observed value                                 |
-| ---------------------- | ---------------------------------------------- |
-| Branch                 | `release/0.1.3`                                |
-| Source/runtime version | `0.1.3`                                        |
-| Local HEAD             | `8b31cae`                                      |
-| Remote ref             | `origin/release/0.1.3=1acbc1d`                 |
-| Local divergence       | 53 commits ahead; no remote update confirmed   |
-| Current full gate      | `2756 passed, 1 deselected`, coverage `87.96%` |
+| Fact                   | Observed value                                              |
+| ---------------------- | ----------------------------------------------------------- |
+| Branch                 | `release/0.1.3`                                             |
+| Source/runtime version | `0.1.3`                                                     |
+| Local HEAD             | `2e09a63`                                                   |
+| Remote ref             | `origin/release/0.1.3=1acbc1d`                              |
+| Local divergence       | 63 commits ahead; no remote update confirmed                |
+| Last full local gate   | `2756 passed, 1 deselected`, coverage `87.96%` at `8b31cae` |
+| Latest scoped gate     | `615 passed`; `make scoped` passed at `2e09a63`             |
 
 The remote-ref observation is not a push acceptance record. `RC-REL-001`
 remains pending until `make push` succeeds and the remote ref is independently

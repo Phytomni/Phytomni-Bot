@@ -18,6 +18,8 @@ import pytest
 pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
+README = ROOT / "README.md"
+AGENTS = ROOT / "AGENTS.md"
 HANDOFF = ROOT / "docs/handoffs/2026-07-15-deep-genome-web-go-handoff.md"
 OPS_HANDOFF = (
     ROOT / "docs/handoffs/2026-07-15-bot-operations-acceptance-handoff.md"
@@ -255,6 +257,16 @@ def test_release_acceptance_ids_are_unique_and_pending() -> None:
         assert "Not returned" in line
 
 
+def test_repository_guidance_links_release_evidence_contract() -> None:
+    """Keep top-level guidance connected to the closure packet."""
+    readme = README.read_text(encoding="utf-8")
+    agents = AGENTS.read_text(encoding="utf-8")
+    assert "docs/handoffs/evidence/README.md" in readme
+    assert "docs/handoffs/evidence/README.md" in agents
+    assert "local Bot gates do not close external" in readme
+    assert "`make scoped`, full-gate, or test output" in agents
+
+
 def test_evidence_template_has_required_redacted_shape() -> None:
     """Keep owner evidence records copyable and credential-free."""
     record = json.loads(EVIDENCE_TEMPLATE.read_text(encoding="utf-8"))
@@ -313,6 +325,7 @@ def _assert_evidence_record(record: dict[str, Any]) -> None:
         "Evidence Returned",
         "Accepted",
         "Blocked",
+        "Closed",
     }
     if record["state"] == "Closed":
         assert record["artifact"] not in {"", "not-returned"}
@@ -325,6 +338,9 @@ def test_valid_evidence_fixture_satisfies_contract() -> None:
     _assert_evidence_record(
         json.loads(VALID_EVIDENCE.read_text(encoding="utf-8"))
     )
+    _assert_evidence_record(
+        json.loads(EVIDENCE_TEMPLATE.read_text(encoding="utf-8"))
+    )
 
 
 def test_invalid_evidence_fixture_cannot_close_unknown_item() -> None:
@@ -333,6 +349,23 @@ def test_invalid_evidence_fixture_cannot_close_unknown_item() -> None:
         _assert_evidence_record(
             json.loads(INVALID_EVIDENCE.read_text(encoding="utf-8"))
         )
+
+
+def test_closed_evidence_requires_reviewed_artifact() -> None:
+    """Reject a closed record that has no returned artifact."""
+    record = json.loads(VALID_EVIDENCE.read_text(encoding="utf-8"))
+    record["state"] = "Closed"
+    record["artifact"] = "not-returned"
+    with pytest.raises(AssertionError):
+        _assert_evidence_record(record)
+
+
+def test_evidence_fixture_rejects_credential_shape() -> None:
+    """Reject a credential-shaped value even when the rest is valid."""
+    record = json.loads(VALID_EVIDENCE.read_text(encoding="utf-8"))
+    record["observed"] = "Authorization: Bearer " + "a" * 24
+    with pytest.raises(AssertionError):
+        _assert_evidence_record(record)
 
 
 def test_matrix_bot_commit_evidence_exists_in_git() -> None:
