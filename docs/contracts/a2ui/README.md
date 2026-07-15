@@ -68,6 +68,12 @@ lock the Bot-side downlink, uplink, success, and cancel shapes for offline
 consumers. Web/Go passthrough behavior and end-to-end gateway acceptance remain
 external evidence; this repository does not claim that integration is complete.
 
+The copyable live sequence is in the
+[Web/Go stream and A2UI acceptance packet](../../handoffs/evidence/web-go-stream-contract-acceptance.md).
+It covers `RC-WEB-006` and the stream portions of `RC-WEB-004` and
+`RC-WEB-005`. The fixtures lock shapes; only a returned, redacted gateway
+record can close the corresponding acceptance item.
+
 ## File index
 
 | File                                 | Purpose                             |
