@@ -202,14 +202,17 @@ def test_main_call_prints_tabular_block(
 def test_main_entry_runs_async_main(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``main()`` is the sync wrapper around ``asyncio.run(_main())``."""
+    """``main()`` exits with the return code from ``asyncio.run(_main())``."""
     captured: dict[str, Any] = {}
 
-    async def fake_main() -> None:
+    async def fake_main(_argv: list[str] | None = None) -> int:
         captured["ran"] = True
+        return 0
 
     monkeypatch.setattr(cli_main, "_main", fake_main)
 
-    main()
+    with pytest.raises(SystemExit) as excinfo:
+        main()
 
     assert captured == {"ran": True}
+    assert excinfo.value.code == 0

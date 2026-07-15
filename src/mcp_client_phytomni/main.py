@@ -12,25 +12,41 @@ selected tool through `PhytomniMcpClient`.
 import argparse
 import asyncio
 import json
-from typing import Any
+import os
+import sys
+from collections.abc import Sequence
+from typing import Any, NoReturn
 
 from .call_output import render_call_output
 from .client import PhytomniMcpClient, server_command_from_target
+from .http_client import HttpClientError, PhytomniHttpClient, RunSnapshot
 
 
-def main() -> None:
+def main() -> NoReturn:
     """Run the command-line client.
 
     Returns:
-        None. Parsed command output is printed to stdout.
+        Never returns; exits with the asynchronous command's status code.
     """
-    asyncio.run(_main())
+    raise SystemExit(asyncio.run(_main()))
 
 
-async def _main() -> None:
-    """Parse CLI arguments and run the selected command."""
+async def _main(argv: Sequence[str] | None = None) -> int:
+    """Parse CLI arguments and run the selected command.
+
+    Args:
+        argv: Optional argument sequence; ``None`` reads the process argv.
+
+    Returns:
+        Process-style exit code. HTTP command failures return ``2`` while
+        failed remote runs return ``1``; existing stdio success paths return
+        ``0``.
+    """
     parser = _build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.command in {"submit", "status"}:
+        return await _run_http_command(args)
+
     command = server_command_from_target(args.server)
     async with PhytomniMcpClient(command) as client:
         if args.command == "list-tools":
@@ -43,7 +59,7 @@ async def _main() -> None:
                 for tool in await client.list_tools()
             ]
             print(json.dumps(tools, ensure_ascii=False, indent=2))
-            return
+            return 0
 
         if args.command == "call":
             result = await client.call_tool(
@@ -51,7 +67,7 @@ async def _main() -> None:
                 _json_object(args.arguments),
             )
             print(render_call_output(result.formatted))
-            return
+            return 0
 
     parser.error(f"Unsupported command: {args.command}")
 
@@ -66,6 +82,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default="mcp_server_phytomni.server",
         help="Python file, JS file, or module name for the MCP server.",
     )
+    parser.add_argument(
+        "--api-url",
+        default=None,
+        help="HTTP API base URL (defaults to PHYTOMNI_API_URL).",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("list-tools", help="List available MCP tools.")
 
@@ -75,6 +96,20 @@ def _build_parser() -> argparse.ArgumentParser:
         "arguments",
         help="JSON object containing tool arguments.",
     )
+
+    submit_parser = subparsers.add_parser(
+        "submit", help="Submit an asynchronous HTTP agent run."
+    )
+    submit_parser.add_argument("agent", help="HTTP agent slug.")
+    submit_parser.add_argument(
+        "arguments",
+        help="JSON object containing agent arguments.",
+    )
+
+    status_parser = subparsers.add_parser(
+        "status", help="Read one asynchronous HTTP run snapshot."
+    )
+    status_parser.add_argument("run_id", help="Owner-scoped HTTP run id.")
     return parser
 
 
@@ -84,6 +119,87 @@ def _json_object(raw_value: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise argparse.ArgumentTypeError("arguments must be a JSON object")
     return value
+
+
+async def _run_http_command(args: argparse.Namespace) -> int:
+    """Dispatch one HTTP command without opening the stdio transport."""
+    try:
+        api_url, api_key = _resolve_http_config(args.api_url)
+        async with PhytomniHttpClient(api_url, api_key) as client:
+            if args.command == "submit":
+                submitted = await client.submit(
+                    args.agent,
+                    _json_object(args.arguments),
+                )
+                print(submitted.run_id)
+                _print_submit_metadata(submitted.task_ids, submitted.status)
+                return 0
+
+            snapshot = await client.get_run(args.run_id)
+            _print_snapshot(snapshot)
+            return 1 if snapshot.status == "failed" else 0
+    except (HttpClientError, TypeError, ValueError) as exc:
+        print(f"error: {_safe_cli_line(str(exc))}", file=sys.stderr)
+        return 2
+
+
+def _resolve_http_config(api_url: str | None) -> tuple[str, str]:
+    """Resolve HTTP URL and key without ever exposing the key in argv."""
+    resolved_url = api_url or os.environ.get("PHYTOMNI_API_URL")
+    if not isinstance(resolved_url, str) or not resolved_url.strip():
+        raise ValueError("PHYTOMNI_API_URL is required")
+    api_key = os.environ.get("PHYTOMNI_API_KEY")
+    if not isinstance(api_key, str) or not api_key.strip():
+        raise ValueError("PHYTOMNI_API_KEY is required")
+    return resolved_url, api_key
+
+
+def _print_submit_metadata(
+    task_ids: Sequence[str], status: str | None
+) -> None:
+    """Print accepted task metadata on stderr, keeping stdout pipe-safe."""
+    task_label = ",".join(_safe_cli_line(task_id) for task_id in task_ids)
+    if not task_label:
+        task_label = "none"
+    fields = [f"task_ids={task_label}"]
+    if status:
+        fields.append(f"status={_safe_cli_line(status)}")
+    print(" ".join(fields), file=sys.stderr)
+
+
+def _print_snapshot(snapshot: RunSnapshot) -> None:
+    """Print the best report to stdout and one progress line to stderr."""
+    report = snapshot.final_report
+    if not isinstance(report, str) or not report.strip():
+        report = snapshot.intermediate_report
+    if isinstance(report, str) and report.strip():
+        sys.stdout.write(report)
+        if not report.endswith("\n"):
+            sys.stdout.write("\n")
+    else:
+        print(f"status={snapshot.status}")
+
+    fields = [
+        f"status={_safe_cli_line(snapshot.status)}",
+        f"revision={snapshot.report_revision}",
+    ]
+    if snapshot.progress:
+        progress = ",".join(
+            f"{_safe_cli_line(key)}={_safe_cli_line(str(value))}"
+            for key, value in snapshot.progress.items()
+        )
+        fields.append(f"progress={progress}")
+    if snapshot.degraded_reason:
+        fields.append(
+            f"degraded_reason={_safe_cli_line(snapshot.degraded_reason)}"
+        )
+    print(" ".join(fields), file=sys.stderr)
+
+
+def _safe_cli_line(value: str) -> str:
+    """Collapse untrusted metadata to a bounded single-line display value."""
+    normalized = " ".join(value.split())
+    return normalized[:256]
 
 
 if __name__ == "__main__":
