@@ -7,11 +7,11 @@ modify another repository, a production database, or a deployment.
 
 ## Current disposition
 
-| Package                                                                       | Status           | Owner                              | Evidence                                            |
-| ----------------------------------------------------------------------------- | ---------------- | ---------------------------------- | --------------------------------------------------- |
-| [Web and Go DeepGenome integration](2026-07-15-deep-genome-web-go-handoff.md) | External Pending | Phytomni-Web and Go gateway        | Not returned                                        |
-| Operations acceptance                                                         | External Pending | Operations and DBA                 | Not returned; document follows in the next delivery |
-| Original handoff disposition matrix                                           | External Pending | Bot maintainer with Web/Ops owners | Not returned; document follows in the next delivery |
+| Package                                                                         | Status           | Owner                              | Evidence     |
+| ------------------------------------------------------------------------------- | ---------------- | ---------------------------------- | ------------ |
+| [Web and Go DeepGenome integration](2026-07-15-deep-genome-web-go-handoff.md)   | External Pending | Phytomni-Web and Go gateway        | Not returned |
+| [Operations acceptance](2026-07-15-bot-operations-acceptance-handoff.md)        | External Pending | Operations and DBA                 | Not returned |
+| [Original handoff disposition matrix](2026-07-15-handoff-disposition-matrix.md) | External Pending | Bot maintainer with Web/Ops owners | Not returned |
 
 `External Pending` is intentional. Offline tests and local gates prove the
 Bot-side contract only; they do not prove a live Web, Go, database, or

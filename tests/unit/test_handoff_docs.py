@@ -7,6 +7,9 @@
 from __future__ import annotations
 
 import json
+import re
+import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +22,23 @@ HANDOFF = ROOT / "docs/handoffs/2026-07-15-deep-genome-web-go-handoff.md"
 OPS_HANDOFF = (
     ROOT / "docs/handoffs/2026-07-15-bot-operations-acceptance-handoff.md"
 )
+MATRIX = ROOT / "docs/handoffs/2026-07-15-handoff-disposition-matrix.md"
+ORIGINAL_HANDOFF_NAMES = [
+    "2026-05-23-python-service-consolidation.md",
+    "2026-06-09-web-gateway-cutover-bot-asks.md",
+    "2026-06-13-analyst-class-result-assembly-workorder.md",
+    "2026-06-26-bot-progress-streaming-handoff.md",
+    "2026-06-28-agui-streaming-contract.md",
+    "2026-06-29-expert-route-endpoint-workorder.md",
+    "2026-06-30-citation-table-ops-migration-handoff.md",
+    "2026-07-08-a2ui-contract-handoff.md",
+    "2026-07-08-gaussdb-unlisten-p0.md",
+    "2026-07-09-early-issues-p0.md",
+    "decouple-bot-handoff.md",
+    "decouple-ops-handoff.md",
+    "decouple-overview.md",
+    "decouple-web-handoff.md",
+]
 EXAMPLE_PATHS = tuple(
     ROOT / "docs/handoffs/examples" / name
     for name in (
@@ -28,6 +48,41 @@ EXAMPLE_PATHS = tuple(
         "deep-genome-brief-gene-failed.json",
     )
 )
+
+
+@dataclass(frozen=True)
+class DispositionRow:
+    """One parsed row from the tracked handoff disposition matrix."""
+
+    name: str
+    status: str
+    bot_evidence: str
+    owner: str
+    evidence: str
+    remaining: str
+
+
+def parse_disposition_rows(path: Path = MATRIX) -> list[DispositionRow]:
+    """Parse the matrix rows without trusting its checklist prose."""
+    rows: list[DispositionRow] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("|") or line.startswith("| ---"):
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        if len(cells) != 6 or cells[0] == "Handoff":
+            continue
+        label = re.sub(r"\[([^]]+)\]\([^)]*\)", r"\1", cells[0])
+        rows.append(
+            DispositionRow(
+                name=label.strip("`"),
+                status=cells[1].strip("`"),
+                bot_evidence=cells[2],
+                owner=cells[3],
+                evidence=cells[4],
+                remaining=cells[5],
+            )
+        )
+    return rows
 
 
 def assert_public_deep_genome_payload(payload: Any) -> None:
@@ -143,3 +198,41 @@ def test_operations_handoff_has_safe_commands_and_rollbacks() -> None:
     assert "staging table" in text and "atomic rename" in text
     assert "BI_LEGACY_HTTP" not in text
     assert "Evidence: Not returned" in text
+
+
+def test_disposition_matrix_covers_all_original_handoffs_once() -> None:
+    """Keep the inventory complete and statuses within the approved set."""
+    rows = parse_disposition_rows()
+    assert [row.name for row in rows] == ORIGINAL_HANDOFF_NAMES
+    assert len({row.name for row in rows}) == 14
+    assert {row.status for row in rows} <= {
+        "Closed",
+        "Superseded",
+        "External Pending",
+        "Blocked",
+    }
+
+
+def test_external_rows_cannot_claim_returned_evidence() -> None:
+    """Missing owner proof must remain visibly pending."""
+    for row in parse_disposition_rows():
+        if row.status == "External Pending":
+            assert row.evidence == "Not returned"
+
+
+def test_matrix_bot_commit_evidence_exists_in_git() -> None:
+    """Require local evidence hashes to resolve in the current repository."""
+    rows = parse_disposition_rows()
+    for row in rows:
+        hashes = re.findall(
+            r"(?<![0-9a-f])[0-9a-f]{7,40}(?![0-9a-f])",
+            row.bot_evidence,
+        )
+        assert hashes, row.name
+        for commit in hashes:
+            result = subprocess.run(
+                ["git", "cat-file", "-e", f"{commit}^{{commit}}"],
+                cwd=ROOT,
+                check=False,
+            )
+            assert result.returncode == 0, (row.name, commit)
