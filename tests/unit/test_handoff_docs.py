@@ -23,6 +23,7 @@ OPS_HANDOFF = (
     ROOT / "docs/handoffs/2026-07-15-bot-operations-acceptance-handoff.md"
 )
 MATRIX = ROOT / "docs/handoffs/2026-07-15-handoff-disposition-matrix.md"
+EVIDENCE_TEMPLATE = ROOT / "docs/handoffs/evidence/record-template.json"
 ORIGINAL_HANDOFF_NAMES = [
     "2026-05-23-python-service-consolidation.md",
     "2026-06-09-web-gateway-cutover-bot-asks.md",
@@ -250,6 +251,40 @@ def test_release_acceptance_ids_are_unique_and_pending() -> None:
         )
         assert "External Pending" in line
         assert "Not returned" in line
+
+
+def test_evidence_template_has_required_redacted_shape() -> None:
+    """Keep owner evidence records copyable and credential-free."""
+    record = json.loads(EVIDENCE_TEMPLATE.read_text(encoding="utf-8"))
+    assert set(record) == {
+        "acceptance_id",
+        "owner",
+        "state",
+        "commit",
+        "environment",
+        "command_or_request",
+        "expected",
+        "observed",
+        "artifact",
+        "redaction",
+        "recorded_at",
+    }
+    assert record["acceptance_id"] in ACCEPTANCE_IDS
+    assert record["state"] == "Prepared"
+    serialized = json.dumps(record)
+    assert not re.search(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{24,}", serialized)
+    assert not re.search(
+        r"\b(?:sk|gh[pousr])_[A-Za-z0-9_-]{20,}\b", serialized
+    )
+
+
+def test_evidence_credential_shape_is_rejected_by_contract() -> None:
+    """Make the redaction rule executable with a synthetic bad value."""
+    bad_record = {
+        "observed": "Authorization: Bearer " + "a" * 24,
+    }
+    serialized = json.dumps(bad_record)
+    assert re.search(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{24,}", serialized)
 
 
 def test_matrix_bot_commit_evidence_exists_in_git() -> None:
