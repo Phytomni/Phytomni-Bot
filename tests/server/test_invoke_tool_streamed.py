@@ -283,7 +283,10 @@ async def test_chat_stream_projects_midstream_failure(
         raise McpError(
             ErrorData(
                 code=INTERNAL_ERROR,
-                message="upstream 502 at https://secret.internal",
+                message=(
+                    "Bearer bearer-secret postgresql://db-user:db-password@"
+                    "db.internal/db SELECT secret_token FROM private_table"
+                ),
             )
         )
 
@@ -300,7 +303,14 @@ async def test_chat_stream_projects_midstream_failure(
 
     assert events[-1].type == "RunError"
     assert events[-1].data["code"] == "agent_execution_failed"
-    assert "secret.internal" not in events[-1].data["message"]
+    message = events[-1].data["message"]
+    for forbidden in (
+        "bearer-secret",
+        "postgresql://",
+        "db-user:db-password",
+        "SELECT secret_token",
+    ):
+        assert forbidden not in message
     assert "RunFinished" not in [event.type for event in events]
 
 

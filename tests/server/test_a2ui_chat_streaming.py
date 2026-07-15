@@ -147,7 +147,10 @@ async def test_stream_a2ui_runtime_failure_emits_error_and_fails_run(
         ) -> dict[str, Any]:
             """Raise a backend failure after the opening event."""
             del config
-            raise RuntimeError("backend token=hidden a2ui failure")
+            raise RuntimeError(
+                "Bearer bearer-secret postgresql://db-user:db-password@"
+                "db.internal/db SELECT secret_token FROM private_table"
+            )
 
     monkeypatch.setattr(
         "mcp_server_phytomni.api.app._chat_a2ui_stream_app",
@@ -165,6 +168,13 @@ async def test_stream_a2ui_runtime_failure_emits_error_and_fails_run(
     assert body.count("event: RunError\n") == 1
     assert "event: RunFinished\n" not in body
     assert body.count("data: [DONE]") == 1
+    for forbidden in (
+        "bearer-secret",
+        "postgresql://",
+        "db-user:db-password",
+        "SELECT secret_token",
+    ):
+        assert forbidden not in body
     run_id = _extract_run_started_id(body)
     fetched = await api_client.get(
         f"/v1/runs/{run_id}",

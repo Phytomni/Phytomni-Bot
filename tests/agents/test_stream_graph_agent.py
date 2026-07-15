@@ -381,7 +381,10 @@ async def test_graph_stream_propagates_runtime_failure() -> None:
             assert stream_mode == ["custom", "updates", "values"]
             assert subgraphs is True
             if stream_mode:
-                raise RuntimeError("graph backend failed")
+                raise RuntimeError(
+                    "Bearer bearer-secret postgresql://db-user:db-password@"
+                    "db.internal/db SELECT secret_token FROM private_table"
+                )
             yield (), "values", {}
 
     stream = _stream_graph_agent(
@@ -398,7 +401,7 @@ async def test_graph_stream_propagates_runtime_failure() -> None:
         async for _event in stream:
             pass
 
-    with pytest.raises(RuntimeError, match="graph backend failed"):
+    with pytest.raises(RuntimeError, match="secret_token"):
         await drain()
 
     lifecycle = StreamLifecycleState()
@@ -421,3 +424,11 @@ async def test_graph_stream_propagates_runtime_failure() -> None:
     assert [event.type for event in projected] == ["RunStarted", "RunError"]
     assert lifecycle.reached_finish is False
     assert lifecycle.saw_error is True
+    evidence = repr(projected)
+    for forbidden in (
+        "bearer-secret",
+        "postgresql://",
+        "db-user:db-password",
+        "SELECT secret_token",
+    ):
+        assert forbidden not in evidence

@@ -59,6 +59,17 @@ async def _cancelled_events() -> AsyncIterator[AguiEvent]:
     raise asyncio.CancelledError
 
 
+async def _cancelled_events_with_cleanup(
+    cleanup: list[bool],
+) -> AsyncIterator[AguiEvent]:
+    """Propagate cancellation while recording producer cleanup."""
+    try:
+        yield run_started("run-1", None)
+        raise asyncio.CancelledError
+    finally:
+        cleanup.append(True)
+
+
 async def _error_then_finish() -> AsyncIterator[AguiEvent]:
     """Emit contradictory error and finish frames for projection testing."""
     yield run_started("run-1", None)
@@ -70,6 +81,16 @@ async def _mcp_error_stream() -> AsyncIterator[AguiEvent]:
     """Raise an MCP error containing long secret-shaped details."""
     yield run_started("run-1", None)
     detail = "token=hidden https://internal.example/path " + ("x" * 2048)
+    raise McpError(ErrorData(code=INTERNAL_ERROR, message=detail))
+
+
+async def _secret_mcp_error_stream() -> AsyncIterator[AguiEvent]:
+    """Raise a known error containing credentials, a DSN, and SQL text."""
+    yield run_started("run-1", None)
+    detail = (
+        "Bearer bearer-secret postgresql://db-user:db-password@db.internal/db "
+        "SELECT secret_token FROM private_table"
+    )
     raise McpError(ErrorData(code=INTERNAL_ERROR, message=detail))
 
 
@@ -139,6 +160,22 @@ async def test_cancelled_error_propagates() -> None:
         )
 
 
+async def test_cancelled_error_runs_producer_cleanup() -> None:
+    """Cancellation leaves the producer's cleanup/finalizer intact."""
+    cleanup: list[bool] = []
+    with pytest.raises(asyncio.CancelledError):
+        await _collect(
+            project_stream_failures(
+                _cancelled_events_with_cleanup(cleanup),
+                state=StreamLifecycleState(),
+                run_id="run-1",
+                request_id="req-1",
+            )
+        )
+
+    assert cleanup == [True]
+
+
 async def test_run_finished_is_suppressed_after_run_error() -> None:
     """A contradictory finish frame cannot follow an emitted error."""
     projected = await _collect(
@@ -169,6 +206,33 @@ async def test_known_mcp_error_is_redacted_and_capped() -> None:
     assert "hidden" not in message
     assert "internal.example" not in message
     assert message.startswith("<redacted-secret>")
+
+
+async def test_secret_fault_never_reaches_frames_or_logs(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Credentials, DSNs, and SQL never escape a known stream failure."""
+    caplog.set_level(
+        logging.ERROR,
+        logger="mcp_server_phytomni.mcp.stream_lifecycle",
+    )
+    projected = await _collect(
+        project_stream_failures(
+            _secret_mcp_error_stream(),
+            state=StreamLifecycleState(),
+            run_id="run-secret",
+            request_id="req-secret",
+        )
+    )
+    evidence = repr(projected) + caplog.text
+
+    for forbidden in (
+        "bearer-secret",
+        "postgresql://",
+        "db-user:db-password",
+        "SELECT secret_token",
+    ):
+        assert forbidden not in evidence
 
 
 async def test_unexpected_error_logs_location_without_message(

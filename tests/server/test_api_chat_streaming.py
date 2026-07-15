@@ -321,6 +321,7 @@ async def test_opened_agent_failure_emits_one_error_and_settles_failed(
     assert body.count("event: RunError\n") == 1
     assert "event: RunFinished\n" not in body
     assert body.count("data: [DONE]") == 1
+    assert "backend token=hidden failure" not in body
     run_id = _extract_run_started_id(body)
     record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
     assert record is not None
@@ -532,6 +533,55 @@ async def test_stream_run_fails_when_client_disconnects_before_finish(
     assert result["formatted"]["answer"] == "Hi"
     assert result["partial"] is True
     assert result["stream"] is True
+
+
+async def test_disconnect_before_finish_has_no_synthetic_frames(
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Closing before finish settles failed without writing another frame."""
+    captured: dict[str, str] = {}
+
+    async def fake_streamed(
+        _tool_name: Any,
+        _arguments: dict[str, Any],
+        *,
+        run_id: str,
+        dialogue_id: str | None,
+    ) -> AsyncIterator[Any]:
+        """Yield a partial run whose remainder must be closed silently."""
+        captured["run_id"] = run_id
+        yield run_started(run_id, dialogue_id)
+        yield text_message_content("m-disconnect", "partial")
+        yield run_finished(run_id)
+
+    monkeypatch.setattr(api_app, "prepare_tool_stream", fake_streamed)
+    payload = ChatCompletionRequest(
+        model="phyto-chat",
+        messages=[ChatMessage(role="user", content="disconnect")],
+        stream=True,
+    )
+    with request_context("u1", "req-disconnect-no-frame"):
+        response = await _stream_chat_completion(
+            tool_name="ChatAgent",
+            arguments={"user_query": "disconnect", "obs_file_list": []},
+            payload=payload,
+            user_query="disconnect",
+        )
+        body = cast(AsyncGenerator[str, None], response.body_iterator)
+        seen: list[str] = []
+        async for line in body:
+            seen.append(line)
+            if "event: TextMessageContent\n" in line:
+                await body.aclose()
+                break
+        with pytest.raises(StopAsyncIteration):
+            await anext(body)
+
+    assert "event: RunError\n" not in "".join(seen)
+    record = RunRegistry(tasks_db_path).get_run(captured["run_id"], owner="u1")
+    assert record is not None
+    assert record.status == "failed"
 
 
 async def test_stream_settle_marks_truncated_when_over_cap(

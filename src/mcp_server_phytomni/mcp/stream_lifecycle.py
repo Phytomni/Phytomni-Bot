@@ -12,6 +12,7 @@ the one-error projection used when an opened producer fails.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Final
@@ -25,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 MAX_STREAM_ERROR_MESSAGE_LENGTH: Final[int] = 512
 GENERIC_STREAM_ERROR_MESSAGE: Final[str] = "Agent execution failed"
+_SQL_RE: Final = re.compile(
+    r"(?is)\b(?:select|insert|update|delete|with|create|alter|drop|"
+    r"grant|revoke)\b.*"
+)
 
 
 @dataclass
@@ -116,6 +121,7 @@ def _mcp_error_message(exc: McpError) -> str:
     if not isinstance(message, str) or not message:
         return GENERIC_STREAM_ERROR_MESSAGE
     redacted = redact_secrets(message)
+    redacted = _SQL_RE.sub("<redacted-sql>", redacted)
     if not redacted:
         return GENERIC_STREAM_ERROR_MESSAGE
     return redacted[:MAX_STREAM_ERROR_MESSAGE_LENGTH]
