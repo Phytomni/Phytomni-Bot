@@ -100,6 +100,36 @@ def _seeded_store(
     return store, reservation
 
 
+def _terminalizable_store(
+    tmp_path: Path,
+) -> tuple[DeepGenomeStore, DeepGenomeReservation, int]:
+    """Prepare one running umbrella with one usable analysis item."""
+    store, reservation = _seeded_store(tmp_path)
+    plan = build_work_item_plan("osa", "Os01g0100100", "Os01g0100100")
+    failed_keys = tuple(
+        item.work_item_key
+        for item in plan
+        if item.work_item_key not in {"smep_analysis", "smoc_analysis"}
+    )
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        for work_item_key in failed_keys:
+            conn.execute(
+                "UPDATE deep_genome_remote_tasks SET status = 'failed', "
+                "failure_reason = 'analysis task failed' "
+                "WHERE umbrella_task_id = ? AND work_item_key = ?",
+                (reservation.umbrella_task_id, work_item_key),
+            )
+    store.apply_work_item_transition(
+        reservation.umbrella_task_id,
+        work_item_key="smep_analysis",
+        status="succeeded",
+        summary_markdown="older summary",
+    )
+    snapshot = store.get_snapshot(reservation.umbrella_task_id)
+    assert snapshot is not None
+    return store, reservation, snapshot.report_revision
+
+
 def _invalid_plan_items(kind: str) -> list[WorkItemSpec]:
     """Return a valid plan with one selected malformed field."""
     items = list(build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"))
@@ -760,3 +790,206 @@ def test_concurrent_successes_preserve_both_sections(tmp_path: Path) -> None:
         assert "SMEP summary" in latest.intermediate_report
         assert "SMOC summary" in latest.intermediate_report
         assert latest.report_revision == 2
+
+
+def test_stale_finalizer_cannot_overwrite_newer_snapshot(
+    tmp_path: Path,
+) -> None:
+    """Final publication uses the revision captured before synthesis."""
+    store, reservation, old_revision = _terminalizable_store(tmp_path)
+
+    store.apply_work_item_transition(
+        reservation.umbrella_task_id,
+        work_item_key="smoc_analysis",
+        status="succeeded",
+        summary_markdown="newer summary",
+    )
+
+    with pytest.raises(
+        DeepGenomeTransitionError, match="stale report revision"
+    ):
+        store.publish_final_report(
+            reservation.umbrella_task_id,
+            final_report="# stale",
+            expected_revision=old_revision,
+        )
+
+    latest = store.get_snapshot(reservation.umbrella_task_id)
+    assert latest is not None
+    assert latest.status == "running"
+    assert latest.final_report is None
+    assert latest.report_revision == old_revision + 1
+    assert "newer summary" in (latest.intermediate_report or "")
+
+
+def test_publish_final_report_sets_task_and_run_terminal_atomically(
+    tmp_path: Path,
+) -> None:
+    """A usable complete snapshot settles both local owner rows."""
+    store, reservation, _ = _terminalizable_store(tmp_path)
+    terminal = store.apply_work_item_transition(
+        reservation.umbrella_task_id,
+        work_item_key="smoc_analysis",
+        status="failed",
+    )
+
+    snapshot = store.publish_final_report(
+        reservation.umbrella_task_id,
+        final_report="# DeepGenome final report\n",
+        expected_revision=terminal.report_revision,
+    )
+
+    assert snapshot.status == "succeeded"
+    assert snapshot.final_report == "# DeepGenome final report\n"
+    assert snapshot.report_stage == "final"
+    assert snapshot.report_completeness == "partial"
+    assert snapshot.degraded is True
+    assert snapshot.report_revision == terminal.report_revision + 1
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        run = conn.execute(
+            "SELECT status, result_json, error FROM runs WHERE run_id = ?",
+            (reservation.run_id,),
+        ).fetchone()
+        task = conn.execute(
+            "SELECT status, final_report, report_stage, "
+            "report_completeness FROM tasks WHERE task_id = ?",
+            (reservation.umbrella_task_id,),
+        ).fetchone()
+
+    assert run[0] == "succeeded"
+    assert run[2] is None
+    assert '"final_report": "# DeepGenome final report\\n"' in run[1]
+    assert task == (
+        "succeeded",
+        "# DeepGenome final report\n",
+        "final",
+        "partial",
+    )
+
+
+def test_publish_final_report_marks_complete_when_all_items_are_usable(
+    tmp_path: Path,
+) -> None:
+    """A fully usable plan publishes a non-degraded complete report."""
+    store, reservation = _seeded_store(tmp_path)
+    store.apply_brief_gene_transition(
+        reservation.umbrella_task_id,
+        status="succeeded",
+        summary_markdown="BriefGene summary",
+    )
+    for item in build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"):
+        store.apply_work_item_transition(
+            reservation.umbrella_task_id,
+            work_item_key=item.work_item_key,
+            status="succeeded",
+            summary_markdown=f"summary for {item.work_item_key}",
+        )
+    current = store.get_snapshot(reservation.umbrella_task_id)
+    assert current is not None
+
+    snapshot = store.publish_final_report(
+        reservation.umbrella_task_id,
+        final_report="# complete",
+        expected_revision=current.report_revision,
+    )
+
+    assert snapshot.status == "succeeded"
+    assert snapshot.report_stage == "final"
+    assert snapshot.report_completeness == "complete"
+    assert snapshot.degraded is False
+    assert snapshot.degraded_reason is None
+
+
+def test_publish_final_report_rejects_nonterminal_items(
+    tmp_path: Path,
+) -> None:
+    """A final report cannot hide concrete work that is still active."""
+    store, reservation = _seeded_store(tmp_path)
+    brief = store.apply_brief_gene_transition(
+        reservation.umbrella_task_id,
+        status="succeeded",
+        summary_markdown="BriefGene summary",
+    )
+
+    with pytest.raises(
+        DeepGenomeTransitionError, match="analysis tasks are still running"
+    ):
+        store.publish_final_report(
+            reservation.umbrella_task_id,
+            final_report="# premature",
+            expected_revision=brief.report_revision,
+        )
+
+
+def test_publish_final_report_requires_a_usable_analysis(
+    tmp_path: Path,
+) -> None:
+    """All-terminal optional work without Markdown cannot succeed."""
+    store, reservation = _seeded_store(tmp_path)
+    store.apply_brief_gene_transition(
+        reservation.umbrella_task_id,
+        status="succeeded",
+        summary_markdown="BriefGene summary",
+    )
+    for item in build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"):
+        store.apply_work_item_transition(
+            reservation.umbrella_task_id,
+            work_item_key=item.work_item_key,
+            status="failed",
+        )
+    snapshot = store.get_snapshot(reservation.umbrella_task_id)
+    assert snapshot is not None
+
+    with pytest.raises(
+        DeepGenomeTransitionError, match="no usable analysis result"
+    ):
+        store.publish_final_report(
+            reservation.umbrella_task_id,
+            final_report="# unusable",
+            expected_revision=snapshot.report_revision,
+        )
+
+
+def test_failed_umbrella_keeps_intermediate_and_clears_final(
+    tmp_path: Path,
+) -> None:
+    """Synthesis failure preserves the best report but never a final one."""
+    store = _store(tmp_path)
+    reservation = store.reserve_run(
+        run_id="run-1",
+        umbrella_task_id="task-1",
+        owner="alice",
+        output_dir="/tmp/task-1",
+    )
+    before = store.apply_brief_gene_transition(
+        reservation.umbrella_task_id,
+        status="succeeded",
+        summary_markdown="BriefGene summary",
+    )
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        conn.execute(
+            "UPDATE tasks SET final_report = ? WHERE task_id = ?",
+            ("stale final", reservation.umbrella_task_id),
+        )
+
+    snapshot = store.fail_umbrella(
+        reservation.umbrella_task_id,
+        reason="final synthesis failed",
+    )
+
+    assert snapshot.status == "failed"
+    assert snapshot.intermediate_report == before.intermediate_report
+    assert snapshot.final_report is None
+    assert snapshot.report_revision == before.report_revision
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        task = conn.execute(
+            "SELECT status, final_report, degraded_reason FROM tasks "
+            "WHERE task_id = ?",
+            (reservation.umbrella_task_id,),
+        ).fetchone()
+        run = conn.execute(
+            "SELECT status, error FROM runs WHERE run_id = ?",
+            (reservation.run_id,),
+        ).fetchone()
+    assert task == ("failed", None, "final synthesis failed")
+    assert run == ("failed", "final synthesis failed")

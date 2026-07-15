@@ -29,8 +29,11 @@ from mcp_server_phytomni.agents.deep_genome.report import (
     DeepGenomeReportMixin,
     _state_gene_string,
 )
+from mcp_server_phytomni.agents.deep_genome.work_items import (
+    build_work_item_plan,
+)
 from mcp_server_phytomni.config.defaults import DeepGenomeConfig
-from mcp_server_phytomni.runtime.task_manager import TaskManager
+from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 
 pytestmark = pytest.mark.unit
 
@@ -327,37 +330,52 @@ class _FollowUpProbe(DeepGenomeReportMixin):
         return await self._run_follow_up_node(state)
 
 
-def test_run_follow_up_node_persists_assembled_report_to_task_row(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The follow-up node writes the assembled markdown to the task row.
-
-    DeepGenome runs in the background and the poll path reads the row, so
-    the last report node must persist the assembled markdown (the same
-    string it writes to disk, including the follow-up section) keyed by
-    ``state['task_id']``. A later ``update_task`` status flip leaves the
-    report intact (targeted column write).
-
-    Args:
-        tmp_path: Pytest temp directory fixture.
-        monkeypatch: Pytest monkeypatch fixture.
-
-    Returns:
-        None after the file + persisted-row assertions pass.
-    """
-    db_path = str(tmp_path / "tasks.db")
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
-        lambda: db_path,
+def _finalization_fixture(
+    tmp_path: Path,
+) -> tuple[DeepGenomeStore, str, str, int]:
+    """Build a reserved run with a running finalization barrier."""
+    db_path = tmp_path / "tasks.db"
+    store = DeepGenomeStore(str(db_path))
+    reservation = store.reserve_run(
+        run_id="run-1",
+        umbrella_task_id="task-1",
+        owner="alice",
+        output_dir="/obs/run",
     )
-    monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
-    mgr = TaskManager(db_path)
-    mgr.record_submission("dg-task-1", "submitted", "/obs/run")
+    store.apply_brief_gene_transition(
+        reservation.umbrella_task_id,
+        status="succeeded",
+        summary_markdown="BriefGene summary",
+    )
+    store.seed_plan(
+        reservation,
+        build_work_item_plan("osa", "Os01g0177400", "Os01g0177400"),
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE deep_genome_remote_tasks SET status = 'failed', "
+            "failure_reason = 'analysis task failed' "
+            "WHERE umbrella_task_id = ? AND work_item_key != ?",
+            (reservation.umbrella_task_id, "smep_analysis"),
+        )
+    snapshot = store.apply_work_item_transition(
+        reservation.umbrella_task_id,
+        work_item_key="smep_analysis",
+        status="succeeded",
+        summary_markdown="SMEP summary",
+    )
+    return (
+        store,
+        str(db_path),
+        reservation.umbrella_task_id,
+        snapshot.report_revision,
+    )
 
-    report_dir = tmp_path / "report"
-    report_dir.mkdir()
-    state = _state(
-        task_id="dg-task-1",
+
+def _report_state(task_id: str, report_dir: Path) -> DeepGenomeState:
+    """Build the final-node state bound to one reserved umbrella."""
+    return _state(
+        task_id=task_id,
         report_dir=str(report_dir),
         part12_combined=(
             "# Deep Genome Analysis of Os01g0177400\n\n"
@@ -368,229 +386,126 @@ def test_run_follow_up_node_persists_assembled_report_to_task_row(
         follow_up_questions=[],
     )
 
-    out = asyncio.run(_FollowUpProbe().run_follow_up_node(state))
 
+def test_run_follow_up_node_publishes_assembled_report_atomically(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The final node publishes Markdown and settles the owner run."""
+    store, db_path, task_id, _ = _finalization_fixture(tmp_path)
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
+        lambda: db_path,
+    )
+    monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
+    report_dir = tmp_path / "report"
+    report_dir.mkdir()
+
+    out = asyncio.run(
+        _FollowUpProbe().run_follow_up_node(_report_state(task_id, report_dir))
+    )
+
+    snapshot = store.get_snapshot(task_id)
+    assert snapshot is not None
+    assert snapshot.status == "succeeded"
+    assert snapshot.final_report is not None
+    assert "## Follow up questions:" in snapshot.final_report
     assert (report_dir / "Os01g0177400_report.md").exists()
-    persisted = mgr.get_task_final_report("dg-task-1")
-    assert persisted is not None
-    # The preamble title (carried by part12_combined) reaches the report.
-    assert "# Deep Genome Analysis of Os01g0177400" in persisted
-    assert "## Follow up questions:" in persisted
-    assert "Q1?" in persisted
-    # The status flip after the background run must not wipe the report.
-    mgr.update_task("dg-task-1", "succeeded", "", "/obs/run")
-    assert mgr.get_task_final_report("dg-task-1") == persisted
+    with sqlite3.connect(db_path) as conn:
+        run_status = conn.execute(
+            "SELECT status FROM runs WHERE run_id = 'run-1'"
+        ).fetchone()[0]
+    assert run_status == "succeeded"
     assert out["follow_up_questions"] == ["Q1?", "Q2?"]
-    assert "Q1?" in out["final_report"]
+
+
+class _FailingFollowUpProbe(_FollowUpProbe):
+    """Follow-up host whose synthesis call fails deterministically."""
+
+    async def _dispatch_chat(self, user_query: str) -> dict[str, Any]:
+        """Raise the same typed failure category as a provider outage."""
+        del user_query
+        raise RuntimeError("provider unavailable")
+
+
+def test_follow_up_failure_preserves_intermediate_and_fails_owner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A synthesis exception cannot be projected as a successful run."""
+    store, db_path, task_id, _ = _finalization_fixture(tmp_path)
+    before = store.get_snapshot(task_id)
+    assert before is not None
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
+        lambda: db_path,
+    )
+    monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
+    report_dir = tmp_path / "report"
+    report_dir.mkdir()
+
+    with pytest.raises(
+        DeepGenomeWorkflowError, match="^final synthesis failed$"
+    ):
+        asyncio.run(
+            _FailingFollowUpProbe().run_follow_up_node(
+                _report_state(task_id, report_dir)
+            )
+        )
+
+    snapshot = store.get_snapshot(task_id)
+    assert snapshot is not None
+    assert snapshot.status == "failed"
+    assert snapshot.intermediate_report == before.intermediate_report
+    assert snapshot.final_report is None
+    with sqlite3.connect(db_path) as conn:
+        run = conn.execute(
+            "SELECT status, error FROM runs WHERE run_id = 'run-1'"
+        ).fetchone()
+    assert run == ("failed", "final synthesis failed")
 
 
 async def test_follow_up_rejects_empty_final_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The graph cannot complete with an empty final Markdown payload."""
+    """An empty final report fails the owner while retaining intermediate."""
+    store, db_path, task_id, _ = _finalization_fixture(tmp_path)
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
+        lambda: db_path,
+    )
     monkeypatch.setattr(report_module, "_assemble_final_report", lambda _: "")
     report_dir = tmp_path / "report"
     report_dir.mkdir()
-    state = _state(report_dir=str(report_dir))
 
     with pytest.raises(
         DeepGenomeWorkflowError, match="^final report unavailable$"
     ):
-        await _FollowUpProbe().run_follow_up_node(state)
+        await _FollowUpProbe().run_follow_up_node(
+            _report_state(task_id, report_dir)
+        )
+
+    snapshot = store.get_snapshot(task_id)
+    assert snapshot is not None
+    assert snapshot.status == "failed"
+    assert snapshot.final_report is None
 
 
-def test_run_follow_up_node_skips_persist_without_task_id(
+def test_follow_up_requires_durable_tracking(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A missing ``task_id`` must not crash the node's persistence step.
-
-    The persistence write is best-effort: when no umbrella task id is in
-    state (defensive guard), the node still writes the report file and
-    returns its delta without raising.
-
-    Args:
-        tmp_path: Pytest temp directory fixture.
-        monkeypatch: Pytest monkeypatch fixture.
-
-    Returns:
-        None after the no-raise + file-written assertions pass.
-    """
+    """A final node without its umbrella id fails closed."""
     db_path = str(tmp_path / "tasks.db")
     monkeypatch.setattr(
         "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
         lambda: db_path,
     )
-    monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
-
     report_dir = tmp_path / "report"
     report_dir.mkdir()
-    state = _state(
-        task_id=None,
-        report_dir=str(report_dir),
-        summary_report="conclusion",
-        follow_up_questions=[],
-    )
 
-    out = asyncio.run(_FollowUpProbe().run_follow_up_node(state))
-
-    assert (report_dir / "Os01g0177400_report.md").exists()
-    assert out["follow_up_questions"] == ["Q1?", "Q2?"]
-
-
-def test_run_follow_up_node_swallows_persist_db_error(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A registry write failure must not crash the workflow's last node.
-
-    The report is already on disk; the row-persist is best-effort, so a
-    ``sqlite3.Error`` (WAL / lock) is logged and swallowed and the node
-    still returns its delta. Losing only the poll-surfacing of one run
-    is preferable to flipping a finished workflow to ``failed``.
-
-    Args:
-        tmp_path: Pytest temp directory fixture.
-        monkeypatch: Pytest monkeypatch fixture.
-
-    Returns:
-        None after the no-raise + file-written assertions pass.
-    """
-    monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
-        lambda: str(tmp_path / "tasks.db"),
-    )
-
-    class _BoomManager:
-        """TaskManager stand-in whose report write always fails."""
-
-        def __init__(self, _db_path: str) -> None:
-            """Accept the db path and ignore it."""
-
-        def set_task_final_report(self, *_: Any) -> bool:
-            """Raise as a WAL-locked / busy registry would."""
-            raise sqlite3.Error("database is locked")
-
-    monkeypatch.setattr(report_module, "TaskManager", _BoomManager)
-
-    report_dir = tmp_path / "report"
-    report_dir.mkdir()
-    state = _state(
-        task_id="dg-boom",
-        report_dir=str(report_dir),
-        summary_report="conclusion",
-        follow_up_questions=[],
-    )
-
-    out = asyncio.run(_FollowUpProbe().run_follow_up_node(state))
-
-    assert (report_dir / "Os01g0177400_report.md").exists()
-    assert out["follow_up_questions"] == ["Q1?", "Q2?"]
-
-
-def test_run_follow_up_node_persists_degraded_reason(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A failures channel persists a redacted degraded reason on the row.
-
-    When an optional analysis branch degrades, ``failures`` carries a
-    record; the final report node must redact its message and write it to
-    the umbrella task row so the poll surface can flag ``degraded``. A
-    backend URL in the message is scrubbed before persist.
-    """
-    db_path = str(tmp_path / "tasks.db")
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
-        lambda: db_path,
-    )
-    monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
-    mgr = TaskManager(db_path)
-    mgr.record_submission("dg-deg-1", "submitted", "/obs/run")
-
-    report_dir = tmp_path / "report"
-    report_dir.mkdir()
-    state = _state(
-        task_id="dg-deg-1",
-        report_dir=str(report_dir),
-        summary_report="conclusion",
-        follow_up_questions=[],
-        failures=[
-            {
-                "task_label": "evolution_analysis",
-                "message": "boom at https://bi.internal:9000/q",
-                "kind": "execute",
-                "traceback_digest": None,
-            }
-        ],
-    )
-
-    asyncio.run(_FollowUpProbe().run_follow_up_node(state))
-
-    assert mgr.get_task_degraded("dg-deg-1") == "boom at <redacted-url>"
-
-
-def test_persist_degraded_uses_literature_degraded_when_no_failures(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Literature-only degradation persists a degraded reason, no failure.
-
-    When the brief_gene mount succeeds overall but rolls up per-symbol
-    ``literature_degraded`` records (and no ``failures``), the final
-    report node must still persist a status-independent degraded reason
-    listing the sorted unique symbols.
-    """
-    db_path = str(tmp_path / "tasks.db")
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
-        lambda: db_path,
-    )
-    monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
-    mgr = TaskManager(db_path)
-    mgr.record_submission("dg-lit-1", "submitted", "/obs/run")
-
-    report_dir = tmp_path / "report"
-    report_dir.mkdir()
-    state = _state(
-        task_id="dg-lit-1",
-        report_dir=str(report_dir),
-        summary_report="conclusion",
-        follow_up_questions=[],
-        failures=[],
-        literature_degraded=[
-            {"task_label": "OsB", "message": "boom"},
-            {"task_label": "OsA", "message": "boom"},
-        ],
-    )
-
-    asyncio.run(_FollowUpProbe().run_follow_up_node(state))
-
-    assert (
-        mgr.get_task_degraded("dg-lit-1")
-        == "literature retrieval degraded for: OsA, OsB"
-    )
-
-
-def test_run_follow_up_node_no_degraded_for_healthy_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A run with no failures leaves degraded_reason NULL (no false hit)."""
-    db_path = str(tmp_path / "tasks.db")
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.deep_genome.report.resolve_tasks_db_path",
-        lambda: db_path,
-    )
-    monkeypatch.setattr(report_module, "get_prompt", lambda *a, **k: "PROMPT")
-    mgr = TaskManager(db_path)
-    mgr.record_submission("dg-ok-1", "submitted", "/obs/run")
-
-    report_dir = tmp_path / "report"
-    report_dir.mkdir()
-    state = _state(
-        task_id="dg-ok-1",
-        report_dir=str(report_dir),
-        summary_report="conclusion",
-        follow_up_questions=[],
-    )
-
-    asyncio.run(_FollowUpProbe().run_follow_up_node(state))
-
-    assert mgr.get_task_degraded("dg-ok-1") is None
+    with pytest.raises(
+        DeepGenomeWorkflowError, match="^final report tracking unavailable$"
+    ):
+        asyncio.run(
+            _FollowUpProbe().run_follow_up_node(
+                _state(task_id=None, report_dir=str(report_dir))
+            )
+        )

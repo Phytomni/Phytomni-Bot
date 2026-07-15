@@ -28,15 +28,15 @@ from ...common.responses import (
 )
 from ...config.defaults import DeepGenomeConfig
 from ...graphs.chat_adapters import build_chat_input, extract_chat_response
-from ...runtime.task_manager import TaskManager, resolve_tasks_db_path
+from ...runtime.deep_genome_store import (
+    DeepGenomeStore,
+    DeepGenomeTransitionError,
+)
+from ...runtime.task_manager import resolve_tasks_db_path
 from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
 from ..chat.service import _cached_chat_app
-from ..shared.parallel_dispatch import (
-    degraded_labels,
-    redact_failure_message,
-)
 from .coordinator import (
     DeepGenomeWorkflowError,
     workflow_outcome_for_state,
@@ -699,108 +699,86 @@ class DeepGenomeReportMixin(WorkflowMixinBase):
         """
         logger.info("Generating follow-up research questions")
 
+        task_id = state.get("task_id")
+        if not isinstance(task_id, str) or not task_id.strip():
+            raise DeepGenomeWorkflowError("final report tracking unavailable")
+        store = DeepGenomeStore(resolve_tasks_db_path())
+        snapshot = store.get_snapshot(task_id)
+        if snapshot is None:
+            raise DeepGenomeWorkflowError("final report tracking unavailable")
+        expected_revision = snapshot.report_revision
         gene_id = state["gene_id"]
-        part0145_str = _assemble_final_report(state)
-        if not part0145_str.strip():
-            raise DeepGenomeWorkflowError("final report unavailable")
+        try:
+            part0145_str = _assemble_final_report(state)
+            if not part0145_str.strip():
+                raise DeepGenomeWorkflowError("final report unavailable")
 
-        follow_up_response = await self._dispatch_chat(
-            get_prompt(
-                self.deep_genome_config.PROMPT_FILE,
-                "system/follow_up_questions",
-                {
-                    "user_query": f"Analyze the gene {gene_id}",
-                    "system_response": part0145_str,
-                },
+            follow_up_response = await self._dispatch_chat(
+                get_prompt(
+                    self.deep_genome_config.PROMPT_FILE,
+                    "system/follow_up_questions",
+                    {
+                        "user_query": f"Analyze the gene {gene_id}",
+                        "system_response": part0145_str,
+                    },
+                )
             )
-        )
-
-        follow_up_list = parse_follow_up_questions(
-            message_content(follow_up_response)
-        )
-        report_dir = state["report_dir"] or ""
-        results_path = Path(report_dir) / f"{state['gene_id']}_report.md"
-        final_report = part0145_str + "\n## Follow up questions: \n"
-        for follow_up in follow_up_list:
-            final_report += follow_up
-            final_report += "\n"
-        if not final_report.strip():
-            raise DeepGenomeWorkflowError("final report unavailable")
-        await _write_async(results_path, final_report)
-        self._persist_final_report(state.get("task_id"), final_report)
-        self._persist_degraded(state.get("task_id"), state)
+            follow_up_list = parse_follow_up_questions(
+                message_content(follow_up_response)
+            )
+            report_dir = state["report_dir"] or ""
+            results_path = Path(report_dir) / f"{state['gene_id']}_report.md"
+            final_report = part0145_str + "\n## Follow up questions: \n"
+            for follow_up in follow_up_list:
+                final_report += follow_up
+                final_report += "\n"
+            if not final_report.strip():
+                raise DeepGenomeWorkflowError("final report unavailable")
+            await _write_async(results_path, final_report)
+            store.publish_final_report(
+                task_id,
+                final_report=final_report,
+                expected_revision=expected_revision,
+            )
+        except DeepGenomeWorkflowError as exc:
+            self._fail_finalization(store, task_id, str(exc))
+            raise
+        except DeepGenomeTransitionError as exc:
+            self._fail_finalization(
+                store, task_id, "final report publication failed"
+            )
+            raise DeepGenomeWorkflowError(
+                "final report publication failed"
+            ) from exc
+        except (
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+            sqlite3.Error,
+        ) as exc:
+            self._fail_finalization(store, task_id, "final synthesis failed")
+            raise DeepGenomeWorkflowError("final synthesis failed") from exc
         return {
             "final_report": final_report,
             "follow_up_questions": follow_up_list,
         }
 
     @staticmethod
-    def _persist_final_report(task_id: str | None, final_report: str) -> None:
-        """Write the assembled report to the umbrella task row, best-effort.
-
-        DeepGenome runs in the background and returns only a submit
-        handle, so the assembled markdown reaches a polling client only
-        if it is persisted on the local task row here (the last report
-        node). ``set_task_final_report`` is a targeted column write, so a
-        later terminal ``update_task`` status flip leaves it intact. The
-        write is best-effort: a registry hiccup (``sqlite3.Error`` for
-        WAL / lock failures, ``OSError`` for a full disk) is logged and
-        swallowed rather than failing the workflow's final node, since
-        the report is already on disk and only the poll-surfacing is lost.
-
-        Args:
-            task_id: Umbrella task id minted by ``arun``; ``None`` skips
-                the write (defensive guard for state built without it).
-            final_report: Assembled report markdown to persist verbatim.
-        """
-        if not task_id:
-            return
+    def _fail_finalization(
+        store: DeepGenomeStore,
+        task_id: str,
+        reason: str,
+    ) -> None:
+        """Fail the owner row when synthesis or publication cannot finish."""
         try:
-            TaskManager(resolve_tasks_db_path()).set_task_final_report(
-                task_id, final_report
-            )
-        except (sqlite3.Error, OSError) as exc:
-            logger.warning(
-                "DeepGenome failed to persist final_report for %s: %s",
+            store.fail_umbrella(task_id, reason=reason)
+        except (DeepGenomeTransitionError, sqlite3.Error) as exc:
+            logger.error(
+                "DeepGenome failed to settle finalization for %s: %s",
                 task_id,
                 exc,
             )
-
-    @staticmethod
-    def _persist_degraded(task_id: str | None, state: DeepGenomeState) -> None:
-        """Persist a redacted degraded reason when a node failed.
-
-        Reads the ``failures`` channel; when non-empty, redacts the
-        first record's message and writes it to the umbrella task row so
-        the poll surface can flag ``degraded``. When ``failures`` is
-        empty it falls back to the ``literature_degraded`` channel rolled
-        up from the brief_gene mount and persists a reason listing the
-        sorted unique symbols. Best-effort like ``_persist_final_report``:
-        a registry hiccup (``sqlite3.Error`` for WAL / lock, ``OSError``
-        for a full disk) is logged and swallowed rather than failing the
-        workflow's final node.
-
-        Args:
-            task_id: Umbrella task id minted by ``arun``; ``None`` skips.
-            state: Final workflow state; ``failures`` drives the write.
-        """
-        failures = state.get("failures") or []
-        degraded = state.get("literature_degraded") or []
-        if not task_id or (not failures and not degraded):
-            return
-        if failures:
-            reason = redact_failure_message(str(failures[0]["message"]))
-        else:
-            reason = "literature retrieval degraded for: " + ", ".join(
-                degraded_labels(degraded)
-            )
-        try:
-            TaskManager(resolve_tasks_db_path()).set_task_degraded(
-                task_id, reason
-            )
-        except (sqlite3.Error, OSError) as exc:
-            logger.warning(
-                "DeepGenome failed to persist degraded reason for %s: %s",
-                task_id,
-                exc,
-            )
+            raise DeepGenomeWorkflowError(
+                "final report tracking failed"
+            ) from exc
