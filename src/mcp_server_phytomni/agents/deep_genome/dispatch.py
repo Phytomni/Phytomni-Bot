@@ -40,6 +40,7 @@ from ..shared.analysis_storage import (
     get_data_list,
 )
 from ..shared.sql import gauss_query, relay_bi_query, sql_literal
+from .coordinator import RemoteSubmission, normalize_submission
 from .summary import build_sub_summary
 from .work_items import build_work_item_plan, section_keys
 
@@ -611,10 +612,13 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         logger.info("Submitting %s task via AnalystAgent", analysis_type)
 
         result = await self._submit_analysis_task(context)
-        self._raise_if_agent_failed(result)
-
-        task_id = result.get("task_id")
-        output_path = result.get("output_dir")
+        if isinstance(result, RemoteSubmission):
+            task_id = result.submitted_task_id
+            output_path = result.output_dir
+        else:
+            self._raise_if_agent_failed(result)
+            task_id = result.get("task_id")
+            output_path = result.get("output_dir")
         if not isinstance(output_path, str):
             raise RuntimeError("AnalystAgent returned no output directory")
         logger.info("%s task completed (task_id: %s)", analysis_type, task_id)
@@ -669,7 +673,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
     async def _submit_analysis_task(
         self: Any,
         context: AnalysisDispatchContext,
-    ) -> dict:
+    ) -> dict | RemoteSubmission:
         """Submit one resolved analysis task to AnalystAgent.
 
         For the two design analysis types (protein_structure /
@@ -706,13 +710,14 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             "prompt_parts": (goal_description, meta, data_list),
             "compute_resource": compute_resource,
         }
-        return await submit_analyst_via_subgraph(
+        submission = await submit_analyst_via_subgraph(
             self._agents.analyst_agent,
             config,
             self.sensitive_config,
             request,
-            is_polling=True,
+            is_polling=False,
         )
+        return normalize_submission(submission)
 
     @staticmethod
     def _raise_if_agent_failed(result: dict) -> None:

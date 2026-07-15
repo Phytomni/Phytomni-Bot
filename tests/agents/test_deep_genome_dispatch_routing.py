@@ -25,10 +25,12 @@ from unittest.mock import AsyncMock
 import pytest
 
 from mcp_server_phytomni.agents.deep_genome import dispatch as dispatch_module
+from mcp_server_phytomni.agents.deep_genome.coordinator import RemoteSubmission
 from mcp_server_phytomni.agents.deep_genome.dispatch import (
     AnalysisDispatchContext,
 )
 from mcp_server_phytomni.config.defaults import DeepGenomeConfig
+from mcp_server_phytomni.graphs import analyst_dispatch_adapters
 
 pytestmark = pytest.mark.agent
 
@@ -77,7 +79,8 @@ def _install_shared_helper_mock(
     """
     subgraph_mock = AsyncMock(
         return_value={
-            "task_id": "subgraph-id",
+            "task_id": "caller-1",
+            "source_task_id": "remote-1",
             "output_dir": "/obs/subgraph",
             "task_status": "SUCCEEDED",
         }
@@ -222,6 +225,7 @@ async def test_protein_structure_routes_to_wrapper(
         )
     )
 
+    assert isinstance(result, dict)
     assert result["task_id"] == "struct-id"
     wrappers["protein_structure_for_gene"].assert_awaited_once_with(
         species_code="ath",
@@ -245,6 +249,7 @@ async def test_promoter_routes_to_wrapper(
         )
     )
 
+    assert isinstance(result, dict)
     assert result["task_id"] == "prom-id"
     wrappers["promoter_design_for_gene"].assert_awaited_once_with(
         species_code="ath",
@@ -273,31 +278,102 @@ async def test_non_transferred_type_routes_subgraph(
         )
     )
 
-    assert result["task_id"] == "subgraph-id"
+    assert isinstance(result, RemoteSubmission)
+    assert result.poll_task_id == "remote-1"
+    assert result.submitted_task_id == "caller-1"
     subgraph_mock.assert_awaited_once()
     for wrapper in wrappers.values():
         wrapper.assert_not_awaited()
 
 
-async def test_subgraph_helper_called_with_is_polling_true(
+async def test_deep_genome_generic_dispatch_is_submit_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """deep_genome dispatch passes ``is_polling=True`` to the helper.
+    """DeepGenome submits generic work without nested polling.
 
-    Pins the polling semantics that match the historical
-    ``analyst_agent.arun(is_polling=True, ...)`` call site; the
-    explicit kwarg forwarding is the contract.
+    The submission acknowledgement is normalized immediately so the
+    coordinator can poll the effective remote task id later.
     """
     mixin = _build_mixin_instance()
     _install_wrapper_mocks(monkeypatch)
     subgraph_mock = _install_shared_helper_mock(monkeypatch)
 
-    await dispatch_module.DeepGenomeDispatchMixin._submit_analysis_task(
-        mixin, _context("haplotypes_analysis")
+    result = (
+        await dispatch_module.DeepGenomeDispatchMixin._submit_analysis_task(
+            mixin, _context("haplotypes_analysis")
+        )
     )
 
     assert subgraph_mock.await_args is not None
-    assert subgraph_mock.await_args.kwargs["is_polling"] is True
+    assert subgraph_mock.await_args.kwargs["is_polling"] is False
+    assert isinstance(result, RemoteSubmission)
+    assert result.poll_task_id == "remote-1"
+
+
+async def test_default_analyst_adapter_still_polls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The standalone adapter default keeps its historical polling mode."""
+    captured: list[bool] = []
+
+    monkeypatch.setattr(
+        analyst_dispatch_adapters,
+        "prepare_analyst_dispatch_context",
+        lambda *_args: SimpleNamespace(
+            analysis_type="standalone",
+            output_dir="/obs/out",
+            thread_id="thread-1",
+        ),
+    )
+
+    async def no_reuse(*_args: Any, **_kwargs: Any) -> None:
+        """Keep the adapter on its fresh-submission path."""
+        return None
+
+    monkeypatch.setattr(
+        analyst_dispatch_adapters, "_reuse_prior_dispatch", no_reuse
+    )
+
+    def capture_input(payload: Any, *, is_polling: bool = True) -> dict:
+        """Record the adapter's default polling argument."""
+        del payload
+        captured.append(is_polling)
+        return {}
+
+    monkeypatch.setattr(
+        analyst_dispatch_adapters,
+        "map_send_payload_to_analyst_input",
+        capture_input,
+    )
+    monkeypatch.setattr(
+        analyst_dispatch_adapters,
+        "record_dispatch_submission",
+        lambda *_args, **_kwargs: None,
+    )
+    agent = SimpleNamespace(
+        app=SimpleNamespace(
+            ainvoke=AsyncMock(
+                return_value={
+                    "task_id": "standalone-1",
+                    "output_dir": "/obs/out",
+                }
+            )
+        )
+    )
+
+    await analyst_dispatch_adapters.submit_analyst_via_subgraph(
+        agent,
+        SimpleNamespace(USER_ID="alice"),
+        SimpleNamespace(),
+        {
+            "analysis_type": "standalone",
+            "target_id": "gene-1",
+            "prompt_parts": ("goal", "meta", {}),
+            "compute_resource": "small",
+        },
+    )
+
+    assert captured == [True]
 
 
 async def test_prepare_tasks_includes_protein_structure() -> None:

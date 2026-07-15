@@ -20,6 +20,7 @@ import pytest
 from mcp_server_phytomni.agents.deep_genome import (
     dispatch as deep_genome_dispatch,
 )
+from mcp_server_phytomni.agents.deep_genome.coordinator import RemoteSubmission
 from mcp_server_phytomni.agents.deep_genome.dispatch import (
     GENERIC_ANALYSIS_NODE_TYPES,
     AnalysisDispatchContext,
@@ -79,6 +80,46 @@ class DispatchHarness(DeepGenomeDispatchMixin):
             OBS_SERVER="https://example.invalid",
         )
         self.sensitive_config = FakeSensitiveConfig()
+
+
+async def test_dispatch_accepts_normalized_submit_ack_without_failure_guard(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Normalized generic acknowledgements bypass terminal-state checks."""
+    harness = DispatchHarness(str(tmp_path / "deep-out"))
+    harness.deep_genome_config.USER_ID = "alice"
+    submission = RemoteSubmission(
+        submitted_task_id="caller-1",
+        poll_task_id="remote-1",
+        output_dir="/obs/out",
+    )
+    submit = AsyncMock(return_value=submission)
+    download = AsyncMock(return_value="/tmp/results")
+    monkeypatch.setattr(harness, "_submit_analysis_task", submit)
+    monkeypatch.setattr(harness, "_download_analysis_result", download)
+
+    def fail_guard(_result: Any) -> None:
+        """Fail if a submit-only acknowledgement is treated as terminal."""
+        raise AssertionError("submit acknowledgement reached failure guard")
+
+    monkeypatch.setattr(harness, "_raise_if_agent_failed", fail_guard)
+
+    dispatch_and_wait = getattr(harness, "_dispatch_and_wait_analysis")
+    result = await dispatch_and_wait(
+        "haplotypes_analysis",
+        "ath",
+        "GeneA",
+    )
+
+    assert result == {
+        "task_id": "caller-1",
+        "output_path": "/obs/out",
+        "results_dir": "/tmp/results",
+        "status": "completed",
+    }
+    submit.assert_awaited_once()
+    download.assert_awaited_once()
 
 
 async def test_download_analysis_result_uses_readable_obsfs_dir(

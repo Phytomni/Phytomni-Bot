@@ -57,11 +57,10 @@ def map_send_payload_to_analyst_input(
     constants ``submit_analyst_analysis`` hard-codes). ``query`` is
     set to the empty string because the preset-plan path inside the
     analyst graph never reads ``query`` once ``is_preset_plan`` is
-    True. ``is_polling`` is parameterised: design / network / research
-    / environment / evolution (the five current dispatch consumers)
-    all submit fire-and-poll-elsewhere style so they pass
-    ``is_polling=False``; the default ``True`` is forward-looking for
-    deep_genome which awaits a polling-terminal task state inline.
+    True. ``is_polling`` is parameterised: DeepGenome passes
+    ``is_polling=False`` so its coordinator owns remote waiting, while
+    standalone and legacy dispatch callers retain the default ``True``
+    polling behavior.
 
     Args:
         payload: Request mapping with ``analysis_type`` / ``target_id``
@@ -70,9 +69,8 @@ def map_send_payload_to_analyst_input(
             / optional ``output_dir``.
         is_polling: Whether the analyst graph should block until the
             submitted task reaches a terminal state. Defaults to
-            ``True`` (deep_genome semantics); existing dispatch
-            consumers pass ``False`` to match their current
-            ``submit_analyst_analysis`` / ``analyst.submit`` paths.
+            ``True`` for standalone and legacy callers. DeepGenome passes
+            ``False`` because its coordinator owns remote polling.
 
     Returns:
         An ``AnalystInput`` dict suitable for ``ainvoke`` on the
@@ -165,10 +163,8 @@ async def submit_analyst_via_subgraph(
             dict) / ``compute_resource`` / optional ``output_dir``.
         is_polling: Whether the analyst graph should block until the
             submitted task reaches a terminal state. Defaults to
-            ``True`` (deep_genome semantics); design / network /
-            research / environment / evolution all pass ``False`` to
-            match their current ``submit_analyst_analysis`` /
-            ``analyst.submit`` fire-and-poll-elsewhere paths.
+            ``True`` for standalone and legacy callers. DeepGenome
+            passes ``False`` so its coordinator can own polling.
 
     Returns:
         Dict containing ``task_id`` / ``output_dir`` / ``plan`` /
