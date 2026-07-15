@@ -273,10 +273,10 @@ async def test_invoke_tool_streamed_raises_not_implemented_for_non_chat(
     assert tool_name in str(excinfo.value)
 
 
-async def test_chat_stream_propagates_midstream_failure(
+async def test_chat_stream_projects_midstream_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A raw raise after opening remains available to the projector."""
+    """An opened MCP failure becomes one redacted RunError frame."""
 
     async def boom(**_kwargs):
         yield {"choices": [{"delta": {"content": "Hi"}}]}
@@ -289,15 +289,19 @@ async def test_chat_stream_propagates_midstream_failure(
 
     monkeypatch.setattr(mcp_app, "stream_phyto_chat_chunks", boom)
 
-    with pytest.raises(McpError, match="upstream 502"):
-        await _drain(
-            mcp_app.invoke_tool_streamed(
-                "ChatAgent",
-                {"user_query": "x", "obs_file_list": []},
-                run_id="run-e",
-                dialogue_id=None,
-            )
+    events = await _drain(
+        mcp_app.invoke_tool_streamed(
+            "ChatAgent",
+            {"user_query": "x", "obs_file_list": []},
+            run_id="run-e",
+            dialogue_id=None,
         )
+    )
+
+    assert events[-1].type == "RunError"
+    assert events[-1].data["code"] == "agent_execution_failed"
+    assert "secret.internal" not in events[-1].data["message"]
+    assert "RunFinished" not in [event.type for event in events]
 
 
 def test_format_tool_chunk_preserves_payload_verbatim() -> None:

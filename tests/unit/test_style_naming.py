@@ -46,6 +46,11 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
         "too-many-lines",
         "too-many-locals",
     },
+    # Opened-stream lifecycle projector: the exception boundary must catch
+    # every ordinary producer failure while leaving cancellation untouched.
+    "src/mcp_server_phytomni/mcp/stream_lifecycle.py": {
+        "broad-exception-caught",
+    },
     # @func_cache chokepoint: see
     # ``docs/development/lint-exemptions.md`` entry on
     # ``run_phyto_chat_cached``.

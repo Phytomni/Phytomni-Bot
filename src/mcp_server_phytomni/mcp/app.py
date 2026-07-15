@@ -44,6 +44,7 @@ from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
 from ..config.defaults import ChatConfig
 from ..runtime.langgraph_runner import build_runnable_config
+from ..runtime.request_context import current_request_id
 from ..runtime.resume import (
     aresume_graph,
     detect_interrupt,
@@ -96,6 +97,7 @@ from .schemas import (
     PhytomniAgents,
     ReviewAgent,
 )
+from .stream_lifecycle import StreamLifecycleState, project_stream_failures
 from .streaming_phases import phase_for
 
 ToolHandler = Callable[[Any], Awaitable[Any]]
@@ -365,11 +367,17 @@ def invoke_tool_streamed(
     HTTP response body is opened, while runtime errors remain in the raw
     iterator for the shared stream lifecycle projector.
     """
-    return prepare_tool_stream(
+    raw_events = prepare_tool_stream(
         name,
         arguments,
         run_id=run_id,
         dialogue_id=dialogue_id,
+    )
+    return project_stream_failures(
+        raw_events,
+        state=StreamLifecycleState(),
+        run_id=run_id,
+        request_id=current_request_id() or "unknown",
     )
 
 

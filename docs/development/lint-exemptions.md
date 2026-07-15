@@ -488,6 +488,24 @@ refactor path above should be re-evaluated.
 
 ______________________________________________________________________
 
+### `mcp/stream_lifecycle.py` — opened-stream exception boundary
+
+**Rule(s)**: W0718 broad-exception-caught in
+`project_stream_failures`.
+
+**Mechanism**: function-local `# pylint: disable=broad-exception-caught`
+on the ordinary-`Exception` handler, registered under
+`src/mcp_server_phytomni/mcp/stream_lifecycle.py` in
+`tests/unit/test_style_naming.py`.
+
+**Why refactor is net-negative**: this is the typed response boundary for
+every opened stream. Enumerating backend exception classes would leave an
+unmapped producer failure able to tear down an already-open SSE response;
+`BaseException` cancellation and generator shutdown remain outside the
+handler by design.
+
+______________________________________________________________________
+
 ### W0135 contextmanager false positive in test fixtures
 
 **Rule(s)**: W0135 contextmanager-generator-missing-cleanup. 6
