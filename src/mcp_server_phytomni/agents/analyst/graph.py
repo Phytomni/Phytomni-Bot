@@ -326,7 +326,7 @@ class AnalystGraphMixin(WorkflowMixinBase):
         resource = self.analyst_config.RESOURCE[compute_res]
         return job_name, {
             "name": job_name,
-            "timeout": self.analyst_config.MAX_POLL,
+            "timeout": self.analyst_config.ANALYSIS_JOB_TIMEOUT,
             "tool_id": self.analyst_config.APP_ID[compute_res],
             "tool_type": "app",
             "tasks": [

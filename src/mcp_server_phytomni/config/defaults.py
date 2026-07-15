@@ -473,6 +473,8 @@ class AnalystConfig(KnowledgeConfig):
             long-running analysis tasks.
         MAX_POLL (float): Maximum duration in seconds for polling the status
             of long-running analysis tasks.
+        ANALYSIS_JOB_TIMEOUT (float): Maximum duration in seconds sent to the
+            remote analysis platform for one submitted job.
         COMPUTE_RESOURCE: compute resource type.
         TASK_NAME: task name in ai4s platform.
         APP_ID: app id in difference compute resource
@@ -540,6 +542,7 @@ class AnalystConfig(KnowledgeConfig):
     PRE_PREPARED_DATA_PATH: str = str(PRE_PREPARED_DATA_PATH)
     POLL_INTERVAL: float = 300
     MAX_POLL: float = 86400
+    ANALYSIS_JOB_TIMEOUT: float = 86400
     PLAN_MIN_SCORE: int = 0
 
 

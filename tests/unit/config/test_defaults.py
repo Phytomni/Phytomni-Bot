@@ -95,6 +95,19 @@ def test_config_inheritance_keeps_agent_defaults_available():
     assert data_config.SIMPLIFY_RESPONSE is True
 
 
+def test_analysis_timeout_budgets_are_independent() -> None:
+    """Request, local polling, and remote job budgets stay independent."""
+    config = AnalystConfig(
+        TIMEOUT=11,
+        MAX_POLL=22,
+        ANALYSIS_JOB_TIMEOUT=33,
+    )
+
+    assert config.TIMEOUT == 11
+    assert config.MAX_POLL == 22
+    assert config.ANALYSIS_JOB_TIMEOUT == 33
+
+
 def test_defaults_reexports_server_required_endpoint_fields() -> None:
     """Existing defaults imports keep the centralized tuple unchanged."""
     assert set(SERVER_REQUIRED_ENDPOINT_FIELDS) <= set(

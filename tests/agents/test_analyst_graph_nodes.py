@@ -195,6 +195,39 @@ async def test_plan_post_node_raises_when_llm_returns_empty_content() -> None:
     assert "Failed to generate plan" in excinfo.value.error.message
 
 
+def _make_agent(**config_overrides: Any) -> SimpleNamespace:
+    """Build a duck-typed analyst host with explicit config overrides."""
+    return SimpleNamespace(
+        analyst_config=AnalystConfig(**config_overrides),
+        sensitive_config=fake_analyst_sensitive_config(),
+    )
+
+
+async def _capture_create_payload(agent: Any) -> dict[str, Any]:
+    """Build the submit payload without contacting the remote platform."""
+    state = cast(AnalystAgentsState, {"compute_resource": "small"})
+    _, payload = AnalystGraphMixin._submit_job_data(
+        agent,
+        state,
+        "/obs/task.yaml",
+        "/obs/model.yaml",
+    )
+    return payload
+
+
+async def test_submit_payload_uses_remote_job_timeout() -> None:
+    """Remote create-task payload uses the dedicated job timeout budget."""
+    agent = _make_agent(
+        TIMEOUT=11,
+        MAX_POLL=22,
+        ANALYSIS_JOB_TIMEOUT=33,
+    )
+
+    payload = await _capture_create_payload(agent)
+
+    assert payload["timeout"] == 33
+
+
 async def test_check_post_node_treats_malformed_json_as_rejected() -> None:
     """Bad critic JSON degrades to score=0, REJECTED, empty feedback.
 
