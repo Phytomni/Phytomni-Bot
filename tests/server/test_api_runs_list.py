@@ -15,6 +15,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -23,6 +24,7 @@ from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.deep_genome.work_items import (
     build_work_item_plan,
 )
+from mcp_server_phytomni.runtime import run_registry as run_registry_module
 from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
@@ -34,34 +36,80 @@ from mcp_server_phytomni.runtime.run_registry import (
 pytestmark = pytest.mark.server
 
 
-def _seed_partial_deep_genome_run(db_path: str) -> str:
+def _seed_partial_deep_genome_run(db_path: str, *, owner: str = "u1") -> str:
     """Seed one owner-scoped DeepGenome snapshot without a coordinator."""
     store = DeepGenomeStore(db_path)
+    run_id = f"run-dg-{owner}"
+    umbrella_id = f"dg-{owner}"
     reservation = store.reserve_run(
-        run_id="run-dg-u1",
-        umbrella_task_id="dg-u1",
-        owner="u1",
+        run_id=run_id,
+        umbrella_task_id=umbrella_id,
+        owner=owner,
         output_dir="/obs/deep-genome",
     )
     store.apply_brief_gene_transition(
-        "dg-u1",
+        umbrella_id,
         status="succeeded",
         summary_markdown="BriefGene profile",
     )
     plan = build_work_item_plan("osa", "Os01g0100100", "Os01g0100100")
     store.seed_plan(reservation, plan)
     store.apply_work_item_transition(
-        "dg-u1",
+        umbrella_id,
         work_item_key="protein_design",
         status="failed",
     )
     store.apply_work_item_transition(
-        "dg-u1",
+        umbrella_id,
         work_item_key="smep_analysis",
         status="succeeded",
         summary_markdown="SMEP summary",
     )
     return reservation.run_id
+
+
+def _seed_terminal_deep_genome_run(
+    db_path: str,
+    *,
+    owner: str,
+    all_failed: bool,
+) -> str:
+    """Seed a final or all-failed DeepGenome snapshot for list tests."""
+    store = DeepGenomeStore(db_path)
+    run_id = f"run-dg-terminal-{owner}"
+    umbrella_id = f"dg-terminal-{owner}"
+    reservation = store.reserve_run(
+        run_id=run_id,
+        umbrella_task_id=umbrella_id,
+        owner=owner,
+        output_dir="/obs/deep-genome",
+    )
+    store.apply_brief_gene_transition(
+        umbrella_id,
+        status="succeeded",
+        summary_markdown="BriefGene profile",
+    )
+    plan = build_work_item_plan("osa", "Os01g0100100", "Os01g0100100")
+    store.seed_plan(reservation, plan)
+    for item in plan:
+        succeeded = not all_failed and item.work_item_key == "smep_analysis"
+        store.apply_work_item_transition(
+            umbrella_id,
+            work_item_key=item.work_item_key,
+            status="succeeded" if succeeded else "failed",
+            summary_markdown="SMEP summary" if succeeded else None,
+        )
+    if all_failed:
+        store.fail_umbrella(umbrella_id, reason="all analyses failed")
+    else:
+        snapshot = store.get_snapshot(umbrella_id)
+        assert snapshot is not None
+        store.publish_final_report(
+            umbrella_id,
+            final_report="# Final report\n",
+            expected_revision=snapshot.report_revision,
+        )
+    return run_id
 
 
 async def test_list_deep_genome_projects_intermediate_snapshot(
@@ -89,6 +137,103 @@ async def test_list_deep_genome_projects_intermediate_snapshot(
     assert "task_results" not in row["result"]
     assert "live_status" not in row["result"]
     assert "raw" not in row["result"]
+
+
+async def test_list_deep_genome_projects_degraded_final_snapshot(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """A final report remains visible when optional analyses failed."""
+    run_id = _seed_terminal_deep_genome_run(
+        tasks_db_path,
+        owner="u1",
+        all_failed=False,
+    )
+
+    response = await api_client.get(
+        "/v1/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    row = next(
+        item for item in response.json()["data"] if item["run_id"] == run_id
+    )
+    assert row["status"] == "succeeded"
+    assert row["result"]["final_report"] == "# Final report\n"
+    assert row["result"]["report_completeness"] == "partial"
+    assert row["result"]["degraded"] is True
+    assert row["answer"] == row["result"]["final_report"]
+
+
+async def test_list_deep_genome_preserves_all_failed_intermediate_snapshot(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """All-analysis failure stays failed while preserving intermediate text."""
+    run_id = _seed_terminal_deep_genome_run(
+        tasks_db_path,
+        owner="u1",
+        all_failed=True,
+    )
+
+    response = await api_client.get(
+        "/v1/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    row = next(
+        item for item in response.json()["data"] if item["run_id"] == run_id
+    )
+    assert row["status"] == "failed"
+    assert row["result"]["final_report"] is None
+    assert row["result"]["intermediate_report"].startswith("#")
+    assert row["result"]["degraded"] is True
+    assert row["answer"] == row["result"]["intermediate_report"]
+
+
+async def test_list_deep_genome_hides_foreign_snapshot(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """Foreign DeepGenome snapshots are not looked up or returned."""
+    run_id = _seed_partial_deep_genome_run(tasks_db_path, owner="u2")
+
+    response = await api_client.get(
+        "/v1/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    assert run_id not in {row["run_id"] for row in response.json()["data"]}
+
+
+async def test_list_deep_genome_does_not_probe_remote_children(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Snapshot listing never calls the remote task reconciler."""
+    _seed_partial_deep_genome_run(tasks_db_path)
+    remote_status_mock = AsyncMock()
+    monkeypatch.setattr(
+        run_registry_module,
+        "reconcile_task",
+        remote_status_mock,
+    )
+
+    response = await api_client.get(
+        "/v1/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    remote_status_mock.assert_not_awaited()
 
 
 def _seed(registry: RunRegistry, **kwargs: str) -> str:
