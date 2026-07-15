@@ -1,6 +1,6 @@
 # Command Line Reference
 
-Phytomni-Bot installs four console scripts from `pyproject.toml`.
+Phytomni-Bot installs five console scripts from `pyproject.toml`.
 Operational commands that deal with credentials print secrets only when
 explicitly documented below.
 
@@ -124,3 +124,30 @@ phytomni-cache --db-path /var/lib/phytomni/func_cache.sqlite stats
 The default cache path is `PHYTOMNI_CACHE_DB` when set, otherwise
 `.cache/phytomni/func_cache.sqlite` relative to the current working
 directory.
+
+## `phytomni-task-db`
+
+`phytomni-task-db` prepares a DeepGenome task database for an older binary
+that cannot read the child tables. It requires an explicit existing SQLite
+file, creates a sibling backup through SQLite's backup API, verifies both
+databases with `PRAGMA integrity_check`, and removes remote-task and section
+rows in one transaction:
+
+```bash
+phytomni-task-db prepare-deep-genome-rollback --db /var/lib/phytomni/server_tasks.db
+```
+
+The command refuses persisted nonterminal DeepGenome work with exit code `2`.
+After the service has been stopped and that loss is acknowledged, pass
+`--mark-nonterminal-failed`; this records a fixed failure reason, clears any
+stale final report, preserves the intermediate report, and then removes the
+child rows:
+
+```bash
+phytomni-task-db prepare-deep-genome-rollback \
+  --db /var/lib/phytomni/server_tasks.db \
+  --mark-nonterminal-failed
+```
+
+Successful preparation returns exit code `0` and prints only database paths
+and deletion counts. Invalid paths or SQLite failures return exit code `1`.

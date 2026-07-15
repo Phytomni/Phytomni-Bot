@@ -63,6 +63,7 @@ phytomni = "mcp_client_phytomni.main:main"
 phytomni-api = "mcp_server_phytomni.api.server:main"
 phytomni-api-key = "mcp_server_phytomni.api.keys:main"
 phytomni-cache = "mcp_server_phytomni.func_cache.cli:main"
+phytomni-task-db = "mcp_server_phytomni.runtime.deep_genome_admin:main"
 
 [project.optional-dependencies]
 dev = [

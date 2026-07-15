@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import json
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -46,6 +47,7 @@ __all__ = [
     "RunRequestInfo",
     "RunSpec",
     "Timestamps",
+    "purge_run_children",
 ]
 
 # Status vocabulary shared with the task layer. Mirrors the e2e poller
@@ -54,6 +56,36 @@ _SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
 _FAILURE_STATUSES = frozenset({"failed", "error"})
 _TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed"})
 _NON_POLLABLE_RUN_STATUSES = _TERMINAL_RUN_STATUSES | {"input_required"}
+
+
+def purge_run_children(
+    connection: sqlite3.Connection, run_ids: Sequence[str]
+) -> None:
+    """Delete DeepGenome children before their owning task and run rows."""
+    ids = tuple(run_ids)
+    if not ids:
+        return
+    placeholders = ",".join("?" for _ in ids)
+    for table in ("deep_genome_remote_tasks", "deep_genome_sections"):
+        exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+        if exists is None:
+            continue
+        connection.execute(
+            f"DELETE FROM {table} WHERE umbrella_task_id IN ("
+            "SELECT task_id FROM tasks WHERE run_id IN ("
+            f"{placeholders}))",
+            ids,
+        )
+    connection.execute(
+        f"DELETE FROM tasks WHERE run_id IN ({placeholders})", ids
+    )
+    connection.execute(
+        f"DELETE FROM runs WHERE run_id IN ({placeholders})", ids
+    )
+
 
 _CREATE_RUNS_DDL = """
 CREATE TABLE IF NOT EXISTS runs (
@@ -743,15 +775,7 @@ class RunRegistry:
             ]
             if not expired:
                 return 0
-            placeholders = ",".join("?" for _ in expired)
-            conn.execute(
-                f"DELETE FROM tasks WHERE run_id IN ({placeholders})",
-                tuple(expired),
-            )
-            conn.execute(
-                f"DELETE FROM runs WHERE run_id IN ({placeholders})",
-                tuple(expired),
-            )
+            purge_run_children(conn, expired)
         return len(expired)
 
     def _touch_running(self, current: RunRecord, status: str) -> RunRecord:
