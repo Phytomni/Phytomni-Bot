@@ -12,8 +12,10 @@ selected tool through `PhytomniMcpClient`.
 import argparse
 import asyncio
 import json
+import math
 import os
 import sys
+import time
 from collections.abc import Sequence
 from typing import Any, NoReturn
 
@@ -44,7 +46,7 @@ async def _main(argv: Sequence[str] | None = None) -> int:
     """
     parser = _build_parser()
     args = parser.parse_args(argv)
-    if args.command in {"submit", "status"}:
+    if args.command in {"submit", "status", "follow"}:
         return await _run_http_command(args)
 
     command = server_command_from_target(args.server)
@@ -110,6 +112,23 @@ def _build_parser() -> argparse.ArgumentParser:
         "status", help="Read one asynchronous HTTP run snapshot."
     )
     status_parser.add_argument("run_id", help="Owner-scoped HTTP run id.")
+
+    follow_parser = subparsers.add_parser(
+        "follow", help="Follow one asynchronous HTTP run to completion."
+    )
+    follow_parser.add_argument("run_id", help="Owner-scoped HTTP run id.")
+    follow_parser.add_argument(
+        "--poll-interval",
+        type=float,
+        default=5.0,
+        help="Seconds between status reads (default: 5.0).",
+    )
+    follow_parser.add_argument(
+        "--wait-timeout",
+        type=float,
+        default=3600.0,
+        help="Maximum local wait in seconds (default: 3600.0).",
+    )
     return parser
 
 
@@ -125,6 +144,11 @@ async def _run_http_command(args: argparse.Namespace) -> int:
     """Dispatch one HTTP command without opening the stdio transport."""
     try:
         api_url, api_key = _resolve_http_config(args.api_url)
+        if args.command == "follow" and (
+            not _positive_number(args.poll_interval)
+            or not _positive_number(args.wait_timeout)
+        ):
+            raise ValueError("poll interval and wait timeout must be positive")
         async with PhytomniHttpClient(api_url, api_key) as client:
             if args.command == "submit":
                 submitted = await client.submit(
@@ -135,12 +159,49 @@ async def _run_http_command(args: argparse.Namespace) -> int:
                 _print_submit_metadata(submitted.task_ids, submitted.status)
                 return 0
 
-            snapshot = await client.get_run(args.run_id)
-            _print_snapshot(snapshot)
-            return 1 if snapshot.status == "failed" else 0
+            if args.command == "status":
+                snapshot = await client.get_run(args.run_id)
+                _print_snapshot(snapshot)
+                return 1 if snapshot.status == "failed" else 0
+
+            return await _follow_http_run(
+                client,
+                args.run_id,
+                poll_interval=args.poll_interval,
+                wait_timeout=args.wait_timeout,
+            )
     except (HttpClientError, TypeError, ValueError) as exc:
         print(f"error: {_safe_cli_line(str(exc))}", file=sys.stderr)
         return 2
+
+
+async def _follow_http_run(
+    client: PhytomniHttpClient,
+    run_id: str,
+    *,
+    poll_interval: float,
+    wait_timeout: float,
+) -> int:
+    """Poll one run until terminal or the local monotonic deadline."""
+    deadline = time.monotonic() + wait_timeout
+    previous_key: tuple[str, int] | None = None
+    last_snapshot: RunSnapshot | None = None
+    while True:
+        snapshot = await client.get_run(run_id)
+        last_snapshot = snapshot
+        progress_key = (snapshot.status, snapshot.report_revision)
+        if progress_key != previous_key:
+            _print_snapshot_metadata(snapshot)
+            previous_key = progress_key
+        if snapshot.status in {"input_required", "succeeded", "failed"}:
+            _print_snapshot_report(snapshot)
+            return 1 if snapshot.status == "failed" else 0
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            _print_snapshot_report(last_snapshot)
+            return 3
+        await asyncio.sleep(min(poll_interval, remaining))
 
 
 def _resolve_http_config(api_url: str | None) -> tuple[str, str]:
@@ -169,6 +230,12 @@ def _print_submit_metadata(
 
 def _print_snapshot(snapshot: RunSnapshot) -> None:
     """Print the best report to stdout and one progress line to stderr."""
+    _print_snapshot_report(snapshot)
+    _print_snapshot_metadata(snapshot)
+
+
+def _print_snapshot_report(snapshot: RunSnapshot) -> None:
+    """Print the best available report or a status line to stdout."""
     report = snapshot.final_report
     if not isinstance(report, str) or not report.strip():
         report = snapshot.intermediate_report
@@ -179,6 +246,9 @@ def _print_snapshot(snapshot: RunSnapshot) -> None:
     else:
         print(f"status={snapshot.status}")
 
+
+def _print_snapshot_metadata(snapshot: RunSnapshot) -> None:
+    """Print one status/progress/degradation line to stderr."""
     fields = [
         f"status={_safe_cli_line(snapshot.status)}",
         f"revision={snapshot.report_revision}",
@@ -194,6 +264,11 @@ def _print_snapshot(snapshot: RunSnapshot) -> None:
             f"degraded_reason={_safe_cli_line(snapshot.degraded_reason)}"
         )
     print(" ".join(fields), file=sys.stderr)
+
+
+def _positive_number(value: float) -> bool:
+    """Return whether one CLI wait option is finite and strictly positive."""
+    return math.isfinite(value) and value > 0
 
 
 def _safe_cli_line(value: str) -> str:

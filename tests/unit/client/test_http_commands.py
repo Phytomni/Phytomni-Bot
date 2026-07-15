@@ -15,6 +15,7 @@ import pytest
 from mcp_client_phytomni import main as cli_main
 from mcp_client_phytomni.http_client import (
     HttpClientError,
+    RunProtocolError,
     RunSnapshot,
     SubmittedRun,
 )
@@ -30,11 +31,14 @@ class _StubHttpClient:
         self,
         *,
         snapshot: RunSnapshot | None = None,
+        snapshots: list[RunSnapshot] | None = None,
         error: Exception | None = None,
     ) -> None:
         self.snapshot = snapshot
+        self.snapshots = snapshots or []
         self.error = error
         self.submitted: tuple[str, dict[str, Any]] | None = None
+        self.requested_run_ids: list[str] = []
 
     async def __aenter__(self) -> _StubHttpClient:
         """Return this stub for one CLI invocation."""
@@ -64,6 +68,9 @@ class _StubHttpClient:
         """Return the configured snapshot or error."""
         if self.error is not None:
             raise self.error
+        self.requested_run_ids.append(run_id)
+        if self.snapshots:
+            self.snapshot = self.snapshots.pop(0)
         if self.snapshot is None:
             raise AssertionError("snapshot fixture missing")
         assert run_id == self.snapshot.run_id
@@ -79,6 +86,24 @@ def _partial_snapshot(*, status: str = "running") -> RunSnapshot:
         degraded=True,
         degraded_reason="1 of 12 optional analyses unavailable",
         progress={"total": 12, "running": 3},
+    )
+
+
+def _revision_snapshot(
+    status: str,
+    revision: int,
+    *,
+    intermediate_report: str | None = None,
+    final_report: str | None = None,
+    degraded_reason: str | None = None,
+) -> RunSnapshot:
+    """Build one compact follow-loop snapshot."""
+    return replace(
+        RunSnapshot("run-1", status),
+        report_revision=revision,
+        intermediate_report=intermediate_report,
+        final_report=final_report,
+        degraded_reason=degraded_reason,
     )
 
 
@@ -217,3 +242,155 @@ def test_installed_status_without_key_exits_two(
     monkeypatch.setenv("PHYTOMNI_API_URL", "https://bot.invalid")
 
     assert asyncio.run(_main(["status", "run-1"])) == 2
+
+
+async def test_follow_reports_only_status_or_revision_changes(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Follow deduplicates unchanged progress and prints the final report."""
+    snapshots = [
+        _revision_snapshot("running", 1),
+        _revision_snapshot("running", 1),
+        _revision_snapshot("running", 2),
+        _revision_snapshot("succeeded", 3, final_report="# final"),
+    ]
+    stub = _StubHttpClient(snapshots=snapshots)
+    monkeypatch.setattr(cli_main.asyncio, "sleep", _no_sleep)
+
+    code = await _run_http_cli(
+        monkeypatch,
+        [
+            "--api-url",
+            "https://bot.invalid",
+            "follow",
+            "run-1",
+            "--poll-interval",
+            "0.001",
+            "--wait-timeout",
+            "1",
+        ],
+        stub,
+    )
+
+    captured = capsys.readouterr()
+    assert code == 0
+    assert captured.out == "# final\n"
+    assert captured.err.count("revision=") == 3
+    assert len(stub.requested_run_ids) == 4
+
+
+async def test_follow_failed_run_prints_last_intermediate(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Follow returns one while retaining a failed run's report."""
+    stub = _StubHttpClient(
+        snapshots=[
+            _revision_snapshot("running", 2, intermediate_report="# partial"),
+            _revision_snapshot(
+                "failed",
+                2,
+                intermediate_report="# partial",
+                degraded_reason="12 of 12 optional analyses unavailable",
+            ),
+        ]
+    )
+    monkeypatch.setattr(cli_main.asyncio, "sleep", _no_sleep)
+
+    code = await _run_http_cli(
+        monkeypatch,
+        ["--api-url", "https://bot.invalid", "follow", "run-1"],
+        stub,
+    )
+
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.out == "# partial\n"
+    assert "12 of 12 optional analyses unavailable" in captured.err
+
+
+async def test_follow_protocol_error_returns_two(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Malformed snapshots map to the protocol/configuration exit code."""
+    stub = _StubHttpClient(error=RunProtocolError("invalid run snapshot"))
+
+    code = await _run_http_cli(
+        monkeypatch,
+        ["--api-url", "https://bot.invalid", "follow", "run-1"],
+        stub,
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert captured.out == ""
+    assert captured.err == "error: invalid run snapshot\n"
+
+
+async def test_follow_timeout_never_cancels_remote_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A local wait timeout only stops GET polling; it never cancels."""
+    stub = _StubHttpClient(
+        snapshot=_revision_snapshot("running", 1, intermediate_report="# p")
+    )
+    clock_values = [0.0, 0.5, 1.1]
+
+    def fake_monotonic() -> float:
+        """Advance the fake clock past the deadline on the second poll."""
+        return clock_values.pop(0) if clock_values else 1.1
+
+    monkeypatch.setattr(cli_main.time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(cli_main.asyncio, "sleep", _no_sleep)
+
+    code = await _run_http_cli(
+        monkeypatch,
+        [
+            "--api-url",
+            "https://bot.invalid",
+            "follow",
+            "run-1",
+            "--poll-interval",
+            "0.001",
+            "--wait-timeout",
+            "1",
+        ],
+        stub,
+    )
+
+    assert code == 3
+    assert stub.requested_run_ids == ["run-1", "run-1"]
+
+
+async def test_follow_rejects_nonpositive_wait_before_http_call(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Invalid local wait options fail before constructing a request."""
+    stub = _StubHttpClient(snapshot=_revision_snapshot("running", 1))
+
+    code = await _run_http_cli(
+        monkeypatch,
+        [
+            "--api-url",
+            "https://bot.invalid",
+            "follow",
+            "run-1",
+            "--poll-interval",
+            "0",
+        ],
+        stub,
+    )
+
+    captured = capsys.readouterr()
+    assert code == 2
+    assert captured.err == (
+        "error: poll interval and wait timeout must be positive\n"
+    )
+    assert not stub.requested_run_ids
+
+
+async def _no_sleep(_delay: float) -> None:
+    """Avoid wall-clock waits in follow-loop tests."""
