@@ -449,17 +449,13 @@ class DeepGenomeAgents(
         # ``part1_node`` used to write so the experiment_node 2-source
         # barrier still fires once ``synthesize_node`` adds the
         # analyst-side +1).
-        brief_gene_mount = self.make_brief_gene_mount_node(
-            self._agents.brief_gene_app
+        workflow.add_node(
+            "brief_gene_node",
+            self.make_brief_gene_mount_node(
+                self._agents.brief_gene_app,
+                self._persist_brief_gene_result,
+            ),
         )
-
-        async def tracked_brief_gene(state: DeepGenomeState) -> dict[str, Any]:
-            """Persist the required profile before optional planning."""
-            return await self._persist_brief_gene_result(
-                brief_gene_mount, state
-            )
-
-        workflow.add_node("brief_gene_node", tracked_brief_gene)
 
         workflow.add_node("prepare_tasks_node", self._prepare_analysis_tasks)
         workflow.add_node("synthesize_node", self._run_report_synthesizer)
@@ -562,11 +558,10 @@ class DeepGenomeAgents(
 
     async def _persist_brief_gene_result(
         self,
-        brief_gene_mount: Any,
+        projected: dict[str, Any],
         state: DeepGenomeState,
     ) -> dict[str, Any]:
         """Persist a successful required profile before graph fan-out."""
-        projected = await brief_gene_mount(state)
         task_id = state.get("task_id")
         if isinstance(task_id, str) and task_id.strip():
             DeepGenomeStore(

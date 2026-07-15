@@ -228,9 +228,6 @@ async def test_brief_gene_success_is_durable_before_optional_planning(
     )
     agent = DeepGenomeAgents.__new__(DeepGenomeAgents)
 
-    async def mount(_state: Any) -> dict[str, str]:
-        return {"preamble": "# Deep Genome Analysis of Os01g0100100"}
-
     state = cast(
         Any,
         {
@@ -238,7 +235,9 @@ async def test_brief_gene_success_is_durable_before_optional_planning(
             "preamble": None,
         },
     )
-    projected = await agent._persist_brief_gene_result(mount, state)
+    projected = await agent._persist_brief_gene_result(
+        {"preamble": "# Deep Genome Analysis of Os01g0100100"}, state
+    )
 
     assert projected["preamble"].startswith("# Deep Genome")
     snapshot = store.get_snapshot(reservation.umbrella_task_id)

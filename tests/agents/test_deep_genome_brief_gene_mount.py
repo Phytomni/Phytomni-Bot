@@ -199,6 +199,29 @@ async def test_brief_gene_mount_writes_experiment_branch_counter() -> None:
     assert "brief_response" not in delta
 
 
+async def test_brief_gene_mount_runs_post_projection_persistence_hook() -> (
+    None
+):
+    """The owner hook receives the projected delta after a successful mount."""
+    seen: list[tuple[dict[str, Any], dict[str, Any]]] = []
+
+    async def persist(
+        projected: dict[str, Any], state: dict[str, Any]
+    ) -> dict[str, Any]:
+        seen.append((projected, state))
+        return projected
+
+    mount = make_brief_gene_mount_node(
+        _build_fake_brief_gene_app(),
+        persist,
+    )
+    state = _deep_genome_state()
+
+    delta = await mount(cast(Any, state))
+
+    assert seen == [(delta, state)]
+
+
 # ---------------------------------------------------------------------------
 # Input synthesis: gene_id → BriefGeneInput user_query.
 # ---------------------------------------------------------------------------

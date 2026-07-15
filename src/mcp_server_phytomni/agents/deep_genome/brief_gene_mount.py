@@ -15,6 +15,7 @@ plus the experiment barrier increment.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 from langgraph.graph.state import CompiledStateGraph
@@ -86,6 +87,9 @@ def _project_brief_gene_output(
 
 def make_brief_gene_mount_node(
     brief_gene_app: CompiledStateGraph,
+    persist_fn: (
+        Callable[[dict[str, Any], Any], Awaitable[dict[str, Any]]] | None
+    ) = None,
 ) -> Any:
     """Return a node body that mounts brief_gene as a structural subgraph.
 
@@ -122,6 +126,14 @@ def make_brief_gene_mount_node(
     block — and writes ``experiment_completed_branches: 1`` so the
     experiment_node 2-source barrier still fires.
 
+    ``persist_fn`` is an optional post-projection hook for the owning
+    coordinator. It runs only after a successful BriefGene projection
+    and receives the projected state delta plus the original DeepGenome
+    state. Keeping the hook in this factory (rather than wrapping the
+    returned callable in another closure) preserves the direct
+    ``brief_gene_app`` free variable that LangGraph uses for xray
+    subgraph discovery.
+
     On brief_gene failure, the closure logs only the sanitized exception
     class and raises ``RequiredBriefGeneError``. The graph therefore stops
     before task preparation or any remote analysis submission.
@@ -130,6 +142,8 @@ def make_brief_gene_mount_node(
         brief_gene_app: Compiled BriefGeneAgent subgraph for this
             consumer instance. Must be a ``CompiledStateGraph`` so
             xray expansion discovers the subgraph.
+        persist_fn: Optional async owner hook invoked after successful
+            projection; it must return the projected state delta.
 
     Returns:
         Async callable suitable for ``StateGraph.add_node``.
@@ -145,7 +159,10 @@ def make_brief_gene_mount_node(
             brief_output = await brief_gene_app.ainvoke(brief_input)
             if not isinstance(brief_output, dict):
                 raise TypeError("BriefGene output is not an object")
-            return _project_brief_gene_output(brief_output, gene_id)
+            projected = _project_brief_gene_output(brief_output, gene_id)
+            if persist_fn is not None:
+                return await persist_fn(projected, state)
+            return projected
         except _BRIEF_GENE_MOUNT_CAUGHT as exc:
             logger.error(
                 "brief_gene mount failed for gene_id=%s; error_type=%s",
@@ -170,7 +187,11 @@ class DeepGenomeBriefGeneMountMixin:
     """
 
     def make_brief_gene_mount_node(
-        self: Any, brief_gene_app: CompiledStateGraph
+        self: Any,
+        brief_gene_app: CompiledStateGraph,
+        persist_fn: (
+            Callable[[dict[str, Any], Any], Awaitable[dict[str, Any]]] | None
+        ) = None,
     ) -> Any:
         """Return a node body mounting brief_gene under this consumer.
 
@@ -180,4 +201,4 @@ class DeepGenomeBriefGeneMountMixin:
         ``self`` rather than importing it directly.
         """
         del self
-        return make_brief_gene_mount_node(brief_gene_app)
+        return make_brief_gene_mount_node(brief_gene_app, persist_fn)
