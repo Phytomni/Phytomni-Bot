@@ -139,6 +139,29 @@ async def test_list_deep_genome_projects_intermediate_snapshot(
     assert "raw" not in row["result"]
 
 
+async def test_list_deep_genome_debug_preserves_private_snapshot_fields(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """Debug list reads retain the registry's private result fields."""
+    run_id = _seed_partial_deep_genome_run(tasks_db_path)
+
+    response = await api_client.get(
+        "/v1/runs",
+        params={"debug": "true"},
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    row = next(
+        item for item in response.json()["data"] if item["run_id"] == run_id
+    )
+    assert "task_results" in row["result"]
+    assert "live_status" in row["result"]
+    assert "artifacts" in row["result"]
+
+
 async def test_list_deep_genome_projects_degraded_final_snapshot(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

@@ -1630,6 +1630,7 @@ def _list_owner_runs(
     created_before: str | None,
     limit: int,
     offset: int,
+    debug: bool = False,
 ) -> dict[str, Any]:
     """Return one ``GET /v1/runs`` body scoped to ``owner``.
 
@@ -1653,6 +1654,7 @@ def _list_owner_runs(
         created_before: Optional ISO-8601 upper bound (inclusive).
         limit: Max rows to return.
         offset: Rows to skip (paging).
+        debug: Whether to retain private result fields.
 
     Returns:
         ``{"object", "data"}`` envelope with the flat run records.
@@ -1673,7 +1675,10 @@ def _list_owner_runs(
     )
     return {
         "object": "list",
-        "data": [_project_public_run_record(record) for record in records],
+        "data": [
+            _project_public_run_record(record, debug=debug)
+            for record in records
+        ],
     }
 
 
@@ -3607,6 +3612,7 @@ def create_app() -> FastAPI:
             created_before=created_before,
             limit=limit,
             offset=offset,
+            debug=resolve_debug(debug),
         )
         if not resolve_debug(debug):
             data = body.get("data")
