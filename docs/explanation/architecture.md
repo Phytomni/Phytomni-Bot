@@ -112,6 +112,43 @@ src/mcp_client_phytomni/
   tool_result_formatters.py  FormattedToolResult model and parse-only shim
 ```
 
+## DeepGenome execution and report boundary
+
+DeepGenome uses one local umbrella and normalized child rows rather than
+exposing upstream task topology:
+
+```text
+owner request
+    -> atomic reservation: runs + umbrella tasks + BriefGene section
+    -> in-process coordinator
+       -> deep_genome_sections (logical report sections)
+       -> deep_genome_remote_tasks (submitted id + effective polling id)
+       -> bounded remote polling and per-transition snapshot writes
+    -> report_revision N: intermediate_report
+    -> successful synthesis: report_revision N+1: final_report
+```
+
+`agents/deep_genome/coordinator.py` normalizes submission acknowledgements and
+owns the bounded polling loop. `agents/deep_genome/dispatch.py` and
+`runtime/deep_genome_transitions.py` persist state through
+`runtime/deep_genome_store.py`; the store reserves the owner run, umbrella
+task, and required BriefGene row in one transaction and applies compare-and-
+swap report revisions. A successful BriefGene profile is the launch barrier;
+optional analysis rows may fail independently, but synthesis needs at least
+one usable summary. The public snapshot is projected by
+`runtime/deep_genome_report_snapshot.py` and read by MCP `GetTaskStatus`, HTTP
+`GET /v1/runs/{run_id}`, and the HTTP-backed CLI. Those read paths do not poll
+the analysis platform.
+
+The coordinator is deliberately process-local. A service restart does not
+resume after process restart; reconciliation settles an orphaned nonterminal
+umbrella at the fixed restart-failure boundary while retaining its latest
+intermediate report. This release has no cross-process durable worker, no
+DataAgent HTTP streaming surface, and no claim that production migration or
+Web/Go acceptance is complete. Operational rollback and external evidence are
+tracked in the [Operations handoff](../handoffs/2026-07-15-bot-operations-acceptance-handoff.md)
+and [disposition matrix](../handoffs/2026-07-15-handoff-disposition-matrix.md).
+
 ## MCP Boundary
 
 `mcp/app.py`, `mcp/schemas.py`, `mcp/handlers.py`, and

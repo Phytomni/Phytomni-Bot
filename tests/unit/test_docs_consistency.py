@@ -22,6 +22,15 @@ from mcp_server_phytomni.mcp.schemas import PhytomniAgents
 pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
+ARCHITECTURE_DOCS = (
+    ROOT / "AGENTS.md",
+    ROOT / "README.md",
+    ROOT / "docs/reference/http-api.md",
+    ROOT / "docs/reference/cli.md",
+    ROOT / "docs/reference/mcp-tools.md",
+    ROOT / "docs/ops/http-api-runbook.md",
+    ROOT / "docs/explanation/architecture.md",
+)
 INLINE_LINK_PATTERN = re.compile(r"!?\[[^\]]+\]\(([^)]+)\)")
 FENCED_BLOCK_PATTERN = re.compile(r"```.*?```", re.DOTALL)
 README_TOOL_PATTERN = re.compile(r"\| `([^`]+)`\s+\|")
@@ -46,6 +55,13 @@ def _git_ls_files(*patterns: str) -> list[Path]:
 def _strip_fenced_blocks(markdown: str) -> str:
     """Remove fenced code blocks before Markdown link extraction."""
     return FENCED_BLOCK_PATTERN.sub("", markdown)
+
+
+def _read_architecture_docs() -> str:
+    """Read the durable guidance surfaces as one consistency corpus."""
+    return "\n".join(
+        path.read_text(encoding="utf-8") for path in ARCHITECTURE_DOCS
+    )
 
 
 def _is_external_or_anchor(target: str) -> bool:
@@ -187,6 +203,28 @@ def test_async_cli_docs_lock_transport_and_exit_codes() -> None:
     assert "--api-key" not in cli
     assert "0 success, 1 task failure, 2 client error, 3 local timeout" in cli
     assert "does not cancel the remote run" in cli
+
+
+def test_durable_docs_match_deep_genome_architecture() -> None:
+    """Keep durable guidance aligned with shipped DeepGenome boundaries."""
+    combined = _read_architecture_docs()
+    for phrase in (
+        "BriefGene is required",
+        "coordinator-owned polling",
+        "intermediate_report",
+        "report_revision",
+        "HTTP-backed CLI",
+        "does not resume after process restart",
+        "deep_genome_remote_tasks",
+    ):
+        assert phrase in combined
+    for false_claim in (
+        "durable DeepGenome worker",
+        "DataAgent HTTP streaming is supported",
+        "production migration complete",
+        "Web integration complete",
+    ):
+        assert false_claim not in combined
 
 
 def test_direct_gauss_rollback_uses_prior_binary_not_fake_switch() -> None:

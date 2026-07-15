@@ -778,6 +778,43 @@ Restore:
 The function cache is recoverable and can usually be rebuilt by traffic.
 Back it up only when preserving expensive cached remote results matters.
 
+## DeepGenome report operations
+
+DeepGenome is coordinated in-process. The launch reservation atomically writes
+the owner run, umbrella task, required BriefGene section, and child tracking
+rows; `deep_genome_sections` stores logical sections and
+`deep_genome_remote_tasks` stores normalized submitted/polling identities. The
+coordinator owns bounded remote polling and persists monotonic
+`report_revision` snapshots. HTTP, MCP, and the HTTP-backed CLI are readers of
+those snapshots, so a status request never polls the analysis platform.
+
+BriefGene must complete before any optional remote analysis is submitted. While
+optional work is pending or partially failed, clients may read the latest
+`intermediate_report`; `final_report` is published only after usable analysis
+and synthesis. A service restart does not resume the in-process coordinator.
+After stopping the service, the read path settles an orphaned umbrella at the
+fixed `workflow interrupted by service restart` boundary and preserves its
+last intermediate report. There is no durable worker or automatic cross-host
+recovery in 0.1.3.
+
+Before a rollback or migration, stop the API and make a verified SQLite backup
+as shown above. Prepare the DeepGenome tables with the guarded admin command:
+
+```bash
+phytomni-task-db prepare-deep-genome-rollback --db "$API_TASKS_DB_PATH"
+```
+
+The command refuses persisted nonterminal work by default. Only after an
+operator has approved the consequence may the command add
+`--mark-nonterminal-failed`; record its count and fixed reason in the change
+ticket. Restore the prior wheel or image before restoring a database backup,
+then run `/readyz`, `/v1/models`, and one owner-scoped status smoke. Do not
+claim production migration, Web/Go acceptance, Gauss role proof, or service
+retirement from these offline checks. Return evidence through the [Operations
+acceptance handoff](../handoffs/2026-07-15-bot-operations-acceptance-handoff.md)
+and track all fourteen source handoffs in the [disposition
+matrix](../handoffs/2026-07-15-handoff-disposition-matrix.md).
+
 ## Restart and Upgrade
 
 Restart:

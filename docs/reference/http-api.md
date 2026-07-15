@@ -1178,6 +1178,36 @@ fail independently. BriefGene failure fails the umbrella; after BriefGene
 succeeds, partial analysis failure is represented in the snapshot and does not
 hide the best report. A final report is published only after synthesis succeeds.
 
+### DeepGenome persistence and restart boundary
+
+The DeepGenome launch is an atomic local reservation. Before the background
+coordinator is scheduled, one transaction creates the owner `runs` row, the
+umbrella `tasks` row, and the required BriefGene section. Logical sections are
+stored in `deep_genome_sections`; concrete remote submissions, including both
+the accepted caller id and effective polling id, are stored in
+`deep_genome_remote_tasks`. The coordinator-owned polling loop is bounded by
+the configured local and remote deadlines and is the only component allowed to
+poll the analysis platform. The HTTP GET path, MCP `GetTaskStatus`, and the
+HTTP-backed CLI read the persisted snapshot instead of issuing remote probes.
+
+Each accepted transition updates the snapshot with a monotonic
+`report_revision`. The current `intermediate_report` is therefore available
+after BriefGene and after each optional analysis transition; `final_report`
+appears only after a usable analysis result and successful final synthesis.
+BriefGene failure is terminal with no report and zero remote submissions.
+Optional failures remain isolated and are reported through `degraded`, counts,
+and fixed failure messages while the best intermediate report remains visible.
+
+The coordinator is intentionally in-process. A service restart does not
+resume after process restart; the read path marks an orphaned nonterminal
+umbrella failed with `workflow interrupted by service restart` while retaining
+the last intermediate snapshot. This release makes no durable-worker,
+production-migration, live-acceptance, or Web/Go-completion claim. See the
+[Web and Go handoff](../handoffs/2026-07-15-deep-genome-web-go-handoff.md),
+[Operations handoff](../handoffs/2026-07-15-bot-operations-acceptance-handoff.md),
+and [disposition matrix](../handoffs/2026-07-15-handoff-disposition-matrix.md)
+for the evidence boundary.
+
 A `deep_genome` report whose optional mounted sub-analysis degraded mid-run
 (its evolution or digital-design step) can still settle as `succeeded` while
 flagging the gap through machine-readable keys —

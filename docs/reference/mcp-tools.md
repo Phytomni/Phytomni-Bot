@@ -244,6 +244,16 @@ BriefGene succeeds, a failed or still-running optional analysis leaves the
 best intermediate report visible, while a final report appears only after
 synthesis succeeds.
 
+The local DeepGenome store reserves the owner run, umbrella task, and required
+BriefGene section atomically before scheduling the coordinator. It keeps
+logical sections in `deep_genome_sections` and normalized child identities in
+`deep_genome_remote_tasks`. The coordinator owns bounded polling and writes
+monotonic report revisions; `GetTaskStatus` only reads the resulting snapshot.
+An API restart does not resume the in-process coordinator, so an orphan is
+settled to the fixed restart-failure boundary while its latest intermediate
+report remains readable. The one-shot stdio command cannot outlive its server
+subprocess; use the HTTP-backed CLI or a persistent MCP session for follow-up.
+
 A degraded `DeepGenomeAgent` report (an optional evolution or digital-design
 sub-analysis failed mid-run) keeps surfacing the report but adds
 `metadata.degraded` (bool) and

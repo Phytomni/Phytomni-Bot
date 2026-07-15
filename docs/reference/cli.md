@@ -83,9 +83,13 @@ a Markdown file. A failed run still prints its last intermediate report.
 
 Exit codes are **0 success, 1 task failure, 2 client error, 3 local timeout**.
 `follow` uses a local monotonic deadline, does not cancel the remote run, and
-prints progress only when the `(status, report_revision)` pair changes. A
-restart of the API process does not resume a coordinator; use the persisted
-local snapshot for reads and an operator recovery procedure for orphaned work.
+prints progress only when the `(status, report_revision)` pair changes. The
+HTTP-backed CLI is a reader of the API-owned snapshot: it chooses
+`final_report`, then `intermediate_report`, and never polls child task ids
+directly. A restart of the API process does not resume after process restart;
+use the persisted local snapshot for reads and the operator recovery procedure
+for orphaned work. This is an in-process coordinator boundary, not a durable
+worker guarantee.
 
 For full response models, use `mcp_client_phytomni.client.PhytomniMcpClient`
 from Python.

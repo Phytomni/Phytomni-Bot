@@ -70,6 +70,23 @@ and progress to stderr:
 phytomni --api-url http://127.0.0.1:8080 follow run-1
 ```
 
+DeepGenome has a local, revisioned report lifecycle. An atomic reservation
+creates the owner run, umbrella task, required BriefGene section, and child
+tracking rows before the in-process coordinator begins. BriefGene must succeed
+before any remote analysis is submitted; optional children may fail or remain
+in flight without hiding the latest `intermediate_report`. The coordinator
+owns bounded polling and writes `report_revision`; HTTP status, MCP
+`GetTaskStatus`, and the HTTP-backed CLI read that local snapshot. A service
+restart does not resume after process restart: the orphan is settled at the
+documented failure boundary, with its last intermediate report preserved.
+This release does not ship a cross-process durable worker for DeepGenome,
+does not expose DataAgent over HTTP streaming, and has no production/live
+integration acceptance. See the [Web and Go
+handoff](docs/handoffs/2026-07-15-deep-genome-web-go-handoff.md), [Operations
+handoff](docs/handoffs/2026-07-15-bot-operations-acceptance-handoff.md), and
+[disposition matrix](docs/handoffs/2026-07-15-handoff-disposition-matrix.md)
+for owner-returned evidence status.
+
 The HTTP API runs as a separate process:
 
 ```bash
