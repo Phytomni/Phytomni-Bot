@@ -682,8 +682,9 @@ The role grant, `default_transaction_read_only` setting, denied-write check,
 and connection-reuse probe remain external Operations evidence. **External Pending until the authorized probe**:
 do not mark production cutover complete
 from offline policy, unit tests, or a successful health check alone. Record the
-sanitized result, operator, timestamp, and rollback reference in the Phase 7
-Operations handoff before enabling customer traffic.
+sanitized result, operator, timestamp, and rollback reference in the
+[Operations acceptance packet](../handoffs/evidence/operations-acceptance.md)
+before enabling customer traffic.
 
 ### Authorized eighteen-query compatibility comparison
 

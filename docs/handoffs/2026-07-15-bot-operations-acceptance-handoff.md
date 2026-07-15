@@ -1,6 +1,6 @@
 # Operations acceptance handoff: Bot 0.1.3
 
-**Date:** 2026-07-15\
+**Date:** 2026-07-16\
 **Release:** `0.1.3` on `release/0.1.3`\
 **Bot owner:** Phytomni-Bot maintainer\
 **External owners:** Operations, DBA, GitHub administrator, and release owner\
@@ -32,6 +32,11 @@ an expected precondition is absent.
 
 The local Bot gate, unit tests, and offline E2E collection cannot close a
 production, database, GitHub, or live-backend item.
+
+The copyable owner sequence is in the
+[Operations, DBA, and GitHub acceptance packet](evidence/operations-acceptance.md).
+It maps the external checks to `RC-OPS-*` and `RC-DB-*`; all remain
+`External Pending` until sanitized owner records are returned.
 
 ## GitHub Actions configuration
 
