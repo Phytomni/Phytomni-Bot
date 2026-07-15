@@ -18,6 +18,7 @@ through ``submit_analyst_via_subgraph``.
 
 from __future__ import annotations
 
+from functools import partial
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
@@ -25,7 +26,10 @@ from unittest.mock import AsyncMock
 import pytest
 
 from mcp_server_phytomni.agents.deep_genome import dispatch as dispatch_module
-from mcp_server_phytomni.agents.deep_genome.coordinator import RemoteSubmission
+from mcp_server_phytomni.agents.deep_genome.coordinator import (
+    RemoteSubmission,
+    WorkItemOutcome,
+)
 from mcp_server_phytomni.agents.deep_genome.dispatch import (
     AnalysisDispatchContext,
 )
@@ -225,12 +229,13 @@ async def test_protein_structure_routes_to_wrapper(
         )
     )
 
-    assert isinstance(result, dict)
-    assert result["task_id"] == "struct-id"
+    assert isinstance(result, RemoteSubmission)
+    assert result.submitted_task_id == "struct-id"
     wrappers["protein_structure_for_gene"].assert_awaited_once_with(
         species_code="ath",
         gene_id="AT1G01010",
         output_dir="/obs/run/out",
+        is_polling=False,
     )
     subgraph_mock.assert_not_awaited()
 
@@ -249,12 +254,13 @@ async def test_promoter_routes_to_wrapper(
         )
     )
 
-    assert isinstance(result, dict)
-    assert result["task_id"] == "prom-id"
+    assert isinstance(result, RemoteSubmission)
+    assert result.submitted_task_id == "prom-id"
     wrappers["promoter_design_for_gene"].assert_awaited_once_with(
         species_code="ath",
         gene_id="AT1G01010",
         output_dir="/obs/run/out",
+        is_polling=False,
     )
     subgraph_mock.assert_not_awaited()
 
@@ -308,6 +314,82 @@ async def test_deep_genome_generic_dispatch_is_submit_only(
     assert subgraph_mock.await_args.kwargs["is_polling"] is False
     assert isinstance(result, RemoteSubmission)
     assert result.poll_task_id == "remote-1"
+
+
+async def test_dispatch_coordinator_receives_effective_poll_id(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    """Poll the dedup source id and resolve Markdown before local success."""
+    mixin = _build_mixin_instance()
+    mixin.deep_genome_config.TIMEOUT = 4.0
+    mixin.deep_genome_config.POLL_INTERVAL = 2.0
+    mixin.deep_genome_config.MAX_POLL = 10.0
+    submission = RemoteSubmission(
+        submitted_task_id="caller-1",
+        poll_task_id="remote-1",
+        output_dir="/obs/out",
+    )
+    submit = AsyncMock(return_value=submission)
+    download_dir = tmp_path / "results"
+    download_dir.mkdir()
+    (download_dir / "analysis.summary").write_text(
+        "# usable result\n",
+        encoding="utf-8",
+    )
+    download = AsyncMock(return_value=str(download_dir))
+    monkeypatch.setattr(mixin, "_submit_analysis_task", submit, raising=False)
+    monkeypatch.setattr(
+        mixin,
+        "_download_analysis_result",
+        download,
+        raising=False,
+    )
+    status = AsyncMock(return_value={"status": "SUCCEEDED"})
+    monkeypatch.setattr(dispatch_module, "task_status", status)
+    seen: dict[str, Any] = {}
+
+    async def poll(
+        received: RemoteSubmission,
+        *,
+        status_reader,
+        result_resolver,
+        transition_sink,
+        **_kwargs: Any,
+    ) -> WorkItemOutcome:
+        """Exercise status and result seams rather than submission success."""
+        seen["poll_task_id"] = received.poll_task_id
+        remote_status = await status_reader(received.poll_task_id, 4.0)
+        assert remote_status["status"] == "SUCCEEDED"
+        summary = await result_resolver(received)
+        assert summary == "# usable result"
+        return await transition_sink("succeeded", summary, None)
+
+    monkeypatch.setattr(dispatch_module, "poll_work_item", poll)
+    poll_remote = getattr(
+        dispatch_module.DeepGenomeDispatchMixin, "_poll_remote_submission"
+    )
+    setattr(mixin, "_poll_remote_submission", partial(poll_remote, mixin))
+
+    dispatch_and_wait = (
+        dispatch_module.DeepGenomeDispatchMixin._dispatch_and_wait_analysis
+    )
+    result = await dispatch_and_wait(
+        mixin,
+        "haplotypes_analysis",
+        "ath",
+        "AT1G01010",
+    )
+
+    assert seen == {"poll_task_id": "remote-1"}
+    assert result["status"] == "completed"
+    submit.assert_awaited_once()
+    status.assert_awaited_once()
+    status_call = status.await_args
+    assert status_call is not None
+    assert status_call.args == ("remote-1",)
+    assert status_call.kwargs["timeout"] == 4.0
+    download.assert_awaited_once()
 
 
 async def test_default_analyst_adapter_still_polls(

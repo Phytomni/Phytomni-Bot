@@ -10,6 +10,7 @@ section from the mounted graph's protein-design task.
 
 from __future__ import annotations
 
+from functools import partial
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -20,6 +21,7 @@ from mcp_server_phytomni.agents.deep_genome import design_mount
 from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
 from mcp_server_phytomni.agents.deep_genome.coordinator import (
     RemoteSubmission,
+    WorkItemOutcome,
 )
 from mcp_server_phytomni.agents.deep_genome.dispatch import (
     DeepGenomeDispatchMixin,
@@ -48,23 +50,57 @@ def _stub_host() -> Any:
         downloaded.append(output_path)
         return f"{output_path}/results"
 
+    async def _poll_remote_submission(
+        submission: RemoteSubmission,
+        context: Any,
+        run_identity: Any,
+        **_kwargs: Any,
+    ) -> tuple[WorkItemOutcome, str]:
+        results_dir = await _download_analysis_result(
+            context,
+            submission.output_dir,
+            run_identity,
+        )
+        return (
+            WorkItemOutcome("succeeded", "# usable result", None),
+            results_dir,
+        )
+
     def _generate_sub_summary(
         *,
         analysis_type: str,
         gene_id: str,
         state: Any,
         results_dir: Any = None,
+        display_order_override: int | None = None,
     ) -> dict:
-        del state
+        del state, display_order_override
         return {"protein_summary": f"{analysis_type}:{gene_id}:{results_dir}"}
 
-    return SimpleNamespace(
+    host = SimpleNamespace(
         deep_genome_config=SimpleNamespace(USER_ID="u"),
         _raise_if_agent_failed=_raise_if_agent_failed,
         _download_analysis_result=_download_analysis_result,
+        _poll_remote_submission=_poll_remote_submission,
         _generate_sub_summary=_generate_sub_summary,
         downloaded=downloaded,
     )
+    setattr(
+        host,
+        "_poll_design_work_item",
+        partial(
+            getattr(DeepGenomeDispatchMixin, "_poll_design_work_item"), host
+        ),
+    )
+    setattr(
+        host,
+        "_finalize_design_submissions",
+        partial(
+            getattr(DeepGenomeDispatchMixin, "_finalize_design_submissions"),
+            host,
+        ),
+    )
+    return host
 
 
 async def test_finalize_summarizes_protein_design_only() -> None:
@@ -110,6 +146,167 @@ async def test_finalize_summarizes_protein_design_only() -> None:
     )
     # Only the protein-design task is downloaded; promoter is deferred.
     assert host.downloaded == ["/obs/p"]
+
+
+async def test_finalize_polls_both_independent_design_work_items() -> None:
+    """Poll protein and promoter submissions independently before success."""
+    host = _stub_host()
+    summary_orders: dict[str, Any] = {}
+
+    def _capture_summary(
+        *,
+        analysis_type: str,
+        gene_id: str,
+        state: Any,
+        results_dir: Any = None,
+        display_order_override: int | None = None,
+    ) -> dict:
+        del state
+        summary_orders[analysis_type] = display_order_override
+        return {f"{analysis_type}_summary": f"{gene_id}:{results_dir}"}
+
+    setattr(host, "_generate_sub_summary", _capture_summary)
+    design_output = {
+        "protein_design": RemoteSubmission(
+            submitted_task_id="protein-caller",
+            poll_task_id="protein-remote",
+            output_dir="/obs/protein",
+        ),
+        "promoter_design": RemoteSubmission(
+            submitted_task_id="promoter-caller",
+            poll_task_id="promoter-caller",
+            output_dir="/obs/promoter",
+        ),
+    }
+    state: Any = {
+        "species_code": "osa",
+        "target_gene": "g1",
+        "task_index": 4,
+        "work_items": [
+            {"work_item_key": "protein_design", "display_order": 10},
+            {"work_item_key": "promoter_design", "display_order": 11},
+        ],
+    }
+
+    delta = await DeepGenomeDispatchMixin.finalize_design_result(
+        host, design_output=design_output, state=state
+    )
+
+    assert delta["analysis_completed_branches"] == 1
+    assert delta["raw_analyst_data"]["task_4:protein_design"]["status"] == (
+        "succeeded"
+    )
+    assert delta["raw_analyst_data"]["task_4:promoter_design"]["status"] == (
+        "succeeded"
+    )
+    assert summary_orders == {
+        "protein_design_analysis": 10,
+        "promoter_analysis": 11,
+    }
+    assert host.downloaded == ["/obs/promoter", "/obs/protein"]
+
+
+async def test_finalize_keeps_partial_design_failure_and_blank_result() -> (
+    None
+):
+    """Keep a usable sibling when the other result is blank/unusable."""
+    host = _stub_host()
+
+    async def _poll_remote_submission(
+        submission: RemoteSubmission,
+        _context: Any,
+        _run_identity: Any,
+        **_kwargs: Any,
+    ) -> tuple[WorkItemOutcome, str | None]:
+        if submission.poll_task_id == "promoter-remote":
+            return (
+                WorkItemOutcome("failed", None, "analysis result unusable"),
+                None,
+            )
+        return (
+            WorkItemOutcome("succeeded", "# protein result", None),
+            "/obs/protein/results",
+        )
+
+    setattr(host, "_poll_remote_submission", _poll_remote_submission)
+    design_output = {
+        "protein_design": RemoteSubmission(
+            submitted_task_id="protein-caller",
+            poll_task_id="protein-remote",
+            output_dir="/obs/protein",
+        ),
+        "promoter_design": RemoteSubmission(
+            submitted_task_id="promoter-caller",
+            poll_task_id="promoter-remote",
+            output_dir="/obs/promoter",
+        ),
+    }
+    state: Any = {
+        "species_code": "osa",
+        "target_gene": "g1",
+        "task_index": 4,
+    }
+
+    delta = await DeepGenomeDispatchMixin.finalize_design_result(
+        host, design_output=design_output, state=state
+    )
+
+    protein = delta["raw_analyst_data"]["task_4:protein_design"]
+    promoter = delta["raw_analyst_data"]["task_4:promoter_design"]
+    assert protein["status"] == "succeeded"
+    assert promoter["status"] == "failed"
+    assert promoter["error"] == "analysis result unusable"
+    assert "protein_summary" in delta["analyst_summaries"]
+    assert "promoter_summary" not in delta["analyst_summaries"]
+
+
+async def test_finalize_isolates_design_summary_failure() -> None:
+    """A summary error fails one item while preserving its sibling."""
+    host = _stub_host()
+
+    def _fail_promoter_summary(
+        *,
+        analysis_type: str,
+        gene_id: str,
+        state: Any,
+        results_dir: Any = None,
+        display_order_override: int | None = None,
+    ) -> dict:
+        del gene_id, state, results_dir, display_order_override
+        if analysis_type == "promoter_analysis":
+            raise UnicodeDecodeError("utf-8", b"\\xff", 0, 1, "invalid")
+        return {"protein_summary": "usable"}
+
+    setattr(host, "_generate_sub_summary", _fail_promoter_summary)
+    design_output = {
+        "protein_design": RemoteSubmission(
+            submitted_task_id="protein-caller",
+            poll_task_id="protein-remote",
+            output_dir="/obs/protein",
+        ),
+        "promoter_design": RemoteSubmission(
+            submitted_task_id="promoter-caller",
+            poll_task_id="promoter-remote",
+            output_dir="/obs/promoter",
+        ),
+    }
+    state: Any = {
+        "species_code": "osa",
+        "target_gene": "g1",
+        "task_index": 4,
+    }
+
+    delta = await DeepGenomeDispatchMixin.finalize_design_result(
+        host, design_output=design_output, state=state
+    )
+
+    assert delta["raw_analyst_data"]["task_4:protein_design"]["status"] == (
+        "succeeded"
+    )
+    promoter = delta["raw_analyst_data"]["task_4:promoter_design"]
+    assert promoter["status"] == "failed"
+    assert promoter["error"] == "analysis summary generation failed"
+    assert delta["analyst_summaries"] == {"protein_summary": "usable"}
 
 
 def _fake_app(output: Any = None, boom: bool = False) -> Any:

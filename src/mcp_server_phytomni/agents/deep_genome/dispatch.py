@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
@@ -31,6 +32,7 @@ from ...storage.obs_storage import normalize_obs_object_key, obsfs_path_for
 from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
 from ..analyst.storage import download_obs_out, download_obs_out_via_relay
+from ..analyst.task_ops import task_status
 from ..design.agent import (
     promoter_design_for_gene,
     protein_structure_for_gene,
@@ -40,8 +42,13 @@ from ..shared.analysis_storage import (
     get_data_list,
 )
 from ..shared.sql import gauss_query, relay_bi_query, sql_literal
-from .coordinator import RemoteSubmission, normalize_submission
-from .summary import build_sub_summary
+from .coordinator import (
+    RemoteSubmission,
+    WorkItemOutcome,
+    normalize_submission,
+    poll_work_item,
+)
+from .summary import build_design_work_item_summary, build_sub_summary
 from .work_items import build_work_item_plan, section_keys
 
 if TYPE_CHECKING:
@@ -94,64 +101,52 @@ ANALYSIS_TARGET_FILE_FEATURE_MAP = {
 }
 
 DEFAULT_TARGET_FILE_FEATURE = [".png", ".summary", ".legend"]
+_DESIGN_SUMMARY_ERRORS: tuple[type[Exception], ...] = (Exception,)
 
 
-def _submitted_work_item_delta(
+def _read_result_markdown(results_dir: str) -> str:
+    """Read deterministic nonblank Markdown summaries from a result dir."""
+    root = Path(results_dir)
+    summaries: list[str] = []
+    for summary_path in sorted(root.rglob("*.summary")):
+        if not summary_path.is_file():
+            continue
+        content = summary_path.read_text(encoding="utf-8").strip()
+        if content:
+            summaries.append(content)
+    return "\n\n".join(summaries)
+
+
+def _outcome_work_item_delta(
     *,
     work_item_key: str,
-    analysis_type: str,
     submission: RemoteSubmission,
+    outcome: WorkItemOutcome,
     state: DeepGenomeState,
+    summary_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Project one submit-only acknowledgement into graph state."""
+    """Project one polled outcome while preserving stable remote identities."""
     task_key = f"task_{state.get('task_index')}:{work_item_key}"
-    return {
-        "raw_analyst_data": {
-            task_key: {
-                "status": "submitted",
-                "analysis_type": analysis_type,
-                "task_id": submission.submitted_task_id,
-                "poll_task_id": submission.poll_task_id,
-                "output_path": submission.output_dir,
-            }
-        },
+    record: dict[str, Any] = {
+        "status": outcome.status,
+        "analysis_type": work_item_key,
+        "task_id": submission.submitted_task_id,
+        "poll_task_id": submission.poll_task_id,
+        "output_path": submission.output_dir,
+        "summary_markdown": outcome.summary,
+    }
+    if outcome.failure_reason:
+        record["error"] = outcome.failure_reason
+    delta: dict[str, Any] = {
+        "raw_analyst_data": {task_key: record},
         "analysis_completed_branches": 1,
     }
+    if summary_data is not None:
+        delta["analyst_summaries"] = summary_data
+    return delta
 
 
-def _submitted_design_delta(
-    submissions: dict[str, RemoteSubmission | None],
-    state: DeepGenomeState,
-) -> dict[str, Any]:
-    """Project both independent Design acknowledgements into state."""
-    return {
-        "raw_analyst_data": {
-            f"task_{state.get('task_index')}:{key}": {
-                "status": "submitted" if submission is not None else "failed",
-                "analysis_type": key,
-                "task_id": (
-                    submission.submitted_task_id
-                    if submission is not None
-                    else None
-                ),
-                "poll_task_id": (
-                    submission.poll_task_id if submission is not None else None
-                ),
-                "output_path": (
-                    submission.output_dir if submission is not None else None
-                ),
-            }
-            for key, submission in sorted(submissions.items())
-        },
-        "analysis_completed_branches": 1,
-    }
-
-
-# The nine generic analysis types that fan out to per-type worker
-# nodes (one LangGraph node each, all running ``_run_analyst_node``).
-# ``evolution_analysis`` and ``digital_design`` are excluded — they
-# mount standalone subgraphs (``evolution_node`` / ``design_node``) and
-# keep explicit special-cases in ``_route_analyst_tasks``.
+# Generic types use worker nodes; evolution/design use mounted subgraphs.
 GENERIC_ANALYSIS_NODE_TYPES: tuple[str, ...] = (
     "gene_expression_tissues",
     "gene_expression_cultivars",
@@ -212,11 +207,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             List of node names to execute. When both flags are True, run
             brief_gene_node, data_node, and prepare_tasks_node.
         """
-        # M11 (X3b A architecture) — ``data_node`` deleted; brief_gene
-        # mount inside ``brief_gene_node`` performs all the BI
-        # annotation + homology + interaction fetching that the
-        # legacy ``data_node`` + 3-branch fan-out used to produce.
-        # ``use_data_agent`` flag is subsumed by the mount.
+        # M11: brief_gene mount replaces data_node and its legacy fan-out.
         use_analyst = state.get("config_params", {}).get(
             "use_analyst_agent", True
         )
@@ -412,29 +403,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         task: dict | RemoteSubmission | None,
         state: DeepGenomeState,
     ) -> dict:
-        """Turn a submitted evolution task into an analyst-branch delta.
-
-        Shared tail of the evolution mount node: it runs the same
-        agent-failure check, result download, and ``build_sub_summary``
-        that ``_run_analyst_node`` runs for the generic types, then
-        contributes the ``analysis_completed_branches: 1`` the synthesize
-        barrier counts. ``task`` is ``None`` when taxonomy resolution
-        produced no task; that raises so the mount node's degraded path
-        records a failed branch and the barrier still advances. The
-        species, gene, and Send index are read from ``state`` (the Send
-        payload the mount node received) so the signature stays within
-        the pylint argument budget.
-
-        Args:
-            task: Submitted analyst task dict from the mounted evolution
-                subgraph, or ``None`` when resolution produced no task.
-            state: Send payload carrying ``species_code`` / ``target_gene``
-                / ``task_index``; also passed to the sub-summary builder.
-
-        Returns:
-            Analyst-branch state delta (``raw_analyst_data`` /
-            ``analyst_summaries`` / ``analysis_completed_branches``).
-        """
+        """Poll an evolution submission and project its branch outcome."""
         species_code = state["species_code"]
         gene_id = state["target_gene"]
         task_index = state.get("task_index")
@@ -443,11 +412,35 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 "evolution mount produced no task (taxid resolution failed)"
             )
         if isinstance(task, RemoteSubmission):
-            return _submitted_work_item_delta(
-                work_item_key="evolution_analysis",
+            run_identity = RunIdentity.create(
+                user_id=self.deep_genome_config.USER_ID,
+                scope="evolution_analysis",
+            )
+            context = AnalysisDispatchContext(
                 analysis_type="evolution_analysis",
+                species_code=species_code,
+                gene_id=gene_id,
+                output_dir=task.output_dir,
+            )
+            outcome, results_dir = await self._poll_remote_submission(
+                task,
+                context,
+                run_identity,
+            )
+            summary_data = None
+            if outcome.status == "succeeded" and results_dir is not None:
+                summary_data = self._generate_sub_summary(
+                    analysis_type="evolution_analysis",
+                    gene_id=gene_id,
+                    state=state,
+                    results_dir=results_dir,
+                )
+            return _outcome_work_item_delta(
+                work_item_key="evolution_analysis",
                 submission=task,
+                outcome=outcome,
                 state=state,
+                summary_data=summary_data,
             )
         self._raise_if_agent_failed(task)
         output_path = task.get("output_dir")
@@ -485,29 +478,113 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             "analysis_completed_branches": 1,
         }
 
+    async def _poll_design_work_item(
+        self: Any,
+        work_item_key: str,
+        submission: RemoteSubmission | None,
+        state: DeepGenomeState,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Poll one independent Design item and return raw/report deltas."""
+        task_key = f"task_{state.get('task_index')}:{work_item_key}"
+        if submission is None:
+            return (
+                {
+                    task_key: {
+                        "status": "failed",
+                        "analysis_type": work_item_key,
+                        "task_id": None,
+                        "poll_task_id": None,
+                        "output_path": None,
+                        "error": "design submission unavailable",
+                    }
+                },
+                {},
+            )
+        analysis_type = {
+            "protein_design": "protein_design_analysis",
+            "promoter_design": "promoter_analysis",
+        }[work_item_key]
+        context = AnalysisDispatchContext(
+            analysis_type=analysis_type,
+            species_code=state["species_code"],
+            gene_id=state["target_gene"],
+            output_dir=submission.output_dir,
+        )
+        run_identity = RunIdentity.create(
+            user_id=self.deep_genome_config.USER_ID,
+            scope=work_item_key,
+        )
+        outcome, results_dir = await self._poll_remote_submission(
+            submission,
+            context,
+            run_identity,
+            summary_builder=lambda path: build_design_work_item_summary(
+                work_item_key, path
+            ),
+        )
+        summary_data: dict[str, Any] = {}
+        if outcome.status == "succeeded" and results_dir is not None:
+            display_order = next(
+                (
+                    item.get("display_order")
+                    for item in state.get("work_items", [])
+                    if item.get("work_item_key") == work_item_key
+                ),
+                None,
+            )
+            try:
+                summary_data = self._generate_sub_summary(
+                    analysis_type=analysis_type,
+                    gene_id=state["target_gene"],
+                    state=state,
+                    results_dir=results_dir,
+                    display_order_override=display_order,
+                )
+            except _DESIGN_SUMMARY_ERRORS:
+                outcome = WorkItemOutcome(
+                    "failed",
+                    None,
+                    "analysis summary generation failed",
+                )
+        delta = _outcome_work_item_delta(
+            work_item_key=work_item_key,
+            submission=submission,
+            outcome=outcome,
+            state=state,
+            summary_data=summary_data or None,
+        )
+        return delta["raw_analyst_data"], summary_data
+
+    async def _finalize_design_submissions(
+        self: Any,
+        submissions: dict[str, RemoteSubmission | None],
+        state: DeepGenomeState,
+    ) -> dict[str, Any]:
+        """Poll both independent Design jobs and merge their state deltas."""
+        raw_data: dict[str, Any] = {}
+        summaries: dict[str, Any] = {}
+        for work_item_key, submission in sorted(submissions.items()):
+            raw_delta, summary_delta = await self._poll_design_work_item(
+                work_item_key,
+                submission,
+                state,
+            )
+            raw_data.update(raw_delta)
+            summaries.update(summary_delta)
+        delta: dict[str, Any] = {
+            "raw_analyst_data": raw_data,
+            "analysis_completed_branches": 1,
+        }
+        if summaries:
+            delta["analyst_summaries"] = summaries
+        return delta
+
     async def finalize_design_result(
         self: Any,
         design_output: dict[str, Any] | dict[str, RemoteSubmission | None],
         state: DeepGenomeState,
     ) -> dict:
-        """Light §8.2 from the mounted design graph's protein-design task.
-
-        Correlates the ``protein_design`` task id to its result entry,
-        downloads it, and builds the protein-design sub-summary. The
-        promoter-design task is submitted but NOT summarized here -- its
-        §8.1 rendering is a tracked follow-up (the restored protocol emits
-        no summary artifact yet). Contributes the single barrier branch.
-
-        Args:
-            design_output: Final state of the mounted DigitalDesignAgents
-                graph (``task_ids`` + ``design_task_result``).
-            state: Send payload carrying ``species_code`` / ``target_gene``
-                / ``task_index``; also passed to the sub-summary builder.
-
-        Returns:
-            Analyst-branch state delta (``raw_analyst_data`` /
-            ``analyst_summaries`` / ``analysis_completed_branches``).
-        """
+        """Poll independent Design submissions and project their outcomes."""
         if (
             design_output
             and set(design_output)
@@ -520,7 +597,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 for value in design_output.values()
             )
         ):
-            return _submitted_design_delta(
+            return await self._finalize_design_submissions(
                 cast(dict[str, RemoteSubmission | None], design_output),
                 state,
             )
@@ -579,9 +656,12 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         gene_id: str,
         state: DeepGenomeState,
         results_dir: str | None = None,
+        display_order_override: int | None = None,
     ) -> dict:
         """Generate sub-summary for a specific analysis type."""
-        display_order = state.get("display_order")
+        display_order = display_order_override
+        if display_order is None:
+            display_order = cast(int | None, state.get("display_order"))
         if display_order is None:
             work_item_key = state.get("work_item_key")
             if work_item_key is None:
@@ -681,6 +761,90 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             "work_items": concrete_items,
         }
 
+    async def _poll_remote_submission(
+        self: Any,
+        submission: RemoteSubmission,
+        context: AnalysisDispatchContext,
+        run_identity: RunIdentity,
+        *,
+        summary_builder: Callable[[str], str] | None = None,
+    ) -> tuple[WorkItemOutcome, str | None]:
+        """Poll and resolve one accepted submission through the coordinator."""
+        resolved_results_dir: str | None = None
+
+        async def read_remote_status(
+            poll_task_id: str,
+            request_timeout: float,
+        ) -> Any:
+            """Read one remote status through the shared task seam."""
+            status_kwargs: dict[str, Any] = {"timeout": request_timeout}
+            for config_name, argument_name in (
+                ("ANALYSIS_URL", "analysis_url"),
+                ("ANALYSIS_REGION", "region"),
+                ("RETRIABLE_CODES", "retriable_codes"),
+                ("MAX_RETRIES", "max_retries"),
+            ):
+                value = getattr(self.deep_genome_config, config_name, None)
+                if value is not None:
+                    status_kwargs[argument_name] = value
+            return await task_status(poll_task_id, **status_kwargs)
+
+        async def resolve_remote_result(
+            accepted: RemoteSubmission,
+        ) -> str:
+            """Download and resolve nonblank local Markdown content."""
+            nonlocal resolved_results_dir
+            resolved_results_dir = await self._download_analysis_result(
+                context,
+                accepted.output_dir,
+                run_identity,
+            )
+            if resolved_results_dir is None:
+                raise RuntimeError("analysis result directory unavailable")
+            resolver = summary_builder
+            if (
+                resolver is None
+                and context.analysis_type == "promoter_analysis"
+            ):
+
+                def resolve_promoter(path: str) -> str:
+                    """Build the promoter artifact fallback summary."""
+                    return build_design_work_item_summary(
+                        "promoter_design", path
+                    )
+
+                resolver = resolve_promoter
+            resolver = resolver or _read_result_markdown
+            return resolver(resolved_results_dir)
+
+        async def record_transition(
+            status: str,
+            summary: str | None,
+            failure_reason: str | None,
+        ) -> WorkItemOutcome:
+            """Return an in-memory transition until storage is added."""
+            return WorkItemOutcome(status, summary, failure_reason)
+
+        request_timeout = float(
+            getattr(self.deep_genome_config, "TIMEOUT", 600.0)
+        )
+        poll_interval = float(
+            getattr(self.deep_genome_config, "POLL_INTERVAL", 300.0)
+        )
+        deadline_seconds = float(
+            getattr(self.deep_genome_config, "MAX_POLL", 86400.0)
+        )
+        outcome = await poll_work_item(
+            submission,
+            status_reader=read_remote_status,
+            result_resolver=resolve_remote_result,
+            transition_sink=record_transition,
+            request_timeout=request_timeout,
+            poll_interval=poll_interval,
+            deadline_seconds=deadline_seconds,
+        )
+        return outcome, resolved_results_dir
+
     async def _dispatch_and_wait_analysis(
         self: Any,
         analysis_type: str,
@@ -688,30 +852,11 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         gene_id: str,
         output_dir: str | None = None,
     ) -> dict:
-        """Submit analysis task using AnalystAgent and wait for completion.
-
-        This method constructs the appropriate prompts and data lists for the
-        specified analysis type, submits the task to the AnalystAgent, waits
-        for completion, and downloads the results.
-
-        Args:
-            analysis_type: Analysis type name (e.g., "evolution_analysis").
-            species_code: Three-letter species code for the analysis.
-            gene_id: Gene identifier for the analysis.
-            output_dir: Optional output directory path.
-
-        Returns:
-            Dict containing task_id and output_path.
-        """
+        """Submit an analysis task, poll it, and download its result."""
         run_identity = RunIdentity.create(
             user_id=self.deep_genome_config.USER_ID,
             scope=analysis_type,
         )
-        # The dispatch seam (ensure_analysis_output_dir) creates the
-        # tenant-neutral shared dir from the input fingerprint, overriding
-        # any preset, so pre-creating a user-scoped dir here would only
-        # leave an unused marker. Pass the caller's output_dir through
-        # (empty for the generic path) and let the seam create the dir.
         context = AnalysisDispatchContext(
             analysis_type=analysis_type,
             species_code=species_code,
@@ -722,20 +867,33 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
 
         result = await self._submit_analysis_task(context)
         if isinstance(result, RemoteSubmission):
+            outcome, resolved_results_dir = await self._poll_remote_submission(
+                result,
+                context,
+                run_identity,
+            )
+            if outcome.status != "succeeded":
+                raise RuntimeError(
+                    outcome.failure_reason or "analysis task failed"
+                )
             task_id = result.submitted_task_id
             output_path = result.output_dir
+            if resolved_results_dir is None:
+                raise RuntimeError("analysis result resolution failed")
+            results_dir = resolved_results_dir
         else:
             self._raise_if_agent_failed(result)
             task_id = result.get("task_id")
             output_path = result.get("output_dir")
+            if not isinstance(output_path, str):
+                raise RuntimeError("AnalystAgent returned no output directory")
+            logger.info("Preparing %s results", analysis_type)
+            results_dir = await self._download_analysis_result(
+                context, output_path, run_identity
+            )
         if not isinstance(output_path, str):
             raise RuntimeError("AnalystAgent returned no output directory")
         logger.info("%s task completed (task_id: %s)", analysis_type, task_id)
-
-        logger.info("Preparing %s results", analysis_type)
-        results_dir = await self._download_analysis_result(
-            context, output_path, run_identity
-        )
         return {
             "task_id": task_id,
             "output_path": output_path,
@@ -772,10 +930,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         )
         if sub_title:
             data_list = data_list[sub_title]
-        # The medium-tier analysis types (evolution / protein structure)
-        # moved to the evolution and design producer modules, which set
-        # their own compute tier; every type that still reaches this
-        # dispatcher runs on the small tier.
+        # Evolution/protein structure set medium tier; the rest use small.
         compute_resource = "small"
         return goal_description, data_list, meta, compute_resource
 
@@ -798,16 +953,22 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         analysis_type = context.analysis_type
         config = self.deep_genome_config
         if analysis_type == "protein_structure_analysis":
-            return await protein_structure_for_gene(
-                species_code=context.species_code,
-                gene_id=context.gene_id,
-                output_dir=context.output_dir,
+            return normalize_submission(
+                await protein_structure_for_gene(
+                    species_code=context.species_code,
+                    gene_id=context.gene_id,
+                    output_dir=context.output_dir,
+                    is_polling=False,
+                )
             )
         if analysis_type == "promoter_analysis":
-            return await promoter_design_for_gene(
-                species_code=context.species_code,
-                gene_id=context.gene_id,
-                output_dir=context.output_dir,
+            return normalize_submission(
+                await promoter_design_for_gene(
+                    species_code=context.species_code,
+                    gene_id=context.gene_id,
+                    output_dir=context.output_dir,
+                    is_polling=False,
+                )
             )
         goal_description, data_list, meta, compute_resource = (
             self._analysis_prompt_parts(context)

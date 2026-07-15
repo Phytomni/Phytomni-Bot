@@ -20,7 +20,10 @@ import pytest
 from mcp_server_phytomni.agents.deep_genome import (
     dispatch as deep_genome_dispatch,
 )
-from mcp_server_phytomni.agents.deep_genome.coordinator import RemoteSubmission
+from mcp_server_phytomni.agents.deep_genome.coordinator import (
+    RemoteSubmission,
+    WorkItemOutcome,
+)
 from mcp_server_phytomni.agents.deep_genome.dispatch import (
     GENERIC_ANALYSIS_NODE_TYPES,
     AnalysisDispatchContext,
@@ -82,22 +85,55 @@ class DispatchHarness(DeepGenomeDispatchMixin):
         self.sensitive_config = FakeSensitiveConfig()
 
 
-async def test_dispatch_accepts_normalized_submit_ack_without_failure_guard(
+async def test_dispatch_polls_normalized_submit_ack_before_download(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    """Normalized generic acknowledgements bypass terminal-state checks."""
+    """The coordinator polls the effective id before resolving results."""
     harness = DispatchHarness(str(tmp_path / "deep-out"))
     harness.deep_genome_config.USER_ID = "alice"
+    harness.deep_genome_config.TIMEOUT = 4.0
+    harness.deep_genome_config.POLL_INTERVAL = 2.0
+    harness.deep_genome_config.MAX_POLL = 10.0
     submission = RemoteSubmission(
         submitted_task_id="caller-1",
         poll_task_id="remote-1",
         output_dir="/obs/out",
     )
     submit = AsyncMock(return_value=submission)
-    download = AsyncMock(return_value="/tmp/results")
+    results_dir = tmp_path / "results"
+    results_dir.mkdir()
+    (results_dir / "result.summary").write_text(
+        "# usable result\n",
+        encoding="utf-8",
+    )
+    download = AsyncMock(return_value=str(results_dir))
     monkeypatch.setattr(harness, "_submit_analysis_task", submit)
     monkeypatch.setattr(harness, "_download_analysis_result", download)
+
+    status = AsyncMock(return_value={"status": "SUCCEEDED"})
+    monkeypatch.setattr(deep_genome_dispatch, "task_status", status)
+
+    async def poll(
+        received: RemoteSubmission,
+        *,
+        status_reader,
+        result_resolver,
+        transition_sink,
+        **kwargs: Any,
+    ) -> WorkItemOutcome:
+        """Drive the injected seams once and return their settled result."""
+        assert received.poll_task_id == "remote-1"
+        assert kwargs["request_timeout"] == 4.0
+        assert kwargs["poll_interval"] == 2.0
+        assert kwargs["deadline_seconds"] == 10.0
+        assert await status_reader(received.poll_task_id, 4.0) == {
+            "status": "SUCCEEDED"
+        }
+        summary = await result_resolver(received)
+        return await transition_sink("succeeded", summary, None)
+
+    monkeypatch.setattr(deep_genome_dispatch, "poll_work_item", poll)
 
     def fail_guard(_result: Any) -> None:
         """Fail if a submit-only acknowledgement is treated as terminal."""
@@ -115,11 +151,12 @@ async def test_dispatch_accepts_normalized_submit_ack_without_failure_guard(
     assert result == {
         "task_id": "caller-1",
         "output_path": "/obs/out",
-        "results_dir": "/tmp/results",
+        "results_dir": str(results_dir),
         "status": "completed",
     }
     submit.assert_awaited_once()
     download.assert_awaited_once()
+    status.assert_awaited_once()
 
 
 async def test_download_analysis_result_uses_readable_obsfs_dir(

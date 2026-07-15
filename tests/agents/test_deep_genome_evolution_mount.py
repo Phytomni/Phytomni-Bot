@@ -18,6 +18,10 @@ from langgraph.graph.state import CompiledStateGraph
 
 from mcp_server_phytomni.agents.deep_genome import evolution_mount
 from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
+from mcp_server_phytomni.agents.deep_genome.coordinator import (
+    RemoteSubmission,
+    WorkItemOutcome,
+)
 from mcp_server_phytomni.agents.deep_genome.dispatch import (
     DeepGenomeDispatchMixin,
 )
@@ -42,6 +46,22 @@ def _stub_host() -> Any:
     ) -> str:
         return f"{output_path}/results"
 
+    async def _poll_remote_submission(
+        submission: RemoteSubmission,
+        context: Any,
+        run_identity: Any,
+        **_kwargs: Any,
+    ) -> tuple[WorkItemOutcome, str]:
+        results_dir = await _download_analysis_result(
+            context,
+            submission.output_dir,
+            run_identity,
+        )
+        return (
+            WorkItemOutcome("succeeded", "# usable result", None),
+            results_dir,
+        )
+
     def _generate_sub_summary(
         *,
         analysis_type: str,
@@ -56,6 +76,7 @@ def _stub_host() -> Any:
         deep_genome_config=SimpleNamespace(USER_ID="u"),
         _raise_if_agent_failed=_raise_if_agent_failed,
         _download_analysis_result=_download_analysis_result,
+        _poll_remote_submission=_poll_remote_submission,
         _generate_sub_summary=_generate_sub_summary,
     )
 
@@ -228,7 +249,7 @@ async def test_mount_node_with_real_finalize_projects_summary() -> None:
         out["raw_analyst_data"]["task_1:evolution_analysis"]["task_id"] == "t9"
     )
     assert out["raw_analyst_data"]["task_1:evolution_analysis"]["status"] == (
-        "submitted"
+        "succeeded"
     )
     assert out["raw_analyst_data"]["task_1:evolution_analysis"][
         "poll_task_id"

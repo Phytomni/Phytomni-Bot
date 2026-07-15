@@ -73,6 +73,11 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
         "too-many-arguments",
         "too-many-locals",
     },
+    # Polling coordinator injection seam: callbacks and timing controls stay
+    # explicit so optional-job tests can deterministically drive each path.
+    "src/mcp_server_phytomni/agents/deep_genome/coordinator.py": {
+        "too-many-arguments",
+    },
     # conftest.py installs deployment env vars BEFORE importing any
     # project module — several agents construct ``ServerConfig()`` at
     # import time and the per-deployment endpoints are required-via-

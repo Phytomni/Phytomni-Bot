@@ -376,6 +376,24 @@ point the parameter set naturally divides across the two functions.
 
 ______________________________________________________________________
 
+### `agents/deep_genome/coordinator.py:poll_work_item` — injected polling seam
+
+**Rule(s)**: R0913 too-many-arguments (9/5).
+
+**Mechanism**: Function-level `# pylint: disable=too-many-arguments` with an
+allowlist entry in `tests/unit/test_style_naming.py`.
+
+**Why refactor is net-negative**: the public seam keeps the status reader,
+result resolver, transition sink, timeout, interval, deadline, clock, and
+sleep explicit. These injections make optional-job failure, deadline, and
+cancellation behavior deterministic in unit tests; an options object would
+hide the required contract.
+
+**Sunset condition**: the coordinator no longer needs injected callbacks or
+deterministic clock/sleep control in its contract.
+
+______________________________________________________________________
+
 ### `mcp/result_formatting.py` — dispatch-boundary formatters
 
 **Rule(s)**: C0302 too-many-lines (file-level), R0914 too-many-locals
