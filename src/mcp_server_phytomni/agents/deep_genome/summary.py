@@ -18,6 +18,10 @@ from typing import Any, NamedTuple
 READ_ERRORS = (StopIteration, FileNotFoundError, OSError, IOError)
 
 
+class UnusableAnalysisResult(ValueError):  # noqa: N818
+    """Raised when a completed analysis has no usable local content."""
+
+
 class ImageSummarySpec(NamedTuple):
     """File matching and output keys for one image summary group.
 
@@ -421,6 +425,98 @@ IMAGE_SUMMARY_SPECS = (
 )
 
 
+def _relative_result_name(path: Path, results_dir: Path) -> str:
+    """Return a stable POSIX-relative artifact name."""
+    return path.relative_to(results_dir).as_posix()
+
+
+def _nonblank_summary_files(results_dir: Path) -> list[tuple[str, str]]:
+    """Read nonblank summary files in deterministic path order."""
+    summaries: list[tuple[str, str]] = []
+    for path in sorted(
+        results_dir.rglob("*.summary"),
+        key=lambda candidate: _relative_result_name(candidate, results_dir),
+    ):
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except (FileNotFoundError, OSError, UnicodeError):
+            continue
+        if text:
+            summaries.append((_relative_result_name(path, results_dir), text))
+    return summaries
+
+
+def _design_artifacts(work_item_key: str, results_dir: Path) -> list[str]:
+    """Return the allow-listed design artifacts in stable order."""
+    names: set[str] = set()
+    for path in results_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = _relative_result_name(path, results_dir)
+        if (
+            path.suffix in {".legend", ".json"}
+            or (
+                work_item_key == "promoter_design"
+                and path.name == "motif_all_logo.png"
+            )
+            or (
+                work_item_key == "protein_design"
+                and path.name == "psap_scores.png"
+            )
+        ):
+            names.add(relative)
+    return sorted(names)
+
+
+def build_design_work_item_summary(
+    work_item_key: str,
+    results_dir: str | Path,
+) -> str:
+    """Build deterministic Markdown for one Digital Design work item.
+
+    A successful promoter result commonly contains several summary files;
+    all nonblank files are joined in filename order.  Some platform
+    versions only emit the motif image and manifest artifacts, so the
+    fallback lists the allow-listed artifacts rather than manufacturing
+    scientific prose.  The same deterministic contract is used for the
+    protein work item, which keeps both concrete jobs independently
+    resolvable by the coordinator.
+
+    Args:
+        work_item_key: ``protein_design`` or ``promoter_design``.
+        results_dir: Local directory containing downloaded result files.
+
+    Returns:
+        Nonblank Markdown headed by the work-item display name.
+
+    Raises:
+        UnusableAnalysisResult: If no nonblank summary or allow-listed
+            artifact exists.
+        ValueError: If ``work_item_key`` is not a supported design job.
+    """
+    if work_item_key not in {"protein_design", "promoter_design"}:
+        raise ValueError(f"unknown design work item: {work_item_key}")
+    root = Path(results_dir)
+    if not root.is_dir():
+        raise UnusableAnalysisResult("design result directory is unavailable")
+    title = (
+        "Protein Design"
+        if work_item_key == "protein_design"
+        else ("Promoter Design")
+    )
+    summaries = _nonblank_summary_files(root)
+    if summaries:
+        body = "\n\n".join(f"### {name}\n\n{text}" for name, text in summaries)
+        return f"## {title}\n\n{body}\n"
+    artifacts = _design_artifacts(work_item_key, root)
+    if not artifacts:
+        raise UnusableAnalysisResult(
+            f"{work_item_key} result contains no usable content"
+        )
+    artifact_lines = "\n".join(f"- `{name}`" for name in artifacts)
+    return f"## {title}\n\n" "Result artifacts:\n\n" f"{artifact_lines}\n"
+
+
 def build_sub_summary(
     analysis_type: str,
     gene_id: str,
@@ -442,6 +538,9 @@ def build_sub_summary(
     Returns:
         Updated summary data and next figure index.
     """
+    display_order = kwargs.get("display_order")
+    if isinstance(display_order, int) and display_order >= 0:
+        figure_index = display_order + 1
     results_dir = kwargs.get("results_dir")
     gene_results_data = data if data is not None else {"gene_name": gene_id}
     out_path = Path(results_dir) if results_dir else Path(deepgenome_out)

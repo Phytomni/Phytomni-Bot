@@ -6,8 +6,8 @@
 Hosts ``make_design_mount_node``: a factory closure that wires the
 standalone ``DigitalDesignAgents`` graph as a structural subgraph. The
 closure captures the compiled app for xray, projects the Send payload
-into the design graph input (polling on), and hands the design output to
-a shared finalize callback that lights the §8.2 protein-design section.
+into the design graph input (submit-only), and hands normalized design
+submissions to the owning coordinator.
 """
 
 from __future__ import annotations
@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from langgraph.graph.state import CompiledStateGraph
 
+from .coordinator import RemoteSubmission, normalize_submission
 from .mount_common import degraded_analysis_delta
 
 if TYPE_CHECKING:
@@ -32,13 +33,61 @@ logger = logging.getLogger(__name__)
 # matches the evolution mount's _EVOLUTION_MOUNT_CAUGHT pattern.
 _DESIGN_MOUNT_CAUGHT: tuple[type[BaseException], ...] = (Exception,)
 
-# Callback shape: (design_output, state) -> analyst-branch delta. The
+# Callback shape: (submissions, state) -> analyst-branch delta. The
 # finalize helper reads species_code / target_gene / task_index from the
-# Send payload state, so the mount node only forwards the graph output.
+# Send payload state, so the mount node only forwards normalized remote
+# identities.
 FinalizeFn = Callable[
-    [dict[str, Any], "DeepGenomeState"],
+    [dict[str, RemoteSubmission | None], "DeepGenomeState"],
     Awaitable[dict[str, Any]],
 ]
+
+
+def _work_item_key(payload: dict[str, Any], task_ids: dict[str, Any]) -> str:
+    """Resolve one design result to its concrete work-item key."""
+    analysis_type = payload.get("analysis_type")
+    if analysis_type in {"protein_design", "protein_design_analysis"}:
+        return "protein_design"
+    if analysis_type in {"promoter_design", "promoter_design_analysis"}:
+        return "promoter_design"
+    task_id = payload.get("task_id")
+    for key, known_task_id in task_ids.items():
+        if key in {"protein_design", "promoter_design"} and str(
+            known_task_id
+        ) == str(task_id):
+            return key
+    raise ValueError("design submission has no concrete work-item key")
+
+
+def _normalize_design_submissions(
+    design_output: dict[str, Any],
+) -> dict[str, RemoteSubmission | None]:
+    """Normalize the two independent Design submission acknowledgements."""
+    task_ids = dict(design_output.get("task_ids") or {})
+    raw_results = design_output.get("design_task_result") or []
+    if not isinstance(raw_results, list):
+        raw_results = []
+    submissions: dict[str, RemoteSubmission | None] = {
+        "protein_design": None,
+        "promoter_design": None,
+    }
+    accepted_keys: set[str] = set()
+    for raw_result in raw_results:
+        if not isinstance(raw_result, dict):
+            continue
+        try:
+            key = _work_item_key(raw_result, task_ids)
+        except ValueError:
+            continue
+        if key in accepted_keys:
+            continue
+        try:
+            submission = normalize_submission(raw_result)
+        except ValueError:
+            continue
+        submissions[key] = submission
+        accepted_keys.add(key)
+    return submissions
 
 
 def make_design_mount_node(
@@ -50,15 +99,13 @@ def make_design_mount_node(
     Closes over ``design_app`` so ``find_subgraph_pregel`` discovers the
     compiled graph through the closure free-variable and xray expands it
     under the parent ``design_node`` key. ``finalize_fn`` is the
-    deep_genome dispatch helper that downloads the protein-design result
-    and builds the §8.2 sub-summary; it is a plain callable (not captured
-    for xray).
+    deep_genome dispatch helper that records the normalized submissions;
+    it is a plain callable (not captured for xray).
 
     Input projection: the node receives a ``Send`` payload carrying the
     design task (``species_code`` / ``target_gene`` / ``task_index``) and
-    projects it into the design graph input with ``is_polling`` on (so
-    both design sub-tasks block and the report can read results
-    synchronously).
+    projects it into the design graph input with ``is_polling`` off. The
+    owning coordinator polls each returned work item independently.
 
     On a mount fault the closure logs the exception and returns a
     degraded delta (a ``FailureRecord`` on the ``failures`` channel plus
@@ -67,9 +114,8 @@ def make_design_mount_node(
     Args:
         design_app: Compiled ``DigitalDesignAgents`` subgraph for this
             consumer instance.
-        finalize_fn: Async callback running the shared download +
-            ``build_sub_summary`` post-processing for the protein-design
-            task.
+        finalize_fn: Async callback receiving normalized submissions for
+            the independent protein and promoter work items.
 
     Returns:
         Async callable suitable for ``StateGraph.add_node``.
@@ -82,13 +128,14 @@ def make_design_mount_node(
         design_input: dict[str, Any] = {
             "species_code": species_code,
             "gene_id": gene_id,
-            "is_polling": True,
+            "is_polling": False,
         }
         try:
             design_output: dict[str, Any] = await design_app.ainvoke(
                 design_input
             )
-            return await finalize_fn(design_output, state)
+            submissions = _normalize_design_submissions(design_output)
+            return await finalize_fn(submissions, state)
         except _DESIGN_MOUNT_CAUGHT as exc:
             logger.exception(
                 "design mount failed for gene_id=%s; emitting a "

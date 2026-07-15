@@ -17,7 +17,7 @@ import logging
 from collections import deque
 from dataclasses import asdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple, cast
 
 from langgraph.graph import END
 from langgraph.types import Send
@@ -94,6 +94,57 @@ ANALYSIS_TARGET_FILE_FEATURE_MAP = {
 }
 
 DEFAULT_TARGET_FILE_FEATURE = [".png", ".summary", ".legend"]
+
+
+def _submitted_work_item_delta(
+    *,
+    work_item_key: str,
+    analysis_type: str,
+    submission: RemoteSubmission,
+    state: DeepGenomeState,
+) -> dict[str, Any]:
+    """Project one submit-only acknowledgement into graph state."""
+    task_key = f"task_{state.get('task_index')}:{work_item_key}"
+    return {
+        "raw_analyst_data": {
+            task_key: {
+                "status": "submitted",
+                "analysis_type": analysis_type,
+                "task_id": submission.submitted_task_id,
+                "poll_task_id": submission.poll_task_id,
+                "output_path": submission.output_dir,
+            }
+        },
+        "analysis_completed_branches": 1,
+    }
+
+
+def _submitted_design_delta(
+    submissions: dict[str, RemoteSubmission | None],
+    state: DeepGenomeState,
+) -> dict[str, Any]:
+    """Project both independent Design acknowledgements into state."""
+    return {
+        "raw_analyst_data": {
+            f"task_{state.get('task_index')}:{key}": {
+                "status": "submitted" if submission is not None else "failed",
+                "analysis_type": key,
+                "task_id": (
+                    submission.submitted_task_id
+                    if submission is not None
+                    else None
+                ),
+                "poll_task_id": (
+                    submission.poll_task_id if submission is not None else None
+                ),
+                "output_path": (
+                    submission.output_dir if submission is not None else None
+                ),
+            }
+            for key, submission in sorted(submissions.items())
+        },
+        "analysis_completed_branches": 1,
+    }
 
 
 # The nine generic analysis types that fan out to per-type worker
@@ -230,14 +281,31 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
                 node = "design_node"
             else:
                 node = _analyst_node_name(str(analysis_type))
+            send_payload: dict[str, Any] = {
+                "task_index": i,
+                "task_submit_sleep": i * sleep_time,
+                **task,
+            }
+            work_item = next(
+                (
+                    item
+                    for item in state.get("work_items", [])
+                    if item.get("section_key") == analysis_type
+                    or item.get("work_item_key") == analysis_type
+                ),
+                None,
+            )
+            if work_item is not None:
+                send_payload.update(
+                    {
+                        "work_item_key": work_item.get("work_item_key"),
+                        "display_order": work_item.get("display_order"),
+                    }
+                )
             sends.append(
                 Send(
                     node,
-                    {
-                        "task_index": i,
-                        "task_submit_sleep": i * sleep_time,
-                        **task,
-                    },
+                    send_payload,
                 )
             )
         return sends
@@ -341,7 +409,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
 
     async def finalize_evolution_result(
         self: Any,
-        task: dict | None,
+        task: dict | RemoteSubmission | None,
         state: DeepGenomeState,
     ) -> dict:
         """Turn a submitted evolution task into an analyst-branch delta.
@@ -373,6 +441,13 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         if task is None:
             raise RuntimeError(
                 "evolution mount produced no task (taxid resolution failed)"
+            )
+        if isinstance(task, RemoteSubmission):
+            return _submitted_work_item_delta(
+                work_item_key="evolution_analysis",
+                analysis_type="evolution_analysis",
+                submission=task,
+                state=state,
             )
         self._raise_if_agent_failed(task)
         output_path = task.get("output_dir")
@@ -412,7 +487,7 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
 
     async def finalize_design_result(
         self: Any,
-        design_output: dict,
+        design_output: dict[str, Any] | dict[str, RemoteSubmission | None],
         state: DeepGenomeState,
     ) -> dict:
         """Light §8.2 from the mounted design graph's protein-design task.
@@ -433,14 +508,31 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
             Analyst-branch state delta (``raw_analyst_data`` /
             ``analyst_summaries`` / ``analysis_completed_branches``).
         """
-        species_code = state["species_code"]
-        gene_id = state["target_gene"]
-        task_index = state.get("task_index")
-        task_ids = design_output.get("task_ids", {})
-        protein_id = task_ids.get("protein_design")
-        results = design_output.get("design_task_result", [])
+        if (
+            design_output
+            and set(design_output)
+            == {
+                "protein_design",
+                "promoter_design",
+            }
+            and all(
+                value is None or isinstance(value, RemoteSubmission)
+                for value in design_output.values()
+            )
+        ):
+            return _submitted_design_delta(
+                cast(dict[str, RemoteSubmission | None], design_output),
+                state,
+            )
+        terminal_output = cast(dict[str, Any], design_output)
+        task_ids: dict[str, Any] = terminal_output.get("task_ids", {})
         protein_task = next(
-            (t for t in results if str(t.get("task_id")) == str(protein_id)),
+            (
+                task
+                for task in terminal_output.get("design_task_result", [])
+                if str(task.get("task_id"))
+                == str(task_ids.get("protein_design"))
+            ),
             None,
         )
         if protein_task is None:
@@ -455,8 +547,8 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         )
         context = AnalysisDispatchContext(
             analysis_type="protein_design_analysis",
-            species_code=species_code,
-            gene_id=gene_id,
+            species_code=state["species_code"],
+            gene_id=state["target_gene"],
             output_dir=output_path,
         )
         results_dir = await self._download_analysis_result(
@@ -464,13 +556,13 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         )
         sub_summary = self._generate_sub_summary(
             analysis_type="protein_design_analysis",
-            gene_id=gene_id,
+            gene_id=state["target_gene"],
             state=state,
             results_dir=results_dir,
         )
         return {
             "raw_analyst_data": {
-                f"task_{task_index}": {
+                f"task_{state.get('task_index')}": {
                     "status": "success",
                     "analysis_type": "digital_design",
                     "task_id": protein_task.get("task_id"),
@@ -489,15 +581,32 @@ class DeepGenomeDispatchMixin(WorkflowMixinBase):
         results_dir: str | None = None,
     ) -> dict:
         """Generate sub-summary for a specific analysis type."""
+        display_order = state.get("display_order")
+        if display_order is None:
+            work_item_key = state.get("work_item_key")
+            if work_item_key is None:
+                work_item_key = analysis_type
+            for item in state.get("work_items", []):
+                if item.get("work_item_key") == work_item_key or (
+                    item.get("analysis_type") == analysis_type
+                    and item.get("section_key") != "digital_design"
+                ):
+                    display_order = item.get("display_order")
+                    break
+        figure_index = (
+            int(display_order) + 1
+            if isinstance(display_order, int) and display_order >= 0
+            else 1
+        )
         result = build_sub_summary(
             analysis_type=analysis_type,
             gene_id=gene_id,
             deepgenome_out=self.deep_genome_config.DEEPGENOME_OUT,
             data=state.get("analyst_summaries"),
-            figure_index=self._figure_index,
+            figure_index=figure_index,
             results_dir=results_dir,
+            display_order=display_order,
         )
-        self._figure_index = result.figure_index
         return result.data
 
     async def _bi_json(self: Any, sql: str) -> dict[str, Any]:

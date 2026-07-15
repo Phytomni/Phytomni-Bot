@@ -18,6 +18,9 @@ from langgraph.graph.state import CompiledStateGraph
 
 from mcp_server_phytomni.agents.deep_genome import design_mount
 from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
+from mcp_server_phytomni.agents.deep_genome.coordinator import (
+    RemoteSubmission,
+)
 from mcp_server_phytomni.agents.deep_genome.dispatch import (
     DeepGenomeDispatchMixin,
 )
@@ -129,7 +132,32 @@ def _fake_app(output: Any = None, boom: bool = False) -> Any:
 
 async def test_mount_projects_input_and_finalizes() -> None:
     """The mount projects DigitalDesignState input and forwards output."""
-    app = _fake_app(output={"design_task_result": [], "task_ids": {}})
+    app = _fake_app(
+        output={
+            "design_task_result": [
+                {
+                    "analysis_type": "protein_design_analysis",
+                    "task_id": "",
+                    "output_dir": "/obs/invalid",
+                },
+                {
+                    "analysis_type": "protein_design_analysis",
+                    "task_id": "protein-caller",
+                    "source_task_id": "protein-remote",
+                    "output_dir": "/obs/protein",
+                },
+                {
+                    "analysis_type": "promoter_design_analysis",
+                    "task_id": "promoter-caller",
+                    "output_dir": "/obs/promoter",
+                },
+            ],
+            "task_ids": {
+                "protein_design": "protein-caller",
+                "promoter_design": "promoter-caller",
+            },
+        }
+    )
 
     async def _finalize(design_output, state):
         return {
@@ -150,11 +178,112 @@ async def test_mount_projects_input_and_finalizes() -> None:
     }
     out = await node(payload)
 
-    assert app.captured["input"]["is_polling"] is True
+    assert app.captured["input"]["is_polling"] is False
     assert app.captured["input"]["gene_id"] == "g1"
     assert app.captured["input"]["species_code"] == "osa"
     assert out["ok"][0] == "osa"
     assert out["ok"][1] == "g1"
+    assert out["ok"][2] == {
+        "protein_design": RemoteSubmission(
+            submitted_task_id="protein-caller",
+            poll_task_id="protein-remote",
+            output_dir="/obs/protein",
+        ),
+        "promoter_design": RemoteSubmission(
+            submitted_task_id="promoter-caller",
+            poll_task_id="promoter-caller",
+            output_dir="/obs/promoter",
+        ),
+    }
+
+
+async def test_mount_keeps_one_design_submission_when_sibling_fails() -> None:
+    """A producer failure does not discard its independent sibling."""
+    app = _fake_app(
+        output={
+            "design_task_result": [
+                {
+                    "analysis_type": "protein_design_analysis",
+                    "task_id": "protein-caller",
+                    "output_dir": "/obs/protein",
+                }
+            ],
+            "task_ids": {"protein_design": "protein-caller"},
+            "failures": [
+                {"task_label": "promoter_design_analysis", "message": "x"}
+            ],
+        }
+    )
+
+    async def _capture(submissions, _state):
+        return {"submissions": submissions}
+
+    node = design_mount.make_design_mount_node(
+        cast(CompiledStateGraph, app), _capture
+    )
+    out = await node(
+        {"species_code": "osa", "target_gene": "g1", "task_index": 1}
+    )
+
+    assert out["submissions"]["protein_design"] is not None
+    assert out["submissions"]["promoter_design"] is None
+
+
+async def test_mount_keeps_valid_design_with_malformed_sibling() -> None:
+    """Malformed optional entries do not discard a valid sibling."""
+    app = _fake_app(
+        output={
+            "design_task_result": [
+                {
+                    "analysis_type": "protein_design_analysis",
+                    "task_id": "protein-caller",
+                    "output_dir": "/obs/protein",
+                },
+                {},
+                "not-an-object",
+            ],
+            "task_ids": {"protein_design": "protein-caller"},
+        }
+    )
+
+    async def _capture(submissions, _state):
+        return {"submissions": submissions}
+
+    node = design_mount.make_design_mount_node(
+        cast(CompiledStateGraph, app), _capture
+    )
+    out = await node(
+        {"species_code": "osa", "target_gene": "g1", "task_index": 1}
+    )
+
+    assert out["submissions"]["protein_design"] is not None
+    assert out["submissions"]["promoter_design"] is None
+
+
+def test_route_carries_concrete_work_item_order_into_send_payload() -> None:
+    """Send payloads preserve the stable work-item display order."""
+    state: Any = {
+        "task_submit_sleep": 0,
+        "analysis_tasks": [
+            {
+                "analysis_type": "single_cell_analysis",
+                "target_gene": "g1",
+                "species_code": "osa",
+            }
+        ],
+        "work_items": [
+            {
+                "section_key": "single_cell_analysis",
+                "work_item_key": "single_cell_analysis",
+                "display_order": 4,
+            }
+        ],
+    }
+    route = getattr(DeepGenomeDispatchMixin, "_route_analyst_tasks")
+    sends = route(object(), state)
+
+    assert sends[0].arg["work_item_key"] == "single_cell_analysis"
+    assert sends[0].arg["display_order"] == 4
 
 
 def test_deep_genome_graph_registers_design_node() -> None:

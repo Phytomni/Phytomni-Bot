@@ -109,8 +109,8 @@ async def test_mount_projects_input_and_finalizes() -> None:
         output={
             "evolution_agents_task": {
                 "task_id": "t1",
+                "source_task_id": "remote-t1",
                 "output_dir": "/obs/out",
-                "task_status": "SUCCEEDED",
             }
         }
     )
@@ -120,7 +120,7 @@ async def test_mount_projects_input_and_finalizes() -> None:
             "finalized": (
                 state["species_code"],
                 state["target_gene"],
-                task["task_id"],
+                task.submitted_task_id,
                 state.get("task_index"),
             )
         }
@@ -136,9 +136,16 @@ async def test_mount_projects_input_and_finalizes() -> None:
     out = await node(payload)
 
     assert app.captured["input"]["target_taxids"] == "All"
-    assert app.captured["input"]["is_polling"] is True
+    assert app.captured["input"]["is_polling"] is False
     assert app.captured["input"]["gene_id"] == "g1"
-    assert out == {"finalized": ("osa", "g1", "t1", 3)}
+    assert out == {
+        "finalized": (
+            "osa",
+            "g1",
+            "t1",
+            3,
+        )
+    }
 
 
 async def test_mount_degrades_on_fault() -> None:
@@ -214,10 +221,15 @@ async def test_mount_node_with_real_finalize_projects_summary() -> None:
         "species_code": "osa",
         "gene_id": "g9",
         "target_taxids": "All",
-        "is_polling": True,
+        "is_polling": False,
     }
     assert out["analysis_completed_branches"] == 1
-    assert out["raw_analyst_data"]["task_1"]["task_id"] == "t9"
-    assert out["analyst_summaries"]["tree_summary"] == (
-        "evolution_analysis:g9:/obs/o/results"
+    assert (
+        out["raw_analyst_data"]["task_1:evolution_analysis"]["task_id"] == "t9"
     )
+    assert out["raw_analyst_data"]["task_1:evolution_analysis"]["status"] == (
+        "submitted"
+    )
+    assert out["raw_analyst_data"]["task_1:evolution_analysis"][
+        "poll_task_id"
+    ] == ("t9")

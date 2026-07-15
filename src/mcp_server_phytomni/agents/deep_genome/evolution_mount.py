@@ -7,8 +7,8 @@ Hosts the ``make_evolution_mount_node`` factory closure that wires the
 standalone evolution graph (``build_evolution_graph``) as a structural
 subgraph:
 the closure captures the compiled app for xray expansion, projects the
-Send payload into ``EvolutionInput`` (scope ``"All"``, polling on), and
-hands the submitted task to a shared finalize callback.
+Send payload into ``EvolutionInput`` (scope ``"All"``, submit-only), and
+hands the normalized submission to a shared coordinator callback.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from langgraph.graph.state import CompiledStateGraph
 
+from .coordinator import RemoteSubmission, normalize_submission
 from .mount_common import degraded_analysis_delta
 
 if TYPE_CHECKING:
@@ -33,11 +34,12 @@ logger = logging.getLogger(__name__)
 # matches the brief_gene mount's _BRIEF_GENE_MOUNT_CAUGHT pattern.
 _EVOLUTION_MOUNT_CAUGHT: tuple[type[BaseException], ...] = (Exception,)
 
-# Callback shape: (task, state) -> analyst-branch delta. The finalize
-# helper reads species_code / target_gene / task_index from the Send
-# payload state, so the mount node only forwards the submitted task.
+# Callback shape: (submission, state) -> analyst-branch delta. The
+# finalize helper reads species_code / target_gene / task_index from the
+# Send payload state, so the mount node only forwards a normalized
+# submission.
 FinalizeFn = Callable[
-    [dict | None, "DeepGenomeState"],
+    [RemoteSubmission, "DeepGenomeState"],
     Awaitable[dict[str, Any]],
 ]
 
@@ -51,15 +53,15 @@ def make_evolution_mount_node(
     Closes over ``evolution_app`` so ``find_subgraph_pregel`` discovers
     the compiled graph through the closure free-variable and xray
     expands it under the parent ``evolution_node`` key. ``finalize_fn``
-    is the deep_genome dispatch helper that downloads results and builds
-    the sub-summary; it is a plain callable (not captured for xray).
+    is the deep_genome dispatch helper that builds the sub-summary after
+    the coordinator observes remote success; it is a plain callable (not
+    captured for xray).
 
     Input projection: the node receives a ``Send`` payload carrying the
     evolution task (``species_code`` / ``target_gene`` / ``task_index``)
     and projects it into ``EvolutionInput`` with the taxonomy scope
     pinned to ``"All"`` (so the mounted graph skips its chat extraction)
-    and ``is_polling`` on (so the analyst submission blocks and the
-    report can read results synchronously).
+    and ``is_polling`` off (so the coordinator owns remote waiting).
 
     On a mount fault the closure logs the exception and returns a
     degraded delta (a ``FailureRecord`` on the ``failures`` channel plus
@@ -68,8 +70,8 @@ def make_evolution_mount_node(
     Args:
         evolution_app: Compiled evolution subgraph for this consumer
             instance (from ``build_evolution_graph()``).
-        finalize_fn: Async callback running the shared download +
-            ``build_sub_summary`` post-processing.
+        finalize_fn: Async callback receiving a normalized remote
+            submission.
 
     Returns:
         Async callable suitable for ``StateGraph.add_node``.
@@ -84,12 +86,15 @@ def make_evolution_mount_node(
             "species_code": species_code,
             "gene_id": gene_id,
             "target_taxids": "All",
-            "is_polling": True,
+            "is_polling": False,
         }
         try:
             evo_output: dict[str, Any] = await evolution_app.ainvoke(evo_input)
             task = evo_output.get("evolution_agents_task")
-            return await finalize_fn(task, state)
+            if not isinstance(task, dict):
+                raise ValueError("evolution submission is not an object")
+            submission = normalize_submission(task)
+            return await finalize_fn(submission, state)
         except _EVOLUTION_MOUNT_CAUGHT as exc:
             logger.exception(
                 "evolution mount failed for gene_id=%s; emitting a "
