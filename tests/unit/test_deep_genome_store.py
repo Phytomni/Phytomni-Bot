@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -23,6 +25,7 @@ from mcp_server_phytomni.runtime.deep_genome_store import (
     DeepGenomeReservation,
     DeepGenomeSnapshot,
     DeepGenomeStore,
+    DeepGenomeTrackingError,
     DeepGenomeTransitionError,
     RemoteSubmission,
 )
@@ -126,6 +129,23 @@ class _FailingStore(DeepGenomeStore):
         if stage == self.fail_after:
             raise sqlite3.OperationalError(f"injected failure after {stage}")
         super()._reservation_execute(connection, stage, statement, parameters)
+
+
+class _DisappearingUmbrellaStore(DeepGenomeStore):
+    """Simulate an owner row disappearing during snapshot persistence."""
+
+    @classmethod
+    def _persist_report_snapshot(
+        cls,
+        connection: sqlite3.Connection,
+        umbrella_task_id: str,
+        now: str,
+    ) -> None:
+        connection.execute(
+            "UPDATE tasks SET status = 'failed' WHERE task_id = ?",
+            (umbrella_task_id,),
+        )
+        super()._persist_report_snapshot(connection, umbrella_task_id, now)
 
 
 def test_store_upgrades_legacy_database_idempotently(tmp_path: Path) -> None:
@@ -539,3 +559,204 @@ def test_remote_identity_rejects_terminal_umbrella(
             work_item_key="smoc_analysis",
             submission=RemoteSubmission("caller-1", "source-1", "obs://out"),
         )
+
+
+def test_duplicate_transition_does_not_advance_revision(
+    tmp_path: Path,
+) -> None:
+    """An identical observation is a durable no-op."""
+    store, reservation = _seeded_store(tmp_path)
+
+    first = store.apply_work_item_transition(
+        reservation.umbrella_task_id,
+        work_item_key="smep_analysis",
+        status="running",
+    )
+    second = store.apply_work_item_transition(
+        reservation.umbrella_task_id,
+        work_item_key="smep_analysis",
+        status="running",
+    )
+
+    assert first.report_revision == 1
+    assert second.report_revision == first.report_revision
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        updated_at = conn.execute(
+            "SELECT report_updated_at FROM tasks WHERE task_id = ?",
+            (reservation.umbrella_task_id,),
+        ).fetchone()[0]
+    assert updated_at == first.report_updated_at
+
+
+def test_brief_gene_transition_publishes_a_brief_gene_only_snapshot(
+    tmp_path: Path,
+) -> None:
+    """BriefGene success is visible before optional work is planned."""
+    store = _store(tmp_path)
+    reservation = store.reserve_run(
+        run_id="run-1",
+        umbrella_task_id="task-1",
+        owner="alice",
+        output_dir="/tmp/task-1",
+    )
+
+    snapshot = store.apply_brief_gene_transition(
+        reservation.umbrella_task_id,
+        status="succeeded",
+        summary_markdown="BriefGene summary",
+    )
+
+    assert snapshot.report_revision == 1
+    assert snapshot.report_stage == "intermediate"
+    assert snapshot.report_completeness == "partial"
+    assert snapshot.intermediate_report is not None
+    assert "BriefGene summary" in snapshot.intermediate_report
+    assert snapshot.progress["planning_complete"] is False
+    assert snapshot.progress["brief_gene_status"] == "succeeded"
+
+
+def test_failed_work_item_persists_only_a_fixed_failure_reason(
+    tmp_path: Path,
+) -> None:
+    """Remote failure text never crosses the local report boundary."""
+    store, reservation = _seeded_store(tmp_path)
+
+    snapshot = store.apply_work_item_transition(
+        reservation.umbrella_task_id,
+        work_item_key="smep_analysis",
+        status="failed",
+        failure_reason="secret DSN and upstream response body",
+    )
+
+    assert snapshot.degraded is True
+    assert snapshot.degraded_reason == "1 of 12 optional analyses unavailable"
+    assert snapshot.failures == (
+        {
+            "work_item_key": "smep_analysis",
+            "status": "failed",
+            "reason": "analysis task failed",
+        },
+    )
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        stored_reason = conn.execute(
+            "SELECT failure_reason FROM deep_genome_remote_tasks "
+            "WHERE umbrella_task_id = ? AND work_item_key = ?",
+            (reservation.umbrella_task_id, "smep_analysis"),
+        ).fetchone()[0]
+    assert stored_reason == "analysis task failed"
+
+
+def test_transition_preserves_an_existing_sanitized_degraded_reason(
+    tmp_path: Path,
+) -> None:
+    """A later snapshot does not erase an established local reason."""
+    store, reservation = _seeded_store(tmp_path)
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        conn.execute(
+            "UPDATE tasks SET degraded_reason = ? WHERE task_id = ?",
+            ("previously sanitized", reservation.umbrella_task_id),
+        )
+
+    snapshot = store.apply_work_item_transition(
+        reservation.umbrella_task_id,
+        work_item_key="smep_analysis",
+        status="running",
+    )
+
+    assert snapshot.degraded_reason == "previously sanitized"
+
+
+def test_tracking_failure_rolls_back_when_umbrella_stops_running(
+    tmp_path: Path,
+) -> None:
+    """A missing running owner aborts the child transition atomically."""
+    _, reservation = _seeded_store(tmp_path)
+    store = _DisappearingUmbrellaStore(str(tmp_path / "tasks.db"))
+
+    with pytest.raises(
+        DeepGenomeTrackingError, match="reserved umbrella task is missing"
+    ):
+        store.apply_work_item_transition(
+            reservation.umbrella_task_id,
+            work_item_key="smep_analysis",
+            status="running",
+        )
+
+    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+        task_status = conn.execute(
+            "SELECT status FROM tasks WHERE task_id = ?",
+            (reservation.umbrella_task_id,),
+        ).fetchone()[0]
+        item_status = conn.execute(
+            "SELECT status FROM deep_genome_remote_tasks "
+            "WHERE umbrella_task_id = ? AND work_item_key = ?",
+            (reservation.umbrella_task_id, "smep_analysis"),
+        ).fetchone()[0]
+    assert task_status == "running"
+    assert item_status == "planned"
+
+
+def test_terminal_transition_cannot_regress_without_a_write(
+    tmp_path: Path,
+) -> None:
+    """A terminal child cannot return to an active lifecycle state."""
+    store, reservation = _seeded_store(tmp_path)
+    completed = store.apply_work_item_transition(
+        reservation.umbrella_task_id,
+        work_item_key="smep_analysis",
+        status="succeeded",
+        summary_markdown="SMEP summary",
+    )
+
+    with pytest.raises(DeepGenomeTransitionError, match="terminal"):
+        store.apply_work_item_transition(
+            reservation.umbrella_task_id,
+            work_item_key="smep_analysis",
+            status="running",
+        )
+
+    latest = store.get_snapshot(reservation.umbrella_task_id)
+    assert latest is not None
+    assert latest.report_revision == completed.report_revision
+    assert latest.intermediate_report == completed.intermediate_report
+
+
+def _run_concurrent_transitions(
+    store: DeepGenomeStore,
+    reservation: DeepGenomeReservation,
+) -> list[DeepGenomeSnapshot]:
+    """Run two independent successful updates behind one start barrier."""
+    barrier = threading.Barrier(2)
+
+    def transition(
+        work_item_key: str,
+        summary: str,
+    ) -> DeepGenomeSnapshot:
+        barrier.wait(timeout=5)
+        return store.apply_work_item_transition(
+            reservation.umbrella_task_id,
+            work_item_key=work_item_key,
+            status="succeeded",
+            summary_markdown=summary,
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(transition, "smep_analysis", "SMEP summary"),
+            executor.submit(transition, "smoc_analysis", "SMOC summary"),
+        ]
+        return [future.result() for future in futures]
+
+
+def test_concurrent_successes_preserve_both_sections(tmp_path: Path) -> None:
+    """Serialized SQLite writers retain both material report updates."""
+    for attempt in range(10):
+        attempt_path = tmp_path / str(attempt)
+        attempt_path.mkdir()
+        store, reservation = _seeded_store(attempt_path)
+        snapshots = _run_concurrent_transitions(store, reservation)
+        latest = max(snapshots, key=lambda snapshot: snapshot.report_revision)
+        assert latest.intermediate_report is not None
+        assert "SMEP summary" in latest.intermediate_report
+        assert "SMOC summary" in latest.intermediate_report
+        assert latest.report_revision == 2

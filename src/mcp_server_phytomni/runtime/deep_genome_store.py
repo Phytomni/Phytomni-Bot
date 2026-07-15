@@ -18,6 +18,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from .deep_genome_transitions import (
+    _TERMINAL_WORK_ITEM_STATUSES,
+    _WORK_ITEM_STATUSES,
+    DeepGenomeTrackingError,
+    DeepGenomeTransitionError,
+    DeepGenomeTransitionMixin,
+)
 from .run_registry import RunRegistry, _expires_at_for
 from .task_manager import _CREATE_TASKS_DDL, _TASK_ADD_COLUMN_STATEMENTS
 
@@ -30,20 +37,11 @@ __all__ = [
     "DeepGenomeSectionRow",
     "DeepGenomeSnapshot",
     "DeepGenomeStore",
+    "DeepGenomeTrackingError",
     "DeepGenomeTransitionError",
     "RemoteSubmission",
 ]
 
-_WORK_ITEM_STATUSES = (
-    "planned",
-    "submitted",
-    "pending",
-    "running",
-    "succeeded",
-    "failed",
-    "cancelled",
-    "timed_out",
-)
 _WORK_ITEM_STATUS_SQL = ", ".join(
     f"'{status}'" for status in _WORK_ITEM_STATUSES
 )
@@ -102,10 +100,6 @@ class RemoteSubmission:
     submitted_task_id: str
     poll_task_id: str
     output_dir: str
-
-
-class DeepGenomeTransitionError(RuntimeError):
-    """Raised when a persisted DeepGenome identity cannot be changed."""
 
 
 @dataclass(frozen=True)
@@ -196,7 +190,7 @@ class DeepGenomeRemoteTaskRow(_RemoteIdentity, _RemoteContent):
     """Immutable row projection for one concrete remote work item."""
 
 
-class DeepGenomeStore:
+class DeepGenomeStore(DeepGenomeTransitionMixin):
     """Own the additive DeepGenome schema in one SQLite database."""
 
     LOCAL_COORDINATOR_FAILURE = "local coordinator failed to start"
@@ -545,19 +539,12 @@ class DeepGenomeStore:
         umbrella_task_id: str,
     ) -> None:
         """Reject acceptance after the owner run or task is terminal."""
-        parent = connection.execute(
-            "SELECT t.status, r.status FROM tasks AS t "
-            "JOIN runs AS r ON r.run_id = t.run_id "
-            "WHERE t.task_id = ? AND t.agent = 'deep_genome' "
-            "AND r.agent = 'deep_genome'",
-            (umbrella_task_id,),
-        ).fetchone()
-        if parent is None:
-            raise DeepGenomeTransitionError(
-                "reserved umbrella task is missing"
+        try:
+            DeepGenomeTransitionMixin._assert_tracking_parent(
+                connection, umbrella_task_id
             )
-        if parent != ("running", "running"):
-            raise DeepGenomeTransitionError("umbrella task is terminal")
+        except DeepGenomeTrackingError as error:
+            raise DeepGenomeTransitionError(str(error)) from error
 
     @staticmethod
     def _assert_seed_parent(
@@ -816,6 +803,14 @@ class DeepGenomeStore:
                 """,
                 (umbrella_task_id,),
             ).fetchone()
+            failure_rows = tuple(
+                conn.execute(
+                    "SELECT work_item_key, status, summary_markdown FROM "
+                    "deep_genome_remote_tasks WHERE umbrella_task_id = ? "
+                    "ORDER BY work_item_key",
+                    (umbrella_task_id,),
+                )
+            )
         finally:
             conn.close()
         if row is None:
@@ -832,6 +827,21 @@ class DeepGenomeStore:
                     for key, value in decoded.items()
                     if isinstance(value, (bool, int, str))
                 }
+        failures = tuple(
+            {
+                "work_item_key": work_item_key,
+                "status": status,
+                "reason": self._failure_reason_for_status(status)
+                or "analysis task unavailable",
+            }
+            for work_item_key, status, summary_markdown in failure_rows
+            if status in _TERMINAL_WORK_ITEM_STATUSES
+            and (
+                status != "succeeded"
+                or not isinstance(summary_markdown, str)
+                or not summary_markdown.strip()
+            )
+        )
         return DeepGenomeSnapshot(
             umbrella_task_id=umbrella_task_id,
             status=row[0] or "running",
@@ -844,5 +854,5 @@ class DeepGenomeStore:
             progress=progress,
             degraded=bool(row[8]),
             degraded_reason=row[8],
-            failures=(),
+            failures=failures,
         )
