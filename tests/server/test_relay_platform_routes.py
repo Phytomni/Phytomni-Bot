@@ -266,6 +266,43 @@ async def test_bi_route_sql_error_returns_error_envelope(
     assert resp.json() == {"message": "sql error", "data": []}
 
 
+@pytest.mark.parametrize("sql", [None, 123, [], "", "   "])
+async def test_bi_route_rejects_non_string_or_blank_sql_before_audit(
+    sql: object,
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid SQL shape returns fixed 400 before execution or audit."""
+    called: list[object] = []
+
+    async def _fake_gauss(value: object) -> dict:
+        called.append(value)
+        return {"message": "ok", "data": []}
+
+    entries: list[object] = []
+
+    def record(entry: object) -> None:
+        """Capture an audit entry without touching SQLite."""
+        entries.append(entry)
+
+    audit = SimpleNamespace(record=record)
+    monkeypatch.setattr(routes_module, "gauss_query", _fake_gauss)
+    monkeypatch.setattr(routes_module, "get_audit_store", lambda _path: audit)
+    monkeypatch.setenv("PHYTOMNI_RELAY_ENABLED", "1")
+
+    resp = await client.post(
+        "/v1/relay/bi/query",
+        headers={"Authorization": f"Bearer {relay_key('bi')}"},
+        json={"sql": sql},
+    )
+
+    assert resp.status_code == 400
+    assert resp.json() == {"detail": "invalid sql"}
+    assert not called
+    assert not entries
+
+
 async def test_platform_upstream_error_maps_to_status(
     client: httpx.AsyncClient,
     relay_key: Callable[[str], str],

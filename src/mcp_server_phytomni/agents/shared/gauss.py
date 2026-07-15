@@ -13,17 +13,22 @@ pools are loop-bound. Driver errors surface as ``McpError``; the relay's
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any
 from weakref import WeakKeyDictionary
 
 import asyncpg
 from mcp.shared.exceptions import McpError
-from mcp.types import INTERNAL_ERROR, ErrorData
+from mcp.types import INTERNAL_ERROR, INVALID_PARAMS, ErrorData
 
 from ...config.defaults import ServerConfig
 from ...config.settings import get_sensitive_config
+from ...runtime.request_context import current_request_id
+from .sql_policy import ReadOnlySqlError, validate_read_only_sql
 
 __all__ = ["aclose_gauss_pool", "gauss_query"]
+
+_LOGGER = logging.getLogger(__name__)
 
 _GAUSS_POOL_STATE: WeakKeyDictionary[
     asyncio.AbstractEventLoop, asyncpg.Pool
@@ -87,14 +92,26 @@ async def gauss_query(sql: str) -> dict[str, Any]:
             prior BI HTTP retry path raised.
     """
     try:
+        validate_read_only_sql(sql)
+    except ReadOnlySqlError as exc:
+        raise McpError(
+            ErrorData(code=INVALID_PARAMS, message=str(exc))
+        ) from exc
+
+    try:
         pool = await _gauss_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(sql)
     except (asyncpg.PostgresError, OSError) as exc:
+        _LOGGER.error(
+            "GaussDB query failed request_id=%s exception_type=%s",
+            current_request_id() or "unknown",
+            type(exc).__name__,
+        )
         raise McpError(
             ErrorData(
                 code=INTERNAL_ERROR,
-                message=f"GaussDB query failed: {exc}",
+                message="GaussDB query failed",
             )
         ) from exc
     return {"message": "ok", "data": [dict(row) for row in rows]}

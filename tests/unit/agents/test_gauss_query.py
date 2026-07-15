@@ -12,10 +12,12 @@ bad-SQL -> McpError contract, per-loop pool isolation, and aclose.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import asyncpg
 import pytest
@@ -37,11 +39,13 @@ class _FakePool:
         rows: list[dict[str, Any]],
         boom: bool,
         timeout_boom: bool = False,
+        error_message: str = "bad sql",
     ) -> None:
         """Store rows and flags; start with closed=False."""
         self._rows = rows
         self._boom = boom
         self._timeout_boom = timeout_boom
+        self._error_message = error_message
         self.closed = False
 
     @asynccontextmanager
@@ -53,7 +57,7 @@ class _FakePool:
             if timeout_boom:
                 raise TimeoutError("command timeout")
             if boom:
-                raise asyncpg.PostgresError("bad sql")
+                raise asyncpg.PostgresError(self._error_message)
             return rows
 
         yield SimpleNamespace(fetch=fetch)
@@ -69,13 +73,14 @@ def _patch_pool(
     *,
     boom: bool = False,
     timeout_boom: bool = False,
+    error_message: str = "bad sql",
 ) -> tuple[list[_FakePool], dict[str, Any]]:
     made: list[_FakePool] = []
     captured: dict[str, Any] = {}
 
     async def fake_create_pool(*_a: Any, **kwargs: Any) -> _FakePool:
         captured.update(kwargs)
-        pool = _FakePool(rows, boom, timeout_boom)
+        pool = _FakePool(rows, boom, timeout_boom, error_message)
         made.append(pool)
         return pool
 
@@ -124,6 +129,53 @@ async def test_gauss_query_bad_sql_raises_mcperror(
     _patch_pool(monkeypatch, [], boom=True)
     with pytest.raises(McpError):
         await gauss_query("SELECT bogus")
+
+
+async def test_unsafe_sql_is_rejected_before_pool_acquire(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unsafe SQL fails before asyncpg creates or acquires a pool."""
+    pool = _FakePool([], boom=False)
+    create_pool = AsyncMock(return_value=pool)
+    monkeypatch.setattr(gauss_mod.asyncpg, "create_pool", create_pool)
+    _GAUSS_POOL_STATE.clear()
+
+    with pytest.raises(McpError, match="read-only query"):
+        await gauss_query("DELETE FROM secret_table")
+
+    create_pool.assert_not_awaited()
+
+
+async def test_driver_error_does_not_leak_sql_or_dsn(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Driver failures expose fixed text and metadata-only diagnostics."""
+    _patch_pool(
+        monkeypatch,
+        [],
+        boom=True,
+        error_message="postgresql://u:p@host/db secret_column",
+    )
+    monkeypatch.setattr(
+        gauss_mod,
+        "current_request_id",
+        lambda: "req-gauss",
+        raising=False,
+    )
+
+    with (
+        caplog.at_level(logging.ERROR, logger=gauss_mod.__name__),
+        pytest.raises(McpError) as exc_info,
+    ):
+        await gauss_query("SELECT secret_column")
+
+    combined = f"{exc_info.value.error.message}\n{caplog.text}"
+    assert exc_info.value.error.message == "GaussDB query failed"
+    assert "postgresql://" not in combined
+    assert "secret_column" not in combined
+    assert "req-gauss" in caplog.text
+    assert "PostgresError" in caplog.text
 
 
 def test_pool_is_per_event_loop(

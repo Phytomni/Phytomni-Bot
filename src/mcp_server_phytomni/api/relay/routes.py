@@ -293,6 +293,8 @@ def _bi_query_handler() -> Callable[..., Awaitable[Response]]:
             sql = json.loads(body)["sql"]
         except (ValueError, KeyError, TypeError) as exc:
             raise HTTPException(status_code=400, detail="missing sql") from exc
+        if not isinstance(sql, str) or not sql.strip():
+            raise HTTPException(status_code=400, detail="invalid sql")
         try:
             payload = await gauss_query(sql)
         except McpError:
