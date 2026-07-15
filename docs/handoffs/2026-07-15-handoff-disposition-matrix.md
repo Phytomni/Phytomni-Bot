@@ -1,10 +1,28 @@
 # Handoff disposition matrix
 
-**Date:** 2026-07-15\
+**Date:** 2026-07-16\
 **Source inventory:** the fourteen filenames under the local `.codex/handoff/`
 directory\
 **Status rule:** missing external proof is never `Closed`\
 **Evidence rule:** `External Pending` rows must say `Not returned`
+
+## Current repository observation
+
+This observation is local evidence for the Bot side only and must be refreshed
+when the release owner reviews the matrix:
+
+| Fact | Observed value |
+| --- | --- |
+| Branch | `release/0.1.3` |
+| Source/runtime version | `0.1.3` |
+| Local HEAD | `8b31cae` |
+| Remote ref | `origin/release/0.1.3=1acbc1d` |
+| Local divergence | 53 commits ahead; no remote update confirmed |
+| Current full gate | `2756 passed, 1 deselected`, coverage `87.96%` |
+
+The remote-ref observation is not a push acceptance record. `RC-REL-001`
+remains pending until `make push` succeeds and the remote ref is independently
+verified.
 
 This matrix is the durable index of the original handoffs. The filenames are
 copied verbatim so a reviewer can compare them with the local source inventory
@@ -55,3 +73,26 @@ No row is `Closed` because no returned Web/Go, GitHub, DBA, live backend, or
 production transcript is present in this repository. A future owner update
 must change the evidence cell and remaining action together; changing only a
 status label is not an acceptance record.
+
+## Acceptance ID mapping
+
+These IDs are the release-closure catalogue. Each appears exactly once so an
+owner can return evidence without relying on a historical handoff title.
+
+| Acceptance ID | Matrix handoff | State | Owner | Evidence |
+| --- | --- | --- | --- | --- |
+| `RC-WEB-001` | DeepGenome Web/Go handoff | External Pending | Web and Go gateway | Not returned |
+| `RC-WEB-002` | DeepGenome Web/Go handoff | External Pending | Web and Go gateway | Not returned |
+| `RC-WEB-003` | DeepGenome Web/Go handoff | External Pending | Web and live backend owners | Not returned |
+| `RC-WEB-004` | Analyst terminal report handoff | External Pending | Web and live backend owners | Not returned |
+| `RC-WEB-005` | DeepGenome Web/Go handoff | External Pending | Web and Go gateway | Not returned |
+| `RC-WEB-006` | A2UI and AG-UI handoffs | External Pending | Web and Go gateway | Not returned |
+| `RC-WEB-007` | Expert route and history handoffs | External Pending | Web, Go, and Operations | Not returned |
+| `RC-OPS-001` | Operations acceptance handoff | External Pending | GitHub administrator | Not returned |
+| `RC-OPS-002` | Operations acceptance handoff | External Pending | Operations | Not returned |
+| `RC-OPS-003` | Operations and citation migration handoffs | External Pending | Operations and DBA | Not returned |
+| `RC-DB-001` | GaussDB unlisten handoff | External Pending | DBA and Operations | Not returned |
+| `RC-DB-002` | GaussDB comparison handoff | External Pending | DBA and Operations | Not returned |
+| `RC-LIVE-001` | DeepGenome Web/Go handoff | External Pending | Release owner and live backend owners | Not returned |
+| `RC-REL-001` | Release push verification | External Pending | Release owner | Not returned |
+| `RC-REL-002` | Final disposition review | External Pending | Release owner | Not returned |

@@ -39,6 +39,23 @@ ORIGINAL_HANDOFF_NAMES = [
     "decouple-overview.md",
     "decouple-web-handoff.md",
 ]
+ACCEPTANCE_IDS = [
+    "RC-WEB-001",
+    "RC-WEB-002",
+    "RC-WEB-003",
+    "RC-WEB-004",
+    "RC-WEB-005",
+    "RC-WEB-006",
+    "RC-WEB-007",
+    "RC-OPS-001",
+    "RC-OPS-002",
+    "RC-OPS-003",
+    "RC-DB-001",
+    "RC-DB-002",
+    "RC-LIVE-001",
+    "RC-REL-001",
+    "RC-REL-002",
+]
 EXAMPLE_PATHS = tuple(
     ROOT / "docs/handoffs/examples" / name
     for name in (
@@ -218,6 +235,21 @@ def test_external_rows_cannot_claim_returned_evidence() -> None:
     for row in parse_disposition_rows():
         if row.status == "External Pending":
             assert row.evidence == "Not returned"
+
+
+def test_release_acceptance_ids_are_unique_and_pending() -> None:
+    """Keep every release obligation mapped exactly once."""
+    text = MATRIX.read_text(encoding="utf-8")
+    mapping = text.split("## Acceptance ID mapping", maxsplit=1)[1]
+    for acceptance_id in ACCEPTANCE_IDS:
+        assert mapping.count(f"`{acceptance_id}`") == 1
+        line = next(
+            line
+            for line in mapping.splitlines()
+            if f"`{acceptance_id}`" in line
+        )
+        assert "External Pending" in line
+        assert "Not returned" in line
 
 
 def test_matrix_bot_commit_evidence_exists_in_git() -> None:
