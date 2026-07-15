@@ -48,6 +48,7 @@ from fastapi import (
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from google.protobuf import json_format
+from httpx import ConnectError, TimeoutException
 from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS
 from pydantic import ValidationError
@@ -112,7 +113,11 @@ from ..interop.registry import (
     InteropRegistryError,
     load_interop_registry,
 )
-from ..mcp.app import invoke_tool_enveloped, invoke_tool_streamed
+from ..mcp.app import (
+    invoke_tool_enveloped,
+    invoke_tool_streamed,
+    prepare_tool_stream,
+)
 from ..mcp.handler_support import chat_kwargs, load_handler_runtime
 from ..mcp.result_formatting import (
     AguiEvent,
@@ -125,6 +130,13 @@ from ..mcp.result_formatting import (
     strip_chat_completion,
 )
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
+from ..mcp.stream_lifecycle import (
+    EmptyStreamError,
+    PrimedAguiStream,
+    StreamLifecycleState,
+    prime_agui_stream,
+    project_stream_failures,
+)
 from ..runtime.deep_genome_store import (
     DeepGenomeStore,
     snapshot_to_public_dict,
@@ -723,7 +735,70 @@ async def _resume_a2ui_run(  # pylint: disable=too-many-locals
     )
 
 
-def _stream_chat_a2ui_confirm(
+def _stream_setup_error(exc: Exception, *, priming: bool) -> HTTPException:
+    """Map stream setup/prime failures to fixed pre-header HTTP errors."""
+    if isinstance(exc, ConnectError):
+        return HTTPException(
+            status_code=502, detail="stream upstream unavailable"
+        )
+    if isinstance(exc, TimeoutException):
+        return HTTPException(
+            status_code=504, detail="stream upstream timed out"
+        )
+    if not priming and isinstance(exc, NotImplementedError):
+        return HTTPException(
+            status_code=400,
+            detail="streaming is not supported for this model",
+        )
+    if (
+        not priming
+        and isinstance(exc, McpError)
+        and exc.error.code == (INVALID_PARAMS)
+    ):
+        return HTTPException(
+            status_code=400,
+            detail="invalid streaming request",
+        )
+    if isinstance(exc, EmptyStreamError):
+        return HTTPException(status_code=500, detail="stream produced no data")
+    return HTTPException(status_code=500, detail="stream setup failed")
+
+
+def _failed_stream_result() -> dict[str, Any]:
+    """Return the minimal failed result persisted after pre-open failure."""
+    return {
+        "formatted": {"answer": ""},
+        "raw": None,
+        "stream": True,
+        "partial": True,
+    }
+
+
+async def _replay_primed_stream(
+    primed: PrimedAguiStream,
+) -> AsyncIterator[AguiEvent]:
+    """Replay a primed first event before consuming its raw remainder."""
+    yield primed.first
+    async for event in primed.remainder:
+        yield event
+
+
+async def _project_primed_stream(
+    primed: PrimedAguiStream,
+    *,
+    run_id: str,
+) -> AsyncIterator[AguiEvent]:
+    """Project a primed raw stream through one typed lifecycle state."""
+    async for event in project_stream_failures(
+        _replay_primed_stream(primed),
+        state=StreamLifecycleState(),
+        run_id=run_id,
+        request_id=current_request_id() or "unknown",
+    ):
+        yield event
+
+
+async def _stream_chat_a2ui_confirm(
     *,
     arguments: dict[str, Any],
     payload: ChatCompletionRequest,
@@ -739,6 +814,11 @@ def _stream_chat_a2ui_confirm(
     """
     agent_slug = "chat"
     owner = current_request_user() or "anonymous"
+    try:
+        app = _chat_a2ui_stream_app()
+        initial_state = _chat_a2ui_initial_state(arguments)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        raise _stream_setup_error(exc, priming=False) from exc
     run_id = IdFactory().new_id("run", agent_slug)
     request_info = RunRequestInfo(
         dialogue_id=payload.dialogue_id,
@@ -754,9 +834,8 @@ def _stream_chat_a2ui_confirm(
     ) -> AsyncIterator[AguiEvent]:
         """Yield AG-UI frames for one A2UI confirm pause."""
         yield run_started(run_id, payload.dialogue_id)
-        app = _chat_a2ui_stream_app()
         final_state = await app.ainvoke(
-            _chat_a2ui_initial_state(arguments),
+            initial_state,
             config=build_runnable_config(run_id),
         )
         interrupt = detect_interrupt(final_state, run_id)
@@ -772,12 +851,18 @@ def _stream_chat_a2ui_confirm(
             yield custom(A2UI_CUSTOM_NAME, a2ui_value)
         yield run_finished(run_id)
 
+    settled_input_required = [False]
+    try:
+        primed = await prime_agui_stream(_agui_events(settled_input_required))
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        _settle_stream_run(run_id, owner, "failed", _failed_stream_result())
+        raise _stream_setup_error(exc, priming=True) from exc
+
     async def _wrapped() -> AsyncIterator[str]:
         """Forward SSE; settle failed only when pause was not recorded."""
-        settled_input_required = [False]
         try:
             async for line in to_chat_completion_chunks(
-                _agui_events(settled_input_required),
+                _project_primed_stream(primed, run_id=run_id),
                 payload.model,
             ):
                 yield line
@@ -811,7 +896,7 @@ def _stream_chat_a2ui_confirm(
     return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
-def _stream_review_a2ui_pause(
+async def _stream_review_a2ui_pause(
     *,
     arguments: dict[str, Any],
     payload: ChatCompletionRequest,
@@ -826,6 +911,12 @@ def _stream_review_a2ui_pause(
     """
     agent_slug = "review"
     owner = current_request_user() or "anonymous"
+    try:
+        args = _validate_review_arguments(arguments)
+        app = _review_stream_app()
+        initial_state = _review_initial_state(args)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        raise _stream_setup_error(exc, priming=False) from exc
     run_id = IdFactory().new_id("run", agent_slug)
     request_info = RunRequestInfo(
         dialogue_id=payload.dialogue_id,
@@ -835,12 +926,9 @@ def _stream_review_a2ui_pause(
         request_json=payload.model_dump_json(),
     )
     _create_running_stream_run(run_id, agent_slug, owner, request_info)
-    args = _validate_review_arguments(arguments)
 
     async def _agui_events(settled: list[bool]) -> AsyncIterator[AguiEvent]:
         yield run_started(run_id, payload.dialogue_id)
-        app = _review_stream_app()
-        initial_state = _review_initial_state(args)
         final_state = await app.ainvoke(
             initial_state,
             config=build_runnable_config(run_id),
@@ -866,16 +954,22 @@ def _stream_review_a2ui_pause(
             settled[0] = True
         yield run_finished(run_id)
 
+    settled_input_required = [False]
+    try:
+        primed = await prime_agui_stream(_agui_events(settled_input_required))
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        _settle_stream_run(run_id, owner, "failed", _failed_stream_result())
+        raise _stream_setup_error(exc, priming=True) from exc
+
     async def _wrapped() -> AsyncIterator[str]:
-        settled_run = [False]
         try:
             async for line in to_chat_completion_chunks(
-                _agui_events(settled_run),
+                _project_primed_stream(primed, run_id=run_id),
                 payload.model,
             ):
                 yield line
         finally:
-            if not settled_run[0]:
+            if not settled_input_required[0]:
                 already_paused = False
                 try:
                     record = RunRegistry(resolve_tasks_db_path()).get_run(
@@ -904,14 +998,14 @@ def _stream_review_a2ui_pause(
     return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
-def _stream_chat_completion(
+async def _stream_chat_completion(
     *,
     tool_name: str,
     arguments: dict[str, Any],
     payload: ChatCompletionRequest,
     user_query: str,
 ) -> StreamingResponse:
-    """Wrap ``invoke_tool_streamed`` + SSE shaper + two-stage run write.
+    """Prepare, prime, and wrap one streamed tool response.
 
     The wrapper is an async generator: each emitted SSE line forwards
     immediately to the client (no buffering). The run row is written
@@ -933,7 +1027,7 @@ def _stream_chat_completion(
         and ApiConfig().A2UI_ENABLED
         and select_chat_a2ui_widget(user_query) is not None
     ):
-        return _stream_chat_a2ui_confirm(
+        return await _stream_chat_a2ui_confirm(
             arguments=arguments,
             payload=payload,
             user_query=user_query,
@@ -941,6 +1035,16 @@ def _stream_chat_completion(
     agent_slug = _MODEL_TO_AGENT_SLUG.get(payload.model)
     owner = current_request_user() or "anonymous"
     run_id = IdFactory().new_id("run", agent_slug or "chat")
+    try:
+        raw_events = prepare_tool_stream(
+            tool_name,
+            arguments,
+            run_id=run_id,
+            dialogue_id=payload.dialogue_id,
+        )
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        raise _stream_setup_error(exc, priming=False) from exc
+
     request_info = RunRequestInfo(
         dialogue_id=payload.dialogue_id,
         query=user_query,
@@ -952,12 +1056,19 @@ def _stream_chat_completion(
     # registry id instead of an unpersisted placeholder.
     if agent_slug is not None:
         _create_running_stream_run(run_id, agent_slug, owner, request_info)
-    events = invoke_tool_streamed(
-        tool_name,
-        arguments,
-        run_id=run_id,
-        dialogue_id=payload.dialogue_id,
-    )
+    try:
+        primed = await prime_agui_stream(raw_events)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        if agent_slug is not None:
+            _settle_stream_run(
+                run_id,
+                owner,
+                "failed",
+                _failed_stream_result(),
+            )
+        raise _stream_setup_error(exc, priming=True) from exc
+
+    events = _project_primed_stream(primed, run_id=run_id)
     accumulator: StreamAnswerAccumulator | None = None
     if tool_name == "ChatAgent":
         accumulator = StreamAnswerAccumulator(
@@ -1847,7 +1958,7 @@ async def _review_chat_completion_response(
     return JSONResponse(completion)
 
 
-def _stream_chat_response(
+async def _stream_chat_response(
     *,
     tool_name: str,
     arguments: dict[str, object],
@@ -1864,7 +1975,7 @@ def _stream_chat_response(
                     "review; use stream=false and POST /v1/runs/{id}/resume"
                 ),
             )
-        return _stream_review_a2ui_pause(
+        return await _stream_review_a2ui_pause(
             arguments=dict(arguments),
             payload=payload,
             user_query=user_query,
@@ -1874,7 +1985,7 @@ def _stream_chat_response(
             status_code=400,
             detail=f"streaming is not supported for model {payload.model}",
         )
-    return _stream_chat_completion(
+    return await _stream_chat_completion(
         tool_name=tool_name,
         arguments=arguments,
         payload=payload,
@@ -3214,7 +3325,7 @@ def create_app() -> FastAPI:
         if accepts_obs:
             arguments["obs_file_list"] = obs_files
         if payload.stream:
-            return _stream_chat_response(
+            return await _stream_chat_response(
                 tool_name=tool_name,
                 arguments=arguments,
                 payload=payload,

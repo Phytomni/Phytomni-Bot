@@ -12,11 +12,15 @@ from typing import Any, cast
 
 import httpx
 import pytest
+
+# Pytest resolves this namespace-package helper; standalone pylint does not.
+# pylint: disable=import-error
 from tests.server.test_api_chat_streaming import (
     _extract_run_started_id,
     _patch_chat_stream,
 )
 
+# pylint: enable=import-error
 from mcp_server_phytomni.agents.shared.a2ui import (
     A2UI_CUSTOM_NAME,
     author_a2ui_surface_offline,
@@ -234,7 +238,7 @@ async def test_stream_a2ui_disconnect_after_a2ui_before_run_finished(
         dialogue_id="dlg-a2ui-early-disc",
     )
     with request_context("u1", "req-a2ui-early-disc"):
-        response = _stream_chat_completion(
+        response = await _stream_chat_completion(
             tool_name="ChatAgent",
             arguments={
                 "user_query": "Confirm next step?",
@@ -280,7 +284,7 @@ async def test_stream_a2ui_disconnect_after_run_finished_keeps_input_required(
         dialogue_id="dlg-a2ui-disc",
     )
     with request_context("u1", "req-a2ui-disc"):
-        response = _stream_chat_completion(
+        response = await _stream_chat_completion(
             tool_name="ChatAgent",
             arguments={
                 "user_query": "Confirm next step?",

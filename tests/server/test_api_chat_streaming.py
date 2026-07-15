@@ -128,7 +128,149 @@ async def test_stream_with_resolve_gene_id_returns_400(
     )
 
     assert response.status_code == 400
-    assert "resolve_gene_id" in response.json()["error"]["message"]
+
+
+async def test_stream_setup_failure_returns_json_before_headers(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Eager setup errors do not commit a streaming 200 response."""
+
+    def fail_prepare(*_args: Any, **_kwargs: Any) -> AsyncIterator[Any]:
+        """Raise an unsupported-stream setup error synchronously."""
+        raise NotImplementedError("internal setup detail")
+
+    monkeypatch.setattr(api_app, "prepare_tool_stream", fail_prepare)
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="photosynthesis",
+    )
+
+    assert response.status_code == 400
+    assert response.headers["content-type"].startswith("application/json")
+    assert not RunRegistry(tasks_db_path).list_runs(owner="u1")
+
+
+async def test_stream_connect_failure_returns_502(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Connection setup errors use a fixed gateway JSON response."""
+
+    def fail_prepare(*_args: Any, **_kwargs: Any) -> AsyncIterator[Any]:
+        """Raise a connection failure with sensitive detail."""
+        raise httpx.ConnectError("credential=hidden upstream unavailable")
+
+    monkeypatch.setattr(api_app, "prepare_tool_stream", fail_prepare)
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="photosynthesis",
+    )
+
+    assert response.status_code == 502
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json()["error"]["message"] == "stream upstream unavailable"
+    assert "credential=hidden" not in response.text
+    assert not RunRegistry(tasks_db_path).list_runs(owner="u1")
+
+
+async def test_stream_timeout_failure_returns_504(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Timeout setup errors use a fixed gateway JSON response."""
+
+    def fail_prepare(*_args: Any, **_kwargs: Any) -> AsyncIterator[Any]:
+        """Raise a timeout with sensitive detail."""
+        raise httpx.TimeoutException("credential=hidden upstream timeout")
+
+    monkeypatch.setattr(api_app, "prepare_tool_stream", fail_prepare)
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="photosynthesis",
+    )
+
+    assert response.status_code == 504
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json()["error"]["message"] == "stream upstream timed out"
+    assert "credential=hidden" not in response.text
+    assert not RunRegistry(tasks_db_path).list_runs(owner="u1")
+
+
+async def test_stream_priming_failure_settles_created_run(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A first-frame failure settles the already-created run as failed."""
+
+    async def fail_prime(*_args: Any, **_kwargs: Any) -> AsyncIterator[Any]:
+        """Raise before yielding the first typed AG-UI event."""
+        if _kwargs.get("emit_unreachable"):
+            yield run_started("unreachable", None)
+        raise RuntimeError("prime detail must stay server-side")
+
+    monkeypatch.setattr(api_app, "prepare_tool_stream", fail_prime)
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="photosynthesis",
+    )
+
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    records = RunRegistry(tasks_db_path).list_runs(owner="u1")
+    assert records
+    assert records[-1].status == "failed"
+    assert response.json()["error"]["message"] == "stream setup failed"
+
+
+async def test_stream_priming_empty_returns_json_and_fails_run(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty raw stream is a failed pre-open response, not success."""
+
+    async def empty_prepare(*_args: Any, **_kwargs: Any) -> AsyncIterator[Any]:
+        """Yield no protocol events."""
+        if _kwargs.get("emit_unreachable"):
+            yield run_started("unreachable", None)
+
+    monkeypatch.setattr(api_app, "prepare_tool_stream", empty_prepare)
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="photosynthesis",
+    )
+
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json()["error"]["message"] == "stream produced no data"
+    records = RunRegistry(tasks_db_path).list_runs(owner="u1")
+    assert records
+    assert records[-1].status == "failed"
 
 
 async def test_stream_run_settles_succeeded_after_finish(
@@ -274,7 +416,7 @@ async def _drive_stream_until(
         yield text_message_content("m-d", "Hi")
         yield run_finished(run_id)
 
-    monkeypatch.setattr(api_app, "invoke_tool_streamed", fake_streamed)
+    monkeypatch.setattr(api_app, "prepare_tool_stream", fake_streamed)
 
     payload = ChatCompletionRequest(
         model="phyto-chat",
@@ -283,7 +425,7 @@ async def _drive_stream_until(
         dialogue_id="dlg-p2s4",
     )
     with request_context("u1", "req-p2s4"):
-        response = _stream_chat_completion(
+        response = await _stream_chat_completion(
             tool_name="ChatAgent",
             arguments={"user_query": "hi", "obs_file_list": []},
             payload=payload,

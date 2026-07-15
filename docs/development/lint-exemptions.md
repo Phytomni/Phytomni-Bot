@@ -506,6 +506,29 @@ handler by design.
 
 ______________________________________________________________________
 
+### `tests/server/test_a2ui_chat_streaming.py` — shared namespace-package helper
+
+**Rule(s)**: E0401 import-error on the shared API streaming test helper.
+
+**Mechanism**: a bracketed `# pylint: disable=import-error` / `enable`
+pair around the `tests.server.test_api_chat_streaming` import, registered under
+`tests/server/test_a2ui_chat_streaming.py` in
+`tests/unit/test_style_naming.py`.
+
+**Why refactor is net-negative**: pytest deliberately keeps `tests/` as a
+namespace package so test collection uses one repository-level conftest. The
+standalone pylint invocation does not add the repository root to its import
+path, so it reports a false positive for this test-only import even though
+pytest resolves it and the helper is intentionally shared. Duplicating the
+helper would add another cross-file test fixture and increase the duplicate
+code baseline.
+
+**Sunset condition**: the lint runner gains repository-root import discovery,
+or the test suite moves the shared helper into a first-class test-support
+module that both pytest and pylint can resolve without a local exemption.
+
+______________________________________________________________________
+
 ### W0135 contextmanager false positive in test fixtures
 
 **Rule(s)**: W0135 contextmanager-generator-missing-cleanup. 6

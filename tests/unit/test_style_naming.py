@@ -97,6 +97,12 @@ ALLOWED_LOCAL_PYLINT_DISABLES = {
         "protected-access",
         "too-many-locals",
     },
+    # Pytest treats ``tests/`` as a namespace package, but the standalone
+    # pylint invocation does not add the repository root to its import path.
+    # The A2UI stream tests intentionally share the API stream fixtures.
+    "tests/server/test_a2ui_chat_streaming.py": {
+        "import-error",
+    },
     # conftest.py installs deployment env vars BEFORE importing any
     # project module — several agents construct ``ServerConfig()`` at
     # import time and the per-deployment endpoints are required-via-
