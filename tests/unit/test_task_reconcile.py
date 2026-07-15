@@ -15,14 +15,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import pytest
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
+from mcp_server_phytomni.agents.deep_genome.work_items import (
+    build_work_item_plan,
+)
+from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 from mcp_server_phytomni.runtime.live_tasks import (
     deregister_live_task,
     register_live_task,
@@ -70,6 +76,38 @@ def _install_local_only_reconcile(
         "mcp_server_phytomni.runtime.task_reconcile.task_status",
         _raise_probe_failure,
     )
+
+
+def _reserve_deep_genome(
+    mgr_path: str,
+    *,
+    run_id: str = "run-dg",
+    task_id: str = "dg-orphan",
+) -> tuple[DeepGenomeStore, str]:
+    """Reserve a real DeepGenome owner with a durable report snapshot."""
+    store = DeepGenomeStore(mgr_path)
+    reservation = store.reserve_run(
+        run_id=run_id,
+        umbrella_task_id=task_id,
+        owner="alice",
+        output_dir="/obs/run",
+    )
+    store.apply_brief_gene_transition(
+        task_id,
+        status="succeeded",
+        summary_markdown="BriefGene summary",
+    )
+    store.seed_plan(
+        reservation,
+        build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"),
+    )
+    store.apply_work_item_transition(
+        task_id,
+        work_item_key="smep_analysis",
+        status="succeeded",
+        summary_markdown="SMEP summary",
+    )
+    return store, task_id
 
 
 def test_reconcile_task_log_returns_cached_payload_without_remote(
@@ -204,7 +242,7 @@ def test_reconcile_task_final_report_none_without_persisted_report(
 @pytest.mark.parametrize(
     ("recorded_status", "report", "expected"),
     [
-        ("running", "# Report\n\nbody\n", "succeeded"),
+        ("running", "# Report\n\nbody\n", "running"),
         ("running", None, "running"),
     ],
 )
@@ -215,12 +253,10 @@ def test_reconcile_task_self_heal_on_lost_terminal_write(
     report: str | None,
     expected: str,
 ) -> None:
-    """A persisted final_report heals a stuck row; absence leaves it running.
+    """A remote error never promotes a non-terminal legacy row.
 
-    The deep_genome done-callback's terminal status write can fail and
-    leave the umbrella showing ``running``. A persisted ``final_report``
-    (the terminal report node ran) reconciles it to ``succeeded``; a row
-    with no report yet stays ``running`` (no false heal mid-execution).
+    The local report is still returned for display, but status remains the
+    durable value until a local owner or snapshot transaction settles it.
     """
     _install_local_only_reconcile(monkeypatch, mgr_path)
     mgr = TaskManager(mgr_path)
@@ -373,22 +409,51 @@ def test_reconcile_marks_dead_deep_genome_umbrella_failed(
     the restart-orphan / lost-write cause is traceable from the logs.
     """
     _install_local_only_reconcile(monkeypatch, mgr_path)
-    mgr = TaskManager(mgr_path)
-    mgr.record(
-        Submission(
-            task_id="dg-dead",
-            status="running",
-            output_dir="/obs/run",
-            run_context=RunContext(agent="deep_genome"),
-        )
+    store, task_id = _reserve_deep_genome(mgr_path)
+    remote_status = AsyncMock()
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_status",
+        remote_status,
     )
 
     with caplog.at_level(logging.WARNING):
-        result = asyncio.run(reconcile_task("dg-dead"))
+        result = asyncio.run(reconcile_task(task_id))
 
     assert result["status"] == "failed"
-    assert "dg-dead" in caplog.text
-    assert "surfacing as failed" in caplog.text
+    assert result["intermediate_report"].startswith("#")
+    assert result["final_report"] is None
+    assert result["degraded"] is True
+    assert result["degraded_reason"] == (
+        "workflow interrupted by service restart"
+    )
+    remote_status.assert_not_awaited()
+    snapshot = store.get_snapshot(task_id)
+    assert snapshot is not None
+    assert snapshot.status == "failed"
+    assert snapshot.intermediate_report == result["intermediate_report"]
+    with sqlite3.connect(mgr_path) as conn:
+        task_row = conn.execute(
+            "SELECT status, final_report, intermediate_report, "
+            "degraded_reason FROM tasks WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+        run_row = conn.execute(
+            "SELECT status, error FROM runs WHERE run_id = ?",
+            ("run-dg",),
+        ).fetchone()
+        child_count = conn.execute(
+            "SELECT COUNT(*) FROM deep_genome_remote_tasks "
+            "WHERE umbrella_task_id = ?",
+            (task_id,),
+        ).fetchone()[0]
+    assert task_row[0] == "failed"
+    assert task_row[1] is None
+    assert task_row[2].startswith("#")
+    assert task_row[3] == "workflow interrupted by service restart"
+    assert run_row == ("failed", "workflow interrupted by service restart")
+    assert child_count == 12
+    assert task_id in caplog.text
+    assert "settled failed" in caplog.text
 
 
 def test_reconcile_skips_remote_probe_for_deep_genome_umbrella(
@@ -409,35 +474,30 @@ def test_reconcile_skips_remote_probe_for_deep_genome_umbrella(
         "mcp_server_phytomni.runtime.task_reconcile.task_status",
         _track_probe,
     )
-    mgr = TaskManager(mgr_path)
-    mgr.record(
-        Submission(
-            task_id="20260604T084205Z-task-deep_genome-a2e59bb1",
-            status="running",
-            output_dir="/obs/run",
-            run_context=RunContext(agent="deep_genome"),
-        )
+    _install_local_only_reconcile(monkeypatch, mgr_path)
+    _, task_id = _reserve_deep_genome(
+        mgr_path,
+        run_id="run-live",
+        task_id="20260604T084205Z-task-deep_genome-a2e59bb1",
     )
     register_live_task(
-        "20260604T084205Z-task-deep_genome-a2e59bb1",
+        task_id,
         cast("asyncio.Task[object]", SimpleNamespace(done=lambda: False)),
     )
     try:
-        result = asyncio.run(
-            reconcile_task("20260604T084205Z-task-deep_genome-a2e59bb1")
-        )
+        result = asyncio.run(reconcile_task(task_id))
     finally:
-        deregister_live_task("20260604T084205Z-task-deep_genome-a2e59bb1")
+        deregister_live_task(task_id)
 
     assert not remote_calls
     assert result["status"] == "running"
     assert result["live_status"] is None
 
 
-def test_reconcile_still_probes_deep_genome_with_source_task_id(
+def test_reconcile_never_probes_deep_genome_with_source_task_id(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Dedup deep_genome rows with source_task_id still probe the remote id."""
+    """DeepGenome rows never use remote probes during local reconciliation."""
     monkeypatch.setattr(
         "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
         lambda: mgr_path,
@@ -465,7 +525,7 @@ def test_reconcile_still_probes_deep_genome_with_source_task_id(
     )
 
     asyncio.run(reconcile_task("dg-dedup-local"))
-    assert probed_ids == ["R-remote"]
+    assert not probed_ids
 
 
 def test_reconcile_leaves_live_deep_genome_umbrella_running(
@@ -473,24 +533,20 @@ def test_reconcile_leaves_live_deep_genome_umbrella_running(
 ) -> None:
     """A still-live umbrella stays running (no false-positive failure)."""
     _install_local_only_reconcile(monkeypatch, mgr_path)
-    mgr = TaskManager(mgr_path)
-    mgr.record(
-        Submission(
-            task_id="dg-live",
-            status="running",
-            output_dir="/obs/run",
-            run_context=RunContext(agent="deep_genome"),
-        )
+    _, task_id = _reserve_deep_genome(
+        mgr_path,
+        run_id="run-live-2",
+        task_id="dg-live",
     )
     register_live_task(
-        "dg-live",
+        task_id,
         cast("asyncio.Task[object]", SimpleNamespace(done=lambda: False)),
     )
     try:
-        result = asyncio.run(reconcile_task("dg-live"))
+        result = asyncio.run(reconcile_task(task_id))
         assert result["status"] == "running"
     finally:
-        deregister_live_task("dg-live")
+        deregister_live_task(task_id)
 
 
 def test_reconcile_report_beats_liveness_for_deep_genome(
@@ -498,18 +554,15 @@ def test_reconcile_report_beats_liveness_for_deep_genome(
 ) -> None:
     """A persisted final_report wins over the liveness rule -> succeeded."""
     _install_local_only_reconcile(monkeypatch, mgr_path)
-    mgr = TaskManager(mgr_path)
-    mgr.record(
-        Submission(
-            task_id="dg-rep",
-            status="running",
-            output_dir="/obs/run",
-            run_context=RunContext(agent="deep_genome"),
-        )
+    _, task_id = _reserve_deep_genome(
+        mgr_path,
+        run_id="run-report",
+        task_id="dg-rep",
     )
-    mgr.set_task_final_report("dg-rep", "# Report\n\nbody\n")
+    mgr = TaskManager(mgr_path)
+    mgr.set_task_final_report(task_id, "# Report\n\nbody\n")
 
-    result = asyncio.run(reconcile_task("dg-rep"))
+    result = asyncio.run(reconcile_task(task_id))
 
     assert result["status"] == "succeeded"
 

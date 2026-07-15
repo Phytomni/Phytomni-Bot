@@ -3,20 +3,22 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Shared local+remote reconciliation for one task row.
 
-Used by ``GetTaskStatus`` and run-registry status. Deep_genome umbrellas
-without ``source_task_id`` reconcile locally only; rows with
-``source_task_id`` still probe the remote analysis platform once.
+Used by ``GetTaskStatus`` and run-registry status. DeepGenome rows reconcile
+from the local snapshot because the in-process coordinator owns remote
+polling; other rows may probe the remote analysis platform once.
 """
 
 from __future__ import annotations
 
 import logging
+import sqlite3
 from typing import Any
 
 from mcp.shared.exceptions import McpError
 
 from ..agents.analyst.agent import task_log, task_status
 from ..config.defaults import AnalystConfig
+from .deep_genome_store import DeepGenomeStore, DeepGenomeTransitionError
 from .live_tasks import is_live_running
 from .task_manager import TaskManager, resolve_tasks_db_path
 
@@ -25,50 +27,84 @@ __all__ = ["reconcile_task", "reconcile_task_log"]
 logger = logging.getLogger(__name__)
 
 _NON_TERMINAL_STATUSES = frozenset({"running", "submitted", "pending"})
+_RESTART_ORPHAN_REASON = "workflow interrupted by service restart"
 
 
-def _heal_finished_local_workflow(
-    result: dict[str, Any], *, agent: str | None
+def _project_deep_genome_snapshot(
+    result: dict[str, Any], snapshot: Any
 ) -> dict[str, Any]:
-    """Self-heal a deep_genome umbrella whose local workflow has ended.
-
-    The umbrella runs as a background task whose terminal status write is
-    best-effort. Two read-time heals recover a row the lost write left
-    non-terminal:
-
-    1. A persisted ``final_report`` means the success-path report node ran
-       -> ``succeeded`` (a lost terminal write on a completed run).
-    2. Otherwise, an ``agent == "deep_genome"`` umbrella that is no longer
-       live (gone from the in-flight registry, or done) died before
-       producing a report (crash-before-report + lost write, or a restart
-       orphan) -> ``failed``.
-
-    The ``agent`` guard keeps the liveness rule off remote child
-    sub-tasks (``agent`` NULL) and other remote agents, which derive their
-    status from the live platform probe. Nothing is written back to the
-    DB; the verdict is re-derived on each poll. Rule 2 emits a
-    ``logger.warning`` breadcrumb (task id only, non-secret) so the
-    lost-write / restart-orphan cause is traceable server-side; the
-    client-facing note in design spec §7 was descheduled (see the plan
-    Self-Review) to avoid a formatter output-shape change.
-    """
-    status = str(result.get("status", "")).lower()
-    if status not in _NON_TERMINAL_STATUSES:
-        return result
-    if result.get("final_report"):
+    """Merge one sanitized local DeepGenome snapshot into a task result."""
+    result.update(
+        {
+            "status": snapshot.status,
+            "intermediate_report": snapshot.intermediate_report,
+            "final_report": snapshot.final_report,
+            "report_stage": snapshot.report_stage,
+            "report_completeness": snapshot.report_completeness,
+            "report_revision": snapshot.report_revision,
+            "report_updated_at": snapshot.report_updated_at,
+            "progress": dict(snapshot.progress),
+            "degraded": snapshot.degraded,
+            "degraded_reason": snapshot.degraded_reason,
+            "failures": [dict(item) for item in snapshot.failures],
+        }
+    )
+    if result["status"] in _NON_TERMINAL_STATUSES and snapshot.final_report:
         result["status"] = "succeeded"
-        return result
-    if agent == "deep_genome" and not is_live_running(
-        str(result.get("task_id", ""))
-    ):
-        logger.warning(
-            "reconcile: deep_genome umbrella %s is non-terminal with no "
-            "final_report and no longer live (lost terminal write or "
-            "restart orphan); surfacing as failed",
-            result.get("task_id", ""),
-        )
-        result["status"] = "failed"
     return result
+
+
+def _reconcile_deep_genome_local(
+    result: dict[str, Any], *, manager: TaskManager, task_id: str
+) -> dict[str, Any]:
+    """Reconcile a DeepGenome row from its local snapshot only.
+
+    The coordinator is the sole owner of concrete remote polling. A read
+    path may settle an orphaned umbrella after process restart, but it must
+    never turn either the umbrella id or a concrete id into a remote probe.
+    """
+    try:
+        store = DeepGenomeStore(manager.db_path)
+        snapshot = store.get_snapshot(task_id)
+    except sqlite3.Error:
+        logger.warning(
+            "reconcile: deep_genome local snapshot unavailable for %s",
+            task_id,
+        )
+        return result
+
+    if snapshot is None:
+        return result
+
+    if (
+        snapshot.status in _NON_TERMINAL_STATUSES
+        and not snapshot.final_report
+        and not is_live_running(task_id)
+    ):
+        try:
+            snapshot = store.fail_umbrella(
+                task_id,
+                reason=_RESTART_ORPHAN_REASON,
+            )
+        except (DeepGenomeTransitionError, sqlite3.Error):
+            # A concurrent coordinator/finalizer may have settled the owner;
+            # reread the winner instead of manufacturing a local verdict.
+            try:
+                snapshot = store.get_snapshot(task_id)
+            except sqlite3.Error:
+                snapshot = None
+            if snapshot is None:
+                return result
+        else:
+            logger.warning(
+                "reconcile: deep_genome umbrella %s was settled failed "
+                "after losing its in-process coordinator",
+                task_id,
+            )
+
+    if snapshot is None:
+        return result
+    return _project_deep_genome_snapshot(result, snapshot)
 
 
 async def reconcile_task(task_id: str) -> dict[str, Any]:
@@ -81,9 +117,10 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
     unreachable live check degrades to the locally recorded status so
     the lookup stays robust.
 
-    Remote probe is skipped for deep_genome umbrella rows that have no
-    ``source_task_id`` (the umbrella id is not a platform job id). All
-    other rows probe ``source_task_id`` when set, else ``task_id``.
+    Remote probes are skipped for every DeepGenome row. The coordinator
+    owns polling for the umbrella and concrete work items; this read path
+    only consumes local snapshots and settles process-restart orphans.
+    All other rows probe ``source_task_id`` when set, else ``task_id``.
 
     Args:
         task_id: The task id to look up.
@@ -96,14 +133,11 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
         markdown DeepGenome persists on the row (``None`` for every
         other agent and for rows with no report yet), letting the poll
         formatter and the run-aggregate surface the report without
-        re-running the workflow. A deep_genome umbrella row with no
-        ``source_task_id`` is local-only: no remote ``task_status``
-        probe is performed (the umbrella id is not an analysis-platform
-        job id). Child / dedup rows that carry a ``source_task_id``
-        still probe that remote id. A deep_genome row still showing a
-        non-terminal status but carrying a ``final_report`` (a lost
-        terminal status write) is surfaced as ``succeeded`` via
-        ``_heal_finished_local_workflow``. ``degraded`` /
+        re-running the workflow. DeepGenome report/progress fields are
+        merged from the local snapshot when the additive tables exist.
+        A DeepGenome row still showing a non-terminal status but carrying
+        a ``final_report`` (a lost terminal status write) is surfaced as
+        ``succeeded``. ``degraded`` /
         ``degraded_reason`` carry the persisted (already-redacted)
         degradation reason or ``None`` so both poll surfaces can flag a
         degraded report.
@@ -121,7 +155,6 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
             "degraded": False,
             "degraded_reason": None,
         }
-    analyst_config = AnalystConfig()
     degraded_reason = manager.get_task_degraded(task_id)
     task_agent = manager.get_task_agent(task_id)
     result: dict[str, Any] = {
@@ -134,9 +167,12 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
         "degraded": degraded_reason is not None,
         "degraded_reason": degraded_reason,
     }
+    if task_agent == "deep_genome":
+        return _reconcile_deep_genome_local(
+            result, manager=manager, task_id=task_id
+        )
+    analyst_config = AnalystConfig()
     probe_id = row["source_task_id"] or task_id
-    if task_agent == "deep_genome" and not row["source_task_id"]:
-        return _heal_finished_local_workflow(result, agent=task_agent)
     try:
         live = await task_status(
             probe_id,
@@ -147,12 +183,12 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
             max_retries=analyst_config.MAX_RETRIES,
         )
     except McpError:
-        return _heal_finished_local_workflow(result, agent=task_agent)
+        return result
     result["live_status"] = live
     live_status = live.get("status") if isinstance(live, dict) else None
     if live_status:
         result["status"] = live_status
-    return _heal_finished_local_workflow(result, agent=task_agent)
+    return result
 
 
 async def reconcile_task_log(task_id: str) -> dict[str, Any] | None:

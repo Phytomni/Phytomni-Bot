@@ -12,8 +12,23 @@ import json
 import sqlite3
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from ..config.defaults import ApiConfig
+
+
+def _expires_at_for(status: str, now_iso: str) -> str | None:
+    """Compute the shared terminal-run expiry timestamp."""
+    if status not in {"succeeded", "failed"}:
+        return None
+    config = ApiConfig()
+    base = datetime.fromisoformat(now_iso)
+    delta = (
+        timedelta(hours=config.API_RUN_TTL_OK_HOURS)
+        if status == "succeeded"
+        else timedelta(days=config.API_RUN_TTL_FAIL_DAYS)
+    )
+    return (base + delta).isoformat()
 
 
 @dataclass(frozen=True)

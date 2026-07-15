@@ -7,10 +7,15 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 
+from mcp_server_phytomni.agents.deep_genome.work_items import (
+    build_work_item_plan,
+)
 from mcp_server_phytomni.runtime import task_reconcile
+from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 from mcp_server_phytomni.runtime.task_manager import TaskManager
 
 pytestmark = pytest.mark.unit
@@ -60,3 +65,38 @@ async def test_reconcile_surfaces_degraded_reason(
 
     assert result["degraded"] is True
     assert result["degraded_reason"] == "gene overview unavailable"
+
+
+async def test_restart_orphan_projects_local_snapshot_without_remote_probe(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An orphan uses the fixed local reason and preserves BriefGene text."""
+    db = str(tmp_path / "tasks.db")
+    monkeypatch.setattr(task_reconcile, "resolve_tasks_db_path", lambda: db)
+    remote_status = AsyncMock()
+    monkeypatch.setattr(task_reconcile, "task_status", remote_status)
+    store = DeepGenomeStore(db)
+    reservation = store.reserve_run(
+        run_id="run-orphan",
+        umbrella_task_id="dg-orphan",
+        owner="alice",
+        output_dir="/obs/orphan",
+    )
+    store.apply_brief_gene_transition(
+        "dg-orphan",
+        status="succeeded",
+        summary_markdown="BriefGene summary",
+    )
+    store.seed_plan(
+        reservation,
+        build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"),
+    )
+
+    result = await task_reconcile.reconcile_task("dg-orphan")
+
+    assert result["status"] == "failed"
+    assert result["intermediate_report"].startswith("#")
+    assert result["degraded_reason"] == (
+        "workflow interrupted by service restart"
+    )
+    remote_status.assert_not_awaited()

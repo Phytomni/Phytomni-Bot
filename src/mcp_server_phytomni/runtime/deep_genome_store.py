@@ -16,6 +16,7 @@ import sqlite3
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 from .deep_genome_transitions import (
@@ -25,8 +26,11 @@ from .deep_genome_transitions import (
     DeepGenomeTransitionError,
     DeepGenomeTransitionMixin,
 )
-from .run_registry import RunRegistry, _expires_at_for
-from .task_manager import _CREATE_TASKS_DDL, _TASK_ADD_COLUMN_STATEMENTS
+from .task_manager import (
+    _CREATE_TASKS_DDL,
+    _TASK_ADD_COLUMN_STATEMENTS,
+    _expires_at_for,
+)
 
 if TYPE_CHECKING:
     from ..agents.deep_genome.work_items import WorkItemSpec
@@ -258,7 +262,13 @@ class DeepGenomeStore(DeepGenomeTransitionMixin):
         # ``RunRegistry`` owns the runs DDL and its additive columns. It is
         # initialized before opening the reservation connection so schema
         # setup cannot be mistaken for a partially committed reservation.
-        RunRegistry(self.db_path)
+        # ``run_registry`` imports this reconciliation module; resolve it by
+        # name here to keep the storage layer's schema bootstrap acyclic.
+        registry_module = import_module(
+            "mcp_server_phytomni.runtime.run_registry"
+        )
+        registry_type = getattr(registry_module, "RunRegistry")
+        registry_type(self.db_path)
         now = datetime.now(UTC).isoformat()
         placeholder = {
             "task_id": umbrella_task_id,

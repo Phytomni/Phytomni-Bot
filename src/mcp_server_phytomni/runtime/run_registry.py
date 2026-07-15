@@ -16,11 +16,14 @@ import contextlib
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
-from ..config.defaults import ApiConfig
-from .task_manager import TaskManager, resolve_tasks_db_path
+from .task_manager import (
+    TaskManager,
+    _expires_at_for,
+    resolve_tasks_db_path,
+)
 from .task_reconcile import reconcile_task
 from .terminal_answer import TerminalAnswerContext, synthesize_terminal_answer
 from .terminal_artifacts import (
@@ -950,17 +953,3 @@ def _row_to_record(
             ),
         ),
     )
-
-
-def _expires_at_for(status: str, now_iso: str) -> str | None:
-    """Compute the TTL ``expires_at`` for a terminal run status."""
-    if status not in _TERMINAL_RUN_STATUSES:
-        return None
-    config = ApiConfig()
-    base = datetime.fromisoformat(now_iso)
-    delta = (
-        timedelta(hours=config.API_RUN_TTL_OK_HOURS)
-        if status == "succeeded"
-        else timedelta(days=config.API_RUN_TTL_FAIL_DAYS)
-    )
-    return (base + delta).isoformat()

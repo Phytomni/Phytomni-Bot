@@ -19,7 +19,7 @@ from .deep_genome_report_snapshot import (
     derive_progress,
     derive_report_classification,
 )
-from .run_registry import _expires_at_for
+from .task_manager import _expires_at_for
 
 if TYPE_CHECKING:
     from .deep_genome_store import DeepGenomeSnapshot
