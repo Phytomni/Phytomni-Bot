@@ -21,6 +21,10 @@ import httpx
 import pytest
 
 from mcp_server_phytomni import server
+from mcp_server_phytomni.mcp.schemas import (
+    AGENT_TOOL_DEFINITIONS,
+    PhytomniAgents,
+)
 from mcp_server_phytomni.runtime import (
     submit_recorder as submit_recorder_module,
 )
@@ -39,6 +43,16 @@ class _RemoteCase:
     stub_return: dict[str, Any]
     arguments: dict[str, Any]
     expected_task_ids: set[str]
+
+
+def _canonical_agent_slug(tool: PhytomniAgents) -> str:
+    """Derive the native API slug from the canonical MCP enum member."""
+    candidate = tool.name.removesuffix("_AGENT").lower()
+    return {
+        "in_silico_research": "research",
+        "digital_design": "design",
+        "gene_network": "network",
+    }.get(candidate, candidate)
 
 
 async def test_list_agents_returns_all_ten(
@@ -162,18 +176,19 @@ async def test_list_agents_adds_capabilities_without_changing_legacy_fields(
         "network",
     )
     assert tuple(row["slug"] for row in rows) == expected_slugs
-    expected_tools = {
-        "chat": "ChatAgent",
-        "knowledge": "KnowledgeAgent",
-        "data": "DataAgent",
-        "review": "ReviewAgent",
-        "brief_gene": "BriefGeneAgent",
-        "analyst": "AnalystAgent",
-        "deep_genome": "DeepGenomeAgent",
-        "research": "InSilicoResearchAgent",
-        "design": "DigitalDesignAgent",
-        "network": "GeneNetworkAgent",
-    }
+    expected_tools = dict(
+        zip(
+            (
+                _canonical_agent_slug(name)
+                for name, _description, _model in AGENT_TOOL_DEFINITIONS
+            ),
+            (
+                name.value
+                for name, _description, _model in AGENT_TOOL_DEFINITIONS
+            ),
+            strict=True,
+        )
+    )
     for row in rows:
         slug = row["slug"]
         assert row["tool"] == expected_tools[slug]

@@ -12,7 +12,6 @@ stays bounded under listing-heavy workloads.
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -20,13 +19,15 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from tests.agents.shared.deep_genome_fixtures import (
+    assert_report_metadata,
+    attach_formatted_result,
+    seed_partial_deep_genome_run,
+    seed_terminal_deep_genome_run,
+)
 
 from mcp_server_phytomni import server
-from mcp_server_phytomni.agents.deep_genome.work_items import (
-    build_work_item_plan,
-)
 from mcp_server_phytomni.runtime import run_registry as run_registry_module
-from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
@@ -37,108 +38,13 @@ from mcp_server_phytomni.runtime.run_registry import (
 pytestmark = pytest.mark.server
 
 
-def _seed_partial_deep_genome_run(db_path: str, *, owner: str = "u1") -> str:
-    """Seed one owner-scoped DeepGenome snapshot without a coordinator."""
-    store = DeepGenomeStore(db_path)
-    run_id = f"run-dg-{owner}"
-    umbrella_id = f"dg-{owner}"
-    reservation = store.reserve_run(
-        run_id=run_id,
-        umbrella_task_id=umbrella_id,
-        owner=owner,
-        output_dir="/obs/deep-genome",
-    )
-    store.apply_brief_gene_transition(
-        umbrella_id,
-        status="succeeded",
-        summary_markdown="BriefGene profile",
-    )
-    plan = build_work_item_plan("osa", "Os01g0100100", "Os01g0100100")
-    store.seed_plan(reservation, plan)
-    store.apply_work_item_transition(
-        umbrella_id,
-        work_item_key="protein_design",
-        status="failed",
-    )
-    store.apply_work_item_transition(
-        umbrella_id,
-        work_item_key="smep_analysis",
-        status="succeeded",
-        summary_markdown="SMEP summary",
-    )
-    return reservation.run_id
-
-
-def _attach_formatted_result(db_path: str, run_id: str) -> None:
-    """Add a legacy-compatible formatted block to one seeded run."""
-    with sqlite3.connect(db_path) as conn:
-        row = conn.execute(
-            "SELECT result_json FROM runs WHERE run_id = ?", (run_id,)
-        ).fetchone()
-        assert row is not None
-        result = json.loads(row[0])
-        result["formatted"] = {
-            "answer": "stored DeepGenome answer",
-            "metadata": {"consumer": "artifact-ui"},
-        }
-        conn.execute(
-            "UPDATE runs SET result_json = ? WHERE run_id = ?",
-            (json.dumps(result), run_id),
-        )
-
-
-def _seed_terminal_deep_genome_run(
-    db_path: str,
-    *,
-    owner: str,
-    all_failed: bool,
-) -> str:
-    """Seed a final or all-failed DeepGenome snapshot for list tests."""
-    store = DeepGenomeStore(db_path)
-    run_id = f"run-dg-terminal-{owner}"
-    umbrella_id = f"dg-terminal-{owner}"
-    reservation = store.reserve_run(
-        run_id=run_id,
-        umbrella_task_id=umbrella_id,
-        owner=owner,
-        output_dir="/obs/deep-genome",
-    )
-    store.apply_brief_gene_transition(
-        umbrella_id,
-        status="succeeded",
-        summary_markdown="BriefGene profile",
-    )
-    plan = build_work_item_plan("osa", "Os01g0100100", "Os01g0100100")
-    store.seed_plan(reservation, plan)
-    for item in plan:
-        succeeded = not all_failed and item.work_item_key == "smep_analysis"
-        store.apply_work_item_transition(
-            umbrella_id,
-            work_item_key=item.work_item_key,
-            status="succeeded" if succeeded else "failed",
-            summary_markdown="SMEP summary" if succeeded else None,
-        )
-    if all_failed:
-        store.fail_umbrella(umbrella_id, reason="all analyses failed")
-    else:
-        snapshot = store.get_snapshot(umbrella_id)
-        assert snapshot is not None
-        store.publish_final_report(
-            umbrella_id,
-            final_report="# Final report\n",
-            expected_revision=snapshot.report_revision,
-        )
-    _attach_formatted_result(db_path, run_id)
-    return run_id
-
-
 async def test_list_deep_genome_projects_intermediate_snapshot(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
     """The list path returns the current local DeepGenome report snapshot."""
-    run_id = _seed_partial_deep_genome_run(tasks_db_path)
+    run_id = seed_partial_deep_genome_run(tasks_db_path)
 
     response = await api_client.get(
         "/v1/runs",
@@ -166,8 +72,8 @@ async def test_list_deep_genome_adds_report_metadata_to_formatted_result(
     tasks_db_path: str,
 ) -> None:
     """The list projection uses the same report metadata adapter as status."""
-    run_id = _seed_partial_deep_genome_run(tasks_db_path)
-    _attach_formatted_result(tasks_db_path, run_id)
+    run_id = seed_partial_deep_genome_run(tasks_db_path)
+    attach_formatted_result(tasks_db_path, run_id)
 
     response = await api_client.get(
         "/v1/runs",
@@ -179,13 +85,7 @@ async def test_list_deep_genome_adds_report_metadata_to_formatted_result(
         item for item in response.json()["data"] if item["run_id"] == run_id
     )
     result = row["result"]
-    report = result["formatted"]["metadata"]["report"]
-    assert report["stage"] == "intermediate"
-    assert report["completeness"] == "partial"
-    assert report["revision"] == 3
-    assert report["degraded"] is True
-    assert report["failure_count"] == len(result["failures"])
-    assert result["formatted"]["metadata"]["consumer"] == "artifact-ui"
+    assert_report_metadata(result, stage="intermediate", revision=3)
 
 
 async def test_list_deep_genome_debug_preserves_private_snapshot_fields(
@@ -194,7 +94,7 @@ async def test_list_deep_genome_debug_preserves_private_snapshot_fields(
     tasks_db_path: str,
 ) -> None:
     """Debug list reads retain the registry's private result fields."""
-    run_id = _seed_partial_deep_genome_run(tasks_db_path)
+    run_id = seed_partial_deep_genome_run(tasks_db_path)
 
     response = await api_client.get(
         "/v1/runs",
@@ -217,7 +117,7 @@ async def test_list_deep_genome_projects_degraded_final_snapshot(
     tasks_db_path: str,
 ) -> None:
     """A final report remains visible when optional analyses failed."""
-    run_id = _seed_terminal_deep_genome_run(
+    run_id = seed_terminal_deep_genome_run(
         tasks_db_path,
         owner="u1",
         all_failed=False,
@@ -236,11 +136,7 @@ async def test_list_deep_genome_projects_degraded_final_snapshot(
     assert row["result"]["final_report"] == "# Final report\n"
     assert row["result"]["report_completeness"] == "partial"
     assert row["result"]["degraded"] is True
-    report = row["result"]["formatted"]["metadata"]["report"]
-    assert report["stage"] == "final"
-    assert report["completeness"] == "partial"
-    assert report["degraded"] is True
-    assert report["failure_count"] == len(row["result"]["failures"])
+    assert_report_metadata(row["result"], stage="final")
     assert row["answer"] == row["result"]["final_report"]
 
 
@@ -250,7 +146,7 @@ async def test_list_deep_genome_preserves_all_failed_intermediate_snapshot(
     tasks_db_path: str,
 ) -> None:
     """All-analysis failure stays failed while preserving intermediate text."""
-    run_id = _seed_terminal_deep_genome_run(
+    run_id = seed_terminal_deep_genome_run(
         tasks_db_path,
         owner="u1",
         all_failed=True,
@@ -269,11 +165,7 @@ async def test_list_deep_genome_preserves_all_failed_intermediate_snapshot(
     assert row["result"]["final_report"] is None
     assert row["result"]["intermediate_report"].startswith("#")
     assert row["result"]["degraded"] is True
-    report = row["result"]["formatted"]["metadata"]["report"]
-    assert report["stage"] == "intermediate"
-    assert report["completeness"] == "partial"
-    assert report["degraded"] is True
-    assert report["failure_count"] == len(row["result"]["failures"])
+    assert_report_metadata(row["result"], stage="intermediate")
     assert row["answer"] == row["result"]["intermediate_report"]
 
 
@@ -283,7 +175,7 @@ async def test_list_deep_genome_hides_foreign_snapshot(
     tasks_db_path: str,
 ) -> None:
     """Foreign DeepGenome snapshots are not looked up or returned."""
-    run_id = _seed_partial_deep_genome_run(tasks_db_path, owner="u2")
+    run_id = seed_partial_deep_genome_run(tasks_db_path, owner="u2")
 
     response = await api_client.get(
         "/v1/runs",
@@ -301,7 +193,7 @@ async def test_list_deep_genome_does_not_probe_remote_children(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Snapshot listing never calls the remote task reconciler."""
-    _seed_partial_deep_genome_run(tasks_db_path)
+    seed_partial_deep_genome_run(tasks_db_path)
     remote_status_mock = AsyncMock()
     monkeypatch.setattr(
         run_registry_module,

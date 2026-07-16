@@ -15,23 +15,26 @@ from mcp_server_phytomni.api.agent_capabilities import (
 
 pytestmark = pytest.mark.server
 
-_EXPECTED_SLUGS = (
-    "chat",
-    "knowledge",
-    "data",
-    "review",
-    "brief_gene",
-    "analyst",
-    "deep_genome",
-    "research",
-    "design",
-    "network",
-)
+_EXPECTED_SLUG_ORDER = {
+    0: "chat",
+    1: "knowledge",
+    2: "data",
+    3: "review",
+    4: "brief_gene",
+    5: "analyst",
+    6: "deep_genome",
+    7: "research",
+    8: "design",
+    9: "network",
+}
 
 
 def test_capability_descriptors_are_explicit_and_json_compatible() -> None:
     """Every supported slug has a frozen, deterministic descriptor."""
-    assert tuple(AGENT_CAPABILITIES) == _EXPECTED_SLUGS
+    assert tuple(AGENT_CAPABILITIES) == tuple(
+        _EXPECTED_SLUG_ORDER[index]
+        for index in range(len(_EXPECTED_SLUG_ORDER))
+    )
     assert get_agent_capability("chat").streaming is True
     assert get_agent_capability("knowledge").streaming is True
     assert get_agent_capability("review").streaming is True
