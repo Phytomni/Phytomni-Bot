@@ -472,6 +472,15 @@ local SQLite snapshot. A list read never reconciles or probes concrete remote
 children. Default mode removes `task_results`, `live_status`, `artifacts`, and
 `raw`; `debug=true` retains those registry fields for authorized diagnostics.
 
+For a persisted DeepGenome result that already contains a `formatted` mapping,
+both projections also attach the additive
+`result.formatted.metadata.report` block. It contains `stage`,
+`completeness`, `revision`, `updated_at`, `progress`, `degraded`, and
+`failure_count`, all derived from the same sanitized snapshot as the
+top-level fields. Existing `formatted.metadata` keys are preserved. Older
+rows without a formatted block keep the top-level projection and do not receive
+an invented placeholder; consumers must therefore support both shapes.
+
 `GET /v1/runs?user_id=<other-user>` lets an upstream operator list
 any tenant's runs. The user key in `Authorization: Bearer ptm_...`
 still authenticates the caller for rate-limit + audit, but the
@@ -1207,6 +1216,15 @@ CLI: `report_stage`, `report_completeness`, monotonic `report_revision`, UTC
 fail independently. BriefGene failure fails the umbrella; after BriefGene
 succeeds, partial analysis failure is represented in the snapshot and does not
 hide the best report. A final report is published only after synthesis succeeds.
+
+Artifact-oriented consumers should prefer the optional
+`result.formatted.metadata.report` adapter when it is present. Keep the last
+accepted `revision` per umbrella run, ignore stale or equal revisions, render
+`intermediate_report` while `stage=intermediate`, and switch permanently to
+`final_report` when `stage=final`. `degraded=true` and `failure_count` are
+warning metadata, not permission to label a partial report complete. The
+top-level fields remain the compatibility fallback for rows without the
+adapter.
 
 ### DeepGenome persistence and restart boundary
 

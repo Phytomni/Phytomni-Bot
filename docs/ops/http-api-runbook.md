@@ -802,6 +802,14 @@ coordinator owns bounded remote polling and persists monotonic
 `report_revision` snapshots. HTTP, MCP, and the HTTP-backed CLI are readers of
 those snapshots, so a status request never polls the analysis platform.
 
+When the stored run result has a `formatted` mapping, the owner-scoped list and
+single-run reads add `result.formatted.metadata.report` as an additive adapter.
+The adapter carries the sanitized `stage`, `completeness`, `revision`,
+`updated_at`, `progress`, `degraded`, and `failure_count` values. It shares the
+snapshot source of truth, preserves unrelated formatted metadata, and is absent
+for older rows without a formatted block. Consumer smoke tests must verify both
+the adapter shape and the existing top-level fallback.
+
 BriefGene must complete before any optional remote analysis is submitted. While
 optional work is pending or partially failed, clients may read the latest
 `intermediate_report`; `final_report` is published only after usable analysis
@@ -810,6 +818,13 @@ After stopping the service, the read path settles an orphaned umbrella at the
 fixed `workflow interrupted by service restart` boundary and preserves its
 last intermediate report. There is no durable worker or automatic cross-host
 recovery in 0.1.3.
+
+For Web artifact rendering, accept a report revision only when it is newer than
+the last rendered revision for the same umbrella run. Render the latest
+intermediate report while the stage is non-terminal; once a final stage is
+observed, prefer its final report and do not replace it with later intermediate
+text. Show degraded/failure counts as a warning state. Never fetch child task
+ids from the browser or use `debug=true` for normal rendering.
 
 Before a rollback or migration, stop the API and make a verified SQLite backup
 as shown above. Prepare the DeepGenome tables with the guarded admin command:
