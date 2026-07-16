@@ -2,12 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Accumulate streamed ChatAgent answer text for run-registry settle.
+"""Accumulate streamed agent answer text for run-registry settle.
 
 Wraps an ``AsyncIterator[AguiEvent]`` between ``invoke_tool_streamed``
 and the SSE shaper so HTTP settle can persist the real concatenated
-answer instead of a ``"[streamed]"`` placeholder. Soft-caps only the
-stored blob; wire events are always forwarded unchanged.
+answer instead of a placeholder. Soft-caps only the stored blob; wire
+events are always forwarded unchanged.
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ class StreamAnswerSnapshot:
 
 
 class StreamAnswerAccumulator:
-    """Async iterator that forwards AguiEvents and accumulates answer text.
+    """Async iterator that forwards AG-UI events and accumulates answer text.
 
     Attributes:
         max_bytes: Soft UTF-8 byte cap for the stored answer.

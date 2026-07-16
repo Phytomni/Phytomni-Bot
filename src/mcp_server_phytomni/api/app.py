@@ -1014,9 +1014,9 @@ async def _stream_chat_completion(  # pylint: disable=too-many-locals
     on the shared typed lifecycle state (finish observed and no error). A
     client that disconnects right after ``RunFinished`` still settles
     succeeded — the answer was produced regardless of whether the
-    socket stayed open to see it. ChatAgent settle persists the
-    accumulated answer under a soft byte cap; other streamed agents keep
-    stream-mode placeholder markers.
+    socket stayed open to see it. Every ordinary streamed agent persists
+    its accumulated answer under a soft byte cap; A2UI pause paths settle
+    their structured interrupt result separately.
 
     Auth, rate-limit, request-id, and OBS argument prep all happen
     before this helper is called, mirroring the non-stream branch.
@@ -1073,14 +1073,12 @@ async def _stream_chat_completion(  # pylint: disable=too-many-locals
         run_id=run_id,
         lifecycle_state=lifecycle_state,
     )
-    accumulator: StreamAnswerAccumulator | None = None
-    if tool_name == "ChatAgent":
-        accumulator = StreamAnswerAccumulator(
-            events,
-            max_bytes=_stream_answer_max_bytes(),
-            lifecycle_state=lifecycle_state,
-        )
-        events = accumulator
+    accumulator = StreamAnswerAccumulator(
+        events,
+        max_bytes=_stream_answer_max_bytes(),
+        lifecycle_state=lifecycle_state,
+    )
+    events = accumulator
     sse_lines = to_chat_completion_chunks(events, payload.model)
 
     async def _wrapped() -> AsyncIterator[str]:
@@ -1098,22 +1096,14 @@ async def _stream_chat_completion(  # pylint: disable=too-many-locals
                     and not lifecycle_state.saw_error
                     else "failed"
                 )
-                if accumulator is not None:
-                    snap = accumulator.snapshot
-                    result: dict[str, Any] = {
-                        "formatted": {"answer": snap.answer},
-                        "raw": None,
-                        "stream": True,
-                        "truncated": snap.truncated,
-                        "partial": status == "failed",
-                    }
-                else:
-                    result = {
-                        "formatted": {"answer": "[streamed]"},
-                        "raw": None,
-                        "stream": True,
-                        "partial": status == "failed",
-                    }
+                snap = accumulator.snapshot
+                result: dict[str, Any] = {
+                    "formatted": {"answer": snap.answer},
+                    "raw": None,
+                    "stream": True,
+                    "truncated": snap.truncated,
+                    "partial": status == "failed",
+                }
                 _settle_stream_run(run_id, owner, status, result)
 
     return StreamingResponse(_wrapped(), media_type="text/event-stream")

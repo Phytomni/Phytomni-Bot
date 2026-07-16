@@ -130,6 +130,31 @@ async def test_stream_with_resolve_gene_id_returns_400(
     assert response.status_code == 400
 
 
+async def test_data_model_is_not_advertised_or_streamable(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+) -> None:
+    """DataAgent stays absent from chat models with a clean lookup error."""
+    models = await api_client.get(
+        "/v1/models",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert models.status_code == 200
+    assert "phyto-data" not in {item["id"] for item in models.json()["data"]}
+
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        model="phyto-data",
+        stream=True,
+        content="data query",
+    )
+    assert response.status_code == 404
+    assert "NotImplementedError" not in response.text
+    assert "model not found: phyto-data" in response.text
+
+
 async def test_stream_setup_failure_returns_json_before_headers(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -391,6 +416,72 @@ async def test_stream_run_settles_succeeded_after_finish(
     assert record.result is not None
     assert record.result["formatted"]["answer"] == "Hi"
     assert record.result["stream"] is True
+    assert record.result["truncated"] is False
+    assert record.result["partial"] is False
+    assert "[streamed]" not in record.result["formatted"]["answer"]
+
+
+@pytest.mark.parametrize(
+    ("model", "tool_name"),
+    [
+        ("phyto-chat", "ChatAgent"),
+        ("phyto-knowledge", "KnowledgeAgent"),
+        ("phyto-review", "ReviewAgent"),
+        ("phyto-brief-gene", "BriefGeneAgent"),
+    ],
+)
+async def test_standard_stream_agents_persist_real_answer(
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+    model: str,
+    tool_name: str,
+) -> None:
+    """Every ordinary streamed model settles its real answer text.
+
+    The graph-backed models emit one terminal message event rather than
+    provider token deltas, but the HTTP registry contract is the same:
+    history consumers must receive the answer that crossed the wire and
+    never a generic ``[streamed]`` marker. Review's A2UI pause route is a
+    separate structured-interrupt path and is intentionally not exercised
+    by this ordinary completion helper.
+    """
+
+    async def fake_streamed(
+        _tool_name: str,
+        _arguments: dict[str, Any],
+        *,
+        run_id: str,
+        dialogue_id: str | None,
+    ) -> AsyncIterator[Any]:
+        """Yield a complete two-part answer for the selected model."""
+        yield run_started(run_id, dialogue_id)
+        yield text_message_content("m-multi", "multi-agent ")
+        yield text_message_content("m-multi", "answer")
+        yield run_finished(run_id)
+
+    monkeypatch.setattr(api_app, "prepare_tool_stream", fake_streamed)
+    payload = ChatCompletionRequest(
+        model=model,
+        messages=[ChatMessage(role="user", content="history")],
+        stream=True,
+    )
+    with request_context("u1", f"req-{model}-success"):
+        response = await _stream_chat_completion(
+            tool_name=tool_name,
+            arguments={"user_query": "history", "obs_file_list": []},
+            payload=payload,
+            user_query="history",
+        )
+        body_iterator = cast(AsyncGenerator[str, None], response.body_iterator)
+        body = "".join([line async for line in body_iterator])
+
+    assert body.count("data: [DONE]") == 1
+    run_id = _extract_run_started_id(body)
+    record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
+    assert record is not None
+    assert record.status == "succeeded"
+    assert record.result is not None
+    assert record.result["formatted"]["answer"] == "multi-agent answer"
     assert record.result["truncated"] is False
     assert record.result["partial"] is False
     assert "[streamed]" not in record.result["formatted"]["answer"]
@@ -666,19 +757,22 @@ def _guard_network_escape(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(loop_cls, method_name, _make_raiser(label))
 
 
-class _FakeKnowledgeStreamApp:
-    """Fake compiled KnowledgeAgent graph asserting astream config.
+class _FakeCitedStreamApp:
+    """Fake compiled cited-agent graph asserting astream config.
 
     Records the ``config`` passed to ``astream`` so the test can prove
     Step 0's ``build_runnable_config`` fix reached the seam, then yields
     one whitelisted stage update (``retrieve_node`` -> ``retrieving``)
     plus one cited terminal ``values`` chunk so the terminal projection
-    emits ``TextMessageContent`` + ``Custom`` frames.
+    emits ``TextMessageContent`` + ``Custom`` frames. The stage node and
+    answer are configurable so the same fake pins Knowledge and Review.
     """
 
-    def __init__(self) -> None:
-        """Init the captured-config holder."""
+    def __init__(self, *, stage_node: str, answer: str) -> None:
+        """Init the captured config and terminal fixture values."""
         self.captured_config: Mapping[str, Any] | None = None
+        self._stage_node = stage_node
+        self._answer = answer
 
     def thread_id(self) -> str | None:
         """Return the thread_id astream received, or None if unset.
@@ -704,7 +798,7 @@ class _FakeKnowledgeStreamApp:
         assert stream_mode == ["custom", "updates", "values"]
         assert subgraphs is True
         self.captured_config = config
-        yield ((), "updates", {"retrieve_node": {}})
+        yield ((), "updates", {self._stage_node: {}})
         yield (
             (),
             "values",
@@ -713,7 +807,7 @@ class _FakeKnowledgeStreamApp:
                     "choices": [
                         {
                             "message": {
-                                "content": "Rice photosynthesis [1].",
+                                "content": self._answer,
                                 "doc_list": [{"file_id": "f1", "title": "T1"}],
                                 "follow_up_questions": ["next?"],
                             }
@@ -742,7 +836,9 @@ async def test_stream_phyto_knowledge_emits_agui_frames(
     Step 0.
     """
     _guard_network_escape(monkeypatch)
-    fake_app = _FakeKnowledgeStreamApp()
+    fake_app = _FakeCitedStreamApp(
+        stage_node="retrieve_node", answer="Rice photosynthesis [1]."
+    )
 
     def _fake_target(
         _user_query: str, obs_file_list: Any = None
@@ -775,6 +871,57 @@ async def test_stream_phyto_knowledge_emits_agui_frames(
     assert fake_app.thread_id() == started_run_id
 
 
+async def test_stream_phyto_review_emits_agui_frames(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review's graph stream emits its existing stage/custom vocabulary."""
+    _guard_network_escape(monkeypatch)
+    fake_app = _FakeCitedStreamApp(
+        stage_node="retrieve_reduce_node", answer="Review evidence [1]."
+    )
+
+    def _fake_target(
+        _user_query: str, obs_file_list: Any = None
+    ) -> tuple[Any, dict[str, Any]]:
+        """Return the fake app + a minimal review initial state."""
+        del obs_file_list
+        return fake_app, {"user_query": _user_query}
+
+    monkeypatch.setattr(mcp_app, "review_stream_target", _fake_target)
+
+    async def _no_enrich(_tool_name: str, _raw: Any) -> None:
+        """Skip bibliographic enrichment so the test stays offline."""
+
+    monkeypatch.setattr(mcp_app, "_maybe_enrich_cited", _no_enrich)
+
+    events = [
+        event
+        async for event in mcp_app.invoke_tool_streamed(
+            "ReviewAgent",
+            {"user_query": "review", "obs_file_list": []},
+            run_id="run-review",
+            dialogue_id="dlg-review",
+        )
+    ]
+    types = [event.type for event in events]
+    assert types[0] == "RunStarted"
+    assert "StepStarted" in types
+    assert "TextMessageContent" in types
+    assert "Custom" in types
+    assert types[-1] == "RunFinished"
+    assert any(
+        event.type == "StepStarted" and event.data["step_name"] == "retrieving"
+        for event in events
+    )
+    customs = {
+        event.data["name"]: event.data["value"]
+        for event in events
+        if event.type == "Custom"
+    }
+    assert "phyto.references" in customs
+    assert customs["phyto.follow_up"] == ["next?"]
+
+
 async def test_streamed_knowledge_run_reconcile_short_circuits(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -791,7 +938,9 @@ async def test_streamed_knowledge_run_reconcile_short_circuits(
     on a terminal cached run instead of probing live ``task_status``.
     """
     _guard_network_escape(monkeypatch)
-    fake_app = _FakeKnowledgeStreamApp()
+    fake_app = _FakeCitedStreamApp(
+        stage_node="retrieve_node", answer="Rice photosynthesis [1]."
+    )
 
     def _fake_target(
         _user_query: str, obs_file_list: Any = None
