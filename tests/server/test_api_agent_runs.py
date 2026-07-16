@@ -137,6 +137,57 @@ async def test_list_agents_includes_legacy_aliases_for_web_tools(
     assert not missing, f"missing legacy aliases: {sorted(missing)}"
 
 
+async def test_list_agents_adds_capabilities_without_changing_legacy_fields(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+) -> None:
+    """The route publishes additive facts in the stable ten-row order."""
+    response = await api_client.get(
+        "/v1/agents",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    rows = response.json()["data"]
+    expected_slugs = (
+        "chat",
+        "knowledge",
+        "data",
+        "review",
+        "brief_gene",
+        "analyst",
+        "deep_genome",
+        "research",
+        "design",
+        "network",
+    )
+    assert tuple(row["slug"] for row in rows) == expected_slugs
+    expected_tools = {
+        "chat": "ChatAgent",
+        "knowledge": "KnowledgeAgent",
+        "data": "DataAgent",
+        "review": "ReviewAgent",
+        "brief_gene": "BriefGeneAgent",
+        "analyst": "AnalystAgent",
+        "deep_genome": "DeepGenomeAgent",
+        "research": "InSilicoResearchAgent",
+        "design": "DigitalDesignAgent",
+        "network": "GeneNetworkAgent",
+    }
+    for row in rows:
+        slug = row["slug"]
+        assert row["tool"] == expected_tools[slug]
+        assert set(row) == {
+            "slug",
+            "tool",
+            "origin",
+            "legacy_aliases",
+            "capabilities",
+        }
+        assert isinstance(row["capabilities"], dict)
+        assert isinstance(row["capabilities"]["report_states"], list)
+
+
 async def test_agent_run_unknown_slug_returns_404(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

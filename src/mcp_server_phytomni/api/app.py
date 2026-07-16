@@ -195,6 +195,7 @@ from .a2ui_limits import (
     read_a2ui_action_request,
 )
 from .admin_auth import is_service_token_valid, require_service_principal
+from .agent_capabilities import serialize_agent_capability
 from .auth import (
     ApiPrincipal,
     get_key_store,
@@ -3433,6 +3434,7 @@ def create_app() -> FastAPI:
                             else "local"
                         ),
                         "legacy_aliases": _LEGACY_ALIASES.get(tool, []),
+                        "capabilities": serialize_agent_capability(slug),
                     }
                     for slug, tool in _AGENT_SLUG_TO_TOOL.items()
                 ],
