@@ -178,7 +178,7 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
 | `GET`    | `/v1/interop/capabilities`               | yes   | Opt-in sanitized MCP/A2A capability discovery; only present when `INTEROP_ENABLED=1`, accepts no query overrides, and requires the `agents` scope. |
 | `GET`    | `/v1/models`                             | yes   | Authenticated liveness and model map check.                                                                                                        |
 | `POST`   | `/v1/chat/completions`                   | yes   | OpenAI-compatible chat-like agents.                                                                                                                |
-| `GET`    | `/v1/agents`                             | yes   | Native agent slug discovery; rows carry `legacy_aliases`.                                                                                          |
+| `GET`    | `/v1/agents`                             | yes   | Native agent slug discovery; rows carry `legacy_aliases` and additive `capabilities`.                                                              |
 | `POST`   | `/v1/agents/{agent}/runs`                | yes   | Native agent submission.                                                                                                                           |
 | `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing; one extra routing-LLM call resolves the agent per request.                                                              |
 | `GET`    | `/v1/memories`                           | yes   | Lists live owner-scoped memory records; route exists only when `MEMORY_ENABLED=1`.                                                                 |
@@ -216,6 +216,31 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
 | `GET`    | `/v1/relay/analysis/{task_id}/logs`      | relay | Analysis task-log relay (envelope, IAM; only the `task_name` query key is forwarded).                                                              |
 | `POST`   | `/v1/relay/analysis/{task_id}/terminate` | relay | Analysis task-terminate relay (envelope, IAM `X-Auth-Token`; task id validated).                                                                   |
 | `GET`    | `/v1/relay/spa-faq/{repo_id}`            | relay | SPA-FAQ relay (envelope, IAM `X-Auth-Token`; repo id validated; proxy-bypass; `question`/`page_size`/`page_num` only).                             |
+
+### Native agent capability discovery
+
+`GET /v1/agents` is the canonical preflight for Web and Go consumers. Every
+row keeps the stable `slug`, `tool`, `origin`, and `legacy_aliases` fields and
+adds a JSON-compatible `capabilities` object:
+
+```json
+{
+  "streaming": true,
+  "interactive": false,
+  "report_states": [],
+  "artifacts": false,
+  "degraded_outcomes": false
+}
+```
+
+The current ten-row order is `chat`, `knowledge`, `data`, `review`,
+`brief_gene`, `analyst`, `deep_genome`, `research`, `design`, `network`.
+`deep_genome` advertises `report_states: ["intermediate", "final"]`,
+`artifacts: true`, and `degraded_outcomes: true`; `chat` and `review` are
+interactive; `chat`, `knowledge`, `review`, and `brief_gene` are streamable.
+`data` has no chat-completions alias and must not be added to a stream model
+map. Treat unknown capability slugs as unsupported and keep authorization
+separate from this metadata.
 
 ### Memory CRUD operations (opt-in)
 
@@ -298,18 +323,20 @@ unredacted secret as a rollout blocker.
 
 Before flipping Web `bot.stream_enabled` + `VITE_STREAM_ENABLED` on:
 
-1. Confirm Bot build includes ChatAgent streamed-answer persistence
-   (settled `result.formatted.answer` is real text, not `"[streamed]"`).
+1. Confirm Bot build includes streamed-answer persistence for every ordinary
+   stream (settled `result.formatted.answer` is real text, not `"[streamed]"`).
 1. Coordinate the Web flags so both sides enable streaming together.
 1. Smoke: start a streamed Instant chat → refresh history → overlay
-   answer matches what the user saw during the stream.
+   answer matches what the user saw during the stream. Repeat with
+   `phyto-knowledge` and `phyto-brief-gene`; Review remains an interactive
+   A2UI pause when its stream flag is enabled.
 1. Optional: send a very long reply and confirm `truncated: true` on
    `GET /v1/runs/{id}` while the live UI still showed the full text.
 
 ### A2UI cutover checklist (ChatAgent / Instant)
 
 Enable `PHYTOMNI_A2UI_ENABLED=1` only after the streaming cutover
-above is green (P4-0): ChatAgent streamed-answer persistence must already
+above is green (P4-0): ordinary streamed-answer persistence must already
 be live so non-A2UI traffic is safe. Additional gates:
 
 1. Coordinate the flag with Web so both sides enable A2UI together.

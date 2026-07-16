@@ -86,7 +86,7 @@ Streaming section below.
 | `GET`    | `/v1/interop/capabilities`               | yes   | Opt-in sanitized MCP/A2A capability discovery; route exists only when `INTEROP_ENABLED=1`, accepts no query overrides, and requires the `agents` scope.                                                 |
 | `GET`    | `/v1/models`                             | yes   | Lists OpenAI-compatible model ids.                                                                                                                                                                      |
 | `POST`   | `/v1/chat/completions`                   | yes   | OpenAI-compatible chat endpoint.                                                                                                                                                                        |
-| `GET`    | `/v1/agents`                             | yes   | Lists native agent-run slugs; each row carries `legacy_aliases`.                                                                                                                                        |
+| `GET`    | `/v1/agents`                             | yes   | Lists native agent-run slugs; each row carries `legacy_aliases` and additive `capabilities`.                                                                                                            |
 | `POST`   | `/v1/agents/{agent}/runs`                | yes   | Invokes one agent by slug.                                                                                                                                                                              |
 | `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing: an LLM selects the agent for a query and returns its `agent.run` envelope with the resolved slug.                                                                            |
 | `GET`    | `/v1/memories`                           | yes   | Lists live memory records in the authenticated user's namespace; route exists only when `MEMORY_ENABLED=1`.                                                                                             |
@@ -135,6 +135,17 @@ agents (`brief_gene`, `design`, `network`) ship an empty list
 rather than dropping the key so the shape stays uniform and any
 future agent must declare its alias inventory explicitly rather
 than silently inherit `[]`.
+
+Each row also carries an additive `capabilities` object. Its stable keys are
+`streaming`, `interactive`, `report_states`, `artifacts`, and
+`degraded_outcomes`; `report_states` is always a JSON list. The current facts
+are `chat` (streaming + interactive), `knowledge` (streaming), `review`
+(streaming + interactive), `brief_gene` (streaming), and `deep_genome`
+(`report_states: ["intermediate", "final"]`, artifacts, and degraded
+outcomes). `data`, `analyst`, `research`, `design`, and `network` currently
+advertise all five values as false/empty. Consumers must treat this object as
+the capability source of truth and fail closed for an unknown slug; it does
+not grant permission or change the canonical route name.
 
 ## User-scoped memory CRUD (opt-in)
 
@@ -848,7 +859,8 @@ Streaming is wired on `phyto-chat`, `phyto-knowledge`, and
 `phyto-brief-gene`: ChatAgent token-streams provider deltas, while
 KnowledgeAgent / BriefGeneAgent drive their compiled graphs through
 the `_stream_graph_agent` primitive (stage `StepStarted` frames then a
-terminal answer + citations). `phyto-review` with `stream: true` returns
+terminal answer + citations). The ReviewAgent stream capability is
+interactive: `phyto-review` with `stream: true` returns
 `400` when `A2UI_ENABLED` is off because human-in-the-loop review
 pauses resume through the non-stream flow plus `/resume`. When
 `A2UI_ENABLED` is on, `phyto-review` with `stream: true` emits a
@@ -908,7 +920,7 @@ empty `text/event-stream`. After the stream drains, the run record is settled fr
 
 - **ChatAgent (`phyto-chat`)**: `result` is
   `{"formatted": {"answer": "<accumulated text>"}, "raw": null, "stream": true, "truncated": bool, "partial": bool}`.
-  `answer` is the concatenation of `TextMessageContent` deltas,
+  `answer` is the concatenation of every `TextMessageContent` delta,
   soft-capped by `STREAM_ANSWER_MAX_BYTES` / `PHYTOMNI_STREAM_ANSWER_MAX_BYTES`
   (default 1 MiB). The SSE wire stream is never truncated.
   `truncated` is true when the stored blob hit the cap; `partial` is
@@ -945,10 +957,13 @@ empty `text/event-stream`. After the stream drains, the run record is settled fr
   The run settles `input_required` with `interrupt.draft.a2ui`; resume
   through `/resume` or `/a2ui-actions` (no second SSE after resume).
   With `A2UI_ENABLED` off, `stream: true` on `phyto-review` stays `400`.
-- **Other streaming-capable models** (knowledge / brief_gene today):
-  settle still uses
-  `{"formatted": {"answer": "[streamed]"}, "raw": null, "stream": true}`
-  until a follow-up change persists their answers the same way.
+- **KnowledgeAgent / BriefGeneAgent ordinary graph streams**: settle uses
+  the same accumulated-answer shape as ChatAgent, including the UTF-8
+  storage cap and `partial` flag. A graph terminal answer is one
+  `TextMessageContent` delta, so history still receives the exact markdown
+  shown on the wire rather than a `[streamed]` placeholder. The ReviewAgent
+  A2UI stream settles its structured `input_required` interrupt separately;
+  any ordinary Review stream path uses the same accumulator contract.
 
 Open-stream transport failures (`ConnectError` / `TimeoutException`)
 are retried once before raising. Once the first event is primed, any
