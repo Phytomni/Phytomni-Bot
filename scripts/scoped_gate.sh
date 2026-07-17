@@ -86,6 +86,7 @@ md_files=""
 toml_files=""
 test_files=""
 demo_changed=0
+policy_changed=0
 
 old_ifs=$IFS
 IFS='
@@ -102,6 +103,15 @@ for f in $changed; do
     case "$f" in
     demo_data/*)
         demo_changed=1
+        ;;
+    esac
+    case "$f" in
+    static-analysis-exemptions.toml | pyproject.toml | .flake8 | Makefile | \
+        scripts/check_static_analysis_exemptions.py | scripts/check_*.py | \
+        scripts/scoped_gate.sh | \
+        scripts/scan_secrets.py | scripts/validate_local.sh | \
+        scripts/static_analysis/* | .github/workflows/* | .githooks/*)
+        policy_changed=1
         ;;
     esac
     case "$f" in
@@ -220,6 +230,26 @@ else
     # tracked by scripts/check_pylint_baseline.py on the full gate, not
     # at the scoped gate (subset runs would emit fragmentary counts).
     run uv run pylint --persistent=no --disable=R0801,R0903 "$@"
+fi
+
+# ---------------------------------------------------------------------------
+# Static-analysis exemption reconciliation. Cross-file findings are checked
+# for every Python change; policy/tooling changes run the full inventory so a
+# modified collector or rule configuration cannot bypass another suppression
+# family. The checker is the single source of matching semantics.
+# ---------------------------------------------------------------------------
+if [ -z "$py_files" ]; then
+    printf '\n==> no changed .py files; skipping static-analysis cross-file check\n'
+else
+    run uv run python scripts/check_static_analysis_exemptions.py \
+        check --scope cross-file
+fi
+
+if [ "$policy_changed" -eq 0 ]; then
+    printf '\n==> no static-analysis policy files changed; skipping full check\n'
+else
+    run uv run python scripts/check_static_analysis_exemptions.py \
+        check --scope full
 fi
 
 # ---------------------------------------------------------------------------

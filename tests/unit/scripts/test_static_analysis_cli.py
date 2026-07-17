@@ -6,6 +6,9 @@
 
 from __future__ import annotations
 
+from datetime import date
+from pathlib import Path
+
 import pytest
 import scripts.check_static_analysis_exemptions as cli
 from scripts.static_analysis.collectors.errors import CollectionError
@@ -130,3 +133,22 @@ def test_cli_render_docs_check_reports_drift(tmp_path) -> None:
         )
         == 1
     )
+
+
+def test_cross_file_scope_excludes_command_baseline_records() -> None:
+    """Partial cross-file checks do not stale command-level suppressions."""
+    registry = cli.load_registry(
+        Path(__file__).resolve().parents[3]
+        / "static-analysis-exemptions.toml",
+        today=date(2026, 7, 17),
+    )
+    scoped = getattr(cli, "_registry_for_scope")(registry, "cross-file")
+
+    assert scoped.exemptions
+    assert {
+        (item.tool, item.rule, item.mechanism.value)
+        for item in scoped.exemptions
+    } == {
+        ("pylint", "R0801", "diagnostic"),
+        ("pylint", "R0903", "diagnostic"),
+    }

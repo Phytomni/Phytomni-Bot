@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from datetime import date
 from importlib import import_module
 from pathlib import Path
@@ -25,6 +26,7 @@ if TYPE_CHECKING:
     )
     from scripts.static_analysis.model import (
         Classification,
+        Registry,
         RegistryError,
         load_registry,
     )
@@ -48,6 +50,7 @@ else:
     collect_inventory = _inventory.collect_inventory
     reconcile = _inventory.reconcile
     Classification = _model.Classification
+    Registry = _model.Registry
     RegistryError = _model.RegistryError
     load_registry = _model.load_registry
     render_candidates = _report.render_candidates
@@ -58,6 +61,7 @@ else:
 
 _ROOT = _PROJECT_ROOT
 _REGISTRY = _ROOT / "static-analysis-exemptions.toml"
+_CROSS_FILE_RULES = frozenset({("pylint", "R0801"), ("pylint", "R0903")})
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -176,6 +180,21 @@ def _filter_result(
     )
 
 
+def _registry_for_scope(registry: Registry, scope: str) -> Registry:
+    """Limit partial reconciliation to the findings that scope observes."""
+    if scope != "cross-file":
+        return registry
+    return replace(
+        registry,
+        exemptions=tuple(
+            item
+            for item in registry.exemptions
+            if (item.tool, item.rule) in _CROSS_FILE_RULES
+            and item.mechanism.value == "diagnostic"
+        ),
+    )
+
+
 def _parse_candidate_flags(
     args: argparse.Namespace,
 ) -> tuple[Classification, date | None] | None:
@@ -250,11 +269,12 @@ def _run(args: argparse.Namespace) -> int:
         return 0
 
     registry = load_registry(args.registry, today=today)
-    result = reconcile(registry, findings, today)
+    effective_registry = _registry_for_scope(registry, args.scope)
+    result = reconcile(effective_registry, findings, today)
     filtered = _filter_result(result, args)
     if args.require_zero_temporary and any(
         item.classification is Classification.TEMPORARY
-        for item in registry.exemptions
+        for item in effective_registry.exemptions
         if _selected(item, args)
     ):
         filtered = AuditResult(
@@ -267,7 +287,7 @@ def _run(args: argparse.Namespace) -> int:
             expired=filtered.expired
             + tuple(
                 item
-                for item in registry.exemptions
+                for item in effective_registry.exemptions
                 if item.classification is Classification.TEMPORARY
                 and _selected(item, args)
             ),

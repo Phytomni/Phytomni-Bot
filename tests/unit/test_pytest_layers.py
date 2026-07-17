@@ -133,3 +133,14 @@ def test_ci_exercises_minimum_and_latest_dependency_resolution() -> None:
     assert 'uv pip install --system -e ".[dev]"' in workflow
     assert "--disable=R0801,R0903" in pylint_job
     assert "scripts/check_pylint_baseline.py" in pylint_job
+
+
+def test_scoped_gate_reconciles_static_analysis_exemptions() -> None:
+    """Scoped Python and policy changes use the shared checker."""
+    scoped_gate = (_project_root() / "scripts/scoped_gate.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "check --scope cross-file" in scoped_gate
+    assert "check --scope full" in scoped_gate
+    assert "static-analysis-exemptions.toml" in scoped_gate
