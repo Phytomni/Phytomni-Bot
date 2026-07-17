@@ -46,10 +46,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # stays exempt-here-instead-of-refactored lives in
 # ``docs/development/lint-exemptions.md``.
 RULE_BASELINES: dict[str, int] = {
-    # Bumped 124 -> 158 for the DeepGenome lifecycle/report, streaming/A2UI,
-    # Gauss safety, and handoff contract surfaces. These are intentional
-    # cross-surface parallels whose shapes are part of the tested contracts.
-    "R0801": 158,  # duplicate-code: cross-file similar blocks
+    # Bumped 158 -> 164 after adding the repository-wide static-analysis
+    # inventory and registry collectors. These are intentional cross-surface
+    # parallels whose shapes are part of the tested contracts; the exact
+    # diagnostic identities live in the deny-by-default registry.
+    "R0801": 164,  # duplicate-code: cross-file similar blocks
     # Bumped 28 -> 36 for the DeepGenome mixins and the additional
     # single-purpose HTTP/graph test stand-ins added with those contracts.
     "R0903": 36,

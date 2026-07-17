@@ -19,22 +19,30 @@ import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 # The ``_visualize_bootstrap`` module installs the offline fake
 # deployment env on its own import and then re-exports the three
 # mcp subgraph symbols this script needs. Routing both through the
 # bootstrap module keeps every import in this file a real ``from``
 # import — no side-effect-only import block, no suppression of the
-# unused-import warning that pattern requires. ``scripts/`` lives on
-# ``sys.path[0]`` for direct invocation; the CLI test inserts the
-# same path before ``spec.loader.exec_module`` so the bootstrap is
-# resolvable in both modes.
-from _visualize_bootstrap import (
-    SubgraphRegistry,
-    build_default_registry,
-    export_manifest,
-)
+# unused-import warning that pattern requires. Static type checking uses
+# the package-qualified name, while direct invocation keeps the sibling
+# import resolved from ``sys.path[0]``. The CLI test inserts that same path
+# before ``spec.loader.exec_module`` so the bootstrap is resolvable in both
+# runtime modes.
+if TYPE_CHECKING:
+    from scripts._visualize_bootstrap import (
+        SubgraphRegistry,
+        build_default_registry,
+        export_manifest,
+    )
+else:
+    from _visualize_bootstrap import (
+        SubgraphRegistry,
+        build_default_registry,
+        export_manifest,
+    )
 
 
 def _disambiguate_subgraph_leaves(graph: Any) -> Any:

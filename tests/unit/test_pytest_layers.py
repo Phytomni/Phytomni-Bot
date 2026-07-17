@@ -144,3 +144,13 @@ def test_scoped_gate_reconciles_static_analysis_exemptions() -> None:
     assert "check --scope cross-file" in scoped_gate
     assert "check --scope full" in scoped_gate
     assert "static-analysis-exemptions.toml" in scoped_gate
+
+
+def test_validate_local_uses_generated_static_analysis_contract() -> None:
+    """The full gate delegates matching and ledger drift checks."""
+    validate_local = (_project_root() / "scripts/validate_local.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "render-docs --check" in validate_local
+    assert "check --scope full" in validate_local

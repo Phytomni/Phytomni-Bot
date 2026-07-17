@@ -80,6 +80,10 @@ $(git ls-files '*.md' ':!:demo_data/')
 EOF
 run uv run mdformat --check "$@"
 run uv run pymarkdown --config pyproject.toml scan "$@"
+run uv run python scripts/check_static_analysis_exemptions.py \
+    render-docs --check
+run uv run python scripts/check_static_analysis_exemptions.py \
+    check --scope full
 
 # toml-sort owns formatting (reads [tool.tomlsort] from pyproject.toml, no
 # CLI flags); validate-pyproject is schema-scoped to pyproject.toml files.
