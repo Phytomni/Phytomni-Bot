@@ -146,7 +146,7 @@ umbrella at the fixed restart-failure boundary while retaining its latest
 intermediate report. This release has no cross-process durable worker, no
 DataAgent HTTP streaming surface, and no claim that production migration or
 Web/Go acceptance is complete. Operational rollback and external evidence are
-kept in the local-only `.codex/handoff/` packets.
+owned by the deployment process and are not implied by this architecture note.
 
 ## MCP Boundary
 

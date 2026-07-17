@@ -836,16 +836,16 @@ pre-created run row as `failed`, rather than returning an empty SSE body.
 The wire framing is AG-UI event data, not provider `chat.completion.chunk`
 objects.
 
-Web/Go live stream, A2UI passthrough, timeout, and error-equivalence evidence
-is collected through the
-[stream contract packet](../handoffs/evidence/web-go-stream-contract-acceptance.md),
-not inferred from these offline contract tests.
+Web/Go gateway passthrough, live stream behavior, timeout handling, and
+error-equivalence evidence are deployment-owner checks; these offline contract
+tests define the Bot wire behavior but do not claim cross-repository
+acceptance.
 
 The current server intentionally exposes a narrowed AG-UI vocabulary:
 `RunStarted`, `StepStarted`, `TextMessageStart` / `TextMessageContent` /
 `TextMessageEnd` (collectively `TextMessage*`), `Custom`, and
 `RunFinished`. The richer `ToolCall*`, `Reasoning*`, and `StepFinished`
-events from the earlier handoff are superseded and are not emitted. The
+events from the older event vocabulary are superseded and are not emitted. The
 opened-stream lifecycle is also a durable contract: an ordinary producer
 failure is projected as exactly one `RunError` with a fixed or redacted
 message, does not emit `RunFinished`, and still closes the SSE response with
@@ -1265,8 +1265,9 @@ The coordinator is intentionally in-process. A service restart does not
 resume after process restart; the read path marks an orphaned nonterminal
 umbrella failed with `workflow interrupted by service restart` while retaining
 the last intermediate snapshot. This release makes no durable-worker,
-production-migration, live-acceptance, or Web/Go-completion claim. The
-evidence boundary is kept in the local-only `.codex/handoff/` packets.
+production-migration, live-acceptance, or Web/Go-completion claim. Those
+deployment and integration checks are separately owned and are not closed by
+the Bot-local documentation or test suite.
 
 A `deep_genome` report whose optional mounted sub-analysis degraded mid-run
 (its evolution or digital-design step) can still settle as `succeeded` while

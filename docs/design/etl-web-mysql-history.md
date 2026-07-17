@@ -13,8 +13,8 @@ from a half-finished implementation.
 
 ## 1. Why (rationale)
 
-Under the candidate-A consumer model (see
-[web-cutover-checklist.md](../ops/web-cutover-checklist.md)), Bot becomes
+Under the candidate-A consumer model (see the public
+[HTTP API history contract](../reference/http-api.md)), Bot becomes
 the single persistence owner of run/turn history that previously lived
 only in Web's MySQL tables. The Bot `runs` table starts empty at
 cutover, so `GET /v1/runs?dialogue_id=` returns nothing for any

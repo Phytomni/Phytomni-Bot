@@ -719,12 +719,11 @@ or input validation failed, exit `1` means a check or output write failed, and
 exit `0` means all checks passed.
 
 The role grant, `default_transaction_read_only` setting, denied-write check,
-and connection-reuse probe remain external Operations evidence. **External Pending until the authorized probe**:
-do not mark production cutover complete
+and connection-reuse probe remain external Operations evidence. **External
+Pending until the authorized probe**: do not mark production cutover complete
 from offline policy, unit tests, or a successful health check alone. Record the
-sanitized result, operator, timestamp, and rollback reference in the
-[Operations acceptance packet](../handoffs/evidence/operations-acceptance.md)
-before enabling customer traffic.
+sanitized result, operator, timestamp, and rollback reference through the
+authorized deployment change process before enabling customer traffic.
 
 ### Authorized eighteen-query compatibility comparison
 
@@ -866,10 +865,9 @@ operator has approved the consequence may the command add
 ticket. Restore the prior wheel or image before restoring a database backup,
 then run `/readyz`, `/v1/models`, and one owner-scoped status smoke. Do not
 claim production migration, Web/Go acceptance, Gauss role proof, or service
-retirement from these offline checks. Return evidence through the local-only
-`.codex/handoff/2026-07-15-bot-operations-acceptance-handoff.md` and track all
-fourteen source handoffs in the local-only
-`.codex/handoff/2026-07-15-handoff-disposition-matrix.md`.
+retirement from these offline checks. Record any authorized external evidence
+through the deployment change process and keep the rollback reference with the
+release record.
 
 ## Restart and Upgrade
 

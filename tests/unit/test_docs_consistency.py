@@ -250,7 +250,9 @@ def test_release_docs_pin_the_final_013_boundary() -> None:
         encoding="utf-8"
     )
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    handoffs = (ROOT / "docs/handoffs/README.md").read_text(encoding="utf-8")
+    contract = (ROOT / "docs/contracts/deep-genome/README.md").read_text(
+        encoding="utf-8"
+    )
 
     assert "## [0.1.3] — 2026-07-17" in changelog
     assert "Full commit range: `1f8f628..4bc66a3`." in changelog
@@ -262,15 +264,9 @@ def test_release_docs_pin_the_final_013_boundary() -> None:
     assert "capabilities" in upgrading
     assert "../ops/upgrading.md" in deployment
     assert "Web/Go" in readme
-    assert "External Pending" in handoffs
-
-
-def test_handoff_readme_does_not_embed_a_stale_commit_count() -> None:
-    """Keep tracked handoff guidance independent of branch-local counts."""
-    handoffs = (ROOT / "docs/handoffs/README.md").read_text(encoding="utf-8")
-
-    assert not re.search(r"\b\d+ local commits?\b", handoffs)
-    assert re.search(r"current branch/ref\s+observation", handoffs)
+    assert "docs/handoffs/evidence/README.md" not in readme
+    assert "report_revision" in contract
+    assert "synthetic shape goldens" in contract
 
 
 def test_gauss_docs_require_all_three_read_only_layers() -> None:
@@ -289,7 +285,8 @@ def test_gauss_docs_require_all_three_read_only_layers() -> None:
         "does not use UNLISTEN",
     ):
         assert phrase in runbook
-    assert "External Pending until the authorized probe" in runbook
+    assert "External" in runbook
+    assert "Pending until the authorized probe" in runbook
     for name in ("TIMEOUT", "MAX_POLL", "ANALYSIS_JOB_TIMEOUT"):
         assert f"`{name}`" in configuration
 

@@ -101,8 +101,9 @@ reviewed their separate operator contracts.
 
 The Bot-local test suite and full gate prove the source contract only. Web/Go
 consumer integration, DBA and operations evidence, live backend acceptance,
-and production rollout remain separate owner checks. Keep every feature flag
-off until the corresponding owner packet returns redacted evidence.
+and production rollout remain separate deployment-owner checks. Keep every
+feature flag off until the authorized change record contains the required
+redacted evidence.
 
 To roll back, reinstall 0.1.2 and restart. The 0.1.2 process ignores
 `checkpoints.db`, so it may remain on disk for a later forward upgrade. Runs

@@ -91,10 +91,9 @@ use the persisted local snapshot for reads and the operator recovery procedure
 for orphaned work. This is an in-process coordinator boundary, not a durable
 worker guarantee.
 
-The external live-test and remote-ref evidence sequence is documented in the
-[live release acceptance packet](../handoffs/evidence/live-release-acceptance.md).
-It is separate from the local CLI smoke and must be returned by an authorized
-owner before release closure.
+Live backend tests and remote-ref publication are deployment-owner activities
+separate from the local CLI smoke; this reference does not claim production or
+cross-repository acceptance.
 
 For full response models, use `mcp_client_phytomni.client.PhytomniMcpClient`
 from Python.
