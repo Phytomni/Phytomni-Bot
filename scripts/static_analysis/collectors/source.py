@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import io
 import re
+import textwrap
 import tokenize
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
@@ -76,7 +77,7 @@ def _symbol_context(source: str, line: int) -> tuple[str | None, str]:
     try:
         tree = ast.parse(source)
     except SyntaxError:
-        return None, normalize_source(source.splitlines()[line - 1])
+        return None, _normalize_unbound_line(source, line)
 
     matches: list[tuple[int, int, str, ast.AST]] = []
 
@@ -102,12 +103,23 @@ def _symbol_context(source: str, line: int) -> tuple[str | None, str]:
 
     visit(tree, (), 0)
     if not matches:
-        lines = source.splitlines()
-        line_text = lines[line - 1] if 0 < line <= len(lines) else ""
-        return None, normalize_source(line_text)
+        return None, _normalize_unbound_line(source, line)
     _, _, symbol, node = max(matches, key=lambda item: (item[0], -item[1]))
     segment = ast.get_source_segment(source, node) or ""
     return symbol, normalize_source(segment)
+
+
+def _normalize_unbound_line(source: str, line: int) -> str:
+    """Normalize an indented line without leaking tokenizer errors."""
+    lines = source.splitlines()
+    line_text = lines[line - 1] if 0 < line <= len(lines) else ""
+    try:
+        return normalize_source(line_text)
+    except ValueError:
+        try:
+            return normalize_source(textwrap.dedent(line_text))
+        except ValueError:
+            return line_text.strip()
 
 
 def _rules(raw_rules: str | None) -> tuple[str, ...]:

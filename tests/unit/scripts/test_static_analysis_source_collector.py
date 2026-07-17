@@ -125,3 +125,18 @@ def test_module_level_directive_uses_span_target(tmp_path: Path) -> None:
 
     assert finding.symbol is None
     assert finding.target_kind.value == "span"
+
+
+def test_indented_import_directive_uses_span_fallback(tmp_path: Path) -> None:
+    """Indented import members use the safe span normalization fallback."""
+    path = tmp_path / "bootstrap.py"
+    path.write_text(
+        "from package import (\n" + "    value,  # noqa: E402\n" + ")\n",
+        encoding="utf-8",
+    )
+
+    finding = collect_source_suppressions(tmp_path, [path])[0]
+
+    assert finding.tool == "ruff"
+    assert finding.rule == "E402"
+    assert finding.symbol is None

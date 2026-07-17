@@ -82,9 +82,11 @@ def collect_secret_markers(
     for path in sorted(paths, key=lambda item: _relative_path(root, item)):
         if path.suffix in {".py", ".pyi"}:
             continue
-        for line_number, line in enumerate(
-            path.read_text(encoding="utf-8").splitlines(), start=1
-        ):
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except UnicodeDecodeError:
+            continue
+        for line_number, line in enumerate(lines, start=1):
             for match in _MARKER_RE.finditer(line):
                 findings.extend(
                     _non_python_finding(

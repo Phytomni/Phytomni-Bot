@@ -132,3 +132,13 @@ def test_secret_collector_handles_python_and_markdown(tmp_path: Path) -> None:
         ("README.md", "*"),
         ("sample.py", "B105"),
     ]
+
+
+def test_secret_collector_skips_binary_tracked_artifacts(
+    tmp_path: Path,
+) -> None:
+    """Binary fixtures are not comment-bearing source and cannot be decoded."""
+    path = tmp_path / "fixture.bin"
+    path.write_bytes(b"\x93\x00\xff")
+
+    assert not collect_secret_markers(tmp_path, [path])
