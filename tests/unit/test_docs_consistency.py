@@ -134,7 +134,8 @@ def test_tracked_markdown_links_resolve_to_local_files() -> None:
     markdown_files = [
         path
         for path in _git_ls_files("*.md")
-        if not path.relative_to(ROOT).as_posix().startswith("demo_data/docs/")
+        if path.exists()
+        and not path.relative_to(ROOT).as_posix().startswith("demo_data/docs/")
     ]
     for path in markdown_files:
         text = _strip_fenced_blocks(path.read_text(encoding="utf-8"))
