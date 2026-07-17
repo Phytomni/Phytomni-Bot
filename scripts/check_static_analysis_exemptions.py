@@ -32,6 +32,7 @@ if TYPE_CHECKING:
         render_candidates,
         render_json,
         render_markdown,
+        render_repository_markdown,
         render_review,
     )
 else:
@@ -52,6 +53,7 @@ else:
     render_candidates = _report.render_candidates
     render_json = _report.render_json
     render_markdown = _report.render_markdown
+    render_repository_markdown = _report.render_repository_markdown
     render_review = _report.render_review
 
 _ROOT = _PROJECT_ROOT
@@ -225,8 +227,11 @@ def _render_inventory(
 def _run(args: argparse.Namespace) -> int:
     today = date.today()
     if args.command == "render-docs":
-        registry = load_registry(args.registry, today=today)
-        content = render_markdown(registry, {})
+        if args.registry != _REGISTRY:
+            registry = load_registry(args.registry, today=today)
+            content = render_markdown(registry, {})
+        else:
+            content = render_repository_markdown(_ROOT)
         output = args.output or (_ROOT / "docs/development/lint-exemptions.md")
         if args.check:
             return 0 if output.read_text(encoding="utf-8") == content else 1

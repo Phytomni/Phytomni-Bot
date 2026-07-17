@@ -7,11 +7,23 @@
 from __future__ import annotations
 
 import json
+import re
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from datetime import date
+from pathlib import Path
+
+import mdformat
+import mdformat.plugins
 
 from .inventory import AuditResult, _sort_finding
-from .model import Classification, Exemption, Finding, Registry
+from .model import (
+    Classification,
+    Exemption,
+    Finding,
+    Registry,
+    load_registry,
+)
 
 
 def _finding_dict(item: Finding) -> dict[str, object]:
@@ -173,20 +185,126 @@ def render_candidates(
 
 
 def render_markdown(registry: Registry, counts: Mapping[str, int]) -> str:
-    """Render a small deterministic registry ledger.
-
-    Task 8 extends this renderer with the full human review narrative while
-    keeping this stable summary available to the checker CLI.
-    """
-    lines = ["# Static-analysis exemption ledger", ""]
-    lines.append(f"- Schema: `{registry.schema_version}`")
-    lines.append(f"- Entries: `{len(registry.exemptions)}`")
-    for tool in sorted(counts):
-        lines.append(f"- {tool}: `{counts[tool]}`")
-    lines.append("")
+    """Render the complete deterministic human-review ledger."""
+    lines = [
+        "# Static-analysis exemption ledger",
+        "",
+        "This file is generated from `static-analysis-exemptions.toml`.",
+        "",
+        "Regeneration:",
+        "",
+        "```bash",
+        "uv run python scripts/check_static_analysis_exemptions.py "
+        "render-docs",
+        "```",
+        "",
+        f"- Schema version: `{registry.schema_version}`",
+        f"- Policy default: `{registry.default}`",
+        f"- Authorized records: `{len(registry.exemptions)}`",
+        "",
+        "## Informational counts",
+        "",
+        "| Tool and rule | Records |",
+        "| --- | ---: |",
+    ]
+    for key in sorted(counts):
+        lines.append(f"| `{_md_cell(key)}` | {counts[key]} |")
+    lines.extend(
+        (
+            "",
+            "## Exact records",
+            "",
+            "".join(
+                (
+                    "| ID | Tool | Rule | Classification | ",
+                    "Mechanism | Target | Path | Symbol | ",
+                    "Fingerprint | Owner | Introduced | Review | ",
+                    "Expiry | Remediation | Tests |",
+                )
+            ),
+            "".join(
+                (
+                    "| --- | --- | --- | --- | --- | --- | --- | --- | ",
+                    "--- | --- | --- | --- | --- | --- | --- | --- |",
+                )
+            ),
+        )
+    )
     for item in sorted(registry.exemptions, key=lambda value: value.id):
+        expiry = item.expires_on.isoformat() if item.expires_on else "—"
+        remediation = item.remediation or "—"
+        tests = ", ".join(item.tests)
         lines.append(
-            f"- `{item.id}` `{item.tool}:{item.rule}` "
-            f"`{item.path}` ({item.classification.value})"
+            "| "
+            + " | ".join(
+                (
+                    f"`{_md_cell(item.id)}`",
+                    _md_cell(item.tool),
+                    _md_cell(item.rule),
+                    _md_cell(item.classification.value),
+                    _md_cell(item.mechanism.value),
+                    _md_cell(item.target_kind.value),
+                    _md_cell(item.path),
+                    _md_cell(item.symbol or "—"),
+                    f"`{_md_cell(item.fingerprint)}`",
+                    _md_cell(item.owner),
+                    item.introduced_on.isoformat(),
+                    item.review_on.isoformat(),
+                    _md_cell(expiry),
+                    _md_cell(remediation),
+                    _md_cell(tests),
+                )
+            )
+            + " |"
+        )
+    lines.extend(("", "## Review fields", ""))
+    for item in sorted(registry.exemptions, key=lambda value: value.id):
+        lines.extend(
+            (
+                f"### `{_md_cell(item.id)}`",
+                "",
+                "Rationale:",
+                "",
+                *_code_block(item.rationale),
+                "Counterfactual:",
+                "",
+                *_code_block(item.counterfactual),
+                "Risk:",
+                "",
+                *_code_block(item.risk),
+                "",
+            )
         )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _md_cell(value: str) -> str:
+    """Escape a value for a single Markdown table/list cell."""
+    return value.replace("|", "\\|").replace("\n", " ↵ ")
+
+
+def _code_block(value: str) -> tuple[str, ...]:
+    """Render arbitrary registry prose without Markdown interpretation."""
+    longest = max(
+        (len(match.group(0)) for match in re.finditer(r"`+", value)),
+        default=0,
+    )
+    fence = "`" * max(3, longest + 1)
+    return (f"{fence}text", value, fence)
+
+
+def render_repository_markdown(root: Path) -> str:
+    """Load the repository registry and render its deterministic ledger."""
+    registry = load_registry(
+        root / "static-analysis-exemptions.toml", today=date.today()
+    )
+    counts = Counter(
+        f"{item.tool}:{item.rule}" for item in registry.exemptions
+    )
+    return mdformat.text(
+        render_markdown(registry, counts),
+        options={"wrap": "keep"},
+        extensions=mdformat.plugins.PARSER_EXTENSIONS,
+        codeformatters=mdformat.plugins.CODEFORMATTERS,
+        _filename=str(root / "docs/development/lint-exemptions.md"),
+    )
