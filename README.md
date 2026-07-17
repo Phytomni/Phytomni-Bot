@@ -118,13 +118,15 @@ redaction and operator-smoke contract.
 
 ### Capability Boundary in 0.1.3
 
-The 2026 capability audit is closed for all 14 dependency-underutilization
-items: six gate rules, four reliability improvements, three dormant-asset
-connections, and MCP stdio progress are shipped. Graph progress is available
-on HTTP SSE and, for Knowledge / Review / Data / BriefGene, through MCP
-`progressToken`. Review interrupt/resume uses a persistent local SQLite
-checkpointer. A2UI Chat/Review widgets are shipped behind
-`PHYTOMNI_A2UI_ENABLED`, which remains off by default.
+The Bot-side implementation for the 14 dependency-underutilization items is
+complete on the `0.1.3` release branch: six gate rules, four reliability
+improvements, three dormant-asset connections, and MCP stdio progress are
+shipped. Graph progress is available on HTTP SSE and, for Knowledge / Review /
+Data / BriefGene, through MCP `progressToken`. Review interrupt/resume uses a
+persistent local SQLite checkpointer. A2UI Chat/Review widgets are shipped
+behind `PHYTOMNI_A2UI_ENABLED`, which remains off by default. Web/Go
+integration, DBA/Ops evidence, live backend acceptance, and production rollout
+remain separately owned checks and are not closed by this Bot-local statement.
 
 The A2A server core is now available as an opt-in 0.1.3 surface. It remains
 disabled unless `PHYTOMNI_A2A_ENABLED=1` and a public base URL are configured;
