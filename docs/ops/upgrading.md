@@ -27,19 +27,38 @@ writable by the service user and must stay on local storage; SQLite WAL is not
 supported on a shared network filesystem. The database is additive and needs
 no operator-authored migration.
 
+### Preflight
+
+Before stopping the 0.1.2 service, confirm the installed version and prepare a
+rollback copy. Stop the service before running the SQLite backups so the
+database files are not changing during the copy:
+
+```bash
+pip show mcp_server_phytomni | grep -E "^Version"
+# Expect: Version: 0.1.2
+
+systemctl stop phytomni-api
+backup_dir="/backup/phytomni-0.1.3-$(date +%F)"
+mkdir -p "$backup_dir"
+sqlite3 "$API_KEYS_DB_PATH" ".backup $backup_dir/api_keys.sqlite"
+sqlite3 "$API_TASKS_DB_PATH" ".backup $backup_dir/server_tasks.db"
+if [ "${MEMORY_ENABLED:-0}" = "1" ]; then
+  sqlite3 "$MEMORY_DB_PATH" ".backup $backup_dir/memory.sqlite"
+fi
+if [ -f checkpoints.db ]; then
+  sqlite3 checkpoints.db ".backup $backup_dir/checkpoints.db"
+fi
+```
+
+Keep the 0.1.2 wheel or image and its configuration available until the
+post-install smoke passes. Install from the release wheel or checkout; do not
+copy or create `uv.lock` in the deployment directory because this project
+resolves from the declared dependency ranges.
+
 ### Deploy Sequence
 
-1. Confirm the installed starting version:
-
-   ```bash
-   pip show mcp_server_phytomni | grep -E "^Version"
-   ```
-
-   Expect `Version: 0.1.2`.
-
-1. Stop the API/MCP service, install the 0.1.3 wheel or editable checkout,
-   and start the service again. Do not copy or create a `uv.lock`; this
-   repository resolves from the declared `pyproject.toml` ranges.
+1. With the preflight backup complete, install the 0.1.3 wheel or editable
+   checkout and start the service again.
 
 1. Verify the package and HTTP metadata agree:
 
@@ -50,6 +69,19 @@ no operator-authored migration.
    ```
 
    Both commands must print `0.1.3`.
+
+1. Verify the additive native-agent capability contract with an `agents`-scoped
+   key:
+
+   ```bash
+   curl -fsS -H "Authorization: Bearer $KEY" \
+     http://127.0.0.1:8080/v1/agents \
+     | python -c 'import json,sys; rows=json.load(sys.stdin)["data"]; assert len(rows)==10 and all("capabilities" in row for row in rows); print("10 agents with capabilities")'
+   ```
+
+   The check must print `10 agents with capabilities`. It validates the
+   additive discovery shape only; do not use it as a substitute for an
+   external agent execution test.
 
 1. Run readiness and one authenticated model-list smoke check as described in
    [Health Checks](http-api-runbook.md#health-checks).
@@ -66,6 +98,11 @@ bounded read-only Chat/Knowledge recall. Memory writes remain explicit; there
 is no autonomous `langmem` writer, embedding store, or semantic index. Keep
 both outbound interop and explicit memory disabled unless the deployment has
 reviewed their separate operator contracts.
+
+The Bot-local test suite and full gate prove the source contract only. Web/Go
+consumer integration, DBA and operations evidence, live backend acceptance,
+and production rollout remain separate owner checks. Keep every feature flag
+off until the corresponding owner packet returns redacted evidence.
 
 To roll back, reinstall 0.1.2 and restart. The 0.1.2 process ignores
 `checkpoints.db`, so it may remain on disk for a later forward upgrade. Runs

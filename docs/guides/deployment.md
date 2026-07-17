@@ -19,6 +19,21 @@ accepted legacy aliases, and runtime-only customer license key behavior.
 Never commit `.env`, API keys, OBS credentials, model keys, generated cache
 databases, local SQLite registries, or local virtual environments.
 
+## Upgrading an existing deployment
+
+For the `0.1.2` → `0.1.3` rollout, follow the complete
+[Upgrade Notes](../ops/upgrading.md) before replacing the running wheel or
+image. It covers the stop-before-backup sequence, version/OpenAPI smoke,
+native `/v1/agents` capability discovery, additive SQLite state, and rollback
+ordering. The [HTTP API Operations Runbook](../ops/http-api-runbook.md) remains
+the source for health checks, feature-specific smoke tests, and multi-worker
+limitations.
+
+The 0.1.3 A2UI, A2A, outbound interop, explicit memory, and credential-relay
+surfaces remain disabled by default. A Bot-local gate does not close Web/Go,
+DBA, operations, live-backend, or production acceptance; enable a surface
+only after its owner returns the corresponding redacted evidence.
+
 ## Outbound Interoperability Trust Boundary
 
 Outbound MCP/A2A discovery is an operator feature and is disabled by default.
