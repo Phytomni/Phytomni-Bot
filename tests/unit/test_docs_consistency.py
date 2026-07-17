@@ -242,6 +242,37 @@ def test_direct_gauss_rollback_uses_prior_binary_not_fake_switch() -> None:
     )
 
 
+def test_release_docs_pin_the_final_013_boundary() -> None:
+    """Keep release notes and rollout docs tied to the final Bot snapshot."""
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    upgrading = (ROOT / "docs/ops/upgrading.md").read_text(encoding="utf-8")
+    deployment = (ROOT / "docs/guides/deployment.md").read_text(
+        encoding="utf-8"
+    )
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    handoffs = (ROOT / "docs/handoffs/README.md").read_text(encoding="utf-8")
+
+    assert "## [0.1.3] — 2026-07-17" in changelog
+    assert "Full commit range: `1f8f628..4bc66a3`." in changelog
+    assert "Full commit range: `adaa874..1f8f628`." in changelog
+    assert "Bot-side implementation" in changelog
+    assert "/openapi.json" in upgrading
+    assert "/v1/agents" in upgrading
+    assert "checkpoints.db" in upgrading
+    assert "capabilities" in upgrading
+    assert "../ops/upgrading.md" in deployment
+    assert "Web/Go" in readme
+    assert "External Pending" in handoffs
+
+
+def test_handoff_readme_does_not_embed_a_stale_commit_count() -> None:
+    """Keep tracked handoff guidance independent of branch-local counts."""
+    handoffs = (ROOT / "docs/handoffs/README.md").read_text(encoding="utf-8")
+
+    assert not re.search(r"\b\d+ local commits?\b", handoffs)
+    assert re.search(r"current branch/ref\s+observation", handoffs)
+
+
 def test_gauss_docs_require_all_three_read_only_layers() -> None:
     """Keep Gauss controls and external operator evidence explicit."""
     runbook = (ROOT / "docs/ops/http-api-runbook.md").read_text(
