@@ -41,12 +41,12 @@ ACCEPTANCE_IDS = [
     "RC-REL-002",
 ]
 EXAMPLE_PATHS = tuple(
-    ROOT / "docs/handoffs/examples" / name
+    ROOT / "docs/contracts/deep-genome" / name
     for name in (
-        "deep-genome-running.json",
-        "deep-genome-partial-final.json",
-        "deep-genome-failed-with-intermediate.json",
-        "deep-genome-brief-gene-failed.json",
+        "running.json",
+        "partial-final.json",
+        "failed-with-intermediate.json",
+        "brief-gene-failed.json",
     )
 )
 
