@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from dataclasses import replace
 from datetime import date
@@ -19,6 +20,13 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 if TYPE_CHECKING:
     from scripts.static_analysis.collectors.errors import CollectionError
+    from scripts.static_analysis.collectors.pylint import (
+        parse_pylint_json,
+        run_cross_file_pylint,
+        run_full_pylint,
+        tracked_python_files,
+        tracked_python_files_with_stubs,
+    )
     from scripts.static_analysis.inventory import (
         AuditResult,
         collect_inventory,
@@ -42,10 +50,16 @@ else:
         "scripts.static_analysis" if __package__ else "static_analysis"
     )
     _errors = import_module(f"{_MODULE_PREFIX}.collectors.errors")
+    _pylint = import_module(f"{_MODULE_PREFIX}.collectors.pylint")
     _inventory = import_module(f"{_MODULE_PREFIX}.inventory")
     _model = import_module(f"{_MODULE_PREFIX}.model")
     _report = import_module(f"{_MODULE_PREFIX}.report")
     CollectionError = _errors.CollectionError
+    parse_pylint_json = _pylint.parse_pylint_json
+    run_cross_file_pylint = _pylint.run_cross_file_pylint
+    run_full_pylint = _pylint.run_full_pylint
+    tracked_python_files = _pylint.tracked_python_files
+    tracked_python_files_with_stubs = _pylint.tracked_python_files_with_stubs
     AuditResult = _inventory.AuditResult
     collect_inventory = _inventory.collect_inventory
     reconcile = _inventory.reconcile
@@ -91,6 +105,20 @@ def _parser() -> argparse.ArgumentParser:
                 choices=("temporary", "structural"),
             )
             command.add_argument("--candidate-expires-on")
+    pylint = subparsers.add_parser(
+        "check-pylint",
+        help="run Pylint and reconcile its exact cross-file findings",
+    )
+    pylint.add_argument(
+        "--python-version",
+        choices=("3.12", "3.13", "3.14"),
+        required=True,
+    )
+    files = pylint.add_mutually_exclusive_group(required=True)
+    files.add_argument("--files-from-git", action="store_true")
+    files.add_argument("--files-from-stdin", action="store_true")
+    pylint.add_argument("--cross-files-from-git", action="store_true")
+    pylint.add_argument("--registry", type=Path, default=_REGISTRY)
     render = subparsers.add_parser("render-docs")
     render.add_argument("--registry", type=Path, default=_REGISTRY)
     render.add_argument("--output", type=Path, default=None)
@@ -195,6 +223,156 @@ def _registry_for_scope(registry: Registry, scope: str) -> Registry:
     )
 
 
+def _validated_python_paths(paths: tuple[str, ...]) -> tuple[str, ...]:
+    """Validate a caller-supplied Python path list against Git tracking."""
+    if not paths:
+        raise CollectionError("no Python files were supplied")
+    tracked = set(tracked_python_files(_ROOT))
+    if len(set(paths)) != len(paths):
+        raise CollectionError("stdin Python file list contains duplicates")
+    invalid = tuple(path for path in paths if path not in tracked)
+    if invalid:
+        raise CollectionError(
+            "stdin Python file list contains untracked paths: "
+            + ", ".join(invalid)
+        )
+    return paths
+
+
+def _stdin_python_paths() -> tuple[str, ...]:
+    """Read a strict NUL-delimited tracked Python path list from stdin."""
+    stream = getattr(sys.stdin, "buffer", sys.stdin)
+    payload = stream.read()
+    if isinstance(payload, str):
+        payload = payload.encode("utf-8")
+    if not isinstance(payload, bytes):
+        raise CollectionError("stdin Python file list is not byte data")
+    parts = payload.split(b"\0")
+    if parts and parts[-1] == b"":
+        parts.pop()
+    if not parts or any(not part for part in parts):
+        raise CollectionError("stdin Python file list is empty or malformed")
+    try:
+        paths = tuple(part.decode("utf-8") for part in parts)
+    except UnicodeDecodeError as exc:
+        raise CollectionError("stdin Python file list is not UTF-8") from exc
+    if any(not path.endswith(".py") for path in paths):
+        raise CollectionError(
+            "stdin Python file list contains non-Python paths"
+        )
+    return _validated_python_paths(paths)
+
+
+def _cross_records(
+    root: Path, records: tuple[dict[str, object], ...], version: str
+) -> tuple:
+    """Parse the bounded cross-file records from a full JSON report."""
+    selected = [
+        record
+        for record in records
+        if record.get("message-id") in {"R0801", "R0903"}
+    ]
+    return parse_pylint_json(root, json.dumps(selected), version)
+
+
+def _pylint_diagnostic_lines(
+    records: tuple[dict[str, object], ...],
+) -> tuple[str, ...]:
+    """Render ordinary Pylint records without trusting their message text."""
+    lines: list[str] = []
+    for record in records:
+        path = record.get("path", "<unknown>")
+        line = record.get("line", "?")
+        column = record.get("column", "?")
+        rule = record.get("message-id", "<unknown>")
+        message = record.get("message", "<missing message>")
+        lines.append(f"{path}:{line}:{column}: {rule}: {message}")
+    return tuple(lines)
+
+
+def _check_pylint(args: argparse.Namespace) -> int:
+    """Run full Pylint and reconcile only exact cross-file exceptions."""
+    if args.files_from_git:
+        files = tracked_python_files(_ROOT)
+    else:
+        files = _stdin_python_paths()
+    if not files:
+        raise CollectionError("Git returned no tracked Python files")
+    version, records = run_full_pylint(
+        _ROOT,
+        files,
+        args.python_version,
+    )
+    cross_rules = {"R0801", "R0903"}
+    cross_records = tuple(
+        record for record in records if record.get("message-id") in cross_rules
+    )
+    cross_findings = _cross_records(_ROOT, cross_records, version)
+
+    if args.cross_files_from_git:
+        if not args.files_from_stdin:
+            raise CollectionError(
+                "--cross-files-from-git requires --files-from-stdin"
+            )
+        # The focused pass is the only source of truth for exact identities;
+        # the changed-file copies above are parsed before they are discarded.
+        ordinary = tuple(
+            record
+            for record in records
+            if record.get("message-id") not in cross_rules
+        )
+    elif args.files_from_stdin:
+        # Without the focused pass, a changed-file cross-file diagnostic is an
+        # ordinary failure rather than an implicitly authorized exception.
+        ordinary = records
+        cross_findings = ()
+    else:
+        ordinary = tuple(
+            record
+            for record in records
+            if record.get("message-id") not in cross_rules
+        )
+
+    if ordinary:
+        print(
+            "check-pylint: ordinary diagnostics are not registered "
+            "exemptions",
+            file=sys.stderr,
+        )
+        for line in _pylint_diagnostic_lines(ordinary):
+            print(line, file=sys.stderr)
+        return 1
+
+    if args.cross_files_from_git or args.files_from_git:
+        cross_findings = run_cross_file_pylint(
+            _ROOT,
+            tracked_python_files_with_stubs(_ROOT),
+            args.python_version,
+        )
+
+    if not (args.files_from_git or args.cross_files_from_git):
+        print(
+            "check-pylint: no ordinary diagnostics; cross-file checks were "
+            "not requested",
+        )
+        return 0
+
+    registry = load_registry(args.registry, today=date.today())
+    result = reconcile(
+        _registry_for_scope(registry, "cross-file"),
+        cross_findings,
+        date.today(),
+    )
+    if not result.is_clean:
+        sys.stdout.write(render_review(result))
+        return 1
+    print(
+        "check-pylint: exact cross-file findings are registered "
+        f"({len(cross_findings)} records; {version})"
+    )
+    return 0
+
+
 def _parse_candidate_flags(
     args: argparse.Namespace,
 ) -> tuple[Classification, date | None] | None:
@@ -245,6 +423,8 @@ def _render_inventory(
 
 def _run(args: argparse.Namespace) -> int:
     today = date.today()
+    if args.command == "check-pylint":
+        return _check_pylint(args)
     if args.command == "render-docs":
         if args.registry != _REGISTRY:
             registry = load_registry(args.registry, today=today)

@@ -161,18 +161,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install uv
           uv pip install --system -e ".[dev,demo]"
-      - name: Analyse the code with pylint
-        run: |
-          git ls-files -z '*.py' \
-            | PYTHONPATH=src xargs -0 -r pylint \
-              --py-version=${{ matrix.python-version }} \
-              --persistent=no \
-              --disable=R0801,R0903
-      - name: Check pylint baselines
-        run: |
-          uv run python scripts/check_pylint_baseline.py \
-            --pylint-cmd "uv run pylint --persistent=no \
-              --py-version=${{ matrix.python-version }}"
+      - name: Analyse code and exact exemptions with pylint
+        run: >-
+          uv run python scripts/check_static_analysis_exemptions.py
+          check-pylint
+          --python-version "${{ matrix.python-version }}"
+          --files-from-git
 
   pytest:
     runs-on: ubuntu-latest

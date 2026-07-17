@@ -27,6 +27,7 @@ from .errors import CollectionError, ReverseEvidence
 from .helpers import FindingParts, make_finding
 
 _RULES = frozenset({"R0801", "R0903"})
+_FULL_STATUS_BITS = 2 | 4 | 8 | 16
 _ENDPOINT_RE = re.compile(
     r"^==(?P<module>[^:\n]+):\[(?P<start>\d+):(?P<end>\d+)\]$",
     re.MULTILINE,
@@ -56,13 +57,48 @@ def validate_pylint_result(returncode: int, stdout: str, stderr: str) -> str:
     return output
 
 
+def validate_full_pylint_result(
+    returncode: int, stdout: str, stderr: str
+) -> str:
+    """Validate a full Pylint report without hiding diagnostic status bits.
+
+    Pylint combines ordinary diagnostic categories into a bit mask.  The
+    fatal (bit 1) and usage-error (bit 32) bits indicate that the invocation
+    itself was not trustworthy, so only the diagnostic bits are accepted here;
+    their records are still evaluated by the caller.
+    """
+    if returncode < 0 or returncode & ~_FULL_STATUS_BITS:
+        detail = stderr.strip() or stdout.strip() or "no output"
+        raise CollectionError(
+            f"pylint invocation failed with unexpected status {returncode}: "
+            f"{detail}"
+        )
+    output = stdout.strip()
+    if not output:
+        detail = stderr.strip() or "no output"
+        raise CollectionError(f"pylint returned empty JSON output: {detail}")
+    try:
+        document: Any = json.loads(output)
+    except json.JSONDecodeError as exc:
+        raise CollectionError("pylint returned malformed JSON") from exc
+    if not isinstance(document, list):
+        raise CollectionError("pylint JSON diagnostics must be an array")
+    for record in document:
+        if not isinstance(record, dict):
+            raise CollectionError("pylint JSON diagnostics must be objects")
+        message_id = record.get("message-id")
+        if not isinstance(message_id, str) or not message_id.strip():
+            raise CollectionError("pylint JSON diagnostic lacks a message-id")
+    return output
+
+
 def _relative_path(root: Path, path: Path) -> str:
     return path.resolve().relative_to(root.resolve()).as_posix()
 
 
 def _tracked_paths(root: Path) -> tuple[Path, ...]:
     result = subprocess.run(
-        ["git", "ls-files", "*.py"],
+        ["git", "ls-files", "*.py", "*.pyi"],
         cwd=root,
         capture_output=True,
         text=True,
@@ -73,6 +109,20 @@ def _tracked_paths(root: Path) -> tuple[Path, ...]:
             f"git file inventory failed: {result.stderr.strip()}"
         )
     return tuple(root / line for line in result.stdout.splitlines() if line)
+
+
+def tracked_python_files(root: Path) -> tuple[str, ...]:
+    """Return tracked implementation Python paths in Git order."""
+    return tuple(
+        _relative_path(root, path)
+        for path in _tracked_paths(root)
+        if path.suffix == ".py"
+    )
+
+
+def tracked_python_files_with_stubs(root: Path) -> tuple[str, ...]:
+    """Return tracked ``.py`` and ``.pyi`` paths for exact diagnostics."""
+    return tuple(_relative_path(root, path) for path in _tracked_paths(root))
 
 
 def _module_name(root: Path, path: Path) -> str:
@@ -331,6 +381,38 @@ def run_cross_file_pylint(
         result.returncode, result.stdout, result.stderr
     )
     return parse_pylint_json(root, text, version.splitlines()[0])
+
+
+def run_full_pylint(
+    root: Path,
+    files: Sequence[str],
+    python_version: str,
+) -> tuple[str, tuple[dict[str, Any], ...]]:
+    """Run all Pylint rules and return its validated JSON diagnostics."""
+    version_result = _run(root, _PYLINT_VERSION)
+    if version_result.returncode != 0:
+        raise CollectionError(
+            f"Pylint version command failed: {version_result.stderr.strip()}"
+        )
+    version = (version_result.stdout or version_result.stderr).strip()
+    if not version:
+        raise CollectionError("Pylint version command returned empty output")
+    command = [
+        "uv",
+        "run",
+        "pylint",
+        "--persistent=no",
+        "--output-format=json",
+        "--py-version",
+        python_version,
+        *files,
+    ]
+    result = _run(root, command)
+    text = validate_full_pylint_result(
+        result.returncode, result.stdout, result.stderr
+    )
+    document = json.loads(text)
+    return version.splitlines()[0], tuple(document)
 
 
 def audit_pylint_suppressions(

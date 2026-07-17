@@ -44,46 +44,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0003"
-tool = "gate"
-rule = "R0801"
-classification = "temporary"
-mechanism = "command"
-target_kind = "command"
-path = ".github/workflows/lint.yml"
-symbol = "--disable"
-fingerprint = "sha256:7edfbd1e3510977fe4d93feba99f8f8fd76f89d754137070004be8752ab3fffb"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "--disable=R0801,R0903"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0004"
-tool = "gate"
-rule = "R0903"
-classification = "temporary"
-mechanism = "command"
-target_kind = "command"
-path = ".github/workflows/lint.yml"
-symbol = "--disable"
-fingerprint = "sha256:9d6789c74bd7f99570a362a80a688cea778b17fbf2bbf019078e39330dc7eb0a"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "--disable=R0801,R0903"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0005"
 tool = "mypy"
 rule = "arg-type"
@@ -383,14 +343,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "scripts/static_analysis/collectors/pylint.py"
-symbol = "291:299"
+symbol = "341:349"
 peer_path = "scripts/static_analysis/collectors/reverse.py"
 peer_symbol = "32:40"
-fingerprint = "sha256:f076bcc16dfb8d109dcdbf8ade423a8d8c76aef0396c0986ffefd4bb11d9f050"
+fingerprint = "sha256:290742346aa7c7c34844303e39f49a3a4c084e52891b671d3920b8c4dd1b9dc7"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==scripts.static_analysis.collectors.pylint:[291:299]\n==scripts.static_analysis.collectors.reverse:[32:40]\n        return subprocess.run(\n            list(command),\n            cwd=root,\n            capture_output=True,\n            text=True,\n            check=False,\n        )\n    except (FileNotFoundError, OSError) as exc:"
+rationale = "Similar lines in 2 files\n==scripts.static_analysis.collectors.pylint:[341:349]\n==scripts.static_analysis.collectors.reverse:[32:40]\n        return subprocess.run(\n            list(command),\n            cwd=root,\n            capture_output=True,\n            text=True,\n            check=False,\n        )\n    except (FileNotFoundError, OSError) as exc:"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -405,14 +365,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "scripts/static_analysis/collectors/pylint.py"
-symbol = "292:298"
+symbol = "342:348"
 peer_path = "scripts/static_analysis/collectors/reverse.py"
 peer_symbol = "26:32"
-fingerprint = "sha256:1d93592c137566636a94242484ac4596f8a297c9c0f33347f7be4dde08d1ce95"
+fingerprint = "sha256:b1101f1725b92758ac965df2e52c683ebb72eff13f3b3441df98302e87b3eb5e"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==scripts.static_analysis.collectors.pylint:[292:298]\n==scripts.static_analysis.collectors.reverse:[26:32]\n                list(command),\n                cwd=root,\n                capture_output=True,\n                text=True,\n                check=False,\n            )"
+rationale = "Similar lines in 2 files\n==scripts.static_analysis.collectors.pylint:[342:348]\n==scripts.static_analysis.collectors.reverse:[26:32]\n                list(command),\n                cwd=root,\n                capture_output=True,\n                text=True,\n                check=False,\n            )"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -427,14 +387,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "scripts/static_analysis/collectors/pylint.py"
-symbol = "65:78"
+symbol = "101:115"
 peer_path = "scripts/static_analysis/inventory.py"
 peer_symbol = "161:174"
-fingerprint = "sha256:bc4ab4dd09d6bd92b94f9e0c80485d638c1c0412f72ee4605dca15b448353116"
+fingerprint = "sha256:c87f948de5cea76c38e86b5c43164ae82e0768d8fd10d71b9dd6dce1af1ed334"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==scripts.static_analysis.collectors.pylint:[65:78]\n==scripts.static_analysis.inventory:[161:174]\n        cwd=root,\n        capture_output=True,\n        text=True,\n        check=False,\n    )\n    if result.returncode != 0:\n        raise CollectionError(\n            f\"git file inventory failed: {result.stderr.strip()}\"\n        )\n    return tuple(root / line for line in result.stdout.splitlines() if line)\n\n\ndef _python_paths(paths: Sequence[Path]) -> tuple[Path, ...]:"
+rationale = "Similar lines in 2 files\n==scripts.static_analysis.collectors.pylint:[101:115]\n==scripts.static_analysis.inventory:[161:174]\n        cwd=root,\n        capture_output=True,\n        text=True,\n        check=False,\n    )\n    if result.returncode != 0:\n        raise CollectionError(\n            f\"git file inventory failed: {result.stderr.strip()}\"\n        )\n    return tuple(root / line for line in result.stdout.splitlines() if line)\n\n\ndef tracked_python_files(root: Path) -> tuple[str, ...]:\n    \"\"\"Return tracked implementation Python paths in Git order.\"\"\""
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -4961,26 +4921,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "tool.pylint.format.max-module-lines=1100"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0233"
-tool = "pylint"
-rule = "numeric-baseline"
-classification = "temporary"
-mechanism = "command"
-target_kind = "command"
-path = ".github/workflows/lint.yml"
-symbol = "check_pylint_baseline.py"
-fingerprint = "sha256:4f7cb8e8b270803ba72bb90b19d3353d4ab7659ee6d7d10e50b3916bc0f085c0"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "uv run python scripts/check_pylint_baseline.py \\"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]

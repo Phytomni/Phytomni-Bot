@@ -131,8 +131,11 @@ def test_ci_exercises_minimum_and_latest_dependency_resolution() -> None:
     assert "validate_local.sh" not in floor_job
     assert 'python-version: ["3.12", "3.13", "3.14"]' in workflow
     assert 'uv pip install --system -e ".[dev]"' in workflow
-    assert "--disable=R0801,R0903" in pylint_job
-    assert "scripts/check_pylint_baseline.py" in pylint_job
+    assert "check-pylint" in pylint_job
+    assert '--python-version "${{ matrix.python-version }}"' in pylint_job
+    assert "--files-from-git" in pylint_job
+    assert "--disable=R0801,R0903" not in pylint_job
+    assert "scripts/check_pylint_baseline.py" not in pylint_job
 
 
 def test_scoped_gate_reconciles_static_analysis_exemptions() -> None:
