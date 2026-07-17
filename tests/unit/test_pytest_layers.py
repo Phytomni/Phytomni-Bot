@@ -137,6 +137,15 @@ def test_ci_exercises_minimum_and_latest_dependency_resolution() -> None:
     assert "--disable=R0801,R0903" not in pylint_job
     assert "scripts/check_pylint_baseline.py" not in pylint_job
 
+    policy_job = workflow.split("\n  static-exemptions:", 1)[1].split(
+        "\n  pytest:", 1
+    )[0]
+    assert 'python-version: "3.12"' in policy_job
+    assert 'uv pip install --system -e ".[dev,demo]"' in policy_job
+    assert "check --scope full" in policy_job
+    assert "render-docs --check" in policy_job
+    assert "scripts/check_pylint_baseline.py" not in policy_job
+
 
 def test_scoped_gate_reconciles_static_analysis_exemptions() -> None:
     """Scoped Python and policy changes use the shared checker."""

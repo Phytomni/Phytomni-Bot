@@ -168,6 +168,28 @@ jobs:
           --python-version "${{ matrix.python-version }}"
           --files-from-git
 
+  static-exemptions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install static-analysis policy dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install uv
+          uv pip install --system -e ".[dev,demo]"
+      - name: Check static-analysis registry
+        run: >-
+          uv run python scripts/check_static_analysis_exemptions.py
+          check --scope full
+      - name: Check generated static-analysis ledger
+        run: >-
+          uv run python scripts/check_static_analysis_exemptions.py
+          render-docs --check
+
   pytest:
     runs-on: ubuntu-latest
     strategy:
