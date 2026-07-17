@@ -13,19 +13,39 @@ Newest first.
 
 ______________________________________________________________________
 
-## [0.1.3] — 2026-07-08
+## [0.1.3] — 2026-07-17
 
-Streaming-progress-observability release. Adds a unified in-band progress
-bus so graph agents (Knowledge / Review / Data / BriefGene) emit structured
-stage ticks during long runs, visible on both the SSE and MCP stdio paths.
-Full commit range: `1f8f628..HEAD`.
+Cross-surface capability and lifecycle release. It preserves the 0.1.2
+GaussDB, Expert-routing, citation, and analyst-report contracts while adding
+bounded interactive surfaces, revisioned background reports, capability
+metadata, and interoperable progress across HTTP and MCP transports.
+Full commit range: `1f8f628..4bc66a3`.
+
+> **Release boundary.** This entry records the Bot-side implementation and
+> offline gate only. Web/Go consumer integration, DBA and operations evidence,
+> live backend acceptance, and production rollout remain separately owned
+> checks; they are not implied by this changelog or the local test suite.
 
 ### Added
 
-- **Streamed chat answer persistence** — ChatAgent SSE runs settle the
-  run registry with the accumulated answer (soft-capped via
-  `PHYTOMNI_STREAM_ANSWER_MAX_BYTES`) so history overlay no longer
-  replaces visible replies with a `"[streamed]"` placeholder.
+- **Streamed answer persistence** — ordinary HTTP streams for ChatAgent,
+  KnowledgeAgent, ReviewAgent, and BriefGeneAgent settle the run registry
+  with the accumulated answer (soft-capped via
+  `PHYTOMNI_STREAM_ANSWER_MAX_BYTES`) so history overlay no longer replaces
+  visible replies with a `"[streamed]"` placeholder.
+- **Revisioned DeepGenome snapshots** — owner-scoped list and single-run
+  reads share the local snapshot projection, expose monotonic report
+  revisions, and select the latest usable `intermediate_report` until a
+  successful final synthesis publishes `final_report`; read paths never
+  probe remote child jobs.
+- **Bounded direct A2UI ingress** — direct action requests reject oversized,
+  duplicate-key, deeply nested, or over-shaped payloads before graph entry,
+  while response bytes and identifiers remain capped under the existing
+  flag-off default.
+- **Agent capability descriptors** — `/v1/agents` keeps its legacy fields and
+  adds immutable descriptors for the ten canonical slugs, including streaming,
+  interactive, report-state, artifact, and degraded-outcome support so
+  consumers do not infer capabilities from names.
 - **Persistent SQLite checkpointer** — ReviewAgent graph pause points are
   stored in a local `checkpoints.db` beside the run/task registry so a
   human-approval interrupt can survive an HTTP API restart.
@@ -198,7 +218,7 @@ cited references with full bibliographic fields, drives the graph agents through
 SSE streaming, and lands four backend reliability knobs. **One required operator
 action at deploy** — provision the new `GAUSS_DSN` secret (see
 [`docs/ops/upgrading.md`](docs/ops/upgrading.md)); everything else
-is additive. Full commit range: `adaa874..HEAD`.
+is additive. Full commit range: `adaa874..1f8f628`.
 
 ### Added
 
