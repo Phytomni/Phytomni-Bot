@@ -1,0 +1,15 @@
+[
+  {
+    "type": "refactor",
+    "module": "tests.unit.utils.test_split_list",
+    "obj": "",
+    "line": 1,
+    "column": 0,
+    "endLine": 1,
+    "endColumn": 5,
+    "path": "tests/unit/utils/test_split_list.py",
+    "symbol": "duplicate-code",
+    "message-id": "R0801",
+    "message": "Similar lines in 2 files\n==tests.agents.test_chat_adapters:[41:79]\n==tests.agents.test_review_follow_up_routing:[50:88]\n    return SimpleNamespace(\n        PROMPT_FILE=\"prompt.yaml\"\n"
+  }
+]

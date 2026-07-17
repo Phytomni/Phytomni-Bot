@@ -1,0 +1,15 @@
+[
+  {
+    "type": "refactor",
+    "module": "mcp_server_phytomni.agents.deep_genome.brief_gene_mount",
+    "obj": "DeepGenomeBriefGeneMountMixin",
+    "line": 177,
+    "column": 0,
+    "endLine": 31,
+    "endColumn": 11,
+    "path": "src/mcp_server_phytomni/agents/deep_genome/brief_gene_mount.py",
+    "symbol": "too-few-public-methods",
+    "message-id": "R0903",
+    "message": "Too few public methods (1/2)"
+  }
+]
