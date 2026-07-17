@@ -10,27 +10,51 @@ from __future__ import annotations
 import argparse
 import sys
 from datetime import date
+from importlib import import_module
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from scripts.static_analysis.collectors.errors import CollectionError
-from scripts.static_analysis.inventory import (
-    AuditResult,
-    collect_inventory,
-    reconcile,
-)
-from scripts.static_analysis.model import (
-    Classification,
-    RegistryError,
-    load_registry,
-)
-from scripts.static_analysis.report import (
-    render_candidates,
-    render_json,
-    render_markdown,
-    render_review,
-)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-_ROOT = Path(__file__).resolve().parent.parent
+if TYPE_CHECKING:
+    from scripts.static_analysis.collectors.errors import CollectionError
+    from scripts.static_analysis.inventory import (
+        AuditResult,
+        collect_inventory,
+        reconcile,
+    )
+    from scripts.static_analysis.model import (
+        Classification,
+        RegistryError,
+        load_registry,
+    )
+    from scripts.static_analysis.report import (
+        render_candidates,
+        render_json,
+        render_markdown,
+        render_review,
+    )
+else:
+    _MODULE_PREFIX = (
+        "scripts.static_analysis" if __package__ else "static_analysis"
+    )
+    _errors = import_module(f"{_MODULE_PREFIX}.collectors.errors")
+    _inventory = import_module(f"{_MODULE_PREFIX}.inventory")
+    _model = import_module(f"{_MODULE_PREFIX}.model")
+    _report = import_module(f"{_MODULE_PREFIX}.report")
+    CollectionError = _errors.CollectionError
+    AuditResult = _inventory.AuditResult
+    collect_inventory = _inventory.collect_inventory
+    reconcile = _inventory.reconcile
+    Classification = _model.Classification
+    RegistryError = _model.RegistryError
+    load_registry = _model.load_registry
+    render_candidates = _report.render_candidates
+    render_json = _report.render_json
+    render_markdown = _report.render_markdown
+    render_review = _report.render_review
+
+_ROOT = _PROJECT_ROOT
 _REGISTRY = _ROOT / "static-analysis-exemptions.toml"
 
 
