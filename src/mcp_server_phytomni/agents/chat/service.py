@@ -274,7 +274,7 @@ def _cached_chat_app() -> Any:
     """Lazy singleton of the compiled chat subgraph.
 
     Resolves ``builder`` dynamically via ``importlib.import_module``
-    rather than ``from .builder import _build_chat_graph``: a
+    rather than ``from .builder import build_chat_graph``: a
     top-level from-import would close the service → builder → graph
     → service cycle at parse time (graph.py imports this module for
     helpers and late-bound ``phyto_chat`` / ``get_prompt`` lookups).
@@ -285,8 +285,7 @@ def _cached_chat_app() -> Any:
     most once and gives test suites a ``cache_clear()`` hook.
     """
     builder_module = importlib.import_module(".builder", package=__package__)
-    # pylint: disable-next=protected-access
-    return builder_module._build_chat_graph()
+    return builder_module.build_chat_graph()
 
 
 def _chat_options(values: dict[str, Any]) -> dict[str, Any]:

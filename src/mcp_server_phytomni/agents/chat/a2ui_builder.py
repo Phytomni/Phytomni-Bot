@@ -8,7 +8,7 @@
 ``prepare_context → a2ui_prepare_surface → a2ui_confirm →
 (a2ui_apply_decision → generate → follow_up | cancel)`` pipeline, then
 routes through ``a2ui_after_work`` so a bounded N=2 re-enter may remint
-a fresh surface. The shared ``_build_chat_graph`` subgraph stays
+a fresh surface. The shared ``build_chat_graph`` subgraph stays
 interrupt-free; HTTP A2UI callers mount this dedicated app instead.
 """
 

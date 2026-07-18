@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Compile the chat LangGraph workflow.
 
-``_build_chat_graph`` assembles the ``prepare_context → generate →
+``build_chat_graph`` assembles the ``prepare_context → generate →
 follow_up`` pipeline with an explicit conditional edge after
 ``generate_node``. ``StateGraph`` is constructed with separate
 ``input_schema`` / ``output_schema`` so parent graphs that mount the
@@ -29,7 +29,7 @@ from .graph import (
 from .state import ChatInput, ChatOutput, ChatState
 
 
-def _build_chat_graph(checkpointer: Any | None = None) -> Any:
+def build_chat_graph(checkpointer: Any | None = None) -> Any:
     """Return a compiled chat LangGraph app.
 
     Args:

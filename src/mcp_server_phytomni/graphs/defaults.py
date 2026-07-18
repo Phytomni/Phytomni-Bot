@@ -27,7 +27,7 @@ from ..agents.brief_gene.state import (
     BriefGeneOutput,
     BriefGeneState,
 )
-from ..agents.chat.builder import _build_chat_graph
+from ..agents.chat.builder import build_chat_graph
 from ..agents.data.agent import DataAgent
 from ..agents.deep_genome.agent import DeepGenomeAgents
 from ..agents.environment.builder import build_environment_graph
@@ -64,7 +64,7 @@ def _build_brief_gene_app() -> Any:
 
 def _build_chat_app() -> Any:
     """Return a compiled chat workflow app."""
-    return _build_chat_graph()
+    return build_chat_graph()
 
 
 def _build_data_app() -> Any:

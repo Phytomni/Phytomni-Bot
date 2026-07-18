@@ -44,26 +44,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0005"
-tool = "mypy"
-rule = "arg-type"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "tests/unit/test_memory_accessor.py"
-symbol = "test_store_failure_degrades_to_empty_without_raw_data_in_logs"
-fingerprint = "sha256:4b76dc0e71b7187bb01def9e51a6d7d4ba377fe40ff1aad9a8c03234eef3b76e"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "type: ignore[arg-type]"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0006"
 tool = "mypy"
 rule = "ignore_missing_imports"
@@ -97,26 +77,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "tool.mypy.overrides[1].ignore_missing_imports=True"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0008"
-tool = "mypy"
-rule = "index"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "tests/unit/test_interop_security_projection.py"
-symbol = "test_credential_reference_surface_is_read_only"
-fingerprint = "sha256:3c8627b70c9e0cb9993777032db6b043eb30260b00e99cee5fa9b6c9246dcea9"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "type: ignore[index]"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -4539,26 +4499,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "tool.pylint.main.ignore='.pytest_cache'"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0240"
-tool = "pylint"
-rule = "protected-access"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/agents/chat/service.py"
-symbol = "_cached_chat_app"
-fingerprint = "sha256:9e14fd09af7d8442a243b3ffb4d0c60c96a9fb85145cdd50bbe3d1ec55dbe5e6"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable-next=protected-access"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]

@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `285`
+- Authorized records: `282`
 
 ## Informational counts
 
@@ -18,9 +18,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | ----------------------------------------------------------------- | ------: |
 | `flake8:E203`                                                     |       1 |
 | `flake8:W503`                                                     |       1 |
-| `mypy:arg-type`                                                   |       1 |
 | `mypy:ignore_missing_imports`                                     |       2 |
-| `mypy:index`                                                      |       1 |
 | `mypy:misc`                                                       |       2 |
 | `mypy:prop-decorator`                                             |       1 |
 | `pylint:R0801`                                                    |     152 |
@@ -29,7 +27,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `pylint:contextmanager-generator-missing-cleanup`                 |       2 |
 | `pylint:max-module-lines`                                         |       1 |
 | `pylint:path-ignore`                                              |       5 |
-| `pylint:protected-access`                                         |      23 |
+| `pylint:protected-access`                                         |      22 |
 | `pylint:too-many-arguments`                                       |       9 |
 | `pylint:too-many-instance-attributes`                             |       3 |
 | `pylint:too-many-lines`                                           |       3 |
@@ -54,10 +52,8 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | \--- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `SAE-TMP-0001` | flake8 | E203 | temporary | config | config | .flake8 | [flake8].extend-ignore | `sha256:ee3ff2f285462681d7e4dd5eed33cbf4cd5ef1d73ca986281e086dc5ef2457a8` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0002` | flake8 | W503 | temporary | config | config | .flake8 | [flake8].extend-ignore | `sha256:1d93293eb8e91ba241c13a2db0c100dc24b5305c4b0f429faa5ca2f334bfccc1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0005` | mypy | arg-type | temporary | inline | symbol | tests/unit/test_memory_accessor.py | test_store_failure_degrades_to_empty_without_raw_data_in_logs | `sha256:4b76dc0e71b7187bb01def9e51a6d7d4ba377fe40ff1aad9a8c03234eef3b76e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0006` | mypy | ignore_missing_imports | temporary | config | config | pyproject.toml | tool.mypy.overrides[0].ignore_missing_imports | `sha256:527e6efc74769b1228c507a1b8b80620eb8ac8b9870681cad036239346b48e93` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0007` | mypy | ignore_missing_imports | temporary | config | config | pyproject.toml | tool.mypy.overrides[1].ignore_missing_imports | `sha256:34f322754c32f50efaf7a19013545c63f95683102c5f7eefefb2e6fdabd638c2` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0008` | mypy | index | temporary | inline | symbol | tests/unit/test_interop_security_projection.py | test_credential_reference_surface_is_read_only | `sha256:3c8627b70c9e0cb9993777032db6b043eb30260b00e99cee5fa9b6c9246dcea9` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0009` | mypy | misc | temporary | inline | symbol | tests/unit/interop/test_capabilities.py | test_capability_is_frozen_and_qualified_name_is_canonical | `sha256:50c5686aeb514f0ea385b0f5efcb20543fb02b479f0a05b4b32116c2e38f65fe` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0010` | mypy | misc | temporary | inline | symbol | tests/unit/test_deep_genome_store.py | test_store_exports_frozen_contract_models | `sha256:da11d568e3816c864121904ffa5d00103600ebf471ec6a5bbefc12277ad4761c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0011` | mypy | prop-decorator | temporary | inline | symbol | src/mcp_server_phytomni/api/schemas.py | FileUploadResponse | `sha256:243d7b24f3e529af946567903305f2f5f09ad24b6316e1063a7ed27a93107a6c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -264,7 +260,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0237` | pylint | path-ignore | temporary | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:3e1bc269c16210ee4149f6c708497a514291d2716f41ad7186c731fe6fce7ea3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0238` | pylint | path-ignore | temporary | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:829ec7992def978f01ad8efae0a0ee64c5e1767cfeb76f3a13236dc4ed5cef23` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0239` | pylint | path-ignore | temporary | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:b7c41d52ad3e667583ed5bc27c3cffee33f6c621371befb228c17357718fc94a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0240` | pylint | protected-access | temporary | inline | symbol | src/mcp_server_phytomni/agents/chat/service.py | \_cached_chat_app | `sha256:9e14fd09af7d8442a243b3ffb4d0c60c96a9fb85145cdd50bbe3d1ec55dbe5e6` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0241` | pylint | protected-access | temporary | inline | span | tests/agents/test_analyst_graph_nodes.py | — | `sha256:0b0a232e2a85cdff21bf4f66e78588404106ab1579a3d5a58d949bce8d7fe870` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0242` | pylint | protected-access | temporary | inline | span | tests/agents/test_analyst_knowledge_subgraph.py | — | `sha256:184e1ebaae891611aee25ac7732145405af2529f5b9a7fc3635d1456e49f80d8` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0243` | pylint | protected-access | temporary | inline | span | tests/agents/test_brief_gene_knowledge_subgraph.py | — | `sha256:53b920f718f4267c30e4435f07abf4f533cd2acdaf6cca3f43885ce683c39263` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -380,26 +375,6 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0005`
-
-Rationale:
-
-```text
-type: ignore[arg-type]
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0006`
 
 Rationale:
@@ -426,26 +401,6 @@ Rationale:
 
 ```text
 tool.mypy.overrides[1].ignore_missing_imports=True
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0008`
-
-Rationale:
-
-```text
-type: ignore[index]
 ```
 
 Counterfactual:
@@ -6635,26 +6590,6 @@ Rationale:
 
 ```text
 tool.pylint.main.ignore='.pytest_cache'
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0240`
-
-Rationale:
-
-```text
-pylint: disable-next=protected-access
 ```
 
 Counterfactual:

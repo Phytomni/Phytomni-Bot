@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import pytest
 
-from mcp_server_phytomni.agents.chat.builder import _build_chat_graph
+from mcp_server_phytomni.agents.chat.builder import build_chat_graph
 from mcp_server_phytomni.agents.chat.graph import route_after_generate
 from mcp_server_phytomni.agents.chat.state import (
     ChatInput,
@@ -36,7 +36,7 @@ def test_build_chat_graph_compiles_with_three_nodes() -> None:
     intentional (and the manifest snapshot / visualization rendering
     that depend on the three-node count update in the same diff).
     """
-    app = _build_chat_graph()
+    app = build_chat_graph()
     nodes = set(app.get_graph().nodes)
     non_boundary = nodes - {"__start__", "__end__"}
     assert non_boundary == {
@@ -54,7 +54,7 @@ def test_chat_graph_start_edge_targets_prepare_context() -> None:
     see the raw user_query and the OBS-attached files would never
     reach the model.
     """
-    app = _build_chat_graph()
+    app = build_chat_graph()
     edges = app.get_graph().edges
     start_targets = {e.target for e in edges if e.source == "__start__"}
     assert start_targets == {"prepare_context_node"}
@@ -67,7 +67,7 @@ def test_chat_graph_prepare_edges_into_generate() -> None:
     conditional) edge: there is no reason to skip the LLM call once
     context has been prepared, so the edge must not carry a router.
     """
-    app = _build_chat_graph()
+    app = build_chat_graph()
     prepare_edges = [
         e for e in app.get_graph().edges if e.source == "prepare_context_node"
     ]
@@ -85,7 +85,7 @@ def test_chat_graph_conditional_edge_after_generate() -> None:
     a single anonymous fork that hides which call shape (chat vs
     chat-with-follow) is in play.
     """
-    app = _build_chat_graph()
+    app = build_chat_graph()
     generate_edges = [
         e for e in app.get_graph().edges if e.source == "generate_node"
     ]
@@ -128,7 +128,7 @@ def test_chat_graph_follow_up_edges_into_end() -> None:
     Pins that follow-up question generation is the last step on its
     branch; no third LLM call sneaks in after.
     """
-    app = _build_chat_graph()
+    app = build_chat_graph()
     follow_edges = [
         e for e in app.get_graph().edges if e.source == "follow_up_node"
     ]
@@ -146,7 +146,7 @@ def test_chat_graph_exposes_input_and_output_schemas() -> None:
     records these classes on the compiled app so loaders can read
     them without re-importing the subgraph module.
     """
-    app = _build_chat_graph()
+    app = build_chat_graph()
     assert app.builder.input_schema is ChatInput
     assert app.builder.output_schema is ChatOutput
     assert app.builder.state_schema is ChatState

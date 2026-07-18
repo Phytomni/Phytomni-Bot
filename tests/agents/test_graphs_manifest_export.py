@@ -18,7 +18,7 @@ from langgraph.graph import END, START, StateGraph
 
 from mcp_server_phytomni.agents.analyst.core import AnalystAgent
 from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
-from mcp_server_phytomni.agents.chat.builder import _build_chat_graph
+from mcp_server_phytomni.agents.chat.builder import build_chat_graph
 from mcp_server_phytomni.agents.data.agent import DataAgent
 from mcp_server_phytomni.agents.environment.builder import (
     build_environment_graph,
@@ -204,7 +204,7 @@ def test_export_real_chat_subgraph_node_set() -> None:
     prepare / generate split, the assertion fails first and the docs
     update rides in the same diff.
     """
-    manifest = export_manifest(_build_chat_graph())
+    manifest = export_manifest(build_chat_graph())
     names = {node.name for node in manifest.nodes}
     documented = {
         "prepare_context_node",

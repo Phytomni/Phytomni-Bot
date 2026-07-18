@@ -21,7 +21,7 @@ from mcp_server_phytomni.runtime.memory.accessor import (
     memory_policy_from_config,
     resolve_memory_accessor,
 )
-from mcp_server_phytomni.runtime.memory.models import MemoryWrite
+from mcp_server_phytomni.runtime.memory.models import MemoryRecord, MemoryWrite
 from mcp_server_phytomni.runtime.memory.sqlite import MemoryStore
 from mcp_server_phytomni.runtime.request_context import request_context
 
@@ -163,19 +163,27 @@ def test_store_failure_degrades_to_empty_without_raw_data_in_logs(
 ) -> None:
     """Read failures are observable but do not expose namespace/content."""
 
-    class BrokenStore:
+    class BrokenStore(MemoryStore):
         """Store double that simulates a local SQLite outage."""
 
-        policy = MemoryStore(":memory:").policy
+        def __init__(self) -> None:
+            """Initialize an in-memory store for the accessor contract."""
+            super().__init__(":memory:")
 
-        def list(self, *_args: object, **_kwargs: object) -> list[object]:
+        def list(
+            self,
+            user_id: str,
+            *,
+            kind: str | None = None,
+            limit: int | None = None,
+            now: datetime | None = None,
+            include_expired: bool = False,
+        ) -> list[MemoryRecord]:
             """Raise the storage error the accessor must redact."""
+            _ = (user_id, kind, limit, now, include_expired)
             raise OSError("backend unavailable")
 
-        def close(self) -> None:
-            """Match the store lifecycle without doing any work."""
-
-    accessor = MemoryAccessor(BrokenStore())  # type: ignore[arg-type]
+    accessor = MemoryAccessor(BrokenStore())
     with request_context("alice", "req-2"):
         assert not accessor.retrieve()
     assert accessor.degraded_reads == 1

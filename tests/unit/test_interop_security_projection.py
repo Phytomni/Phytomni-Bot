@@ -6,7 +6,10 @@
 from __future__ import annotations
 
 import json
+import operator
+from collections.abc import MutableMapping
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from pydantic import SecretStr
@@ -45,7 +48,11 @@ def test_credential_reference_surface_is_read_only() -> None:
     headers = credential_headers(raw, "peer-auth")
     assert headers["Authorization"] == "Bearer operator-secret"
     with pytest.raises(TypeError):
-        headers["Authorization"] = "caller-value"  # type: ignore[index]
+        operator.setitem(
+            cast(MutableMapping[str, str], headers),
+            "Authorization",
+            "caller-value",
+        )
 
 
 def test_untrusted_evidence_labels_and_content_are_redacted_before_state() -> (
