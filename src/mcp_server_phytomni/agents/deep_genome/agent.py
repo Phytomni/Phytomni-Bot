@@ -66,8 +66,8 @@ from ..knowledge.agent import KnowledgeAgent
 from ..shared.knowledge_subgraph import build_knowledge_app
 from ..shared.parallel_dispatch import DegradedRecord, FailureRecord
 from .brief_gene_mount import (
-    DeepGenomeBriefGeneMountMixin,
     RequiredBriefGeneError,
+    make_brief_gene_mount_node,
 )
 from .design_mount import make_design_mount_node
 from .dispatch import (
@@ -324,7 +324,6 @@ class DeepGenomeAgentDeps(NamedTuple):
 
 
 class DeepGenomeAgents(
-    DeepGenomeBriefGeneMountMixin,
     DeepGenomeDispatchMixin,
     DeepGenomeProfileMixin,
     DeepGenomeReportMixin,
@@ -451,7 +450,7 @@ class DeepGenomeAgents(
         # analyst-side +1).
         workflow.add_node(
             "brief_gene_node",
-            self.make_brief_gene_mount_node(
+            make_brief_gene_mount_node(
                 self._agents.brief_gene_app,
                 self._persist_brief_gene_result,
             ),

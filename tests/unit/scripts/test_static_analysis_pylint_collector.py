@@ -50,7 +50,7 @@ def test_r0903_resolves_the_class_symbol() -> None:
     assert finding.path == (
         "src/mcp_server_phytomni/agents/deep_genome/brief_gene_mount.py"
     )
-    assert finding.symbol == "DeepGenomeBriefGeneMountMixin"
+    assert finding.symbol == "RequiredBriefGeneError"
     assert finding.target_kind is TargetKind.SYMBOL
 
 

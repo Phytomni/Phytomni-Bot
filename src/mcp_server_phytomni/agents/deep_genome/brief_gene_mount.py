@@ -4,8 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """brief_gene subgraph mount adapter for DeepGenomeAgents.
 
-Hosts ``DeepGenomeBriefGeneMountMixin`` + the
-``make_brief_gene_mount_node`` factory closure that wires
+Hosts the ``make_brief_gene_mount_node`` factory closure that wires
 ``BriefGeneAgent`` as a structural subgraph inside the deep_genome
 workflow, projecting BriefGeneOutput into deep_genome's
 ``gene_annotation`` + ``knowledge_context`` + verbatim ``preamble``
@@ -172,33 +171,3 @@ def make_brief_gene_mount_node(
             raise RequiredBriefGeneError("brief gene profile failed") from None
 
     return _brief_gene_mount
-
-
-class DeepGenomeBriefGeneMountMixin:
-    """Factory exposure for DeepGenomeAgents to mount brief_gene.
-
-    The mixin surfaces ``make_brief_gene_mount_node`` as a method so
-    ``DeepGenomeAgents._build_graph`` can call
-    ``self.make_brief_gene_mount_node(self._brief_gene_app)`` once the
-    brief_gene app is constructed in ``__init__``. The factory itself
-    is the module-level function above; the mixin only adds the
-    bound-method indirection so the MRO pattern other deep_genome
-    mixins use stays consistent.
-    """
-
-    def make_brief_gene_mount_node(
-        self: Any,
-        brief_gene_app: CompiledStateGraph,
-        persist_fn: (
-            Callable[[dict[str, Any], Any], Awaitable[dict[str, Any]]] | None
-        ) = None,
-    ) -> Any:
-        """Return a node body mounting brief_gene under this consumer.
-
-        Delegates to the module-level ``make_brief_gene_mount_node``;
-        the bound-method indirection matches the project's other
-        consumer mixins so ``_build_graph`` looks up the factory via
-        ``self`` rather than importing it directly.
-        """
-        del self
-        return make_brief_gene_mount_node(brief_gene_app, persist_fn)

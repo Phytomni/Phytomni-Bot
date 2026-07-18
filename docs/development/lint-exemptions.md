@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `278`
+- Authorized records: `277`
 
 ## Informational counts
 
@@ -22,7 +22,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:misc`                                                       |       2 |
 | `mypy:prop-decorator`                                             |       1 |
 | `pylint:R0801`                                                    |     152 |
-| `pylint:R0903`                                                    |      33 |
+| `pylint:R0903`                                                    |      32 |
 | `pylint:broad-exception-caught`                                   |       6 |
 | `pylint:contextmanager-generator-missing-cleanup`                 |       2 |
 | `pylint:max-module-lines`                                         |       1 |
@@ -209,7 +209,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0175` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_store.py | 36:47 | `sha256:c745b76ae3ca2d6d7f4539177b39872d80bcf54b0b9d11bec0acbc5dfa2d7ee3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0176` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_store.py | 49:62 | `sha256:838d045a66d38a592d0d88e73bb8fdfd07daf6af2726fc2a439e63f69209d0fa` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0177` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_stream_lifecycle.py | 228:241 | `sha256:ac967fd4db89089be6f80ebe53d9d8dce90582d0d91a72ac1c8c1c9a10d7bff6` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0180` | pylint | R0903 | temporary | diagnostic | symbol | src/mcp_server_phytomni/agents/deep_genome/brief_gene_mount.py | DeepGenomeBriefGeneMountMixin | `sha256:bb4f90a677198e3e5dd1b4470b50d96486952ad6fce2832d27d9de43731f0ad5` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0183` | pylint | R0903 | temporary | diagnostic | symbol | src/mcp_server_phytomni/graphs/loader.py | GraphLoader | `sha256:8732b4e60bfb3bafb674d6729dc96e0e6532cf7cc48e7e2bcdf1b69482cc63e8` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0186` | pylint | R0903 | temporary | diagnostic | symbol | tests/agents/test_brief_gene_knowledge_subgraph.py | test_retrieve_worker_factory_exception_writes_empty_sentinel.\_BrokenApp | `sha256:34a3bbaa6e71f356df4c01429dc47c184701680974c839900abe92d31e90c893` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0187` | pylint | R0903 | temporary | diagnostic | symbol | tests/agents/test_brief_gene_preamble_workflow.py | \_StubKnowledgeApp | `sha256:f1dbcf14aa38debc6423bb6268245a639a685dd62bf2f582aaf4e7a31f79d3ca` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -5566,26 +5565,6 @@ Similar lines in 2 files
         "SELECT secret_token",
     ):
         assert forbidden not in evidence
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0180`
-
-Rationale:
-
-```text
-Too few public methods (1/2)
 ```
 
 Counterfactual:

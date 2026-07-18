@@ -3488,26 +3488,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0180"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/agents/deep_genome/brief_gene_mount.py"
-symbol = "DeepGenomeBriefGeneMountMixin"
-fingerprint = "sha256:bb4f90a677198e3e5dd1b4470b50d96486952ad6fce2832d27d9de43731f0ad5"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (1/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0183"
 tool = "pylint"
 rule = "R0903"
