@@ -56,24 +56,11 @@ _KNOWLEDGE_OUTPUT = {
 }
 
 
-class _StubKnowledgeApp:
-    """Duck-typed stand-in for the compiled KnowledgeAgent subgraph.
-
-    The preamble graph's retrieve worker only calls ``.ainvoke`` on the
-    mounted knowledge app, which in production fans out real retrieve /
-    rerank / chat HTTP calls. Replacing the whole subgraph here keeps
-    the fan-in test hermetic and deterministic on any machine —
-    independent of func_cache warmth, relay-mode transports, and the
-    ``block_external_http`` fixture's ``.request``-only coverage, which
-    an async ``.send`` / ``loop.create_connection`` path can bypass,
-    letting a real call escape and hang the fan-in.
-    """
-
-    async def ainvoke(
-        self, _knowledge_input: Any, *_args: Any, **_kwargs: Any
-    ) -> dict[str, Any]:
-        """Return a canned ``KnowledgeOutput``-shaped doc list."""
-        return _KNOWLEDGE_OUTPUT
+async def _stub_knowledge_ainvoke(
+    _knowledge_input: Any, *_args: Any, **_kwargs: Any
+) -> dict[str, Any]:
+    """Return a canned ``KnowledgeOutput``-shaped doc list."""
+    return _KNOWLEDGE_OUTPUT
 
 
 def _install_mocks(
@@ -90,7 +77,9 @@ def _install_mocks(
     chat_mock = AsyncMock(return_value=_CHAT_STUB)
     monkeypatch.setattr(
         "mcp_server_phytomni.agents.brief_gene.core.build_knowledge_app",
-        lambda *_args, **_kwargs: _StubKnowledgeApp(),
+        lambda *_args, **_kwargs: SimpleNamespace(
+            ainvoke=_stub_knowledge_ainvoke
+        ),
     )
     monkeypatch.setattr(
         "mcp_server_phytomni.agents.brief_gene.core.run_bi_api", bi_mock

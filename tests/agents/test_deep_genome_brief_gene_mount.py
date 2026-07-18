@@ -26,6 +26,8 @@ from mcp_server_phytomni.agents.deep_genome.brief_gene_mount import (
     make_brief_gene_mount_node,
 )
 
+from ._subgraph_branch_fakes import failing_async_object
+
 pytestmark = pytest.mark.agent
 
 
@@ -277,13 +279,10 @@ async def test_brief_gene_mount_raises_required_error_on_failure() -> None:
     is stable and does not copy an upstream exception into graph state.
     """
 
-    async def _raising_ainvoke(_input: Any) -> Any:
-        raise RuntimeError("brief_gene exploded")
-
-    class _BrokenApp:
-        ainvoke = staticmethod(_raising_ainvoke)
-
-    mount = make_brief_gene_mount_node(cast(CompiledStateGraph, _BrokenApp()))
+    broken_app = failing_async_object(
+        "ainvoke", RuntimeError("brief_gene exploded")
+    )
+    mount = make_brief_gene_mount_node(cast(CompiledStateGraph, broken_app))
     state = _deep_genome_state(gene_id="AT1G01010")
 
     with pytest.raises(
@@ -300,15 +299,13 @@ async def test_brief_gene_failure_does_not_invoke_downstream_submit() -> None:
         await submits()
         return {}
 
-    async def _raising_ainvoke(_input: Any) -> Any:
-        raise RuntimeError("brief_gene exploded")
-
-    class _BrokenApp:
-        ainvoke = staticmethod(_raising_ainvoke)
+    broken_app = failing_async_object(
+        "ainvoke", RuntimeError("brief_gene exploded")
+    )
 
     workflow: StateGraph = StateGraph(_FakeBriefGeneState)
     workflow.add_node(
-        "brief", make_brief_gene_mount_node(cast(Any, _BrokenApp()))
+        "brief", make_brief_gene_mount_node(cast(Any, broken_app))
     )
     workflow.add_node("remote", cast(Any, _remote_submit))
     workflow.add_edge(START, "brief")

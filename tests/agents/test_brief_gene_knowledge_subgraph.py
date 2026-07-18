@@ -27,6 +27,8 @@ from mcp_server_phytomni.agents.brief_gene.state import BriefGeneAgentState
 from mcp_server_phytomni.config.defaults import BriefGeneConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
+from ._subgraph_branch_fakes import failing_async_object
+
 pytestmark = pytest.mark.agent
 
 _CORE_MODULE = "mcp_server_phytomni.agents.brief_gene.core"
@@ -242,19 +244,15 @@ async def test_retrieve_worker_factory_exception_writes_empty_sentinel(
 ) -> None:
     """Worker on exception writes ``(task_index, [])`` AND logs loudly."""
 
-    async def _raising_ainvoke(_input: Any) -> Any:
-        raise RuntimeError("boom")
-
-    class _BrokenApp:
-        ainvoke = staticmethod(_raising_ainvoke)
+    broken_app = failing_async_object("ainvoke", RuntimeError("boom"))
 
     monkeypatch.setattr(
         f"{_CORE_MODULE}.build_knowledge_app",
-        lambda **_kwargs: cast(CompiledStateGraph, _BrokenApp()),
+        lambda **_kwargs: cast(CompiledStateGraph, broken_app),
     )
     agent = _build_agent()
     worker = agent.make_retrieve_worker_node(
-        cast(CompiledStateGraph, _BrokenApp())
+        cast(CompiledStateGraph, broken_app)
     )
 
     state = _gene_found_state()

@@ -11,7 +11,7 @@ fragment reaches graph state or the public error.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import cast
 
 import pytest
 from langgraph.graph.state import CompiledStateGraph
@@ -23,6 +23,8 @@ from mcp_server_phytomni.agents.deep_genome.brief_gene_mount import (
 from mcp_server_phytomni.agents.deep_genome.mount_common import (
     degraded_analysis_delta,
 )
+
+from ._subgraph_branch_fakes import failing_async_object
 
 pytestmark = pytest.mark.agent
 
@@ -67,13 +69,8 @@ async def test_brief_gene_mount_uses_fixed_public_error(
 ) -> None:
     """The required BriefGene mount never exposes upstream exception text."""
 
-    async def _raising_ainvoke(_input: Any) -> Any:
-        raise _SECRET_EXC
-
-    class _BrokenApp:
-        ainvoke = staticmethod(_raising_ainvoke)
-
-    mount = make_brief_gene_mount_node(cast(CompiledStateGraph, _BrokenApp()))
+    broken_app = failing_async_object("ainvoke", _SECRET_EXC)
+    mount = make_brief_gene_mount_node(cast(CompiledStateGraph, broken_app))
 
     with pytest.raises(
         RequiredBriefGeneError, match="^brief gene profile failed$"

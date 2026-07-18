@@ -769,12 +769,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/core.py"
 symbol = "119:124"
 peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
-peer_symbol = "244:249"
-fingerprint = "sha256:672ac8ba2ca15e4a6bff483256212bad9a4b452b5b2f47f58d4c71a953af2ffb"
+peer_symbol = "246:251"
+fingerprint = "sha256:8abc75dc1000bf60d768999279807f0eeaddc148800ee6f2cd64db6d725b2794"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.core:[119:124]\n==tests.agents.test_deep_genome_brief_gene_mount:[244:249]\n        \"go_string\": \"\",\n        \"kegg_string\": \"\",\n        \"interpro_string\": \"\",\n        \"description_string\": \"\",\n        \"retrieved_docs\": [],"
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.core:[119:124]\n==tests.agents.test_deep_genome_brief_gene_mount:[246:251]\n        \"go_string\": \"\",\n        \"kegg_string\": \"\",\n        \"interpro_string\": \"\",\n        \"description_string\": \"\",\n        \"retrieved_docs\": [],"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -791,12 +791,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/core.py"
 symbol = "119:130"
 peer_path = "tests/agents/test_brief_gene_knowledge_subgraph.py"
-peer_symbol = "115:123"
-fingerprint = "sha256:0a201031a7234bed17589e4e095b273be77befb070f165201474ca57d8733796"
+peer_symbol = "117:125"
+fingerprint = "sha256:6e14879614fdafb89ea01429091d8732afa805508b610ae35c505869d9f4dd08"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.core:[119:130]\n==tests.agents.test_brief_gene_knowledge_subgraph:[115:123]\n        \"go_string\": \"\",\n        \"kegg_string\": \"\",\n        \"interpro_string\": \"\",\n        \"description_string\": \"\",\n        \"retrieved_docs\": [],\n        \"retrieve_context\": \"\",\n        \"follow_up_questions\": [],\n        \"final_response\": {},\n        # X3b A architecture preamble fan-out fields.\n        # All seeded empty here so the TypedDict contract holds at\n        # ``arun`` entry; nodes populate them during the workflow."
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.core:[119:130]\n==tests.agents.test_brief_gene_knowledge_subgraph:[117:125]\n        \"go_string\": \"\",\n        \"kegg_string\": \"\",\n        \"interpro_string\": \"\",\n        \"description_string\": \"\",\n        \"retrieved_docs\": [],\n        \"retrieve_context\": \"\",\n        \"follow_up_questions\": [],\n        \"final_response\": {},\n        # X3b A architecture preamble fan-out fields.\n        # All seeded empty here so the TypedDict contract holds at\n        # ``arun`` entry; nodes populate them during the workflow."
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -989,12 +989,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/state.py"
 symbol = "106:111"
 peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
-peer_symbol = "38:43"
-fingerprint = "sha256:efda7a4d0bc9f7c0bc21f3ab1a9de39e3f2e5d7a57d98bb90cc13a61be50d4e3"
+peer_symbol = "40:45"
+fingerprint = "sha256:f02e4bbecd4a1b24bb2ae00ecccaea982dc4fbf26f201be98c9d966f128b05fc"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[106:111]\n==tests.agents.test_deep_genome_brief_gene_mount:[38:43]\n    go_string: str\n    kegg_string: str\n    interpro_string: str\n    description_string: str\n    retrieved_docs: list[dict[str, Any]]"
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[106:111]\n==tests.agents.test_deep_genome_brief_gene_mount:[40:45]\n    go_string: str\n    kegg_string: str\n    interpro_string: str\n    description_string: str\n    retrieved_docs: list[dict[str, Any]]"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1011,12 +1011,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/state.py"
 symbol = "130:143"
 peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
-peer_symbol = "51:71"
-fingerprint = "sha256:30b55bc914bb205817b22f0e14d035412ee8a0181e7bc80de269c2e309350dba"
+peer_symbol = "53:73"
+fingerprint = "sha256:b1d7c1fcd77ad6685f2801b25ed00d2269e547ad8d851dbdb8951f2444a0c485"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[130:143]\n==tests.agents.test_deep_genome_brief_gene_mount:[51:71]\n    section1_markdown: str\n    section2_markdown: str\n    section3_markdown: str\n    section4_markdown: str\n    introduction_report: str\n\n\ndef _build_fake_brief_gene_app(\n    output: dict[str, Any] | None = None,\n) -> CompiledStateGraph:\n    \"\"\"Compile a one-node ``StateGraph`` to stand in for BriefGeneAgent.\n\n    ``find_subgraph_pregel`` recognises ``CompiledStateGraph`` by\n    isinstance, so a SimpleNamespace cannot satisfy the xray\n    expansion. Compiling a trivial ``StateGraph`` keeps the test\n    fully offline while still presenting a real compiled subgraph\n    for the mount factory closure to hold. The optional ``output``\n    map stages the canned BriefGeneOutput keys the stub returns.\n    \"\"\"\n"
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[130:143]\n==tests.agents.test_deep_genome_brief_gene_mount:[53:73]\n    section1_markdown: str\n    section2_markdown: str\n    section3_markdown: str\n    section4_markdown: str\n    introduction_report: str\n\n\ndef _build_fake_brief_gene_app(\n    output: dict[str, Any] | None = None,\n) -> CompiledStateGraph:\n    \"\"\"Compile a one-node ``StateGraph`` to stand in for BriefGeneAgent.\n\n    ``find_subgraph_pregel`` recognises ``CompiledStateGraph`` by\n    isinstance, so a SimpleNamespace cannot satisfy the xray\n    expansion. Compiling a trivial ``StateGraph`` keeps the test\n    fully offline while still presenting a real compiled subgraph\n    for the mount factory closure to hold. The optional ``output``\n    map stages the canned BriefGeneOutput keys the stub returns.\n    \"\"\"\n"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1033,12 +1033,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/state.py"
 symbol = "61:67"
 peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
-peer_symbol = "36:42"
-fingerprint = "sha256:7a8fa01108e449558ae8f535f73b355b23a912c1574bac86cd8013fb45d656c5"
+peer_symbol = "38:44"
+fingerprint = "sha256:aee3dee7871954447218c5a5a668caa158aeb37441057a378e04fbe74b669950"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[61:67]\n==tests.agents.test_deep_genome_brief_gene_mount:[36:42]\n    gene_id: str\n    species_code: str\n    go_string: str\n    kegg_string: str\n    interpro_string: str\n    description_string: str"
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[61:67]\n==tests.agents.test_deep_genome_brief_gene_mount:[38:44]\n    gene_id: str\n    species_code: str\n    go_string: str\n    kegg_string: str\n    interpro_string: str\n    description_string: str"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1055,12 +1055,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/state.py"
 symbol = "67:76"
 peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
-peer_symbol = "47:71"
-fingerprint = "sha256:61a59518f847e0f2c50b3f7a5e2810830159c6e7c0f5e22d05d98b35dc754895"
+peer_symbol = "49:73"
+fingerprint = "sha256:3f43b1d6fcfe6a5ef7a39edf75acf4a56974ea0bfb37b807698d5dfa0046204f"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[67:76]\n==tests.agents.test_deep_genome_brief_gene_mount:[47:71]\n    gene_structure_string: str\n    orthologs_data: dict[str, Any]\n    paralogs_data: dict[str, Any]\n    interaction_data: dict[str, Any]\n    section1_markdown: str\n    section2_markdown: str\n    section3_markdown: str\n    section4_markdown: str\n    introduction_report: str"
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[67:76]\n==tests.agents.test_deep_genome_brief_gene_mount:[49:73]\n    gene_structure_string: str\n    orthologs_data: dict[str, Any]\n    paralogs_data: dict[str, Any]\n    interaction_data: dict[str, Any]\n    section1_markdown: str\n    section2_markdown: str\n    section3_markdown: str\n    section4_markdown: str\n    introduction_report: str"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1869,12 +1869,12 @@ target_kind = "pair"
 path = "tests/agents/test_brief_gene_chat_subgraph.py"
 symbol = "48:56"
 peer_path = "tests/agents/test_brief_gene_knowledge_subgraph.py"
-peer_symbol = "100:108"
-fingerprint = "sha256:6dd6be1ef0509a12985128efe55b9da11d7f79526e1d11f7cc278526cd3ca149"
+peer_symbol = "102:110"
+fingerprint = "sha256:fab01903754ebb6bb6b7ac8d8fc8e8437674c761c4cd1c2251ecb97f57dc4750"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==tests.agents.test_brief_gene_chat_subgraph:[48:56]\n==tests.agents.test_brief_gene_knowledge_subgraph:[100:108]\n            \"is_follow_up\": False,\n            \"gene_found\": True,\n            \"gene_id\": \"AT1G01010\",\n            \"query_id_version\": \"tair10\",\n            \"gene_id_version\": \"tair10\",\n            \"species_code\": \"ath\",\n            \"species_latin_name\": \"Arabidopsis thaliana\",\n            \"species_english_name\": \"thale cress\","
+rationale = "Similar lines in 2 files\n==tests.agents.test_brief_gene_chat_subgraph:[48:56]\n==tests.agents.test_brief_gene_knowledge_subgraph:[102:110]\n            \"is_follow_up\": False,\n            \"gene_found\": True,\n            \"gene_id\": \"AT1G01010\",\n            \"query_id_version\": \"tair10\",\n            \"gene_id_version\": \"tair10\",\n            \"species_code\": \"ath\",\n            \"species_latin_name\": \"Arabidopsis thaliana\",\n            \"species_english_name\": \"thale cress\","
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1889,14 +1889,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "tests/agents/test_brief_gene_knowledge_subgraph.py"
-symbol = "115:120"
+symbol = "117:122"
 peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
-peer_symbol = "349:354"
-fingerprint = "sha256:f720cfe1651fe48ee40f96b8c484a8f11c851e959e66b6e9be3bd04c06b1ddc2"
+peer_symbol = "346:351"
+fingerprint = "sha256:46a63952622462f7235ac2a7d3458360c183bc3e37dc8cb01083210115bf773a"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==tests.agents.test_brief_gene_knowledge_subgraph:[115:120]\n==tests.agents.test_deep_genome_brief_gene_mount:[349:354]\n            \"go_string\": \"\",\n            \"kegg_string\": \"\",\n            \"interpro_string\": \"\",\n            \"description_string\": \"\",\n            \"retrieved_docs\": [],"
+rationale = "Similar lines in 2 files\n==tests.agents.test_brief_gene_knowledge_subgraph:[117:122]\n==tests.agents.test_deep_genome_brief_gene_mount:[346:351]\n            \"go_string\": \"\",\n            \"kegg_string\": \"\",\n            \"interpro_string\": \"\",\n            \"description_string\": \"\",\n            \"retrieved_docs\": [],"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -3488,46 +3488,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0186"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/agents/test_brief_gene_knowledge_subgraph.py"
-symbol = "test_retrieve_worker_factory_exception_writes_empty_sentinel._BrokenApp"
-fingerprint = "sha256:34a3bbaa6e71f356df4c01429dc47c184701680974c839900abe92d31e90c893"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (0/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0187"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/agents/test_brief_gene_preamble_workflow.py"
-symbol = "_StubKnowledgeApp"
-fingerprint = "sha256:f1dbcf14aa38debc6423bb6268245a639a685dd62bf2f582aaf4e7a31f79d3ca"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (1/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0188"
 tool = "pylint"
 rule = "R0903"
@@ -3541,66 +3501,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "Too few public methods (1/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0189"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/agents/test_deep_genome_brief_gene_mount.py"
-symbol = "test_brief_gene_failure_does_not_invoke_downstream_submit._BrokenApp"
-fingerprint = "sha256:b58783ca3413f5f76def9ffaef0b161b7f0d08ee4ed343e35c349f56d6b822b7"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (0/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0190"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/agents/test_deep_genome_brief_gene_mount.py"
-symbol = "test_brief_gene_mount_raises_required_error_on_failure._BrokenApp"
-fingerprint = "sha256:31334abe5cddacacbc063c40fb2f07aead798035460567b94c078d09c851ba37"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (0/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0193"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/agents/test_deep_genome_mount_redaction.py"
-symbol = "test_brief_gene_mount_uses_fixed_public_error._BrokenApp"
-fingerprint = "sha256:26c1f14d2299360b28e651119cfe184ef8fbb9207f88d0f9b8c2d681c77c6455"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (0/2)"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]

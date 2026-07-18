@@ -15,13 +15,22 @@ consumer's flag branch.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 from unittest.mock import AsyncMock
 
 import pytest
 
 from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
 from mcp_server_phytomni.config.settings import SensitiveConfig
+
+
+def failing_async_object(method: str, exc: Exception) -> SimpleNamespace:
+    """Build a typed async failure object for a one-method app seam."""
+
+    async def fail(*_args: object, **_kwargs: object) -> NoReturn:
+        raise exc
+
+    return SimpleNamespace(**{method: fail})
 
 
 def install_branch_mocks(
