@@ -25,7 +25,9 @@ class _ChunkedUpload:
     """Minimal ``UploadFile`` stand-in delivering a scripted chunk list.
 
     Records every ``read(n)`` call so tests can assert the helper
-    stopped pulling more chunks once the budget broke.
+    stopped pulling more chunks once the budget broke. The mutable
+    remaining queue models a one-shot upload stream and cannot be replaced
+    by a value-only namespace without losing read offsets.
     """
 
     def __init__(self, chunks: list[bytes]) -> None:

@@ -594,6 +594,9 @@ def _build_fake_obs_client() -> Any:
         memory), ``getObjectMetadata`` (reports the seeded byte length),
         and ``listObjects`` (returns seeded ``pages`` in order). Tests seed
         ``objects`` / ``pages`` before exercising the download/list ops.
+        Class-level state is intentional: each fixture call returns a fresh
+        class so one simulated OBS lifecycle can retain objects, page order,
+        and captured SDK kwargs across client instances.
         """
 
         captured: dict[str, Any] = {}

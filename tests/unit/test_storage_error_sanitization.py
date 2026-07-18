@@ -36,8 +36,10 @@ class _ExplodingObsClient:
     client outside its sanitization try-block; the failure has to fire
     inside the method call (putContent/putFile/deleteObject/etc.) so
     the helper's ``except Exception`` runs and returns the sanitized
-    ``OSError``. ``__getattr__`` proxies the camelCase SDK surface so
-    each method behaves identically without re-declaring it.
+    ``OSError``. ``__getattr__`` proxies the arbitrary camelCase SDK surface
+    so each method behaves identically without re-declaring it; this dynamic
+    attribute protocol is why a state-free function or namespace cannot
+    replace the class.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:

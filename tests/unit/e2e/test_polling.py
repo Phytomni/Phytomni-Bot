@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, cast
 
 import httpx
@@ -93,24 +94,23 @@ def test_task_state_mapping_projects_report_and_failure_fields() -> None:
 async def test_http_poll_records_distinct_monotonic_revisions() -> None:
     """HTTP polling records revisions without retaining response bodies."""
 
+    @dataclass(frozen=True)
     class Response:
-        """Minimal JSON response fake for the polling helper."""
+        """Frozen JSON response record for the polling helper."""
 
-        status_code = 200
-
-        def __init__(self, body: dict[str, object]) -> None:
-            """Store one JSON response body."""
-            self._body = body
+        body: dict[str, object]
+        status_code: int = 200
 
         def json(self) -> dict[str, object]:
             """Return the stored JSON body."""
-            return self._body
+            return self.body
 
     class Client:
         """Minimal async HTTP client fake with two status responses."""
 
         def __init__(self) -> None:
             """Prepare running and terminal responses."""
+            self.paths: list[str] = []
             self.responses = iter(
                 (
                     Response(
@@ -135,11 +135,13 @@ async def test_http_poll_records_distinct_monotonic_revisions() -> None:
             self, _path: str, *, headers: dict[str, str]
         ) -> Response:
             """Return the next prepared response."""
+            self.paths.append(_path)
             del headers
             return next(self.responses)
 
+    client = Client()
     terminal = await polling.poll_http_run_to_terminal(
-        cast(httpx.AsyncClient, Client()),
+        cast(httpx.AsyncClient, client),
         "run-1",
         headers={"X-Service-Token": "test"},
         timeout_seconds=1.0,
@@ -149,3 +151,4 @@ async def test_http_poll_records_distinct_monotonic_revisions() -> None:
     assert terminal.status == "succeeded"
     assert terminal.revisions == (1, 2)
     assert terminal.result["final_report"] == "# final"
+    assert client.paths == ["/v1/runs/run-1", "/v1/runs/run-1"]

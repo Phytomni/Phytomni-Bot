@@ -404,7 +404,7 @@ def _mcp_target() -> MCPStreamableHttpTarget:
 
 
 class _FakeMCPServer:
-    """Offline stand-in for ``MultiServerMCPClient`` and its peer."""
+    """Offline MCP peer with lifecycle and tool-catalog capture state."""
 
     tools: list[Any] = []
     instances: list[_FakeMCPServer] = []

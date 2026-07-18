@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `261`
+- Authorized records: `260`
 
 ## Informational counts
 
@@ -22,7 +22,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:misc`                                                       |       2 |
 | `mypy:prop-decorator`                                             |       1 |
 | `pylint:R0801`                                                    |     152 |
-| `pylint:R0903`                                                    |      13 |
+| `pylint:R0903`                                                    |      12 |
 | `pylint:broad-exception-caught`                                   |       6 |
 | `pylint:contextmanager-generator-missing-cleanup`                 |       2 |
 | `pylint:max-module-lines`                                         |       1 |
@@ -199,8 +199,8 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0161` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_relay_openai_routes.py | 76:111 | `sha256:90d03cbc6cfa912e6c79ba754c576d80abf09250ca899f3d180038494cc00bfb` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0162` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_result_formatting.py | 479:488 | `sha256:fde2a886b5be06310ff9328180822b646f6ede9217907f7a98a46f408026b52f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0163` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_resume_mcp.py | 104:114 | `sha256:4dbbc1854fd72ac53af9cd850a1e453ef7c0bc583d0cc5ecfa4f2a2df4b5f0f6` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0164` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/e2e/test_assertions.py | 21:29 | `sha256:db5380a79499711c2d976b02d7d205221fd26de599f39b7eb7406e68420c5f2c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0165` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/e2e/test_assertions.py | 31:36 | `sha256:08f087169cfa40da6f218af8475e416e1f72b4db4385297134263b558270e1e8` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0164` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/e2e/test_assertions.py | 21:29 | `sha256:add2ea92737e0640446ee8ba333547f9d8f321dece5f04a7667ac7f7b18d2f8b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0165` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/e2e/test_assertions.py | 31:36 | `sha256:5f250d874ec7e5ab7dda4fbb8cc9862427f419b9db583f31d06a10f3691fa060` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0166` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/interop/test_a2a_client.py | 126:132 | `sha256:ecf2324d0c1b39b2f5ab6c1ebb468afc9262b3a3dee182cd9a7ccd2bf6cca2a7` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0167` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/interop/test_a2a_client.py | 133:141 | `sha256:2c326a038c82a3e01dbe2752e30ce9836eebc95688bd6ae65fcefb2711623434` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0168` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/interop/test_a2a_client.py | 293:306 | `sha256:eb3e93560d9c6607712d8955e1858b2e712515c029d2c14977024abe120064e5` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -214,12 +214,11 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0176` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_store.py | 49:62 | `sha256:838d045a66d38a592d0d88e73bb8fdfd07daf6af2726fc2a439e63f69209d0fa` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0177` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_stream_lifecycle.py | 228:241 | `sha256:9841db38ab87a9cc9ea8495614647541015f3013773fa3a52a42c315377a2dd6` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0194` | pylint | R0903 | temporary | diagnostic | symbol | tests/agents/test_deep_genome_submit.py | \_FakeApp | `sha256:1f7f51708ece122db06fccc8c565c771ccda09fd3dab04360277d25248e3fef0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0200` | pylint | R0903 | temporary | diagnostic | symbol | tests/conftest.py | \_build_fake_obs_client.\_FakeObsClient | `sha256:bdc751aa42890e90315050767a71d97be294611f7284929d9a7335ee0932b470` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0211` | pylint | R0903 | temporary | diagnostic | symbol | tests/unit/e2e/test_polling.py | test_http_poll_records_distinct_monotonic_revisions.Client | `sha256:da7cf65686cb7478e57df8ba489482a275c62ee25fd5a4da92b82dd36292c5b3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0212` | pylint | R0903 | temporary | diagnostic | symbol | tests/unit/e2e/test_polling.py | test_http_poll_records_distinct_monotonic_revisions.Response | `sha256:03ead9da23231e283f93b93411a8248714edbce30f10c7e3923b833abd38f33f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0213` | pylint | R0903 | temporary | diagnostic | symbol | tests/unit/interop/test_fake_peer_e2e.py | \_FakeMCPServer | `sha256:54f65c95838ec87a9421e2969ae36697b1040eb1ee33b2309074ef73ed4c7025` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0214` | pylint | R0903 | temporary | diagnostic | symbol | tests/unit/test_api_file_upload.py | \_ChunkedUpload | `sha256:19158fcb6dfafa4294b516da1f6fb89fb68038bc14f3cc96f097a31b5d763163` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0215` | pylint | R0903 | temporary | diagnostic | symbol | tests/unit/test_storage_error_sanitization.py | \_ExplodingObsClient | `sha256:d30fc310f840684a257ef77723b2705404b3e66b7e58cd8185c9f33400e56633` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0200` | pylint | R0903 | temporary | diagnostic | symbol | tests/conftest.py | \_build_fake_obs_client.\_FakeObsClient | `sha256:2dc747295b1e436a070df77a883fd813565b56d9c86de87801b81cfbb178fae7` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0211` | pylint | R0903 | temporary | diagnostic | symbol | tests/unit/e2e/test_polling.py | test_http_poll_records_distinct_monotonic_revisions.Client | `sha256:f4a6bb85b202f6f9be1a4bdf895fd80b219a442eab4fd5f04fb29cd46b4c3d93` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0213` | pylint | R0903 | temporary | diagnostic | symbol | tests/unit/interop/test_fake_peer_e2e.py | \_FakeMCPServer | `sha256:0dcf2d975d525a931a08dd914e21c20836ea700969650768d93515b034f55122` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0214` | pylint | R0903 | temporary | diagnostic | symbol | tests/unit/test_api_file_upload.py | \_ChunkedUpload | `sha256:eda00c1f02071e7fa974cdef673f09b7b2efc3b1302890c475dbc5ed46cefe1d` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0215` | pylint | R0903 | temporary | diagnostic | symbol | tests/unit/test_storage_error_sanitization.py | \_ExplodingObsClient | `sha256:826980652eb87a9cc733947dd7a6328efa942f2f98b5cb373e5db5d4ae417825` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0216` | pylint | R0903 | temporary | diagnostic | symbol | typings/obs/__init__.pyi | GetObjectHeader | `sha256:8b33ef3b41e1734cd85d4db326c94556f6c6710caf36d9587a9cdd22b2d67edc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0217` | pylint | R0903 | temporary | diagnostic | symbol | typings/obs/__init__.pyi | ListObjectsBody | `sha256:27ea6a3da40442bb712fc570308e704e944c4af45f746c28767d5c67ffe8f77e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0218` | pylint | R0903 | temporary | diagnostic | symbol | typings/obs/__init__.pyi | ListObjectsResponse | `sha256:f650d953e8dfca4242cadee1342e6a2cf1f646c895af830e03904febff1ca070` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -5181,15 +5180,15 @@ Rationale:
 ```text
 Similar lines in 2 files
 ==test_assertions:[21:29]
-==test_polling:[63:71]
-            "task_id": "task-1",
-            "status": "failed",
-            "analysis_id": "",
-            "output_dir": "",
-            "intermediate_report": "# profile",
-            "final_report": None,
-            "report_stage": "intermediate",
-            "report_completeness": "partial",
+==test_polling:[64:72]
+        "task_id": "task-1",
+        "status": "failed",
+        "analysis_id": "",
+        "output_dir": "",
+        "intermediate_report": "# profile",
+        "final_report": None,
+        "report_stage": "intermediate",
+        "report_completeness": "partial",
 ```
 
 Counterfactual:
@@ -5211,7 +5210,7 @@ Rationale:
 ```text
 Similar lines in 2 files
 ==test_assertions:[31:36]
-==test_polling:[73:78]
+==test_polling:[74:79]
             "progress": {"brief_gene_status": "succeeded"},
             "degraded": True,
             "degraded_reason": "1 of 12 optional analyses unavailable",
@@ -5654,7 +5653,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Too few public methods (1/2)
+The fake deliberately models one OBS lifecycle with class-level objects, pagination, captured SDK calls, and dynamic camelCase dispatch; replacing it with a value-only fake would lose the shared external-state contract.
 ```
 
 Counterfactual:
@@ -5674,27 +5673,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Too few public methods (1/2)
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0212`
-
-Rationale:
-
-```text
-Too few public methods (1/2)
+The polling client owns a response iterator and request-path capture so the test proves sequential HTTP status/JSON handling and monotonic revision collection.
 ```
 
 Counterfactual:
@@ -5714,7 +5693,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Too few public methods (1/2)
+The fake MCP server retains constructor instances, tool catalogs, and requested server names across discovery and invocation to prove the external lifecycle boundary.
 ```
 
 Counterfactual:
@@ -5734,7 +5713,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Too few public methods (1/2)
+The upload fake models a one-shot mutable chunk stream and records read offsets so the byte-budget guard can prove it stops at the first overflow.
 ```
 
 Counterfactual:
@@ -5754,7 +5733,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Too few public methods (1/2)
+The fake must accept the SDK constructor and dynamically synthesize arbitrary camelCase methods that raise a sentinel, proving storage sanitization preserves the cause without leaking its text.
 ```
 
 Counterfactual:
