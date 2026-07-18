@@ -3508,46 +3508,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0181"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/agents/shared/fan_out.py"
-symbol = "FanOutWorker"
-fingerprint = "sha256:e1cc22a90f62950964387317b0f9555c4953160638d1181831d0d2b825214043"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (1/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0182"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/agents/shared/fan_out.py"
-symbol = "TaskBuilder"
-fingerprint = "sha256:a90d0ba80177646e10fc75ae81d47625c7d00c440476044cf7cc57e1a7296c61"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (1/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0183"
 tool = "pylint"
 rule = "R0903"

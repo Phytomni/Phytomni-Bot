@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `282`
+- Authorized records: `280`
 
 ## Informational counts
 
@@ -22,7 +22,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:misc`                                                       |       2 |
 | `mypy:prop-decorator`                                             |       1 |
 | `pylint:R0801`                                                    |     152 |
-| `pylint:R0903`                                                    |      37 |
+| `pylint:R0903`                                                    |      35 |
 | `pylint:broad-exception-caught`                                   |       6 |
 | `pylint:contextmanager-generator-missing-cleanup`                 |       2 |
 | `pylint:max-module-lines`                                         |       1 |
@@ -210,8 +210,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0176` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_store.py | 49:62 | `sha256:838d045a66d38a592d0d88e73bb8fdfd07daf6af2726fc2a439e63f69209d0fa` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0177` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_stream_lifecycle.py | 228:241 | `sha256:ac967fd4db89089be6f80ebe53d9d8dce90582d0d91a72ac1c8c1c9a10d7bff6` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0180` | pylint | R0903 | temporary | diagnostic | symbol | src/mcp_server_phytomni/agents/deep_genome/brief_gene_mount.py | DeepGenomeBriefGeneMountMixin | `sha256:bb4f90a677198e3e5dd1b4470b50d96486952ad6fce2832d27d9de43731f0ad5` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0181` | pylint | R0903 | temporary | diagnostic | symbol | src/mcp_server_phytomni/agents/shared/fan_out.py | FanOutWorker | `sha256:e1cc22a90f62950964387317b0f9555c4953160638d1181831d0d2b825214043` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0182` | pylint | R0903 | temporary | diagnostic | symbol | src/mcp_server_phytomni/agents/shared/fan_out.py | TaskBuilder | `sha256:a90d0ba80177646e10fc75ae81d47625c7d00c440476044cf7cc57e1a7296c61` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0183` | pylint | R0903 | temporary | diagnostic | symbol | src/mcp_server_phytomni/graphs/loader.py | GraphLoader | `sha256:8732b4e60bfb3bafb674d6729dc96e0e6532cf7cc48e7e2bcdf1b69482cc63e8` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0184` | pylint | R0903 | temporary | diagnostic | symbol | src/mcp_server_phytomni/runtime/terminal_answer.py | AnswerSynthesizer | `sha256:6c2490cdff0778378d9f5c61415f27ff522036b49a7f266e292c331c5a61412c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0185` | pylint | R0903 | temporary | diagnostic | symbol | src/mcp_server_phytomni/runtime/terminal_artifacts.py | ArtifactLister | `sha256:d6ce3631f968cfc0fde29b7681417a06c98b9ed883b2a961929edfe6ae9bd201` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -5585,46 +5583,6 @@ Suppression can hide a future regression.
 ```
 
 ### `SAE-TMP-0180`
-
-Rationale:
-
-```text
-Too few public methods (1/2)
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0181`
-
-Rationale:
-
-```text
-Too few public methods (1/2)
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0182`
 
 Rationale:
 

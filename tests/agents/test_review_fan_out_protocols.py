@@ -2,9 +2,9 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for FanOutWorker / TaskBuilder Protocol shapes."""
+"""Tests for FanOutWorker / TaskBuilder callback shapes."""
 
-import inspect
+from typing import Any
 
 import pytest
 
@@ -18,17 +18,24 @@ from mcp_server_phytomni.agents.shared.fan_out import (
 pytestmark = pytest.mark.agent
 
 
-def test_fan_out_worker_is_runtime_checkable() -> None:
-    """FanOutWorker Protocol must be runtime-checkable for isinstance()."""
-    # Smoke test: FanOutWorker.__call__ signature carries a 'state' parameter.
-    sig = inspect.signature(FanOutWorker.__call__)
-    assert "state" in sig.parameters
+async def test_fan_out_worker_callback_invocation() -> None:
+    """A real async worker satisfies and executes the callback alias."""
+
+    async def worker_impl(state: dict[str, Any]) -> StateDelta:
+        return {"seen": state["seen"]}
+
+    worker: FanOutWorker = worker_impl
+    assert await worker({"seen": True}) == {"seen": True}
 
 
-def test_task_builder_protocol_signature() -> None:
-    """TaskBuilder takes state dict, returns list of TaskPayload."""
-    sig = inspect.signature(TaskBuilder.__call__)
-    assert "state" in sig.parameters
+def test_task_builder_callback_invocation() -> None:
+    """A real builder satisfies and executes the callback alias."""
+
+    def builder_impl(state: dict[str, Any]) -> list[TaskPayload]:
+        return [{"task": state["task"]}]
+
+    builder: TaskBuilder = builder_impl
+    assert builder({"task": "retrieve"}) == [{"task": "retrieve"}]
 
 
 def test_task_payload_and_state_delta_are_dict_aliases() -> None:
