@@ -9,22 +9,22 @@ Start from the table below, or browse a category directly.
 
 ## I want to… → Read
 
-| I want to…                        | Read                                                               |
-| --------------------------------- | ------------------------------------------------------------------ |
-| Look up an environment variable   | [reference/configuration.md](reference/configuration.md)           |
-| Look up an HTTP endpoint          | [reference/http-api.md](reference/http-api.md)                     |
-| Look up an MCP tool               | [reference/mcp-tools.md](reference/mcp-tools.md)                   |
-| Look up a CLI command             | [reference/cli.md](reference/cli.md)                               |
-| Read DeepGenome response shapes   | [contracts/deep-genome/README.md](contracts/deep-genome/README.md) |
-| Understand the architecture       | [explanation/architecture.md](explanation/architecture.md)         |
-| Understand the agent graphs       | [explanation/agent-graphs.md](explanation/agent-graphs.md)         |
-| Deploy, or build a customer image | [guides/deployment.md](guides/deployment.md)                       |
-| Set up for local development      | [guides/development.md](guides/development.md)                     |
-| Operate the HTTP service          | [ops/http-api-runbook.md](ops/http-api-runbook.md)                 |
-| Upgrade 0.1.2 → 0.1.3             | [ops/upgrading.md](ops/upgrading.md)                               |
-| Upgrade 0.1.1 → 0.1.2             | [ops/upgrading.md](ops/upgrading.md)                               |
-| See release history               | [../CHANGELOG.md](../CHANGELOG.md)                                 |
-| Look up the lint-waiver ledger    | [development/lint-exemptions.md](development/lint-exemptions.md)   |
+| I want to…                                         | Read                                                               |
+| -------------------------------------------------- | ------------------------------------------------------------------ |
+| Look up an environment variable                    | [reference/configuration.md](reference/configuration.md)           |
+| Look up an HTTP endpoint                           | [reference/http-api.md](reference/http-api.md)                     |
+| Look up an MCP tool                                | [reference/mcp-tools.md](reference/mcp-tools.md)                   |
+| Look up a CLI command                              | [reference/cli.md](reference/cli.md)                               |
+| Read DeepGenome response shapes                    | [contracts/deep-genome/README.md](contracts/deep-genome/README.md) |
+| Understand the architecture                        | [explanation/architecture.md](explanation/architecture.md)         |
+| Understand the agent graphs                        | [explanation/agent-graphs.md](explanation/agent-graphs.md)         |
+| Deploy, or build a customer image                  | [guides/deployment.md](guides/deployment.md)                       |
+| Set up for local development                       | [guides/development.md](guides/development.md)                     |
+| Operate the HTTP service                           | [ops/http-api-runbook.md](ops/http-api-runbook.md)                 |
+| Upgrade 0.1.2 → 0.1.3                              | [ops/upgrading.md](ops/upgrading.md)                               |
+| Upgrade 0.1.1 → 0.1.2                              | [ops/upgrading.md](ops/upgrading.md)                               |
+| See release history                                | [../CHANGELOG.md](../CHANGELOG.md)                                 |
+| Read the static-analysis exemption approval ledger | [development/lint-exemptions.md](development/lint-exemptions.md)   |
 
 ## Where docs live
 
@@ -37,3 +37,11 @@ Start from the table below, or browse a category directly.
 - `ops/` — operate a running deployment: the HTTP runbook and upgrade
   notes.
 - `contracts/` — copyable, sanitized wire-shape fixtures for clients.
+
+## Static-analysis exemption approval
+
+The generated [static-analysis exemption ledger](development/lint-exemptions.md)
+is the review record for exact, approved findings. The durable workflow is
+documented in `AGENTS.md` and `STYLE.md`: inspect the finding, write the
+counterfactual, obtain explicit approval, update the standalone registry, and
+run the scoped gate before committing.

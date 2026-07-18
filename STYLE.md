@@ -140,7 +140,7 @@ README-style prose may wrap the same copyright text across lines.
   Python 3.12, 3.13, and 3.14 CI matrix green.
 - Keep the configured line length at 79.
 - Let `black`, `ruff`, `flake8`, `mypy`, `pyright`, and `pylint` define the
-  automated baseline.
+  automated diagnostics; a count baseline is never an authorization.
 - Flake8 ignores `E203` and `W503` intentionally to stay compatible with
   Black formatting; these are project style rules, not temporary debt.
 - `__init__.py` re-exports should be explicit through `__all__` and must not
@@ -156,9 +156,15 @@ README-style prose may wrap the same copyright text across lines.
   docstring, mutable-default, exception, or unused-argument rules.
 - Local waivers must sit beside the compatibility boundary they protect and
   include a short reason when the intent is not obvious.
-- Current local Pylint waivers are enumerated in the
-  ALLOWED_LOCAL_PYLINT_DISABLES table in `tests/unit/test_style_naming.py` and
-  documented in `docs/development/lint-exemptions.md`.
+- `static-analysis-exemptions.toml` is the single default deny registry for
+  exact static-analysis findings. Inspect the finding first, write its
+  counterfactual and risk, and obtain explicit approval before adding a
+  record.
+- Classification outcomes are `temporary` and `structural`. Temporary records
+  require an owner, review date, expiry, remediation, and linked tests;
+  structural records still require review and a remediation plan.
+- Run `make scoped` for every commit and `make push` for every push. Count
+  baselines, numeric ratchets, and parallel local allowlists are prohibited.
 - Test-only style exceptions, such as pytest function docstrings, must remain
   under `tests/`.
 

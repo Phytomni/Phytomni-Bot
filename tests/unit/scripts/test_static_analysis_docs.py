@@ -38,3 +38,38 @@ def test_lint_ledger_contains_lifecycle_and_evidence_fields() -> None:
     assert "Remediation" in rendered
     assert "Tests" in rendered
     assert "numeric baseline" not in rendered.lower()
+
+
+def test_approval_workflow_is_documented_in_durable_guidance() -> None:
+    """Contributors get one explicit, reviewable exemption workflow."""
+    agents_path = _ROOT / "AGENTS.md"
+    style = (_ROOT / "STYLE.md").read_text(encoding="utf-8").lower()
+    readme = (_ROOT / "docs/README.md").read_text(encoding="utf-8").lower()
+
+    documents = [style]
+    if agents_path.exists():
+        documents.append(agents_path.read_text(encoding="utf-8").lower())
+
+    for document in documents:
+        for phrase in (
+            "static-analysis-exemptions.toml",
+            "default deny",
+            "temporary",
+            "structural",
+            "review",
+            "expiry",
+            "explicit approval",
+            "make scoped",
+            "make push",
+            "count baseline",
+        ):
+            assert phrase in document
+
+    if agents_path.exists():
+        agents = documents[-1]
+        assert "inspect" in agents
+        assert "counterfactual" in agents
+        assert "codeowners" in agents
+        assert "branch protection" in agents
+        assert "external" in agents
+    assert "static-analysis exemption approval" in readme
