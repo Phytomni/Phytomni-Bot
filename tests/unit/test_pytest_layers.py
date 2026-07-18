@@ -153,7 +153,10 @@ def test_scoped_gate_reconciles_static_analysis_exemptions() -> None:
         encoding="utf-8"
     )
 
-    assert "check --scope cross-file" in scoped_gate
+    assert "check-pylint" in scoped_gate
+    assert "--files-from-stdin" in scoped_gate
+    assert "--cross-files-from-git" in scoped_gate
+    assert "--disable=R0801,R0903" not in scoped_gate
     assert "check --scope full" in scoped_gate
     assert "static-analysis-exemptions.toml" in scoped_gate
 
@@ -166,3 +169,6 @@ def test_validate_local_uses_generated_static_analysis_contract() -> None:
 
     assert "render-docs --check" in validate_local
     assert "check --scope full" in validate_local
+    assert "check-pylint" in validate_local
+    assert "--files-from-git" in validate_local
+    assert "scripts/check_pylint_baseline.py" not in validate_local

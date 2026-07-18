@@ -23,23 +23,10 @@ run uv run flake8 src tests e2e scripts
 run uv run mypy src tests e2e scripts
 run uv run pyright src tests e2e scripts
 
-set --
-while IFS= read -r pyfile; do
-    if [ -n "$pyfile" ]; then
-        set -- "$@" "$pyfile"
-    fi
-done <<EOF
-$(git ls-files '*.py')
-EOF
-# R0801 (duplicate-code, cross-file) and R0903 (too-few-public-methods,
-# test fakes) have no per-file disable mechanism and would
-# otherwise demand inline disables on every offending site. They are
-# silenced here at the CLI level and re-counted against a pinned
-# baseline by scripts/check_pylint_baseline.py below, so the gate
-# fails on a count increase but passes at the current state. See
-# docs/development/lint-exemptions.md for the full rationale.
-run uv run pylint --persistent=no --disable=R0801,R0903 "$@"
-run uv run python scripts/check_pylint_baseline.py
+pylint_python_version=$(uv run python -c \
+    'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
+run uv run python scripts/check_static_analysis_exemptions.py \
+    check-pylint --python-version "$pylint_python_version" --files-from-git
 
 set --
 while IFS= read -r shfile; do

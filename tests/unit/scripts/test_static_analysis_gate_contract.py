@@ -18,9 +18,12 @@ _MAKEFILE = (_ROOT / "Makefile").read_text(encoding="utf-8")
 _GATE = (_ROOT / "scripts/scoped_gate.sh").read_text(encoding="utf-8")
 _FULL_GATE = (_ROOT / "scripts/validate_local.sh").read_text(encoding="utf-8")
 _WORKFLOW = (_ROOT / ".github/workflows/lint.yml").read_text(encoding="utf-8")
-_CHECKS = _GATE.split(
-    "# Static-analysis exemption reconciliation.", maxsplit=1
-)[1].split("# Static + format check", maxsplit=1)[0]
+_STYLE_TEST = (_ROOT / "tests/unit/test_style_naming.py").read_text(
+    encoding="utf-8"
+)
+_CHECKS = _GATE.split("# Python toolchain", maxsplit=1)[1].split(
+    "# Static + format check", maxsplit=1
+)[0]
 
 
 def _command(scope: str) -> str:
@@ -31,13 +34,14 @@ def _command(scope: str) -> str:
 
 
 def test_python_changes_run_one_cross_file_check() -> None:
-    """A Python change invokes the exact cross-file checker once."""
-    assert len(re.findall(_command("cross-file"), _CHECKS)) == 1
+    """A Python change invokes the centralized scoped Pylint checker once."""
+    assert _CHECKS.count("check-pylint") == 1
+    assert "--files-from-stdin" in _CHECKS
+    assert "--cross-files-from-git" in _CHECKS
+    assert "--disable=R0801,R0903" not in _CHECKS
+    assert "check --scope cross-file" not in _CHECKS
     assert 'if [ -z "$py_files" ]; then' in _CHECKS
-    assert (
-        "no changed .py files; skipping static-analysis cross-file check"
-        in (_CHECKS)
-    )
+    assert "no changed .py files; skipping compileall" in _CHECKS
 
 
 def test_non_python_changes_skip_cross_file_check() -> None:
@@ -48,8 +52,10 @@ def test_non_python_changes_skip_cross_file_check() -> None:
         flags=re.DOTALL,
     )
     assert match is not None
-    assert "cross-file check" in match.group("body")
-    assert re.search(_command("cross-file"), match.group("run"))
+    assert "no changed .py files" in match.group("body")
+    assert "check-pylint" in match.group("run")
+    assert "--files-from-stdin" in match.group("run")
+    assert "--cross-files-from-git" in match.group("run")
 
 
 def test_policy_paths_force_full_inventory() -> None:
@@ -72,8 +78,21 @@ def test_full_gate_checks_registry_and_generated_ledger() -> None:
     """The full local gate uses the shared checker and renderer."""
     assert "render-docs --check" in _FULL_GATE
     assert re.search(_command("full"), _FULL_GATE)
-    assert "scripts/check_pylint_baseline.py" in _FULL_GATE
+    assert "check-pylint" in _FULL_GATE
+    assert "--files-from-git" in _FULL_GATE
+    assert "scripts/check_pylint_baseline.py" not in _FULL_GATE
+    assert "--disable=R0801,R0903" not in _FULL_GATE
     assert "reconcile(" not in _FULL_GATE
+
+
+def test_legacy_numeric_baseline_and_local_allowlist_are_absent() -> None:
+    """No second authorization path may return after the cutover."""
+    assert not (_ROOT / "scripts/check_pylint_baseline.py").exists()
+    gate_text = "\n".join((_GATE, _FULL_GATE, _WORKFLOW))
+    assert "RULE_BASELINES" not in gate_text
+    assert "--disable=R0801,R0903" not in gate_text
+    assert "ALLOWED_LOCAL_PYLINT_DISABLES" not in _STYLE_TEST
+    assert "PYLINT_DISABLE_MARKER" not in _STYLE_TEST
 
 
 def test_local_gate_entrypoints_share_the_generated_checker() -> None:

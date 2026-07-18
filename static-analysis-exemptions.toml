@@ -272,26 +272,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0016"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "command"
-target_kind = "command"
-path = "scripts/scoped_gate.sh"
-symbol = "--disable"
-fingerprint = "sha256:a2c5b2b22061217ce6940be858afc5fb24b4f7ab6ff4ca35990867d7e8d7c835"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "run uv run pylint --persistent=no --disable=R0801,R0903 \"$@\""
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0017"
 tool = "pylint"
 rule = "R0801"
@@ -417,26 +397,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "Similar lines in 2 files\n==scripts.static_analysis.collectors.source:[84:98]\n==scripts.static_analysis.fingerprints:[48:62]\n        name = _definition_name(node)\n        next_parents = parents\n        next_depth = depth\n        if name is not None:\n            next_parents = (*parents, name)\n            next_depth += 1\n            start = getattr(node, \"lineno\", None)\n            end = getattr(node, \"end_lineno\", None)\n            if (\n                isinstance(start, int)\n                and isinstance(end, int)\n                and start <= line <= end\n            ):\n                matches.append("
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0023"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "command"
-target_kind = "command"
-path = "scripts/validate_local.sh"
-symbol = "--disable"
-fingerprint = "sha256:2ab3cb190855ae40cf57a7f40da43fea448ba0efe25b1653eca1b3affcbf0d9a"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "run uv run pylint --persistent=no --disable=R0801,R0903 \"$@\""
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -3832,46 +3792,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0178"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "command"
-target_kind = "command"
-path = "scripts/scoped_gate.sh"
-symbol = "--disable"
-fingerprint = "sha256:32f968b322db2223028740bbcbf58f9aac85c5e7871999322ab5f2c78c77406b"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "run uv run pylint --persistent=no --disable=R0801,R0903 \"$@\""
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0179"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "command"
-target_kind = "command"
-path = "scripts/validate_local.sh"
-symbol = "--disable"
-fingerprint = "sha256:0e9c1286d2f148b5e1ddc1519a4251871e9b5c27629397ef12347c2ca7cabdc4"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "run uv run pylint --persistent=no --disable=R0801,R0903 \"$@\""
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0180"
 tool = "pylint"
 rule = "R0903"
@@ -4921,26 +4841,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "tool.pylint.format.max-module-lines=1100"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0234"
-tool = "pylint"
-rule = "numeric-baseline"
-classification = "temporary"
-mechanism = "command"
-target_kind = "command"
-path = "scripts/validate_local.sh"
-symbol = "check_pylint_baseline.py"
-fingerprint = "sha256:6898f9970793f9e7a24244538540fd811dad18fc2705d6d63ca672908543b224"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "run uv run python scripts/check_pylint_baseline.py"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]

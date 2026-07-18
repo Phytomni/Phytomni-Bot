@@ -225,26 +225,20 @@ else
     run uv run mypy "$@"
     run uv run pyright "$@"
 
-    # NOTE: validate_local.sh does NOT set PYTHONPATH for pylint; mirror that.
-    # --disable=R0801,R0903 mirrors validate_local.sh: those rules are
-    # tracked by scripts/check_pylint_baseline.py on the full gate, not
-    # at the scoped gate (subset runs would emit fragmentary counts).
-    run uv run pylint --persistent=no --disable=R0801,R0903 "$@"
+    pylint_python_version=$(uv run python -c \
+        'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
+    printf '%s' "$py_files" | tr '\n' '\0' |
+        run uv run python scripts/check_static_analysis_exemptions.py \
+            check-pylint --python-version "$pylint_python_version" \
+            --files-from-stdin --cross-files-from-git
 fi
 
 # ---------------------------------------------------------------------------
-# Static-analysis exemption reconciliation. Cross-file findings are checked
-# for every Python change; policy/tooling changes run the full inventory so a
-# modified collector or rule configuration cannot bypass another suppression
-# family. The checker is the single source of matching semantics.
+# Static-analysis exemption reconciliation. Policy/tooling changes run the
+# full inventory so a modified collector or rule configuration cannot bypass
+# another suppression family. The checker is the single source of matching
+# semantics; Python changes already use its scoped Pylint path above.
 # ---------------------------------------------------------------------------
-if [ -z "$py_files" ]; then
-    printf '\n==> no changed .py files; skipping static-analysis cross-file check\n'
-else
-    run uv run python scripts/check_static_analysis_exemptions.py \
-        check --scope cross-file
-fi
-
 if [ "$policy_changed" -eq 0 ]; then
     printf '\n==> no static-analysis policy files changed; skipping full check\n'
 else
