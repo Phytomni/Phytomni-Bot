@@ -6,7 +6,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, NoReturn
 
 import httpx
 import pytest
@@ -16,6 +17,11 @@ from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
 
 pytestmark = pytest.mark.server
+
+_SENSITIVE_ERROR = (
+    "Bearer bearer-secret postgresql://db-user:db-password@"
+    "db.internal/db SELECT secret_token FROM private_table"
+)
 
 
 def _patch_review_app(monkeypatch: pytest.MonkeyPatch, app: Any) -> None:
@@ -122,21 +128,16 @@ async def test_review_stream_runtime_failure_emits_error_and_fails_run(
     """A Review A2UI fault after RunStarted emits one error and fails."""
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
 
-    class _FailingReviewApp:
-        async def ainvoke(
-            self,
-            _state: dict[str, Any],
-            *,
-            config: dict[str, Any],
-        ) -> dict[str, Any]:
-            """Raise a backend failure after the opening event."""
-            del config
-            raise RuntimeError(
-                "Bearer bearer-secret postgresql://db-user:db-password@"
-                "db.internal/db SELECT secret_token FROM private_table"
-            )
+    async def _fail_review(
+        _state: dict[str, Any],
+        *,
+        config: dict[str, Any],
+    ) -> NoReturn:
+        """Raise a backend failure after the opening event."""
+        del _state, config
+        raise RuntimeError(_SENSITIVE_ERROR)
 
-    _patch_review_app(monkeypatch, _FailingReviewApp())
+    _patch_review_app(monkeypatch, SimpleNamespace(ainvoke=_fail_review))
     response = await _post_review_chat_completion(
         api_client,
         issued_api_key,

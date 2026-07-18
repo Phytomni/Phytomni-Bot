@@ -3165,14 +3165,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "tests/server/test_resume_mcp.py"
-symbol = "107:117"
+symbol = "104:114"
 peer_path = "tests/server/test_stdio_progress.py"
 peer_symbol = "49:60"
-fingerprint = "sha256:0984e98111b5f90c75d8d316dd689e5eb68ffe7657805d1240a8f724d01610cf"
+fingerprint = "sha256:4dbbc1854fd72ac53af9cd850a1e453ef7c0bc583d0cc5ecfa4f2a2df4b5f0f6"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_resume_mcp:[107:117]\n==test_stdio_progress:[49:60]\n    monkeypatch.setattr(\n        app_mod,\n        \"_graph_stream_target\",\n        lambda _tool, _args: (fake_app, {\"user_query\": \"q\"}),\n    )\n    monkeypatch.setattr(\n        app_mod, \"_astream_progress_ticks\", _fake_astream_progress\n    )\n    # capture terminal payload path\n    monkeypatch.setattr(\n        app_mod,"
+rationale = "Similar lines in 2 files\n==test_resume_mcp:[104:114]\n==test_stdio_progress:[49:60]\n    monkeypatch.setattr(\n        app_mod,\n        \"_graph_stream_target\",\n        lambda _tool, _args: (fake_app, {\"user_query\": \"q\"}),\n    )\n    monkeypatch.setattr(\n        app_mod, \"_astream_progress_ticks\", _fake_astream_progress\n    )\n    monkeypatch.setattr(\n        app_mod,"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -3748,46 +3748,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0201"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/server/test_a2ui_chat_streaming.py"
-symbol = "test_stream_a2ui_runtime_failure_emits_error_and_fails_run._FailingA2UIApp"
-fingerprint = "sha256:c63479d4ed42935fc72a4ad099d0f8f61d49ed48e95fd766f8280971f84365ce"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (1/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0205"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/server/test_a2ui_review_http.py"
-symbol = "test_review_stream_runtime_failure_emits_error_and_fails_run._FailingReviewApp"
-fingerprint = "sha256:8ce4faa6d5b78b445ff5d54cc0b9d2107239fa3f69e7939dc959655d98e14b98"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (1/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0206"
 tool = "pylint"
 rule = "R0903"
@@ -3801,46 +3761,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "Too few public methods (1/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0209"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/server/test_resume_mcp.py"
-symbol = "_FakeInterrupt"
-fingerprint = "sha256:035f11516f396fb8e888a46558f2a978da954672237aa30dfa2422c6bf3e3e7e"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (0/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0210"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/server/test_resume_mcp.py"
-symbol = "_FakeSession.elicit._Result"
-fingerprint = "sha256:f9eb44d6ebcf74c3171819ecb6bb1f006ac372c7acbe613deca70779ea3d84b4"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (0/2)"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]

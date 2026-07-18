@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Any, cast
+from types import SimpleNamespace
+from typing import Any, NoReturn, cast
 
 import httpx
 import pytest
@@ -121,23 +122,21 @@ async def test_stream_a2ui_runtime_failure_emits_error_and_fails_run(
     """A Chat A2UI fault emits one error and settles the run failed."""
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
 
-    class _FailingA2UIApp:
-        async def ainvoke(
-            self,
-            _state: dict[str, Any],
-            *,
-            config: dict[str, Any],
-        ) -> dict[str, Any]:
-            """Raise a backend failure after the opening event."""
-            del config
-            raise RuntimeError(
-                "Bearer bearer-secret postgresql://db-user:db-password@"
-                "db.internal/db SELECT secret_token FROM private_table"
-            )
+    async def _fail_a2ui(
+        _state: dict[str, Any],
+        *,
+        config: dict[str, Any],
+    ) -> NoReturn:
+        """Raise a backend failure after the opening event."""
+        del config
+        raise RuntimeError(
+            "Bearer bearer-secret postgresql://db-user:db-password@"
+            "db.internal/db SELECT secret_token FROM private_table"
+        )
 
     monkeypatch.setattr(
         "mcp_server_phytomni.api.app._chat_a2ui_stream_app",
-        _FailingA2UIApp,
+        lambda: SimpleNamespace(ainvoke=_fail_a2ui),
     )
     response = await chat_completion(
         api_client,

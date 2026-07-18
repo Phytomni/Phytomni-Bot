@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -14,11 +15,6 @@ from mcp_server_phytomni.mcp import app as app_mod
 from mcp_server_phytomni.runtime.resume import elicit_review_decision
 
 pytestmark = pytest.mark.server
-
-
-class _FakeInterrupt:
-    def __init__(self, value: Any) -> None:
-        self.value = value
 
 
 class _FakeSession:
@@ -39,11 +35,10 @@ class _FakeSession:
             {"message": message, "schema": requested_schema}
         )
 
-        class _Result:
-            action = self._action
-            content = {"edits": None}
-
-        return _Result()
+        return SimpleNamespace(
+            action=self._action,
+            content={"edits": None},
+        )
 
 
 @pytest.mark.asyncio
@@ -79,7 +74,9 @@ async def test_review_stdio_interrupt_elicits_and_resumes(
     """ReviewAgent stdio interrupts elicit a decision before formatting."""
     session = AsyncMock()
     fake_app = AsyncMock()
-    interrupted = {"__interrupt__": [_FakeInterrupt({"draft": "DRAFT"})]}
+    interrupted = {
+        "__interrupt__": [SimpleNamespace(value={"draft": "DRAFT"})]
+    }
     resumed_state = {"final_response": "done"}
     decisions: list[dict[str, Any]] = []
     resumes: list[tuple[str, dict[str, Any]]] = []
@@ -145,7 +142,9 @@ async def test_review_dispatch_without_progress_token_elicits_and_resumes(
     """ReviewAgent stdio calls elicit even without progressToken."""
     session = AsyncMock()
     fake_app = AsyncMock()
-    interrupted = {"__interrupt__": [_FakeInterrupt({"draft": "DRAFT"})]}
+    interrupted = {
+        "__interrupt__": [SimpleNamespace(value={"draft": "DRAFT"})]
+    }
     resumed_state = {"final_response": "done"}
     decisions: list[dict[str, Any]] = []
     resumes: list[tuple[str, dict[str, Any]]] = []
