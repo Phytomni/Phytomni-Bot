@@ -497,12 +497,13 @@ regression bait — any node-set or edge-set drift surfaces as a
 diff in the same PR that causes it. A CI re-export-and-diff guard
 remains pending. See [Declarative Graphs](#declarative-graphs) for
 the reverse direction: reading a manifest back into a validated
-view via `GraphLoader`.
+view via `load_graph_manifest`.
 
 ## Declarative Graphs
 
-`graphs/loader.py` ships a default-off loader that reads any
-committed `graphs/manifests/*.graph.json` snapshot back into a
+`graphs/loader.py` ships a default-off `load_graph_manifest`
+function that reads any committed
+`graphs/manifests/*.graph.json` snapshot back into a
 validated `GraphManifest` view. It is the read-back complement of
 the `export_manifest()` write path and the foundation for future
 LLM-authored or human-edited manifests that compile into LangGraph
@@ -510,9 +511,9 @@ apps.
 
 **Feature flag.** `GRAPH_LOADER_ENABLED` on `ServerConfig` (env
 `GRAPH_LOADER_ENABLED` or `PHYTOMNI_GRAPH_LOADER`) gates
-construction; the default is `False`. With the flag off,
-`GraphLoader()` raises `GraphLoaderDisabledError`, so import-time
-exposure does not enable anything. Set
+the call; the default is `False`. With the flag off,
+`load_graph_manifest(...)` raises `GraphLoaderDisabledError`, so
+importing the function does not enable anything. Set
 `PHYTOMNI_GRAPH_LOADER=true` per deployment to opt in.
 
 **Allowlist.** `graphs/allowlist.py` derives
@@ -543,10 +544,9 @@ node-ref and route-fn lookups inherit the same guard.
 the env var) looks like:
 
 ```python
-from mcp_server_phytomni.graphs.loader import GraphLoader
+from mcp_server_phytomni.graphs.loader import load_graph_manifest
 
-loader = GraphLoader()  # raises GraphLoaderDisabledError if flag is off
-manifest = loader.load(
+manifest = load_graph_manifest(
     "src/mcp_server_phytomni/graphs/manifests/chat.graph.json"
 )
 print(manifest.subgraph_node_names)

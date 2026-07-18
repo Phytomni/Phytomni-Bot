@@ -24,9 +24,9 @@ from mcp_server_phytomni.graphs.allowlist import (
 )
 from mcp_server_phytomni.graphs.defaults import build_default_registry
 from mcp_server_phytomni.graphs.loader import (
-    GraphLoader,
     GraphLoaderDisabledError,
     GraphLoaderValidationError,
+    load_graph_manifest,
 )
 from mcp_server_phytomni.graphs.manifest import GraphManifest
 from mcp_server_phytomni.graphs.schema import GRAPH_MANIFEST_SCHEMA_PATH
@@ -46,7 +46,7 @@ def _enabled_config() -> ServerConfig:
 
 
 def test_loader_disabled_by_default() -> None:
-    """Default-off ``ServerConfig`` makes ``GraphLoader()`` raise.
+    """Default-off ``ServerConfig`` makes manifest loading raise.
 
     Pins the production-safety contract: importing the loader module
     does not enable anything; only an explicit flag-on config (env or
@@ -54,13 +54,36 @@ def test_loader_disabled_by_default() -> None:
     """
     assert ServerConfig().GRAPH_LOADER_ENABLED is False
     with pytest.raises(GraphLoaderDisabledError):
-        GraphLoader()
+        load_graph_manifest(MANIFESTS_DIR / "chat.graph.json")
 
 
-def test_loader_constructs_when_flag_on() -> None:
-    """Flag-on config produces a loader carrying the default allowlist."""
-    loader = GraphLoader(config=_enabled_config())
-    assert loader.allowlist == default_subgraph_allowlist()
+def test_loader_accepts_enabled_config(tmp_path: Path) -> None:
+    """Flag-on config loads a manifest using the default allowlist."""
+    manifest_path = tmp_path / "enabled.graph.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "nodes": [
+                    {"name": "__start__", "kind": "boundary"},
+                    {"name": "__end__", "kind": "boundary"},
+                ],
+                "edges": [
+                    {
+                        "source": "__start__",
+                        "target": "__end__",
+                        "conditional": False,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest = load_graph_manifest(
+        manifest_path,
+        allowlist=default_subgraph_allowlist(),
+        config=_enabled_config(),
+    )
+    assert manifest.subgraph_node_names == ()
 
 
 @pytest.mark.parametrize(
@@ -81,8 +104,7 @@ def test_loader_round_trips_every_committed_manifest(
     historic indent=2 form and any future canonicalization that
     sorts keys.
     """
-    loader = GraphLoader(config=_enabled_config())
-    manifest = loader.load(manifest_path)
+    manifest = load_graph_manifest(manifest_path, config=_enabled_config())
     expected = json.loads(manifest_path.read_text(encoding="utf-8"))
     # ``mode='json'`` coerces the model's tuple fields back to JSON
     # arrays so the round-trip equals the on-disk shape.
@@ -120,9 +142,8 @@ def test_loader_rejects_subgraph_outside_allowlist(
     }
     bogus_path = tmp_path / "bogus.graph.json"
     bogus_path.write_text(json.dumps(bogus), encoding="utf-8")
-    loader = GraphLoader(config=_enabled_config())
     with pytest.raises(GraphLoaderValidationError) as exc_info:
-        loader.load(bogus_path)
+        load_graph_manifest(bogus_path, config=_enabled_config())
     assert "definitely_not_a_real_subgraph" in str(exc_info.value)
 
 
@@ -136,9 +157,8 @@ def test_loader_rejects_schema_violation(tmp_path: Path) -> None:
     malformed = {"nodes": [{"kind": "node"}], "edges": []}
     bad_path = tmp_path / "bad.graph.json"
     bad_path.write_text(json.dumps(malformed), encoding="utf-8")
-    loader = GraphLoader(config=_enabled_config())
     with pytest.raises(GraphLoaderValidationError):
-        loader.load(bad_path)
+        load_graph_manifest(bad_path, config=_enabled_config())
 
 
 def test_exported_schema_matches_pydantic_model() -> None:
