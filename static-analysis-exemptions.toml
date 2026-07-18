@@ -2727,12 +2727,12 @@ target_kind = "pair"
 path = "tests/server/test_api_chat_completions.py"
 symbol = "299:306"
 peer_path = "tests/agents/test_chat_agent.py"
-peer_symbol = "451:458"
-fingerprint = "sha256:771d1eb24f3c86febc0a2c17fb106d2c2a21dcd514b38c5f140523e90b48d7fd"
+peer_symbol = "461:468"
+fingerprint = "sha256:f4c1e2e498bcf853e5210de41230f57074b0c2741a83e60dd331d35b96f44a39"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_chat_completions:[299:306]\n==tests.agents.test_chat_agent:[451:458]\n                        \"message\": {\n                            \"role\": \"assistant\",\n                            \"content\": \"\",\n                            \"reasoning_content\": (\n                                \"<think>identify chlorophyll</think>\"\n                                \"Leaves capture light.\"\n                            ),"
+rationale = "Similar lines in 2 files\n==test_api_chat_completions:[299:306]\n==tests.agents.test_chat_agent:[461:468]\n                        \"message\": {\n                            \"role\": \"assistant\",\n                            \"content\": \"\",\n                            \"reasoning_content\": (\n                                \"<think>identify chlorophyll</think>\"\n                                \"Leaves capture light.\"\n                            ),"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -3475,32 +3475,12 @@ target_kind = "pair"
 path = "tests/unit/test_stream_lifecycle.py"
 symbol = "228:241"
 peer_path = "tests/agents/test_stream_graph_agent.py"
-peer_symbol = "427:434"
-fingerprint = "sha256:ac967fd4db89089be6f80ebe53d9d8dce90582d0d91a72ac1c8c1c9a10d7bff6"
+peer_symbol = "426:433"
+fingerprint = "sha256:9841db38ab87a9cc9ea8495614647541015f3013773fa3a52a42c315377a2dd6"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_stream_lifecycle:[228:241]\n==tests.agents.test_stream_graph_agent:[427:434]\n    for forbidden in (\n        \"bearer-secret\",\n        \"postgresql://\",\n        \"db-user:db-password\",\n        \"SELECT secret_token\",\n    ):\n        assert forbidden not in evidence"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0188"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/agents/test_chat_agent.py"
-symbol = "test_non_streaming_repairs_reasoning_content_answer_tail.MisplacedReasoningCompletion"
-fingerprint = "sha256:2f75398d04db82e71f2cf4f463d5cdd72b935714ee1128b7f189fbcf289bca4a"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (1/2)"
+rationale = "Similar lines in 2 files\n==test_stream_lifecycle:[228:241]\n==tests.agents.test_stream_graph_agent:[426:433]\n    for forbidden in (\n        \"bearer-secret\",\n        \"postgresql://\",\n        \"db-user:db-password\",\n        \"SELECT secret_token\",\n    ):\n        assert forbidden not in evidence\n\n\nasync def test_unexpected_error_logs_location_without_message(\n    caplog: pytest.LogCaptureFixture,\n) -> None:\n    \"\"\"Unexpected logs include identity/location but not raw exception text.\"\"\""
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -3528,106 +3508,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0195"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/agents/test_evolution_agent.py"
-symbol = "test_find_spa_taxids_returns_empty_on_non_200.fake_factory._Client"
-fingerprint = "sha256:30d84cc563351bd457a2c3432421d275b52d37cbcb4eb47ad2995978940b5c99"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (1/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0196"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/agents/test_evolution_agent.py"
-symbol = "test_find_spa_taxids_uses_async_httpx_factory.fake_factory._Client"
-fingerprint = "sha256:c31799112ea227e85aea5e4d06a3f01ee32ea862dc6052b0a3288c34f7b127de"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (1/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0197"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/agents/test_knowledge_subgraph_helper.py"
-symbol = "_FakeKnowledgeApp"
-fingerprint = "sha256:ff37e230f44b4b65165722510e09b07e53ed8acbe51c4687d0261c03f3de3278"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (1/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0198"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/agents/test_relay_routing.py"
-symbol = "_FakeCompletion"
-fingerprint = "sha256:7e651d3dbe9e31cf8551870e01d06dbbb2dbe4cd1535577c4b3cb490e690e918"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (1/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0199"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/agents/test_stream_graph_agent.py"
-symbol = "test_graph_stream_propagates_runtime_failure.FailingStreamApp"
-fingerprint = "sha256:b0465f55f3e6f8e0e7b66876e97cf548b39448f8f11acc850e204f4659f4794c"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (1/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0200"
 tool = "pylint"
 rule = "R0903"
@@ -3637,26 +3517,6 @@ target_kind = "symbol"
 path = "tests/conftest.py"
 symbol = "_build_fake_obs_client._FakeObsClient"
 fingerprint = "sha256:bdc751aa42890e90315050767a71d97be294611f7284929d9a7335ee0932b470"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (1/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0206"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/server/test_handler_support.py"
-symbol = "_FakeSecret"
-fingerprint = "sha256:a1bd544f1ccb72e7949fea2654de9b9fdfbecd6784921616fde3ca8a748c7a65"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15

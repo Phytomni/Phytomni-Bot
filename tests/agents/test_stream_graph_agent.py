@@ -14,6 +14,7 @@ frames -> terminal ``TextMessage``/``Custom`` projection ->
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Mapping
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -365,30 +366,28 @@ async def test_graph_stream_projects_progress_and_filters_child_ns() -> None:
 async def test_graph_stream_propagates_runtime_failure() -> None:
     """Raw graph streams leave runtime failures for the outer projector."""
 
-    class FailingStreamApp:
-        """Fake graph that fails after opening the run."""
+    async def failing_astream(
+        _state: Mapping[str, Any],
+        stream_mode: list[str],
+        config: Mapping[str, Any] | None = None,
+        *,
+        subgraphs: bool = False,
+    ) -> AsyncIterator[tuple[tuple[str, ...], str, dict[str, Any]]]:
+        """Raise a raw error after validating the graph stream options."""
+        del config
+        assert stream_mode == ["custom", "updates", "values"]
+        assert subgraphs is True
+        if stream_mode:
+            raise RuntimeError(
+                "Bearer bearer-secret postgresql://db-user:db-password@"
+                "db.internal/db SELECT secret_token FROM private_table"
+            )
+        yield (), "values", {}
 
-        async def astream(
-            self,
-            _state: Mapping[str, Any],
-            stream_mode: list[str],
-            config: Mapping[str, Any] | None = None,
-            *,
-            subgraphs: bool = False,
-        ) -> AsyncIterator[tuple[tuple[str, ...], str, dict[str, Any]]]:
-            """Raise a raw runtime error after validating stream options."""
-            del config
-            assert stream_mode == ["custom", "updates", "values"]
-            assert subgraphs is True
-            if stream_mode:
-                raise RuntimeError(
-                    "Bearer bearer-secret postgresql://db-user:db-password@"
-                    "db.internal/db SELECT secret_token FROM private_table"
-                )
-            yield (), "values", {}
+    failing_app = SimpleNamespace(astream=failing_astream)
 
     stream = _stream_graph_agent(
-        FailingStreamApp(),
+        failing_app,
         {},
         "KnowledgeAgent",
         "KnowledgeAgent",
@@ -409,7 +408,7 @@ async def test_graph_stream_propagates_runtime_failure() -> None:
         event
         async for event in project_stream_failures(
             _stream_graph_agent(
-                FailingStreamApp(),
+                failing_app,
                 {},
                 "KnowledgeAgent",
                 "KnowledgeAgent",

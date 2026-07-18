@@ -25,24 +25,22 @@ from mcp_server_phytomni.agents.shared.knowledge_subgraph import (
 pytestmark = pytest.mark.agent
 
 
-class _FakeKnowledgeApp:
-    """Minimal stand-in for a compiled KnowledgeAgent app."""
+def _fake_knowledge_app(response: dict[str, Any]) -> SimpleNamespace:
+    """Build a callable KA seam with explicit, inspectable call state."""
+    calls: list[dict[str, Any]] = []
 
-    def __init__(self, response: dict[str, Any]) -> None:
-        """Capture the canned KA response and start with no recorded calls."""
-        self.response = response
-        self.calls: list[dict[str, Any]] = []
-
-    async def ainvoke(self, payload: dict[str, Any]) -> dict[str, Any]:
+    async def ainvoke(payload: dict[str, Any]) -> dict[str, Any]:
         """Record the call and return the canned response."""
-        self.calls.append(payload)
-        return self.response
+        calls.append(payload)
+        return response
+
+    return SimpleNamespace(ainvoke=ainvoke, calls=calls)
 
 
 @pytest.mark.asyncio
 async def test_node_wrapper_projects_state_and_stores_response():
     """Wrapper builds KA input, awaits the app, stores response."""
-    fake_app = _FakeKnowledgeApp(
+    fake_app = _fake_knowledge_app(
         response={"retrieved_docs": [{"id": "doc-1"}]}
     )
 
@@ -68,7 +66,7 @@ async def test_node_wrapper_closure_captures_app_for_xray():
     subgraph. If a future refactor passes the app via globals or
     inline lookup, this assertion fails and surfaces the regression.
     """
-    fake_app = _FakeKnowledgeApp(response={"retrieved_docs": []})
+    fake_app = _fake_knowledge_app(response={"retrieved_docs": []})
 
     node = make_knowledge_node_wrapper(
         knowledge_app=cast(CompiledStateGraph, fake_app),
@@ -123,7 +121,7 @@ def test_after_router_ignores_non_string_pending():
 @pytest.mark.asyncio
 async def test_node_wrapper_returns_only_response_key():
     """Delta dict contains exactly one key — the configured response_key."""
-    fake_app = _FakeKnowledgeApp(
+    fake_app = _fake_knowledge_app(
         response={"retrieved_docs": [], "extra_field": "ignored"}
     )
 
@@ -143,7 +141,7 @@ async def test_node_wrapper_returns_only_response_key():
 @pytest.mark.asyncio
 async def test_node_wrapper_propagates_input_fn_exceptions():
     """``build_input_fn`` exceptions surface; the wrapper does not swallow."""
-    fake_app = _FakeKnowledgeApp(response={})
+    fake_app = _fake_knowledge_app(response={})
 
     def _boom(state: Any) -> dict[str, Any]:
         raise KeyError("missing field")

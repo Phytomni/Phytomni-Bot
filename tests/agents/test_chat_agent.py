@@ -10,6 +10,7 @@ follow-up question attachment without external network calls.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
@@ -441,12 +442,21 @@ async def test_non_streaming_repairs_reasoning_content_answer_tail(
     """Non-stream completions repair answers misplaced in reasoning_content."""
     chat_agents.run_phyto_chat_cached.cache_clear()
 
+    @dataclass(frozen=True)
     class MisplacedReasoningCompletion:
-        """Response stand-in with the answer tail in reasoning_content."""
+        """Frozen response stand-in for the model_dump boundary."""
+
+        payload: dict[str, Any]
 
         def model_dump(self) -> dict[str, Any]:
-            """Return a provider-shaped payload with blank content."""
-            return {
+            """Return the provider-shaped payload under test."""
+            return self.payload
+
+    async def fake_create(**kwargs: Any) -> MisplacedReasoningCompletion:
+        """Return the misplaced provider response."""
+        assert kwargs["stream"] is False
+        return MisplacedReasoningCompletion(
+            payload={
                 "choices": [
                     {
                         "message": {
@@ -460,11 +470,7 @@ async def test_non_streaming_repairs_reasoning_content_answer_tail(
                     }
                 ]
             }
-
-    async def fake_create(**kwargs: Any) -> MisplacedReasoningCompletion:
-        """Return the misplaced provider response."""
-        assert kwargs["stream"] is False
-        return MisplacedReasoningCompletion()
+        )
 
     def fake_async_openai(api_key: str, base_url: str) -> SimpleNamespace:
         """Return a fake AsyncOpenAI client."""

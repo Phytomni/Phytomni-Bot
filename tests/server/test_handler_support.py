@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from pydantic import SecretStr
 
 from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.mcp.handler_support import (
@@ -32,17 +33,6 @@ from mcp_server_phytomni.mcp.handler_support import (
 pytestmark = pytest.mark.server
 
 
-class _FakeSecret:
-    """Stand-in for a Pydantic SecretStr value used in tests."""
-
-    def __init__(self, value: str) -> None:
-        self._value = value
-
-    def get_secret_value(self) -> str:
-        """Return the wrapped plaintext value (SecretStr-shaped API)."""
-        return self._value
-
-
 def _fake_sensitive() -> SensitiveConfig:
     """Build a SensitiveConfig-shaped fake with the fields helpers read.
 
@@ -52,12 +42,12 @@ def _fake_sensitive() -> SensitiveConfig:
     duck-typed object passes through every code path under test.
     """
     namespace = SimpleNamespace(
-        API_KEY=_FakeSecret("fake-api-key"),
+        API_KEY=SecretStr("fake-api-key"),
         BASE_URL="https://example.invalid/llm",
         MODEL_ID="fake-model",
         CODER_URL="https://example.invalid/coder",
         CODER_MODEL="fake-coder-model",
-        CODER_API_KEY=_FakeSecret("fake-coder-api-key"),
+        CODER_API_KEY=SecretStr("fake-coder-api-key"),
     )
     return cast(SensitiveConfig, namespace)
 

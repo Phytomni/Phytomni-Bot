@@ -103,25 +103,22 @@ async def test_find_spa_taxids_uses_async_httpx_factory(
         """Hand out a stub client that records the parameters passed in."""
         captured["factory_kwargs"] = factory_kwargs
 
-        class _Client:
-            """Stub async httpx client whose ``get`` returns a fixed body."""
+        async def fake_get(url: str, **call_kwargs: Any) -> httpx.Response:
+            """Capture the request and return a two-record payload."""
+            captured["url"] = url
+            captured["call_kwargs"] = call_kwargs
+            return httpx.Response(
+                200,
+                json={
+                    "total": 2,
+                    "records": [
+                        {"answer": "9606. Homo sapiens"},
+                        {"answer": "10090. Mus musculus"},
+                    ],
+                },
+            )
 
-            async def get(self, url: str, **call_kwargs: Any) -> Any:
-                """Capture the request and return a two-record payload."""
-                captured["url"] = url
-                captured["call_kwargs"] = call_kwargs
-                return httpx.Response(
-                    200,
-                    json={
-                        "total": 2,
-                        "records": [
-                            {"answer": "9606. Homo sapiens"},
-                            {"answer": "10090. Mus musculus"},
-                        ],
-                    },
-                )
-
-        yield _Client()
+        yield SimpleNamespace(get=fake_get)
 
     monkeypatch.setattr(evolution_agent, "get_async_client", fake_factory)
 
@@ -157,15 +154,12 @@ async def test_find_spa_taxids_returns_empty_on_non_200(
         """Yield a stub client that always returns a 502."""
         del factory_kwargs
 
-        class _Client:
-            """Stub async httpx client whose ``get`` always errors."""
+        async def fake_get(url: str, **call_kwargs: Any) -> httpx.Response:
+            """Discard the request and return a 502 response."""
+            del url, call_kwargs
+            return httpx.Response(502, text="bad gateway")
 
-            async def get(self, url: str, **call_kwargs: Any) -> Any:
-                """Discard the request and return a 502 response."""
-                del url, call_kwargs
-                return httpx.Response(502, text="bad gateway")
-
-        yield _Client()
+        yield SimpleNamespace(get=fake_get)
 
     monkeypatch.setattr(evolution_agent, "get_async_client", fake_factory)
 

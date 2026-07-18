@@ -13,6 +13,7 @@ endpoints and never leaks operator coder/embed secrets.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 
@@ -25,14 +26,15 @@ from mcp_server_phytomni.config.settings import get_sensitive_config
 pytestmark = pytest.mark.agent
 
 
+@dataclass(frozen=True)
 class _FakeCompletion:
-    """Minimal Chat Completions stand-in with the model_dump contract."""
+    """Frozen Chat Completions stand-in for the model_dump boundary."""
+
+    payload: dict[str, Any]
 
     def model_dump(self) -> dict[str, Any]:
-        """Return a minimal completion payload."""
-        return {
-            "choices": [{"message": {"content": "ok", "role": "assistant"}}]
-        }
+        """Return the provider-shaped payload consumed by chat service."""
+        return self.payload
 
 
 def _capturing_async_openai(captured: dict[str, Any]):
@@ -40,7 +42,13 @@ def _capturing_async_openai(captured: dict[str, Any]):
 
     async def fake_create(**kwargs: Any) -> _FakeCompletion:
         del kwargs
-        return _FakeCompletion()
+        return _FakeCompletion(
+            payload={
+                "choices": [
+                    {"message": {"content": "ok", "role": "assistant"}}
+                ]
+            }
+        )
 
     def fake_async_openai(api_key: str, base_url: str) -> SimpleNamespace:
         captured["api_key"] = api_key
@@ -99,12 +107,13 @@ async def test_chat_relay_mode_overrides_llm_endpoint(monkeypatch):
         chat_service, "AsyncOpenAI", _capturing_async_openai(captured)
     )
 
-    await chat_service.run_phyto_chat_cached(
+    result = await chat_service.run_phyto_chat_cached(
         api_key="operator-key",
         base_url="https://operator.invalid/v1",
         **_sampling("relay routing"),
     )
 
+    assert result["choices"][0]["message"]["content"] == "ok"
     assert captured["api_key"] == "relay-key"
     assert captured["base_url"] == "https://relay.test/v1/relay/llm"
 
@@ -119,12 +128,13 @@ async def test_chat_normal_mode_keeps_operator_endpoint(monkeypatch):
         chat_service, "AsyncOpenAI", _capturing_async_openai(captured)
     )
 
-    await chat_service.run_phyto_chat_cached(
+    result = await chat_service.run_phyto_chat_cached(
         api_key="operator-key",
         base_url="https://operator.invalid/v1",
         **_sampling("normal routing"),
     )
 
+    assert result["choices"][0]["message"]["content"] == "ok"
     assert captured["api_key"] == "operator-key"
     assert captured["base_url"] == "https://operator.invalid/v1"
 
