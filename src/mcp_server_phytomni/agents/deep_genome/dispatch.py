@@ -39,7 +39,6 @@ from ...runtime.deep_genome_store import (
     DeepGenomeTransitionError,
 )
 from ...runtime.task_manager import resolve_tasks_db_path
-from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.obs_storage import normalize_obs_object_key, obsfs_path_for
 from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
@@ -169,6 +168,7 @@ def _outcome_work_item_delta(
 
 
 # Generic types use worker nodes; evolution/design use mounted subgraphs.
+# Keep this ordered list aligned with the work-item plan and its test oracle.
 GENERIC_ANALYSIS_NODE_TYPES: tuple[str, ...] = (
     "gene_expression_tissues",
     "gene_expression_cultivars",
@@ -213,8 +213,9 @@ class AnalysisDispatchContext(NamedTuple):
     output_dir: str
 
 
-class DeepGenomeDispatchMixin(WorkflowMixinBase):
-    """Routing, dispatch, and analysis-task nodes for DeepGenome."""
+class DeepGenomeDispatchMixin:
+    """Routing, dispatch, and analysis-task nodes for DeepGenome.
+    Dispatch methods share durable lifecycle and remote-submission state."""
 
     def _lifecycle_store(
         self: Any, state: DeepGenomeState | None

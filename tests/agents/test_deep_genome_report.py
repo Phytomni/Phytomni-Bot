@@ -52,6 +52,11 @@ class _ReportProbe(DeepGenomeReportMixin):
         """Wire the single config attribute the protected helpers read."""
         self.deep_genome_config = DeepGenomeConfig()
 
+    async def _dispatch_chat(self, user_query: str) -> dict[str, Any]:
+        """Return canned follow-up questions for final-report tests."""
+        del user_query
+        return {"choices": [{"message": {"content": '["Q1?", "Q2?"]'}}]}
+
     def preamble_and_analysis(self, state: DeepGenomeState) -> str:
         """Public proxy for ``_preamble_and_analysis``."""
         return self._preamble_and_analysis(state)
@@ -71,6 +76,12 @@ class _ReportProbe(DeepGenomeReportMixin):
     async def run_synthesizer(self, state: DeepGenomeState) -> dict[str, Any]:
         """Public proxy for the concrete-outcome synthesis barrier."""
         return await self._run_report_synthesizer(state)
+
+    async def run_follow_up_node(
+        self, state: DeepGenomeState
+    ) -> dict[str, Any]:
+        """Public proxy for the final follow-up report node."""
+        return await self._run_follow_up_node(state)
 
 
 def _state(**overrides: Any) -> DeepGenomeState:
@@ -306,30 +317,6 @@ async def test_synthesizer_rejects_missing_final_synthesis() -> None:
         await _ReportProbe().run_synthesizer(state)
 
 
-class _FollowUpProbe(DeepGenomeReportMixin):
-    """Report mixin host with a canned chat dispatch + public node proxy.
-
-    The follow-up node calls the shared chat subgraph; the probe stubs
-    ``_dispatch_chat`` so the test stays offline and focuses on the
-    final-report persistence side effect rather than the LLM round-trip.
-    """
-
-    def __init__(self) -> None:
-        """Wire the single config attribute the node reads."""
-        self.deep_genome_config = DeepGenomeConfig()
-
-    async def _dispatch_chat(self, user_query: str) -> dict[str, Any]:
-        """Return a canned follow-up chat response (JSON-list content)."""
-        del user_query
-        return {"choices": [{"message": {"content": '["Q1?", "Q2?"]'}}]}
-
-    async def run_follow_up_node(
-        self, state: DeepGenomeState
-    ) -> dict[str, Any]:
-        """Public proxy for ``_run_follow_up_node`` (in-hierarchy access)."""
-        return await self._run_follow_up_node(state)
-
-
 def _finalization_fixture(
     tmp_path: Path,
 ) -> tuple[DeepGenomeStore, str, str, int]:
@@ -401,7 +388,7 @@ def test_run_follow_up_node_publishes_assembled_report_atomically(
     report_dir.mkdir()
 
     out = asyncio.run(
-        _FollowUpProbe().run_follow_up_node(_report_state(task_id, report_dir))
+        _ReportProbe().run_follow_up_node(_report_state(task_id, report_dir))
     )
 
     snapshot = store.get_snapshot(task_id)
@@ -416,15 +403,6 @@ def test_run_follow_up_node_publishes_assembled_report_atomically(
         ).fetchone()[0]
     assert run_status == "succeeded"
     assert out["follow_up_questions"] == ["Q1?", "Q2?"]
-
-
-class _FailingFollowUpProbe(_FollowUpProbe):
-    """Follow-up host whose synthesis call fails deterministically."""
-
-    async def _dispatch_chat(self, user_query: str) -> dict[str, Any]:
-        """Raise the same typed failure category as a provider outage."""
-        del user_query
-        raise RuntimeError("provider unavailable")
 
 
 def test_follow_up_failure_preserves_intermediate_and_fails_owner(
@@ -442,13 +420,18 @@ def test_follow_up_failure_preserves_intermediate_and_fails_owner(
     report_dir = tmp_path / "report"
     report_dir.mkdir()
 
+    async def fail_dispatch(_user_query: str) -> dict[str, Any]:
+        """Raise the same typed failure category as a provider outage."""
+        raise RuntimeError("provider unavailable")
+
+    probe = _ReportProbe()
+    setattr(probe, "_dispatch_chat", fail_dispatch)
+
     with pytest.raises(
         DeepGenomeWorkflowError, match="^final synthesis failed$"
     ):
         asyncio.run(
-            _FailingFollowUpProbe().run_follow_up_node(
-                _report_state(task_id, report_dir)
-            )
+            probe.run_follow_up_node(_report_state(task_id, report_dir))
         )
 
     snapshot = store.get_snapshot(task_id)
@@ -479,7 +462,7 @@ async def test_follow_up_rejects_empty_final_report(
     with pytest.raises(
         DeepGenomeWorkflowError, match="^final report unavailable$"
     ):
-        await _FollowUpProbe().run_follow_up_node(
+        await _ReportProbe().run_follow_up_node(
             _report_state(task_id, report_dir)
         )
 
@@ -505,7 +488,7 @@ def test_follow_up_requires_durable_tracking(
         DeepGenomeWorkflowError, match="^final report tracking unavailable$"
     ):
         asyncio.run(
-            _FollowUpProbe().run_follow_up_node(
+            _ReportProbe().run_follow_up_node(
                 _state(task_id=None, report_dir=str(report_dir))
             )
         )

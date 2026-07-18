@@ -22,7 +22,6 @@ from ...common.prompts import get_prompt
 from ...common.responses import parse_follow_up_questions
 from ...graphs.chat_adapters import build_chat_input, build_chat_kwargs_for
 from ...mcp.progress_events import emit_progress
-from ...runtime.workflow_mixins import WorkflowMixinBase
 from .helpers import _renumber_citations
 
 if TYPE_CHECKING:
@@ -31,8 +30,9 @@ else:
     DeepResearchState = dict[str, Any]
 
 
-class ReviewSummaryMixin(WorkflowMixinBase):
-    """Summary synthesis and follow-up nodes for deep research."""
+class ReviewSummaryMixin:
+    """Summary synthesis and follow-up nodes for deep research.
+    Both stages use the same review-agent chat and citation context."""
 
     async def summary_prep_node(
         self: Any, state: DeepResearchState

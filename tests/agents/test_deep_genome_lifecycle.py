@@ -13,6 +13,7 @@ import asyncio
 import sqlite3
 from dataclasses import asdict
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
@@ -173,16 +174,11 @@ async def test_brief_gene_failure_fails_owner_without_remote_children(
     )
     agent = DeepGenomeAgents.__new__(DeepGenomeAgents)
 
-    class BrokenApp:
-        """Fake BriefGene-backed graph that fails before optional work."""
+    async def broken_ainvoke(*_args: Any, **_kwargs: Any) -> Any:
+        """Fail before any optional task can be submitted."""
+        raise agent_module.RequiredBriefGeneError("brief gene profile failed")
 
-        async def ainvoke(self, *_args: Any, **_kwargs: Any) -> Any:
-            """Fail before any optional task can be submitted."""
-            raise agent_module.RequiredBriefGeneError(
-                "brief gene profile failed"
-            )
-
-    agent.app = cast(Any, BrokenApp())
+    agent.app = cast(Any, SimpleNamespace(ainvoke=broken_ainvoke))
     config = DeepGenomeConfig()
     setattr(config, "DEEPGENOME_OUT", str(tmp_path))
     agent.deep_genome_config = config
@@ -439,19 +435,16 @@ async def test_design_mount_failure_settles_both_concrete_items(
     )
     harness = _dispatch_harness()
 
-    class BrokenDesignApp:
-        """Fake DigitalDesign graph that fails before acceptance."""
-
-        async def ainvoke(self, *_args: Any, **_kwargs: Any) -> Any:
-            """Raise a deterministic producer error."""
-            raise RuntimeError("design producer unavailable")
+    async def broken_design_ainvoke(*_args: Any, **_kwargs: Any) -> Any:
+        """Raise a deterministic producer error."""
+        raise RuntimeError("design producer unavailable")
 
     async def finalize(*_args: Any, **_kwargs: Any) -> Any:
         """The finalize callback must not run after a mount fault."""
         raise AssertionError("finalize must not run")
 
     node = design_mount.make_design_mount_node(
-        cast(Any, BrokenDesignApp()),
+        cast(Any, SimpleNamespace(ainvoke=broken_design_ainvoke)),
         finalize,
         harness._record_mount_failure,
     )
@@ -501,10 +494,8 @@ def test_all_optional_failures_preserve_profile_and_fail_owner(
             status="failed",
         )
 
-    class ReportHarness(DeepGenomeReportMixin):
-        """Minimal report host for the all-unusable barrier."""
-
-        deep_genome_config = DeepGenomeConfig()
+    report_harness = DeepGenomeReportMixin()
+    setattr(report_harness, "deep_genome_config", DeepGenomeConfig())
 
     state = {
         "task_id": reservation.umbrella_task_id,
@@ -521,7 +512,7 @@ def test_all_optional_failures_preserve_profile_and_fail_owner(
     with pytest.raises(
         DeepGenomeWorkflowError, match="no usable analysis result"
     ):
-        asyncio.run(ReportHarness()._run_report_synthesizer(cast(Any, state)))
+        asyncio.run(report_harness._run_report_synthesizer(cast(Any, state)))
 
     snapshot = store.get_snapshot(reservation.umbrella_task_id)
     assert snapshot is not None

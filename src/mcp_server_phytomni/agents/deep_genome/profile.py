@@ -21,7 +21,6 @@ from mcp.types import INTERNAL_ERROR, ErrorData
 
 from ...common.http import JsonPostRetry, require_json_object
 from ...config.defaults import DeepGenomeConfig
-from ...runtime.workflow_mixins import WorkflowMixinBase
 from ..shared.sql import bi_query, sql_literal
 
 if TYPE_CHECKING:
@@ -146,8 +145,10 @@ async def _cached_gene_annotation_lookup(
     return gene_anno_dict
 
 
-class DeepGenomeProfileMixin(WorkflowMixinBase):
-    """Gene annotation, network, and Part 1 profile nodes."""
+# pylint: disable-next=too-few-public-methods
+class DeepGenomeProfileMixin:
+    """Gene annotation, network, and Part 1 profile nodes.
+    Profile stages share the consuming agent's configuration and BI clients."""
 
     async def _gene_symbol(
         self: Any,

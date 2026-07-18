@@ -33,7 +33,6 @@ from ...common.httpx_client import get_async_client
 from ...common.prompts import get_prompt
 from ...common.relay_client import current_relay_client
 from ...config.relay_mode import relay_mode_enabled
-from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.path_policy import RunIdentity, task_tmp_key
 from ..knowledge.retrieval import retrieve
 from ..shared.analysis_storage import ensure_run_output_dir
@@ -74,8 +73,9 @@ def literal_str_representer(dumper, data):
 CustomDumper.add_representer(LiteralString, literal_str_representer)
 
 
-class AnalystGraphMixin(WorkflowMixinBase):
-    """Tool-usage retrieval and task submission nodes for AnalystAgent."""
+class AnalystGraphMixin:
+    """Tool-usage retrieval and task submission nodes for AnalystAgent.
+    The nodes keep their shared submission context on the consuming agent."""
 
     async def tool_retrieve_node(self: Any, state: AnalystAgentsState) -> dict:
         """Retrieve usage instructions for the extracted tools.

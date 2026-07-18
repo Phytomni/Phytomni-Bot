@@ -2045,12 +2045,12 @@ target_kind = "pair"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
 symbol = "205:215"
 peer_path = "tests/agents/test_deep_genome_report.py"
-peer_symbol = "221:231"
-fingerprint = "sha256:829e8aa81594bf1de1a62a3297af0c342efcf545c9a2ed54f245c4f694ef0d1a"
+peer_symbol = "232:242"
+fingerprint = "sha256:75dad3aced8db3b4e246aadf053950e52fe4a7cdd5fc8d42f880ce982eead563"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==tests.agents.test_deep_genome_dispatch_routing:[205:215]\n==tests.agents.test_deep_genome_report:[221:231]\n            {\n                \"work_item_key\": \"evolution_analysis\",\n                \"analysis_type\": \"evolution_analysis\",\n            },\n            {\n                \"work_item_key\": \"promoter_design\",\n                \"analysis_type\": \"promoter_design_analysis\",\n                \"section_key\": \"digital_design\",\n            },\n        ],"
+rationale = "Similar lines in 2 files\n==tests.agents.test_deep_genome_dispatch_routing:[205:215]\n==tests.agents.test_deep_genome_report:[232:242]\n            {\n                \"work_item_key\": \"evolution_analysis\",\n                \"analysis_type\": \"evolution_analysis\",\n            },\n            {\n                \"work_item_key\": \"promoter_design\",\n                \"analysis_type\": \"promoter_design_analysis\",\n                \"section_key\": \"digital_design\",\n            },\n        ],"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -2067,12 +2067,12 @@ target_kind = "pair"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
 symbol = "232:242"
 peer_path = "tests/agents/test_deep_genome_report.py"
-peer_symbol = "253:263"
-fingerprint = "sha256:4b948a5c5ab0c8bafa607b30b3e6fac824ecbc5ccb728f1f39109b37d5cdf8f7"
+peer_symbol = "264:274"
+fingerprint = "sha256:fa56f98abe19802582ed18c6218bdb33f8ac06548e017c481da1b514a67217dd"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==tests.agents.test_deep_genome_dispatch_routing:[232:242]\n==tests.agents.test_deep_genome_report:[253:263]\n            {\n                \"work_item_key\": \"evolution_analysis\",\n                \"analysis_type\": \"evolution_analysis\",\n            },\n            {\n                \"work_item_key\": \"promoter_design\",\n                \"analysis_type\": \"promoter_design_analysis\",\n                \"section_key\": \"digital_design\",\n            },\n        ],"
+rationale = "Similar lines in 2 files\n==tests.agents.test_deep_genome_dispatch_routing:[232:242]\n==tests.agents.test_deep_genome_report:[264:274]\n            {\n                \"work_item_key\": \"evolution_analysis\",\n                \"analysis_type\": \"evolution_analysis\",\n            },\n            {\n                \"work_item_key\": \"promoter_design\",\n                \"analysis_type\": \"promoter_design_analysis\",\n                \"section_key\": \"digital_design\",\n            },\n        ],"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -2089,12 +2089,12 @@ target_kind = "pair"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
 symbol = "243:252"
 peer_path = "tests/agents/test_deep_genome_report.py"
-peer_symbol = "232:241"
-fingerprint = "sha256:89f0f5e75f7c96e22b860c756d90e8767d660461a9a07a70e9eec9967c262f60"
+peer_symbol = "243:252"
+fingerprint = "sha256:bd1b158bf7ec303dbeb32e2d61e567458d5bbaf4412f870fa26884e744803ac5"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==tests.agents.test_deep_genome_dispatch_routing:[243:252]\n==tests.agents.test_deep_genome_report:[232:241]\n            \"task_0:evolution_analysis\": {\n                \"analysis_type\": \"evolution_analysis\",\n                \"status\": \"failed\",\n            },\n            \"task_10\": {\n                \"analysis_type\": \"digital_design\",\n                \"status\": \"failed\",\n            },\n        },"
+rationale = "Similar lines in 2 files\n==tests.agents.test_deep_genome_dispatch_routing:[243:252]\n==tests.agents.test_deep_genome_report:[243:252]\n            \"task_0:evolution_analysis\": {\n                \"analysis_type\": \"evolution_analysis\",\n                \"status\": \"failed\",\n            },\n            \"task_10\": {\n                \"analysis_type\": \"digital_design\",\n                \"status\": \"failed\",\n            },\n        },"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -2947,12 +2947,12 @@ target_kind = "pair"
 path = "tests/server/test_get_task_status.py"
 symbol = "39:49"
 peer_path = "tests/agents/test_deep_genome_lifecycle.py"
-peer_symbol = "53:63"
-fingerprint = "sha256:c3da2127e437773b332f62e0df7a2817c392aac5d263efdf1b54279a4b34d31b"
+peer_symbol = "54:64"
+fingerprint = "sha256:6c428246112060c3705f0bd8095bd141da283c3bd9c6ceda5da9009c926a6cbd"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_get_task_status:[39:49]\n==tests.agents.test_deep_genome_lifecycle:[53:63]\n    )\n    store.apply_brief_gene_transition(\n        reservation.umbrella_task_id,\n        status=\"succeeded\",\n        summary_markdown=\"# BriefGene profile\",\n    )\n    store.seed_plan(\n        reservation,\n        build_work_item_plan(\"osa\", \"Os01g0100100\", \"Os01g0100100\"),\n    )"
+rationale = "Similar lines in 2 files\n==test_get_task_status:[39:49]\n==tests.agents.test_deep_genome_lifecycle:[54:64]\n    )\n    store.apply_brief_gene_transition(\n        reservation.umbrella_task_id,\n        status=\"succeeded\",\n        summary_markdown=\"# BriefGene profile\",\n    )\n    store.seed_plan(\n        reservation,\n        build_work_item_plan(\"osa\", \"Os01g0100100\", \"Os01g0100100\"),\n    )"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -2969,12 +2969,12 @@ target_kind = "pair"
 path = "tests/server/test_get_task_status.py"
 symbol = "54:60"
 peer_path = "tests/agents/test_deep_genome_lifecycle.py"
-peer_symbol = "538:544"
-fingerprint = "sha256:7b83618a700cdb3d78efc0612e9193fe4587664d6829717a9e31cf414a89a5f1"
+peer_symbol = "529:535"
+fingerprint = "sha256:652a691371dabbdf328a2b9333b29731804925679f1fef3dbdeb7aad806e1e49"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_get_task_status:[54:60]\n==tests.agents.test_deep_genome_lifecycle:[538:544]\n    store.apply_work_item_transition(\n        reservation.umbrella_task_id,\n        work_item_key=\"smep_analysis\",\n        status=\"succeeded\",\n        summary_markdown=\"# SMEP summary\",\n    )"
+rationale = "Similar lines in 2 files\n==test_get_task_status:[54:60]\n==tests.agents.test_deep_genome_lifecycle:[529:535]\n    store.apply_work_item_transition(\n        reservation.umbrella_task_id,\n        work_item_key=\"smep_analysis\",\n        status=\"succeeded\",\n        summary_markdown=\"# SMEP summary\",\n    )"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -3365,12 +3365,12 @@ target_kind = "pair"
 path = "tests/unit/test_deep_genome_admin.py"
 symbol = "38:46"
 peer_path = "tests/agents/test_deep_genome_report.py"
-peer_symbol = "343:351"
-fingerprint = "sha256:e446a1f6b2a9271a9a392073d090919940366a8e720665d30a08dc7056f853a1"
+peer_symbol = "330:338"
+fingerprint = "sha256:d31703b04d8b444d3e963b1cc94534a6a2a39ec56fe231841e5ec923d2b20c11"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_deep_genome_admin:[38:46]\n==tests.agents.test_deep_genome_report:[343:351]\n    )\n    store.apply_brief_gene_transition(\n        reservation.umbrella_task_id,\n        status=\"succeeded\",\n        summary_markdown=\"BriefGene summary\",\n    )\n    store.seed_plan(\n        reservation,"
+rationale = "Similar lines in 2 files\n==test_deep_genome_admin:[38:46]\n==tests.agents.test_deep_genome_report:[330:338]\n    )\n    store.apply_brief_gene_transition(\n        reservation.umbrella_task_id,\n        status=\"succeeded\",\n        summary_markdown=\"BriefGene summary\",\n    )\n    store.seed_plan(\n        reservation,"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -3601,46 +3601,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "Too few public methods (0/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0191"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/agents/test_deep_genome_lifecycle.py"
-symbol = "test_brief_gene_failure_fails_owner_without_remote_children.BrokenApp"
-fingerprint = "sha256:29fb2e6ae0760387127c0413f98990398738d36e6c7d63e64b973ace8250da0d"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (1/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0192"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/agents/test_deep_genome_lifecycle.py"
-symbol = "test_design_mount_failure_settles_both_concrete_items.BrokenDesignApp"
-fingerprint = "sha256:78806b83a4e2f8b31828831de576b72050b4c97cb104f6fd01599cccec4ccf73"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (1/2)"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -4908,7 +4868,7 @@ mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/agents/deep_genome/dispatch.py"
 symbol = "DeepGenomeDispatchMixin"
-fingerprint = "sha256:acbe7f04de199b10e394d2e6393ec56c299bf55ecd852e7899b516e8a8209276"
+fingerprint = "sha256:b20197eb42c0782169622e60d20915ebe11b19b8d0759e2273072356ec65cdc6"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
@@ -5139,7 +5099,7 @@ mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/agents/deep_genome/dispatch.py"
 symbol = "DeepGenomeDispatchMixin"
-fingerprint = "sha256:2cd921c3dea781d79f6bf91d3a0e93be4430d232e5d8d9ea70aadc917ca9c895"
+fingerprint = "sha256:f448c3daf964aa5c4402edbe600c046c6aa04060521ad616ade6e97f5aa403ce"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
@@ -5374,7 +5334,7 @@ mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/agents/deep_genome/dispatch.py"
 symbol = "DeepGenomeDispatchMixin"
-fingerprint = "sha256:3dab7ba8ec98a3fa592dd356a00f830b9895da95feee4445c820c82e5fa1bfae"
+fingerprint = "sha256:0798e8ccfb5acef4a3251eb0b379d705d9bd8adf987f3f9f95c931665356ccbc"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
@@ -5800,3 +5760,57 @@ risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
 expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
+
+[[exemptions]]
+id = "SAE-STR-0001"
+tool = "pylint"
+rule = "too-few-public-methods"
+classification = "structural"
+mechanism = "inline"
+target_kind = "symbol"
+path = "src/mcp_server_phytomni/agents/deep_genome/profile.py"
+symbol = "DeepGenomeProfileMixin"
+fingerprint = "sha256:f919078a50df4db511f41d14935848003d67ff934117be82f1f237cc9b4cf6f4"
+owner = "bot-maintainers"
+introduced_on = 2026-07-18
+review_on = 2027-01-18
+rationale = "The profile mixin keeps two graph-bound BI/cache helpers on the consuming agent."
+counterfactual = "Extracting free functions would re-thread shared configuration and BI/cache context and weaken the profile boundary."
+risk = "A future helper added without graph-state coupling could be incorrectly retained in this structural mixin."
+tests = ["tests/agents/test_cache_candidates.py", "tests/agents/test_deep_genome_sql.py"]
+
+[[exemptions]]
+id = "SAE-STR-0002"
+tool = "pylint"
+rule = "too-few-public-methods"
+classification = "structural"
+mechanism = "inline"
+target_kind = "symbol"
+path = "src/mcp_server_phytomni/agents/deep_genome/report.py"
+symbol = "DeepGenomeReportMixin"
+fingerprint = "sha256:4b34b5b2a359f15b41ff6c5f9b12ab49cb33631f7f5f1982518b4458f4ac89e5"
+owner = "bot-maintainers"
+introduced_on = 2026-07-18
+review_on = 2027-01-18
+rationale = "The report mixin groups graph nodes that share DeepGenome stores, mounted subgraphs, provider dispatch, and durable finalization."
+counterfactual = "Extracting the thirteen stateful helpers would fragment the finalization barrier and enlarge the error-prone argument surface."
+risk = "A future stateless report helper could be hidden by this class-level exception instead of being extracted."
+tests = ["tests/agents/test_deep_genome_chat_subgraph.py", "tests/agents/test_deep_genome_knowledge_subgraph.py", "tests/agents/test_deep_genome_lifecycle.py", "tests/agents/test_deep_genome_report.py"]
+
+[[exemptions]]
+id = "SAE-STR-0003"
+tool = "pylint"
+rule = "too-few-public-methods"
+classification = "structural"
+mechanism = "inline"
+target_kind = "symbol"
+path = "src/mcp_server_phytomni/agents/review/report.py"
+symbol = "ReviewReportMixin"
+fingerprint = "sha256:1437a6aeed48bfca0a47bfe423e9f70a2258c20f3ae7e558805dfc7cc19af8a8"
+owner = "bot-maintainers"
+introduced_on = 2026-07-18
+review_on = 2027-01-18
+rationale = "The report mixin keeps critique, supplementary retrieval formatting, and citation auditing on the review agent."
+counterfactual = "Extracting the helpers would re-thread retrieval, citation, and failure-accumulator state and split the report invariant."
+risk = "A future helper with no review-agent state could be incorrectly retained in this structural mixin."
+tests = ["tests/agents/test_review_add_query_failures.py", "tests/agents/test_review_report_helpers.py", "tests/agents/test_review_revised_fan_out.py"]

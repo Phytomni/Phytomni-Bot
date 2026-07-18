@@ -28,7 +28,6 @@ from ...graphs.review_to_knowledge_adapters import (
     extract_review_knowledge_response,
 )
 from ...mcp.progress_events import emit_progress
-from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.downloads import download_upload_context
 from ..shared.analysis import _compute_traceback_digest
 from ..shared.parallel_dispatch import FailureRecord
@@ -68,8 +67,9 @@ class RetrievalAccumulator:
     file_id: int = 0
 
 
-class ReviewPlanningMixin(WorkflowMixinBase):
-    """Planning and retrieval nodes for the deep research workflow."""
+class ReviewPlanningMixin:
+    """Planning and retrieval nodes for the deep research workflow.
+    Planning and retrieval stages share the consuming agent's configuration."""
 
     async def plan_query_prep_node(
         self: Any, state: DeepResearchState

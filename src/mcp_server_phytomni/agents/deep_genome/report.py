@@ -33,7 +33,6 @@ from ...runtime.deep_genome_store import (
     DeepGenomeTransitionError,
 )
 from ...runtime.task_manager import resolve_tasks_db_path
-from ...runtime.workflow_mixins import WorkflowMixinBase
 from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
 from ..chat.service import _cached_chat_app
@@ -301,8 +300,10 @@ def _assemble_final_report(state: DeepGenomeState) -> str:
     )
 
 
-class DeepGenomeReportMixin(WorkflowMixinBase):
-    """Report synthesis and finalization nodes for DeepGenome."""
+# pylint: disable-next=too-few-public-methods
+class DeepGenomeReportMixin:
+    """Report synthesis and finalization nodes for DeepGenome.
+    Report stages share the consuming agent's stores, clients, and config."""
 
     async def _dispatch_knowledge_retrieve(
         self: Any,

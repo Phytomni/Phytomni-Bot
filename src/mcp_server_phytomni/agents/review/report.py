@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Any
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content
-from ...runtime.workflow_mixins import WorkflowMixinBase
 from ..shared.analysis import _compute_traceback_digest
 from ..shared.parallel_dispatch import FailureRecord
 from .helpers import (
@@ -130,8 +129,11 @@ class SupplementaryFormatState:
     counters: SupplementaryCounters
 
 
-class ReviewReportMixin(WorkflowMixinBase):
-    """Critique, revise, and citation-audit nodes for deep research."""
+# pylint: disable-next=too-few-public-methods
+class ReviewReportMixin:
+    """Critique, revise, and citation-audit nodes for deep research.
+    The report helpers share the review agent's configured retrieval context.
+    """
 
     async def _feedback_rag(
         self: Any,
