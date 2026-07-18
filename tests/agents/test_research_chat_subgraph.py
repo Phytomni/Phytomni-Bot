@@ -9,9 +9,8 @@
 with the shared ``chat_adapters`` IO mappers.
 """
 
-# pylint: disable=protected-access
-# Test file exercises ``_extract_goals`` (the chat-site chokepoint
-# inside InSilicoResearchAgents) directly to assert chat routing.
+# The direct goal-parser probe below targets the smallest research chat seam;
+# its protected-access directive is scoped to that test symbol.
 
 from __future__ import annotations
 
@@ -67,6 +66,7 @@ async def test_extract_goals_uses_chat_subgraph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``_extract_goals`` delegates to the compiled chat subgraph."""
+    # pylint: disable=protected-access
     agent = _build_agent()
     subgraph_app_mock = _install_chat_app_mock(
         monkeypatch,

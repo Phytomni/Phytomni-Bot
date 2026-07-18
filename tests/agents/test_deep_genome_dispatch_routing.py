@@ -11,10 +11,8 @@ inside ``_submit_analysis_task``. Non-transferred analysis types route
 through ``submit_analyst_via_subgraph``.
 """
 
-# pylint: disable=protected-access
-# Test file exercises ``_submit_analysis_task`` (the internal
-# dispatch chokepoint inside DeepGenomeAgents) directly to assert
-# producer-wrapper routing.
+# The direct routing and coordinator probes below target internal dispatch
+# seams; each carries a symbol-scoped protected-access directive.
 
 from __future__ import annotations
 
@@ -134,6 +132,7 @@ def test_route_analyst_tasks_sends_evolution_to_evolution_node() -> None:
     dedicated mounted ``evolution_node`` rather than the generic
     ``analyst_node``.
     """
+    # pylint: disable=protected-access
     state: Any = {
         "task_submit_sleep": 0,
         "analysis_tasks": [
@@ -163,6 +162,7 @@ def test_route_analyst_tasks_sends_evolution_to_evolution_node() -> None:
 
 def test_route_start_waits_for_brief_gene_before_task_preparation() -> None:
     """The initial route launches only the required BriefGene mount."""
+    # pylint: disable=protected-access
     state: Any = {"config_params": {"use_analyst_agent": True}}
 
     sends = dispatch_module.DeepGenomeDispatchMixin._route_start(
@@ -176,6 +176,7 @@ def test_route_after_brief_gene_reaches_preparation_only_when_enabled() -> (
     None
 ):
     """Successful BriefGene gates optional analyst preparation."""
+    # pylint: disable=protected-access
     route = dispatch_module.DeepGenomeDispatchMixin._route_after_brief_gene
 
     enabled_state: Any = {"config_params": {"use_analyst_agent": True}}
@@ -189,6 +190,7 @@ def test_route_after_brief_gene_reaches_preparation_only_when_enabled() -> (
 
 def test_route_experiment_skips_protocol_when_analyst_disabled() -> None:
     """The analyst-off path proceeds to discussion without looping."""
+    # pylint: disable=protected-access
     state: Any = {
         "config_params": {"use_analyst_agent": False},
         "report_triggered": True,
@@ -201,6 +203,7 @@ def test_route_experiment_skips_protocol_when_analyst_disabled() -> None:
 
 def test_route_synthesize_waits_for_every_concrete_work_item() -> None:
     """The synthesis route uses twelve concrete rows, not a branch count."""
+    # pylint: disable=protected-access
     state: Any = {
         "work_items": [
             {
@@ -228,6 +231,7 @@ def test_route_synthesize_waits_for_every_concrete_work_item() -> None:
 
 def test_route_synthesize_rejects_all_terminal_failures() -> None:
     """The all-failed concrete matrix raises instead of reaching END."""
+    # pylint: disable=protected-access
     state: Any = {
         "work_items": [
             {
@@ -262,6 +266,7 @@ def test_route_synthesize_rejects_all_terminal_failures() -> None:
 
 def test_route_synthesize_preserves_skip_fixture() -> None:
     """Pre-rendered test-mode synthesis bypasses concrete task rows."""
+    # pylint: disable=protected-access
     state: Any = {
         "skip_synthesize": True,
         "synthesize_report": "pre-rendered synthesis",
@@ -274,6 +279,7 @@ def test_route_synthesize_preserves_skip_fixture() -> None:
 
 def test_route_analyst_tasks_sends_design_to_design_node() -> None:
     """The digital_design task fans to the mounted ``design_node``."""
+    # pylint: disable=protected-access
     state: Any = {
         "task_submit_sleep": 0,
         "analysis_tasks": [
@@ -303,6 +309,7 @@ def test_route_analyst_tasks_sends_design_to_design_node() -> None:
 
 def test_route_analyst_tasks_sends_each_generic_to_its_own_node() -> None:
     """Each generic analysis_type fans to its deterministic named node."""
+    # pylint: disable=protected-access
     state: Any = {
         "task_submit_sleep": 0,
         "analysis_tasks": [
@@ -331,6 +338,7 @@ async def test_protein_structure_routes_to_wrapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``protein_structure_analysis`` routes structure to its wrapper."""
+    # pylint: disable=protected-access
     mixin = _build_mixin_instance()
     wrappers = _install_wrapper_mocks(monkeypatch)
     subgraph_mock = _install_shared_helper_mock(monkeypatch)
@@ -356,6 +364,7 @@ async def test_promoter_routes_to_wrapper(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``promoter_analysis`` routes promoter to its wrapper."""
+    # pylint: disable=protected-access
     mixin = _build_mixin_instance()
     wrappers = _install_wrapper_mocks(monkeypatch)
     subgraph_mock = _install_shared_helper_mock(monkeypatch)
@@ -386,6 +395,7 @@ async def test_non_transferred_type_routes_subgraph(
     the same ``submit_analyst_via_subgraph`` chokepoint as design /
     network / research / environment / evolution.
     """
+    # pylint: disable=protected-access
     mixin = _build_mixin_instance()
     wrappers = _install_wrapper_mocks(monkeypatch)
     subgraph_mock = _install_shared_helper_mock(monkeypatch)
@@ -412,6 +422,7 @@ async def test_deep_genome_generic_dispatch_is_submit_only(
     The submission acknowledgement is normalized immediately so the
     coordinator can poll the effective remote task id later.
     """
+    # pylint: disable=protected-access
     mixin = _build_mixin_instance()
     _install_wrapper_mocks(monkeypatch)
     subgraph_mock = _install_shared_helper_mock(monkeypatch)
@@ -433,6 +444,7 @@ async def test_dispatch_coordinator_receives_effective_poll_id(
     tmp_path,
 ) -> None:
     """Poll the dedup source id and resolve Markdown before local success."""
+    # pylint: disable=protected-access
     mixin = _build_mixin_instance()
     mixin.deep_genome_config.TIMEOUT = 4.0
     mixin.deep_genome_config.POLL_INTERVAL = 2.0
@@ -578,6 +590,7 @@ async def test_prepare_tasks_includes_protein_structure() -> None:
     Structure section never rendered. ``species_code="ath"`` takes the
     ``case _`` branch and avoids the BI id-table lookup.
     """
+    # pylint: disable=protected-access
     mixin = _build_mixin_instance()
     state: Any = {"gene_id": "AT1G01010", "species_code": "ath"}
 

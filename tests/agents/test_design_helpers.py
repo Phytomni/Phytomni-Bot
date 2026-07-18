@@ -10,12 +10,8 @@ gets ``"medium"``; everything else gets ``"small"``) and the
 unknown analysis type before any prompt lookup.
 """
 
-# pylint: disable=protected-access
-# Test file exercises the design agent's internal helpers directly
-# (``_get_compute_resource``, ``_analysis_prompt_parts``); pylint W0212
-# is suppressed at file scope because pytest's "test the smallest unit
-# the bug can hide in" convention requires reaching into private
-# methods. See ``docs/development/lint-exemptions.md`` for the rationale.
+# The helper probes below intentionally target private design decisions; each
+# carries a symbol-scoped protected-access directive.
 
 from __future__ import annotations
 
@@ -51,6 +47,7 @@ def _build_agent() -> DigitalDesignAgents:
 
 def test_get_compute_resource_protein_design_returns_medium() -> None:
     """Protein design is the only documented medium-tier analysis."""
+    # pylint: disable=protected-access
     agent = _build_agent()
 
     assert agent._get_compute_resource("protein_design_analysis") == "medium"
@@ -58,6 +55,7 @@ def test_get_compute_resource_protein_design_returns_medium() -> None:
 
 def test_get_compute_resource_unknown_falls_back_to_small() -> None:
     """Every other analysis type stays on the small tier by default."""
+    # pylint: disable=protected-access
     agent = _build_agent()
 
     assert agent._get_compute_resource("promoter_design_analysis") == "small"
@@ -71,6 +69,7 @@ def test_analysis_prompt_parts_rejects_unknown_type() -> None:
     so a misconfigured caller never reaches the species metadata
     layer with a typo in the analysis-type slug.
     """
+    # pylint: disable=protected-access
     agent = _build_agent()
 
     with pytest.raises(ValueError, match="does-not-exist"):

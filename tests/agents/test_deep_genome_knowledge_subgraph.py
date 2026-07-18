@@ -10,10 +10,8 @@ knowledge subgraph ``ainvoke`` and unwraps ``final_response`` so
 callers see the same chat-completion envelope shape.
 """
 
-# pylint: disable=protected-access
-# Test file exercises ``DeepGenomeReportMixin._dispatch_knowledge_retrieve``
-# (an internal helper that owns the knowledge-call seam shared by the
-# experiment protocols worker) directly to assert flag routing.
+# The direct dispatch probe below targets the report's internal knowledge
+# seam; its protected-access directive is scoped to that test symbol.
 
 from __future__ import annotations
 
@@ -53,6 +51,7 @@ async def test_dispatch_knowledge_uses_subgraph() -> None:
     ``final_response`` so callers see the same chat-completion envelope
     the legacy ``knowledge_agent.arun`` produced.
     """
+    # pylint: disable=protected-access
     subgraph_app_mock = AsyncMock(
         return_value={
             "retrieved_docs": [],

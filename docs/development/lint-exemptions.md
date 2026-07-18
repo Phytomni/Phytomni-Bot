@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `251`
+- Authorized records: `282`
 
 ## Informational counts
 
@@ -27,7 +27,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `pylint:contextmanager-generator-missing-cleanup`                 |       2 |
 | `pylint:max-module-lines`                                         |       1 |
 | `pylint:path-ignore`                                              |       5 |
-| `pylint:protected-access`                                         |      14 |
+| `pylint:protected-access`                                         |      45 |
 | `pylint:too-few-public-methods`                                   |       3 |
 | `pylint:too-many-arguments`                                       |       9 |
 | `pylint:too-many-instance-attributes`                             |       3 |
@@ -146,9 +146,9 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0097` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_design_mount.py | 50:76 | `sha256:e81b26339ab9fe82dca21c97fe9d4b632d8466cc9d3bfe86a6a82950a9a6d178` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0098` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_design_mount.py | 528:538 | `sha256:071ce086a928f64d2ad3e849e3b6548346aa988cfe1ab79589bd375821d6c640` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0099` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_design_mount.py | 80:85 | `sha256:400841f01e9d8e3cb49687e6da6007ce61df9ead8fd96f286be1b280420ddd34` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0100` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_dispatch_routing.py | 205:215 | `sha256:75dad3aced8db3b4e246aadf053950e52fe4a7cdd5fc8d42f880ce982eead563` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0101` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_dispatch_routing.py | 232:242 | `sha256:fa56f98abe19802582ed18c6218bdb33f8ac06548e017c481da1b514a67217dd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0102` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_dispatch_routing.py | 243:252 | `sha256:bd1b158bf7ec303dbeb32e2d61e567458d5bbaf4412f870fa26884e744803ac5` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0100` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_dispatch_routing.py | 208:218 | `sha256:6ec90dba8d40b01c4189bf5264b3872181875855cfee0dfb11b5277a33bbd81e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0101` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_dispatch_routing.py | 236:246 | `sha256:e755caa3cded6202c151581162fcd5492923c77cec5bf4cd06c61650cbd88ebe` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0102` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_dispatch_routing.py | 247:256 | `sha256:14cda471c334b08b8932ae449953e69923ce5a21b05940575ba4bcb750879d89` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0103` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_design_promoter_design_for_gene.py | 25:41 | `sha256:e6595d7854d763a159f27ce0b85baeebbd21b540066e083d1818cae0089c8a04` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0104` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_design_promoter_design_for_gene.py | 42:51 | `sha256:80ce2a5ec0ac26365188bffc84ec81380b06f8c129f9b6c1cb508d774072a02d` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0105` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_design_promoter_design_for_gene.py | 53:68 | `sha256:d86600bc49af4e7a4b294acc0acd55f56a5e5d60c17eb4646ea5e12f364dc7f8` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -158,19 +158,19 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0109` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_resume_kernel.py | 25:42 | `sha256:4ad39b4ad4b4823fe799020de33c01bfd5161991446aff20e5be60d87f550eae` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0110` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_resume_kernel.py | 43:48 | `sha256:e44e55cdded49e86109ef57098c78ebda86bba0f2946ece45fa0ec9ed1c314db` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0111` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 156:164 | `sha256:34de4964ce7c59b8b237d42ead116116bf3cbb36bc3a30ccf12fd594eec1c970` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0112` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 23:45 | `sha256:17aa8f6b430636750e69deaacd9ba86f302cc05511adb9f5f9e7bb3a6bbdf77a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0112` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 23:45 | `sha256:23bbd8b239642e018dbc60f49d3d1e4c8cdfbebb5f87414e5b5445e40b6fbb93` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0113` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 31:51 | `sha256:d950aa1822e259620bc4bff509416c52b55c92a973643f5d4e0baa95662afae6` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0114` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 62:69 | `sha256:6c364e0fbb31f7df72af4c1abfcadd1f3e7285b68bffd04fb6cdfd33e57d0d5c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0115` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 86:98 | `sha256:5cad0f467fa989f648e63da88d03b44259cb0135250fbc7bb3647df4034a3b59` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0116` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 112:118 | `sha256:dc52f9fd416213fe2b3a291ffe848f7cd8a08175d8843e2600944905bf2ff6ab` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0116` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 112:118 | `sha256:cd79dea0ee4b5d430f86455f0390e5d207d1bf4e83ed7367c3de03bbc4a23337` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0117` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 128:151 | `sha256:3265569274137c65390fb3fdb51cdd6031d9b9c4e59123a13da30cbd7c64e480` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0118` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 145:151 | `sha256:6544c8fa1d0448a37b76155fbf15a1da84396702216565d76a64080739accf9a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0118` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 145:151 | `sha256:26e8c7b6d4a394e05d7c5cf7320f5eacf6e257b8c36b83bf9fb4098e6f39d476` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0119` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 161:167 | `sha256:ae995bf05988ccbf722d517247f781a4254b4865f7e852a9112faef33453f3e1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0120` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 26:55 | `sha256:3805b83f9881ae8be0fb92e94baab7fecca11e0bb99b58c789022a2820a1fcf2` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0121` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 71:81 | `sha256:dbd52f40235adff6d246ff064785835af197b2443af9365785eed8dbf60fd110` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0122` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_follow_up_routing.py | 165:178 | `sha256:6a65a21d1726d9f252e4b483bdd612ffaa0922f203d5905c2b3b89b8903852b1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0123` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_review_results_fan_out.py | 277:282 | `sha256:cdf2eb0f11dd6f2bdad37d6819e9bfd2ad607bf29bbcaaa7e3cab729b1974ddc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0124` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_review_results_fan_out.py | 51:57 | `sha256:3a65147026e2c4763837bc1df744badb9ee107228fabc8b75d3572a18c342874` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0123` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_review_results_fan_out.py | 277:282 | `sha256:bf2a4098c8d798c29376dae042680e2b25e8cd86a43a9f37681da34c1c7c334e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0124` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_review_results_fan_out.py | 51:57 | `sha256:0b6be40574dbb02e3bb54d46cdf2951d05710bac783d4d63ea4f5299ad6aaefd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0125` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_actions_http.py | 810:819 | `sha256:d30623a9d2caa6c8f0ea3c64da0ad0d8b8d7ed8e0e45dfa8300d9198f8efbda1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0138` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_agent_runs.py | 279:284 | `sha256:6e4751d43a63d7aff887cb68161f78e9be2f4202e5b99f4d158cb5adfd00fd5e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0139` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_brief_gene_resolve.py | 342:357 | `sha256:e2deb1873295a49e527fba53ee268c30a673457090dd41c46cbeae5725b71ce4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -188,7 +188,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0151` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_runs_list.py | 549:558 | `sha256:45d985de66ab2e70b9b99e7ad5f272c4dc35e629d0716f0b6c4236318e6c28a5` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0152` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_user_context.py | 40:51 | `sha256:d070c5d26bcb1a3a76655010cc1e2066842679987463a6520c2e4f896470af51` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0153` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_get_task_status.py | 39:49 | `sha256:6c428246112060c3705f0bd8095bd141da283c3bd9c6ceda5da9009c926a6cbd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0154` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_get_task_status.py | 54:60 | `sha256:652a691371dabbdf328a2b9333b29731804925679f1fef3dbdeb7aad806e1e49` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0154` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_get_task_status.py | 54:60 | `sha256:d2d3b3f8667794cb7d5957c08d3d429d4c37c0ab86972dbef5b65d510c4b53cd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0155` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_mcp_app_invoke.py | 266:272 | `sha256:2ffab28ca78e35f68ffce562e642663c93ef659e6d1e80fc65e9e7c5271ad3bf` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0156` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_mcp_app_invoke.py | 304:317 | `sha256:f6175ef13c21d05adb80c45ca307f25cfbf594357c0c7e86bf6d2a44d7001726` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0157` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_memory_http.py | 39:44 | `sha256:53523ba52adeb85599e4208c9fb09c7547bf6b963993602ada44250a976677cf` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -208,7 +208,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0171` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_client_elicitation.py | 59:66 | `sha256:975f355cd6c2a65dca9d57186615c419eeda303eac5e94c7fdd0adfb91f399cf` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0172` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_admin.py | 38:46 | `sha256:d31703b04d8b444d3e963b1cc94534a6a2a39ec56fe231841e5ec923d2b20c11` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0173` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_admin.py | 41:48 | `sha256:5125884f84d157e2c66e315e2fa2e58b8a8b9d1bd8c812d3b7e98eca06f64ee4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0174` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_dispatch.py | 97:103 | `sha256:31820c51b0a514a097e2db7ad223b448b4d3807e19d96c12138e1c010da5cc0e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0174` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_dispatch.py | 97:103 | `sha256:edba189ae68899ee52de5400d60bd3c2e65782e445172a0b6860ace817535c43` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0175` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_store.py | 36:47 | `sha256:c745b76ae3ca2d6d7f4539177b39872d80bcf54b0b9d11bec0acbc5dfa2d7ee3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0176` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_store.py | 49:62 | `sha256:838d045a66d38a592d0d88e73bb8fdfd07daf6af2726fc2a439e63f69209d0fa` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0177` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_stream_lifecycle.py | 228:241 | `sha256:9841db38ab87a9cc9ea8495614647541015f3013773fa3a52a42c315377a2dd6` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -238,20 +238,19 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0237` | pylint | path-ignore | temporary | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:3e1bc269c16210ee4149f6c708497a514291d2716f41ad7186c731fe6fce7ea3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0238` | pylint | path-ignore | temporary | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:829ec7992def978f01ad8efae0a0ee64c5e1767cfeb76f3a13236dc4ed5cef23` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0239` | pylint | path-ignore | temporary | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:b7c41d52ad3e667583ed5bc27c3cffee33f6c621371befb228c17357718fc94a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0241` | pylint | protected-access | temporary | inline | span | tests/agents/test_analyst_graph_nodes.py | — | `sha256:0b0a232e2a85cdff21bf4f66e78588404106ab1579a3d5a58d949bce8d7fe870` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0245` | pylint | protected-access | temporary | inline | span | tests/agents/test_deep_genome_chat_subgraph.py | — | `sha256:a906df6ac3ba8be7f7354116b6ca50d358ef31583f6cd609769ae94bfee39137` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0246` | pylint | protected-access | temporary | inline | span | tests/agents/test_deep_genome_dispatch_routing.py | — | `sha256:e6817e4d57f379047aacfb24dc75936fe81b2bde08a36424f9ef6debb0e29f2d` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0247` | pylint | protected-access | temporary | inline | span | tests/agents/test_deep_genome_knowledge_subgraph.py | — | `sha256:e1558d6b07c52c2260fbcdbf5f1ec89aa3b19e9e8dbb00ae2db7707435259169` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0248` | pylint | protected-access | temporary | inline | span | tests/agents/test_deep_genome_lifecycle.py | — | `sha256:cfadadd6fdc9f05d4d99269d2993a555360be047c5bc050004e5e1abd0a7d059` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0249` | pylint | protected-access | temporary | inline | span | tests/agents/test_design_analyst_subgraph.py | — | `sha256:9be8391b3a06b2bdd95ceab37deae647bcb665c80f89f07087624ecd96f2a49a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0250` | pylint | protected-access | temporary | inline | span | tests/agents/test_design_helpers.py | — | `sha256:226dc5e2a223b35941a225d0f01cb600f1b87a5092aa69992c93c9a1fc31d4c4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0251` | pylint | protected-access | temporary | inline | span | tests/agents/test_network_analyst_subgraph.py | — | `sha256:a9086de22445f0443cb2bfe90759a60fe34151cb4dbd18c3ce1a921cef7e33c1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0252` | pylint | protected-access | temporary | inline | span | tests/agents/test_research_analyst_subgraph.py | — | `sha256:a92f8f7fd5f8bce81bd9260081741954094599d0ef816da156d3e029025d9bc0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0253` | pylint | protected-access | temporary | inline | span | tests/agents/test_research_chat_subgraph.py | — | `sha256:15b62a607f4a5f73cf0fc7520b9a737915c6443f4052ceba17a34161da641433` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0255` | pylint | protected-access | temporary | inline | span | tests/agents/test_review_add_query_failures.py | — | `sha256:54358a4844d2a88c0ccd4e20d42a819c4cd4a7a8c43c3b0fa1eea860cc42ee00` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0260` | pylint | protected-access | temporary | inline | span | tests/agents/test_review_revised_fan_out.py | — | `sha256:88e385472cb38305cb394629a2b70db68bc9d3948e945402fb6d28c2205c0f3b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0261` | pylint | protected-access | temporary | inline | span | tests/server/test_run_gc_background.py | — | `sha256:92ebe88b2384f591fa6078933805e7aed62c4b6a1a7796553d9b96277b56b3e0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0262` | pylint | protected-access | temporary | inline | span | tests/server/test_stdio_progress.py | — | `sha256:4652118967857921e9ef15a9df15326042e1a41eb5154c538b8afc2e09b3b594` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0241` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_analyst_graph_nodes.py | \_capture_create_payload | `sha256:cd6697f92e2f53b8be8ff1d45348694b78b636827525788f5ca1dab931844253` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0245` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_chat_subgraph.py | test_dispatch_chat_uses_subgraph | `sha256:dc8cf6a9d64081107dcb8c0509cf9b38ffc98a1931b77e52d26b7fee2d4383eb` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0246` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_deep_genome_generic_dispatch_is_submit_only | `sha256:d7231430fe9c4901f96ab215506cd45a2986336a0c009b0bf3ebb77dc60d81da` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0247` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_knowledge_subgraph.py | test_dispatch_knowledge_uses_subgraph | `sha256:1b291a1a683e13a8b5ff3295e985256175f83d94cc0ca011fbb173a525bf04a8` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0248` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_lifecycle.py | test_all_optional_failures_preserve_profile_and_fail_owner | `sha256:7c4cc25324af4c7a96948142dcd0ffdebb1f0547852b87a5ea4d389d83ccd804` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0249` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_design_analyst_subgraph.py | test_dispatch_uses_subgraph_submit | `sha256:3b41ad535c9476731684a60027a1c20e5fe9eb910e963ca566bb1db2a56e7299` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0250` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_design_helpers.py | test_analysis_prompt_parts_rejects_unknown_type | `sha256:5920289e37592f4bf00a38fa591f263313e4ad7774c9a368f018f6090560b37c` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0251` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_network_analyst_subgraph.py | test_dispatch_request_carries_to_id_as_target | `sha256:7b00f3c4d7abe53a1e197b9f01f9b447860703561be848f801fd9566b1be0395` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0252` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_research_analyst_subgraph.py | test_submit_task_propagates_failed_status | `sha256:f28a7f9cbe511502173ee920deaafa38dcfd3b0ba13b3cdf6f8bc3a487d815d5` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0253` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_research_chat_subgraph.py | test_extract_goals_uses_chat_subgraph | `sha256:e779e814ad5960cc1e61077d79408530084759acc64e8a04347db5900bf0a743` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0255` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_review_add_query_failures.py | test_feedback_rag_failures_empty_when_no_add_queries | `sha256:ea1bd79bc055e411a3e1bb27595e369d13a9e6be0644e57bb7e949128bb161b6` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0261` | pylint | protected-access | temporary | inline | symbol | tests/server/test_run_gc_background.py | test_async_gc_coalesces_concurrent_passes | `sha256:0dcac7edf70b73e87d365ab2a55a6988025320b3309f742972b4e93446d03736` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0262` | pylint | protected-access | temporary | inline | symbol | tests/server/test_stdio_progress.py | test_progress_forwarded_when_token_present | `sha256:f119c910e90f018323907d6760b625893d289a739e1ea4ee80765553e81f64ac` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0263` | pylint | too-many-arguments | temporary | inline | span | scripts/gauss_live_probe.py | — | `sha256:e291191c021b141db59904d57b1b1d7ade99c76f2f2f38f90128c4785a30db39` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0264` | pylint | too-many-arguments | temporary | inline | span | src/mcp_server_phytomni/agents/chat/service.py | — | `sha256:ad4d4dd0361f7f453d9ecdb6b0c08c35739ff0751ca885d54f7a30eacc1aa133` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0265` | pylint | too-many-arguments | temporary | inline | span | src/mcp_server_phytomni/agents/data/nl2sql.py | — | `sha256:84dc17c51613d59f92ae20603553449d971f33d170353c0623b7992dcc0c222c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -278,7 +277,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0286` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/api/app.py | \_stream_review_a2ui_pause | `sha256:1b5e7ee2821e52528a7c5b95ad412cbe7f2646d465c0b31dabe61ec0be04cfc5` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0287` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/mcp/result_formatting.py | \_format_design_result | `sha256:8628b792cea0d61f8299df4d795e861c92b404813e5abe827b980f211edbe83f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0288` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/storage/uploads.py | — | `sha256:d713586935bbfb52b818a5e473e7d2169737526f18839e9196e5831051e4c466` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0289` | pylint | too-many-locals | temporary | inline | span | tests/agents/test_deep_genome_lifecycle.py | — | `sha256:4826e10b79938726acf6c101e54b772710da0d577ca3bb9190a6754b21af8660` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0289` | pylint | too-many-locals | temporary | inline | span | tests/agents/test_deep_genome_lifecycle.py | — | `sha256:c89456f6ae1c750fc0f451d10d4b0885a15b45a3ff3d5623b86b86decb5721ba` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0290` | pylint | too-many-positional-arguments | temporary | inline | span | src/mcp_server_phytomni/agents/data/nl2sql.py | — | `sha256:5070abd4d3f8904dfe8375cdec6872bd6d155615cc6bd4b54f914cf5e07c75d2` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0291` | pylint | too-many-positional-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | DeepGenomeDispatchMixin | `sha256:0798e8ccfb5acef4a3251eb0b379d705d9bd8adf987f3f9f95c931665356ccbc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0292` | pylint | too-many-statements | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:d31ea0d7a171aebd3fbf1bd2c0eca47443f9cf55147649ba476c187710e62378` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -302,6 +301,38 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0312` | ruff | N802 | temporary | config | config | pyproject.toml | tool.ruff.lint.per-file-ignores.typings/**/\*.pyi | `sha256:bf0326cb042985ec93478cbec49d2e724864485a45acf6ad1e15bc9d520eb9a4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0313` | ruff | N803 | temporary | config | config | pyproject.toml | tool.ruff.lint.per-file-ignores.typings/**/*.pyi | `sha256:04fd5950474f7a9f1e297946d6fbe12928593497186dbe231583d79859f82d30` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0314` | ruff | N815 | temporary | config | config | pyproject.toml | tool.ruff.lint.per-file-ignores.typings/\*\*/*.pyi | `sha256:c46f9c1d9fbddac831ac4f216f43c4ff6703ad4274821d10b4f0186703a912e0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0315` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_analyst_graph_nodes.py | test_submit_output_dir_forwards_input_fingerprint | `sha256:854cb4451cc07c0b5a5399e4c782adb77e2a6ce896ed0e39709ba05851d78eaa` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0316` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_dispatch_coordinator_receives_effective_poll_id | `sha256:ff5a3cfe8bf5d4cf7443bd0ec5540f676d620ffcb1e4139a1f5057275463540b` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0317` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_non_transferred_type_routes_subgraph | `sha256:23079a67586d9358ab26bd2222ab2d62c607ad2726a4303a8ca7ff4c34b09458` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0318` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_prepare_tasks_includes_protein_structure | `sha256:70ee5d63c40a1eb2a3e381fddb60eb0611ed8fb8d4778530023df3fe78d2ab62` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0319` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_promoter_routes_to_wrapper | `sha256:b882c1ce446460ec090b3628d6746c574d8099b4abec7812af94f2dd10abf44e` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0320` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_protein_structure_routes_to_wrapper | `sha256:21b51d588eb6960f247f06d3d4e503ace1fd66b78dba31785ce83b75bca4ec01` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0321` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_route_after_brief_gene_reaches_preparation_only_when_enabled | `sha256:d761da1d331ff50a9e6cd62343fa40f554b016080d8bee7754b15ca69795679e` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0322` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_route_analyst_tasks_sends_design_to_design_node | `sha256:60cf736f268c9561d50f890b0ebf4e7ca0bd27a6e4814546ddd5e5a13f7904ca` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0323` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_route_analyst_tasks_sends_each_generic_to_its_own_node | `sha256:a1a47aff502651142a268a3f6a5dca43b362b182aa4bd782c085a62d6e2e4cc0` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0324` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_route_analyst_tasks_sends_evolution_to_evolution_node | `sha256:e03c1bbefc25917d063112a7f218cde783b57a08737edee6dff8d8e5b9e460ae` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0325` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_route_experiment_skips_protocol_when_analyst_disabled | `sha256:46a128372113d8ff065aff1949064e55f2eaa35fd2f45efd6df8dd06b70484d9` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0326` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_route_start_waits_for_brief_gene_before_task_preparation | `sha256:dbda426b0fdb2d10ad2e90ba6baafc06f5dac5cf5b79b34a558c8ef44ac5b334` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0327` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_route_synthesize_preserves_skip_fixture | `sha256:ab989c3cc8eefb9243ab93b39b0ad63ae7688af3684805b6e86bf2db17c8cb77` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0328` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_route_synthesize_rejects_all_terminal_failures | `sha256:9fb0e72047279d6da6017157a24f27374ff7e97110369dc5423f1a7b497244a1` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0329` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_route_synthesize_waits_for_every_concrete_work_item | `sha256:6038e2fff5d817a8a2b2ef2b9b9966da39c514e167d4039a52a046cc28760666` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0330` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_lifecycle.py | test_brief_gene_success_is_durable_before_optional_planning | `sha256:06506962eca91de88293b9baa7cc71061be62baf84fa50a58f1fe30332aef5cd` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0331` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_lifecycle.py | test_design_mount_failure_settles_both_concrete_items | `sha256:bb7677591f5e7d2b7ca017f2d6db17a9ced78263ff7ba6b2f907b30ae82bfe8c` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0332` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_lifecycle.py | test_fake_backend_persists_acceptance_before_poll_and_snapshots | `sha256:ab7b89b5c47ebd49b30c468174c097d01f9b993be78e917a2b42be5b5fb206d0` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0333` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_lifecycle.py | test_reserved_profile_seeds_concrete_plan_before_submission | `sha256:c070b135c4b627a8fac1a46e344b7e1b31545ec57ed2dcb79290e6c24c503aee` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0334` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_lifecycle.py | test_send_payload_carries_reserved_lifecycle_identity | `sha256:72c0a74224c96207c9283114da641f3fdb1e68fd268130f2f752a829a51409d8` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0335` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_lifecycle.py | test_tracking_write_failure_cancels_and_fails_umbrella | `sha256:95eae751c81532fb64b6805449bc4d4994c4764929623b2ed551398e208ee5f1` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0336` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_deep_genome_lifecycle.py | test_unsubmitted_failure_is_persisted_before_branch_degrades | `sha256:b1f18471002fe378618f67fe2d4fbb440a7d1ea328605b4301bfb7ad23ca8ae6` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0337` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_design_helpers.py | test_get_compute_resource_protein_design_returns_medium | `sha256:8729d40cd01d205eaae4cc0dfb2f93c99107e88e02f8903d30d8510cfbf91ff1` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0338` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_design_helpers.py | test_get_compute_resource_unknown_falls_back_to_small | `sha256:5177408e990d2b34ce4af96964a892d42dabbae4ead41fb7555171dc41c82174` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0339` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_network_analyst_subgraph.py | test_dispatch_routes_through_subgraph_submit | `sha256:4e143b0eb1cebfdb4bc01c651f88b850cfe28250c01fbe1295ade6d161f3fbce` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0340` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_research_analyst_subgraph.py | test_submit_task_uses_subgraph | `sha256:b286ad3d9de8685a7387fa660964f2425ba80fc34b0017921f5b573cc4592aa8` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0341` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_review_add_query_failures.py | test_feedback_rag_records_failure_for_single_failed_query | `sha256:9e73231727fd2148bae7bdb9465a68c0d856c73e2fc5b0c4434882d6e7e5e304` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0342` | pylint | protected-access | temporary | inline | symbol | tests/agents/test_review_add_query_failures.py | test_feedback_rag_records_failures_for_all_failed_queries | `sha256:d757d5771d1a696f29b2d2a7124d4f65f83881d5b898b6b91f9006292401b7e2` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0343` | pylint | protected-access | temporary | inline | symbol | tests/server/test_run_gc_background.py | test_async_gc_keeps_the_request_loop_responsive | `sha256:7f35a982bdb094d7ec7b5a3d4b703863f4763b3f00cf7f53a6f20a5b862d8930` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0344` | pylint | protected-access | temporary | inline | symbol | tests/server/test_run_gc_background.py | test_async_gc_reraises_unexpected_worker_failure | `sha256:7730531788cdeed258784f623dcfaab9c7c60b7b090a8e6a9f7489044aba5d96` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0345` | pylint | protected-access | temporary | inline | symbol | tests/server/test_run_gc_background.py | test_gc_dependency_and_background_task_are_native_async | `sha256:a56b1e9b1d28f2f6ef41e27dea435ec61af8684205df4ccc5b6404085dd27e87` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0346` | pylint | protected-access | temporary | inline | symbol | tests/server/test_run_gc_background.py | test_sync_write_routes_declare_gc_dependency | `sha256:aa43846d8f6ff46e20300d268aed091e8c2feb9cebc014c5a8f92c092d1512b8` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 
 ## Review fields
 
@@ -3197,19 +3228,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_deep_genome_dispatch_routing:[205:215]
-==tests.agents.test_deep_genome_report:[232:242]
-            {
-                "work_item_key": "evolution_analysis",
-                "analysis_type": "evolution_analysis",
-            },
-            {
-                "work_item_key": "promoter_design",
-                "analysis_type": "promoter_design_analysis",
-                "section_key": "digital_design",
-            },
-        ],
+DeepGenome routing tests intentionally share concrete work-item fixtures with report tests.
 ```
 
 Counterfactual:
@@ -3229,19 +3248,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_deep_genome_dispatch_routing:[232:242]
-==tests.agents.test_deep_genome_report:[264:274]
-            {
-                "work_item_key": "evolution_analysis",
-                "analysis_type": "evolution_analysis",
-            },
-            {
-                "work_item_key": "promoter_design",
-                "analysis_type": "promoter_design_analysis",
-                "section_key": "digital_design",
-            },
-        ],
+DeepGenome routing tests intentionally share concrete work-item fixtures with report tests.
 ```
 
 Counterfactual:
@@ -3261,18 +3268,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_deep_genome_dispatch_routing:[243:252]
-==tests.agents.test_deep_genome_report:[243:252]
-            "task_0:evolution_analysis": {
-                "analysis_type": "evolution_analysis",
-                "status": "failed",
-            },
-            "task_10": {
-                "analysis_type": "digital_design",
-                "status": "failed",
-            },
-        },
+DeepGenome routing tests intentionally share concrete work-item fixtures with report tests.
 ```
 
 Counterfactual:
@@ -3580,31 +3576,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_review_chat_single_shot:[23:45]
-==tests.agents.test_review_revised_fan_out:[29:51]
-pytestmark = pytest.mark.agent
-
-
-def _build_agent() -> DeepResearchAgent:
-    """Construct a ``DeepResearchAgent`` for the revised fan-out."""
-    return DeepResearchAgent(
-        review_config=ReviewConfig(),
-        sensitive_config=SensitiveConfig.load(),
-    )
-
-
-# ---------------------------------------------------------------------------
-# Flag-on prepare node returns empty delta.
-# ---------------------------------------------------------------------------
-
-
-async def test_revised_prepare_tasks_node_returns_empty_delta() -> None:
-    """``revised_prepare_tasks_node`` acts as a no-op split node."""
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
+Review fan-out tests intentionally share indexed state fixtures across adjacent worker paths.
 ```
 
 Counterfactual:
@@ -3684,7 +3656,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Review draft and revised workers intentionally share the same indexed-result fixture shape.
+Review fan-out tests intentionally share indexed state fixtures across adjacent worker paths.
 ```
 
 Counterfactual:
@@ -3724,7 +3696,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Review draft and revised failure tests intentionally share the same failure-state fixture.
+Review fan-out tests intentionally share indexed state fixtures across adjacent worker paths.
 ```
 
 Counterfactual:
@@ -3824,7 +3796,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Review-results and revised tests intentionally share the same xray expansion assertion.
+Review fan-out tests intentionally share indexed state fixtures across adjacent worker paths.
 ```
 
 Counterfactual:
@@ -3844,7 +3816,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Review-results and revised tests intentionally share the same indexed state fixture.
+Review fan-out tests intentionally share indexed state fixtures across adjacent worker paths.
 ```
 
 Counterfactual:
@@ -4424,15 +4396,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==test_get_task_status:[54:60]
-==tests.agents.test_deep_genome_lifecycle:[529:535]
-    store.apply_work_item_transition(
-        reservation.umbrella_task_id,
-        work_item_key="smep_analysis",
-        status="succeeded",
-        summary_markdown="# SMEP summary",
-    )
+Task-status and lifecycle tests intentionally share the same durable transition fixture.
 ```
 
 Counterfactual:
@@ -5051,15 +5015,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==test_deep_genome_dispatch:[97:103]
-==tests.agents.test_deep_genome_dispatch_routing:[439:445]
-    submission = RemoteSubmission(
-        submitted_task_id="caller-1",
-        poll_task_id="remote-1",
-        output_dir="/obs/out",
-    )
-    submit = AsyncMock(return_value=submission)
+DeepGenome routing tests intentionally share concrete work-item fixtures with report tests.
 ```
 
 Counterfactual:
@@ -5730,19 +5686,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=protected-access
+_capture_create_payload isolates an analyst graph payload/path seam so its private invariant is asserted without invoking the full graph.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A protected-access exception can hide unintended coupling or stale private invariants.
 ```
 
 ### `SAE-TMP-0245`
@@ -5750,19 +5706,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=protected-access
+test_dispatch_chat_uses_subgraph isolates a DeepGenome report adapter seam so the mounted subgraph contract is asserted without unrelated stages.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A protected-access exception can hide unintended coupling or stale private invariants.
 ```
 
 ### `SAE-TMP-0246`
@@ -5770,19 +5726,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=protected-access
+test_deep_genome_generic_dispatch_is_submit_only pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A protected-access exception can hide unintended coupling or stale private invariants.
 ```
 
 ### `SAE-TMP-0247`
@@ -5790,19 +5746,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=protected-access
+test_dispatch_knowledge_uses_subgraph isolates a DeepGenome report adapter seam so the mounted subgraph contract is asserted without unrelated stages.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A protected-access exception can hide unintended coupling or stale private invariants.
 ```
 
 ### `SAE-TMP-0248`
@@ -5810,19 +5766,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=protected-access,too-many-locals
+test_all_optional_failures_preserve_profile_and_fail_owner isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A protected-access exception can hide unintended coupling or stale private invariants.
 ```
 
 ### `SAE-TMP-0249`
@@ -5830,19 +5786,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=protected-access
+test_dispatch_uses_subgraph_submit isolates design analyst-subgraph routing so the fire-and-poll contract is asserted without remote side effects.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A protected-access exception can hide unintended coupling or stale private invariants.
 ```
 
 ### `SAE-TMP-0250`
@@ -5850,19 +5806,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=protected-access
+test_analysis_prompt_parts_rejects_unknown_type pins a design resource or prompt guard at its smallest decision seam rather than through a full graph invocation.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A protected-access exception can hide unintended coupling or stale private invariants.
 ```
 
 ### `SAE-TMP-0251`
@@ -5870,19 +5826,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=protected-access
+test_dispatch_request_carries_to_id_as_target isolates network analyst dispatch so target mapping and subgraph routing remain explicit.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A protected-access exception can hide unintended coupling or stale private invariants.
 ```
 
 ### `SAE-TMP-0252`
@@ -5890,19 +5846,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=protected-access
+test_submit_task_propagates_failed_status isolates research analyst dispatch so routing and failure propagation are checked without a remote task.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A protected-access exception can hide unintended coupling or stale private invariants.
 ```
 
 ### `SAE-TMP-0253`
@@ -5910,19 +5866,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=protected-access
+test_extract_goals_uses_chat_subgraph isolates the research chat goal-parser seam so the compiled chat adapter contract is asserted directly.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A protected-access exception can hide unintended coupling or stale private invariants.
 ```
 
 ### `SAE-TMP-0255`
@@ -5930,39 +5886,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=protected-access
+test_feedback_rag_failures_empty_when_no_add_queries isolates review supplementary-query failure accumulation so each degraded record remains attributable to its query.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0260`
-
-Rationale:
-
-```text
-pylint: disable=protected-access
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
+A protected-access exception can hide unintended coupling or stale private invariants.
 ```
 
 ### `SAE-TMP-0261`
@@ -5970,19 +5906,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=protected-access
+test_async_gc_coalesces_concurrent_passes isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A protected-access exception can hide unintended coupling or stale private invariants.
 ```
 
 ### `SAE-TMP-0262`
@@ -5990,19 +5926,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=protected-access
+test_progress_forwarded_when_token_present isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A protected-access exception can hide unintended coupling or stale private invariants.
 ```
 
 ### `SAE-TMP-0263`
@@ -6530,7 +6466,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=protected-access,too-many-locals
+The lifecycle test keeps its coordinator setup in one scenario so persistence and failure ordering remain readable.
 ```
 
 Counterfactual:
@@ -7003,4 +6939,644 @@ Risk:
 
 ```text
 Suppression can hide a future regression.
+```
+
+### `SAE-TMP-0315`
+
+Rationale:
+
+```text
+test_submit_output_dir_forwards_input_fingerprint isolates an analyst graph payload/path seam so its private invariant is asserted without invoking the full graph.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0316`
+
+Rationale:
+
+```text
+test_dispatch_coordinator_receives_effective_poll_id pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0317`
+
+Rationale:
+
+```text
+test_non_transferred_type_routes_subgraph pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0318`
+
+Rationale:
+
+```text
+test_prepare_tasks_includes_protein_structure pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0319`
+
+Rationale:
+
+```text
+test_promoter_routes_to_wrapper pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0320`
+
+Rationale:
+
+```text
+test_protein_structure_routes_to_wrapper pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0321`
+
+Rationale:
+
+```text
+test_route_after_brief_gene_reaches_preparation_only_when_enabled pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0322`
+
+Rationale:
+
+```text
+test_route_analyst_tasks_sends_design_to_design_node pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0323`
+
+Rationale:
+
+```text
+test_route_analyst_tasks_sends_each_generic_to_its_own_node pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0324`
+
+Rationale:
+
+```text
+test_route_analyst_tasks_sends_evolution_to_evolution_node pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0325`
+
+Rationale:
+
+```text
+test_route_experiment_skips_protocol_when_analyst_disabled pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0326`
+
+Rationale:
+
+```text
+test_route_start_waits_for_brief_gene_before_task_preparation pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0327`
+
+Rationale:
+
+```text
+test_route_synthesize_preserves_skip_fixture pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0328`
+
+Rationale:
+
+```text
+test_route_synthesize_rejects_all_terminal_failures pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0329`
+
+Rationale:
+
+```text
+test_route_synthesize_waits_for_every_concrete_work_item pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0330`
+
+Rationale:
+
+```text
+test_brief_gene_success_is_durable_before_optional_planning isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0331`
+
+Rationale:
+
+```text
+test_design_mount_failure_settles_both_concrete_items isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0332`
+
+Rationale:
+
+```text
+test_fake_backend_persists_acceptance_before_poll_and_snapshots isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0333`
+
+Rationale:
+
+```text
+test_reserved_profile_seeds_concrete_plan_before_submission isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0334`
+
+Rationale:
+
+```text
+test_send_payload_carries_reserved_lifecycle_identity isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0335`
+
+Rationale:
+
+```text
+test_tracking_write_failure_cancels_and_fails_umbrella isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0336`
+
+Rationale:
+
+```text
+test_unsubmitted_failure_is_persisted_before_branch_degrades isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0337`
+
+Rationale:
+
+```text
+test_get_compute_resource_protein_design_returns_medium pins a design resource or prompt guard at its smallest decision seam rather than through a full graph invocation.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0338`
+
+Rationale:
+
+```text
+test_get_compute_resource_unknown_falls_back_to_small pins a design resource or prompt guard at its smallest decision seam rather than through a full graph invocation.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0339`
+
+Rationale:
+
+```text
+test_dispatch_routes_through_subgraph_submit isolates network analyst dispatch so target mapping and subgraph routing remain explicit.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0340`
+
+Rationale:
+
+```text
+test_submit_task_uses_subgraph isolates research analyst dispatch so routing and failure propagation are checked without a remote task.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0341`
+
+Rationale:
+
+```text
+test_feedback_rag_records_failure_for_single_failed_query isolates review supplementary-query failure accumulation so each degraded record remains attributable to its query.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0342`
+
+Rationale:
+
+```text
+test_feedback_rag_records_failures_for_all_failed_queries isolates review supplementary-query failure accumulation so each degraded record remains attributable to its query.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0343`
+
+Rationale:
+
+```text
+test_async_gc_keeps_the_request_loop_responsive isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0344`
+
+Rationale:
+
+```text
+test_async_gc_reraises_unexpected_worker_failure isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0345`
+
+Rationale:
+
+```text
+test_gc_dependency_and_background_task_are_native_async isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0346`
+
+Rationale:
+
+```text
+test_sync_write_routes_declare_gc_dependency isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport.
+```
+
+Counterfactual:
+
+```text
+Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
+```
+
+Risk:
+
+```text
+A protected-access exception can hide unintended coupling or stale private invariants.
 ```

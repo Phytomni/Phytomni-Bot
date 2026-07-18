@@ -9,11 +9,8 @@ the dispatch routes through ``_cached_chat_app().ainvoke`` using the
 shared chat_adapters IO mappers.
 """
 
-# pylint: disable=protected-access
-# Test file exercises ``DeepGenomeReportMixin._dispatch_chat`` (an
-# internal helper that owns the chat-call seam shared by the
-# experiment / protocol / discussion / summary / follow_up report
-# nodes) directly to assert chat-subgraph dispatch.
+# The direct dispatch probe below targets the report's internal chat seam;
+# its protected-access directive is scoped to that test symbol.
 
 from __future__ import annotations
 
@@ -48,6 +45,7 @@ async def test_dispatch_chat_uses_subgraph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Dispatch delegates to the compiled chat subgraph."""
+    # pylint: disable=protected-access
     mixin = _build_mixin_instance()
     subgraph_app_mock = AsyncMock(
         return_value={

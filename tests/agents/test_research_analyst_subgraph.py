@@ -11,9 +11,8 @@ pre-computed ``thread_id`` per task; the test pins the dispatch
 contract without disturbing the rest of the flow.
 """
 
-# pylint: disable=protected-access
-# Test file exercises ``_submit_research_task`` directly (the
-# per-task dispatch chokepoint) to assert flag routing.
+# The direct task probes below target the smallest research dispatch seam;
+# each carries a symbol-scoped protected-access directive.
 
 from __future__ import annotations
 
@@ -74,6 +73,7 @@ async def test_submit_task_uses_subgraph(
     the dispatch request and bypasses the direct ``arun`` call; the
     test asserts both observable conditions.
     """
+    # pylint: disable=protected-access
     agent = _build_agent()
     subgraph_mock = AsyncMock(
         return_value={
@@ -119,6 +119,7 @@ async def test_submit_task_propagates_failed_status(
     ``RuntimeError``. Pins the contract so dispatch cannot
     accidentally swallow analyst failures.
     """
+    # pylint: disable=protected-access
     agent = _build_agent()
     subgraph_mock = AsyncMock(
         return_value={

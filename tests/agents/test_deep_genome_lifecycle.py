@@ -5,7 +5,7 @@
 
 # These tests intentionally drive the protected coordinator seams and use
 # Pydantic-style uppercase config fields on lightweight fakes.
-# pylint: disable=protected-access,too-many-locals
+# pylint: disable=too-many-locals
 
 from __future__ import annotations
 
@@ -83,6 +83,7 @@ async def test_fake_backend_persists_acceptance_before_poll_and_snapshots(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Accepted identities and every fake-backend state reach SQLite first."""
+    # pylint: disable=protected-access
     store, reservation = _seed_store(tmp_path)
     monkeypatch.setattr(
         dispatch_module,
@@ -209,6 +210,7 @@ async def test_brief_gene_success_is_durable_before_optional_planning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The required profile transition commits before plan fan-out."""
+    # pylint: disable=protected-access
     db = tmp_path / "tasks.db"
     store = DeepGenomeStore(str(db))
     reservation = store.reserve_run(
@@ -247,6 +249,7 @@ async def test_reserved_profile_seeds_concrete_plan_before_submission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The graph state carries reservation identity into plan seeding."""
+    # pylint: disable=protected-access
     db = tmp_path / "tasks.db"
     store = DeepGenomeStore(str(db))
     reservation = store.reserve_run(
@@ -290,6 +293,7 @@ async def test_reserved_profile_seeds_concrete_plan_before_submission(
 
 def test_send_payload_carries_reserved_lifecycle_identity() -> None:
     """Dynamic branches retain the umbrella identity after Send routing."""
+    # pylint: disable=protected-access
     harness = _dispatch_harness()
     state: Any = {
         "analysis_tasks": [
@@ -328,6 +332,7 @@ async def test_tracking_write_failure_cancels_and_fails_umbrella(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A local write failure never becomes a successful optional branch."""
+    # pylint: disable=protected-access
     store, reservation = _seed_store(tmp_path)
     monkeypatch.setattr(
         dispatch_module,
@@ -387,6 +392,7 @@ async def test_unsubmitted_failure_is_persisted_before_branch_degrades(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A submit exception settles its planned concrete row as failed."""
+    # pylint: disable=protected-access
     store, reservation = _seed_store(tmp_path)
     monkeypatch.setattr(
         dispatch_module,
@@ -427,6 +433,7 @@ async def test_design_mount_failure_settles_both_concrete_items(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A mounted Design fault marks protein and promoter unavailable."""
+    # pylint: disable=protected-access
     reservation = _seed_store(tmp_path)[1]
     monkeypatch.setattr(
         dispatch_module,
@@ -480,6 +487,7 @@ def test_all_optional_failures_preserve_profile_and_fail_owner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """No usable optional result settles failed with the profile retained."""
+    # pylint: disable=protected-access
     store, reservation = _seed_store(tmp_path)
     monkeypatch.setattr(
         report_module,

@@ -12,8 +12,6 @@ worker writes the empty sentinel, the dual mirror-write of
 expansion.
 """
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 from typing import cast

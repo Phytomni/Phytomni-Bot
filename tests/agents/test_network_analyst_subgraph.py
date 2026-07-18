@@ -11,9 +11,8 @@ subgraph adapter is unit-tested in the design sibling; this file only
 pins the network dispatcher's routing decision and ``to_id`` mapping.
 """
 
-# pylint: disable=protected-access
-# Test file exercises ``GeneNetworkAgents._dispatch_and_wait_analysis``
-# directly to assert routing, mirroring ``test_design_helpers``.
+# The direct dispatcher probes below target the smallest network routing seam;
+# each carries a symbol-scoped protected-access directive.
 
 from __future__ import annotations
 
@@ -57,6 +56,7 @@ async def test_dispatch_routes_through_subgraph_submit(
     never awaited so the network dispatcher matches the design
     dispatcher's routing semantics.
     """
+    # pylint: disable=protected-access
     agent = _build_agent()
     legacy_mock = AsyncMock(return_value={"task_id": "legacy-task"})
     subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-task"})
@@ -88,6 +88,7 @@ async def test_dispatch_request_carries_to_id_as_target(
     the design dispatcher fails loudly rather than silently mixing
     up the target identifier downstream.
     """
+    # pylint: disable=protected-access
     agent = _build_agent()
     subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-task"})
     monkeypatch.setattr(

@@ -12,11 +12,8 @@ in the shared chat node, so the tests feed the verdict through
 ``chat_response`` and drive the wired prep/post methods directly.
 """
 
-# pylint: disable=protected-access
-# Test file exercises the analyst graph-mixin's internal helper
-# ``_submit_output_dir`` directly; pylint W0212 is suppressed at file
-# scope because the unit test must reach the smallest sub-operation
-# that forwards the fingerprint. See ``docs/development/lint-exemptions.md``.
+# The two direct helper probes below intentionally target the smallest
+# analyst graph operations; each carries a symbol-scoped directive.
 
 from __future__ import annotations
 
@@ -205,6 +202,7 @@ def _make_agent(**config_overrides: Any) -> SimpleNamespace:
 
 async def _capture_create_payload(agent: Any) -> dict[str, Any]:
     """Build the submit payload without contacting the remote platform."""
+    # pylint: disable=protected-access
     state = cast(AnalystAgentsState, {"compute_resource": "small"})
     _, payload = AnalystGraphMixin._submit_job_data(
         agent,
@@ -267,6 +265,7 @@ def test_submit_output_dir_forwards_input_fingerprint(
     pipeline (which computes it in ``retrieve_plan_submit``) and the OBS
     directory creator (which routes on it in ``create_output_dir``).
     """
+    # pylint: disable=protected-access
     captured: dict[str, Any] = {}
 
     def _fake_ensure(

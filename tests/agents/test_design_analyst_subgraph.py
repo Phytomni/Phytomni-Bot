@@ -11,11 +11,8 @@ with the per-task ``thread_id`` ``RunnableConfig``, and the
 ``map_analyst_output_to_dispatch_state`` round-trip.
 """
 
-# pylint: disable=protected-access
-# Test file exercises the design agent's internal helper
-# (``_dispatch_and_wait_analysis``) directly to assert the flag
-# branch; pylint W0212 is suppressed at file scope to mirror
-# ``test_design_helpers.py`` (same protected-helper coverage seam).
+# The direct dispatcher probe below targets the smallest design routing seam;
+# its protected-access directive is scoped to that test symbol.
 
 from __future__ import annotations
 
@@ -90,6 +87,7 @@ async def test_dispatch_uses_subgraph_submit(
     entry point; the test asserts the legacy ``submit_analyst_analysis``
     helper is never awaited (no double-dispatch, no fallback).
     """
+    # pylint: disable=protected-access
     agent = _build_agent()
     legacy_mock, subgraph_mock = install_branch_mocks(
         monkeypatch, _DESIGN_MODULE

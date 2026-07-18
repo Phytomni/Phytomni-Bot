@@ -12,8 +12,6 @@ tests pin the per-call accumulation, the per-query ``task_label`` form
 contract when no add_query calls are issued.
 """
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 import asyncio
@@ -74,6 +72,7 @@ async def test_feedback_rag_records_failure_for_single_failed_query(
     query indices, ``kind`` is ``"execute"``, and the message round-
     trips ``str(exc)``.
     """
+    # pylint: disable=protected-access
     monkeypatch.setattr(
         ReviewReportMixin, "_audit_citations", _audit_passthrough
     )
@@ -125,6 +124,7 @@ async def test_feedback_rag_records_failures_for_all_failed_queries(
     ``draft_content`` because the empty supplementary block bypasses
     the feedback chat.
     """
+    # pylint: disable=protected-access
     monkeypatch.setattr(
         ReviewReportMixin, "_audit_citations", _audit_passthrough
     )
@@ -195,6 +195,7 @@ async def test_feedback_rag_failures_empty_when_no_add_queries(
     forward expects a list-typed delta on the universal failures
     channel so the ``operator.add`` reducer never sees ``None``).
     """
+    # pylint: disable=protected-access
     monkeypatch.setattr(
         ReviewReportMixin, "_audit_citations", _audit_passthrough
     )

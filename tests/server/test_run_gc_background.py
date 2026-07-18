@@ -9,9 +9,8 @@ than blocking the response on the SQLite DELETE scan. The listing
 route's inline purge and the SSE-finally purge stay out of scope.
 """
 
-# pylint: disable=protected-access
-# Test file exercises ``_schedule_run_gc`` (a module-private dependency
-# function) directly to assert the three write routes declare it.
+# The GC probes below intentionally inspect the module-private dependency and
+# worker; each carries a symbol-scoped protected-access directive.
 
 from __future__ import annotations
 
@@ -29,6 +28,7 @@ pytestmark = pytest.mark.server
 
 def test_sync_write_routes_declare_gc_dependency() -> None:
     """The three sync write routes carry the _schedule_run_gc dependency."""
+    # pylint: disable=protected-access
     app = api_app.create_app()
     wanted = {
         "/v1/agents/{agent}/runs",
@@ -49,6 +49,7 @@ async def test_gc_dependency_and_background_task_are_native_async(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Run GC without Starlette's worker-thread completion bridge."""
+    # pylint: disable=protected-access
     calls = 0
 
     def _purge_spy() -> None:
@@ -79,6 +80,7 @@ async def test_async_gc_keeps_the_request_loop_responsive(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The post-response SQLite pass stays off the request event loop."""
+    # pylint: disable=protected-access
     started = threading.Event()
     release = threading.Event()
 
@@ -107,6 +109,7 @@ async def test_async_gc_coalesces_concurrent_passes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Concurrent write responses share one process-local GC pass."""
+    # pylint: disable=protected-access
     started = threading.Event()
     release = threading.Event()
     calls = 0
@@ -147,6 +150,7 @@ async def test_async_gc_reraises_unexpected_worker_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Unexpected worker failures remain visible to Starlette logging."""
+    # pylint: disable=protected-access
 
     def _boom() -> None:
         raise RuntimeError("gc worker failed")

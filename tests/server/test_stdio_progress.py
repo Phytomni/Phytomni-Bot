@@ -3,9 +3,8 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Tests for the MCP stdio in-band progress-notification path."""
 
-# pylint: disable=protected-access
-# Test exercises ``_drive_stdio_progress`` directly to assert the
-# per-tick notification contract and the dispatch fallback.
+# The first test intentionally drives the internal stdio progress seam;
+# its protected-access directive is scoped to that test symbol.
 
 from __future__ import annotations
 
@@ -23,6 +22,7 @@ async def test_progress_forwarded_when_token_present(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A progressToken drives send_progress_notification per tick."""
+    # pylint: disable=protected-access
     ticks = [
         {
             "kind": "phyto.progress",
