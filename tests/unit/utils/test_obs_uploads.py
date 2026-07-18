@@ -22,6 +22,16 @@ from mcp_server_phytomni.storage import downloads
 pytestmark = pytest.mark.unit
 
 
+def _write_text(path: Path | str, content: str) -> None:
+    """Write fixture text through a synchronous test helper."""
+    Path(path).write_text(content, encoding="utf-8")
+
+
+def _read_text(path: Path | str) -> str:
+    """Read fixture text through a synchronous test helper."""
+    return Path(path).read_text(encoding="utf-8")
+
+
 class FakeMarkItDown:
     """Small MarkItDown stand-in that reads plain text files.
 
@@ -222,10 +232,7 @@ async def test_download_obs_file_falls_back_to_sdk_temp_path(
         """
         del obs_client, context
         captured["object_key"] = object_key
-        # Tiny tmp fixture I/O stays inline: thread wake-up is under test.
-        Path(server_file).write_text(  # noqa: ASYNC240
-            "downloaded", encoding="utf-8"
-        )
+        _write_text(server_file, "downloaded")
         return server_file
 
     monkeypatch.setattr(downloads, "ObsClient", FakeObsClient)
@@ -242,11 +249,7 @@ async def test_download_obs_file_falls_back_to_sdk_temp_path(
     )
 
     assert captured["object_key"] == "agent_data/paper.pdf"
-    # Tiny tmp fixture I/O stays inline: thread wake-up is under test.
-    assert (
-        Path(result).read_text(encoding="utf-8")  # noqa: ASYNC240
-        == "downloaded"
-    )
+    assert _read_text(result) == "downloaded"
     assert str(result).startswith(str(tmp_path / "temp"))
     result_path = Path(result)
     assert result_path.parent.parent.parent == tmp_path / "temp" / "agent_data"
@@ -313,10 +316,7 @@ async def test_download_list_convert_marks_sdk_downloads_for_cleanup(
             Local path to the fake downloaded file.
         """
         del obs_client, object_key, context
-        # Tiny tmp fixture I/O stays inline: thread wake-up is under test.
-        Path(server_file).write_text(  # noqa: ASYNC240
-            "downloaded", encoding="utf-8"
-        )
+        _write_text(server_file, "downloaded")
         return server_file
 
     def fake_convert(file_path: str, cleanup: bool = True) -> str:

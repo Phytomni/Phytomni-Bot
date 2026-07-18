@@ -846,7 +846,7 @@ async def _stream_chat_a2ui_confirm(
     try:
         app = _chat_a2ui_stream_app()
         initial_state = _chat_a2ui_initial_state(arguments)
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:
         raise _stream_setup_error(exc, priming=False) from exc
     run_id = IdFactory().new_id("run", agent_slug)
     request_info = RunRequestInfo(
@@ -884,7 +884,7 @@ async def _stream_chat_a2ui_confirm(
     settled_terminal = [False]
     try:
         primed = await prime_agui_stream(_agui_events(settled_terminal))
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:
         _settle_stream_run(run_id, owner, "failed", _failed_stream_result())
         raise _stream_setup_error(exc, priming=True) from exc
 
@@ -929,7 +929,7 @@ async def _stream_review_a2ui_pause(  # pylint: disable=too-many-locals
         args = _validate_review_arguments(arguments)
         app = _review_stream_app()
         initial_state = _review_initial_state(args)
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:
         raise _stream_setup_error(exc, priming=False) from exc
     run_id = IdFactory().new_id("run", agent_slug)
     request_info = RunRequestInfo(
@@ -972,7 +972,7 @@ async def _stream_review_a2ui_pause(  # pylint: disable=too-many-locals
     settled_terminal = [False]
     try:
         primed = await prime_agui_stream(_agui_events(settled_terminal))
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:
         _settle_stream_run(run_id, owner, "failed", _failed_stream_result())
         raise _stream_setup_error(exc, priming=True) from exc
 
@@ -1041,7 +1041,7 @@ async def _stream_chat_completion(  # pylint: disable=too-many-locals
             run_id=run_id,
             dialogue_id=payload.dialogue_id,
         )
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:
         raise _stream_setup_error(exc, priming=False) from exc
 
     request_info = RunRequestInfo(
@@ -1057,7 +1057,7 @@ async def _stream_chat_completion(  # pylint: disable=too-many-locals
         _create_running_stream_run(run_id, agent_slug, owner, request_info)
     try:
         primed = await prime_agui_stream(raw_events)
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:
         if agent_slug is not None:
             _settle_stream_run(
                 run_id,

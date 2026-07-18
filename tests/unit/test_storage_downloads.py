@@ -24,6 +24,16 @@ from mcp_server_phytomni.storage.downloads import download_obs_file
 pytestmark = pytest.mark.unit
 
 
+def _write_bytes(path: Path | str, content: bytes) -> None:
+    """Write fixture bytes through a synchronous test helper."""
+    Path(path).write_bytes(content)
+
+
+def _read_bytes(path: Path | str) -> bytes:
+    """Read fixture bytes through a synchronous test helper."""
+    return Path(path).read_bytes()
+
+
 async def test_download_obs_file_uses_relay_in_relay_mode(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -33,8 +43,7 @@ async def test_download_obs_file_uses_relay_in_relay_mode(
         obs_path: str, destination: Path, *, message: str
     ) -> None:
         del obs_path, message
-        # Tiny tmp fixture I/O stays inline: thread wake-up is under test.
-        Path(destination).write_bytes(b"PDF-BYTES")  # noqa: ASYNC240
+        _write_bytes(destination, b"PDF-BYTES")
 
     relay = Mock()
     relay.get_obs_object_to_path = AsyncMock(side_effect=_stream_to_path)
@@ -54,5 +63,4 @@ async def test_download_obs_file_uses_relay_in_relay_mode(
         "notes.pdf"
     )
     assert not no_sdk.called
-    # Tiny tmp fixture I/O stays inline: thread wake-up is under test.
-    assert Path(local_path).read_bytes() == b"PDF-BYTES"  # noqa: ASYNC240
+    assert _read_bytes(local_path) == b"PDF-BYTES"

@@ -1036,7 +1036,7 @@ class DeepGenomeDispatchMixin:
 
     # pylint: enable=too-many-locals
 
-    # pylint: disable=too-many-arguments,too-many-positional-arguments
+    # pylint: disable=too-many-arguments
     # pylint: disable=too-many-locals
     async def _poll_remote_submission(
         self: Any,

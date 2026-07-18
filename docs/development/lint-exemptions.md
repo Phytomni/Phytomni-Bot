@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `282`
+- Authorized records: `273`
 
 ## Informational counts
 
@@ -23,13 +23,13 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:prop-decorator`                                             |       1 |
 | `pylint:R0801`                                                    |     151 |
 | `pylint:R0903`                                                    |      12 |
-| `pylint:broad-exception-caught`                                   |       6 |
+| `pylint:broad-exception-caught`                                   |       3 |
 | `pylint:contextmanager-generator-missing-cleanup`                 |       2 |
 | `pylint:max-module-lines`                                         |       1 |
 | `pylint:path-ignore`                                              |       5 |
 | `pylint:protected-access`                                         |      45 |
 | `pylint:too-few-public-methods`                                   |       3 |
-| `pylint:too-many-arguments`                                       |       9 |
+| `pylint:too-many-arguments`                                       |      10 |
 | `pylint:too-many-instance-attributes`                             |       3 |
 | `pylint:too-many-lines`                                           |       3 |
 | `pylint:too-many-locals`                                          |      12 |
@@ -41,7 +41,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `pytest:ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning` |       1 |
 | `ruff:ASYNC109`                                                   |       1 |
 | `ruff:ASYNC110`                                                   |       3 |
-| `ruff:ASYNC240`                                                   |       7 |
 | `ruff:E402`                                                       |       2 |
 | `ruff:N802`                                                       |       1 |
 | `ruff:N803`                                                       |       1 |
@@ -226,9 +225,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0221` | pylint | R0903 | temporary | diagnostic | symbol | typings/obs/__init__.pyi | PutObjectHeader | `sha256:f57100dd30cfc38f37a226a4092a97b7df38f3b10625cbf08caae5f436fae090` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0222` | pylint | broad-exception-caught | temporary | inline | symbol | e2e/helpers/polling.py | \_reconciled_task_state | `sha256:58b3b2f3bb4ee5b58ee8ca5380146a1ab5d43c18bff5e36510cb912eece854a3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0223` | pylint | broad-exception-caught | temporary | inline | symbol | src/mcp_server_phytomni/api/app.py | \_maybe_project_review_interrupt | `sha256:00283b9c5b01c64fbb2fbbd8564f6f8a84317997b467d41ffdac50f678c5fde0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0224` | pylint | broad-exception-caught | temporary | inline | symbol | src/mcp_server_phytomni/api/app.py | \_stream_chat_a2ui_confirm | `sha256:ff5cde0a7f9152ec9aa42901ceea6d7b91c6f9ec6805aaabc0ccf64c0182b166` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0225` | pylint | broad-exception-caught | temporary | inline | symbol | src/mcp_server_phytomni/api/app.py | \_stream_chat_completion | `sha256:3c57338060cbf808466bcfb818b3ffd44c40c522cd6590962e809e287a53a3e3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0226` | pylint | broad-exception-caught | temporary | inline | symbol | src/mcp_server_phytomni/api/app.py | \_stream_review_a2ui_pause | `sha256:007aee7350c14cf87de6a37f48a6e20593841d7097b4adeeaa113022232c86a3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0227` | pylint | broad-exception-caught | temporary | inline | symbol | src/mcp_server_phytomni/mcp/stream_lifecycle.py | project_stream_failures | `sha256:0fa2621f7153da1bff3a4df5a0a23d14425aa3d17b782f9545d0c2e657296557` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0228` | pylint | contextmanager-generator-missing-cleanup | temporary | inline | span | tests/agents/test_cache_candidates.py | — | `sha256:1a93e1b05a8cfa872aeddc39c7850189f9089c16b59a0d36c97909cc4341ae03` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0229` | pylint | contextmanager-generator-missing-cleanup | temporary | inline | span | tests/conftest.py | — | `sha256:8051cd3af754f03cba8b655218a54168e8867d393d6ed998ce98de611d0b7b9a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -289,13 +285,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0300` | ruff | ASYNC110 | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/report.py | \_write_async | `sha256:a7cb1e8424467f0727f7a3b99bf30356d9bb18b99462d892fbf92402f43dd198` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0301` | ruff | ASYNC110 | temporary | inline | symbol | src/mcp_server_phytomni/api/app.py | \_purge_expired_runs_best_effort_async | `sha256:a52705825d478feeafb241f23127685f24facd52ebf4d62d6ed335d1dd04782d` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0302` | ruff | ASYNC110 | temporary | inline | symbol | src/mcp_server_phytomni/api/relay/obs.py | \_wait_obs_future | `sha256:a8f3e3adef4dab97a6423e96bc1f91159c519a5060e52a58156302de97e99e33` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0303` | ruff | ASYNC240 | temporary | inline | symbol | tests/unit/test_analyst_storage.py | test_download_obs_out_via_relay_downloads_all_when_flagged.\_to_path | `sha256:1aee89a4c5356ddde0a8379b004fae29504f55dc9513381b1c9d6eee6c1b2f07` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0304` | ruff | ASYNC240 | temporary | inline | symbol | tests/unit/test_analyst_storage.py | test_download_obs_out_via_relay_writes_matching_objects.\_to_path | `sha256:ac5ec39c27751b8e7b283ac0090a0d1e803b0c96217c8d3590dd14f0853b8a0f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0305` | ruff | ASYNC240 | temporary | inline | symbol | tests/unit/test_storage_downloads.py | test_download_obs_file_uses_relay_in_relay_mode | `sha256:8d835ccc45ce6915b38f111bfa8689a1ceb6c93974bdae138da8792cc2bfe247` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0306` | ruff | ASYNC240 | temporary | inline | symbol | tests/unit/test_storage_downloads.py | test_download_obs_file_uses_relay_in_relay_mode.\_stream_to_path | `sha256:908ed0a856529543c54881f7a07925c43568e62fd1333946b7c906972a23232e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0307` | ruff | ASYNC240 | temporary | inline | symbol | tests/unit/utils/test_obs_uploads.py | test_download_list_convert_marks_sdk_downloads_for_cleanup.fake_download_with_retry | `sha256:2b865e3bde39ff43b92ec08f6acfc49e36c7ef5e89dce1d7baabec5566394545` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0308` | ruff | ASYNC240 | temporary | inline | symbol | tests/unit/utils/test_obs_uploads.py | test_download_obs_file_falls_back_to_sdk_temp_path | `sha256:b5f743db9e5cd682ab17e49ce05bb44bcb50fc55f875050b594657de797d92ee` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0309` | ruff | ASYNC240 | temporary | inline | symbol | tests/unit/utils/test_obs_uploads.py | test_download_obs_file_falls_back_to_sdk_temp_path.fake_download_with_retry | `sha256:f444a0e861c793085939705e45135485fdd22964728e9f98435bb58774153990` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0310` | ruff | E402 | temporary | inline | span | scripts/\_visualize_bootstrap.py | — | `sha256:5bb9d315b606c4e79f7f08a5a3896da1ae9fe6ea43c2d6d2055599a1c4e33f40` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0311` | ruff | E402 | temporary | inline | span | scripts/\_visualize_bootstrap.py | — | `sha256:9e583e7c25de4e2c0f6b97674641e1e427cb71f230c2aa96fb00b4aa48ddf6cf` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0312` | ruff | N802 | temporary | config | config | pyproject.toml | tool.ruff.lint.per-file-ignores.typings/**/\*.pyi | `sha256:bf0326cb042985ec93478cbec49d2e724864485a45acf6ad1e15bc9d520eb9a4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -333,6 +322,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0344` | pylint | protected-access | temporary | inline | symbol | tests/server/test_run_gc_background.py | test_async_gc_reraises_unexpected_worker_failure | `sha256:7730531788cdeed258784f623dcfaab9c7c60b7b090a8e6a9f7489044aba5d96` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0345` | pylint | protected-access | temporary | inline | symbol | tests/server/test_run_gc_background.py | test_gc_dependency_and_background_task_are_native_async | `sha256:a56b1e9b1d28f2f6ef41e27dea435ec61af8684205df4ccc5b6404085dd27e87` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0346` | pylint | protected-access | temporary | inline | symbol | tests/server/test_run_gc_background.py | test_sync_write_routes_declare_gc_dependency | `sha256:aa43846d8f6ff46e20300d268aed091e8c2feb9cebc014c5a8f92c092d1512b8` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0347` | pylint | too-many-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | DeepGenomeDispatchMixin | `sha256:5718146c933edb576d220edaf4190c626b7966cf86d8097be352e92203b76c39` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 
 ## Review fields
 
@@ -5441,66 +5431,6 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0224`
-
-Rationale:
-
-```text
-pylint: disable=broad-exception-caught
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0225`
-
-Rationale:
-
-```text
-pylint: disable=broad-exception-caught
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0226`
-
-Rationale:
-
-```text
-pylint: disable=broad-exception-caught
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0227`
 
 Rationale:
@@ -6701,146 +6631,6 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0303`
-
-Rationale:
-
-```text
-noqa: ASYNC240
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0304`
-
-Rationale:
-
-```text
-noqa: ASYNC240
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0305`
-
-Rationale:
-
-```text
-noqa: ASYNC240
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0306`
-
-Rationale:
-
-```text
-noqa: ASYNC240
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0307`
-
-Rationale:
-
-```text
-noqa: ASYNC240
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0308`
-
-Rationale:
-
-```text
-noqa: ASYNC240
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0309`
-
-Rationale:
-
-```text
-noqa: ASYNC240
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0310`
 
 Rationale:
@@ -7579,4 +7369,24 @@ Risk:
 
 ```text
 A protected-access exception can hide unintended coupling or stale private invariants.
+```
+
+### `SAE-TMP-0347`
+
+Rationale:
+
+```text
+pylint: disable=too-many-arguments
+```
+
+Counterfactual:
+
+```text
+Remove or refactor after review.
+```
+
+Risk:
+
+```text
+Suppression can hide a future regression.
 ```

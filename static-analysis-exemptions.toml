@@ -3746,66 +3746,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0224"
-tool = "pylint"
-rule = "broad-exception-caught"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/api/app.py"
-symbol = "_stream_chat_a2ui_confirm"
-fingerprint = "sha256:ff5cde0a7f9152ec9aa42901ceea6d7b91c6f9ec6805aaabc0ccf64c0182b166"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=broad-exception-caught"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0225"
-tool = "pylint"
-rule = "broad-exception-caught"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/api/app.py"
-symbol = "_stream_chat_completion"
-fingerprint = "sha256:3c57338060cbf808466bcfb818b3ffd44c40c522cd6590962e809e287a53a3e3"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=broad-exception-caught"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0226"
-tool = "pylint"
-rule = "broad-exception-caught"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/api/app.py"
-symbol = "_stream_review_a2ui_pause"
-fingerprint = "sha256:007aee7350c14cf87de6a37f48a6e20593841d7097b4adeeaa113022232c86a3"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=broad-exception-caught"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0227"
 tool = "pylint"
 rule = "broad-exception-caught"
@@ -4984,146 +4924,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0303"
-tool = "ruff"
-rule = "ASYNC240"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "tests/unit/test_analyst_storage.py"
-symbol = "test_download_obs_out_via_relay_downloads_all_when_flagged._to_path"
-fingerprint = "sha256:1aee89a4c5356ddde0a8379b004fae29504f55dc9513381b1c9d6eee6c1b2f07"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "noqa: ASYNC240"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0304"
-tool = "ruff"
-rule = "ASYNC240"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "tests/unit/test_analyst_storage.py"
-symbol = "test_download_obs_out_via_relay_writes_matching_objects._to_path"
-fingerprint = "sha256:ac5ec39c27751b8e7b283ac0090a0d1e803b0c96217c8d3590dd14f0853b8a0f"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "noqa: ASYNC240"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0305"
-tool = "ruff"
-rule = "ASYNC240"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "tests/unit/test_storage_downloads.py"
-symbol = "test_download_obs_file_uses_relay_in_relay_mode"
-fingerprint = "sha256:8d835ccc45ce6915b38f111bfa8689a1ceb6c93974bdae138da8792cc2bfe247"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "noqa: ASYNC240"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0306"
-tool = "ruff"
-rule = "ASYNC240"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "tests/unit/test_storage_downloads.py"
-symbol = "test_download_obs_file_uses_relay_in_relay_mode._stream_to_path"
-fingerprint = "sha256:908ed0a856529543c54881f7a07925c43568e62fd1333946b7c906972a23232e"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "noqa: ASYNC240"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0307"
-tool = "ruff"
-rule = "ASYNC240"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "tests/unit/utils/test_obs_uploads.py"
-symbol = "test_download_list_convert_marks_sdk_downloads_for_cleanup.fake_download_with_retry"
-fingerprint = "sha256:2b865e3bde39ff43b92ec08f6acfc49e36c7ef5e89dce1d7baabec5566394545"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "noqa: ASYNC240"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0308"
-tool = "ruff"
-rule = "ASYNC240"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "tests/unit/utils/test_obs_uploads.py"
-symbol = "test_download_obs_file_falls_back_to_sdk_temp_path"
-fingerprint = "sha256:b5f743db9e5cd682ab17e49ce05bb44bcb50fc55f875050b594657de797d92ee"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "noqa: ASYNC240"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0309"
-tool = "ruff"
-rule = "ASYNC240"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "tests/unit/utils/test_obs_uploads.py"
-symbol = "test_download_obs_file_falls_back_to_sdk_temp_path.fake_download_with_retry"
-fingerprint = "sha256:f444a0e861c793085939705e45135485fdd22964728e9f98435bb58774153990"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "noqa: ASYNC240"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0310"
 tool = "ruff"
 rule = "E402"
@@ -5911,6 +5711,26 @@ review_on = 2026-08-15
 rationale = "test_sync_write_routes_declare_gc_dependency isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
+tests = ["static-analysis-inventory"]
+expires_on = 2026-08-31
+remediation = "SAE-WORK-INITIAL-AUDIT"
+
+[[exemptions]]
+id = "SAE-TMP-0347"
+tool = "pylint"
+rule = "too-many-arguments"
+classification = "temporary"
+mechanism = "inline"
+target_kind = "symbol"
+path = "src/mcp_server_phytomni/agents/deep_genome/dispatch.py"
+symbol = "DeepGenomeDispatchMixin"
+fingerprint = "sha256:5718146c933edb576d220edaf4190c626b7966cf86d8097be352e92203b76c39"
+owner = "bot-maintainers"
+introduced_on = 2026-07-19
+review_on = 2026-08-15
+rationale = "pylint: disable=too-many-arguments"
+counterfactual = "Remove or refactor after review."
+risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
 expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"

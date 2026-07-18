@@ -32,6 +32,11 @@ def _obsfs_root(tmp_path: Path) -> Path:
     return root
 
 
+def _write_bytes(path: Path | str, content: bytes) -> None:
+    """Write fixture bytes through a synchronous test helper."""
+    Path(path).write_bytes(content)
+
+
 def test_create_output_dir_prefers_obsfs(tmp_path):
     """Verify output directories are created through obsfs first.
 
@@ -140,10 +145,7 @@ async def test_download_obs_out_via_relay_writes_matching_objects(
 
     async def _to_path(obs_path, destination, *, message):
         del message
-        # Tiny tmp fixture I/O stays inline: thread wake-up is under test.
-        Path(destination).write_bytes(  # noqa: ASYNC240
-            b"DATA:" + obs_path.encode()
-        )
+        _write_bytes(destination, b"DATA:" + obs_path.encode())
 
     relay.get_obs_object_to_path = AsyncMock(side_effect=_to_path)
     monkeypatch.setattr(analyst_storage, "current_relay_client", lambda: relay)
@@ -173,8 +175,7 @@ async def test_download_obs_out_via_relay_downloads_all_when_flagged(
 
     async def _to_path(obs_path, destination, *, message):
         del obs_path, message
-        # Tiny tmp fixture I/O stays inline: thread wake-up is under test.
-        Path(destination).write_bytes(b"x")  # noqa: ASYNC240
+        _write_bytes(destination, b"x")
 
     relay.get_obs_object_to_path = AsyncMock(side_effect=_to_path)
     monkeypatch.setattr(analyst_storage, "current_relay_client", lambda: relay)
