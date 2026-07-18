@@ -20,6 +20,7 @@ import pytest
 
 from mcp_server_phytomni.runtime import terminal_artifacts
 from mcp_server_phytomni.runtime.terminal_artifacts import (
+    ArtifactLister,
     collect_terminal_artifacts,
 )
 
@@ -130,11 +131,13 @@ def test_enumerate_fills_paths_for_succeeded_rows() -> None:
         {"task_id": "t3", "status": "succeeded", "output_dir": ""},
     ]
 
-    async def lister(output_dir):
+    async def lister(output_dir: str) -> list[str]:
         return [f"{output_dir}/fig.png"]
 
+    typed_lister: ArtifactLister = lister
+
     out = _run(
-        terminal_artifacts.enumerate_artifact_paths(live, lister=lister)
+        terminal_artifacts.enumerate_artifact_paths(live, lister=typed_lister)
     )
 
     assert out[0]["artifact_paths"] == ["/obs/p/r1/fig.png"]
@@ -150,10 +153,14 @@ def test_enumerate_swallows_lister_errors(
         {"task_id": "t1", "status": "succeeded", "output_dir": "/obs/p/r1"},
     ]
 
-    async def boom(output_dir):
+    async def boom(output_dir: str) -> list[str]:
         raise OSError(f"obs down for {output_dir}")
 
-    out = _run(terminal_artifacts.enumerate_artifact_paths(live, lister=boom))
+    typed_lister: ArtifactLister = boom
+
+    out = _run(
+        terminal_artifacts.enumerate_artifact_paths(live, lister=typed_lister)
+    )
 
     assert out[0]["artifact_paths"] == []
     assert any("t1" in rec.message for rec in artifacts_caplog.records)
@@ -167,11 +174,15 @@ def test_enumerate_caps_and_logs_truncation(
         {"task_id": "t1", "status": "succeeded", "output_dir": "/obs/p/r1"},
     ]
 
-    async def many(output_dir):
+    async def many(output_dir: str) -> list[str]:
         return [f"{output_dir}/f{i}.png" for i in range(5)]
 
+    typed_lister: ArtifactLister = many
+
     out = _run(
-        terminal_artifacts.enumerate_artifact_paths(live, lister=many, cap=2)
+        terminal_artifacts.enumerate_artifact_paths(
+            live, lister=typed_lister, cap=2
+        )
     )
 
     assert len(out[0]["artifact_paths"]) == 2

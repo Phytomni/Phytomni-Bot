@@ -13,8 +13,9 @@ without changing the call site (inputs ride a ``TerminalAnswerContext``).
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
 __all__ = [
     "AnswerSynthesizer",
@@ -46,10 +47,8 @@ class TerminalAnswerContext:
     query: str | None
 
 
-class AnswerSynthesizer(Protocol):
-    """Async callable producing the terminal answer markdown."""
-
-    async def __call__(self, context: TerminalAnswerContext) -> str: ...
+AnswerSynthesizer = Callable[[TerminalAnswerContext], Awaitable[str]]
+"""Async callable producing the terminal answer markdown."""
 
 
 async def synthesize_terminal_answer(

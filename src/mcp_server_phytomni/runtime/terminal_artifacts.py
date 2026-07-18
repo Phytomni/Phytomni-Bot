@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Iterable
-from typing import Any, Protocol
+from collections.abc import Awaitable, Callable, Iterable
+from typing import Any
 
 from ..config.defaults import ServerConfig
 from ..storage.artifact_listing import list_artifact_paths
@@ -33,10 +33,8 @@ _SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
 _DEFAULT_PATH_CAP = 200
 
 
-class ArtifactLister(Protocol):
-    """Async callable listing object paths under one output directory."""
-
-    async def __call__(self, output_dir: str) -> list[str]: ...
+ArtifactLister = Callable[[str], Awaitable[list[str]]]
+"""Async callable listing object paths under one output directory."""
 
 
 async def _default_artifact_lister(output_dir: str) -> list[str]:

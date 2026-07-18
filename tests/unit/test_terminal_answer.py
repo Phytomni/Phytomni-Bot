@@ -10,7 +10,10 @@ import asyncio
 import pytest
 
 from mcp_server_phytomni.runtime import terminal_answer
-from mcp_server_phytomni.runtime.terminal_answer import TerminalAnswerContext
+from mcp_server_phytomni.runtime.terminal_answer import (
+    AnswerSynthesizer,
+    TerminalAnswerContext,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -110,9 +113,11 @@ def test_none_query_omits_query_line():
 def test_custom_synthesizer_is_used():
     """An injected synthesizer overrides the thin default."""
 
-    async def fake(context):
+    async def fake(context: TerminalAnswerContext) -> str:
         assert context.agent == "analyst"
         return "RICH REPORT"
+
+    synthesizer: AnswerSynthesizer = fake
 
     answer = _run(
         terminal_answer.synthesize_terminal_answer(
@@ -123,7 +128,7 @@ def test_custom_synthesizer_is_used():
                 _artifacts([[]]),
                 None,
             ),
-            synthesizer=fake,
+            synthesizer=synthesizer,
         )
     )
     assert answer == "RICH REPORT"
