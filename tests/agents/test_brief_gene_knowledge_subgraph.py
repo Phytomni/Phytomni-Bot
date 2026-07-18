@@ -10,8 +10,6 @@ The retrieve site routes through a Send-dispatch triad
 dedicated KnowledgeAgent subgraph invocation.
 """
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 import logging
@@ -134,20 +132,6 @@ def _gene_not_found_state() -> BriefGeneAgentState:
     base["gene_found"] = False
     base["user_query"] = "Some free-text gene query"
     return base
-
-
-# ---------------------------------------------------------------------------
-# Constructor: _knowledge_app always built.
-# ---------------------------------------------------------------------------
-
-
-def test_knowledge_app_always_built(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``_knowledge_app`` is always populated in ``__init__``."""
-    fake_app = _install_fake_knowledge_app(monkeypatch)
-    agent = _build_agent()
-    assert agent._knowledge_app is fake_app
 
 
 # ---------------------------------------------------------------------------

@@ -10,8 +10,6 @@ contract on :func:`build_chat_kwargs_for` (``None`` omits the key so
 non-review consumers keep their existing router default).
 """
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 from types import SimpleNamespace

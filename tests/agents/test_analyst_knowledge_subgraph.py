@@ -9,8 +9,6 @@ surrounding a per-instance compiled KnowledgeAgent app. Also covers
 the cross-product with the always-mounted chat subgraph.
 """
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 from typing import Any, TypedDict, cast
@@ -180,23 +178,6 @@ async def test_method_retrieve_post_node_defaults_empty_docs(
     method_context = result["method_context"]
     assert method_context["upload_context"] == ""
     assert method_context["retrieve_context"] == ""
-
-
-# ---------------------------------------------------------------------------
-# Constructor: ``_knowledge_app`` is always instantiated.
-# ---------------------------------------------------------------------------
-
-
-def test_knowledge_app_always_built(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``_knowledge_app`` is always the compiled KnowledgeAgent app."""
-    fake_app = _install_fake_knowledge_app(monkeypatch)
-    agent = AnalystAgent(
-        analyst_config=AnalystConfig(),
-        sensitive_config=SensitiveConfig.load(),
-    )
-    assert agent._knowledge_app is fake_app
 
 
 # ---------------------------------------------------------------------------

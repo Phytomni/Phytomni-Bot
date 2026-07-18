@@ -11,8 +11,6 @@ each worker. Also covers partial failure with the empty-JSON sentinel,
 reduce ordering, and xray expansion.
 """
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 from typing import Any, cast

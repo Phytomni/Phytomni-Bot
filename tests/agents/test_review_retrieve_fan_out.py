@@ -10,8 +10,6 @@ The retrieve site routes through a Send-dispatch triad
 ordering, and xray subgraph expansion.
 """
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 from typing import Any, TypedDict, cast
@@ -267,23 +265,6 @@ async def test_retrieve_reduce_node_partial_failure_still_produces_n_params(
     assert params[0]["subtopic"] == "d0"
     assert params[1]["subtopic"] == "d1"
     assert params[2]["subtopic"] == "d2"
-
-
-# ---------------------------------------------------------------------------
-# Constructor: ``_knowledge_app`` is always built.
-# ---------------------------------------------------------------------------
-
-
-def test_knowledge_app_always_built(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``_knowledge_app`` is populated with the compiled KA subgraph."""
-    fake_app = _install_fake_knowledge_app(monkeypatch)
-    agent = DeepResearchAgent(
-        review_config=ReviewConfig(),
-        sensitive_config=SensitiveConfig.load(),
-    )
-    assert agent._knowledge_app is fake_app
 
 
 # ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `260`
+- Authorized records: `251`
 
 ## Informational counts
 
@@ -21,13 +21,13 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:ignore_missing_imports`                                     |       2 |
 | `mypy:misc`                                                       |       2 |
 | `mypy:prop-decorator`                                             |       1 |
-| `pylint:R0801`                                                    |     152 |
+| `pylint:R0801`                                                    |     151 |
 | `pylint:R0903`                                                    |      12 |
 | `pylint:broad-exception-caught`                                   |       6 |
 | `pylint:contextmanager-generator-missing-cleanup`                 |       2 |
 | `pylint:max-module-lines`                                         |       1 |
 | `pylint:path-ignore`                                              |       5 |
-| `pylint:protected-access`                                         |      22 |
+| `pylint:protected-access`                                         |      14 |
 | `pylint:too-few-public-methods`                                   |       3 |
 | `pylint:too-many-arguments`                                       |       9 |
 | `pylint:too-many-instance-attributes`                             |       3 |
@@ -90,7 +90,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0040` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/planning.py | 101:107 | `sha256:aa9f030fa22f1341c154c9cfa1b703bee67e2fcb6e2aa47ea744319bd9039090` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0041` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/state.py | 114:119 | `sha256:b9c858b4756d1eeba0e3575fea150ea4750ceadcf06fb842cd871d087c87a349` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0042` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 119:124 | `sha256:8abc75dc1000bf60d768999279807f0eeaddc148800ee6f2cd64db6d725b2794` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0043` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 119:130 | `sha256:6e14879614fdafb89ea01429091d8732afa805508b610ae35c505869d9f4dd08` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0043` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 119:130 | `sha256:0a201031a7234bed17589e4e095b273be77befb070f165201474ca57d8733796` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0044` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 131:138 | `sha256:d2eb8102471c388d5ab72cb5468a375af44240897171a2a20c19bb8db477b15e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0045` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 264:277 | `sha256:71c51e7737eb6d61c69c8b052130cf106fa57d55217488c3520076465b9f19af` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0046` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py | 81:87 | `sha256:4e2efd035ff8c8489702efc9cd2c5821e6c43082be5bf553df9c94d573d2e4c0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -134,15 +134,14 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0084` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 59:64 | `sha256:dab91daad1dc692da89b2d3c4bedfcd081201a6cd5e592f6d9f289f0ad825f66` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0085` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 73:79 | `sha256:02a0ef0f7f5041c275b28c1c4c24c010eae62e1de902e15478e70af3b9aa9b42` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0086` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/migrations.py | 23:31 | `sha256:4f06fd5ec9e45a0c63ea3f65946f56998710e5123f0135fc1bc20ca49b9bbe3a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0087` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_analyst_graph_io.py | 31:59 | `sha256:00329e540fcf919758aeee18da87364144040e6e9ad4949b263c9ce419990c7f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0087` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_analyst_graph_io.py | 31:59 | `sha256:9edea2a2a1fdeb012ab1fc4c9804f02ad86d4ed21e4921630ee0b35438126ae7` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0088` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_analyst_graph_io.py | 36:59 | `sha256:fc3966432000e2768da9529c49a2577c3c4ca9df46275cd8d13c76df0d63360c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0089` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_analyst_knowledge_subgraph.py | 196:226 | `sha256:cebca18db252e1274c9969546a7c44b772adccbcf0ad0ccff0c7ed2d075bb55c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0090` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_analyst_knowledge_subgraph.py | 240:247 | `sha256:8dc884b580cce5c39ad8a2802c18b2a35afee9972599cb5cebc208f90751304c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0091` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_analyst_knowledge_subgraph.py | 32:74 | `sha256:7800fab6ac8dfd4f5a375ae6bda76a0eba526e1a229e6858d9e25f0c58d564bd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0092` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_brief_gene_chat_subgraph.py | 48:56 | `sha256:fab01903754ebb6bb6b7ac8d8fc8e8437674c761c4cd1c2251ecb97f57dc4750` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0093` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_brief_gene_knowledge_subgraph.py | 117:122 | `sha256:46a63952622462f7235ac2a7d3458360c183bc3e37dc8cb01083210115bf773a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0094` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_chat_adapters.py | 41:79 | `sha256:25447e820df5b0bcb2bcb2bb5e0e95d8e992ebcb5e49488b0884e9c52be06f8e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0095` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_data_chat_subgraph.py | 67:95 | `sha256:ffe9cc993869c90076e42992f7bcbdb3a3286688c2bdc31b1fb1e0c8da395532` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0090` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_analyst_knowledge_subgraph.py | 221:228 | `sha256:d2913287fac654b798e4f5d92548a15ce2a42aaac519121965f142517bb46546` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0091` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_analyst_knowledge_subgraph.py | 30:72 | `sha256:e780a26f9d9a5c53253f6403d16c571a90a88972876d5823fc4e73d6856a80aa` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0092` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_brief_gene_chat_subgraph.py | 48:56 | `sha256:6dd6be1ef0509a12985128efe55b9da11d7f79526e1d11f7cc278526cd3ca149` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0093` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_brief_gene_knowledge_subgraph.py | 115:120 | `sha256:bc70faed4c88c0dfab582f45b9b5233de78603b3b936fe989d498338398c9dce` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0094` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_chat_adapters.py | 41:79 | `sha256:c5de4d6af55d14a37e50b608b166b4dabd208d844d3044f7d409ac7f6228793e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0095` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_data_chat_subgraph.py | 67:95 | `sha256:e55fdef09fedb868a03b2a95a4cfaff2339bf70bd15a625c4a44519b0da2d28b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0096` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_design_mount.py | 506:515 | `sha256:379d69b825614f6c4622544ca3554760a749338730b42d6702a8b994879180dd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0097` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_design_mount.py | 50:76 | `sha256:e81b26339ab9fe82dca21c97fe9d4b632d8466cc9d3bfe86a6a82950a9a6d178` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0098` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_design_mount.py | 528:538 | `sha256:071ce086a928f64d2ad3e849e3b6548346aa988cfe1ab79589bd375821d6c640` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -158,20 +157,20 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0108` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_graphs_manifest_export.py | 178:193 | `sha256:04db7ecea1e9da5bd8060fda5b6806090e1033f622c378c61e05ab9f03af601b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0109` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_resume_kernel.py | 25:42 | `sha256:4ad39b4ad4b4823fe799020de33c01bfd5161991446aff20e5be60d87f550eae` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0110` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_resume_kernel.py | 43:48 | `sha256:e44e55cdded49e86109ef57098c78ebda86bba0f2946ece45fa0ec9ed1c314db` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0111` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 156:164 | `sha256:0fb9d3d39c674c4d3fdc8042975b3c408da75a1d41d6e5601ad54debbdc238fb` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0111` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 156:164 | `sha256:34de4964ce7c59b8b237d42ead116116bf3cbb36bc3a30ccf12fd594eec1c970` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0112` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 23:45 | `sha256:17aa8f6b430636750e69deaacd9ba86f302cc05511adb9f5f9e7bb3a6bbdf77a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0113` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 31:51 | `sha256:3bbed7e3f201e004a105288208b210cdd40983c918f420a34379393ee960ac50` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0114` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 62:69 | `sha256:444834c3f901a5305b3c3e34c7ccadf4de4ca7b806ba2307b60a568c8b317f06` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0115` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 86:98 | `sha256:12920a86211612f44ce8762893dfc346eed9152baba1a219b472514fa43fc50f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0116` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 114:120 | `sha256:8cc4e58c389216e39fa93d306063adf59953674ed0e220a287025591ac845ee1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0117` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 130:153 | `sha256:92ec8f32f7d749843eb1c6a4d9459827bb993ee6af8c2c5895de221b7497f814` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0118` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 147:153 | `sha256:f215e11b7c898654df2e7aebd01fbeefbd10d719ac4a84ffb4cf9ea20182d9bb` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0119` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 163:169 | `sha256:eaf188fba7b5830a586378fe2af515e5c826370bff3ceae4999296c48899e0bb` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0120` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 28:57 | `sha256:987ab1b0fe2dc6f9fdd6ccc45625f03b7c4f59e3dbbc749b4a71fad2a7b19b65` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0121` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 73:83 | `sha256:a6e790af2012c9fdbd05696bfe6ce8ddce94f1b95defffe90dfab43a8c40ec8a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0122` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_follow_up_routing.py | 167:180 | `sha256:9ef10dc699ee41f949ea96d13d1b7a4539c981f6553d848d2b15a86da8c1a999` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0123` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_review_results_fan_out.py | 279:284 | `sha256:e367559e17eb5bb4fed426c744bc59f989a3cdfd2bbefe1c5daf7a64b65e102a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0124` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_review_results_fan_out.py | 53:59 | `sha256:2d77b4ebe51ab6654b88ac04d35fc03397a5b828eacccf77fb331af184602115` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0113` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 31:51 | `sha256:d950aa1822e259620bc4bff509416c52b55c92a973643f5d4e0baa95662afae6` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0114` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 62:69 | `sha256:6c364e0fbb31f7df72af4c1abfcadd1f3e7285b68bffd04fb6cdfd33e57d0d5c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0115` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 86:98 | `sha256:5cad0f467fa989f648e63da88d03b44259cb0135250fbc7bb3647df4034a3b59` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0116` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 112:118 | `sha256:dc52f9fd416213fe2b3a291ffe848f7cd8a08175d8843e2600944905bf2ff6ab` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0117` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 128:151 | `sha256:3265569274137c65390fb3fdb51cdd6031d9b9c4e59123a13da30cbd7c64e480` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0118` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 145:151 | `sha256:6544c8fa1d0448a37b76155fbf15a1da84396702216565d76a64080739accf9a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0119` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 161:167 | `sha256:ae995bf05988ccbf722d517247f781a4254b4865f7e852a9112faef33453f3e1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0120` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 26:55 | `sha256:3805b83f9881ae8be0fb92e94baab7fecca11e0bb99b58c789022a2820a1fcf2` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0121` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 71:81 | `sha256:dbd52f40235adff6d246ff064785835af197b2443af9365785eed8dbf60fd110` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0122` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_follow_up_routing.py | 165:178 | `sha256:6a65a21d1726d9f252e4b483bdd612ffaa0922f203d5905c2b3b89b8903852b1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0123` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_review_results_fan_out.py | 277:282 | `sha256:cdf2eb0f11dd6f2bdad37d6819e9bfd2ad607bf29bbcaaa7e3cab729b1974ddc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0124` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_review_results_fan_out.py | 51:57 | `sha256:3a65147026e2c4763837bc1df744badb9ee107228fabc8b75d3572a18c342874` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0125` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_actions_http.py | 810:819 | `sha256:d30623a9d2caa6c8f0ea3c64da0ad0d8b8d7ed8e0e45dfa8300d9198f8efbda1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0138` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_agent_runs.py | 279:284 | `sha256:6e4751d43a63d7aff887cb68161f78e9be2f4202e5b99f4d158cb5adfd00fd5e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0139` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_brief_gene_resolve.py | 342:357 | `sha256:e2deb1873295a49e527fba53ee268c30a673457090dd41c46cbeae5725b71ce4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -240,9 +239,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0238` | pylint | path-ignore | temporary | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:829ec7992def978f01ad8efae0a0ee64c5e1767cfeb76f3a13236dc4ed5cef23` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0239` | pylint | path-ignore | temporary | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:b7c41d52ad3e667583ed5bc27c3cffee33f6c621371befb228c17357718fc94a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0241` | pylint | protected-access | temporary | inline | span | tests/agents/test_analyst_graph_nodes.py | — | `sha256:0b0a232e2a85cdff21bf4f66e78588404106ab1579a3d5a58d949bce8d7fe870` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0242` | pylint | protected-access | temporary | inline | span | tests/agents/test_analyst_knowledge_subgraph.py | — | `sha256:184e1ebaae891611aee25ac7732145405af2529f5b9a7fc3635d1456e49f80d8` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0243` | pylint | protected-access | temporary | inline | span | tests/agents/test_brief_gene_knowledge_subgraph.py | — | `sha256:53b920f718f4267c30e4435f07abf4f533cd2acdaf6cca3f43885ce683c39263` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0244` | pylint | protected-access | temporary | inline | span | tests/agents/test_data_knowledge_subgraph.py | — | `sha256:7355080d432ad83c419cad3b4d8a2fa587787b015bc2f4abc0f7a7859f3c57d4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0245` | pylint | protected-access | temporary | inline | span | tests/agents/test_deep_genome_chat_subgraph.py | — | `sha256:a906df6ac3ba8be7f7354116b6ca50d358ef31583f6cd609769ae94bfee39137` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0246` | pylint | protected-access | temporary | inline | span | tests/agents/test_deep_genome_dispatch_routing.py | — | `sha256:e6817e4d57f379047aacfb24dc75936fe81b2bde08a36424f9ef6debb0e29f2d` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0247` | pylint | protected-access | temporary | inline | span | tests/agents/test_deep_genome_knowledge_subgraph.py | — | `sha256:e1558d6b07c52c2260fbcdbf5f1ec89aa3b19e9e8dbb00ae2db7707435259169` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -252,12 +248,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0251` | pylint | protected-access | temporary | inline | span | tests/agents/test_network_analyst_subgraph.py | — | `sha256:a9086de22445f0443cb2bfe90759a60fe34151cb4dbd18c3ce1a921cef7e33c1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0252` | pylint | protected-access | temporary | inline | span | tests/agents/test_research_analyst_subgraph.py | — | `sha256:a92f8f7fd5f8bce81bd9260081741954094599d0ef816da156d3e029025d9bc0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0253` | pylint | protected-access | temporary | inline | span | tests/agents/test_research_chat_subgraph.py | — | `sha256:15b62a607f4a5f73cf0fc7520b9a737915c6443f4052ceba17a34161da641433` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0254` | pylint | protected-access | temporary | inline | span | tests/agents/test_resolver_schema_derivation.py | — | `sha256:df9d3948a546c09b6e17bf86f3ab3e899addb1c3bb8dd2cc218508be66ee6a10` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0255` | pylint | protected-access | temporary | inline | span | tests/agents/test_review_add_query_failures.py | — | `sha256:54358a4844d2a88c0ccd4e20d42a819c4cd4a7a8c43c3b0fa1eea860cc42ee00` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0256` | pylint | protected-access | temporary | inline | span | tests/agents/test_review_draft_fan_out.py | — | `sha256:65c71f673b4427cbb4efa9e04be5afcb73d456ddd446555f30fa091e6161de0b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0257` | pylint | protected-access | temporary | inline | span | tests/agents/test_review_follow_up_routing.py | — | `sha256:1f2cfee40b9fcfbdec115990c0bc26088f67802fa3d170226bd59a8993abd658` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0258` | pylint | protected-access | temporary | inline | span | tests/agents/test_review_retrieve_fan_out.py | — | `sha256:3d6f49c940c1a38e47a9ee960babcfe29ff913cff2328f5e01908d7c0e833a18` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0259` | pylint | protected-access | temporary | inline | span | tests/agents/test_review_review_results_fan_out.py | — | `sha256:5d8401dd8146d69f1d85248402d93f143a53cbc1d258fbfb0b378f853e739df3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0260` | pylint | protected-access | temporary | inline | span | tests/agents/test_review_revised_fan_out.py | — | `sha256:88e385472cb38305cb394629a2b70db68bc9d3948e945402fb6d28c2205c0f3b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0261` | pylint | protected-access | temporary | inline | span | tests/server/test_run_gc_background.py | — | `sha256:92ebe88b2384f591fa6078933805e7aed62c4b6a1a7796553d9b96277b56b3e0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0262` | pylint | protected-access | temporary | inline | span | tests/server/test_stdio_progress.py | — | `sha256:4652118967857921e9ef15a9df15326042e1a41eb5154c538b8afc2e09b3b594` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -1417,20 +1408,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.brief_gene.core:[119:130]
-==tests.agents.test_brief_gene_knowledge_subgraph:[117:125]
-        "go_string": "",
-        "kegg_string": "",
-        "interpro_string": "",
-        "description_string": "",
-        "retrieved_docs": [],
-        "retrieve_context": "",
-        "follow_up_questions": [],
-        "final_response": {},
-        # X3b A architecture preamble fan-out fields.
-        # All seeded empty here so the TypedDict contract holds at
-        # ``arun`` entry; nodes populate them during the workflow.
+Shared BriefGene state fixture shape remains intentionally duplicated across the production schema and knowledge fan-out test.
 ```
 
 Counterfactual:
@@ -2894,40 +2872,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_analyst_graph_io:[31:59]
-==tests.agents.test_analyst_knowledge_subgraph:[27:58]
-pytestmark = pytest.mark.agent
-
-_CORE_MODULE = "mcp_server_phytomni.agents.analyst.core"
-
-
-class _FakeKnowledgeState(TypedDict, total=False):
-    """Minimal state shape for the offline knowledge-subgraph stub."""
-
-    retrieved_docs: list[dict[str, Any]]
-
-
-def _build_fake_knowledge_app() -> CompiledStateGraph:
-    """Compile a one-node ``StateGraph`` to stand in for the KA subgraph.
-
-    ``find_subgraph_pregel`` (the walker behind ``get_graph(xray=True)``)
-    recognises ``CompiledStateGraph`` instances by isinstance, not by
-    duck typing, so a ``SimpleNamespace`` cannot satisfy the xray
-    expansion. Compiling a trivial ``StateGraph`` that returns an empty
-    ``retrieved_docs`` list keeps the test fully offline while still
-    presenting a real compiled subgraph for the wrapper's closure to
-    capture.
-    """
-
-    async def _noop(state: _FakeKnowledgeState) -> dict[str, Any]:
-        del state
-        return {"retrieved_docs": []}
-
-    workflow: StateGraph = StateGraph(_FakeKnowledgeState)
-    workflow.add_node("noop", _noop)
-    workflow.add_edge(START, "noop")
-    workflow.add_edge("noop", END)
+Analyst knowledge graph fixture shape remains intentionally duplicated with the graph-I/O characterization test.
 ```
 
 Counterfactual:
@@ -2990,73 +2935,12 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0089`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==tests.agents.test_analyst_knowledge_subgraph:[196:226]
-==tests.agents.test_data_knowledge_subgraph:[198:228]
-        sensitive_config=SensitiveConfig.load(),
-    )
-    assert agent._knowledge_app is fake_app
-
-
-# ---------------------------------------------------------------------------
-# Structural: the method_retrieve site mounts the prep+post pair.
-# ---------------------------------------------------------------------------
-
-
-def test_compiled_graph_xray_expands_knowledge_subgraph(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Compiled graph exposes the shared knowledge subgraph to ``xray``.
-
-    Structural check: ``StateGraph.get_graph(xray=True)`` walks the
-    compiled graph and inlines any node whose body closes over a
-    ``CompiledStateGraph``. Mounting knowledge via
-    ``make_knowledge_node_wrapper(knowledge_app=...)`` keeps the
-    compiled subgraph at the wrapper's closure free-vars, so
-    ``find_subgraph_pregel`` discovers it and the xray render carries
-    node keys prefixed with ``knowledge:``. A flat ``knowledge`` key
-    with no child prefix would mean the wrapper hid the subgraph and
-    the render reverted to an opaque box.
-    """
-    agent = _build_agent(monkeypatch)
-    node_keys = list(agent.app.get_graph(xray=True).nodes.keys())
-    assert any(key.startswith("knowledge:") for key in node_keys), sorted(
-        node_keys
-    )
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0090`
 
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_analyst_knowledge_subgraph:[240:247]
-==tests.agents.test_data_knowledge_subgraph:[246:253]
-    agent = _build_agent(monkeypatch)
-    node_keys = list(agent.app.get_graph(xray=True).nodes.keys())
-    assert any(key.startswith("chat:") for key in node_keys), sorted(node_keys)
-    assert any(key.startswith("knowledge:") for key in node_keys), sorted(
-        node_keys
-    )
-    # Cross-product still substitutes the method_retrieve site.
+Knowledge graph xray assertions intentionally duplicate the analyst/data cross-product boundary shape.
 ```
 
 Counterfactual:
@@ -3076,51 +2960,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_analyst_knowledge_subgraph:[32:74]
-==tests.agents.test_data_knowledge_subgraph:[31:73]
-class _FakeKnowledgeState(TypedDict, total=False):
-    """Minimal state shape for the offline knowledge-subgraph stub."""
-
-    retrieved_docs: list[dict[str, Any]]
-
-
-def _build_fake_knowledge_app() -> CompiledStateGraph:
-    """Compile a one-node ``StateGraph`` to stand in for the KA subgraph.
-
-    ``find_subgraph_pregel`` (the walker behind ``get_graph(xray=True)``)
-    recognises ``CompiledStateGraph`` instances by isinstance, not by
-    duck typing, so a ``SimpleNamespace`` cannot satisfy the xray
-    expansion. Compiling a trivial ``StateGraph`` that returns an empty
-    ``retrieved_docs`` list keeps the test fully offline while still
-    presenting a real compiled subgraph for the wrapper's closure to
-    capture.
-    """
-
-    async def _noop(state: _FakeKnowledgeState) -> dict[str, Any]:
-        del state
-        return {"retrieved_docs": []}
-
-    workflow: StateGraph = StateGraph(_FakeKnowledgeState)
-    workflow.add_node("noop", _noop)
-    workflow.add_edge(START, "noop")
-    workflow.add_edge("noop", END)
-    return workflow.compile()
-
-
-def _install_fake_knowledge_app(
-    monkeypatch: pytest.MonkeyPatch,
-) -> CompiledStateGraph:
-    """Patch ``build_knowledge_app`` to return a deterministic compiled stub.
-
-    ``DataAgent.__init__`` constructs the per-instance compiled KA
-    subgraph unconditionally; tests substitute a tiny compiled
-    subgraph so the structural xray walk discovers it through the
-    wrapper's closure free-vars while keeping the test fully offline
-    (no real KnowledgeAgent compile, no real retrieve).
-    """
-    fake_app = _build_fake_knowledge_app()
-    monkeypatch.setattr(
+Analyst and data knowledge tests intentionally share the same compiled-subgraph fixture protocol.
 ```
 
 Counterfactual:
@@ -3140,17 +2980,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_brief_gene_chat_subgraph:[48:56]
-==tests.agents.test_brief_gene_knowledge_subgraph:[102:110]
-            "is_follow_up": False,
-            "gene_found": True,
-            "gene_id": "AT1G01010",
-            "query_id_version": "tair10",
-            "gene_id_version": "tair10",
-            "species_code": "ath",
-            "species_latin_name": "Arabidopsis thaliana",
-            "species_english_name": "thale cress",
+BriefGene chat and knowledge tests intentionally share the same seeded state fixture shape.
 ```
 
 Counterfactual:
@@ -3170,14 +3000,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_brief_gene_knowledge_subgraph:[117:122]
-==tests.agents.test_deep_genome_brief_gene_mount:[346:351]
-            "go_string": "",
-            "kegg_string": "",
-            "interpro_string": "",
-            "description_string": "",
-            "retrieved_docs": [],
+BriefGene knowledge state remains intentionally duplicated with the DeepGenome BriefGene mount contract.
 ```
 
 Counterfactual:
@@ -3197,47 +3020,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_chat_adapters:[41:79]
-==tests.agents.test_review_follow_up_routing:[50:88]
-    return SimpleNamespace(
-        PROMPT_FILE="prompt.yaml",
-        PROMPT_PATH="/tmp/prompts",
-        FREQUENCY_PENALTY=0.0,
-        N=1,
-        PRESENCE_PENALTY=0.0,
-        REASONING_EFFORT="medium",
-        RESPONSE_FORMAT={"type": "text"},
-        STREAM=False,
-        TEMPERATURE=0.2,
-        TOP_P=0.9,
-        USER="consumer-user",
-        TIMEOUT=120.0,
-        RETRIABLE_CODES=[429, 500, 502, 503, 504],
-        MAX_RETRIES=3,
-    )
-
-
-def _fake_sensitive_config() -> SimpleNamespace:
-    """Build a SimpleNamespace stand-in for ``SensitiveConfig``.
-
-    ``API_KEY`` exposes ``get_secret_value`` to mirror the real
-    Pydantic ``SecretStr`` surface every consumer agent reads.
-    """
-    return SimpleNamespace(
-        API_KEY=SimpleNamespace(get_secret_value=lambda: "sk-test"),
-        BASE_URL="https://llm.example/v1",
-        MODEL_ID="phyto-llm-v1",
-    )
-
-
-def test_build_chat_kwargs_for_packs_all_17_fields() -> None:
-    """The returned dict has all 17 keys with the expected values.
-
-    Pins the shared 17-key bag the data / knowledge / analyst chat
-    sites pass. If the dispatch site ever adds or drops a kwarg, this
-    test fails first so the adapter and the call sites stay aligned.
-    """
+Review follow-up config fixtures intentionally mirror the shared chat-adapter contract.
 ```
 
 Counterfactual:
@@ -3257,37 +3040,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_data_chat_subgraph:[67:95]
-==tests.agents.test_data_knowledge_subgraph:[72:115]
-    monkeypatch.setattr(
-        f"{_DATA_MODULE}.build_knowledge_app", lambda **_kwargs: fake_app
-    )
-    return fake_app
-
-
-def _build_agent(monkeypatch: pytest.MonkeyPatch) -> DataAgent:
-    """Construct a ``DataAgent`` with the chat subgraph mounted.
-
-    The knowledge subgraph is always mounted at the retrieve site, so
-    the helper installs an offline knowledge-app stub via
-    :func:`_install_fake_knowledge_app` to keep construction offline,
-    then isolates the chat-subgraph mount under test.
-    """
-    _install_fake_knowledge_app(monkeypatch)
-    return DataAgent(
-        data_config=DataConfig(),
-        sensitive_config=SensitiveConfig.load(),
-    )
-
-
-def _minimal_rewrite_state() -> DataAgentState:
-    """Return the minimal state the rewrite prep node reads.
-
-    The rewrite prep node only reads ``retrieve_prompt`` (the prompt
-    already stitched by ``retrieve_post_node``); no other keys are
-    read at this node, so the dict stays minimal.
-    """
+Data chat and knowledge tests intentionally share the same compiled knowledge-app fixture protocol.
 ```
 
 Counterfactual:
@@ -3807,17 +3560,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_review_chat_single_shot:[156:164]
-==tests.agents.test_review_follow_up_routing:[126:134]
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "original_user_query": "Photosynthesis",
-            "summary_content": "A review of photosynthesis.",
-            "all_raw_doc_list": [],
-            "add_doc_list": [],
+Review single-shot and follow-up tests intentionally share the same terminal state fixture shape.
 ```
 
 Counterfactual:
@@ -3881,28 +3624,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_review_chat_single_shot:[31:51]
-==tests.agents.test_review_follow_up_routing:[78:97]
-    )
-
-
-# ---------------------------------------------------------------------------
-# Per-site prep-node assertions.
-# ---------------------------------------------------------------------------
-
-
-async def test_plan_query_prep_chat_kwargs_disables_follow_up() -> None:
-    """``plan_query_prep_node`` stages ``with_follow_up`` False."""
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "original_user_query": "How does photosynthesis work?",
-            "obs_file_list": [],
-        },
-    )
-    result = await agent.plan_query_prep_node(state)
+Review single-shot and follow-up tests intentionally share the same agent/prep test setup.
 ```
 
 Counterfactual:
@@ -3922,16 +3644,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_review_chat_single_shot:[62:69]
-==tests.agents.test_review_follow_up_routing:[103:110]
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "original_user_query": "Photosynthesis",
-            "revised_reports": [
-                {"subtopic": "dim1", "revised_report": "Content 1"},
+Review single-shot and follow-up tests intentionally share the same revised-report state shape.
 ```
 
 Counterfactual:
@@ -3951,21 +3664,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_review_chat_single_shot:[86:98]
-==tests.agents.test_review_follow_up_routing:[126:137]
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "original_user_query": "Photosynthesis",
-            "summary_content": "A review of photosynthesis.",
-            "all_raw_doc_list": [],
-            "add_doc_list": [],
-        },
-    )
-    result = await agent.follow_up_prep_node(state)
-
+Review single-shot and follow-up tests intentionally share the same follow-up state shape.
 ```
 
 Counterfactual:
@@ -3985,15 +3684,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_review_draft_fan_out:[114:120]
-==tests.agents.test_review_revised_fan_out:[121:127]
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "task_index": 2,
-            "subtopic": "auxin signalling",
+Review draft and revised workers intentionally share the same indexed-result fixture shape.
 ```
 
 Counterfactual:
@@ -4013,32 +3704,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_review_draft_fan_out:[130:153]
-==tests.agents.test_review_review_results_fan_out:[130:159]
-    assert "failures" not in result
-    assert fake_app.ainvoke.await_count == 1
-
-
-# ---------------------------------------------------------------------------
-# Flag-on worker exception: writes empty sentinel AND FailureRecord.
-# ---------------------------------------------------------------------------
-
-
-async def test_draft_worker_node_exception_writes_sentinel_and_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Worker writes ``""`` sentinel AND FailureRecord dict on exception."""
-    fake_app = AsyncMock(
-        ainvoke=AsyncMock(side_effect=RuntimeError("chat timeout"))
-    )
-    monkeypatch.setattr(f"{_AGENT_MODULE}.CHAT_APP", fake_app)
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "task_index": 1,
-            "subtopic": "drought tolerance",
+Review draft and review-results failure tests intentionally share the same failure sentinel setup.
 ```
 
 Counterfactual:
@@ -4058,15 +3724,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_review_draft_fan_out:[147:153]
-==tests.agents.test_review_revised_fan_out:[167:173]
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "task_index": 1,
-            "subtopic": "drought tolerance",
+Review draft and revised failure tests intentionally share the same failure-state fixture.
 ```
 
 Counterfactual:
@@ -4086,15 +3744,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_review_draft_fan_out:[163:169]
-==tests.agents.test_review_review_results_fan_out:[168:174]
-    failures = result.get("failures", [])
-    assert len(failures) == 1
-    rec = failures[0]
-    # FailureRecord is a TypedDict — check structural keys, not isinstance.
-    assert rec["kind"] == "execute"
-    assert "chat timeout" in rec["message"]
+Review draft and review-results tests intentionally share the same FailureRecord assertions.
 ```
 
 Counterfactual:
@@ -4114,38 +3764,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_review_draft_fan_out:[28:57]
-==tests.agents.test_review_review_results_fan_out:[28:57]
-pytestmark = pytest.mark.agent
-
-_AGENT_MODULE = "mcp_server_phytomni.agents.review.agent"
-
-
-def _build_agent() -> DeepResearchAgent:
-    """Construct a ``DeepResearchAgent`` for the review_results fan-out."""
-    return DeepResearchAgent(
-        review_config=ReviewConfig(),
-        sensitive_config=SensitiveConfig.load(),
-    )
-
-
-def _ok_chat_response(text: str) -> dict[str, Any]:
-    """Build a minimal chat-completion response wrapping ``text``."""
-    return {"choices": [{"message": {"content": text}}]}
-
-
-# ---------------------------------------------------------------------------
-# Prepare node returns empty delta.
-# ---------------------------------------------------------------------------
-
-
-async def test_review_results_prepare_tasks_node_returns_empty_delta() -> None:
-    """``review_results_prepare_tasks_node`` acts as a no-op split node."""
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
+Review draft and review-results tests intentionally share the same agent fixture setup.
 ```
 
 Counterfactual:
@@ -4165,19 +3784,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_review_draft_fan_out:[73:83]
-==tests.agents.test_review_follow_up_routing:[148:158]
-    agent = _build_agent()
-    params = [
-        {"subtopic": "photosynthesis", "knowledge": "snippet-0"},
-        {"subtopic": "chlorophyll", "knowledge": "snippet-1"},
-        {"subtopic": "stomatal", "knowledge": "snippet-2"},
-    ]
-    state = cast(DeepResearchState, {"dimension_params": params})
-    sends = agent.route_draft_tasks(state)
-
-    assert len(sends) == 3
+Review draft and follow-up tests intentionally share the same Send payload characterization.
 ```
 
 Counterfactual:
@@ -4197,22 +3804,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_review_follow_up_routing:[167:180]
-==tests.agents.test_review_review_results_fan_out:[72:85]
-    agent = _build_agent()
-    dimensions = ["photosynthesis", "chlorophyll", "stomatal"]
-    drafts = ["draft-A", "draft-B", "draft-C"]
-    state = cast(
-        DeepResearchState,
-        {
-            "research_dimensions": dimensions,
-            "draft_contents": drafts,
-        },
-    )
-    sends = agent.route_review_results_tasks(state)
-
-    assert len(sends) == 3
+Review follow-up and review-results tests intentionally share the same Send payload characterization.
 ```
 
 Counterfactual:
@@ -4232,14 +3824,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_review_review_results_fan_out:[279:284]
-==tests.agents.test_review_revised_fan_out:[340:345]
-    agent = _build_agent()
-    node_keys = list(agent.app.get_graph(xray=True).nodes.keys())
-    assert any(
-        key.startswith("review_results_worker_node:") for key in node_keys
-    ), sorted(node_keys)
+Review-results and revised tests intentionally share the same xray expansion assertion.
 ```
 
 Counterfactual:
@@ -4259,15 +3844,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==tests.agents.test_review_review_results_fan_out:[53:59]
-==tests.agents.test_review_revised_fan_out:[47:53]
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "research_dimensions": ["photosynthesis"],
-            "draft_contents": ["draft-A"],
+Review-results and revised tests intentionally share the same indexed state fixture.
 ```
 
 Counterfactual:
@@ -6168,66 +5745,6 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0242`
-
-Rationale:
-
-```text
-pylint: disable=protected-access
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0243`
-
-Rationale:
-
-```text
-pylint: disable=protected-access
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0244`
-
-Rationale:
-
-```text
-pylint: disable=protected-access
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0245`
 
 Rationale:
@@ -6408,107 +5925,7 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0254`
-
-Rationale:
-
-```text
-pylint: disable=protected-access
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0255`
-
-Rationale:
-
-```text
-pylint: disable=protected-access
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0256`
-
-Rationale:
-
-```text
-pylint: disable=protected-access
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0257`
-
-Rationale:
-
-```text
-pylint: disable=protected-access
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0258`
-
-Rationale:
-
-```text
-pylint: disable=protected-access
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0259`
 
 Rationale:
 

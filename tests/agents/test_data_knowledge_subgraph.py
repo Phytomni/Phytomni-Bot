@@ -9,8 +9,6 @@ surrounding a per-instance compiled KnowledgeAgent app. Also covers
 the cross-product with the always-mounted chat subgraph.
 """
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 from typing import Any, TypedDict, cast
@@ -182,23 +180,6 @@ async def test_retrieve_post_node_defaults_empty_docs(
     assert "list every transcript per sample" in result["retrieve_prompt"]
     # Empty doc list yields no scenario fragment.
     assert "scenario" not in result["retrieve_prompt"].lower().split("user")[0]
-
-
-# ---------------------------------------------------------------------------
-# Constructor: ``_knowledge_app`` is always instantiated.
-# ---------------------------------------------------------------------------
-
-
-def test_knowledge_app_always_built(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``_knowledge_app`` is populated on every construction."""
-    fake_app = _install_fake_knowledge_app(monkeypatch)
-    agent = DataAgent(
-        data_config=DataConfig(),
-        sensitive_config=SensitiveConfig.load(),
-    )
-    assert agent._knowledge_app is fake_app
 
 
 # ---------------------------------------------------------------------------

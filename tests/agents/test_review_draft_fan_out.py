@@ -11,8 +11,6 @@ the chat subgraph under each worker. Also covers partial failure,
 reduce ordering, and xray subgraph expansion.
 """
 
-# pylint: disable=protected-access
-
 from __future__ import annotations
 
 from typing import Any, cast
