@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from mcp_server_phytomni.agents.deep_genome.summary import (
-    UnusableAnalysisResult,
+    UnusableAnalysisResultError,
     build_design_work_item_summary,
     build_sub_summary,
 )
@@ -90,7 +90,7 @@ def test_promoter_design_summary_rejects_empty_results(
     """Reject a promoter result containing neither text nor artifacts."""
     (tmp_path / "empty.summary").write_text("\n", encoding="utf-8")
 
-    with pytest.raises(UnusableAnalysisResult):
+    with pytest.raises(UnusableAnalysisResultError):
         build_design_work_item_summary("promoter_design", tmp_path)
 
 

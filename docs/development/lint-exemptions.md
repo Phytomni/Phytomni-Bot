@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `307`
+- Authorized records: `304`
 
 ## Informational counts
 
@@ -40,7 +40,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `pylint:wrong-import-position`                                    |       1 |
 | `pymarkdown:md013`                                                |       1 |
 | `pytest:error`                                                    |       1 |
-| `pytest:ignore::UserWarning`                                      |       2 |
 | `pytest:ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning` |       1 |
 | `ruff:ASYNC109`                                                   |       1 |
 | `ruff:ASYNC110`                                                   |       3 |
@@ -49,7 +48,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `ruff:N802`                                                       |       1 |
 | `ruff:N803`                                                       |       1 |
 | `ruff:N815`                                                       |       1 |
-| `ruff:N818`                                                       |       1 |
 
 ## Exact records
 
@@ -342,8 +340,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0293` | pylint | wrong-import-position | temporary | inline | span | scripts/\_visualize_bootstrap.py | — | `sha256:637afabc246f45d9145f3aa93a39fe94d65fb830b2067196e8f33d8b77ed1847` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0294` | pymarkdown | md013 | temporary | config | config | pyproject.toml | tool.pymarkdown.plugins.md013.enabled | `sha256:34d8c475a236a211d36db927ee2de462f03fdb4f3f07864359540255c750bf01` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0295` | pytest | error | temporary | config | config | pyproject.toml | tool.pytest.ini_options.filterwarnings[0] | `sha256:0aa661937816a1fb17f333eb9a372e15f3093ed7bf8b75bc5d904d38422ef20f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0296` | pytest | ignore::UserWarning | temporary | decorator | fixture | tests/agents/test_prompt_align_a.py | test_literature_only_prompt_uses_align_a | `sha256:e2cbfea53fe570c4eff2a1184a946f7ada1f9ff04d61d3ed8b7fe1dc0018ef94` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0297` | pytest | ignore::UserWarning | temporary | decorator | fixture | tests/agents/test_prompt_align_a.py | test_section_or_intro_prompt_uses_align_a | `sha256:2a437dd77d84ac7534efffb36844c9f67a42bf61f191c872f9d2c5b8fa90822f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0298` | pytest | ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning | temporary | config | config | pyproject.toml | tool.pytest.ini_options.filterwarnings[1] | `sha256:3b0438047d9767b1eb34f8a245bfa1e11abe24c3fc8011aee6a4f08905aef12a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0299` | ruff | ASYNC109 | temporary | config | config | pyproject.toml | tool.ruff.lint.ignore | `sha256:5993cb3b3995e8a9e9d1b75ec77d7be80c2deb72a69b7a164790e0d8fea7998a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0300` | ruff | ASYNC110 | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/report.py | \_write_async | `sha256:a7cb1e8424467f0727f7a3b99bf30356d9bb18b99462d892fbf92402f43dd198` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -361,7 +357,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0312` | ruff | N802 | temporary | config | config | pyproject.toml | tool.ruff.lint.per-file-ignores.typings/**/\*.pyi | `sha256:bf0326cb042985ec93478cbec49d2e724864485a45acf6ad1e15bc9d520eb9a4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0313` | ruff | N803 | temporary | config | config | pyproject.toml | tool.ruff.lint.per-file-ignores.typings/**/*.pyi | `sha256:04fd5950474f7a9f1e297946d6fbe12928593497186dbe231583d79859f82d30` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0314` | ruff | N815 | temporary | config | config | pyproject.toml | tool.ruff.lint.per-file-ignores.typings/\*\*/*.pyi | `sha256:c46f9c1d9fbddac831ac4f216f43c4ff6703ad4274821d10b4f0186703a912e0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0315` | ruff | N818 | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/summary.py | UnusableAnalysisResult | `sha256:90f1e4e2cd626e45e45c681059af0950fe8f8dd2463dcbd24062bf01a5d9ef77` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 
 ## Review fields
 
@@ -8350,46 +8345,6 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0296`
-
-Rationale:
-
-```text
-ignore::UserWarning
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0297`
-
-Rationale:
-
-```text
-ignore::UserWarning
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0298`
 
 Rationale:
@@ -8716,26 +8671,6 @@ Rationale:
 
 ```text
 tool.ruff.lint.per-file-ignores.typings/**/*.pyi=['N802', 'N803', 'N815']
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0315`
-
-Rationale:
-
-```text
-noqa: N818
 ```
 
 Counterfactual:

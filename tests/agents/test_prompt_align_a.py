@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from mcp_server_phytomni.common.prompts import get_prompt
+from mcp_server_phytomni.common.prompts import load_template
 from mcp_server_phytomni.common.responses import assert_no_citation_residue
 
 pytestmark = pytest.mark.unit
@@ -37,11 +37,11 @@ ALIGN_A_PROMPTS_LITERATURE_ONLY = (
 )
 
 
-@pytest.mark.filterwarnings("ignore::UserWarning")
 @pytest.mark.parametrize("name", ALIGN_A_PROMPTS_WITH_STRUCTURAL)
 def test_section_or_intro_prompt_uses_align_a(name: str) -> None:
     """Section + intro prompts split annotation data from Literature."""
-    body = get_prompt(PROMPT_FILE, f"user/{name}", {})
+    body = load_template(PROMPT_FILE, f"user/{name}")
+    assert isinstance(body, str)
     assert (
         "## Citation Rules" in body
     ), f"{name} missing `## Citation Rules` header"
@@ -73,7 +73,6 @@ def test_section_or_intro_prompt_uses_align_a(name: str) -> None:
     )
 
 
-@pytest.mark.filterwarnings("ignore::UserWarning")
 @pytest.mark.parametrize("name", ALIGN_A_PROMPTS_LITERATURE_ONLY)
 def test_literature_only_prompt_uses_align_a(name: str) -> None:
     """Knowledge / Review prompts declare the citation form.
@@ -86,7 +85,8 @@ def test_literature_only_prompt_uses_align_a(name: str) -> None:
     client. The placeholder ``[document:X]`` form must never appear — N
     must always be a real document number.
     """
-    body = get_prompt(PROMPT_FILE, f"user/{name}", {})
+    body = load_template(PROMPT_FILE, f"user/{name}")
+    assert isinstance(body, str)
     assert "[document:N]" in body, (
         f"{name} no longer instructs the [document:N] citation form the "
         f"repo uses internally"

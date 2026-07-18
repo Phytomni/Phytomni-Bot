@@ -18,7 +18,7 @@ from typing import Any, NamedTuple
 READ_ERRORS = (StopIteration, FileNotFoundError, OSError, IOError)
 
 
-class UnusableAnalysisResult(ValueError):  # noqa: N818
+class UnusableAnalysisResultError(ValueError):
     """Raised when a completed analysis has no usable local content."""
 
 
@@ -490,7 +490,7 @@ def build_design_work_item_summary(
         Nonblank Markdown headed by the work-item display name.
 
     Raises:
-        UnusableAnalysisResult: If no nonblank summary or allow-listed
+        UnusableAnalysisResultError: If no nonblank summary or allow-listed
             artifact exists.
         ValueError: If ``work_item_key`` is not a supported design job.
     """
@@ -498,7 +498,9 @@ def build_design_work_item_summary(
         raise ValueError(f"unknown design work item: {work_item_key}")
     root = Path(results_dir)
     if not root.is_dir():
-        raise UnusableAnalysisResult("design result directory is unavailable")
+        raise UnusableAnalysisResultError(
+            "design result directory is unavailable"
+        )
     title = (
         "Protein Design"
         if work_item_key == "protein_design"
@@ -510,7 +512,7 @@ def build_design_work_item_summary(
         return f"## {title}\n\n{body}\n"
     artifacts = _design_artifacts(work_item_key, root)
     if not artifacts:
-        raise UnusableAnalysisResult(
+        raise UnusableAnalysisResultError(
             f"{work_item_key} result contains no usable content"
         )
     artifact_lines = "\n".join(f"- `{name}`" for name in artifacts)
