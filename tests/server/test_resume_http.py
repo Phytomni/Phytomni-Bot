@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -20,52 +19,6 @@ from mcp_server_phytomni.runtime.run_registry import (
 )
 
 pytestmark = pytest.mark.server
-
-
-class _FakeCheckpointer:
-    """Minimal async checkpointer proving a pause point exists."""
-
-    async def aget(self, _config: dict[str, Any]) -> object:
-        """Return a checkpoint sentinel for ``aresume_graph``."""
-        return object()
-
-
-class _FakeReviewApp:
-    """Compiled-graph stand-in used by the HTTP adapter tests."""
-
-    checkpointer = _FakeCheckpointer()
-
-    def __init__(self) -> None:
-        """Initialize call capture for assertions."""
-        self.calls: list[Any] = []
-
-    async def ainvoke(
-        self,
-        payload: Any,
-        *,
-        config: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Pause on first invocation, then finish after resume."""
-        self.calls.append((payload, config))
-        if isinstance(payload, dict):
-            return {
-                "__interrupt__": [
-                    SimpleNamespace(value={"summary": "draft review"})
-                ]
-            }
-        return {
-            "final_response": {
-                "choices": [
-                    {
-                        "message": {
-                            "content": "Approved final review.",
-                            "doc_list": [],
-                            "follow_up_questions": [],
-                        }
-                    }
-                ]
-            }
-        }
 
 
 def _seed_run(
@@ -175,10 +128,11 @@ async def test_review_run_interrupt_then_resume_finishes(
     issued_api_key: str,
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
+    review_app_factory: Any,
 ) -> None:
     """A review run can pause for approval and resume to success."""
     _ = tasks_db_path
-    fake_app = _FakeReviewApp()
+    fake_app = review_app_factory(interrupt_key="summary")
     monkeypatch.setattr(
         api_app_module,
         "_review_stream_app",
@@ -228,10 +182,11 @@ async def test_review_chat_completion_interrupt_body(
     issued_api_key: str,
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
+    review_app_factory: Any,
 ) -> None:
     """Review chat completions return a direct interrupt body on pause."""
     _ = tasks_db_path
-    fake_app = _FakeReviewApp()
+    fake_app = review_app_factory(interrupt_key="summary")
     monkeypatch.setattr(
         api_app_module,
         "_review_stream_app",

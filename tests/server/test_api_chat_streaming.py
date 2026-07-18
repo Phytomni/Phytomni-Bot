@@ -15,7 +15,6 @@ once the response drains.
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping
 from typing import (
     Any,
@@ -41,37 +40,11 @@ from mcp_server_phytomni.runtime.run_registry import RunRegistry
 pytestmark = pytest.mark.server
 
 
-def _patch_chat_stream(
-    monkeypatch: pytest.MonkeyPatch, payloads: list[dict[str, Any]]
-) -> None:
-    """Replace ``stream_phyto_chat_chunks`` in the mcp app namespace.
-
-    Args:
-        monkeypatch: Pytest monkeypatch fixture.
-        payloads: Provider chunk dicts the fake should yield.
-    """
-
-    async def fake_stream(**_kwargs: Any) -> AsyncIterator[dict[str, Any]]:
-        """Yield each pre-built payload, ignoring the chat kwargs."""
-        for payload in payloads:
-            yield payload
-
-    monkeypatch.setattr(mcp_app, "stream_phyto_chat_chunks", fake_stream)
-
-
-def _extract_run_started_id(body: str) -> str:
-    """Return the ``run_id`` embedded in the SSE body's RunStarted frame."""
-    marker = "event: RunStarted\ndata: "
-    start = body.index(marker) + len(marker)
-    end = body.index("\n", start)
-    return str(json.loads(body[start:end])["run_id"])
-
-
 async def test_stream_phyto_chat_emits_agui_frames(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     chat_completion: Callable[..., Any],
-    monkeypatch: pytest.MonkeyPatch,
+    patch_chat_stream: Callable[[list[dict[str, Any]]], None],
 ) -> None:
     """``stream=true`` + ``phyto-chat`` yields AG-UI SSE frames.
 
@@ -81,8 +54,7 @@ async def test_stream_phyto_chat_emits_agui_frames(
     ``RunFinished`` frame, and the terminating ``data: [DONE]`` line
     every SSE consumer relies on to close its ``EventSource``.
     """
-    _patch_chat_stream(
-        monkeypatch,
+    patch_chat_stream(
         [
             {"choices": [{"delta": {"content": "Hel"}}]},
             {
@@ -310,6 +282,7 @@ async def test_stream_priming_empty_returns_json_and_fails_run(
 async def test_opened_agent_failure_emits_one_error_and_settles_failed(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
+    extract_run_started_id: Callable[[str], str],
     model: str,
     tool_name: str,
 ) -> None:
@@ -347,7 +320,7 @@ async def test_opened_agent_failure_emits_one_error_and_settles_failed(
     assert "event: RunFinished\n" not in body
     assert body.count("data: [DONE]") == 1
     assert "backend token=hidden failure" not in body
-    run_id = _extract_run_started_id(body)
+    run_id = extract_run_started_id(body)
     record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
     assert record is not None
     assert record.status == "failed"
@@ -359,8 +332,7 @@ async def test_stream_run_settles_succeeded_after_finish(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     chat_completion: Callable[..., Any],
-    monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
+    stream_test_tools: Any,
 ) -> None:
     """The run settles ``succeeded`` after the stream reaches RunFinished.
 
@@ -381,8 +353,7 @@ async def test_stream_run_settles_succeeded_after_finish(
     both columns and would otherwise let a stale ``created_at`` slip
     past ``updated_at`` on a slow settle.
     """
-    _patch_chat_stream(
-        monkeypatch,
+    stream_test_tools.patch_chat_stream(
         [
             {
                 "choices": [
@@ -397,8 +368,8 @@ async def test_stream_run_settles_succeeded_after_finish(
     )
 
     assert response.status_code == 200
-    started_run_id = _extract_run_started_id(response.text)
-    registry = RunRegistry(db_path=tasks_db_path)
+    started_run_id = stream_test_tools.extract_run_started_id(response.text)
+    registry = RunRegistry(db_path=stream_test_tools.tasks_db_path)
     # issued_api_key fixture binds the key to user "u1"; the request
     # context resolves the owner from the authenticated principal.
     runs = [
@@ -433,6 +404,7 @@ async def test_stream_run_settles_succeeded_after_finish(
 async def test_standard_stream_agents_persist_real_answer(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
+    extract_run_started_id: Callable[[str], str],
     model: str,
     tool_name: str,
 ) -> None:
@@ -476,7 +448,7 @@ async def test_standard_stream_agents_persist_real_answer(
         body = "".join([line async for line in body_iterator])
 
     assert body.count("data: [DONE]") == 1
-    run_id = _extract_run_started_id(body)
+    run_id = extract_run_started_id(body)
     record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
     assert record is not None
     assert record.status == "succeeded"
@@ -491,7 +463,8 @@ async def test_stream_chat_run_get_exposes_answer(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     chat_completion: Callable[..., Any],
-    monkeypatch: pytest.MonkeyPatch,
+    patch_chat_stream: Callable[[list[dict[str, Any]]], None],
+    extract_run_started_id: Callable[[str], str],
 ) -> None:
     """A settled chat stream run exposes the real answer via GET /runs/{id}.
 
@@ -501,8 +474,7 @@ async def test_stream_chat_run_get_exposes_answer(
     ``_run_record_to_dict``, and happy-path ``truncated``/``partial``
     flags without the ``[streamed]`` placeholder.
     """
-    _patch_chat_stream(
-        monkeypatch,
+    patch_chat_stream(
         [
             {
                 "choices": [
@@ -516,7 +488,7 @@ async def test_stream_chat_run_get_exposes_answer(
         api_client, issued_api_key, stream=True, dialogue_id="dlg-http"
     )
     assert response.status_code == 200
-    run_id = _extract_run_started_id(response.text)
+    run_id = extract_run_started_id(response.text)
 
     fetched = await api_client.get(
         f"/v1/runs/{run_id}",
@@ -680,7 +652,7 @@ async def test_stream_settle_marks_truncated_when_over_cap(
     issued_api_key: str,
     chat_completion: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
+    stream_test_tools: Any,
 ) -> None:
     """Chat stream settle sets truncated=true when over the soft cap."""
     monkeypatch.setenv("PHYTOMNI_STREAM_ANSWER_MAX_BYTES", "4")
@@ -692,8 +664,7 @@ async def test_stream_settle_marks_truncated_when_over_cap(
         "_stream_answer_max_bytes",
         lambda: 4,
     )
-    _patch_chat_stream(
-        monkeypatch,
+    stream_test_tools.patch_chat_stream(
         [
             {
                 "choices": [
@@ -707,8 +678,8 @@ async def test_stream_settle_marks_truncated_when_over_cap(
     )
     response = await chat_completion(api_client, issued_api_key, stream=True)
     assert response.status_code == 200
-    started_run_id = _extract_run_started_id(response.text)
-    registry = RunRegistry(db_path=tasks_db_path)
+    started_run_id = stream_test_tools.extract_run_started_id(response.text)
+    registry = RunRegistry(db_path=stream_test_tools.tasks_db_path)
     record = registry.get_run(started_run_id, owner="u1")
     assert record is not None
     assert record.status == "succeeded"
@@ -823,6 +794,7 @@ async def test_stream_phyto_knowledge_emits_agui_frames(
     issued_api_key: str,
     chat_completion: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
+    extract_run_started_id: Callable[[str], str],
 ) -> None:
     """``stream=true`` + ``phyto-knowledge`` yields graph AG-UI frames.
 
@@ -867,7 +839,7 @@ async def test_stream_phyto_knowledge_emits_agui_frames(
     assert "event: Custom\n" in body
     assert "event: RunFinished\n" in body
     assert body.rstrip().endswith("data: [DONE]")
-    started_run_id = _extract_run_started_id(body)
+    started_run_id = extract_run_started_id(body)
     assert fake_app.thread_id() == started_run_id
 
 
@@ -927,7 +899,7 @@ async def test_streamed_knowledge_run_reconcile_short_circuits(
     issued_api_key: str,
     chat_completion: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
+    stream_test_tools: Any,
 ) -> None:
     """A settled streamed run skips ``reconcile_task`` on ``GET /runs/{id}``.
 
@@ -968,13 +940,13 @@ async def test_streamed_knowledge_run_reconcile_short_circuits(
         api_client, issued_api_key, model="phyto-knowledge", stream=True
     )
     assert response.status_code == 200
-    run_id = _extract_run_started_id(response.text)
+    run_id = stream_test_tools.extract_run_started_id(response.text)
 
     # The run settled terminal in the shared temp DB, so reconcile must
     # short-circuit rather than probe. Read the row back through the same
     # path the fixture pins so the assertion runs against the DB the API
     # actually wrote to.
-    registry = RunRegistry(db_path=tasks_db_path)
+    registry = RunRegistry(db_path=stream_test_tools.tasks_db_path)
     settled = registry.get_run(run_id, owner="u1")
     assert settled is not None
     assert settled.status == "succeeded"

@@ -6,63 +6,16 @@
 
 from __future__ import annotations
 
-import json
-from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
 from fastapi import HTTPException
 
-# Pytest resolves this namespace-package helper; standalone pylint does not.
-# pylint: disable=import-error
-from tests.server.test_api_chat_streaming import _extract_run_started_id
-
-# pylint: enable=import-error
-from mcp_server_phytomni.agents.shared.a2ui import A2UI_CUSTOM_NAME
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
 
 pytestmark = pytest.mark.server
-
-
-class _FakeCheckpointer:
-    async def aget(self, _config: dict[str, Any]) -> object:
-        """Return a non-None checkpoint so resume paths stay open."""
-        return object()
-
-
-class _FakeReviewAppPause:
-    """Pause with production interrupt value shape."""
-
-    checkpointer = _FakeCheckpointer()
-
-    def __init__(self) -> None:
-        self.calls: list[Any] = []
-
-    async def ainvoke(self, payload: Any, *, config: dict[str, Any]) -> dict:
-        """Interrupt on first invoke; finish on Command(resume=...)."""
-        self.calls.append((payload, config))
-        if isinstance(payload, dict):
-            return {
-                "__interrupt__": [
-                    SimpleNamespace(value={"draft": "draft review"})
-                ]
-            }
-        # Command(resume=...) path — default approve finishes
-        return {
-            "final_response": {
-                "choices": [
-                    {
-                        "message": {
-                            "content": "Approved final review.",
-                            "doc_list": [],
-                            "follow_up_questions": [],
-                        }
-                    }
-                ]
-            }
-        }
 
 
 def _patch_review_app(monkeypatch: pytest.MonkeyPatch, app: Any) -> None:
@@ -75,16 +28,38 @@ def _patch_review_app(monkeypatch: pytest.MonkeyPatch, app: Any) -> None:
     )
 
 
+async def _post_review_chat_completion(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    *,
+    stream: bool,
+    content: str,
+) -> httpx.Response:
+    """Post one canonical Review chat-completion test request."""
+    payload: dict[str, Any] = {
+        "model": "phyto-review",
+        "messages": [{"role": "user", "content": content}],
+    }
+    if stream:
+        payload["stream"] = True
+    return await api_client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json=payload,
+    )
+
+
 async def test_review_pause_flag_off_has_no_a2ui(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
+    review_app_factory: Any,
 ) -> None:
     """With A2UI disabled, Review pauses keep a plain draft interrupt."""
     _ = tasks_db_path
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "false")
-    _patch_review_app(monkeypatch, _FakeReviewAppPause())
+    _patch_review_app(monkeypatch, review_app_factory())
     response = await api_client.post(
         "/v1/agents/review/runs",
         headers={"Authorization": f"Bearer {issued_api_key}"},
@@ -106,11 +81,12 @@ async def test_review_pause_flag_on_projects_a2ui(
     issued_api_key: str,
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
+    review_app_factory: Any,
 ) -> None:
     """With A2UI enabled, Review pauses attach a confirm surface."""
     _ = tasks_db_path
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
-    _patch_review_app(monkeypatch, _FakeReviewAppPause())
+    _patch_review_app(monkeypatch, review_app_factory())
     response = await api_client.post(
         "/v1/agents/review/runs",
         headers={"Authorization": f"Bearer {issued_api_key}"},
@@ -141,6 +117,7 @@ async def test_review_stream_runtime_failure_emits_error_and_fails_run(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
+    assert_failed_stream: Any,
 ) -> None:
     """A Review A2UI fault after RunStarted emits one error and fails."""
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
@@ -160,35 +137,16 @@ async def test_review_stream_runtime_failure_emits_error_and_fails_run(
             )
 
     _patch_review_app(monkeypatch, _FailingReviewApp())
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "model": "phyto-review",
-            "stream": True,
-            "messages": [{"role": "user", "content": "Review this."}],
-        },
+    response = await _post_review_chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="Review this.",
     )
 
     assert response.status_code == 200
     body = response.text
-    assert body.count("event: RunError\n") == 1
-    assert "event: RunFinished\n" not in body
-    assert body.count("data: [DONE]") == 1
-    for forbidden in (
-        "bearer-secret",
-        "postgresql://",
-        "db-user:db-password",
-        "SELECT secret_token",
-    ):
-        assert forbidden not in body
-    run_id = _extract_run_started_id(body)
-    fetched = await api_client.get(
-        f"/v1/runs/{run_id}",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-    )
-    assert fetched.status_code == 200
-    assert fetched.json()["status"] == "failed"
+    await assert_failed_stream(body)
 
 
 async def test_review_chat_completion_pause_projects_a2ui(
@@ -196,18 +154,17 @@ async def test_review_chat_completion_pause_projects_a2ui(
     issued_api_key: str,
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
+    review_app_factory: Any,
 ) -> None:
     """Chat-completions Review pauses also project a2ui when enabled."""
     _ = tasks_db_path
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
-    _patch_review_app(monkeypatch, _FakeReviewAppPause())
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "model": "phyto-review",
-            "messages": [{"role": "user", "content": "Review this."}],
-        },
+    _patch_review_app(monkeypatch, review_app_factory())
+    response = await _post_review_chat_completion(
+        api_client,
+        issued_api_key,
+        stream=False,
+        content="Review this.",
     )
     assert response.status_code == 200
     assert "a2ui" in response.json()["interrupt"]["draft"]
@@ -236,34 +193,18 @@ async def test_review_stream_validation_fails_before_sse(
     assert caught.value.detail == "invalid ReviewAgent arguments"
 
 
-class _FakeReviewAppRejectReinterrupt(_FakeReviewAppPause):
-    """Re-interrupt after a reject resume with a revised draft."""
-
-    async def ainvoke(self, payload: Any, *, config: dict[str, Any]) -> dict:
-        self.calls.append((payload, config))
-        if isinstance(payload, dict):
-            return {
-                "__interrupt__": [
-                    SimpleNamespace(value={"draft": "draft review"})
-                ]
-            }
-        return {
-            "__interrupt__": [
-                SimpleNamespace(value={"draft": "revised draft"})
-            ]
-        }
-
-
 async def test_review_a2ui_action_approve_matches_resume_kernel(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
+    review_app_factory: Any,
 ) -> None:
     """A2UI accept resumes Review through the shared kernel."""
     _ = tasks_db_path
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
-    _patch_review_app(monkeypatch, _FakeReviewAppPause())
+    review_app = review_app_factory()
+    _patch_review_app(monkeypatch, review_app)
     paused = await api_client.post(
         "/v1/agents/review/runs",
         headers={"Authorization": f"Bearer {issued_api_key}"},
@@ -286,19 +227,7 @@ async def test_review_a2ui_action_approve_matches_resume_kernel(
         resume_payload: dict[str, Any],
     ) -> dict[str, Any]:
         calls.append(dict(resume_payload))
-        return {
-            "final_response": {
-                "choices": [
-                    {
-                        "message": {
-                            "content": "Approved final review.",
-                            "doc_list": [],
-                            "follow_up_questions": [],
-                        }
-                    }
-                ]
-            }
-        }
+        return review_app.success_response
 
     monkeypatch.setattr(api_app_module, "_resume_paused_run", _spy_resume)
 
@@ -333,11 +262,12 @@ async def test_review_resume_includes_result_a2ui_when_projected(
     issued_api_key: str,
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
+    review_app_factory: Any,
 ) -> None:
     """Classic /resume also returns submitted a2ui when surface was open."""
     _ = tasks_db_path
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
-    _patch_review_app(monkeypatch, _FakeReviewAppPause())
+    _patch_review_app(monkeypatch, review_app_factory())
     paused = await api_client.post(
         "/v1/agents/review/runs",
         headers={"Authorization": f"Bearer {issued_api_key}"},
@@ -370,11 +300,12 @@ async def test_review_a2ui_then_resume_second_returns_409(
     issued_api_key: str,
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
+    review_app_factory: Any,
 ) -> None:
     """Dual-transport: first winner settles; second path 409."""
     _ = tasks_db_path
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
-    _patch_review_app(monkeypatch, _FakeReviewAppPause())
+    _patch_review_app(monkeypatch, review_app_factory())
     paused = await api_client.post(
         "/v1/agents/review/runs",
         headers={"Authorization": f"Bearer {issued_api_key}"},
@@ -417,11 +348,12 @@ async def test_review_reject_a2ui_mints_new_surface_on_reinterrupt(
     issued_api_key: str,
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
+    review_app_factory: Any,
 ) -> None:
     """Reject resume that re-interrupts projects a new surface_id."""
     _ = tasks_db_path
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
-    _patch_review_app(monkeypatch, _FakeReviewAppRejectReinterrupt())
+    _patch_review_app(monkeypatch, review_app_factory(reinterrupt=True))
     paused = await api_client.post(
         "/v1/agents/review/runs",
         headers={"Authorization": f"Bearer {issued_api_key}"},
@@ -455,19 +387,6 @@ async def test_review_reject_a2ui_mints_new_surface_on_reinterrupt(
     assert out["interrupt"]["draft"]["draft"] == "revised draft"
 
 
-def _extract_custom_a2ui(body: str) -> dict[str, Any] | None:
-    """Return the ``phyto.a2ui`` value from an SSE body, if present."""
-    marker = "event: Custom\ndata: "
-    for chunk in body.split("\n\n"):
-        if not chunk.startswith(marker):
-            continue
-        payload = json.loads(chunk[len(marker) :])
-        if payload.get("name") == A2UI_CUSTOM_NAME:
-            value = payload.get("value")
-            return value if isinstance(value, dict) else None
-    return None
-
-
 async def test_review_stream_flag_off_still_400(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -477,14 +396,11 @@ async def test_review_stream_flag_off_still_400(
     """With A2UI disabled, Review streaming stays rejected."""
     _ = tasks_db_path
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "false")
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "model": "phyto-review",
-            "stream": True,
-            "messages": [{"role": "user", "content": "Review this topic."}],
-        },
+    response = await _post_review_chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="Review this topic.",
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == 400
@@ -494,30 +410,27 @@ async def test_review_stream_flag_off_still_400(
 async def test_review_stream_flag_on_emits_phyto_a2ui(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
-    tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
+    stream_test_tools: Any,
+    review_app_factory: Any,
 ) -> None:
     """With A2UI enabled, Review streaming pauses with phyto.a2ui."""
-    _ = tasks_db_path
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
-    _patch_review_app(monkeypatch, _FakeReviewAppPause())
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "model": "phyto-review",
-            "stream": True,
-            "messages": [{"role": "user", "content": "Review this topic."}],
-        },
+    _patch_review_app(monkeypatch, review_app_factory())
+    response = await _post_review_chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="Review this topic.",
     )
     assert response.status_code == 200
     body = response.text
-    a2ui = _extract_custom_a2ui(body)
+    a2ui = stream_test_tools.extract_custom_a2ui(body)
     assert a2ui is not None
     assert a2ui["widget"] == "confirm"
     assert "phyto.a2ui" in body
 
-    run_id = _extract_run_started_id(body)
+    run_id = stream_test_tools.extract_run_started_id(body)
     assert run_id
 
     got = await api_client.get(

@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `304`
+- Authorized records: `285`
 
 ## Informational counts
 
@@ -23,11 +23,10 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:index`                                                      |       1 |
 | `mypy:misc`                                                       |       2 |
 | `mypy:prop-decorator`                                             |       1 |
-| `pylint:R0801`                                                    |     164 |
-| `pylint:R0903`                                                    |      42 |
+| `pylint:R0801`                                                    |     152 |
+| `pylint:R0903`                                                    |      37 |
 | `pylint:broad-exception-caught`                                   |       6 |
 | `pylint:contextmanager-generator-missing-cleanup`                 |       2 |
-| `pylint:import-error`                                             |       2 |
 | `pylint:max-module-lines`                                         |       1 |
 | `pylint:path-ignore`                                              |       5 |
 | `pylint:protected-access`                                         |      23 |
@@ -174,18 +173,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0123` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_review_results_fan_out.py | 279:284 | `sha256:e367559e17eb5bb4fed426c744bc59f989a3cdfd2bbefe1c5daf7a64b65e102a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0124` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_review_results_fan_out.py | 53:59 | `sha256:2d77b4ebe51ab6654b88ac04d35fc03397a5b828eacccf77fb331af184602115` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0125` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_actions_http.py | 810:819 | `sha256:d30623a9d2caa6c8f0ea3c64da0ad0d8b8d7ed8e0e45dfa8300d9198f8efbda1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0126` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_chat_streaming.py | 163:193 | `sha256:a8be76d0b0b49aec6da31047fe93023535ebeaf33d35d3a66d0e0eaa28204528` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0127` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_chat_streaming.py | 170:176 | `sha256:50a0aa6bafe571c051226eca7d0f4207f5694182b8ae6c0daa61d9992f28f58f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0128` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_chat_streaming.py | 52:67 | `sha256:6fd283119808f875fc626c854fffd0e5cc8d37680b7b111347700366e21694fd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0129` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_review_http.py | 162:167 | `sha256:cf79704c753b2282082ab3559af6411b7575abbf71d734fd01c43adc9141cba0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0130` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_review_http.py | 162:168 | `sha256:03d47118178eda97f548e730da93a2cd103be7fe1c7fffcb74a9303b32691490` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0131` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_review_http.py | 177:183 | `sha256:07b0e462416576786498ca957510c1d59c072a7dd147c8a4b0c77c9d34be5f55` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0132` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_review_http.py | 203:208 | `sha256:01540d5d33d4f350eaed05ec1f70467c1b053e81b81ee32bcf9a09369c5cc5d2` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0133` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_review_http.py | 288:302 | `sha256:004057aad34bcd1ad10f8cd520b01e6e5f7b34f544166fea3bc1b127b2c58e1c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0134` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_review_http.py | 37:48 | `sha256:814d02ac9e755f48ca315d39129bb67c643895b679def0004347e9edbbca7190` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0135` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_review_http.py | 479:500 | `sha256:f5ec476fcd419feb1ad45a63ce4d4cb9e51741b8706edfdefa762de9f5abb3c0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0136` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_review_http.py | 49:69 | `sha256:c98773446c9f45b53ffda511d67429b02f66b9f769e39c6919e71269fa99a4c1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0137` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_review_http.py | 503:512 | `sha256:835e7b3f9545401a80be6198bd247b21f267ea7904f264710f79db878991d164` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0138` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_agent_runs.py | 279:284 | `sha256:6e4751d43a63d7aff887cb68161f78e9be2f4202e5b99f4d158cb5adfd00fd5e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0139` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_brief_gene_resolve.py | 342:357 | `sha256:e2deb1873295a49e527fba53ee268c30a673457090dd41c46cbeae5725b71ce4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0140` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_chat_completions.py | 233:239 | `sha256:5e9a1039956c911bbc89be0fbed03a680579c6d59449b2a50a6f0f8d69d80a0b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -248,13 +235,8 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0199` | pylint | R0903 | temporary | diagnostic | symbol | tests/agents/test_stream_graph_agent.py | test_graph_stream_propagates_runtime_failure.FailingStreamApp | `sha256:b0465f55f3e6f8e0e7b66876e97cf548b39448f8f11acc850e204f4659f4794c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0200` | pylint | R0903 | temporary | diagnostic | symbol | tests/conftest.py | \_build_fake_obs_client.\_FakeObsClient | `sha256:bdc751aa42890e90315050767a71d97be294611f7284929d9a7335ee0932b470` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0201` | pylint | R0903 | temporary | diagnostic | symbol | tests/server/test_a2ui_chat_streaming.py | test_stream_a2ui_runtime_failure_emits_error_and_fails_run.\_FailingA2UIApp | `sha256:c63479d4ed42935fc72a4ad099d0f8f61d49ed48e95fd766f8280971f84365ce` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0202` | pylint | R0903 | temporary | diagnostic | symbol | tests/server/test_a2ui_review_http.py | \_FakeCheckpointer | `sha256:9908e90466db43104339ee37cef5b1f4951f2ea5cb874cb0789a22348e9f56b0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0203` | pylint | R0903 | temporary | diagnostic | symbol | tests/server/test_a2ui_review_http.py | \_FakeReviewAppPause | `sha256:ea8d8b37a0984566da3c38cf17ac331aab517b505fcc3ef6f21f7b0f32eebb99` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0204` | pylint | R0903 | temporary | diagnostic | symbol | tests/server/test_a2ui_review_http.py | \_FakeReviewAppRejectReinterrupt | `sha256:0257b4d2a4629a5793de6ee8ba323e89b504dae937c8e1101079a46417be1d93` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0205` | pylint | R0903 | temporary | diagnostic | symbol | tests/server/test_a2ui_review_http.py | test_review_stream_runtime_failure_emits_error_and_fails_run.\_FailingReviewApp | `sha256:8ce4faa6d5b78b445ff5d54cc0b9d2107239fa3f69e7939dc959655d98e14b98` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0206` | pylint | R0903 | temporary | diagnostic | symbol | tests/server/test_handler_support.py | \_FakeSecret | `sha256:a1bd544f1ccb72e7949fea2654de9b9fdfbecd6784921616fde3ca8a748c7a65` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0207` | pylint | R0903 | temporary | diagnostic | symbol | tests/server/test_resume_http.py | \_FakeCheckpointer | `sha256:e315034bb274ffa5cefc8e2f17e42c8f7c036258c879e2f888908261b7622d24` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0208` | pylint | R0903 | temporary | diagnostic | symbol | tests/server/test_resume_http.py | \_FakeReviewApp | `sha256:80df500974234388e9781cd056ee9cc3dd250b0ea4e1ad660d858fd3ecd8ede9` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0209` | pylint | R0903 | temporary | diagnostic | symbol | tests/server/test_resume_mcp.py | \_FakeInterrupt | `sha256:035f11516f396fb8e888a46558f2a978da954672237aa30dfa2422c6bf3e3e7e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0210` | pylint | R0903 | temporary | diagnostic | symbol | tests/server/test_resume_mcp.py | \_FakeSession.elicit.\_Result | `sha256:f9eb44d6ebcf74c3171819ecb6bb1f006ac372c7acbe613deca70779ea3d84b4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0211` | pylint | R0903 | temporary | diagnostic | symbol | tests/unit/e2e/test_polling.py | test_http_poll_records_distinct_monotonic_revisions.Client | `sha256:da7cf65686cb7478e57df8ba489482a275c62ee25fd5a4da92b82dd36292c5b3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -276,8 +258,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0227` | pylint | broad-exception-caught | temporary | inline | symbol | src/mcp_server_phytomni/mcp/stream_lifecycle.py | project_stream_failures | `sha256:0fa2621f7153da1bff3a4df5a0a23d14425aa3d17b782f9545d0c2e657296557` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0228` | pylint | contextmanager-generator-missing-cleanup | temporary | inline | span | tests/agents/test_cache_candidates.py | — | `sha256:1a93e1b05a8cfa872aeddc39c7850189f9089c16b59a0d36c97909cc4341ae03` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0229` | pylint | contextmanager-generator-missing-cleanup | temporary | inline | span | tests/conftest.py | — | `sha256:8051cd3af754f03cba8b655218a54168e8867d393d6ed998ce98de611d0b7b9a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0230` | pylint | import-error | temporary | inline | span | tests/server/test_a2ui_chat_streaming.py | — | `sha256:cf8d8c13ec2cb2738dd22ccf860dbf82fb176878f98b1acab7048fadc1dfe7e0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0231` | pylint | import-error | temporary | inline | span | tests/server/test_a2ui_review_http.py | — | `sha256:00055654618d8e5acea17926a37234854811e1fe3820ce0db33f0ee99a3b5a58` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0232` | pylint | max-module-lines | temporary | config | config | pyproject.toml | tool.pylint.format.max-module-lines | `sha256:56ab2666391bfe20e49b31efb25773c9fa08523cec25d451bac69ed8516cd17f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0235` | pylint | path-ignore | temporary | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:2594f4f66df475f4c21526ce505b0814d4b10599e889277db5d89ee8b92bbb1e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0236` | pylint | path-ignore | temporary | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:38fd2748eed7f3803e3176f0ef992ae35b8441cfc99a8e873d01821f62c700eb` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -4339,422 +4319,6 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0126`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_a2ui_chat_streaming:[163:193]
-==test_a2ui_review_http:[170:200]
-    )
-
-    assert response.status_code == 200
-    body = response.text
-    assert body.count("event: RunError\n") == 1
-    assert "event: RunFinished\n" not in body
-    assert body.count("data: [DONE]") == 1
-    for forbidden in (
-        "bearer-secret",
-        "postgresql://",
-        "db-user:db-password",
-        "SELECT secret_token",
-    ):
-        assert forbidden not in body
-    run_id = _extract_run_started_id(body)
-    fetched = await api_client.get(
-        f"/v1/runs/{run_id}",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-    )
-    assert fetched.status_code == 200
-    assert fetched.json()["status"] == "failed"
-
-
-async def test_stream_a2ui_form_settles_input_required(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    chat_completion: Callable[..., Any],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Flag+form query emits phyto.a2ui with widget=form and pauses."""
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0127`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_a2ui_chat_streaming:[170:176]
-==tests.agents.test_stream_graph_agent:[427:433]
-    for forbidden in (
-        "bearer-secret",
-        "postgresql://",
-        "db-user:db-password",
-        "SELECT secret_token",
-    ):
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0128`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_a2ui_chat_streaming:[52:67]
-==test_a2ui_review_http:[459:477]
-    marker = "event: Custom\ndata: "
-    for chunk in body.split("\n\n"):
-        if not chunk.startswith(marker):
-            continue
-        payload = json.loads(chunk[len(marker) :])
-        if payload.get("name") == A2UI_CUSTOM_NAME:
-            value = payload.get("value")
-            return value if isinstance(value, dict) else None
-    return None
-
-
-async def test_review_stream_flag_off_still_400(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """With A2UI disabled, Review streaming stays rejected."""
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0129`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_a2ui_review_http:[162:167]
-==test_resume_http:[245:250]
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "model": "phyto-review",
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0130`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_a2ui_review_http:[162:168]
-==test_resume_http:[269:275]
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "model": "phyto-review",
-            "stream": True,
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0131`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_a2ui_review_http:[177:183]
-==test_invoke_tool_streamed:[306:312]
-    for forbidden in (
-        "bearer-secret",
-        "postgresql://",
-        "db-user:db-password",
-        "SELECT secret_token",
-    ):
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0132`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_a2ui_review_http:[203:208]
-==test_resume_http:[269:274]
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "model": "phyto-review",
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0133`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_a2ui_review_http:[288:302]
-==test_resume_http:[55:77]
-        return {
-            "final_response": {
-                "choices": [
-                    {
-                        "message": {
-                            "content": "Approved final review.",
-                            "doc_list": [],
-                            "follow_up_questions": [],
-                        }
-                    }
-                ]
-            }
-        }
-
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0134`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_a2ui_review_http:[37:48]
-==test_resume_http:[35:52]
-    checkpointer = _FakeCheckpointer()
-
-    def __init__(self) -> None:
-        self.calls: list[Any] = []
-
-    async def ainvoke(self, payload: Any, *, config: dict[str, Any]) -> dict:
-        """Interrupt on first invoke; finish on Command(resume=...)."""
-        self.calls.append((payload, config))
-        if isinstance(payload, dict):
-            return {
-                "__interrupt__": [
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0135`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_a2ui_review_http:[479:500]
-==test_resume_http:[269:282]
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "model": "phyto-review",
-            "stream": True,
-            "messages": [{"role": "user", "content": "Review this topic."}],
-        },
-    )
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == 400
-    assert "human-in-the-loop review" in response.json()["error"]["message"]
-
-
-async def test_review_stream_flag_on_emits_phyto_a2ui(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """With A2UI enabled, Review streaming pauses with phyto.a2ui."""
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0136`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_a2ui_review_http:[49:69]
-==test_resume_http:[53:77]
-                ]
-            }
-        # Command(resume=...) path — default approve finishes
-        return {
-            "final_response": {
-                "choices": [
-                    {
-                        "message": {
-                            "content": "Approved final review.",
-                            "doc_list": [],
-                            "follow_up_questions": [],
-                        }
-                    }
-                ]
-            }
-        }
-
-
-def _patch_review_app(monkeypatch: pytest.MonkeyPatch, app: Any) -> None:
-    """Point Review HTTP helpers at a fake compiled graph app."""
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0137`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_a2ui_review_http:[503:512]
-==test_resume_http:[269:279]
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "model": "phyto-review",
-            "stream": True,
-            "messages": [{"role": "user", "content": "Review this topic."}],
-        },
-    )
-
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0138`
 
 Rationale:
@@ -6505,66 +6069,6 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0202`
-
-Rationale:
-
-```text
-Too few public methods (1/2)
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0203`
-
-Rationale:
-
-```text
-Too few public methods (1/2)
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0204`
-
-Rationale:
-
-```text
-Too few public methods (1/2)
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0205`
 
 Rationale:
@@ -6586,46 +6090,6 @@ Suppression can hide a future regression.
 ```
 
 ### `SAE-TMP-0206`
-
-Rationale:
-
-```text
-Too few public methods (1/2)
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0207`
-
-Rationale:
-
-```text
-Too few public methods (1/2)
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0208`
 
 Rationale:
 
@@ -7051,46 +6515,6 @@ Rationale:
 
 ```text
 pylint: disable=contextmanager-generator-missing-cleanup
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0230`
-
-Rationale:
-
-```text
-pylint: disable=import-error
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0231`
-
-Rationale:
-
-```text
-pylint: disable=import-error
 ```
 
 Counterfactual:

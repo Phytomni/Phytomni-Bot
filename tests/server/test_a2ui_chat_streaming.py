@@ -13,14 +13,6 @@ from typing import Any, cast
 import httpx
 import pytest
 
-# Pytest resolves this namespace-package helper; standalone pylint does not.
-# pylint: disable=import-error
-from tests.server.test_api_chat_streaming import (
-    _extract_run_started_id,
-    _patch_chat_stream,
-)
-
-# pylint: enable=import-error
 from mcp_server_phytomni.agents.shared.a2ui import (
     A2UI_CUSTOM_NAME,
     author_a2ui_surface_offline,
@@ -48,21 +40,10 @@ def _use_offline_a2ui_author(
     )
 
 
-def _extract_custom_a2ui(body: str) -> dict[str, Any] | None:
-    """Return the ``phyto.a2ui`` value from an SSE body, if present."""
-    marker = "event: Custom\ndata: "
-    for chunk in body.split("\n\n"):
-        if not chunk.startswith(marker):
-            continue
-        payload = json.loads(chunk[len(marker) :])
-        if payload.get("name") == A2UI_CUSTOM_NAME:
-            value = payload.get("value")
-            return value if isinstance(value, dict) else None
-    return None
-
-
 async def _consume_stream_until_a2ui(
     response: Any,
+    extract_run_started_id: Callable[[str], str],
+    extract_custom_a2ui: Callable[[str], dict[str, Any] | None],
 ) -> tuple[str, dict[str, Any], str]:
     """Read SSE until ``phyto.a2ui``, then close before ``RunFinished``."""
     body_iter = cast(Any, response.body_iterator)
@@ -72,8 +53,8 @@ async def _consume_stream_until_a2ui(
     async for line in body_iter:
         accumulated += line
         if not run_id and "event: RunStarted\n" in accumulated:
-            run_id = _extract_run_started_id(accumulated)
-        a2ui = _extract_custom_a2ui(accumulated)
+            run_id = extract_run_started_id(accumulated)
+        a2ui = extract_custom_a2ui(accumulated)
         if a2ui is not None:
             await body_iter.aclose()
             break
@@ -89,6 +70,7 @@ async def test_stream_a2ui_confirm_settles_input_required(
     issued_api_key: str,
     chat_completion: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
+    stream_test_tools: Any,
 ) -> None:
     """Flag+confirm query emits phyto.a2ui and pauses the run."""
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
@@ -106,8 +88,8 @@ async def test_stream_a2ui_confirm_settles_input_required(
     assert "event: RunFinished\n" in body
     assert body.rstrip().endswith("data: [DONE]")
 
-    run_id = _extract_run_started_id(body)
-    a2ui = _extract_custom_a2ui(body)
+    run_id = stream_test_tools.extract_run_started_id(body)
+    a2ui = stream_test_tools.extract_custom_a2ui(body)
     assert a2ui is not None
     assert a2ui["widget"] == "confirm"
     assert a2ui["surface_id"]
@@ -134,6 +116,7 @@ async def test_stream_a2ui_runtime_failure_emits_error_and_fails_run(
     issued_api_key: str,
     chat_completion: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
+    assert_failed_stream: Any,
 ) -> None:
     """A Chat A2UI fault emits one error and settles the run failed."""
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
@@ -165,23 +148,7 @@ async def test_stream_a2ui_runtime_failure_emits_error_and_fails_run(
 
     assert response.status_code == 200
     body = response.text
-    assert body.count("event: RunError\n") == 1
-    assert "event: RunFinished\n" not in body
-    assert body.count("data: [DONE]") == 1
-    for forbidden in (
-        "bearer-secret",
-        "postgresql://",
-        "db-user:db-password",
-        "SELECT secret_token",
-    ):
-        assert forbidden not in body
-    run_id = _extract_run_started_id(body)
-    fetched = await api_client.get(
-        f"/v1/runs/{run_id}",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-    )
-    assert fetched.status_code == 200
-    assert fetched.json()["status"] == "failed"
+    await assert_failed_stream(body)
 
 
 async def test_stream_a2ui_form_settles_input_required(
@@ -189,6 +156,7 @@ async def test_stream_a2ui_form_settles_input_required(
     issued_api_key: str,
     chat_completion: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
+    extract_custom_a2ui: Callable[[str], dict[str, Any] | None],
 ) -> None:
     """Flag+form query emits phyto.a2ui with widget=form and pauses."""
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
@@ -207,7 +175,7 @@ async def test_stream_a2ui_form_settles_input_required(
     assert f'"name": "{A2UI_CUSTOM_NAME}"' in body
     assert "event: RunFinished\n" in body
 
-    a2ui = _extract_custom_a2ui(body)
+    a2ui = extract_custom_a2ui(body)
     assert a2ui is not None
     assert a2ui["widget"] == "form"
     assert a2ui["surface_id"]
@@ -218,11 +186,11 @@ async def test_stream_with_flag_skips_a2ui_for_non_confirm_query(
     issued_api_key: str,
     chat_completion: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
+    patch_chat_stream: Callable[[list[dict[str, Any]]], None],
 ) -> None:
     """Flag on but non-confirm query uses normal chat stream."""
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
-    _patch_chat_stream(
-        monkeypatch,
+    patch_chat_stream(
         [
             {
                 "choices": [
@@ -250,11 +218,11 @@ async def test_stream_without_flag_skips_a2ui(
     issued_api_key: str,
     chat_completion: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
+    patch_chat_stream: Callable[[list[dict[str, Any]]], None],
 ) -> None:
     """Confirm-like query with flag off uses normal chat stream."""
     monkeypatch.delenv("PHYTOMNI_A2UI_ENABLED", raising=False)
-    _patch_chat_stream(
-        monkeypatch,
+    patch_chat_stream(
         [
             {
                 "choices": [
@@ -282,6 +250,7 @@ async def test_stream_a2ui_disconnect_after_a2ui_before_run_finished(
     issued_api_key: str,
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
+    stream_test_tools: Any,
 ) -> None:
     """Disconnect after phyto.a2ui but before RunFinished stays paused."""
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
@@ -302,7 +271,11 @@ async def test_stream_a2ui_disconnect_after_a2ui_before_run_finished(
             payload=payload,
             user_query="Confirm next step?",
         )
-        run_id, a2ui, accumulated = await _consume_stream_until_a2ui(response)
+        run_id, a2ui, accumulated = await _consume_stream_until_a2ui(
+            response,
+            stream_test_tools.extract_run_started_id,
+            stream_test_tools.extract_custom_a2ui,
+        )
 
     assert "event: RunFinished\n" not in accumulated
 
@@ -328,6 +301,7 @@ async def test_stream_a2ui_disconnect_after_a2ui_before_run_finished(
 async def test_stream_a2ui_disconnect_after_run_finished_keeps_input_required(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
+    stream_test_tools: Any,
 ) -> None:
     """Disconnect after RunFinished must not downgrade the run to failed."""
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
@@ -352,7 +326,7 @@ async def test_stream_a2ui_disconnect_after_run_finished_keeps_input_required(
         run_id = ""
         async for line in body_iter:
             if "event: RunStarted\n" in line:
-                run_id = _extract_run_started_id(line)
+                run_id = stream_test_tools.extract_run_started_id(line)
             if "event: RunFinished\n" in line:
                 await body_iter.aclose()
                 break

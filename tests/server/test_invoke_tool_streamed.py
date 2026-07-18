@@ -304,13 +304,15 @@ async def test_chat_stream_projects_midstream_failure(
     assert events[-1].type == "RunError"
     assert events[-1].data["code"] == "agent_execution_failed"
     message = events[-1].data["message"]
-    for forbidden in (
-        "bearer-secret",
-        "postgresql://",
-        "db-user:db-password",
-        "SELECT secret_token",
-    ):
-        assert forbidden not in message
+    assert all(
+        marker not in message
+        for marker in (
+            "bearer-secret",
+            "postgresql://",
+            "db-user:db-password",
+            "SELECT secret_token",
+        )
+    )
     assert "RunFinished" not in [event.type for event in events]
 
 
