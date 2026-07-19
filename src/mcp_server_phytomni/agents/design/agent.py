@@ -28,7 +28,6 @@ from langgraph.types import Command, interrupt
 from ...common.prompts import get_prompt
 from ...config.defaults import DigitalDesignConfig
 from ...config.settings import SensitiveConfig, get_sensitive_config
-from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
 from ...interop.planner import InteropMode
 from ...runtime.langgraph_runner import ensure_checkpointer
 from ..analyst.agent import (
@@ -64,6 +63,10 @@ from ..shared.parallel_dispatch import (
     ParallelDispatchSpec,
     ParallelDispatchState,
     build_parallel_dispatch_graph,
+)
+from ..shared.remote_analysis import (
+    RemoteAnalysisRequest,
+    submit_remote_analysis,
 )
 from .interop import (
     DESIGN_A2A_CAPABILITY,
@@ -273,14 +276,16 @@ class DigitalDesignAgents:
                 f"{meta}\n\n"
                 f"{format_design_evidence(options.external_evidence)}"
             )
-        request = {
-            "analysis_type": analysis_type,
-            "target_id": gene_id,
-            "output_dir": options.output_dir,
-            "prompt_parts": (goal_description, meta, data_list),
-            "compute_resource": self._get_compute_resource(analysis_type),
-        }
-        return await submit_analyst_via_subgraph(
+        request = RemoteAnalysisRequest(
+            analysis_type=analysis_type,
+            target_id=gene_id,
+            output_dir=options.output_dir,
+            goal_description=goal_description,
+            meta=meta,
+            data_list=data_list,
+            compute_resource=self._get_compute_resource(analysis_type),
+        )
+        return await submit_remote_analysis(
             self.analyst_agent,
             self.digital_design_config,
             self.sensitive_config,
@@ -293,7 +298,7 @@ class DigitalDesignAgents:
         analysis_type: str,
         species_code: str,
         gene_id: str,
-    ) -> tuple[str, str, Any]:
+    ) -> tuple[str, str, dict[str, Any]]:
         """Return goal, meta, and data list for one design analysis."""
         paths = DIGITAL_DESIGN_TEMPLATE_PATHS.get(analysis_type)
         if paths is None:
@@ -790,14 +795,16 @@ async def _submit_design_analysis(
         resolve_data_list_key(spec.analysis_type),
         species_code,
     )
-    request = {
-        "analysis_type": spec.analysis_type,
-        "target_id": gene_id,
-        "output_dir": output_dir,
-        "prompt_parts": (goal_description, meta, data_list),
-        "compute_resource": spec.compute_resource,
-    }
-    return await submit_analyst_via_subgraph(
+    request = RemoteAnalysisRequest(
+        analysis_type=spec.analysis_type,
+        target_id=gene_id,
+        output_dir=output_dir,
+        goal_description=goal_description,
+        meta=meta,
+        data_list=data_list,
+        compute_resource=spec.compute_resource,
+    )
+    return await submit_remote_analysis(
         AnalystAgent(
             analyst_config=DIGITAL_DESIGN_CONFIG,
             sensitive_config=sensitive,

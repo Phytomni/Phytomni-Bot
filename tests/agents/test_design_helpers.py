@@ -17,13 +17,19 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import cast
+from unittest.mock import AsyncMock
 
 import pytest
 
+import mcp_server_phytomni.agents.design.agent as design_agent_module
 from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
 from mcp_server_phytomni.agents.design.agent import (
     DigitalDesignAgents,
     DigitalDesignConfig,
+    _DispatchOptions,
+)
+from mcp_server_phytomni.agents.shared.remote_analysis import (
+    RemoteAnalysisRequest,
 )
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
@@ -78,3 +84,80 @@ def test_analysis_prompt_parts_rejects_unknown_type() -> None:
             species_code="ath",
             gene_id="AT1G01010",
         )
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        (
+            "protein_design_analysis",
+            "protein goal for AT1G01010",
+            "protein meta",
+            {"/obs/protein.fasta": "protein"},
+            "medium",
+        ),
+        (
+            "promoter_design_analysis",
+            "promoter goal for AT1G01010",
+            "promoter meta",
+            {"/obs/promoter.txt": "promoter"},
+            "small",
+        ),
+    ],
+)
+async def test_dispatch_builds_typed_remote_analysis_request(
+    monkeypatch: pytest.MonkeyPatch,
+    case: tuple[str, str, str, dict[str, str], str],
+) -> None:
+    """Capture the exact typed request for both Design analysis paths."""
+    analysis_type, goal, meta, data_list, compute_resource = case
+    agent = _build_agent()
+    monkeypatch.setattr(
+        agent,
+        "_analysis_prompt_parts",
+        lambda *_args: (goal, meta, data_list),
+    )
+    monkeypatch.setattr(
+        agent,
+        "_get_compute_resource",
+        lambda _analysis_type: compute_resource,
+    )
+    captured: dict[str, object] = {}
+
+    async def fake_submit(
+        _analyst: AnalystAgent,
+        _config: DigitalDesignConfig,
+        _sensitive: SensitiveConfig,
+        request: RemoteAnalysisRequest,
+        *,
+        is_polling: bool,
+    ) -> dict[str, str]:
+        captured["request"] = request
+        captured["is_polling"] = is_polling
+        return {"task_id": f"{analysis_type}-task"}
+
+    monkeypatch.setattr(
+        design_agent_module,
+        "submit_remote_analysis",
+        AsyncMock(side_effect=fake_submit),
+        raising=False,
+    )
+    dispatch = getattr(agent, "_dispatch_and_wait_analysis")
+    result = await dispatch(
+        analysis_type,
+        "ath",
+        "AT1G01010",
+        _DispatchOptions(output_dir="/obs/design-out"),
+    )
+
+    request = captured["request"]
+    assert isinstance(request, RemoteAnalysisRequest)
+    assert request.analysis_type == analysis_type
+    assert request.target_id == "AT1G01010"
+    assert request.goal_description == goal
+    assert request.meta == meta
+    assert request.data_list == data_list
+    assert request.output_dir == "/obs/design-out"
+    assert request.compute_resource == compute_resource
+    assert captured["is_polling"] is False
+    assert result["task_id"] == f"{analysis_type}-task"

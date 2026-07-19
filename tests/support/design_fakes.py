@@ -12,6 +12,9 @@ from unittest.mock import AsyncMock
 import pytest
 
 from mcp_server_phytomni.agents.design import agent as design_agent
+from mcp_server_phytomni.agents.shared.remote_analysis import (
+    RemoteAnalysisRequest,
+)
 
 
 def install_design_dependencies(
@@ -31,7 +34,7 @@ def install_design_dependencies(
     monkeypatch.setattr(
         design_agent,
         "get_data_list",
-        lambda *_a, **_kw: [data_uri],
+        lambda *_a, **_kw: {data_uri: "fixture"},
     )
     monkeypatch.setattr(
         design_agent,
@@ -46,9 +49,7 @@ def install_design_dependencies(
             "task_status": "SUCCEEDED",
         }
     )
-    monkeypatch.setattr(
-        design_agent, "submit_analyst_via_subgraph", submit_mock
-    )
+    monkeypatch.setattr(design_agent, "submit_remote_analysis", submit_mock)
     return submit_mock
 
 
@@ -58,9 +59,11 @@ async def invoke_design_case(
     *,
     species_code: str,
     gene_id: str,
-) -> tuple[dict[str, Any], dict[str, Any], Mapping[str, Any]]:
+) -> tuple[dict[str, Any], RemoteAnalysisRequest, Mapping[str, Any]]:
     """Invoke one producer wrapper and return result, request, and kwargs."""
     result = await wrapper(species_code=species_code, gene_id=gene_id)
     call_args = submit_mock.await_args
     assert call_args is not None
-    return result, call_args.args[3], call_args.kwargs
+    request = call_args.args[3]
+    assert isinstance(request, RemoteAnalysisRequest)
+    return result, request, call_args.kwargs

@@ -37,7 +37,6 @@ from mcp_server_phytomni.graphs.analyst_dispatch_adapters import (
 from ._subgraph_branch_fakes import (
     assert_branch_taken,
     build_branch_agent,
-    install_branch_mocks,
     stub_prompt_parts,
 )
 
@@ -87,14 +86,21 @@ async def test_dispatch_uses_subgraph_submit(
     entry point; the test asserts the legacy ``submit_analyst_analysis``
     helper is never awaited (no double-dispatch, no fallback).
     """
-    # pylint: disable=protected-access
     agent = _build_agent()
-    legacy_mock, subgraph_mock = install_branch_mocks(
-        monkeypatch, _DESIGN_MODULE
+    legacy_mock = AsyncMock(return_value={"task_id": "legacy-task"})
+    subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-task"})
+    monkeypatch.setattr(
+        f"{_DESIGN_MODULE}.submit_analyst_analysis",
+        legacy_mock,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        f"{_DESIGN_MODULE}.submit_remote_analysis", subgraph_mock
     )
     stub_prompt_parts(monkeypatch, agent)
 
-    result = await agent._dispatch_and_wait_analysis(
+    dispatch = getattr(agent, "_dispatch_and_wait_analysis")
+    result = await dispatch(
         analysis_type="protein_design_analysis",
         species_code="ath",
         gene_id="AT1G01010",

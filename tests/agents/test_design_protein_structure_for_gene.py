@@ -77,11 +77,12 @@ async def test_request_shape_targets_protein_structure_analysis(
         gene_id="AT1G01010",
     )
 
-    assert request["analysis_type"] == "protein_structure_analysis"
-    assert request["target_id"] == "AT1G01010"
-    assert isinstance(request["prompt_parts"], tuple)
-    assert len(request["prompt_parts"]) == 3
-    assert request["compute_resource"] == "medium"
+    assert request.analysis_type == "protein_structure_analysis"
+    assert request.target_id == "AT1G01010"
+    assert request.goal_description == "prompt-stub"
+    assert request.meta == "prompt-stub"
+    assert request.data_list == {"obs://data/structure-input": "fixture"}
+    assert request.compute_resource == "medium"
     assert request_kwargs["is_polling"] is True
 
 
@@ -109,9 +110,7 @@ async def test_resolves_real_structure_data_list_for_real_species(
             "task_status": "SUCCEEDED",
         }
     )
-    monkeypatch.setattr(
-        design_agent, "submit_analyst_via_subgraph", submit_mock
-    )
+    monkeypatch.setattr(design_agent, "submit_remote_analysis", submit_mock)
 
     await protein_structure_for_gene(
         species_code="osa",
@@ -121,5 +120,5 @@ async def test_resolves_real_structure_data_list_for_real_species(
     call_args = submit_mock.await_args
     assert call_args is not None
     request = call_args.args[3]
-    data_list = request["prompt_parts"][2]
+    data_list = request.data_list
     assert data_list, "expected a non-empty real data list from the JSON"

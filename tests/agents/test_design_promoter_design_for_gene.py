@@ -74,9 +74,10 @@ async def test_request_shape_targets_promoter_analysis(
         gene_id="AT1G01010",
     )
 
-    assert request["analysis_type"] == "promoter_analysis"
-    assert request["target_id"] == "AT1G01010"
-    assert isinstance(request["prompt_parts"], tuple)
-    assert len(request["prompt_parts"]) == 3
-    assert request["compute_resource"] == "small"
+    assert request.analysis_type == "promoter_analysis"
+    assert request.target_id == "AT1G01010"
+    assert request.goal_description == "prompt-stub"
+    assert request.meta == "prompt-stub"
+    assert request.data_list == {"obs://data/promoter-input": "fixture"}
+    assert request.compute_resource == "small"
     assert request_kwargs["is_polling"] is True

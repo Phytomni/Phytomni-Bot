@@ -63,8 +63,7 @@ async def test_run_design_node_threads_is_polling(polling: bool) -> None:
         "task_ids": {},
     }
     with patch(
-        "mcp_server_phytomni.agents.design.agent."
-        "submit_analyst_via_subgraph",
+        "mcp_server_phytomni.agents.design.agent.submit_remote_analysis",
         new=AsyncMock(side_effect=_fake_submit),
     ):
         await agents.run_design_node(state)
