@@ -31,6 +31,9 @@ from mcp_server_phytomni.agents.research.interop import (
     collect_research_a2a,
     collect_research_evidence,
 )
+from mcp_server_phytomni.agents.shared.remote_analysis import (
+    RemoteAnalysisRequest,
+)
 from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.interop.a2a_client import InteropA2AClientError
 from mcp_server_phytomni.interop.a2a_mapping import (
@@ -439,8 +442,7 @@ async def test_worker_keeps_local_analyst_dispatch_and_attaches_evidence(
         "task_status": "SUCCEEDED",
     }
     submit_path = (
-        "mcp_server_phytomni.agents.research.agent."
-        "submit_analyst_via_subgraph"
+        "mcp_server_phytomni.agents.research.agent.submit_remote_analysis"
     )
     monkeypatch.setattr(submit_path, submit)
 
@@ -462,7 +464,16 @@ async def test_worker_keeps_local_analyst_dispatch_and_attaches_evidence(
     submit_call = submit.await_args
     assert submit_call is not None
     request = submit_call.args[3]
-    assert "[UNTRUSTED EXTERNAL MCP EVIDENCE]" in request["prompt_parts"][1]
+    assert isinstance(request, RemoteAnalysisRequest)
+    assert request.analysis_type == "research_goal_0"
+    assert request.target_id == "research_goal_0"
+    assert request.goal_description == "Characterize PHYB"
+    assert request.meta.startswith("local context\n\n")
+    assert "[UNTRUSTED EXTERNAL MCP EVIDENCE]" in request.meta
+    assert request.data_list == {}
+    assert request.output_dir == "/tmp/research-out"
+    assert request.compute_resource == "medium"
+    assert submit_call.kwargs["is_polling"] is False
 
     updates = await agent.run_research_node(
         cast(
@@ -687,8 +698,7 @@ async def test_research_graph_interrupts_and_resumes_a2a_once(
     )
     monkeypatch.setattr(agent, "_extract_goals", extract)
     monkeypatch.setattr(
-        "mcp_server_phytomni.agents.research.agent."
-        "submit_analyst_via_subgraph",
+        "mcp_server_phytomni.agents.research.agent.submit_remote_analysis",
         submit,
     )
 

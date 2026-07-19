@@ -4,11 +4,11 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Dispatch tests for InSilicoResearchAgents analyst-subgraph routing.
 
-Asserts ``_submit_research_task`` routes through
-``submit_analyst_via_subgraph``. Research differs from design /
-network: it bypasses ``submit_analyst_analysis`` and threads a
-pre-computed ``thread_id`` per task; the test pins the dispatch
-contract without disturbing the rest of the flow.
+Asserts ``_submit_research_task`` routes through the typed
+``submit_remote_analysis`` seam. Research differs from design / network:
+it bypasses ``submit_analyst_analysis`` and threads a pre-computed
+``thread_id`` per task; the test pins the dispatch contract without
+disturbing the rest of the flow.
 """
 
 # The direct task probes below target the smallest research dispatch seam;
@@ -28,6 +28,9 @@ from mcp_server_phytomni.agents.research.agent import (
     InSilicoResearchConfig,
     ResearchTaskContext,
 )
+from mcp_server_phytomni.agents.shared.remote_analysis import (
+    RemoteAnalysisRequest,
+)
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
 pytestmark = pytest.mark.agent
@@ -38,7 +41,7 @@ def _build_agent() -> InSilicoResearchAgents:
 
     The analyst stub is a ``SimpleNamespace`` whose ``arun`` is an
     AsyncMock — dispatch is routed through a separately-patched
-    ``submit_analyst_via_subgraph`` so the call is observable
+    ``submit_remote_analysis`` so the call is observable
     without constructing a real ``AnalystAgent``.
     """
     config = InSilicoResearchConfig()
@@ -67,7 +70,7 @@ def _sample_task() -> ResearchTaskContext:
 async def test_submit_task_uses_subgraph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Dispatch delegates to ``submit_analyst_via_subgraph``.
+    """Dispatch delegates to ``submit_remote_analysis``.
 
     The path forwards the task's prompt parts and target name into
     the dispatch request and bypasses the direct ``arun`` call; the
@@ -83,8 +86,7 @@ async def test_submit_task_uses_subgraph(
         }
     )
     monkeypatch.setattr(
-        "mcp_server_phytomni.agents.research.agent."
-        "submit_analyst_via_subgraph",
+        "mcp_server_phytomni.agents.research.agent.submit_remote_analysis",
         subgraph_mock,
     )
 
@@ -96,14 +98,14 @@ async def test_submit_task_uses_subgraph(
     call_args = subgraph_mock.await_args
     assert call_args is not None
     request = call_args.args[3]
-    assert request["analysis_type"] == "research_goal_0"
-    assert request["target_id"] == "research_goal_0"
-    assert request["compute_resource"] == "medium"
-    assert request["prompt_parts"] == (
-        "Investigate gene X under stress.",
-        "preset-plan-meta",
-        {"sample_a.tsv": "expression matrix"},
-    )
+    assert isinstance(request, RemoteAnalysisRequest)
+    assert request.analysis_type == "research_goal_0"
+    assert request.target_id == "research_goal_0"
+    assert request.goal_description == "Investigate gene X under stress."
+    assert request.meta == "preset-plan-meta"
+    assert request.data_list == {"sample_a.tsv": "expression matrix"}
+    assert request.output_dir == "/tmp/research-out"
+    assert request.compute_resource == "medium"
     # Research preserves its current fire-and-poll-elsewhere
     # semantics: must override the producer-side default of True.
     assert call_args.kwargs["is_polling"] is False
@@ -128,8 +130,7 @@ async def test_submit_task_propagates_failed_status(
         }
     )
     monkeypatch.setattr(
-        "mcp_server_phytomni.agents.research.agent."
-        "submit_analyst_via_subgraph",
+        "mcp_server_phytomni.agents.research.agent.submit_remote_analysis",
         subgraph_mock,
     )
 

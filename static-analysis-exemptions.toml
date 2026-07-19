@@ -1189,12 +1189,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/design/agent.py"
 symbol = "378:385"
 peer_path = "src/mcp_server_phytomni/agents/research/agent.py"
-peer_symbol = "428:435"
-fingerprint = "sha256:d3b483c6e745f9782dce9c037db05eaed99663fe29163e74fd5a861a001043de"
+peer_symbol = "430:437"
+fingerprint = "sha256:e0cd24dbe16f751325b6a9d60a10e3a8e4fe6eccfba8cb586e3df4d1aa2eb7bd"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[373:380]\n==mcp_server_phytomni.agents.research.agent:[428:435]\n                dependencies=dependencies,\n            )\n            if result is not None:\n                if result[\"status\"] == \"input_required\":\n                    task_id = result.get(\"task_id\")\n                    if not task_id:\n                        raise RuntimeError("
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[378:385]\n==mcp_server_phytomni.agents.research.agent:[430:437]\n                dependencies=dependencies,\n            )\n            if result is not None:\n                if result[\"status\"] == \"input_required\":\n                    task_id = result.get(\"task_id\")\n                    if not task_id:\n                        raise RuntimeError("
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1211,12 +1211,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/design/agent.py"
 symbol = "506:518"
 peer_path = "src/mcp_server_phytomni/agents/research/agent.py"
-peer_symbol = "630:648"
-fingerprint = "sha256:5dbe5f05fa8f833b5e1b745f7718cb19df706734d5a2db2a7b064683c532746e"
+peer_symbol = "632:650"
+fingerprint = "sha256:eb821e4f9d43cb8e7d63842145181a1ce0917da9327a47d1b643eebf9e0bd456"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[501:513]\n==mcp_server_phytomni.agents.research.agent:[630:648]\n                    **interop_state_update(\n                        make_interop_record(\n                            target_id=pending[\"target_id\"],\n                            kind=\"a2a\",\n                            capability=pending[\"capability\"],\n                            status=\"input_required\",\n                            latency_seconds=perf_counter() - started,\n                        )\n                    ),\n                },\n            )\n"
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[506:518]\n==mcp_server_phytomni.agents.research.agent:[632:650]\n                    **interop_state_update(\n                        make_interop_record(\n                            target_id=pending[\"target_id\"],\n                            kind=\"a2a\",\n                            capability=pending[\"capability\"],\n                            status=\"input_required\",\n                            latency_seconds=perf_counter() - started,\n                        )\n                    ),\n                },\n            )\n\n        async def submit_call() -> dict[str, Any]:\n            \"\"\"Submit one research task and return its raw result.\n\n            Returns:\n                AnalystAgent payload with ``task_id`` and ``output_dir``.\n            \"\"\""
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1233,12 +1233,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/design/agent.py"
 symbol = "558:567"
 peer_path = "src/mcp_server_phytomni/agents/research/agent.py"
-peer_symbol = "677:686"
-fingerprint = "sha256:3c09c6e7e8f74456f615bdd5a7a3e46f26b6de07ef731683b10a425bf3d89403"
+peer_symbol = "679:688"
+fingerprint = "sha256:0627fefe4483668befa42c7e51c26cd08660fe4b47df18739b5d4fe90ba74343"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[553:562]\n==mcp_server_phytomni.agents.research.agent:[677:686]\n                            \"degraded\",\n                            perf_counter() - started,\n                            True,\n                        )\n                    )\n                )\n            else:\n                updates.update(\n                    interop_evidence_update("
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[558:567]\n==mcp_server_phytomni.agents.research.agent:[679:688]\n                            \"degraded\",\n                            perf_counter() - started,\n                            True,\n                        )\n                    )\n                )\n            else:\n                updates.update(\n                    interop_evidence_update("
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1255,12 +1255,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/design/agent.py"
 symbol = "565:579"
 peer_path = "src/mcp_server_phytomni/agents/research/agent.py"
-peer_symbol = "770:798"
-fingerprint = "sha256:e2a1bcf4bf25472e77015fb3fb5d21b95267b79476b69c817e98f869660af444"
+peer_symbol = "772:800"
+fingerprint = "sha256:b2f685bc5dcf5396ad18b7e564ec17ea22990763b2a47f36e9c2a18ed52c5660"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[560:574]\n==mcp_server_phytomni.agents.research.agent:[770:798]\n        updates.update(\n            interop_evidence_update(\n                evidence,\n                status=\"completed\",\n                latency_seconds=perf_counter() - started,\n            )\n        )\n        return updates\n\n    async def arun(\n        self,\n        paper_text: str,\n        data_list: dict[str, str],\n        **kwargs: Any,\n    ) -> dict[str, Any]:\n        \"\"\"Conduct in silico research and return task_ids.\n\n        Args:\n            paper_text: Scientific paper text to analyze.\n            data_list: Dictionary of data sources for research.\n            user_id: Optional user identifier.\n            obs_file_list: List of OBS files to include as context.\n            output_dir: Optional output directory path.\n            thread_id: Optional thread ID for checkpointer.\n\n        Returns:\n            Dict with task_ids mapping research goals to task IDs.\n        \"\"\""
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[565:579]\n==mcp_server_phytomni.agents.research.agent:[772:800]\n                updates.update(\n                    interop_evidence_update(\n                        evidence,\n                        status=\"completed\",\n                        latency_seconds=perf_counter() - started,\n                    )\n                )\n        return updates\n\n    async def resume_design_a2a(\n        self,\n        state: DigitalDesignState,\n    ) -> dict[str, Any]:\n        \"\"\"Resume one paused A2A planning exchange before local dispatch.\"\"\""
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1277,12 +1277,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/design/agent.py"
 symbol = "568:584"
 peer_path = "src/mcp_server_phytomni/agents/research/agent.py"
-peer_symbol = "687:703"
-fingerprint = "sha256:aa2208d5afc03c26ba664da0e7814310fbb82ad0ccae520310ef9857290c3e9b"
+peer_symbol = "689:705"
+fingerprint = "sha256:75d6daa79ef9e397412d70daa0a2ab61a54694ac206a3baa5519a136088e43cd"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[563:579]\n==mcp_server_phytomni.agents.research.agent:[687:703]\n                        status=\"completed\",\n                        latency_seconds=perf_counter() - started,\n                    )\n                )\n        return updates\n\n    async def resume_research_a2a(\n        self,\n        state: InSilicoResearchState,\n    ) -> dict[str, Any]:\n        \"\"\"Resume pending external A2A work after a graph interrupt.\"\"\"\n        pending_items = state.get(\"a2a_pending\", [])\n        if not pending_items:\n            return {}\n        pending = pending_items[0]\n        started = perf_counter()"
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[568:584]\n==mcp_server_phytomni.agents.research.agent:[689:705]\n                        status=\"completed\",\n                        latency_seconds=perf_counter() - started,\n                    )\n                )\n        return updates\n\n    async def resume_design_a2a(\n        self,\n        state: DigitalDesignState,\n    ) -> dict[str, Any]:\n        \"\"\"Resume one paused A2A planning exchange before local dispatch.\"\"\""
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1299,12 +1299,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/design/agent.py"
 symbol = "664:694"
 peer_path = "src/mcp_server_phytomni/agents/research/agent.py"
-peer_symbol = "770:801"
-fingerprint = "sha256:cbbb1320aa8d958a0d0fac580e2b536913e0cd14a5a86e573cddb358bdbe75e1"
+peer_symbol = "772:803"
+fingerprint = "sha256:aae20b708118a245d565bf4dba59ddfb08f4a2b3f5da3f168dd44d2f26201223"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[659:689]\n==mcp_server_phytomni.agents.research.agent:[770:801]\n        updates.update(\n            interop_evidence_update(\n                evidence,\n                status=\"completed\",\n                latency_seconds=perf_counter() - started,\n            )\n        )\n        return updates\n\n    async def arun(\n        self,\n        paper_text: str,\n        data_list: dict[str, str],\n        **kwargs: Any,\n    ) -> dict[str, Any]:\n        \"\"\"Conduct in silico research and return task_ids.\n\n        Args:\n            paper_text: Scientific paper text to analyze.\n            data_list: Dictionary of data sources for research.\n            user_id: Optional user identifier.\n            obs_file_list: List of OBS files to include as context.\n            output_dir: Optional output directory path.\n            thread_id: Optional thread ID for checkpointer.\n\n        Returns:\n            Dict with task_ids mapping research goals to task IDs.\n        \"\"\"\n        return await run_analysis_graph(\n            self.app,\n            {"
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[664:694]\n==mcp_server_phytomni.agents.research.agent:[772:803]\n        updates.update(\n            interop_evidence_update(\n                evidence,\n                status=\"completed\",\n                latency_seconds=perf_counter() - started,\n            )\n        )\n        return updates\n\n    async def arun(\n        self,\n        species_code: str,\n        gene_id: str,\n        **kwargs: Any,\n    ) -> dict[str, Any]:\n        \"\"\"Submit protein design tasks and return task_ids.\n\n        Args:\n            species_code: Three-letter species code (e.g., \"ath\", \"osa\").\n            gene_id: Gene identifier.\n            user_id: Optional user identifier.\n            batch: Whether this is batch processing.\n            thread_id: Optional thread ID for checkpointer.\n\n        Returns:\n            Dict with task_ids on success, or error on failure.\n        \"\"\"\n        return await run_analysis_graph(\n            self.app,\n            {"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -3066,7 +3066,7 @@ mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_research_analyst_subgraph.py"
 symbol = "test_submit_task_propagates_failed_status"
-fingerprint = "sha256:f28a7f9cbe511502173ee920deaafa38dcfd3b0ba13b3cdf6f8bc3a487d815d5"
+fingerprint = "sha256:703861b6c2122568233a161f3323b921ed51aa617a31c181e20085e857a2f98e"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
 review_on = 2027-01-17
@@ -4456,7 +4456,7 @@ mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_research_analyst_subgraph.py"
 symbol = "test_submit_task_uses_subgraph"
-fingerprint = "sha256:b286ad3d9de8685a7387fa660964f2425ba80fc34b0017921f5b573cc4592aa8"
+fingerprint = "sha256:439995578fb94e35076c30c4da8e4bcd0cdb2dc4061ab0f3519b93a4d46db0f0"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
 review_on = 2027-01-17

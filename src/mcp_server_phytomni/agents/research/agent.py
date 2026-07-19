@@ -26,7 +26,6 @@ from ...config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from ...config.settings import SensitiveConfig, get_sensitive_config
-from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
 from ...graphs.chat_adapters import (
     build_chat_input,
     build_chat_kwargs_for,
@@ -76,6 +75,10 @@ from ..shared.parallel_dispatch import (
     ParallelDispatchSpec,
     ParallelDispatchState,
     build_parallel_dispatch_graph,
+)
+from ..shared.remote_analysis import (
+    RemoteAnalysisRequest,
+    submit_remote_analysis,
 )
 from .interop import (
     RESEARCH_A2A_CAPABILITY,
@@ -364,21 +367,20 @@ class InSilicoResearchAgents:
                 f"{task.context}\n\n{format_research_evidence(evidence)}"
             )
 
-        result = await submit_analyst_via_subgraph(
+        request = RemoteAnalysisRequest(
+            analysis_type=task.task_name,
+            target_id=task.task_name,
+            output_dir=task.output_dir,
+            goal_description=task.goal_description,
+            meta=prompt_context,
+            data_list=task.data_list,
+            compute_resource="medium",
+        )
+        result = await submit_remote_analysis(
             self.analyst_agent,
             self.in_silico_config,
             self.sensitive_config,
-            {
-                "analysis_type": task.task_name,
-                "target_id": task.task_name,
-                "output_dir": task.output_dir,
-                "prompt_parts": (
-                    task.goal_description,
-                    prompt_context,
-                    task.data_list,
-                ),
-                "compute_resource": "medium",
-            },
+            request,
             is_polling=False,
         )
 

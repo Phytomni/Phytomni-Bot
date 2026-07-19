@@ -109,12 +109,12 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0059` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/data/agent.py | 261:274 | `sha256:67e3f7e920faa4c5565eecbd04ae955f65fad55ab92b2e69836511be429005b3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0060` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/deep_genome/agent.py | 89:109 | `sha256:b4b963480d858629b532c499ad4623327af6699366b96afb4f757636f3fce0d2` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0061` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | 172:181 | `sha256:2c939f306bfc192d1b4ccf2554102891e23b77d00d43855201693dcb676bfc6b` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_deep_genome_work_items.py, static-analysis-inventory |
-| `SAE-TMP-0062` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 378:385 | `sha256:d3b483c6e745f9782dce9c037db05eaed99663fe29163e74fd5a861a001043de` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0063` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 506:518 | `sha256:5dbe5f05fa8f833b5e1b745f7718cb19df706734d5a2db2a7b064683c532746e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0064` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 558:567 | `sha256:3c09c6e7e8f74456f615bdd5a7a3e46f26b6de07ef731683b10a425bf3d89403` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0065` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 565:579 | `sha256:e2a1bcf4bf25472e77015fb3fb5d21b95267b79476b69c817e98f869660af444` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0066` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 568:584 | `sha256:aa2208d5afc03c26ba664da0e7814310fbb82ad0ccae520310ef9857290c3e9b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0067` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 664:694 | `sha256:cbbb1320aa8d958a0d0fac580e2b536913e0cd14a5a86e573cddb358bdbe75e1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0062` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 378:385 | `sha256:e0cd24dbe16f751325b6a9d60a10e3a8e4fe6eccfba8cb586e3df4d1aa2eb7bd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0063` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 506:518 | `sha256:eb821e4f9d43cb8e7d63842145181a1ce0917da9327a47d1b643eebf9e0bd456` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0064` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 558:567 | `sha256:0627fefe4483668befa42c7e51c26cd08660fe4b47df18739b5d4fe90ba74343` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0065` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 565:579 | `sha256:b2f685bc5dcf5396ad18b7e564ec17ea22990763b2a47f36e9c2a18ed52c5660` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0066` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 568:584 | `sha256:75d6daa79ef9e397412d70daa0a2ab61a54694ac206a3baa5519a136088e43cd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0067` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 664:694 | `sha256:aae20b708118a245d565bf4dba59ddfb08f4a2b3f5da3f168dd44d2f26201223` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0068` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/environment/agent.py | 89:96 | `sha256:412bbae97443018da3d59a4a22453b8e01b100e4a28028e36d6dbf2ee3982c7b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0069` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/environment/graph.py | 171:178 | `sha256:acecf18e51ca4896d2aae066f303e97fcbacb43d1cacb6108164dcfc959ab015` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0070` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/research/interop.py | 238:245 | `sha256:5100104b2803ff4bfed6614c72a1e1bdd6c12912c00e954b9f70e3317834d541` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -199,7 +199,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0248` | pylint | protected-access | structural | inline | symbol | tests/agents/test_deep_genome_lifecycle.py | test_all_optional_failures_preserve_profile_and_fail_owner | `sha256:7c4cc25324af4c7a96948142dcd0ffdebb1f0547852b87a5ea4d389d83ccd804` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0250` | pylint | protected-access | structural | inline | symbol | tests/agents/test_design_helpers.py | test_analysis_prompt_parts_rejects_unknown_type | `sha256:5920289e37592f4bf00a38fa591f263313e4ad7774c9a368f018f6090560b37c` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0251` | pylint | protected-access | structural | inline | symbol | tests/agents/test_network_analyst_subgraph.py | test_dispatch_request_carries_to_id_as_target | `sha256:7b00f3c4d7abe53a1e197b9f01f9b447860703561be848f801fd9566b1be0395` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0252` | pylint | protected-access | structural | inline | symbol | tests/agents/test_research_analyst_subgraph.py | test_submit_task_propagates_failed_status | `sha256:f28a7f9cbe511502173ee920deaafa38dcfd3b0ba13b3cdf6f8bc3a487d815d5` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0252` | pylint | protected-access | structural | inline | symbol | tests/agents/test_research_analyst_subgraph.py | test_submit_task_propagates_failed_status | `sha256:703861b6c2122568233a161f3323b921ed51aa617a31c181e20085e857a2f98e` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0253` | pylint | protected-access | structural | inline | symbol | tests/agents/test_research_chat_subgraph.py | test_extract_goals_uses_chat_subgraph | `sha256:e779e814ad5960cc1e61077d79408530084759acc64e8a04347db5900bf0a743` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0255` | pylint | protected-access | structural | inline | symbol | tests/agents/test_review_add_query_failures.py | test_feedback_rag_failures_empty_when_no_add_queries | `sha256:ea1bd79bc055e411a3e1bb27595e369d13a9e6be0644e57bb7e949128bb161b6` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0261` | pylint | protected-access | structural | inline | symbol | tests/server/test_run_gc_background.py | test_async_gc_coalesces_concurrent_passes | `sha256:0dcac7edf70b73e87d365ab2a55a6988025320b3309f742972b4e93446d03736` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
@@ -271,7 +271,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0337` | pylint | protected-access | structural | inline | symbol | tests/agents/test_design_helpers.py | test_get_compute_resource_protein_design_returns_medium | `sha256:8729d40cd01d205eaae4cc0dfb2f93c99107e88e02f8903d30d8510cfbf91ff1` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0338` | pylint | protected-access | structural | inline | symbol | tests/agents/test_design_helpers.py | test_get_compute_resource_unknown_falls_back_to_small | `sha256:5177408e990d2b34ce4af96964a892d42dabbae4ead41fb7555171dc41c82174` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0339` | pylint | protected-access | structural | inline | symbol | tests/agents/test_network_analyst_subgraph.py | test_dispatch_routes_through_subgraph_submit | `sha256:4e143b0eb1cebfdb4bc01c651f88b850cfe28250c01fbe1295ade6d161f3fbce` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0340` | pylint | protected-access | structural | inline | symbol | tests/agents/test_research_analyst_subgraph.py | test_submit_task_uses_subgraph | `sha256:b286ad3d9de8685a7387fa660964f2425ba80fc34b0017921f5b573cc4592aa8` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0340` | pylint | protected-access | structural | inline | symbol | tests/agents/test_research_analyst_subgraph.py | test_submit_task_uses_subgraph | `sha256:439995578fb94e35076c30c4da8e4bcd0cdb2dc4061ab0f3519b93a4d46db0f0` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0341` | pylint | protected-access | structural | inline | symbol | tests/agents/test_review_add_query_failures.py | test_feedback_rag_records_failure_for_single_failed_query | `sha256:9e73231727fd2148bae7bdb9465a68c0d856c73e2fc5b0c4434882d6e7e5e304` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0342` | pylint | protected-access | structural | inline | symbol | tests/agents/test_review_add_query_failures.py | test_feedback_rag_records_failures_for_all_failed_queries | `sha256:d757d5771d1a696f29b2d2a7124d4f65f83881d5b898b6b91f9006292401b7e2` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0343` | pylint | protected-access | structural | inline | symbol | tests/server/test_run_gc_background.py | test_async_gc_keeps_the_request_loop_responsive | `sha256:7f35a982bdb094d7ec7b5a3d4b703863f4763b3f00cf7f53a6f20a5b862d8930` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
@@ -1751,8 +1751,8 @@ Rationale:
 
 ```text
 Similar lines in 2 files
-==mcp_server_phytomni.agents.design.agent:[373:380]
-==mcp_server_phytomni.agents.research.agent:[428:435]
+==mcp_server_phytomni.agents.design.agent:[378:385]
+==mcp_server_phytomni.agents.research.agent:[430:437]
                 dependencies=dependencies,
             )
             if result is not None:
@@ -1780,8 +1780,8 @@ Rationale:
 
 ```text
 Similar lines in 2 files
-==mcp_server_phytomni.agents.design.agent:[501:513]
-==mcp_server_phytomni.agents.research.agent:[630:648]
+==mcp_server_phytomni.agents.design.agent:[506:518]
+==mcp_server_phytomni.agents.research.agent:[632:650]
                     **interop_state_update(
                         make_interop_record(
                             target_id=pending["target_id"],
@@ -1794,6 +1794,12 @@ Similar lines in 2 files
                 },
             )
 
+        async def submit_call() -> dict[str, Any]:
+            """Submit one research task and return its raw result.
+
+            Returns:
+                AnalystAgent payload with ``task_id`` and ``output_dir``.
+            """
 ```
 
 Counterfactual:
@@ -1814,8 +1820,8 @@ Rationale:
 
 ```text
 Similar lines in 2 files
-==mcp_server_phytomni.agents.design.agent:[553:562]
-==mcp_server_phytomni.agents.research.agent:[677:686]
+==mcp_server_phytomni.agents.design.agent:[558:567]
+==mcp_server_phytomni.agents.research.agent:[679:688]
                             "degraded",
                             perf_counter() - started,
                             True,
@@ -1845,36 +1851,22 @@ Rationale:
 
 ```text
 Similar lines in 2 files
-==mcp_server_phytomni.agents.design.agent:[560:574]
-==mcp_server_phytomni.agents.research.agent:[770:798]
-        updates.update(
-            interop_evidence_update(
-                evidence,
-                status="completed",
-                latency_seconds=perf_counter() - started,
-            )
-        )
+==mcp_server_phytomni.agents.design.agent:[565:579]
+==mcp_server_phytomni.agents.research.agent:[772:800]
+                updates.update(
+                    interop_evidence_update(
+                        evidence,
+                        status="completed",
+                        latency_seconds=perf_counter() - started,
+                    )
+                )
         return updates
 
-    async def arun(
+    async def resume_design_a2a(
         self,
-        paper_text: str,
-        data_list: dict[str, str],
-        **kwargs: Any,
+        state: DigitalDesignState,
     ) -> dict[str, Any]:
-        """Conduct in silico research and return task_ids.
-
-        Args:
-            paper_text: Scientific paper text to analyze.
-            data_list: Dictionary of data sources for research.
-            user_id: Optional user identifier.
-            obs_file_list: List of OBS files to include as context.
-            output_dir: Optional output directory path.
-            thread_id: Optional thread ID for checkpointer.
-
-        Returns:
-            Dict with task_ids mapping research goals to task IDs.
-        """
+        """Resume one paused A2A planning exchange before local dispatch."""
 ```
 
 Counterfactual:
@@ -1895,24 +1887,19 @@ Rationale:
 
 ```text
 Similar lines in 2 files
-==mcp_server_phytomni.agents.design.agent:[563:579]
-==mcp_server_phytomni.agents.research.agent:[687:703]
+==mcp_server_phytomni.agents.design.agent:[568:584]
+==mcp_server_phytomni.agents.research.agent:[689:705]
                         status="completed",
                         latency_seconds=perf_counter() - started,
                     )
                 )
         return updates
 
-    async def resume_research_a2a(
+    async def resume_design_a2a(
         self,
-        state: InSilicoResearchState,
+        state: DigitalDesignState,
     ) -> dict[str, Any]:
-        """Resume pending external A2A work after a graph interrupt."""
-        pending_items = state.get("a2a_pending", [])
-        if not pending_items:
-            return {}
-        pending = pending_items[0]
-        started = perf_counter()
+        """Resume one paused A2A planning exchange before local dispatch."""
 ```
 
 Counterfactual:
@@ -1933,8 +1920,8 @@ Rationale:
 
 ```text
 Similar lines in 2 files
-==mcp_server_phytomni.agents.design.agent:[659:689]
-==mcp_server_phytomni.agents.research.agent:[770:801]
+==mcp_server_phytomni.agents.design.agent:[664:694]
+==mcp_server_phytomni.agents.research.agent:[772:803]
         updates.update(
             interop_evidence_update(
                 evidence,
@@ -1946,22 +1933,21 @@ Similar lines in 2 files
 
     async def arun(
         self,
-        paper_text: str,
-        data_list: dict[str, str],
+        species_code: str,
+        gene_id: str,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        """Conduct in silico research and return task_ids.
+        """Submit protein design tasks and return task_ids.
 
         Args:
-            paper_text: Scientific paper text to analyze.
-            data_list: Dictionary of data sources for research.
+            species_code: Three-letter species code (e.g., "ath", "osa").
+            gene_id: Gene identifier.
             user_id: Optional user identifier.
-            obs_file_list: List of OBS files to include as context.
-            output_dir: Optional output directory path.
+            batch: Whether this is batch processing.
             thread_id: Optional thread ID for checkpointer.
 
         Returns:
-            Dict with task_ids mapping research goals to task IDs.
+            Dict with task_ids on success, or error on failure.
         """
         return await run_analysis_graph(
             self.app,
