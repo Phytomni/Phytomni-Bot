@@ -13,10 +13,9 @@ dedicated KnowledgeAgent subgraph invocation.
 from __future__ import annotations
 
 import logging
-from typing import Any, TypedDict, cast
+from typing import Any, cast
 
 import pytest
-from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send
 
@@ -24,6 +23,7 @@ from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
 from mcp_server_phytomni.agents.brief_gene.state import BriefGeneAgentState
 from mcp_server_phytomni.config.defaults import BriefGeneConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.subgraph_fakes import install_knowledge_app
 
 from ._subgraph_branch_fakes import failing_async_object
 
@@ -32,50 +32,16 @@ pytestmark = pytest.mark.agent
 _CORE_MODULE = "mcp_server_phytomni.agents.brief_gene.core"
 
 
-class _FakeKnowledgeState(TypedDict, total=False):
-    """Minimal state shape for the offline knowledge-subgraph stub."""
-
-    user_query: str
-    retrieved_docs: list[dict[str, Any]]
-
-
-def _build_fake_knowledge_app(
-    docs_by_query: dict[str, list[dict[str, Any]]] | None = None,
-) -> CompiledStateGraph:
-    """Compile a one-node ``StateGraph`` to stand in for the KA subgraph.
-
-    ``find_subgraph_pregel`` recognises ``CompiledStateGraph`` instances
-    by isinstance, so a SimpleNamespace cannot satisfy the xray
-    expansion. Compiling a trivial ``StateGraph`` keeps the test fully
-    offline while still presenting a real compiled subgraph for the
-    worker factory closure to hold. The optional ``docs_by_query`` map
-    lets a test stage per-query doc lists keyed on the
-    ``user_query`` substring; absent keys default to ``[]``.
-    """
-
-    async def _stub(state: _FakeKnowledgeState) -> dict[str, Any]:
-        if docs_by_query is None:
-            return {"retrieved_docs": []}
-        query = cast(Any, state).get("user_query", "")
-        return {"retrieved_docs": docs_by_query.get(query, [])}
-
-    workflow: StateGraph = StateGraph(_FakeKnowledgeState)
-    workflow.add_node("stub", _stub)
-    workflow.add_edge(START, "stub")
-    workflow.add_edge("stub", END)
-    return workflow.compile()
-
-
 def _install_fake_knowledge_app(
     monkeypatch: pytest.MonkeyPatch,
     docs_by_query: dict[str, list[dict[str, Any]]] | None = None,
 ) -> CompiledStateGraph:
     """Patch ``build_knowledge_app`` import on brief_gene.core."""
-    fake_app = _build_fake_knowledge_app(docs_by_query)
-    monkeypatch.setattr(
-        f"{_CORE_MODULE}.build_knowledge_app", lambda **_kwargs: fake_app
-    )
-    return fake_app
+    return install_knowledge_app(
+        monkeypatch,
+        f"{_CORE_MODULE}.build_knowledge_app",
+        docs_by_query=docs_by_query,
+    ).compiled
 
 
 def _build_agent(

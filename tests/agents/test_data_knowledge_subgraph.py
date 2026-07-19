@@ -11,67 +11,22 @@ the cross-product with the always-mounted chat subgraph.
 
 from __future__ import annotations
 
-from typing import Any, TypedDict, cast
+from typing import cast
 
 import pytest
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import CompiledStateGraph
 
 from mcp_server_phytomni.agents.data.agent import DataAgent
 from mcp_server_phytomni.agents.data.state import DataAgentState
 from mcp_server_phytomni.config.defaults import DataConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.subgraph_fakes import (
+    assert_subgraph_prefixes,
+    install_knowledge_app,
+)
 
 pytestmark = pytest.mark.agent
 
 _DATA_MODULE = "mcp_server_phytomni.agents.data.agent"
-
-
-class _FakeKnowledgeState(TypedDict, total=False):
-    """Minimal state shape for the offline knowledge-subgraph stub."""
-
-    retrieved_docs: list[dict[str, Any]]
-
-
-def _build_fake_knowledge_app() -> CompiledStateGraph:
-    """Compile a one-node ``StateGraph`` to stand in for the KA subgraph.
-
-    ``find_subgraph_pregel`` (the walker behind ``get_graph(xray=True)``)
-    recognises ``CompiledStateGraph`` instances by isinstance, not by
-    duck typing, so a ``SimpleNamespace`` cannot satisfy the xray
-    expansion. Compiling a trivial ``StateGraph`` that returns an empty
-    ``retrieved_docs`` list keeps the test fully offline while still
-    presenting a real compiled subgraph for the wrapper's closure to
-    capture.
-    """
-
-    async def _noop(state: _FakeKnowledgeState) -> dict[str, Any]:
-        del state
-        return {"retrieved_docs": []}
-
-    workflow: StateGraph = StateGraph(_FakeKnowledgeState)
-    workflow.add_node("noop", _noop)
-    workflow.add_edge(START, "noop")
-    workflow.add_edge("noop", END)
-    return workflow.compile()
-
-
-def _install_fake_knowledge_app(
-    monkeypatch: pytest.MonkeyPatch,
-) -> CompiledStateGraph:
-    """Patch ``build_knowledge_app`` to return a deterministic compiled stub.
-
-    ``DataAgent.__init__`` constructs the per-instance compiled KA
-    subgraph unconditionally; tests substitute a tiny compiled
-    subgraph so the structural xray walk discovers it through the
-    wrapper's closure free-vars while keeping the test fully offline
-    (no real KnowledgeAgent compile, no real retrieve).
-    """
-    fake_app = _build_fake_knowledge_app()
-    monkeypatch.setattr(
-        f"{_DATA_MODULE}.build_knowledge_app", lambda **_kwargs: fake_app
-    )
-    return fake_app
 
 
 def _build_agent(
@@ -82,12 +37,11 @@ def _build_agent(
     The retrieve site always mounts the prep + post pair surrounding
     the per-instance compiled KnowledgeAgent app, and the chat
     subgraph is always mounted too, so the cross-product wire is
-    exercised on every construction. The helper installs the fake
-    knowledge app via :func:`_install_fake_knowledge_app` so the
-    construction stays offline (no real KnowledgeAgent compile, no
-    real retrieve).
+    exercised on every construction. The shared recording fake keeps
+    construction offline (no real KnowledgeAgent compile, no real
+    retrieve).
     """
-    _install_fake_knowledge_app(monkeypatch)
+    install_knowledge_app(monkeypatch, f"{_DATA_MODULE}.build_knowledge_app")
     return DataAgent(
         data_config=DataConfig(),
         sensitive_config=SensitiveConfig.load(),
@@ -227,10 +181,7 @@ def test_compiled_graph_xray_expands_both_subgraphs(
     """
     agent = _build_agent(monkeypatch)
     node_keys = list(agent.app.get_graph(xray=True).nodes.keys())
-    assert any(key.startswith("chat:") for key in node_keys), sorted(node_keys)
-    assert any(key.startswith("knowledge:") for key in node_keys), sorted(
-        node_keys
-    )
+    assert_subgraph_prefixes(node_keys, "chat:", "knowledge:")
     # Cross-product still substitutes the retrieve site.
     assert "retrieve_prep_node" in node_keys
     assert "retrieve_post_node" in node_keys

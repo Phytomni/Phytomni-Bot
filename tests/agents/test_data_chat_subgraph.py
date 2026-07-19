@@ -11,11 +11,9 @@ single shared chat node registered via ``add_node`` from the
 
 from __future__ import annotations
 
-from typing import Any, TypedDict, cast
+from typing import cast
 
 import pytest
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import CompiledStateGraph
 from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.data.agent import DataAgent
@@ -25,6 +23,7 @@ from mcp_server_phytomni.agents.data.state import (
 )
 from mcp_server_phytomni.config.defaults import DataConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.subgraph_fakes import install_knowledge_app
 
 from ._subgraph_branch_fakes import install_chat_subgraph_mocks
 
@@ -38,48 +37,14 @@ _CHAT_COMPLETION_RESPONSE = {
 }
 
 
-class _FakeKnowledgeState(TypedDict, total=False):
-    """Minimal state shape for the offline knowledge-subgraph stub."""
-
-    retrieved_docs: list[dict[str, Any]]
-
-
-def _install_fake_knowledge_app(
-    monkeypatch: pytest.MonkeyPatch,
-) -> CompiledStateGraph:
-    """Patch ``build_knowledge_app`` to return a deterministic compiled stub.
-
-    ``DataAgent.__init__`` builds the per-instance compiled KA
-    subgraph unconditionally; this chat-focused test substitutes a
-    tiny compiled subgraph so construction stays offline (no real
-    KnowledgeAgent compile, no real retrieve) while the chat-subgraph
-    mount under test is exercised through the same graph.
-    """
-
-    async def _noop(state: _FakeKnowledgeState) -> dict[str, Any]:
-        del state
-        return {"retrieved_docs": []}
-
-    workflow: StateGraph = StateGraph(_FakeKnowledgeState)
-    workflow.add_node("noop", _noop)
-    workflow.add_edge(START, "noop")
-    workflow.add_edge("noop", END)
-    fake_app = workflow.compile()
-    monkeypatch.setattr(
-        f"{_DATA_MODULE}.build_knowledge_app", lambda **_kwargs: fake_app
-    )
-    return fake_app
-
-
 def _build_agent(monkeypatch: pytest.MonkeyPatch) -> DataAgent:
     """Construct a ``DataAgent`` with the chat subgraph mounted.
 
     The knowledge subgraph is always mounted at the retrieve site, so
-    the helper installs an offline knowledge-app stub via
-    :func:`_install_fake_knowledge_app` to keep construction offline,
-    then isolates the chat-subgraph mount under test.
+    the shared recording fake keeps construction offline, then
+    isolates the chat-subgraph mount under test.
     """
-    _install_fake_knowledge_app(monkeypatch)
+    install_knowledge_app(monkeypatch, f"{_DATA_MODULE}.build_knowledge_app")
     return DataAgent(
         data_config=DataConfig(),
         sensitive_config=SensitiveConfig.load(),

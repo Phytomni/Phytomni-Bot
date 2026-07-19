@@ -11,55 +11,55 @@ the cross-product with the always-mounted chat subgraph.
 
 from __future__ import annotations
 
-from typing import Any, TypedDict, cast
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import CompiledStateGraph
 
 from mcp_server_phytomni.agents.analyst.core import AnalystAgent
 from mcp_server_phytomni.agents.analyst.state import AnalystState
 from mcp_server_phytomni.config.defaults import AnalystConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.subgraph_fakes import (
+    RecordingKnowledgeApp,
+    assert_subgraph_prefixes,
+    install_knowledge_app,
+    knowledge_output,
+    knowledge_state,
+)
 
 pytestmark = pytest.mark.agent
 
 _CORE_MODULE = "mcp_server_phytomni.agents.analyst.core"
 
 
-class _FakeKnowledgeState(TypedDict, total=False):
-    """Minimal state shape for the offline knowledge-subgraph stub."""
+async def test_knowledge_fakes_capture_output_and_isolate_state() -> None:
+    """Shared knowledge fakes capture calls and return independent values."""
+    fake = RecordingKnowledgeApp(output=knowledge_output("captured"))
+    state = knowledge_state(user_query="query")
+    sibling = knowledge_state()
 
-    retrieved_docs: list[dict[str, Any]]
+    result = await fake.compiled.ainvoke(state)
+    state["retrieved_docs"].append({"title": "mutated"})
+
+    expected = knowledge_output("captured")
+    assert result["retrieved_docs"] == expected["retrieved_docs"]
+    assert result["final_response"] == expected["final_response"]
+    assert fake.calls == [{"user_query": "query", "retrieved_docs": []}]
+    assert sibling["retrieved_docs"] == []
 
 
-def _build_fake_knowledge_app() -> CompiledStateGraph:
-    """Compile a one-node ``StateGraph`` to stand in for the KA subgraph.
+async def test_knowledge_fake_propagates_configured_error() -> None:
+    """Shared knowledge fakes do not swallow configured failures."""
+    fake = RecordingKnowledgeApp(error=RuntimeError("boom"))
 
-    ``find_subgraph_pregel`` (the walker behind ``get_graph(xray=True)``)
-    recognises ``CompiledStateGraph`` instances by isinstance, not by
-    duck typing, so a ``SimpleNamespace`` cannot satisfy the xray
-    expansion. Compiling a trivial ``StateGraph`` that returns an empty
-    ``retrieved_docs`` list keeps the test fully offline while still
-    presenting a real compiled subgraph for the wrapper's closure to
-    capture.
-    """
-
-    async def _noop(state: _FakeKnowledgeState) -> dict[str, Any]:
-        del state
-        return {"retrieved_docs": []}
-
-    workflow: StateGraph = StateGraph(_FakeKnowledgeState)
-    workflow.add_node("noop", _noop)
-    workflow.add_edge(START, "noop")
-    workflow.add_edge("noop", END)
-    return workflow.compile()
+    with pytest.raises(RuntimeError, match="boom"):
+        await fake.compiled.ainvoke(knowledge_state())
 
 
 def _install_fake_knowledge_app(
     monkeypatch: pytest.MonkeyPatch,
-) -> CompiledStateGraph:
+) -> Any:
     """Patch ``build_knowledge_app`` to return a deterministic compiled stub.
 
     ``AnalystAgent.__init__`` always constructs the per-instance
@@ -68,11 +68,10 @@ def _install_fake_knowledge_app(
     wrapper's closure free-vars while keeping the test fully offline
     (no real KnowledgeAgent compile, no real retrieve).
     """
-    fake_app = _build_fake_knowledge_app()
-    monkeypatch.setattr(
-        f"{_CORE_MODULE}.build_knowledge_app", lambda **_kwargs: fake_app
-    )
-    return fake_app
+    return install_knowledge_app(
+        monkeypatch,
+        f"{_CORE_MODULE}.build_knowledge_app",
+    ).compiled
 
 
 def _build_agent(
@@ -221,10 +220,7 @@ def test_compiled_graph_xray_expands_both_subgraphs(
     """xray surfaces both ``chat:`` AND ``knowledge:`` keys."""
     agent = _build_agent(monkeypatch)
     node_keys = list(agent.app.get_graph(xray=True).nodes.keys())
-    assert any(key.startswith("chat:") for key in node_keys), sorted(node_keys)
-    assert any(key.startswith("knowledge:") for key in node_keys), sorted(
-        node_keys
-    )
+    assert_subgraph_prefixes(node_keys, "chat:", "knowledge:")
     # Cross-product still substitutes the method_retrieve site.
     assert "method_retrieve_prep_node" in node_keys
     assert "method_retrieve_post_node" in node_keys

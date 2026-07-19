@@ -17,12 +17,15 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 
 from mcp_server_phytomni.agents.deep_genome import report as report_module
 from mcp_server_phytomni.config.defaults import DeepGenomeConfig
+from tests.support.subgraph_fakes import (
+    RecordingKnowledgeApp,
+    knowledge_output,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -52,16 +55,8 @@ async def test_dispatch_knowledge_uses_subgraph() -> None:
     the legacy ``knowledge_agent.arun`` produced.
     """
     # pylint: disable=protected-access
-    subgraph_app_mock = AsyncMock(
-        return_value={
-            "retrieved_docs": [],
-            "final_response": {
-                "choices": [{"message": {"content": "subgraph"}}]
-            },
-        }
-    )
-    knowledge_app = SimpleNamespace(ainvoke=subgraph_app_mock)
-    mixin = _build_mixin_instance(knowledge_app=knowledge_app)
+    fake = RecordingKnowledgeApp(output=knowledge_output("subgraph"))
+    mixin = _build_mixin_instance(knowledge_app=fake.compiled)
 
     result = (
         await report_module.DeepGenomeReportMixin._dispatch_knowledge_retrieve(
@@ -72,4 +67,4 @@ async def test_dispatch_knowledge_uses_subgraph() -> None:
     )
 
     assert result == {"choices": [{"message": {"content": "subgraph"}}]}
-    subgraph_app_mock.assert_awaited_once()
+    assert len(fake.calls) == 1
