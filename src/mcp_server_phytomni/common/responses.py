@@ -5,8 +5,8 @@
 """Helpers for response parsing and bounded prompt fragments.
 
 Functions: message_content, first_message, parse_json_list_fragment,
-    parse_follow_up_questions, attach_message_payload,
-    join_limited_fragments.
+    parse_json_object_fragment, parse_follow_up_questions,
+    attach_message_payload, join_limited_fragments.
 """
 
 import json
@@ -113,6 +113,32 @@ def parse_json_list_fragment(text: str) -> list[Any]:
     except (ValueError, TypeError):
         return []
     return parsed if isinstance(parsed, list) else []
+
+
+def parse_json_object_fragment(text: str) -> dict[str, Any]:
+    """Parse a JSON object embedded in model output text.
+
+    Args:
+        text: String containing a JSON object possibly embedded in prose or
+            a Markdown code fence.
+
+    Returns:
+        A parsed object, or an empty mapping when no valid object is found.
+    """
+    if not isinstance(text, str) or not text:
+        return {}
+    decoder = json.JSONDecoder()
+    start_index = text.find("{")
+    while start_index != -1:
+        try:
+            parsed, _ = decoder.raw_decode(text[start_index:])
+        except (ValueError, TypeError):
+            start_index = text.find("{", start_index + 1)
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+        start_index = text.find("{", start_index + 1)
+    return {}
 
 
 def parse_follow_up_questions(text: str) -> list[str]:

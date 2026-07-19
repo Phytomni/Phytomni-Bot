@@ -15,6 +15,7 @@ from mcp_server_phytomni.common.responses import (
     message_content,
     parse_follow_up_questions,
     parse_json_list_fragment,
+    parse_json_object_fragment,
 )
 
 pytestmark = pytest.mark.unit
@@ -48,6 +49,37 @@ def test_parse_json_list_fragment_reads_embedded_list():
         "a",
         "b",
     ]
+
+
+def test_parse_json_object_fragment_returns_empty_for_empty_message():
+    """An empty model message has no JSON object to project."""
+    assert parse_json_object_fragment("") == {}
+
+
+def test_parse_json_object_fragment_reads_embedded_object():
+    """An object embedded in prose is parsed without losing nesting."""
+    assert parse_json_object_fragment(
+        'prefix {"gene_id": "AT1G01010", "meta": {"source": "llm"}} suffix'
+    ) == {
+        "gene_id": "AT1G01010",
+        "meta": {"source": "llm"},
+    }
+
+
+def test_parse_json_object_fragment_reads_fenced_object():
+    """A fenced JSON object is parsed from the surrounding markdown."""
+    assert parse_json_object_fragment(
+        '\u0060\u0060\u0060json\n{"gene_id": "AT1G01010"}\n'
+        "\u0060\u0060\u0060"
+    ) == {"gene_id": "AT1G01010"}
+
+
+@pytest.mark.parametrize("text", ["{not-json}", "[1, 2]"])
+def test_parse_json_object_fragment_rejects_invalid_or_non_object(
+    text: str,
+) -> None:
+    """Malformed and non-object JSON fragments return an empty mapping."""
+    assert parse_json_object_fragment(text) == {}
 
 
 def test_parse_follow_up_questions_rejects_non_list():
