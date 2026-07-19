@@ -131,7 +131,7 @@ def shared_client_initialised() -> bool:
 @asynccontextmanager
 async def get_async_client(
     *,
-    timeout: Any = None,
+    timeout: Any = None,  # noqa: ASYNC109
     config: ServerConfig | None = None,
     **client_kwargs: Any,
 ) -> AsyncGenerator[AsyncClient, None]:

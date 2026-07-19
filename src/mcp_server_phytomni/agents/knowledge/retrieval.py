@@ -609,7 +609,7 @@ async def _retrieve_scope_docs(
     page_size: int,
     filter_string: str | None,
     extra_repo_ids: tuple[str, ...],
-    timeout: float,
+    timeout: float,  # noqa: ASYNC109
     max_retries: int,
     retriable_codes: tuple[int, ...],
 ) -> Any:
@@ -872,7 +872,7 @@ async def _rerank_batch(
     docs_batch: list[dict[str, Any]],
     rerank_url: str,
     top_n: int,
-    timeout: float,
+    timeout: float,  # noqa: ASYNC109
     max_retries: int,
     retriable_codes: tuple[int, ...],
 ):

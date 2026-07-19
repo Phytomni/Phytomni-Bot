@@ -25,7 +25,8 @@ SENSITIVE_CONFIG = SensitiveConfig.load()
 
 
 async def get_token(
-    timeout: float = SERVER_CONFIG.TIMEOUT, region: str = SERVER_CONFIG.REGION
+    timeout: float = SERVER_CONFIG.TIMEOUT,  # noqa: ASYNC109
+    region: str = SERVER_CONFIG.REGION,
 ) -> str:
     """Obtain an X-Subject-Token for API authentication.
 

@@ -129,14 +129,10 @@ exclude = [
 ]
 
 [tool.ruff.lint]
+# ASYNC109 is handled by exact function-local ``noqa`` records. The
+# approved functions forward a transport budget to a downstream client;
+# they do not own the cancellation scope for that request.
 extend-select = ["I", "N", "UP", "ASYNC", "SIM"]
-# ASYNC109: async function definitions with a `timeout` parameter in this
-# repo always forward the value to downstream HTTP/LLM calls (e.g.
-# agents/deep_genome/profile.py passes `timeout` to _post_bi_sql,
-# common/http.py threads it to httpx). They are not candidates for
-# `anyio.timeout` / `asyncio.timeout`. All 14 occurrences follow this
-# pattern, so a global config-level exemption is declared here.
-ignore = ["ASYNC109"]
 
 [tool.ruff.lint.per-file-ignores]
 # typings/*.pyi files mirror external SDKs (e.g. esdk-obs-python) whose

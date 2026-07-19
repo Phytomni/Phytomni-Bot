@@ -35,7 +35,7 @@ _LOOKUP_CONFIG = DeepGenomeConfig()
 
 async def _post_bi_sql(
     sql: str,
-    timeout: float = _LOOKUP_CONFIG.TIMEOUT,
+    timeout: float = _LOOKUP_CONFIG.TIMEOUT,  # noqa: ASYNC109
 ) -> dict[str, Any]:
     """Run one BI SQL query and return the JSON payload.
 
@@ -87,7 +87,7 @@ async def _post_bi_sql(
 async def _cached_gene_symbol_lookup(
     species_code: str,
     gene_id: str,
-    timeout: float = _LOOKUP_CONFIG.TIMEOUT,
+    timeout: float = _LOOKUP_CONFIG.TIMEOUT,  # noqa: ASYNC109
 ) -> list[str]:
     """Retrieve gene symbols for one species/gene pair."""
     sql = (
@@ -111,7 +111,7 @@ async def _cached_gene_symbol_lookup(
 async def _cached_gene_annotation_lookup(
     species_code: str,
     gene_id: str,
-    timeout: float = _LOOKUP_CONFIG.TIMEOUT,
+    timeout: float = _LOOKUP_CONFIG.TIMEOUT,  # noqa: ASYNC109
 ) -> dict[str, Any]:
     """Retrieve gene annotations for one species/gene pair."""
     gene_literal = sql_literal(gene_id)

@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `272`
+- Authorized records: `280`
 
 ## Informational counts
 
@@ -44,7 +44,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `pymarkdown:md013`                                                |       1 |
 | `pytest:error`                                                    |       1 |
 | `pytest:ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning` |       1 |
-| `ruff:ASYNC109`                                                   |       1 |
+| `ruff:ASYNC109`                                                   |       9 |
 | `ruff:ASYNC110`                                                   |       3 |
 | `ruff:E402`                                                       |       2 |
 | `ruff:N802`                                                       |       1 |
@@ -119,7 +119,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0065` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 560:574 | `sha256:47596af147e9172828fdf5f2c27d8408eb421b1192fc39ef3d33c6befabe7607` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0066` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 563:579 | `sha256:7271d0ac0f1454361e1f47819895b51d59eed4d6a85d5b0608b5b4ab0584fa2e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0067` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 659:689 | `sha256:f4dd4186f6a6b658a87efdd1a26751b119ce33cdfc6ee2a2f14b9e188c081185` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0068` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/environment/agent.py | 89:96 | `sha256:48e20f923448194a6bdb689cd13d84a61c3719f98bd21ce267c78d548b3679d0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0068` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/environment/agent.py | 89:96 | `sha256:412bbae97443018da3d59a4a22453b8e01b100e4a28028e36d6dbf2ee3982c7b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0069` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/environment/graph.py | 171:178 | `sha256:acecf18e51ca4896d2aae066f303e97fcbacb43d1cacb6108164dcfc959ab015` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0070` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/research/interop.py | 238:245 | `sha256:5100104b2803ff4bfed6614c72a1e1bdd6c12912c00e954b9f70e3317834d541` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0071` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/shared/chat_subgraph.py | 93:99 | `sha256:6165ee88078541c3c33262bd4a723df6d7bdd0feacd68b2c48d2e63bd71b3045` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -279,7 +279,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0294` | pymarkdown | md013 | temporary | config | config | pyproject.toml | tool.pymarkdown.plugins.md013.enabled | `sha256:34d8c475a236a211d36db927ee2de462f03fdb4f3f07864359540255c750bf01` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0295` | pytest | error | temporary | config | config | pyproject.toml | tool.pytest.ini_options.filterwarnings[0] | `sha256:0aa661937816a1fb17f333eb9a372e15f3093ed7bf8b75bc5d904d38422ef20f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0298` | pytest | ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning | temporary | config | config | pyproject.toml | tool.pytest.ini_options.filterwarnings[1] | `sha256:3b0438047d9767b1eb34f8a245bfa1e11abe24c3fc8011aee6a4f08905aef12a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0299` | ruff | ASYNC109 | temporary | config | config | pyproject.toml | tool.ruff.lint.ignore | `sha256:5993cb3b3995e8a9e9d1b75ec77d7be80c2deb72a69b7a164790e0d8fea7998a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0300` | ruff | ASYNC110 | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/report.py | \_write_async | `sha256:a7cb1e8424467f0727f7a3b99bf30356d9bb18b99462d892fbf92402f43dd198` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0301` | ruff | ASYNC110 | temporary | inline | symbol | src/mcp_server_phytomni/api/app.py | \_purge_expired_runs_best_effort_async | `sha256:a52705825d478feeafb241f23127685f24facd52ebf4d62d6ed335d1dd04782d` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0302` | ruff | ASYNC110 | temporary | inline | symbol | src/mcp_server_phytomni/api/relay/obs.py | \_wait_obs_future | `sha256:a8f3e3adef4dab97a6423e96bc1f91159c519a5060e52a58156302de97e99e33` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -327,6 +326,15 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0351` | pylint | R0913 | temporary | inline | span | typings/obs/__init__.pyi | — | `sha256:a15ec92995e4889b5cb4df0701e8c716d144aa145db9430f9e48cf5fb2f7d097` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | typings/obs/__init__.pyi, tests/unit/test_style_naming.py, static-analysis-inventory |
 | `SAE-TMP-0352` | pylint | R0917 | temporary | inline | span | typings/obs/__init__.pyi | — | `sha256:8af6543ba16f67381086f0353049a789f5614276cc7434e402f6f4567c5c46d3` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | typings/obs/__init__.pyi, tests/unit/test_style_naming.py, static-analysis-inventory |
 | `SAE-TMP-0353` | pylint | W0613 | temporary | inline | span | typings/obs/__init__.pyi | — | `sha256:f0fc55ced5b6b61c39a6343c9096d648e4ab54e91be08eb8ed93d449a49e297c` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | typings/obs/__init__.pyi, tests/unit/test_style_naming.py, static-analysis-inventory |
+| `SAE-TMP-0354` | ruff | ASYNC109 | temporary | inline | symbol | src/mcp_server_phytomni/agents/chat/service.py | run_phyto_chat_cached | `sha256:7c8abf6977bb26a0953727ea231b896bacab040602ba7337e7a037e5d24f7c0d` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-STATIC-ANALYSIS-GOVERNANCE | src/mcp_server_phytomni/agents/chat/service.py, static-analysis-inventory |
+| `SAE-TMP-0355` | ruff | ASYNC109 | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/profile.py | \_post_bi_sql | `sha256:e9b02987d1e2de686402c3ea46f0b75ae6f86cf4a2b350217807b3727273b550` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-STATIC-ANALYSIS-GOVERNANCE | src/mcp_server_phytomni/agents/deep_genome/profile.py, static-analysis-inventory |
+| `SAE-TMP-0356` | ruff | ASYNC109 | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/profile.py | \_cached_gene_symbol_lookup | `sha256:063f0eeece2e09a0127065a7fb7888cd0028cf66cc935056a403369974743e09` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-STATIC-ANALYSIS-GOVERNANCE | src/mcp_server_phytomni/agents/deep_genome/profile.py, static-analysis-inventory |
+| `SAE-TMP-0357` | ruff | ASYNC109 | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/profile.py | \_cached_gene_annotation_lookup | `sha256:e7e9cea52b216d68a49a1cad774cd5d5e3a0b2f9e2b314b54c6436ed31eaf6a7` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-STATIC-ANALYSIS-GOVERNANCE | src/mcp_server_phytomni/agents/deep_genome/profile.py, static-analysis-inventory |
+| `SAE-TMP-0358` | ruff | ASYNC109 | temporary | inline | symbol | src/mcp_server_phytomni/agents/evolution/agent.py | find_spa_taxids | `sha256:9b1db3e2c21f23bbdfc39763a9fee97b55fb045dbc6abd84b744aa9df2be511f` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-STATIC-ANALYSIS-GOVERNANCE | src/mcp_server_phytomni/agents/evolution/agent.py, static-analysis-inventory |
+| `SAE-TMP-0359` | ruff | ASYNC109 | temporary | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | \_retrieve_scope_docs | `sha256:2d450f9fdf3c5d37449bc7d68f8e5757884d952f8eefc3677e0cb58736dd6063` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-STATIC-ANALYSIS-GOVERNANCE | src/mcp_server_phytomni/agents/knowledge/retrieval.py, static-analysis-inventory |
+| `SAE-TMP-0360` | ruff | ASYNC109 | temporary | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | \_rerank_batch | `sha256:4de11f90d993c77a4329ab5845fef2ae2a326f2617324c1929fed665b7389c9d` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-STATIC-ANALYSIS-GOVERNANCE | src/mcp_server_phytomni/agents/knowledge/retrieval.py, static-analysis-inventory |
+| `SAE-TMP-0361` | ruff | ASYNC109 | temporary | inline | symbol | src/mcp_server_phytomni/auth/iam.py | get_token | `sha256:86c7b9c1162e4bb19a32a5e178c0a2f362018486f6aa8c0efd145e60dafaa822` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-STATIC-ANALYSIS-GOVERNANCE | src/mcp_server_phytomni/auth/iam.py, static-analysis-inventory |
+| `SAE-TMP-0362` | ruff | ASYNC109 | temporary | inline | symbol | src/mcp_server_phytomni/common/httpx_client.py | get_async_client | `sha256:d902f3079846e17beb3ccdcc68c0bd432c3e473f0171b0c54c975be37ee154c9` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-STATIC-ANALYSIS-GOVERNANCE | src/mcp_server_phytomni/common/httpx_client.py, static-analysis-inventory |
 
 ## Review fields
 
@@ -2295,7 +2303,7 @@ Rationale:
 ```text
 Similar lines in 2 files
 ==mcp_server_phytomni.agents.environment.agent:[89:96]
-==mcp_server_phytomni.agents.evolution.agent:[149:156]
+==mcp_server_phytomni.agents.evolution.agent:[151:158]
     chat_output = await _cached_chat_app().ainvoke(
         build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs_bag)
     )
@@ -6415,26 +6423,6 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0299`
-
-Rationale:
-
-```text
-tool.ruff.lint.ignore=['ASYNC109']
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0300`
 
 Rationale:
@@ -7373,4 +7361,184 @@ Risk:
 
 ```text
 A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules.
+```
+
+### `SAE-TMP-0354`
+
+Rationale:
+
+```text
+noqa: ASYNC109
+```
+
+Counterfactual:
+
+```text
+Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
+```
+
+Risk:
+
+```text
+The exemption could hide an accidental timeout that is not forwarded to the underlying client.
+```
+
+### `SAE-TMP-0355`
+
+Rationale:
+
+```text
+noqa: ASYNC109
+```
+
+Counterfactual:
+
+```text
+Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
+```
+
+Risk:
+
+```text
+The exemption could hide an accidental timeout that is not forwarded to the underlying client.
+```
+
+### `SAE-TMP-0356`
+
+Rationale:
+
+```text
+noqa: ASYNC109
+```
+
+Counterfactual:
+
+```text
+Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
+```
+
+Risk:
+
+```text
+The exemption could hide an accidental timeout that is not forwarded to the underlying client.
+```
+
+### `SAE-TMP-0357`
+
+Rationale:
+
+```text
+noqa: ASYNC109
+```
+
+Counterfactual:
+
+```text
+Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
+```
+
+Risk:
+
+```text
+The exemption could hide an accidental timeout that is not forwarded to the underlying client.
+```
+
+### `SAE-TMP-0358`
+
+Rationale:
+
+```text
+noqa: ASYNC109
+```
+
+Counterfactual:
+
+```text
+Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
+```
+
+Risk:
+
+```text
+The exemption could hide an accidental timeout that is not forwarded to the underlying client.
+```
+
+### `SAE-TMP-0359`
+
+Rationale:
+
+```text
+noqa: ASYNC109
+```
+
+Counterfactual:
+
+```text
+Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
+```
+
+Risk:
+
+```text
+The exemption could hide an accidental timeout that is not forwarded to the underlying client.
+```
+
+### `SAE-TMP-0360`
+
+Rationale:
+
+```text
+noqa: ASYNC109
+```
+
+Counterfactual:
+
+```text
+Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
+```
+
+Risk:
+
+```text
+The exemption could hide an accidental timeout that is not forwarded to the underlying client.
+```
+
+### `SAE-TMP-0361`
+
+Rationale:
+
+```text
+noqa: ASYNC109
+```
+
+Counterfactual:
+
+```text
+Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
+```
+
+Risk:
+
+```text
+The exemption could hide an accidental timeout that is not forwarded to the underlying client.
+```
+
+### `SAE-TMP-0362`
+
+Rationale:
+
+```text
+noqa: ASYNC109
+```
+
+Counterfactual:
+
+```text
+Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
+```
+
+Risk:
+
+```text
+The exemption could hide an accidental timeout that is not forwarded to the underlying client.
 ```

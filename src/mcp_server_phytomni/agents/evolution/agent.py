@@ -85,7 +85,9 @@ def evolution_submit_kwargs(
     )
 
 
-async def find_spa_taxids(spa_names: str, timeout: float) -> list[str]:
+async def find_spa_taxids(
+    spa_names: str, timeout: float  # noqa: ASYNC109
+) -> list[str]:
     """Return taxonomy ids for a target species name."""
     if relay_mode_enabled():
         # Relay mode injects the operator IAM token and bypasses the proxy.

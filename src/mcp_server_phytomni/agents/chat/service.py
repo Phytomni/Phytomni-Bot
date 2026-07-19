@@ -429,7 +429,7 @@ async def run_phyto_chat_cached(
     api_key: str,
     base_url: str,
     user: str,
-    timeout: float,
+    timeout: float,  # noqa: ASYNC109
     stream: bool,
 ) -> dict[str, Any]:
     """Issue one LLM completion and cache the normalized dict.
