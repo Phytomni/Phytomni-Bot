@@ -58,6 +58,7 @@ class _FakePost:
             instance is raised, anything else is returned as the
             parsed JSON response.
         dialog_ids: ``dialog_id`` observed on each successive POST.
+        token_timeouts: Timeout values passed to the IAM token loader.
         backoff_attempts: Attempt index passed to each inter-rotation
             backoff (recorded by the patched no-op so the suite stays
             fast and the cadence is assertable).
@@ -67,6 +68,7 @@ class _FakePost:
         """Store the scripted per-attempt outcomes."""
         self.outcomes = outcomes
         self.dialog_ids: list[str] = []
+        self.token_timeouts: list[float] = []
         self.backoff_attempts: list[int] = []
 
     async def __call__(self, client: Any, request: Any, retry: Any) -> Any:
@@ -136,8 +138,9 @@ def _patch_transport(monkeypatch: pytest.MonkeyPatch, fake: _FakePost) -> None:
         fake: Scripted POST stand-in capturing per-attempt dialog ids.
     """
 
-    async def fake_token() -> str:
+    async def fake_token(**_kwargs: Any) -> str:
         """Return a dummy IAM token."""
+        fake.token_timeouts.append(_kwargs["timeout"])
         return "token-xyz"
 
     async def fake_backoff(attempt: int) -> None:
@@ -350,7 +353,11 @@ async def test_execute_nl2sql_returns_first_success_without_rotation(
     _patch_transport(monkeypatch, fake)
     request = Nl2SqlRequest.from_kwargs(
         "homologs of AT1G75370 in wheat",
-        {"dialog_id": "dialog-explicit", "max_retries": 3},
+        {
+            "dialog_id": "dialog-explicit",
+            "max_retries": 3,
+            "timeout": 7.0,
+        },
     )
 
     result = await execute_nl2sql_request(request)
@@ -358,6 +365,7 @@ async def test_execute_nl2sql_returns_first_success_without_rotation(
     assert result == {"answer": "ok"}
     # Exactly one conversation, and it honored the caller's dialog id.
     assert fake.recorded_dialog_ids() == ["dialog-explicit"]
+    assert fake.token_timeouts == [7.0]
 
 
 async def test_execute_nl2sql_rotates_dialog_id_on_retry(

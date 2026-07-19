@@ -92,8 +92,9 @@ async def test_find_spa_taxids_uses_async_httpx_factory(
     """
     captured: dict[str, Any] = {}
 
-    async def fake_get_token() -> str:
+    async def fake_get_token(**kwargs: Any) -> str:
         """Return a deterministic IAM token for the request headers."""
+        captured["token_timeout"] = kwargs["timeout"]
         return "fake-iam-token"
 
     monkeypatch.setattr(evolution_agent, "get_token", fake_get_token)
@@ -126,6 +127,7 @@ async def test_find_spa_taxids_uses_async_httpx_factory(
 
     assert taxids == ["9606", "10090"]
     assert captured["factory_kwargs"]["timeout"] == 12.0
+    assert captured["token_timeout"] == 12.0
     assert captured["factory_kwargs"]["trust_env"] is False
     assert (
         captured["call_kwargs"]["headers"]["X-Auth-Token"] == "fake-iam-token"
@@ -143,7 +145,7 @@ async def test_find_spa_taxids_returns_empty_on_non_200(
             token loader and the shared HTTP client factory.
     """
 
-    async def fake_get_token() -> str:
+    async def fake_get_token(**_kwargs: Any) -> str:
         """Return a deterministic IAM token."""
         return "fake-iam-token"
 

@@ -35,6 +35,8 @@ pytestmark = [pytest.mark.unit, pytest.mark.agent]
 
 
 class _FakePool:
+    _fetch_delay = 0.0
+
     def __init__(
         self,
         rows: list[dict[str, Any]],
@@ -56,11 +58,17 @@ class _FakePool:
     async def acquire(self) -> AsyncIterator[Any]:
         """Yield a connection stub that returns rows or raises on a flag."""
         rows, boom, timeout_boom = self._rows, self._boom, self._timeout_boom
+        fetch_delay = self._fetch_delay
         events: list[str] = []
         transaction_calls: list[dict[str, Any]] = []
 
-        async def fetch(_sql: str) -> list[dict[str, Any]]:
+        fetch_calls: list[dict[str, Any]] = []
+
+        async def fetch(_sql: str, **kwargs: Any) -> list[dict[str, Any]]:
+            fetch_calls.append(kwargs)
             events.append("fetch")
+            if fetch_delay:
+                await asyncio.sleep(fetch_delay)
             if timeout_boom:
                 raise TimeoutError("command timeout")
             if boom:
@@ -82,6 +90,7 @@ class _FakePool:
             fetch=fetch,
             transaction=transaction,
             events=events,
+            fetch_calls=fetch_calls,
             transaction_calls=transaction_calls,
         )
         yield self.last_connection
@@ -307,6 +316,31 @@ async def test_gauss_query_command_timeout_raises_mcperror(
     _patch_pool(monkeypatch, [], timeout_boom=True)
     with pytest.raises(McpError):
         await gauss_query("SELECT slow")
+
+
+async def test_gauss_query_passes_explicit_timeout_to_asyncpg(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A caller timeout overrides asyncpg's pool command default."""
+    made, _captured = _patch_pool(monkeypatch, [{"x": 1}])
+
+    result = await gauss_query("SELECT 1", request_timeout=7.5)
+
+    connection = made[0].last_connection
+    assert connection is not None
+    assert result == {"message": "ok", "data": [{"x": 1}]}
+    assert connection.fetch_calls == [{"timeout": 7.5}]
+
+
+async def test_gauss_query_timeout_bounds_the_full_pool_operation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A caller timeout bounds a slow fetch, not only driver arguments."""
+    _patch_pool(monkeypatch, [])
+    monkeypatch.setattr(_FakePool, "_fetch_delay", 0.05)
+
+    with pytest.raises(McpError, match="GaussDB query failed"):
+        await gauss_query("SELECT slow", request_timeout=0.001)
 
 
 class _ResetModelingPool:

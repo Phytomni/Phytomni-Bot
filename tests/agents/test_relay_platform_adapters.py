@@ -80,6 +80,7 @@ class _FakeRelay:
         json_body: Any,
         message: str,
         extra_headers: dict[str, str] | None = None,
+        request_timeout: float | None = None,
     ) -> Any:
         """Record a relay POST and return the canned response."""
         self.calls.append(
@@ -89,6 +90,7 @@ class _FakeRelay:
                 "body": json_body,
                 "message": message,
                 "extra_headers": extra_headers,
+                "timeout": request_timeout,
             }
         )
         return self.response
@@ -99,6 +101,7 @@ class _FakeRelay:
         *,
         message: str,
         query: dict[str, str] | None = None,
+        request_timeout: float | None = None,
     ) -> Any:
         """Record a relay GET and return the canned response."""
         self.calls.append(
@@ -107,6 +110,7 @@ class _FakeRelay:
                 "path": relay_path,
                 "message": message,
                 "query": query,
+                "timeout": request_timeout,
             }
         )
         return self.response
@@ -158,6 +162,7 @@ async def test_retrieve_scope_docs_routes_through_relay(monkeypatch):
     assert relay.calls[0]["path"] == "retrieve/search"
     assert relay.calls[0]["body"]["repo_id"] == "repo-1"
     assert relay.calls[0]["body"]["content"] == "leaf growth"
+    assert relay.calls[0]["timeout"] == 1.0
 
 
 async def test_rerank_batch_routes_through_relay(monkeypatch):
@@ -182,6 +187,7 @@ async def test_rerank_batch_routes_through_relay(monkeypatch):
     assert relay.calls[0]["path"] == "rerank/rank"
     assert relay.calls[0]["body"]["query"] == "leaf growth"
     assert relay.calls[0]["body"]["docs"] == [{"id": "d1"}]
+    assert relay.calls[0]["timeout"] == 1.0
 
 
 async def test_nl2sql_routes_through_relay_with_workspace_header(monkeypatch):
@@ -357,6 +363,7 @@ async def test_find_spa_taxids_routes_through_relay(monkeypatch):
     assert relay.calls[0]["path"].startswith("spa-faq/")
     assert relay.calls[0]["query"]["question"] == "Arabidopsis"
     assert relay.calls[0]["query"]["page_size"] == "10"
+    assert relay.calls[0]["timeout"] == 1.0
 
 
 async def test_bi_query_operator_mode_runs_gauss_query(monkeypatch):
@@ -365,8 +372,9 @@ async def test_bi_query_operator_mode_runs_gauss_query(monkeypatch):
     monkeypatch.delenv("RELAY_MODE", raising=False)
     captured: dict[str, Any] = {}
 
-    async def fake_gauss_query(sql: str) -> Any:
+    async def fake_gauss_query(sql: str, **kwargs: Any) -> Any:
         captured["sql"] = sql
+        captured["request_timeout"] = kwargs["request_timeout"]
         return {"message": "ok", "data": [{"x": 9}]}
 
     monkeypatch.setattr(shared_sql, "gauss_query", fake_gauss_query)
@@ -383,3 +391,4 @@ async def test_bi_query_operator_mode_runs_gauss_query(monkeypatch):
 
     assert result == {"message": "ok", "data": [{"x": 9}]}
     assert captured["sql"] == "SELECT 9"
+    assert captured["request_timeout"] == 1.0

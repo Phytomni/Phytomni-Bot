@@ -536,6 +536,7 @@ async def _open_relay_upstream(
                 upstream.url,
                 headers=forward_headers,
                 content=body,
+                timeout=timeout,
             ),
             stream=True,
         )

@@ -83,11 +83,20 @@ async def _gauss_pool() -> asyncpg.Pool:
     return pool
 
 
-async def gauss_query(sql: str) -> dict[str, Any]:
+async def gauss_query(
+    sql: str,
+    *,
+    request_timeout: float | None = None,
+) -> dict[str, Any]:
     """Run one read-only SQL statement against GaussDB.
 
     Args:
         sql: The SQL statement to execute.
+        request_timeout: Optional per-query timeout in seconds. When supplied,
+            it bounds both pool acquisition and statement execution; the value
+            is also passed to asyncpg so it overrides the pool's default
+            ``command_timeout`` for this query. ``None`` keeps the pool
+            default and the historical behaviour.
 
     Returns:
         ``{"message": "ok", "data": [<row dict>, ...]}`` — byte-identical
@@ -107,9 +116,18 @@ async def gauss_query(sql: str) -> dict[str, Any]:
         ) from exc
 
     try:
-        pool = await _gauss_pool()
-        async with pool.acquire() as conn, conn.transaction(readonly=True):
-            rows = await conn.fetch(sql)
+        if request_timeout is None:
+            pool = await _gauss_pool()
+            async with pool.acquire() as conn, conn.transaction(readonly=True):
+                rows = await conn.fetch(sql)
+        else:
+            async with asyncio.timeout(request_timeout):
+                pool = await _gauss_pool()
+                async with (
+                    pool.acquire() as conn,
+                    conn.transaction(readonly=True),
+                ):
+                    rows = await conn.fetch(sql, timeout=request_timeout)
     except (
         asyncpg.PostgresError,
         asyncpg.InterfaceError,

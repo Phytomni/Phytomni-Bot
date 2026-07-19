@@ -12,7 +12,11 @@ mode, forwards to ``/v1/relay/bi/query`` via ``relay_bi_query`` (the
 operator runs the query server-side; no BI credential is forwarded).
 """
 
+import asyncio
 from typing import Any
+
+from mcp.shared.exceptions import McpError
+from mcp.types import INTERNAL_ERROR, ErrorData
 
 from ...common.http import JsonPostRetry
 from ...common.relay_client import current_relay_client
@@ -22,7 +26,12 @@ from .gauss import gauss_query
 __all__ = ["bi_query", "relay_bi_query", "sql_literal"]
 
 
-async def relay_bi_query(sql: str, *, message: str) -> Any:
+async def relay_bi_query(
+    sql: str,
+    *,
+    message: str,
+    request_timeout: float | None = None,
+) -> Any:
     """Run a BI SQL query through the customer relay route.
 
     Posts the standard ``{"sql", "returnType": "json"}`` body to
@@ -34,15 +43,38 @@ async def relay_bi_query(sql: str, *, message: str) -> Any:
     Args:
         sql: The BI SQL statement to execute.
         message: Key-free error prefix for the relay ``McpError``.
+        request_timeout: Optional per-request timeout in seconds. When
+            supplied, it bounds the complete relay request, including response
+            parsing. ``None`` keeps the relay client's configured timeout.
 
     Returns:
         The parsed BI JSON payload.
     """
-    return await current_relay_client().post_json(
-        "bi/query",
-        json_body={"sql": sql, "returnType": "json"},
-        message=message,
-    )
+    relay = current_relay_client()
+    if request_timeout is None:
+        request = relay.post_json(
+            "bi/query",
+            json_body={"sql": sql, "returnType": "json"},
+            message=message,
+        )
+    else:
+        request = relay.post_json(
+            "bi/query",
+            json_body={"sql": sql, "returnType": "json"},
+            message=message,
+            request_timeout=request_timeout,
+        )
+    if request_timeout is None:
+        return await request
+    try:
+        return await asyncio.wait_for(request, timeout=request_timeout)
+    except TimeoutError as exc:
+        raise McpError(
+            ErrorData(
+                code=INTERNAL_ERROR,
+                message="BI relay query timed out",
+            )
+        ) from exc
 
 
 async def bi_query(sql: str, *, retry: JsonPostRetry) -> Any:
@@ -55,15 +87,20 @@ async def bi_query(sql: str, *, retry: JsonPostRetry) -> Any:
 
     Args:
         sql: The BI SQL statement to execute.
-        retry: Retry policy; its ``message`` is reused as the relay error
-            prefix. (The direct GaussDB path has its own error handling.)
+        retry: Retry policy; its ``timeout`` bounds the direct query or relay
+            request, and its ``message`` is reused as the relay error prefix.
+            (The direct GaussDB path has its own error handling.)
 
     Returns:
         The BI JSON payload (``{"message": "ok", "data": [...]}``).
     """
     if relay_mode_enabled():
-        return await relay_bi_query(sql, message=retry.message)
-    return await gauss_query(sql)
+        return await relay_bi_query(
+            sql,
+            message=retry.message,
+            request_timeout=retry.timeout,
+        )
+    return await gauss_query(sql, request_timeout=retry.timeout)
 
 
 def sql_literal(value: str) -> str:

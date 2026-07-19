@@ -69,8 +69,8 @@ def _relay_client(
     monkeypatch.setattr(httpx.AsyncClient, "request", _REAL_REQUEST)
 
     @contextlib.asynccontextmanager
-    async def fake_get_async_client(*, timeout: Any = None, **_kwargs: Any):
-        del timeout, _kwargs
+    async def fake_get_async_client(**_kwargs: Any):
+        del _kwargs
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport) as client:
             yield client

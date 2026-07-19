@@ -641,7 +641,10 @@ async def _retrieve_scope_docs(
     message = "Failed to retrieve knowledge base"
     if relay_mode_enabled():
         result = await current_relay_client().post_json(
-            "retrieve/search", json_body=body, message=message
+            "retrieve/search",
+            json_body=body,
+            message=message,
+            request_timeout=timeout,
         )
     else:
         result = await post_json_with_retries(
@@ -896,7 +899,10 @@ async def _rerank_batch(
         }
         if relay_mode_enabled():
             result = await current_relay_client().post_json(
-                "rerank/rank", json_body=body, message="Failed to rerank"
+                "rerank/rank",
+                json_body=body,
+                message="Failed to rerank",
+                request_timeout=timeout,
             )
         else:
             result = await post_json_with_retries(

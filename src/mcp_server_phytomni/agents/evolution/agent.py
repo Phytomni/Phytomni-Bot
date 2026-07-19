@@ -88,9 +88,8 @@ def evolution_submit_kwargs(
 async def find_spa_taxids(spa_names: str, timeout: float) -> list[str]:
     """Return taxonomy ids for a target species name."""
     if relay_mode_enabled():
-        # The relay injects the operator IAM token and bypasses the proxy
-        # server-side; a failed lookup soft-fails to no taxids, mirroring
-        # the operator path's non-200 handling below.
+        # Relay mode injects the operator IAM token and bypasses the proxy.
+        # Failed lookups soft-fail to no taxids, mirroring direct handling.
         try:
             response_taxid_data = await current_relay_client().get_json(
                 f"spa-faq/{DEEP_GENOME_CONFIG.SPA_REPO_ID}",
@@ -100,6 +99,7 @@ async def find_spa_taxids(spa_names: str, timeout: float) -> list[str]:
                     "page_num": "1",
                 },
                 message="SPA-FAQ lookup failed",
+                request_timeout=timeout,
             )
         except McpError:
             return []
@@ -108,7 +108,7 @@ async def find_spa_taxids(spa_names: str, timeout: float) -> list[str]:
             repo_id=DEEP_GENOME_CONFIG.SPA_REPO_ID
         )
         headers = {
-            "X-Auth-Token": await get_token(),
+            "X-Auth-Token": await get_token(timeout=timeout),
             "Content-Type": "application/json",
         }
         request_params: dict[str, str | int] = {

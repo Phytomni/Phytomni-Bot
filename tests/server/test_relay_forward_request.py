@@ -154,6 +154,10 @@ async def test_transparent_2xx_streams_with_upstream_status(
     assert body == b'{"ok":true}'
     # Caller credential stripped, operator credential injected (T10/T11).
     assert seen[0].headers["authorization"] == "Bearer sk-operator-secret"
+    timeout = seen[0].extensions["timeout"]
+    expected_timeout = forward_module.ApiConfig().RELAY_TIMEOUT_SECONDS
+    assert timeout["connect"] == expected_timeout
+    assert timeout["read"] == expected_timeout
     records = store.query()
     assert len(records) == 1
     assert records[0].status_code == 200

@@ -155,10 +155,10 @@ async def _run_poll_fixture(
         except StopIteration:
             return 0.0
 
-    async def status_reader(task_id: str, timeout: float) -> dict[str, str]:
+    async def status_reader(task_id: str, _timeout: float) -> dict[str, str]:
         """Return one remote status while asserting the effective id."""
         assert task_id == "source-1"
-        assert timeout == 4.0
+        assert _timeout == 4.0
         return {"status": next(status_values)}
 
     async def result_resolver(submission: RemoteSubmission) -> str | None:

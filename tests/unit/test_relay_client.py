@@ -95,8 +95,8 @@ def _patch_client(monkeypatch, response: Any) -> _CapturingClient:
     client = _CapturingClient(response)
 
     @contextlib.asynccontextmanager
-    async def fake_get_async_client(*, timeout: Any = None, **_kwargs: Any):
-        del timeout, _kwargs
+    async def fake_get_async_client(**_kwargs: Any):
+        del _kwargs
         yield client
 
     monkeypatch.setattr(rc, "get_async_client", fake_get_async_client)
@@ -190,6 +190,21 @@ async def test_get_json_uses_get_method(monkeypatch):
         == "https://relay.test/v1/relay/analysis/abc"
     )
     assert client_stub.captured["headers"]["Authorization"] == "Bearer k9"
+
+
+async def test_post_json_accepts_request_timeout_override(monkeypatch):
+    """A caller-specific relay timeout reaches the per-request HTTP call."""
+    client_stub = _patch_client(monkeypatch, _response(200, {"ok": True}))
+
+    result = await _client("k9").post_json(
+        "retrieve/search",
+        json_body={"q": "gene"},
+        message="relay retrieve failed",
+        request_timeout=2.5,
+    )
+
+    assert result == {"ok": True}
+    assert client_stub.captured["timeout"] == 2.5
 
 
 async def test_non_retriable_status_raises_mcperror_without_key(monkeypatch):
@@ -334,6 +349,7 @@ async def test_get_obs_object_to_path_streams_to_disk(tmp_path, monkeypatch):
     assert client_stub.captured["method"] == "GET"
     assert "v1/relay/obs/object?" in client_stub.captured["url"]
     assert client_stub.captured["headers"]["Authorization"] == "Bearer k9"
+    assert client_stub.captured["timeout"] == 5.0
 
 
 async def test_get_obs_object_to_path_raises_on_error_status(

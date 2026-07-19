@@ -90,7 +90,7 @@ class JsonPostRetry:
 async def _send_retry_request(
     client: AsyncClient,
     request: JsonPostRequest,
-    timeout: float,
+    request_timeout: float,
 ) -> Response:
     """Send one HTTP request using the common retry payload."""
     method = request.method.upper()
@@ -110,7 +110,7 @@ async def _send_retry_request(
         return await client.get(
             request.url,
             headers=headers,
-            timeout=timeout,
+            timeout=request_timeout,
         )
     if method == "POST":
         return await client.post(
@@ -119,7 +119,7 @@ async def _send_retry_request(
             content=content,
             data=form_data,
             headers=headers,
-            timeout=timeout,
+            timeout=request_timeout,
         )
     return await client.request(
         method,
@@ -128,7 +128,7 @@ async def _send_retry_request(
         content=content,
         data=form_data,
         headers=headers,
-        timeout=timeout,
+        timeout=request_timeout,
     )
 
 

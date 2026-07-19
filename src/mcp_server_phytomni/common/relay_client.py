@@ -95,17 +95,23 @@ class RelayClient:
             headers.update(extra)
         return headers
 
-    def _retry(self, message: str) -> JsonPostRetry:
-        """Return the retry policy with a key-free error prefix."""
+    def _retry(
+        self, message: str, *, timeout: float | None = None
+    ) -> JsonPostRetry:
+        """Return the retry policy with an optional per-call timeout."""
         return JsonPostRetry(
-            timeout=self.timeout,
+            timeout=self.timeout if timeout is None else timeout,
             max_retries=self.max_retries,
             retriable_codes=self.retriable_codes,
             message=message,
         )
 
     async def _request_json(
-        self, request: JsonPostRequest, message: str
+        self,
+        request: JsonPostRequest,
+        message: str,
+        *,
+        request_timeout: float | None = None,
     ) -> Any:
         """Run one relay request through the shared retry/JSON helper.
 
@@ -115,9 +121,14 @@ class RelayClient:
         ``message`` prefix never contains the relay key, so the key
         stays out of logs and raised errors.
         """
-        async with get_async_client(timeout=self.timeout) as client:
+        effective_timeout = (
+            self.timeout if request_timeout is None else request_timeout
+        )
+        async with get_async_client(timeout=effective_timeout) as client:
             return await post_json_with_retries(
-                client, request, self._retry(message)
+                client,
+                request,
+                self._retry(message, timeout=effective_timeout),
             )
 
     async def post_json(
@@ -127,11 +138,13 @@ class RelayClient:
         json_body: Any,
         message: str,
         extra_headers: Mapping[str, str] | None = None,
+        request_timeout: float | None = None,
     ) -> Any:
         """POST ``json_body`` to a relay route and return parsed JSON.
 
         ``extra_headers`` carries business request headers the relay
         forwards upstream (e.g. ``X-Workspace-Id`` for NL2SQL).
+        ``request_timeout`` overrides the client's default for this call.
         """
         request = JsonPostRequest(
             url=self.relay_url(relay_path),
@@ -139,7 +152,9 @@ class RelayClient:
             headers=self._auth_headers(extra_headers),
             json_body=json_body,
         )
-        return await self._request_json(request, message)
+        return await self._request_json(
+            request, message, request_timeout=request_timeout
+        )
 
     async def post_data(
         self, relay_path: str, *, data: Any, message: str
@@ -164,14 +179,20 @@ class RelayClient:
         *,
         message: str,
         query: Mapping[str, str] | None = None,
+        request_timeout: float | None = None,
     ) -> Any:
-        """GET a relay route (optional allowlisted query) and parse JSON."""
+        """GET a relay route and parse JSON.
+
+        ``request_timeout`` overrides the client's default for this call.
+        """
         request = JsonPostRequest(
             url=self.relay_url(relay_path, query),
             method="GET",
             headers=self._auth_headers(),
         )
-        return await self._request_json(request, message)
+        return await self._request_json(
+            request, message, request_timeout=request_timeout
+        )
 
     async def put_obs_object(
         self, obs_path: str, content: bytes, *, message: str
@@ -233,7 +254,10 @@ class RelayClient:
         async with (
             get_async_client(timeout=self.timeout) as client,
             client.stream(
-                "GET", url, headers=self._auth_headers()
+                "GET",
+                url,
+                headers=self._auth_headers(),
+                timeout=self.timeout,
             ) as response,
         ):
             if response.status_code >= 400:

@@ -30,7 +30,7 @@ def _patch_helper(
     *,
     result: Any = None,
     error: Exception | None = None,
-) -> None:
+) -> dict[str, Any]:
     """Replace profile.bi_query with a signature-agnostic async fake.
 
     Args:
@@ -38,6 +38,8 @@ def _patch_helper(
         result: Value the fake helper returns when no error is set.
         error: Exception the fake helper raises instead of returning.
     """
+
+    captured: dict[str, Any] = {}
 
     async def fake_helper(*args: Any, **kwargs: Any) -> Any:
         """Return the configured payload or raise the configured error.
@@ -52,12 +54,13 @@ def _patch_helper(
         Raises:
             Exception: The configured ``error`` when set.
         """
-        _ = (args, kwargs)
+        captured.update(args=args, kwargs=kwargs)
         if error is not None:
             raise error
         return result
 
     monkeypatch.setattr(profile, "bi_query", fake_helper)
+    return captured
 
 
 async def test_post_bi_sql_returns_payload_on_success(
@@ -76,6 +79,19 @@ async def test_post_bi_sql_returns_payload_on_success(
     result = await _post_bi_sql("SELECT 1")
 
     assert result == {"data": []}
+
+
+async def test_post_bi_sql_preserves_caller_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The profile timeout reaches the shared BI retry policy."""
+    captured = _patch_helper(monkeypatch, result={"data": []})
+
+    result = await _post_bi_sql("SELECT 1", timeout=4.25)
+
+    assert result == {"data": []}
+    retry = captured["kwargs"]["retry"]
+    assert retry.timeout == 4.25
 
 
 async def test_post_bi_sql_propagates_helper_mcperror(
