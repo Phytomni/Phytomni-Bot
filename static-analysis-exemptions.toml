@@ -1974,94 +1974,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0103"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/agents/test_design_promoter_design_for_gene.py"
-symbol = "25:41"
-peer_path = "tests/agents/test_design_protein_structure_for_gene.py"
-peer_symbol = "25:41"
-fingerprint = "sha256:e6595d7854d763a159f27ce0b85baeebbd21b540066e083d1818cae0089c8a04"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==tests.agents.test_design_promoter_design_for_gene:[25:41]\n==tests.agents.test_design_protein_structure_for_gene:[25:41]\npytestmark = pytest.mark.agent\n\n\ndef _install_stub_dependencies(\n    monkeypatch: pytest.MonkeyPatch,\n    submit_return: dict[str, Any] | None = None,\n) -> AsyncMock:\n    \"\"\"Patch prompt / data / AnalystAgent / submit deps on design.agent.\"\"\"\n    monkeypatch.setattr(\n        design_agent,\n        \"get_prompt\",\n        lambda *_a, **_kw: \"prompt-stub\",\n    )\n    monkeypatch.setattr(\n        design_agent,\n        \"get_data_list\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0104"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/agents/test_design_promoter_design_for_gene.py"
-symbol = "42:51"
-peer_path = "tests/agents/test_design_protein_structure_for_gene.py"
-peer_symbol = "42:51"
-fingerprint = "sha256:80ce2a5ec0ac26365188bffc84ec81380b06f8c129f9b6c1cb508d774072a02d"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==tests.agents.test_design_promoter_design_for_gene:[42:51]\n==tests.agents.test_design_protein_structure_for_gene:[42:51]\n    )\n    monkeypatch.setattr(\n        design_agent,\n        \"AnalystAgent\",\n        lambda **_kw: \"analyst-agent-stub\",\n    )\n    submit_mock = AsyncMock(\n        return_value=submit_return\n        or {"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0105"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/agents/test_design_promoter_design_for_gene.py"
-symbol = "53:68"
-peer_path = "tests/agents/test_design_protein_structure_for_gene.py"
-peer_symbol = "53:68"
-fingerprint = "sha256:d86600bc49af4e7a4b294acc0acd55f56a5e5d60c17eb4646ea5e12f364dc7f8"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==tests.agents.test_design_promoter_design_for_gene:[53:68]\n==tests.agents.test_design_protein_structure_for_gene:[53:68]\n            \"task_status\": \"SUCCEEDED\",\n        }\n    )\n    monkeypatch.setattr(\n        design_agent, \"submit_analyst_via_subgraph\", submit_mock\n    )\n    return submit_mock\n\n\nasync def test_returns_submit_helper_result_verbatim(\n    monkeypatch: pytest.MonkeyPatch,\n) -> None:\n    \"\"\"Wrapper returns the analyst-subgraph helper's projected dict.\"\"\"\n    submit_mock = _install_stub_dependencies(monkeypatch)\n"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0106"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/agents/test_design_promoter_design_for_gene.py"
-symbol = "92:99"
-peer_path = "tests/agents/test_design_protein_structure_for_gene.py"
-peer_symbol = "92:99"
-fingerprint = "sha256:5759fe9e8fdad269e6284f32c139e153687cf90150f83cec1f58fdc63f507cf9"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==tests.agents.test_design_promoter_design_for_gene:[92:99]\n==tests.agents.test_design_protein_structure_for_gene:[92:99]\n        species_code=\"ath\",\n        gene_id=\"AT1G01010\",\n    )\n\n    call_args = submit_mock.await_args\n    assert call_args is not None\n    request = call_args.args[3]"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0107"
 tool = "pylint"
 rule = "R0801"
@@ -2172,72 +2084,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0138"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/server/test_api_agent_runs.py"
-symbol = "279:284"
-peer_path = "tests/server/test_api_runs_list.py"
-peer_symbol = "455:460"
-fingerprint = "sha256:6e4751d43a63d7aff887cb68161f78e9be2f4202e5b99f4d158cb5adfd00fd5e"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_agent_runs:[279:284]\n==test_api_runs_list:[455:460]\n    response = await api_client.post(\n        \"/v1/agents/chat/runs\",\n        headers={\"Authorization\": f\"Bearer {issued_api_key}\"},\n        json={\n            \"arguments\": {"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0139"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/server/test_api_brief_gene_resolve.py"
-symbol = "342:357"
-peer_path = "tests/server/test_api_deep_genome_resolve.py"
-peer_symbol = "117:132"
-fingerprint = "sha256:e2deb1873295a49e527fba53ee268c30a673457090dd41c46cbeae5725b71ce4"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_brief_gene_resolve:[342:357]\n==test_api_deep_genome_resolve:[117:132]\n    assert metadata.get(\"resolved_gene_id\") == \"Os01g0177400\"\n    assert metadata.get(\"resolved_species_code\") == \"osa\"\n    assert metadata.get(\"resolve_gene_id\") is True\n\n\nasync def test_native_runs_skips_resolver_when_flag_false_or_missing(\n    api_client: httpx.AsyncClient,\n    issued_api_key: str,\n    monkeypatch: pytest.MonkeyPatch,\n    tasks_db_path: str,\n) -> None:\n    \"\"\"flag=false leaves user_query as-is, and the key is still popped.\"\"\"\n    del tasks_db_path\n    captured: dict[str, Any] = {}\n    resolver_calls: list[str] = []"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0140"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/server/test_api_chat_completions.py"
-symbol = "233:239"
-peer_path = "tests/server/test_api_runs_list.py"
-peer_symbol = "630:636"
-fingerprint = "sha256:5e9a1039956c911bbc89be0fbed03a680579c6d59449b2a50a6f0f8d69d80a0b"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_chat_completions:[233:239]\n==test_api_runs_list:[630:636]\n            \"object\": \"chat.completion\",\n            \"choices\": [\n                {\n                    \"index\": 0,\n                    \"message\": {\n                        \"role\": \"assistant\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0141"
 tool = "pylint"
 rule = "R0801"
@@ -2245,14 +2091,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "tests/server/test_api_chat_completions.py"
-symbol = "296:302"
+symbol = "270:276"
 peer_path = "tests/unit/scripts/test_capture_reasoning_normalize.py"
 peer_symbol = "175:181"
-fingerprint = "sha256:b6e4f4decd5768fc08e5ada11b43d227a6818ddc8050b25464b07ad0228b3df8"
+fingerprint = "sha256:f9c3289d6c898a889a1dfd3e5f8e2cd0be30da770c82e23e4ed98884788a2cfe"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_chat_completions:[296:302]\n==test_capture_reasoning_normalize:[175:181]\n        \"choices\": [\n            {\n                \"index\": 0,\n                \"message\": {\n                    \"role\": \"assistant\",\n                    \"content\": \"\","
+rationale = "Similar lines in 2 files\n==test_api_chat_completions:[270:276]\n==test_capture_reasoning_normalize:[175:181]\n        \"choices\": [\n            {\n                \"index\": 0,\n                \"message\": {\n                    \"role\": \"assistant\",\n                    \"content\": \"\","
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -2267,14 +2113,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "tests/server/test_api_chat_completions.py"
-symbol = "296:303"
+symbol = "270:277"
 peer_path = "tests/unit/scripts/test_capture_reasoning_normalize.py"
 peer_symbol = "55:62"
-fingerprint = "sha256:0a3135c9e77ac6764bbc391c5d874cc0dac2fbb58bc1e9e6426ee4cc7e8fe799"
+fingerprint = "sha256:7c7c4f6bd04c654870bcbb3498637d9d1ffc2af0a7f7230c231dcecfb7588ba4"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_chat_completions:[296:303]\n==test_capture_reasoning_normalize:[55:62]\n        \"choices\": [\n            {\n                \"index\": 0,\n                \"message\": {\n                    \"role\": \"assistant\",\n                    \"content\": \"\",\n                    \"reasoning_content\": ("
+rationale = "Similar lines in 2 files\n==test_api_chat_completions:[270:277]\n==test_capture_reasoning_normalize:[55:62]\n        \"choices\": [\n            {\n                \"index\": 0,\n                \"message\": {\n                    \"role\": \"assistant\",\n                    \"content\": \"\",\n                    \"reasoning_content\": ("
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -2289,14 +2135,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "tests/server/test_api_chat_completions.py"
-symbol = "299:306"
+symbol = "273:280"
 peer_path = "tests/agents/test_chat_agent.py"
 peer_symbol = "461:468"
-fingerprint = "sha256:f4c1e2e498bcf853e5210de41230f57074b0c2741a83e60dd331d35b96f44a39"
+fingerprint = "sha256:2852957544508ff8577b6510cde1ecef104df64ae5747843bbce8dca9f8bd965"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_chat_completions:[299:306]\n==tests.agents.test_chat_agent:[461:468]\n                        \"message\": {\n                            \"role\": \"assistant\",\n                            \"content\": \"\",\n                            \"reasoning_content\": (\n                                \"<think>identify chlorophyll</think>\"\n                                \"Leaves capture light.\"\n                            ),"
+rationale = "Similar lines in 2 files\n==test_api_chat_completions:[273:280]\n==tests.agents.test_chat_agent:[461:468]\n                    \"message\": {\n                        \"role\": \"assistant\",\n                        \"content\": \"\",\n                        \"reasoning_content\": (\n                            \"<think>identify chlorophyll</think>\"\n                            \"Leaves capture light.\"\n                        ),"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -2311,124 +2157,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "tests/server/test_api_chat_completions.py"
-symbol = "301:313"
+symbol = "275:287"
 peer_path = "tests/server/test_result_formatting.py"
 peer_symbol = "308:320"
-fingerprint = "sha256:67471d49d473bc65d93d39d0d378bade70b59c76e4d621e0f38da5c9287394e6"
+fingerprint = "sha256:873179933a1be98afef2b8046639aecc9bf99f4875334e80fb36739322026a5c"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_chat_completions:[301:313]\n==test_result_formatting:[308:320]\n                    \"content\": \"\",\n                    \"reasoning_content\": (\n                        \"<think>identify chlorophyll</think>\"\n                        \"Leaves capture light.\"\n                    ),\n                },\n                \"finish_reason\": \"stop\",\n            }\n        ],\n        \"usage\": {\"total_tokens\": 12},\n    }\n"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0145"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/server/test_api_chat_completions.py"
-symbol = "30:38"
-peer_path = "tests/server/test_api_runs_list.py"
-peer_symbol = "628:636"
-fingerprint = "sha256:b7af15f4cb9c241f09a4c1c07f2dcfeb1ab95d31e950e1e9efdc2656a2078656"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_chat_completions:[30:38]\n==test_api_runs_list:[628:636]\n        return {\n            \"id\": \"chatcmpl-canned\",\n            \"object\": \"chat.completion\",\n            \"choices\": [\n                {\n                    \"index\": 0,\n                    \"message\": {\n                        \"role\": \"assistant\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0146"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/server/test_api_chat_completions.py"
-symbol = "40:60"
-peer_path = "tests/server/test_api_runs_list.py"
-peer_symbol = "639:651"
-fingerprint = "sha256:2977e3498d50907554e3fc4077b98454c8772c81a95e3e75fd2cf58959b7adc2"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_chat_completions:[40:60]\n==test_api_runs_list:[639:651]\n                    },\n                    \"finish_reason\": \"stop\",\n                }\n            ],\n        }\n\n    monkeypatch.setitem(\n        server.TOOL_HANDLERS,\n        server.PhytomniAgents.CHAT_AGENT.value,\n        fake,\n    )\n"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0147"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/server/test_api_deep_genome_resolve.py"
-symbol = "191:209"
-peer_path = "tests/server/test_api_design_resolve.py"
-peer_symbol = "186:204"
-fingerprint = "sha256:e32ad3fc650616a8da64ba403cca619b880e6f6fe7c935a57547b2234a733980"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_deep_genome_resolve:[191:209]\n==test_api_design_resolve:[186:204]\n    )\n\n    assert response.status_code == 400\n    body = response.json()\n    assert \"user_query\" in body[\"error\"][\"message\"]\n    assert not resolver_calls\n    assert \"gene_id\" not in captured\n\n\nasync def test_native_runs_resolver_failure_returns_400(\n    api_client: httpx.AsyncClient,\n    issued_api_key: str,\n    monkeypatch: pytest.MonkeyPatch,\n    tasks_db_path: str,\n) -> None:\n    \"\"\"DigitalDesignResolveError surfaces as HTTP 400 with the reason.\"\"\"\n    del tasks_db_path\n    captured: dict[str, Any] = {}"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0148"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/server/test_api_deep_genome_resolve.py"
-symbol = "274:283"
-peer_path = "tests/server/test_api_design_resolve.py"
-peer_symbol = "266:275"
-fingerprint = "sha256:83449b870f9b68f0f652d5fb432a566b53db9d96deb2a7437be85435ed69a00f"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_deep_genome_resolve:[274:283]\n==test_api_design_resolve:[266:275]\n            \"resolve_gene_id\": True,\n        },\n    )\n\n    assert response.status_code == 400\n    body = response.json()\n    assert \"species_code\" in body[\"error\"][\"message\"]\n    assert \"gene_id\" not in captured\n    assert \"species_code\" not in captured"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0149"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/server/test_api_deep_genome_resolve.py"
-symbol = "58:86"
-peer_path = "tests/server/test_api_design_resolve.py"
-peer_symbol = "56:84"
-fingerprint = "sha256:877674888b12eb2791b5c8558bf13c318c34dc8564cdf760310197e99896e0d1"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_deep_genome_resolve:[58:86]\n==test_api_design_resolve:[56:84]\n        fake,\n    )\n\n\nasync def _post_run(\n    api_client: httpx.AsyncClient,\n    issued_api_key: str,\n    agent_slug: str,\n    arguments: dict[str, Any],\n) -> httpx.Response:\n    \"\"\"POST one native /v1/agents/{slug}/runs with arguments.\"\"\"\n    auth_header = {\"Authorization\": f\"Bearer {issued_api_key}\"}\n    payload = {\"arguments\": arguments}\n    return await api_client.post(\n        f\"/v1/agents/{agent_slug}/runs\", headers=auth_header, json=payload\n    )\n\n\nasync def test_native_runs_resolves_when_flag_true(\n    api_client: httpx.AsyncClient,\n    issued_api_key: str,\n    monkeypatch: pytest.MonkeyPatch,\n    tasks_db_path: str,\n) -> None:\n    \"\"\"flag=true rewrites user_query into gene_id and stamps metadata.\"\"\"\n    del tasks_db_path\n    captured: dict[str, Any] = {}\n    resolver_calls: list[str] = []"
+rationale = "Similar lines in 2 files\n==test_api_chat_completions:[275:287]\n==test_result_formatting:[308:320]\n                        \"content\": \"\",\n                        \"reasoning_content\": (\n                            \"<think>identify chlorophyll</think>\"\n                            \"Leaves capture light.\"\n                        ),\n                    },\n                    \"finish_reason\": \"stop\",\n                }\n            ],\n            \"usage\": {\"total_tokens\": 12},\n        }\n"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -2465,14 +2201,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "tests/server/test_api_runs_list.py"
-symbol = "549:558"
+symbol = "550:559"
 peer_path = "tests/unit/test_run_registry.py"
 peer_symbol = "463:472"
-fingerprint = "sha256:45d985de66ab2e70b9b99e7ad5f272c4dc35e629d0716f0b6c4236318e6c28a5"
+fingerprint = "sha256:0d25731b5f8cd95112099bf4a63f1347f6a749a52a53df03a1139f9b11af45d4"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_runs_list:[549:558]\n==test_run_registry:[463:472]\n        conn.executemany(\n            \"UPDATE runs SET created_at = ? WHERE run_id = ?\",\n            [\n                (\"2026-01-01T00:00:00+00:00\", \"run-old\"),\n                (\"2026-06-01T00:00:00+00:00\", \"run-new\"),\n            ],\n        )\n        conn.commit()\n"
+rationale = "Similar lines in 2 files\n==test_api_runs_list:[550:559]\n==test_run_registry:[463:472]\n        conn.executemany(\n            \"UPDATE runs SET created_at = ? WHERE run_id = ?\",\n            [\n                (\"2026-01-01T00:00:00+00:00\", \"run-old\"),\n                (\"2026-06-01T00:00:00+00:00\", \"run-new\"),\n            ],\n        )\n        conn.commit()\n"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]

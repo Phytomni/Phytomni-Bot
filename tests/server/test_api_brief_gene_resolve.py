@@ -16,6 +16,7 @@ from typing import Any
 
 import httpx
 import pytest
+from tests.support.resolver_fakes import post_native_run
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.brief_gene.resolve_query import (
@@ -278,27 +279,13 @@ async def test_chat_resolver_failure_returns_400(
     assert "user_query" not in captured
 
 
-async def _post_agent_run(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    agent_slug: str,
-    arguments: dict[str, Any],
-) -> httpx.Response:
-    """POST one native /v1/agents/{slug}/runs with the supplied arguments."""
-    auth_header = {"Authorization": f"Bearer {issued_api_key}"}
-    payload = {"arguments": arguments}
-    return await api_client.post(
-        f"/v1/agents/{agent_slug}/runs", headers=auth_header, json=payload
-    )
-
-
 async def _post_brief_gene_run(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     arguments: dict[str, Any],
 ) -> httpx.Response:
     """POST one native brief_gene run via the generic agent-run helper."""
-    return await _post_agent_run(
+    return await post_native_run(
         api_client, issued_api_key, "brief_gene", arguments
     )
 
@@ -402,7 +389,7 @@ async def test_native_runs_rejects_resolve_flag_on_non_brief_gene_agent(
 
     monkeypatch.setattr(api_app, "resolve_brief_gene_user_query", fake_resolve)
 
-    response = await _post_agent_run(
+    response = await post_native_run(
         api_client,
         issued_api_key,
         "chat",

@@ -15,40 +15,12 @@ from typing import Any
 
 import httpx
 import pytest
+from tests.support.chat_fakes import install_chat_handler
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
-
-
-def _stub_chat(monkeypatch: pytest.MonkeyPatch, captured: dict) -> None:
-    """Replace the ChatAgent handler with a canned ChatCompletion."""
-
-    async def fake(args: Any) -> dict[str, Any]:
-        """Return a fixed OpenAI-shaped completion."""
-        captured["user_query"] = args.user_query
-        return {
-            "id": "chatcmpl-canned",
-            "object": "chat.completion",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": "photosynthesis converts light",
-                        "follow_up_questions": ["what is C4?"],
-                    },
-                    "finish_reason": "stop",
-                }
-            ],
-        }
-
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.CHAT_AGENT.value,
-        fake,
-    )
 
 
 async def test_chat_completions_passthrough(
@@ -59,7 +31,9 @@ async def test_chat_completions_passthrough(
 ) -> None:
     """Verify a valid call returns the ChatCompletion with extras."""
     captured: dict[str, Any] = {}
-    _stub_chat(monkeypatch, captured)
+    install_chat_handler(
+        monkeypatch, captured, follow_up_questions=["what is C4?"]
+    )
 
     response = await chat_completion(
         api_client,
@@ -142,7 +116,7 @@ async def test_chat_completions_records_local_run(
         tasks_db_path: Temp registry DB fixture wired into the API
             module's resolver.
     """
-    _stub_chat(monkeypatch, {})
+    install_chat_handler(monkeypatch, {})
 
     response = await chat_completion(
         api_client,
@@ -171,7 +145,7 @@ async def test_chat_completions_persists_request_info(
     tasks_db_path: str,
 ) -> None:
     """Chat completions write dialogue / query / tool / model into runs."""
-    _stub_chat(monkeypatch, {})
+    install_chat_handler(monkeypatch, {})
 
     response = await chat_completion(
         api_client,
@@ -201,7 +175,7 @@ async def test_chat_completions_omits_dialogue_id_keeps_field_null(
     tasks_db_path: str,
 ) -> None:
     """A request without dialogue_id persists with the field NULL."""
-    _stub_chat(monkeypatch, {})
+    install_chat_handler(monkeypatch, {})
 
     await chat_completion(api_client, issued_api_key)
 
@@ -349,7 +323,7 @@ async def test_chat_completions_envelope_carries_formatted_and_raw(
     moved inside ``formatted``, ``raw`` carries the sanitized handler
     payload, and the ChatCompletion shape stays OpenAI compatible.
     """
-    _stub_chat(monkeypatch, {})
+    install_chat_handler(monkeypatch, {})
 
     response = await chat_completion(
         api_client,
@@ -446,7 +420,7 @@ async def test_chat_completions_exposes_run_id_matching_runs_listing(
     can join on the Bot run id (the OpenAI ``chatcmpl-*`` provider id
     is NOT the join key).
     """
-    _stub_chat(monkeypatch, {})
+    install_chat_handler(monkeypatch, {})
 
     response = await chat_completion(
         api_client,
@@ -490,7 +464,7 @@ async def test_chat_completions_run_id_survives_default_strip(
     but ``run_id`` and ``degraded_tracking`` must survive the strip so
     non-debug clients can still join on the Bot run id.
     """
-    _stub_chat(monkeypatch, {})
+    install_chat_handler(monkeypatch, {})
 
     # Default mode: debug not set (defaults to False).
     response = await chat_completion(
@@ -522,7 +496,7 @@ async def test_chat_completions_degraded_tracking_on_persistence_failure(
     not persisted. Mirrors the remote-agent ``degraded_tracking``
     signal.
     """
-    _stub_chat(monkeypatch, {})
+    install_chat_handler(monkeypatch, {})
     monkeypatch.setattr(
         "mcp_server_phytomni.api.app._record_sync_run",
         lambda **_: None,

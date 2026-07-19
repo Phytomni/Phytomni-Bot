@@ -25,6 +25,7 @@ from tests.agents.shared.deep_genome_fixtures import (
     seed_partial_deep_genome_run,
     seed_terminal_deep_genome_run,
 )
+from tests.support.chat_fakes import install_chat_handler
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.runtime import run_registry as run_registry_module
@@ -623,30 +624,10 @@ async def test_list_runs_response_row_shape(
     """Response rows expose dialogue/query/tool/model/answer fields."""
     del tasks_db_path
 
-    async def fake(args: Any) -> dict[str, Any]:
-        """Return an OpenAI ChatCompletion-shaped payload."""
-        _ = args
-        return {
-            "id": "chatcmpl-canned",
-            "object": "chat.completion",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": (
-                            "C3 photosynthesis fixes CO2 in the Calvin cycle."
-                        ),
-                    },
-                    "finish_reason": "stop",
-                }
-            ],
-        }
-
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.CHAT_AGENT.value,
-        fake,
+    install_chat_handler(
+        monkeypatch,
+        {},
+        content="C3 photosynthesis fixes CO2 in the Calvin cycle.",
     )
 
     chat_response = await api_client.post(

@@ -19,6 +19,7 @@ from typing import Any
 
 import httpx
 import pytest
+from tests.support.resolver_fakes import post_native_run
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.mcp.schemas import (
@@ -277,16 +278,15 @@ async def test_agent_run_sync_persists_request_info(
         fake,
     )
 
-    response = await api_client.post(
-        "/v1/agents/chat/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "arguments": {
-                "user_query": "summarise C3 photosynthesis",
-                "obs_file_list": [],
-            },
-            "dialogue_id": "dlg-agent-7",
+    response = await post_native_run(
+        api_client,
+        issued_api_key,
+        "chat",
+        {
+            "user_query": "summarise C3 photosynthesis",
+            "obs_file_list": [],
         },
+        dialogue_id="dlg-agent-7",
     )
     assert response.status_code == 200
 
