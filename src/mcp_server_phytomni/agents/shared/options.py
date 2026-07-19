@@ -14,6 +14,7 @@ from typing import Any
 __all__ = [
     "SubmitKwargsSpec",
     "build_chat_kwargs",
+    "build_resolver_chat_kwargs",
     "build_submit_kwargs",
     "copy_resource_dict",
     "retry_codes_from_kwargs",
@@ -122,6 +123,36 @@ def build_chat_kwargs(
     }
     if "with_follow_up" in kwargs:
         result["with_follow_up"] = kwargs["with_follow_up"]
+    return result
+
+
+def build_resolver_chat_kwargs(
+    prompt_path: str,
+    response_format: dict[str, Any],
+    config: Any,
+    sensitive_config: Any,
+) -> dict[str, Any]:
+    """Return shared chat options for a structured query resolver.
+
+    Resolver callers use a fixed system prompt and provider response schema;
+    keeping those two overrides together prevents domain resolvers from
+    duplicating the same option-building sequence.
+
+    Args:
+        prompt_path: System prompt path used by the resolver.
+        response_format: Structured-output schema accepted by ``phyto_chat``.
+        config: Domain config object with chat defaults.
+        sensitive_config: Sensitive config object with model credentials.
+
+    Returns:
+        Keyword arguments suitable for forwarding to ``phyto_chat``.
+    """
+    result = build_chat_kwargs(
+        {"prompt_path": prompt_path},
+        config,
+        sensitive_config,
+    )
+    result["response_format"] = response_format
     return result
 
 

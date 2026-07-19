@@ -318,6 +318,7 @@ async def test_resolver_warns_when_picking_upstream_deprecated_id(
         f"{[r.getMessage() for r in caplog.records]}"
     )
     msg = deprecated_warnings[0].getMessage()
+    assert {record.getMessage() for record in deprecated_warnings} == {msg}
     assert "TO:0000139" in msg
     assert "grains per panicle" in msg
 
@@ -507,3 +508,55 @@ async def test_resolver_propagates_per_candidate_species_code(
     candidate_by_id = {c.to_id: c for c in result.candidates}
     assert candidate_by_id["TO:0000207"].species_code == "ath"
     assert candidate_by_id["TO:0000276"].species_code == "osa"
+
+
+async def test_resolver_uses_only_catalog_checked_fallback_id(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[GeneNetworkConfig, SensitiveConfig],
+) -> None:
+    """Invalid candidates cannot displace a catalog-validated top-level id."""
+
+    async def fake_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
+        return _make_response(
+            {
+                "to_id": "TO:0000207",
+                "species_code": "osa",
+                "candidates": [
+                    {"to_id": "TO:9999999", "confidence": 0.99},
+                ],
+            }
+        )
+
+    monkeypatch.setattr(nw_module, "phyto_chat", fake_phyto_chat)
+    network_config, sensitive_config = configs
+
+    result = await resolve_network_user_query(
+        "rice plant height",
+        network_config=network_config,
+        sensitive_config=sensitive_config,
+    )
+
+    assert result.to_id == "TO:0000207"
+    assert [candidate.to_id for candidate in result.candidates] == [
+        "TO:0000207"
+    ]
+
+
+async def test_resolver_propagates_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[GeneNetworkConfig, SensitiveConfig],
+) -> None:
+    """Cancellation from the shared invocation seam remains uncaught."""
+
+    async def fake_invoke(*_: Any, **__: Any) -> dict[str, Any]:
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(nw_module, "invoke_chat_resolver", fake_invoke)
+    network_config, sensitive_config = configs
+
+    with pytest.raises(asyncio.CancelledError):
+        await resolve_network_user_query(
+            "rice plant height",
+            network_config=network_config,
+            sensitive_config=sensitive_config,
+        )

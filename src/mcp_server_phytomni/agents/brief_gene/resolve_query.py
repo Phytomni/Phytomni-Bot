@@ -20,17 +20,17 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from ...common.prompts import get_prompt
-from ...common.responses import message_content, parse_json_object_fragment
 from ...config.defaults import BriefGeneConfig
 from ...config.settings import SensitiveConfig
 from ..chat.service import phyto_chat
-from ..shared.options import build_chat_kwargs
+from ..shared.options import build_resolver_chat_kwargs
 from ..shared.query_resolution import (
-    ResolverFailure,
+    ResolverInvocation,
     build_candidate_item_schema,
-    invoke_resolver,
-    normalize_confidence,
+    invoke_chat_resolver,
+    normalize_candidate_fields,
     normalize_species_code,
+    parse_resolver_payload,
 )
 from ..shared.species_catalog import warn_if_unsupported_species
 
@@ -95,8 +95,7 @@ def _candidate_item_schema() -> dict[str, Any]:
     props = model["properties"]
     return build_candidate_item_schema(
         "gene_id",
-        props["confidence"]["minimum"],
-        props["confidence"]["maximum"],
+        props["confidence"],
     )
 
 
@@ -165,42 +164,27 @@ async def resolve_brief_gene_user_query(
         {"user_query": raw_query},
     )
 
-    chat_kwargs = build_chat_kwargs(
-        {"prompt_path": _RESOLVER_SYSTEM_PROMPT_PATH},
+    chat_kwargs = build_resolver_chat_kwargs(
+        _RESOLVER_SYSTEM_PROMPT_PATH,
+        _RESOLVER_JSON_SCHEMA,
         brief_config,
         sensitive_config,
     )
-    chat_kwargs["response_format"] = _RESOLVER_JSON_SCHEMA
+    invocation = ResolverInvocation(
+        chat_kwargs=chat_kwargs,
+        timeout_seconds=timeout_seconds,
+        error_type=BriefGeneResolveError,
+    )
 
-    try:
-        phyto_response = await invoke_resolver(
-            lambda: phyto_chat(
-                user_query=rendered_user_query,
-                **chat_kwargs,
-            ),
-            timeout_seconds,
-        )
-    except ResolverFailure as exc:
-        if str(exc).startswith("resolver timeout after"):
-            raise BriefGeneResolveError(
-                f"resolver timeout after {timeout_seconds:.1f} s"
-            ) from exc
-        if str(exc) == "resolver returned no result":
-            raise BriefGeneResolveError(
-                "LLM returned no content after retries"
-            ) from exc
-        raise BriefGeneResolveError(str(exc)) from exc
+    phyto_response = await invoke_chat_resolver(
+        phyto_chat,
+        rendered_user_query,
+        invocation,
+    )
 
-    content = message_content(phyto_response)
-    if not content:
-        raise BriefGeneResolveError("LLM returned empty content")
+    payload = parse_resolver_payload(phyto_response, BriefGeneResolveError)
 
-    payload = parse_json_object_fragment(content)
-    if not payload:
-        raise BriefGeneResolveError("non-parseable LLM output")
-
-    species_raw = payload.get("species_code")
-    species_code = species_raw.strip() if isinstance(species_raw, str) else ""
+    species_code = normalize_species_code(payload.get("species_code"), "")
     if not species_code:
         raise BriefGeneResolveError(
             "species_code could not be determined from query: "
@@ -247,13 +231,8 @@ def _normalize_candidates(
             gene_id = str(raw.get("gene_id", "")).strip()
             if not gene_id:
                 continue
-            confidence_raw = raw.get("confidence", 0.0)
-            try:
-                confidence = normalize_confidence(confidence_raw)
-            except ResolverFailure:
-                confidence = 0.0
-            species_code = normalize_species_code(
-                raw.get("species_code"), top_species_code
+            confidence, species_code = normalize_candidate_fields(
+                raw, top_species_code
             )
             out.append(
                 BriefGeneIdCandidate(

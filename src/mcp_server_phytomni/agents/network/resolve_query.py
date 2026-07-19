@@ -13,8 +13,6 @@ validates the returned id against it; fabricated ids drop inside
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 from functools import lru_cache
 from typing import Any
@@ -25,7 +23,15 @@ from ...common.prompts import get_prompt
 from ...config.defaults import GeneNetworkConfig
 from ...config.settings import SensitiveConfig
 from ..chat.service import phyto_chat
-from ..shared.options import build_chat_kwargs
+from ..shared.options import build_resolver_chat_kwargs
+from ..shared.query_resolution import (
+    ResolverInvocation,
+    build_candidate_item_schema,
+    invoke_chat_resolver,
+    normalize_candidate_fields,
+    normalize_species_code,
+    parse_resolver_payload,
+)
 from ..shared.species_catalog import warn_if_unsupported_species
 from .to_ontology import (
     DEPRECATED_UPSTREAM_STATUS,
@@ -91,19 +97,10 @@ def _candidate_item_schema() -> dict[str, Any]:
     """
     model = GeneNetworkToIdCandidate.model_json_schema()
     props = model["properties"]
-    return {
-        "type": "object",
-        "properties": {
-            "to_id": {"type": "string"},
-            "species_code": {"type": "string"},
-            "confidence": {
-                "type": "number",
-                "minimum": props["confidence"]["minimum"],
-                "maximum": props["confidence"]["maximum"],
-            },
-        },
-        "required": ["to_id"],
-    }
+    return build_candidate_item_schema(
+        "to_id",
+        props["confidence"],
+    )
 
 
 _RESOLVER_JSON_SCHEMA: dict[str, Any] = {
@@ -177,41 +174,27 @@ async def resolve_network_user_query(
     # on the user message.
     rendered_user_query = f"Catalog:\n{catalog_text}\n\n{rendered_user_query}"
 
-    chat_kwargs = build_chat_kwargs(
-        {"prompt_path": _RESOLVER_SYSTEM_PROMPT_PATH},
+    chat_kwargs = build_resolver_chat_kwargs(
+        _RESOLVER_SYSTEM_PROMPT_PATH,
+        _RESOLVER_JSON_SCHEMA,
         network_config,
         sensitive_config,
     )
-    chat_kwargs["response_format"] = _RESOLVER_JSON_SCHEMA
+    invocation = ResolverInvocation(
+        chat_kwargs=chat_kwargs,
+        timeout_seconds=timeout_seconds,
+        error_type=GeneNetworkResolveError,
+    )
 
-    try:
-        phyto_response = await asyncio.wait_for(
-            phyto_chat(user_query=rendered_user_query, **chat_kwargs),
-            timeout=timeout_seconds,
-        )
-    except TimeoutError as exc:
-        raise GeneNetworkResolveError(
-            f"resolver timeout after {timeout_seconds:.1f} s"
-        ) from exc
+    phyto_response = await invoke_chat_resolver(
+        phyto_chat,
+        rendered_user_query,
+        invocation,
+    )
 
-    if phyto_response is None:
-        raise GeneNetworkResolveError("LLM returned no content after retries")
+    payload = parse_resolver_payload(phyto_response, GeneNetworkResolveError)
 
-    content = _first_message_content(phyto_response)
-    if not content:
-        raise GeneNetworkResolveError("LLM returned empty content")
-
-    try:
-        payload = json.loads(content)
-    except json.JSONDecodeError as exc:
-        raise GeneNetworkResolveError(
-            f"non-parseable LLM output: {exc.msg}"
-        ) from exc
-
-    if not isinstance(payload, dict):
-        raise GeneNetworkResolveError("LLM output is not a JSON object")
-
-    species_code = _extract_species_code(payload.get("species_code"))
+    species_code = normalize_species_code(payload.get("species_code"), "")
     if not species_code:
         raise GeneNetworkResolveError(
             "species_code could not be determined from query: "
@@ -276,30 +259,6 @@ def _warn_if_deprecated(chosen_to_id: str, raw_query: str) -> None:
     )
 
 
-def _extract_species_code(raw: Any) -> str:
-    """Normalize an LLM-provided species_code field to a stripped string."""
-    return raw.strip() if isinstance(raw, str) else ""
-
-
-def _first_message_content(
-    phyto_response: dict[str, Any],
-) -> str | None:
-    """Pull the first assistant message content out of an OpenAI dict."""
-    choices = phyto_response.get("choices")
-    if not isinstance(choices, list) or not choices:
-        return None
-    first = choices[0]
-    if not isinstance(first, dict):
-        return None
-    message = first.get("message")
-    if not isinstance(message, dict):
-        return None
-    content = message.get("content")
-    if isinstance(content, str):
-        return content
-    return None
-
-
 def _normalize_candidates(
     top_to_id: Any,
     candidates_field: Any,
@@ -326,19 +285,9 @@ def _normalize_candidates(
             to_id = str(raw.get("to_id", "")).strip()
             if not to_id or to_id not in valid_to_ids:
                 continue
-            confidence_raw = raw.get("confidence", 0.0)
-            try:
-                confidence = float(confidence_raw)
-            except (TypeError, ValueError):
-                confidence = 0.0
-            confidence = max(0.0, min(1.0, confidence))
-            candidate_species_raw = raw.get("species_code")
-            candidate_species = (
-                candidate_species_raw.strip()
-                if isinstance(candidate_species_raw, str)
-                else ""
+            confidence, species_code = normalize_candidate_fields(
+                raw, top_species_code
             )
-            species_code = candidate_species or top_species_code
             out.append(
                 GeneNetworkToIdCandidate(
                     to_id=to_id,

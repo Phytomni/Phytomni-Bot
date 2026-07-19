@@ -16,7 +16,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from mcp_server_phytomni.agents.shared.options import retry_codes_from_kwargs
+from mcp_server_phytomni.agents.shared.options import (
+    build_resolver_chat_kwargs,
+    retry_codes_from_kwargs,
+)
+from mcp_server_phytomni.config.defaults import BriefGeneConfig
+from mcp_server_phytomni.config.settings import SensitiveConfig
 
 pytestmark = pytest.mark.unit
 
@@ -35,3 +40,22 @@ def test_retry_codes_prefers_explicit_kwarg() -> None:
     assert retry_codes_from_kwargs(
         {"retriable_codes": [429, 500]}, config
     ) == [429, 500]
+
+
+def test_build_resolver_chat_kwargs_applies_structured_overrides() -> None:
+    """Resolver options keep common defaults and replace schema settings."""
+    config = BriefGeneConfig()
+    sensitive_config = SensitiveConfig.load()
+    schema = {"type": "json_schema"}
+
+    result = build_resolver_chat_kwargs(
+        "system/resolver",
+        schema,
+        config,
+        sensitive_config,
+    )
+
+    assert result["prompt_path"] == "system/resolver"
+    assert result["response_format"] is schema
+    assert result["api_key"] == sensitive_config.API_KEY.get_secret_value()
+    assert result["retriable_codes"] == list(config.RETRIABLE_CODES)

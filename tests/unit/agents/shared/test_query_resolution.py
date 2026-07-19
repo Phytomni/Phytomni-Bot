@@ -14,10 +14,14 @@ import pytest
 
 from mcp_server_phytomni.agents.shared.query_resolution import (
     ResolverFailure,
+    ResolverInvocation,
     build_candidate_item_schema,
+    invoke_chat_resolver,
     invoke_resolver,
+    normalize_candidate_fields,
     normalize_confidence,
     normalize_species_code,
+    parse_resolver_payload,
 )
 
 pytestmark = pytest.mark.unit
@@ -37,6 +41,41 @@ async def test_invoke_resolver_rejects_none_result() -> None:
     """A missing resolver result becomes a typed shared failure."""
     with pytest.raises(ResolverFailure, match="no result"):
         await invoke_resolver(_return_none, timeout_seconds=1.0)
+
+
+async def test_invoke_resolver_maps_shared_failure() -> None:
+    """A domain mapper may translate shared failure wording at the edge."""
+
+    def map_failure(failure: ResolverFailure) -> RuntimeError:
+        return RuntimeError(f"mapped: {failure}")
+
+    with pytest.raises(
+        RuntimeError, match="mapped: resolver returned no result"
+    ):
+        await invoke_resolver(
+            _return_none,
+            timeout_seconds=1.0,
+            failure_mapper=map_failure,
+        )
+
+
+async def test_invoke_chat_resolver_maps_none_to_domain_error() -> None:
+    """Structured invocation maps an empty provider response at the edge."""
+
+    async def no_response(**_: Any) -> None:
+        return None
+
+    with pytest.raises(ValueError, match="retry exhausted"):
+        await invoke_chat_resolver(
+            no_response,
+            "query",
+            ResolverInvocation(
+                chat_kwargs={},
+                timeout_seconds=1.0,
+                error_type=ValueError,
+                empty_result_message="retry exhausted",
+            ),
+        )
 
 
 async def test_invoke_resolver_translates_timeout() -> None:
@@ -87,9 +126,43 @@ def test_normalize_species_code_uses_fallback(
     assert normalize_species_code(value, fallback) == expected
 
 
+def test_normalize_candidate_fields_defaults_invalid_confidence() -> None:
+    """Candidate normalization keeps a zero-confidence fallback."""
+    assert normalize_candidate_fields(
+        {"confidence": "not-a-number", "species_code": " ath "},
+        "osa",
+    ) == (0.0, "ath")
+
+
+def test_parse_resolver_payload_accepts_embedded_json() -> None:
+    """Resolver payloads may be wrapped in short provider prose."""
+    response = {
+        "choices": [
+            {"message": {"content": 'Result: {"gene_id": "AT1G01010"}'}}
+        ]
+    }
+
+    assert parse_resolver_payload(response, ValueError) == {
+        "gene_id": "AT1G01010"
+    }
+
+
+@pytest.mark.parametrize("content", ["", "not json"])
+def test_parse_resolver_payload_rejects_missing_object(content: str) -> None:
+    """Empty and non-JSON content use the same domain error boundary."""
+    response = {"choices": [{"message": {"content": content}}]}
+
+    with pytest.raises(
+        ValueError, match="LLM returned empty content|non-parseable"
+    ):
+        parse_resolver_payload(response, ValueError)
+
+
 def test_build_candidate_item_schema_keeps_identifier_and_bounds() -> None:
     """The shared schema builder preserves domain id names and limits."""
-    assert build_candidate_item_schema("gene_id", 0.0, 1.0) == {
+    assert build_candidate_item_schema(
+        "gene_id", {"minimum": 0.0, "maximum": 1.0}
+    ) == {
         "type": "object",
         "properties": {
             "gene_id": {"type": "string"},

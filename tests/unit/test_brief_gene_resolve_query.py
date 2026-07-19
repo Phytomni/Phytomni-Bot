@@ -20,7 +20,6 @@ from mcp_server_phytomni.agents.brief_gene.resolve_query import (
     resolve_brief_gene_user_query,
 )
 from mcp_server_phytomni.agents.chat import service as chat_service
-from mcp_server_phytomni.agents.shared.query_resolution import ResolverFailure
 from mcp_server_phytomni.config.defaults import BriefGeneConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
@@ -411,9 +410,9 @@ async def test_resolver_translates_shared_timeout(
     brief_config, sensitive_config = configs
 
     async def fake_invoke(*_: Any, **__: Any) -> dict[str, Any]:
-        raise ResolverFailure("resolver timeout after 2.00 s")
+        raise BriefGeneResolveError("resolver timeout after 2.0 s")
 
-    monkeypatch.setattr(resolve_query, "invoke_resolver", fake_invoke)
+    monkeypatch.setattr(resolve_query, "invoke_chat_resolver", fake_invoke)
 
     with pytest.raises(
         BriefGeneResolveError, match=r"resolver timeout after 2\.0 s"
@@ -434,9 +433,9 @@ async def test_resolver_translates_shared_empty_result(
     brief_config, sensitive_config = configs
 
     async def fake_invoke(*_: Any, **__: Any) -> dict[str, Any]:
-        raise ResolverFailure("resolver returned no result")
+        raise BriefGeneResolveError("LLM returned no content after retries")
 
-    monkeypatch.setattr(resolve_query, "invoke_resolver", fake_invoke)
+    monkeypatch.setattr(resolve_query, "invoke_chat_resolver", fake_invoke)
 
     with pytest.raises(
         BriefGeneResolveError, match="LLM returned no content after retries"
@@ -458,7 +457,7 @@ async def test_resolver_propagates_unexpected_resolver_failure(
     async def fake_invoke(*_: Any, **__: Any) -> dict[str, Any]:
         raise RuntimeError("backend unavailable")
 
-    monkeypatch.setattr(resolve_query, "invoke_resolver", fake_invoke)
+    monkeypatch.setattr(resolve_query, "invoke_chat_resolver", fake_invoke)
 
     with pytest.raises(RuntimeError, match="backend unavailable"):
         await resolve_brief_gene_user_query(
