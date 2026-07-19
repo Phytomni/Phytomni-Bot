@@ -7,7 +7,7 @@ default = "deny"
 id = "SAE-TMP-0001"
 tool = "flake8"
 rule = "E203"
-classification = "temporary"
+classification = "structural"
 mechanism = "config"
 target_kind = "config"
 path = ".flake8"
@@ -15,133 +15,119 @@ symbol = "[flake8].extend-ignore"
 fingerprint = "sha256:ee3ff2f285462681d7e4dd5eed33cbf4cd5ef1d73ca986281e086dc5ef2457a8"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "[flake8].extend-ignore='E203,W503'"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0348"
 tool = "pylint"
 rule = "C0103"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "span"
 path = "typings/obs/__init__.pyi"
 fingerprint = "sha256:09aee44e3ac01f4a545115d3328a6fb65f01c5c33e02dd0377e0039056d5484e"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613"
 counterfactual = "Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff."
 risk = "A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules."
 tests = ["typings/obs/__init__.pyi", "tests/unit/test_style_naming.py", "static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0349"
 tool = "pylint"
 rule = "C0116"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "span"
 path = "typings/obs/__init__.pyi"
 fingerprint = "sha256:2f9a477a4c23b20217aab2ea3567537fbb4c460a226ddff45484eb4db2d1f337"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613"
 counterfactual = "Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff."
 risk = "A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules."
 tests = ["typings/obs/__init__.pyi", "tests/unit/test_style_naming.py", "static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0350"
 tool = "pylint"
 rule = "R0903"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "span"
 path = "typings/obs/__init__.pyi"
 fingerprint = "sha256:5c977671811194457cd243d6dd05218d1fc7f86882833161d8a50e2dfe5298f8"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613"
 counterfactual = "Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff."
 risk = "A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules."
 tests = ["typings/obs/__init__.pyi", "tests/unit/test_style_naming.py", "static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0351"
 tool = "pylint"
 rule = "R0913"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "span"
 path = "typings/obs/__init__.pyi"
 fingerprint = "sha256:a15ec92995e4889b5cb4df0701e8c716d144aa145db9430f9e48cf5fb2f7d097"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613"
 counterfactual = "Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff."
 risk = "A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules."
 tests = ["typings/obs/__init__.pyi", "tests/unit/test_style_naming.py", "static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0352"
 tool = "pylint"
 rule = "R0917"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "span"
 path = "typings/obs/__init__.pyi"
 fingerprint = "sha256:8af6543ba16f67381086f0353049a789f5614276cc7434e402f6f4567c5c46d3"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613"
 counterfactual = "Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff."
 risk = "A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules."
 tests = ["typings/obs/__init__.pyi", "tests/unit/test_style_naming.py", "static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0353"
 tool = "pylint"
 rule = "W0613"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "span"
 path = "typings/obs/__init__.pyi"
 fingerprint = "sha256:f0fc55ced5b6b61c39a6343c9096d648e4ab54e91be08eb8ed93d449a49e297c"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613"
 counterfactual = "Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff."
 risk = "A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules."
 tests = ["typings/obs/__init__.pyi", "tests/unit/test_style_naming.py", "static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0002"
 tool = "flake8"
 rule = "W503"
-classification = "temporary"
+classification = "structural"
 mechanism = "config"
 target_kind = "config"
 path = ".flake8"
@@ -149,13 +135,11 @@ symbol = "[flake8].extend-ignore"
 fingerprint = "sha256:1d93293eb8e91ba241c13a2db0c100dc24b5305c4b0f429faa5ca2f334bfccc1"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "[flake8].extend-ignore='E203,W503'"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0006"
@@ -201,7 +185,7 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0009"
 tool = "mypy"
 rule = "misc"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/unit/interop/test_capabilities.py"
@@ -209,19 +193,17 @@ symbol = "test_capability_is_frozen_and_qualified_name_is_canonical"
 fingerprint = "sha256:50c5686aeb514f0ea385b0f5efcb20543fb02b479f0a05b4b32116c2e38f65fe"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "type: ignore[misc]"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0010"
 tool = "mypy"
 rule = "misc"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/unit/test_deep_genome_store.py"
@@ -229,19 +211,17 @@ symbol = "test_store_exports_frozen_contract_models"
 fingerprint = "sha256:da11d568e3816c864121904ffa5d00103600ebf471ec6a5bbefc12277ad4761c"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "type: ignore[misc]"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0011"
 tool = "mypy"
 rule = "prop-decorator"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/api/schemas.py"
@@ -249,13 +229,11 @@ symbol = "FileUploadResponse"
 fingerprint = "sha256:243d7b24f3e529af946567903305f2f5f09ad24b6316e1063a7ed27a93107a6c"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "type: ignore[prop-decorator]"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0012"
@@ -3583,7 +3561,7 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0194"
 tool = "pylint"
 rule = "R0903"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_submit.py"
@@ -3591,19 +3569,17 @@ symbol = "_FakeApp"
 fingerprint = "sha256:1f7f51708ece122db06fccc8c565c771ccda09fd3dab04360277d25248e3fef0"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "Too few public methods (1/2)"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0200"
 tool = "pylint"
 rule = "R0903"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "symbol"
 path = "tests/conftest.py"
@@ -3611,19 +3587,17 @@ symbol = "_build_fake_obs_client._FakeObsClient"
 fingerprint = "sha256:2dc747295b1e436a070df77a883fd813565b56d9c86de87801b81cfbb178fae7"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "The fake deliberately models one OBS lifecycle with class-level objects, pagination, captured SDK calls, and dynamic camelCase dispatch; replacing it with a value-only fake would lose the shared external-state contract."
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0211"
 tool = "pylint"
 rule = "R0903"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "symbol"
 path = "tests/unit/e2e/test_polling.py"
@@ -3631,19 +3605,17 @@ symbol = "test_http_poll_records_distinct_monotonic_revisions.Client"
 fingerprint = "sha256:f4a6bb85b202f6f9be1a4bdf895fd80b219a442eab4fd5f04fb29cd46b4c3d93"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "The polling client owns a response iterator and request-path capture so the test proves sequential HTTP status/JSON handling and monotonic revision collection."
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0213"
 tool = "pylint"
 rule = "R0903"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "symbol"
 path = "tests/unit/interop/test_fake_peer_e2e.py"
@@ -3651,19 +3623,17 @@ symbol = "_FakeMCPServer"
 fingerprint = "sha256:0dcf2d975d525a931a08dd914e21c20836ea700969650768d93515b034f55122"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "The fake MCP server retains constructor instances, tool catalogs, and requested server names across discovery and invocation to prove the external lifecycle boundary."
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0214"
 tool = "pylint"
 rule = "R0903"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "symbol"
 path = "tests/unit/test_api_file_upload.py"
@@ -3671,19 +3641,17 @@ symbol = "_ChunkedUpload"
 fingerprint = "sha256:eda00c1f02071e7fa974cdef673f09b7b2efc3b1302890c475dbc5ed46cefe1d"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "The upload fake models a one-shot mutable chunk stream and records read offsets so the byte-budget guard can prove it stops at the first overflow."
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0215"
 tool = "pylint"
 rule = "R0903"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "symbol"
 path = "tests/unit/test_storage_error_sanitization.py"
@@ -3691,19 +3659,17 @@ symbol = "_ExplodingObsClient"
 fingerprint = "sha256:826980652eb87a9cc733947dd7a6328efa942f2f98b5cb373e5db5d4ae417825"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "The fake must accept the SDK constructor and dynamically synthesize arbitrary camelCase methods that raise a sentinel, proving storage sanitization preserves the cause without leaking its text."
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0222"
 tool = "pylint"
 rule = "broad-exception-caught"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "e2e/helpers/polling.py"
@@ -3711,13 +3677,11 @@ symbol = "_reconciled_task_state"
 fingerprint = "sha256:58b3b2f3bb4ee5b58ee8ca5380146a1ab5d43c18bff5e36510cb912eece854a3"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "pylint: disable=broad-exception-caught"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0223"
@@ -3763,39 +3727,35 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0228"
 tool = "pylint"
 rule = "contextmanager-generator-missing-cleanup"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "span"
 path = "tests/agents/test_cache_candidates.py"
 fingerprint = "sha256:1a93e1b05a8cfa872aeddc39c7850189f9089c16b59a0d36c97909cc4341ae03"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "pylint: disable=contextmanager-generator-missing-cleanup"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0229"
 tool = "pylint"
 rule = "contextmanager-generator-missing-cleanup"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "span"
 path = "tests/conftest.py"
 fingerprint = "sha256:8051cd3af754f03cba8b655218a54168e8867d393d6ed998ce98de611d0b7b9a"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "pylint: disable=contextmanager-generator-missing-cleanup"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0232"
@@ -3821,7 +3781,7 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0236"
 tool = "pylint"
 rule = "path-ignore"
-classification = "temporary"
+classification = "structural"
 mechanism = "config"
 target_kind = "config"
 path = "pyproject.toml"
@@ -3829,19 +3789,17 @@ symbol = "tool.pylint.main.ignore"
 fingerprint = "sha256:38fd2748eed7f3803e3176f0ef992ae35b8441cfc99a8e873d01821f62c700eb"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "tool.pylint.main.ignore='.venv'"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0237"
 tool = "pylint"
 rule = "path-ignore"
-classification = "temporary"
+classification = "structural"
 mechanism = "config"
 target_kind = "config"
 path = "pyproject.toml"
@@ -3849,19 +3807,17 @@ symbol = "tool.pylint.main.ignore"
 fingerprint = "sha256:3e1bc269c16210ee4149f6c708497a514291d2716f41ad7186c731fe6fce7ea3"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "tool.pylint.main.ignore='.mypy_cache'"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0238"
 tool = "pylint"
 rule = "path-ignore"
-classification = "temporary"
+classification = "structural"
 mechanism = "config"
 target_kind = "config"
 path = "pyproject.toml"
@@ -3869,19 +3825,17 @@ symbol = "tool.pylint.main.ignore"
 fingerprint = "sha256:829ec7992def978f01ad8efae0a0ee64c5e1767cfeb76f3a13236dc4ed5cef23"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "tool.pylint.main.ignore='.ruff_cache'"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0239"
 tool = "pylint"
 rule = "path-ignore"
-classification = "temporary"
+classification = "structural"
 mechanism = "config"
 target_kind = "config"
 path = "pyproject.toml"
@@ -3889,19 +3843,17 @@ symbol = "tool.pylint.main.ignore"
 fingerprint = "sha256:b7c41d52ad3e667583ed5bc27c3cffee33f6c621371befb228c17357718fc94a"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "tool.pylint.main.ignore='.pytest_cache'"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0241"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_analyst_graph_nodes.py"
@@ -3909,19 +3861,17 @@ symbol = "_capture_create_payload"
 fingerprint = "sha256:cd6697f92e2f53b8be8ff1d45348694b78b636827525788f5ca1dab931844253"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "_capture_create_payload isolates an analyst graph payload/path seam so its private invariant is asserted without invoking the full graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0245"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_chat_subgraph.py"
@@ -3929,19 +3879,17 @@ symbol = "test_dispatch_chat_uses_subgraph"
 fingerprint = "sha256:dc8cf6a9d64081107dcb8c0509cf9b38ffc98a1931b77e52d26b7fee2d4383eb"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_dispatch_chat_uses_subgraph isolates a DeepGenome report adapter seam so the mounted subgraph contract is asserted without unrelated stages."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0246"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
@@ -3949,19 +3897,17 @@ symbol = "test_deep_genome_generic_dispatch_is_submit_only"
 fingerprint = "sha256:d7231430fe9c4901f96ab215506cd45a2986336a0c009b0bf3ebb77dc60d81da"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_deep_genome_generic_dispatch_is_submit_only pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0247"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_knowledge_subgraph.py"
@@ -3969,19 +3915,17 @@ symbol = "test_dispatch_knowledge_uses_subgraph"
 fingerprint = "sha256:1b291a1a683e13a8b5ff3295e985256175f83d94cc0ca011fbb173a525bf04a8"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_dispatch_knowledge_uses_subgraph isolates a DeepGenome report adapter seam so the mounted subgraph contract is asserted without unrelated stages."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0248"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_lifecycle.py"
@@ -3989,19 +3933,17 @@ symbol = "test_all_optional_failures_preserve_profile_and_fail_owner"
 fingerprint = "sha256:7c4cc25324af4c7a96948142dcd0ffdebb1f0547852b87a5ea4d389d83ccd804"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_all_optional_failures_preserve_profile_and_fail_owner isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0249"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_design_analyst_subgraph.py"
@@ -4009,19 +3951,17 @@ symbol = "test_dispatch_uses_subgraph_submit"
 fingerprint = "sha256:3b41ad535c9476731684a60027a1c20e5fe9eb910e963ca566bb1db2a56e7299"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_dispatch_uses_subgraph_submit isolates design analyst-subgraph routing so the fire-and-poll contract is asserted without remote side effects."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0250"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_design_helpers.py"
@@ -4029,19 +3969,17 @@ symbol = "test_analysis_prompt_parts_rejects_unknown_type"
 fingerprint = "sha256:5920289e37592f4bf00a38fa591f263313e4ad7774c9a368f018f6090560b37c"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_analysis_prompt_parts_rejects_unknown_type pins a design resource or prompt guard at its smallest decision seam rather than through a full graph invocation."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0251"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_network_analyst_subgraph.py"
@@ -4049,19 +3987,17 @@ symbol = "test_dispatch_request_carries_to_id_as_target"
 fingerprint = "sha256:7b00f3c4d7abe53a1e197b9f01f9b447860703561be848f801fd9566b1be0395"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_dispatch_request_carries_to_id_as_target isolates network analyst dispatch so target mapping and subgraph routing remain explicit."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0252"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_research_analyst_subgraph.py"
@@ -4069,19 +4005,17 @@ symbol = "test_submit_task_propagates_failed_status"
 fingerprint = "sha256:f28a7f9cbe511502173ee920deaafa38dcfd3b0ba13b3cdf6f8bc3a487d815d5"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_submit_task_propagates_failed_status isolates research analyst dispatch so routing and failure propagation are checked without a remote task."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0253"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_research_chat_subgraph.py"
@@ -4089,19 +4023,17 @@ symbol = "test_extract_goals_uses_chat_subgraph"
 fingerprint = "sha256:e779e814ad5960cc1e61077d79408530084759acc64e8a04347db5900bf0a743"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_extract_goals_uses_chat_subgraph isolates the research chat goal-parser seam so the compiled chat adapter contract is asserted directly."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0255"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_review_add_query_failures.py"
@@ -4109,19 +4041,17 @@ symbol = "test_feedback_rag_failures_empty_when_no_add_queries"
 fingerprint = "sha256:ea1bd79bc055e411a3e1bb27595e369d13a9e6be0644e57bb7e949128bb161b6"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_feedback_rag_failures_empty_when_no_add_queries isolates review supplementary-query failure accumulation so each degraded record remains attributable to its query."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0261"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/server/test_run_gc_background.py"
@@ -4129,19 +4059,17 @@ symbol = "test_async_gc_coalesces_concurrent_passes"
 fingerprint = "sha256:0dcac7edf70b73e87d365ab2a55a6988025320b3309f742972b4e93446d03736"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_async_gc_coalesces_concurrent_passes isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0262"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/server/test_stdio_progress.py"
@@ -4149,13 +4077,11 @@ symbol = "test_progress_forwarded_when_token_present"
 fingerprint = "sha256:f119c910e90f018323907d6760b625893d289a739e1ea4ee80765553e81f64ac"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_progress_forwarded_when_token_present isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0263"
@@ -4742,26 +4668,24 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0293"
 tool = "pylint"
 rule = "wrong-import-position"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "span"
 path = "scripts/_visualize_bootstrap.py"
 fingerprint = "sha256:637afabc246f45d9145f3aa93a39fe94d65fb830b2067196e8f33d8b77ed1847"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "pylint: disable=wrong-import-position"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0294"
 tool = "pymarkdown"
 rule = "md013"
-classification = "temporary"
+classification = "structural"
 mechanism = "config"
 target_kind = "config"
 path = "pyproject.toml"
@@ -4769,19 +4693,17 @@ symbol = "tool.pymarkdown.plugins.md013.enabled"
 fingerprint = "sha256:34d8c475a236a211d36db927ee2de462f03fdb4f3f07864359540255c750bf01"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "tool.pymarkdown.plugins.md013.enabled=False"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0295"
 tool = "pytest"
 rule = "error"
-classification = "temporary"
+classification = "structural"
 mechanism = "config"
 target_kind = "config"
 path = "pyproject.toml"
@@ -4789,13 +4711,11 @@ symbol = "tool.pytest.ini_options.filterwarnings[0]"
 fingerprint = "sha256:0aa661937816a1fb17f333eb9a372e15f3093ed7bf8b75bc5d904d38422ef20f"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "error"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0298"
@@ -4821,7 +4741,7 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0300"
 tool = "ruff"
 rule = "ASYNC110"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/agents/deep_genome/report.py"
@@ -4829,19 +4749,17 @@ symbol = "_write_async"
 fingerprint = "sha256:a7cb1e8424467f0727f7a3b99bf30356d9bb18b99462d892fbf92402f43dd198"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "noqa: ASYNC110"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0301"
 tool = "ruff"
 rule = "ASYNC110"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/api/app.py"
@@ -4849,19 +4767,17 @@ symbol = "_purge_expired_runs_best_effort_async"
 fingerprint = "sha256:a52705825d478feeafb241f23127685f24facd52ebf4d62d6ed335d1dd04782d"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "noqa: ASYNC110"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0302"
 tool = "ruff"
 rule = "ASYNC110"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/api/relay/obs.py"
@@ -4869,57 +4785,51 @@ symbol = "_wait_obs_future"
 fingerprint = "sha256:a8f3e3adef4dab97a6423e96bc1f91159c519a5060e52a58156302de97e99e33"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "noqa: ASYNC110"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0310"
 tool = "ruff"
 rule = "E402"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "span"
 path = "scripts/_visualize_bootstrap.py"
 fingerprint = "sha256:5bb9d315b606c4e79f7f08a5a3896da1ae9fe6ea43c2d6d2055599a1c4e33f40"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "noqa: E402"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0311"
 tool = "ruff"
 rule = "E402"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "span"
 path = "scripts/_visualize_bootstrap.py"
 fingerprint = "sha256:9e583e7c25de4e2c0f6b97674641e1e427cb71f230c2aa96fb00b4aa48ddf6cf"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "noqa: E402"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0312"
 tool = "ruff"
 rule = "N802"
-classification = "temporary"
+classification = "structural"
 mechanism = "config"
 target_kind = "config"
 path = "pyproject.toml"
@@ -4927,19 +4837,17 @@ symbol = "tool.ruff.lint.per-file-ignores.typings/**/*.pyi"
 fingerprint = "sha256:bf0326cb042985ec93478cbec49d2e724864485a45acf6ad1e15bc9d520eb9a4"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "tool.ruff.lint.per-file-ignores.typings/**/*.pyi=['N802', 'N803', 'N815']"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0313"
 tool = "ruff"
 rule = "N803"
-classification = "temporary"
+classification = "structural"
 mechanism = "config"
 target_kind = "config"
 path = "pyproject.toml"
@@ -4947,19 +4855,17 @@ symbol = "tool.ruff.lint.per-file-ignores.typings/**/*.pyi"
 fingerprint = "sha256:04fd5950474f7a9f1e297946d6fbe12928593497186dbe231583d79859f82d30"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "tool.ruff.lint.per-file-ignores.typings/**/*.pyi=['N802', 'N803', 'N815']"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0314"
 tool = "ruff"
 rule = "N815"
-classification = "temporary"
+classification = "structural"
 mechanism = "config"
 target_kind = "config"
 path = "pyproject.toml"
@@ -4967,13 +4873,11 @@ symbol = "tool.ruff.lint.per-file-ignores.typings/**/*.pyi"
 fingerprint = "sha256:c46f9c1d9fbddac831ac4f216f43c4ff6703ad4274821d10b4f0186703a912e0"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "tool.ruff.lint.per-file-ignores.typings/**/*.pyi=['N802', 'N803', 'N815']"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-STR-0001"
@@ -5033,7 +4937,7 @@ tests = ["tests/agents/test_review_add_query_failures.py", "tests/agents/test_re
 id = "SAE-TMP-0315"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_analyst_graph_nodes.py"
@@ -5041,19 +4945,17 @@ symbol = "test_submit_output_dir_forwards_input_fingerprint"
 fingerprint = "sha256:854cb4451cc07c0b5a5399e4c782adb77e2a6ce896ed0e39709ba05851d78eaa"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_submit_output_dir_forwards_input_fingerprint isolates an analyst graph payload/path seam so its private invariant is asserted without invoking the full graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0316"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
@@ -5061,19 +4963,17 @@ symbol = "test_dispatch_coordinator_receives_effective_poll_id"
 fingerprint = "sha256:ff5a3cfe8bf5d4cf7443bd0ec5540f676d620ffcb1e4139a1f5057275463540b"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_dispatch_coordinator_receives_effective_poll_id pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0317"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
@@ -5081,19 +4981,17 @@ symbol = "test_non_transferred_type_routes_subgraph"
 fingerprint = "sha256:23079a67586d9358ab26bd2222ab2d62c607ad2726a4303a8ca7ff4c34b09458"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_non_transferred_type_routes_subgraph pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0318"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
@@ -5101,19 +4999,17 @@ symbol = "test_prepare_tasks_includes_protein_structure"
 fingerprint = "sha256:70ee5d63c40a1eb2a3e381fddb60eb0611ed8fb8d4778530023df3fe78d2ab62"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_prepare_tasks_includes_protein_structure pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0319"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
@@ -5121,19 +5017,17 @@ symbol = "test_promoter_routes_to_wrapper"
 fingerprint = "sha256:b882c1ce446460ec090b3628d6746c574d8099b4abec7812af94f2dd10abf44e"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_promoter_routes_to_wrapper pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0320"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
@@ -5141,19 +5035,17 @@ symbol = "test_protein_structure_routes_to_wrapper"
 fingerprint = "sha256:21b51d588eb6960f247f06d3d4e503ace1fd66b78dba31785ce83b75bca4ec01"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_protein_structure_routes_to_wrapper pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0321"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
@@ -5161,19 +5053,17 @@ symbol = "test_route_after_brief_gene_reaches_preparation_only_when_enabled"
 fingerprint = "sha256:d761da1d331ff50a9e6cd62343fa40f554b016080d8bee7754b15ca69795679e"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_route_after_brief_gene_reaches_preparation_only_when_enabled pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0322"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
@@ -5181,19 +5071,17 @@ symbol = "test_route_analyst_tasks_sends_design_to_design_node"
 fingerprint = "sha256:60cf736f268c9561d50f890b0ebf4e7ca0bd27a6e4814546ddd5e5a13f7904ca"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_route_analyst_tasks_sends_design_to_design_node pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0323"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
@@ -5201,19 +5089,17 @@ symbol = "test_route_analyst_tasks_sends_each_generic_to_its_own_node"
 fingerprint = "sha256:a1a47aff502651142a268a3f6a5dca43b362b182aa4bd782c085a62d6e2e4cc0"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_route_analyst_tasks_sends_each_generic_to_its_own_node pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0324"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
@@ -5221,19 +5107,17 @@ symbol = "test_route_analyst_tasks_sends_evolution_to_evolution_node"
 fingerprint = "sha256:e03c1bbefc25917d063112a7f218cde783b57a08737edee6dff8d8e5b9e460ae"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_route_analyst_tasks_sends_evolution_to_evolution_node pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0325"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
@@ -5241,19 +5125,17 @@ symbol = "test_route_experiment_skips_protocol_when_analyst_disabled"
 fingerprint = "sha256:46a128372113d8ff065aff1949064e55f2eaa35fd2f45efd6df8dd06b70484d9"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_route_experiment_skips_protocol_when_analyst_disabled pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0326"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
@@ -5261,19 +5143,17 @@ symbol = "test_route_start_waits_for_brief_gene_before_task_preparation"
 fingerprint = "sha256:dbda426b0fdb2d10ad2e90ba6baafc06f5dac5cf5b79b34a558c8ef44ac5b334"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_route_start_waits_for_brief_gene_before_task_preparation pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0327"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
@@ -5281,19 +5161,17 @@ symbol = "test_route_synthesize_preserves_skip_fixture"
 fingerprint = "sha256:ab989c3cc8eefb9243ab93b39b0ad63ae7688af3684805b6e86bf2db17c8cb77"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_route_synthesize_preserves_skip_fixture pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0328"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
@@ -5301,19 +5179,17 @@ symbol = "test_route_synthesize_rejects_all_terminal_failures"
 fingerprint = "sha256:9fb0e72047279d6da6017157a24f27374ff7e97110369dc5423f1a7b497244a1"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_route_synthesize_rejects_all_terminal_failures pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0329"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
@@ -5321,19 +5197,17 @@ symbol = "test_route_synthesize_waits_for_every_concrete_work_item"
 fingerprint = "sha256:6038e2fff5d817a8a2b2ef2b9b9966da39c514e167d4039a52a046cc28760666"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_route_synthesize_waits_for_every_concrete_work_item pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0330"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_lifecycle.py"
@@ -5341,19 +5215,17 @@ symbol = "test_brief_gene_success_is_durable_before_optional_planning"
 fingerprint = "sha256:06506962eca91de88293b9baa7cc71061be62baf84fa50a58f1fe30332aef5cd"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_brief_gene_success_is_durable_before_optional_planning isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0331"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_lifecycle.py"
@@ -5361,19 +5233,17 @@ symbol = "test_design_mount_failure_settles_both_concrete_items"
 fingerprint = "sha256:bb7677591f5e7d2b7ca017f2d6db17a9ced78263ff7ba6b2f907b30ae82bfe8c"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_design_mount_failure_settles_both_concrete_items isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0332"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_lifecycle.py"
@@ -5381,19 +5251,17 @@ symbol = "test_fake_backend_persists_acceptance_before_poll_and_snapshots"
 fingerprint = "sha256:ab7b89b5c47ebd49b30c468174c097d01f9b993be78e917a2b42be5b5fb206d0"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_fake_backend_persists_acceptance_before_poll_and_snapshots isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0333"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_lifecycle.py"
@@ -5401,19 +5269,17 @@ symbol = "test_reserved_profile_seeds_concrete_plan_before_submission"
 fingerprint = "sha256:c070b135c4b627a8fac1a46e344b7e1b31545ec57ed2dcb79290e6c24c503aee"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_reserved_profile_seeds_concrete_plan_before_submission isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0334"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_lifecycle.py"
@@ -5421,19 +5287,17 @@ symbol = "test_send_payload_carries_reserved_lifecycle_identity"
 fingerprint = "sha256:72c0a74224c96207c9283114da641f3fdb1e68fd268130f2f752a829a51409d8"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_send_payload_carries_reserved_lifecycle_identity isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0335"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_lifecycle.py"
@@ -5441,19 +5305,17 @@ symbol = "test_tracking_write_failure_cancels_and_fails_umbrella"
 fingerprint = "sha256:95eae751c81532fb64b6805449bc4d4994c4764929623b2ed551398e208ee5f1"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_tracking_write_failure_cancels_and_fails_umbrella isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0336"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_lifecycle.py"
@@ -5461,19 +5323,17 @@ symbol = "test_unsubmitted_failure_is_persisted_before_branch_degrades"
 fingerprint = "sha256:b1f18471002fe378618f67fe2d4fbb440a7d1ea328605b4301bfb7ad23ca8ae6"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_unsubmitted_failure_is_persisted_before_branch_degrades isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0337"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_design_helpers.py"
@@ -5481,19 +5341,17 @@ symbol = "test_get_compute_resource_protein_design_returns_medium"
 fingerprint = "sha256:8729d40cd01d205eaae4cc0dfb2f93c99107e88e02f8903d30d8510cfbf91ff1"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_get_compute_resource_protein_design_returns_medium pins a design resource or prompt guard at its smallest decision seam rather than through a full graph invocation."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0338"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_design_helpers.py"
@@ -5501,19 +5359,17 @@ symbol = "test_get_compute_resource_unknown_falls_back_to_small"
 fingerprint = "sha256:5177408e990d2b34ce4af96964a892d42dabbae4ead41fb7555171dc41c82174"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_get_compute_resource_unknown_falls_back_to_small pins a design resource or prompt guard at its smallest decision seam rather than through a full graph invocation."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0339"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_network_analyst_subgraph.py"
@@ -5521,19 +5377,17 @@ symbol = "test_dispatch_routes_through_subgraph_submit"
 fingerprint = "sha256:4e143b0eb1cebfdb4bc01c651f88b850cfe28250c01fbe1295ade6d161f3fbce"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_dispatch_routes_through_subgraph_submit isolates network analyst dispatch so target mapping and subgraph routing remain explicit."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0340"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_research_analyst_subgraph.py"
@@ -5541,19 +5395,17 @@ symbol = "test_submit_task_uses_subgraph"
 fingerprint = "sha256:b286ad3d9de8685a7387fa660964f2425ba80fc34b0017921f5b573cc4592aa8"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_submit_task_uses_subgraph isolates research analyst dispatch so routing and failure propagation are checked without a remote task."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0341"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_review_add_query_failures.py"
@@ -5561,19 +5413,17 @@ symbol = "test_feedback_rag_records_failure_for_single_failed_query"
 fingerprint = "sha256:9e73231727fd2148bae7bdb9465a68c0d856c73e2fc5b0c4434882d6e7e5e304"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_feedback_rag_records_failure_for_single_failed_query isolates review supplementary-query failure accumulation so each degraded record remains attributable to its query."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0342"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_review_add_query_failures.py"
@@ -5581,19 +5431,17 @@ symbol = "test_feedback_rag_records_failures_for_all_failed_queries"
 fingerprint = "sha256:d757d5771d1a696f29b2d2a7124d4f65f83881d5b898b6b91f9006292401b7e2"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_feedback_rag_records_failures_for_all_failed_queries isolates review supplementary-query failure accumulation so each degraded record remains attributable to its query."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0343"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/server/test_run_gc_background.py"
@@ -5601,19 +5449,17 @@ symbol = "test_async_gc_keeps_the_request_loop_responsive"
 fingerprint = "sha256:7f35a982bdb094d7ec7b5a3d4b703863f4763b3f00cf7f53a6f20a5b862d8930"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_async_gc_keeps_the_request_loop_responsive isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0344"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/server/test_run_gc_background.py"
@@ -5621,19 +5467,17 @@ symbol = "test_async_gc_reraises_unexpected_worker_failure"
 fingerprint = "sha256:7730531788cdeed258784f623dcfaab9c7c60b7b090a8e6a9f7489044aba5d96"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_async_gc_reraises_unexpected_worker_failure isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0345"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/server/test_run_gc_background.py"
@@ -5641,19 +5485,17 @@ symbol = "test_gc_dependency_and_background_task_are_native_async"
 fingerprint = "sha256:a56b1e9b1d28f2f6ef41e27dea435ec61af8684205df4ccc5b6404085dd27e87"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_gc_dependency_and_background_task_are_native_async isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0346"
 tool = "pylint"
 rule = "protected-access"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "tests/server/test_run_gc_background.py"
@@ -5661,13 +5503,11 @@ symbol = "test_sync_write_routes_declare_gc_dependency"
 fingerprint = "sha256:aa43846d8f6ff46e20300d268aed091e8c2feb9cebc014c5a8f92c092d1512b8"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "test_sync_write_routes_declare_gc_dependency isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0347"
@@ -5693,7 +5533,7 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0354"
 tool = "ruff"
 rule = "ASYNC109"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/agents/chat/service.py"
@@ -5701,19 +5541,17 @@ symbol = "run_phyto_chat_cached"
 fingerprint = "sha256:7c8abf6977bb26a0953727ea231b896bacab040602ba7337e7a037e5d24f7c0d"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "noqa: ASYNC109"
 counterfactual = "Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime."
 risk = "The exemption could hide an accidental timeout that is not forwarded to the underlying client."
 tests = ["src/mcp_server_phytomni/agents/chat/service.py", "static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-STATIC-ANALYSIS-GOVERNANCE"
 
 [[exemptions]]
 id = "SAE-TMP-0355"
 tool = "ruff"
 rule = "ASYNC109"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/agents/deep_genome/profile.py"
@@ -5721,19 +5559,17 @@ symbol = "_post_bi_sql"
 fingerprint = "sha256:e9b02987d1e2de686402c3ea46f0b75ae6f86cf4a2b350217807b3727273b550"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "noqa: ASYNC109"
 counterfactual = "Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime."
 risk = "The exemption could hide an accidental timeout that is not forwarded to the underlying client."
 tests = ["src/mcp_server_phytomni/agents/deep_genome/profile.py", "static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-STATIC-ANALYSIS-GOVERNANCE"
 
 [[exemptions]]
 id = "SAE-TMP-0356"
 tool = "ruff"
 rule = "ASYNC109"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/agents/deep_genome/profile.py"
@@ -5741,19 +5577,17 @@ symbol = "_cached_gene_symbol_lookup"
 fingerprint = "sha256:063f0eeece2e09a0127065a7fb7888cd0028cf66cc935056a403369974743e09"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "noqa: ASYNC109"
 counterfactual = "Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime."
 risk = "The exemption could hide an accidental timeout that is not forwarded to the underlying client."
 tests = ["src/mcp_server_phytomni/agents/deep_genome/profile.py", "static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-STATIC-ANALYSIS-GOVERNANCE"
 
 [[exemptions]]
 id = "SAE-TMP-0357"
 tool = "ruff"
 rule = "ASYNC109"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/agents/deep_genome/profile.py"
@@ -5761,19 +5595,17 @@ symbol = "_cached_gene_annotation_lookup"
 fingerprint = "sha256:e7e9cea52b216d68a49a1cad774cd5d5e3a0b2f9e2b314b54c6436ed31eaf6a7"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "noqa: ASYNC109"
 counterfactual = "Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime."
 risk = "The exemption could hide an accidental timeout that is not forwarded to the underlying client."
 tests = ["src/mcp_server_phytomni/agents/deep_genome/profile.py", "static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-STATIC-ANALYSIS-GOVERNANCE"
 
 [[exemptions]]
 id = "SAE-TMP-0358"
 tool = "ruff"
 rule = "ASYNC109"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/agents/evolution/agent.py"
@@ -5781,19 +5613,17 @@ symbol = "find_spa_taxids"
 fingerprint = "sha256:9b1db3e2c21f23bbdfc39763a9fee97b55fb045dbc6abd84b744aa9df2be511f"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "noqa: ASYNC109"
 counterfactual = "Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime."
 risk = "The exemption could hide an accidental timeout that is not forwarded to the underlying client."
 tests = ["src/mcp_server_phytomni/agents/evolution/agent.py", "static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-STATIC-ANALYSIS-GOVERNANCE"
 
 [[exemptions]]
 id = "SAE-TMP-0359"
 tool = "ruff"
 rule = "ASYNC109"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/agents/knowledge/retrieval.py"
@@ -5801,19 +5631,17 @@ symbol = "_retrieve_scope_docs"
 fingerprint = "sha256:2d450f9fdf3c5d37449bc7d68f8e5757884d952f8eefc3677e0cb58736dd6063"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "noqa: ASYNC109"
 counterfactual = "Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime."
 risk = "The exemption could hide an accidental timeout that is not forwarded to the underlying client."
 tests = ["src/mcp_server_phytomni/agents/knowledge/retrieval.py", "static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-STATIC-ANALYSIS-GOVERNANCE"
 
 [[exemptions]]
 id = "SAE-TMP-0360"
 tool = "ruff"
 rule = "ASYNC109"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/agents/knowledge/retrieval.py"
@@ -5821,19 +5649,17 @@ symbol = "_rerank_batch"
 fingerprint = "sha256:4de11f90d993c77a4329ab5845fef2ae2a326f2617324c1929fed665b7389c9d"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "noqa: ASYNC109"
 counterfactual = "Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime."
 risk = "The exemption could hide an accidental timeout that is not forwarded to the underlying client."
 tests = ["src/mcp_server_phytomni/agents/knowledge/retrieval.py", "static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-STATIC-ANALYSIS-GOVERNANCE"
 
 [[exemptions]]
 id = "SAE-TMP-0361"
 tool = "ruff"
 rule = "ASYNC109"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/auth/iam.py"
@@ -5841,19 +5667,17 @@ symbol = "get_token"
 fingerprint = "sha256:86c7b9c1162e4bb19a32a5e178c0a2f362018486f6aa8c0efd145e60dafaa822"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "noqa: ASYNC109"
 counterfactual = "Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime."
 risk = "The exemption could hide an accidental timeout that is not forwarded to the underlying client."
 tests = ["src/mcp_server_phytomni/auth/iam.py", "static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-STATIC-ANALYSIS-GOVERNANCE"
 
 [[exemptions]]
 id = "SAE-TMP-0362"
 tool = "ruff"
 rule = "ASYNC109"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/common/httpx_client.py"
@@ -5861,10 +5685,8 @@ symbol = "get_async_client"
 fingerprint = "sha256:d902f3079846e17beb3ccdcc68c0bd432c3e473f0171b0c54c975be37ee154c9"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
-review_on = 2026-08-15
+review_on = 2027-01-17
 rationale = "noqa: ASYNC109"
 counterfactual = "Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime."
 risk = "The exemption could hide an accidental timeout that is not forwarded to the underlying client."
 tests = ["src/mcp_server_phytomni/common/httpx_client.py", "static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-STATIC-ANALYSIS-GOVERNANCE"
