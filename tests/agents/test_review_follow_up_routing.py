@@ -12,7 +12,6 @@ non-review consumers keep their existing router default).
 
 from __future__ import annotations
 
-from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -23,6 +22,7 @@ from mcp_server_phytomni.agents.review.state import DeepResearchState
 from mcp_server_phytomni.config.defaults import ReviewConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.graphs.chat_adapters import build_chat_kwargs_for
+from tests.support.config_fakes import fake_chat_config, fake_sensitive_config
 
 pytestmark = pytest.mark.agent
 
@@ -36,44 +36,6 @@ def _build_agent() -> DeepResearchAgent:
     return DeepResearchAgent(
         review_config=ReviewConfig(),
         sensitive_config=SensitiveConfig.load(),
-    )
-
-
-def _fake_config() -> SimpleNamespace:
-    """Build a SimpleNamespace stand-in for the chat-kwargs builder.
-
-    Mirrors ``tests/agents/test_chat_adapters.py`` so the tri-state
-    ``with_follow_up`` assertions stay independent of Pydantic
-    validation on the real ``ReviewAgentConfig`` instance.
-    """
-    return SimpleNamespace(
-        PROMPT_FILE="prompt.yaml",
-        PROMPT_PATH="/tmp/prompts",
-        FREQUENCY_PENALTY=0.0,
-        N=1,
-        PRESENCE_PENALTY=0.0,
-        REASONING_EFFORT="medium",
-        RESPONSE_FORMAT={"type": "text"},
-        STREAM=False,
-        TEMPERATURE=0.2,
-        TOP_P=0.9,
-        USER="consumer-user",
-        TIMEOUT=120.0,
-        RETRIABLE_CODES=[429, 500, 502, 503, 504],
-        MAX_RETRIES=3,
-    )
-
-
-def _fake_sensitive_config() -> SimpleNamespace:
-    """Build a SimpleNamespace stand-in for ``SensitiveConfig``.
-
-    ``API_KEY`` exposes ``get_secret_value`` to mirror the real
-    Pydantic ``SecretStr`` surface every consumer agent reads.
-    """
-    return SimpleNamespace(
-        API_KEY=SimpleNamespace(get_secret_value=lambda: "sk-test"),
-        BASE_URL="https://llm.example/v1",
-        MODEL_ID="phyto-llm-v1",
     )
 
 
@@ -197,8 +159,8 @@ def test_build_chat_kwargs_for_default_omits_follow_up_key() -> None:
     must omit the key entirely.
     """
     bag: dict[str, Any] = build_chat_kwargs_for(
-        config=_fake_config(),
-        sensitive_config=_fake_sensitive_config(),
+        config=fake_chat_config(),
+        sensitive_config=fake_sensitive_config(),
     )
     assert "with_follow_up" not in bag
 
@@ -206,8 +168,8 @@ def test_build_chat_kwargs_for_default_omits_follow_up_key() -> None:
 def test_build_chat_kwargs_for_explicit_false_includes_follow_up_key() -> None:
     """Explicit ``with_follow_up=False`` includes the key with value False."""
     bag: dict[str, Any] = build_chat_kwargs_for(
-        config=_fake_config(),
-        sensitive_config=_fake_sensitive_config(),
+        config=fake_chat_config(),
+        sensitive_config=fake_sensitive_config(),
         with_follow_up=False,
     )
     assert bag["with_follow_up"] is False
@@ -216,8 +178,8 @@ def test_build_chat_kwargs_for_explicit_false_includes_follow_up_key() -> None:
 def test_build_chat_kwargs_for_explicit_true_includes_follow_up_key() -> None:
     """Explicit ``with_follow_up=True`` includes the key with value True."""
     bag: dict[str, Any] = build_chat_kwargs_for(
-        config=_fake_config(),
-        sensitive_config=_fake_sensitive_config(),
+        config=fake_chat_config(),
+        sensitive_config=fake_sensitive_config(),
         with_follow_up=True,
     )
     assert bag["with_follow_up"] is True

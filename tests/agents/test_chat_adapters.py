@@ -14,8 +14,6 @@ projects the same arguments without drift. Covers the kwargs builder
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 from mcp_server_phytomni.agents.chat.state import ChatInput
@@ -24,50 +22,27 @@ from mcp_server_phytomni.graphs.chat_adapters import (
     build_chat_kwargs_for,
     extract_chat_response,
 )
+from tests.support.config_fakes import fake_chat_config, fake_sensitive_config
 
 pytestmark = pytest.mark.agent
 
 
-def _fake_config() -> SimpleNamespace:
-    """Build a SimpleNamespace stand-in for a consumer-agent config.
+def test_fake_chat_config_exposes_the_complete_chat_surface() -> None:
+    """Shared config fixture exposes the canonical chat kwargs surface."""
+    config = fake_chat_config(TEMPERATURE=0.7)
 
-    Only the fields the kwargs builder reads are populated; using
-    SimpleNamespace keeps the test independent from Pydantic
-    validation rules on the real ``DataConfig`` / ``KnowledgeConfig`` /
-    ``AnalystConfig`` instances. All three share the same 17-key
-    shape because the canonical
-    :func:`agents.shared.options.build_chat_kwargs` helper reads the
-    same attribute set across consumers.
-    """
-    return SimpleNamespace(
-        PROMPT_FILE="prompt.yaml",
-        PROMPT_PATH="/tmp/prompts",
-        FREQUENCY_PENALTY=0.0,
-        N=1,
-        PRESENCE_PENALTY=0.0,
-        REASONING_EFFORT="medium",
-        RESPONSE_FORMAT={"type": "text"},
-        STREAM=False,
-        TEMPERATURE=0.2,
-        TOP_P=0.9,
-        USER="consumer-user",
-        TIMEOUT=120.0,
-        RETRIABLE_CODES=[429, 500, 502, 503, 504],
-        MAX_RETRIES=3,
-    )
+    assert config.TEMPERATURE == 0.7
+    assert config.RETRIABLE_CODES == [429, 500, 502, 503, 504]
+    assert config.TIMEOUT == 120.0
 
 
-def _fake_sensitive_config() -> SimpleNamespace:
-    """Build a SimpleNamespace stand-in for ``SensitiveConfig``.
+def test_fake_sensitive_config_exposes_secret_and_model_fields() -> None:
+    """Shared sensitive fixture mirrors the fields consumed by adapters."""
+    config = fake_sensitive_config()
 
-    ``API_KEY`` exposes ``get_secret_value`` to mirror the real
-    Pydantic ``SecretStr`` surface every consumer agent reads.
-    """
-    return SimpleNamespace(
-        API_KEY=SimpleNamespace(get_secret_value=lambda: "sk-test"),
-        BASE_URL="https://llm.example/v1",
-        MODEL_ID="phyto-llm-v1",
-    )
+    assert config.API_KEY.get_secret_value() == "sk-test"
+    assert config.BASE_URL == "https://llm.example/v1"
+    assert config.MODEL_ID == "phyto-llm-v1"
 
 
 def test_build_chat_kwargs_for_packs_all_17_fields() -> None:
@@ -78,8 +53,8 @@ def test_build_chat_kwargs_for_packs_all_17_fields() -> None:
     test fails first so the adapter and the call sites stay aligned.
     """
     kwargs = build_chat_kwargs_for(
-        config=_fake_config(),
-        sensitive_config=_fake_sensitive_config(),
+        config=fake_chat_config(),
+        sensitive_config=fake_sensitive_config(),
     )
 
     assert kwargs == {
@@ -114,8 +89,8 @@ def test_build_chat_kwargs_for_response_format_override() -> None:
     """
     schema_format = {"type": "json_schema", "json_schema": {"name": "x"}}
     kwargs = build_chat_kwargs_for(
-        config=_fake_config(),
-        sensitive_config=_fake_sensitive_config(),
+        config=fake_chat_config(),
+        sensitive_config=fake_sensitive_config(),
         response_format=schema_format,
     )
 
@@ -132,8 +107,8 @@ def test_build_chat_kwargs_for_default_inherits_config() -> None:
     never crash on a missing override key.
     """
     kwargs = build_chat_kwargs_for(
-        config=_fake_config(),
-        sensitive_config=_fake_sensitive_config(),
+        config=fake_chat_config(),
+        sensitive_config=fake_sensitive_config(),
         response_format=None,
     )
 

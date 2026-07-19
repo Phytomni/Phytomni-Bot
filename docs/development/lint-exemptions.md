@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `280`
+- Authorized records: `279`
 
 ## Informational counts
 
@@ -23,7 +23,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:prop-decorator`                                             |       1 |
 | `pylint:C0103`                                                    |       1 |
 | `pylint:C0116`                                                    |       1 |
-| `pylint:R0801`                                                    |     151 |
+| `pylint:R0801`                                                    |     150 |
 | `pylint:R0903`                                                    |       7 |
 | `pylint:R0913`                                                    |       1 |
 | `pylint:R0917`                                                    |       1 |
@@ -144,7 +144,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0091` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_analyst_knowledge_subgraph.py | 30:72 | `sha256:e780a26f9d9a5c53253f6403d16c571a90a88972876d5823fc4e73d6856a80aa` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0092` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_brief_gene_chat_subgraph.py | 48:56 | `sha256:6dd6be1ef0509a12985128efe55b9da11d7f79526e1d11f7cc278526cd3ca149` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0093` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_brief_gene_knowledge_subgraph.py | 115:120 | `sha256:bc70faed4c88c0dfab582f45b9b5233de78603b3b936fe989d498338398c9dce` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0094` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_chat_adapters.py | 41:79 | `sha256:c5de4d6af55d14a37e50b608b166b4dabd208d844d3044f7d409ac7f6228793e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0095` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_data_chat_subgraph.py | 67:95 | `sha256:e55fdef09fedb868a03b2a95a4cfaff2339bf70bd15a625c4a44519b0da2d28b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0096` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_design_mount.py | 506:515 | `sha256:379d69b825614f6c4622544ca3554760a749338730b42d6702a8b994879180dd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0097` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_design_mount.py | 50:76 | `sha256:e81b26339ab9fe82dca21c97fe9d4b632d8466cc9d3bfe86a6a82950a9a6d178` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -161,18 +160,18 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0108` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_graphs_manifest_export.py | 178:193 | `sha256:04db7ecea1e9da5bd8060fda5b6806090e1033f622c378c61e05ab9f03af601b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0109` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_resume_kernel.py | 25:42 | `sha256:4ad39b4ad4b4823fe799020de33c01bfd5161991446aff20e5be60d87f550eae` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0110` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_resume_kernel.py | 43:48 | `sha256:e44e55cdded49e86109ef57098c78ebda86bba0f2946ece45fa0ec9ed1c314db` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0111` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 156:164 | `sha256:34de4964ce7c59b8b237d42ead116116bf3cbb36bc3a30ccf12fd594eec1c970` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0111` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 156:164 | `sha256:eafb2e850b5917942f2c81cbfe651d9330a57f453fc59303f4157a4809b078ef` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0112` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 23:45 | `sha256:23bbd8b239642e018dbc60f49d3d1e4c8cdfbebb5f87414e5b5445e40b6fbb93` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0113` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 31:51 | `sha256:d950aa1822e259620bc4bff509416c52b55c92a973643f5d4e0baa95662afae6` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0114` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 62:69 | `sha256:6c364e0fbb31f7df72af4c1abfcadd1f3e7285b68bffd04fb6cdfd33e57d0d5c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0115` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 86:98 | `sha256:5cad0f467fa989f648e63da88d03b44259cb0135250fbc7bb3647df4034a3b59` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0113` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 23:51 | `sha256:ddb612db8fefc45358b6d75539d9f30d035551353f2c75ec702ad9a6a188868d` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0114` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 62:69 | `sha256:82d89d279ad0674e10e82cd7593610e6b9e2fd37c38b5362d02a127ba45d21bc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0115` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_chat_single_shot.py | 86:98 | `sha256:5958a5492516e1ab331e8c505f11ce5f6131c69da9aa3e4e276f2c5fe5d47e60` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0116` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 112:118 | `sha256:cd79dea0ee4b5d430f86455f0390e5d207d1bf4e83ed7367c3de03bbc4a23337` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0117` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 128:151 | `sha256:3265569274137c65390fb3fdb51cdd6031d9b9c4e59123a13da30cbd7c64e480` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0118` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 145:151 | `sha256:26e8c7b6d4a394e05d7c5cf7320f5eacf6e257b8c36b83bf9fb4098e6f39d476` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0119` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 161:167 | `sha256:ae995bf05988ccbf722d517247f781a4254b4865f7e852a9112faef33453f3e1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0120` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 26:55 | `sha256:3805b83f9881ae8be0fb92e94baab7fecca11e0bb99b58c789022a2820a1fcf2` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0121` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 71:81 | `sha256:dbd52f40235adff6d246ff064785835af197b2443af9365785eed8dbf60fd110` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0122` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_follow_up_routing.py | 165:178 | `sha256:6a65a21d1726d9f252e4b483bdd612ffaa0922f203d5905c2b3b89b8903852b1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0121` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_draft_fan_out.py | 71:81 | `sha256:a2f5348f77dc74da5f3dbc733ec6d0b7f95adea8520d015bfcd4b90c6854a483` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0122` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_follow_up_routing.py | 127:140 | `sha256:df308387cbd9a67ea3d7df1efc54badaab7cfae528bb2c0d990274ae2bfc16c0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0123` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_review_results_fan_out.py | 277:282 | `sha256:bf2a4098c8d798c29376dae042680e2b25e8cd86a43a9f37681da34c1c7c334e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0124` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_review_review_results_fan_out.py | 51:57 | `sha256:0b6be40574dbb02e3bb54d46cdf2951d05710bac783d4d63ea4f5299ad6aaefd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0125` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_actions_http.py | 810:819 | `sha256:d30623a9d2caa6c8f0ea3c64da0ad0d8b8d7ed8e0e45dfa8300d9198f8efbda1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -3034,26 +3033,6 @@ Rationale:
 
 ```text
 BriefGene knowledge state remains intentionally duplicated with the DeepGenome BriefGene mount contract.
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0094`
-
-Rationale:
-
-```text
-Review follow-up config fixtures intentionally mirror the shared chat-adapter contract.
 ```
 
 Counterfactual:
