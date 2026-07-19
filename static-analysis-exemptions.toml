@@ -24,6 +24,120 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
+id = "SAE-TMP-0348"
+tool = "pylint"
+rule = "C0103"
+classification = "temporary"
+mechanism = "inline"
+target_kind = "span"
+path = "typings/obs/__init__.pyi"
+fingerprint = "sha256:09aee44e3ac01f4a545115d3328a6fb65f01c5c33e02dd0377e0039056d5484e"
+owner = "bot-maintainers"
+introduced_on = 2026-07-19
+review_on = 2026-08-15
+rationale = "pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613"
+counterfactual = "Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff."
+risk = "A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules."
+tests = ["typings/obs/__init__.pyi", "tests/unit/test_style_naming.py", "static-analysis-inventory"]
+expires_on = 2026-08-31
+remediation = "SAE-WORK-INITIAL-AUDIT"
+
+[[exemptions]]
+id = "SAE-TMP-0349"
+tool = "pylint"
+rule = "C0116"
+classification = "temporary"
+mechanism = "inline"
+target_kind = "span"
+path = "typings/obs/__init__.pyi"
+fingerprint = "sha256:2f9a477a4c23b20217aab2ea3567537fbb4c460a226ddff45484eb4db2d1f337"
+owner = "bot-maintainers"
+introduced_on = 2026-07-19
+review_on = 2026-08-15
+rationale = "pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613"
+counterfactual = "Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff."
+risk = "A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules."
+tests = ["typings/obs/__init__.pyi", "tests/unit/test_style_naming.py", "static-analysis-inventory"]
+expires_on = 2026-08-31
+remediation = "SAE-WORK-INITIAL-AUDIT"
+
+[[exemptions]]
+id = "SAE-TMP-0350"
+tool = "pylint"
+rule = "R0903"
+classification = "temporary"
+mechanism = "inline"
+target_kind = "span"
+path = "typings/obs/__init__.pyi"
+fingerprint = "sha256:5c977671811194457cd243d6dd05218d1fc7f86882833161d8a50e2dfe5298f8"
+owner = "bot-maintainers"
+introduced_on = 2026-07-19
+review_on = 2026-08-15
+rationale = "pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613"
+counterfactual = "Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff."
+risk = "A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules."
+tests = ["typings/obs/__init__.pyi", "tests/unit/test_style_naming.py", "static-analysis-inventory"]
+expires_on = 2026-08-31
+remediation = "SAE-WORK-INITIAL-AUDIT"
+
+[[exemptions]]
+id = "SAE-TMP-0351"
+tool = "pylint"
+rule = "R0913"
+classification = "temporary"
+mechanism = "inline"
+target_kind = "span"
+path = "typings/obs/__init__.pyi"
+fingerprint = "sha256:a15ec92995e4889b5cb4df0701e8c716d144aa145db9430f9e48cf5fb2f7d097"
+owner = "bot-maintainers"
+introduced_on = 2026-07-19
+review_on = 2026-08-15
+rationale = "pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613"
+counterfactual = "Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff."
+risk = "A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules."
+tests = ["typings/obs/__init__.pyi", "tests/unit/test_style_naming.py", "static-analysis-inventory"]
+expires_on = 2026-08-31
+remediation = "SAE-WORK-INITIAL-AUDIT"
+
+[[exemptions]]
+id = "SAE-TMP-0352"
+tool = "pylint"
+rule = "R0917"
+classification = "temporary"
+mechanism = "inline"
+target_kind = "span"
+path = "typings/obs/__init__.pyi"
+fingerprint = "sha256:8af6543ba16f67381086f0353049a789f5614276cc7434e402f6f4567c5c46d3"
+owner = "bot-maintainers"
+introduced_on = 2026-07-19
+review_on = 2026-08-15
+rationale = "pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613"
+counterfactual = "Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff."
+risk = "A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules."
+tests = ["typings/obs/__init__.pyi", "tests/unit/test_style_naming.py", "static-analysis-inventory"]
+expires_on = 2026-08-31
+remediation = "SAE-WORK-INITIAL-AUDIT"
+
+[[exemptions]]
+id = "SAE-TMP-0353"
+tool = "pylint"
+rule = "W0613"
+classification = "temporary"
+mechanism = "inline"
+target_kind = "span"
+path = "typings/obs/__init__.pyi"
+fingerprint = "sha256:f0fc55ced5b6b61c39a6343c9096d648e4ab54e91be08eb8ed93d449a49e297c"
+owner = "bot-maintainers"
+introduced_on = 2026-07-19
+review_on = 2026-08-15
+rationale = "pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613"
+counterfactual = "Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff."
+risk = "A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules."
+tests = ["typings/obs/__init__.pyi", "tests/unit/test_style_naming.py", "static-analysis-inventory"]
+expires_on = 2026-08-31
+remediation = "SAE-WORK-INITIAL-AUDIT"
+
+[[exemptions]]
 id = "SAE-TMP-0002"
 tool = "flake8"
 rule = "W503"
@@ -3586,126 +3700,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0216"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "typings/obs/__init__.pyi"
-symbol = "GetObjectHeader"
-fingerprint = "sha256:8b33ef3b41e1734cd85d4db326c94556f6c6710caf36d9587a9cdd22b2d67edc"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (0/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0217"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "typings/obs/__init__.pyi"
-symbol = "ListObjectsBody"
-fingerprint = "sha256:27ea6a3da40442bb712fc570308e704e944c4af45f746c28767d5c67ffe8f77e"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (0/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0218"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "typings/obs/__init__.pyi"
-symbol = "ListObjectsResponse"
-fingerprint = "sha256:f650d953e8dfca4242cadee1342e6a2cf1f646c895af830e03904febff1ca070"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (0/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0219"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "typings/obs/__init__.pyi"
-symbol = "ObjectSummary"
-fingerprint = "sha256:2cf1097236098490dea6ba9ab35034d84aaa518f3980cac0d8de72bd1a93c830"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (0/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0220"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "typings/obs/__init__.pyi"
-symbol = "ObsResponse"
-fingerprint = "sha256:86477f709254d56c91dea64df5319161ffe7b5377e92dffa9911285e74c34411"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (0/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0221"
-tool = "pylint"
-rule = "R0903"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "typings/obs/__init__.pyi"
-symbol = "PutObjectHeader"
-fingerprint = "sha256:f57100dd30cfc38f37a226a4092a97b7df38f3b10625cbf08caae5f436fae090"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Too few public methods (0/2)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0222"
 tool = "pylint"
 rule = "broad-exception-caught"
@@ -3817,26 +3811,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "tool.pylint.format.max-module-lines=1100"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0235"
-tool = "pylint"
-rule = "path-ignore"
-classification = "temporary"
-mechanism = "config"
-target_kind = "config"
-path = "pyproject.toml"
-symbol = "tool.pylint.main.ignore"
-fingerprint = "sha256:2594f4f66df475f4c21526ce505b0814d4b10599e889277db5d89ee8b92bbb1e"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "tool.pylint.main.ignore='typings'"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]

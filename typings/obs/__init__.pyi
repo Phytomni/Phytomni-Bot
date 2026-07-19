@@ -12,12 +12,15 @@ so the type-check correspondence holds. Ruff silences the PEP 8 naming
 rules that target executable-code semantics (N802 / N803 / N815) on
 ``typings/**/*.pyi`` via ``[tool.ruff.lint.per-file-ignores]``;
 structural ruff checks (import sort, dead code) still run on this
-file. Pylint cannot express the same per-file rule mask without inline
-disables, so ``typings`` is excluded wholesale through
-``[tool.pylint.main].ignore`` in ``pyproject.toml``.
+file. Pylint uses the file-local rule mask below because these six
+diagnostics describe the external stub surface rather than executable
+implementation quality.
 """
 
 from typing import Any
+
+# The names and signatures mirror the external OBS SDK exactly.
+# pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613
 
 class ObsResponse:
     """Common OBS response fields used by this project."""

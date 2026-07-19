@@ -245,8 +245,9 @@ py-version = "3.12"
 # / R0913 / R0917 trip on the camelCase signatures that must mirror
 # upstream exactly. mypy and pyright are the canonical stub checkers
 # (validated by ``stubPath = "typings"`` in [tool.pyright]) so
-# pylint walks past the directory entirely.
-ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv", "typings"]
+# The OBS stub carries a file-local rule set for the six signature/docstring
+# diagnostics above; ordinary tool/cache directories remain excluded here.
+ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"]
 
 [tool.pylint."messages control"]
 

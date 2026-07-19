@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `273`
+- Authorized records: `272`
 
 ## Informational counts
 
@@ -21,12 +21,17 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:ignore_missing_imports`                                     |       2 |
 | `mypy:misc`                                                       |       2 |
 | `mypy:prop-decorator`                                             |       1 |
+| `pylint:C0103`                                                    |       1 |
+| `pylint:C0116`                                                    |       1 |
 | `pylint:R0801`                                                    |     151 |
-| `pylint:R0903`                                                    |      12 |
+| `pylint:R0903`                                                    |       7 |
+| `pylint:R0913`                                                    |       1 |
+| `pylint:R0917`                                                    |       1 |
+| `pylint:W0613`                                                    |       1 |
 | `pylint:broad-exception-caught`                                   |       3 |
 | `pylint:contextmanager-generator-missing-cleanup`                 |       2 |
 | `pylint:max-module-lines`                                         |       1 |
-| `pylint:path-ignore`                                              |       5 |
+| `pylint:path-ignore`                                              |       4 |
 | `pylint:protected-access`                                         |      45 |
 | `pylint:too-few-public-methods`                                   |       3 |
 | `pylint:too-many-arguments`                                       |      10 |
@@ -217,19 +222,12 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0213` | pylint | R0903 | temporary | diagnostic | symbol | tests/unit/interop/test_fake_peer_e2e.py | \_FakeMCPServer | `sha256:0dcf2d975d525a931a08dd914e21c20836ea700969650768d93515b034f55122` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0214` | pylint | R0903 | temporary | diagnostic | symbol | tests/unit/test_api_file_upload.py | \_ChunkedUpload | `sha256:eda00c1f02071e7fa974cdef673f09b7b2efc3b1302890c475dbc5ed46cefe1d` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0215` | pylint | R0903 | temporary | diagnostic | symbol | tests/unit/test_storage_error_sanitization.py | \_ExplodingObsClient | `sha256:826980652eb87a9cc733947dd7a6328efa942f2f98b5cb373e5db5d4ae417825` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0216` | pylint | R0903 | temporary | diagnostic | symbol | typings/obs/__init__.pyi | GetObjectHeader | `sha256:8b33ef3b41e1734cd85d4db326c94556f6c6710caf36d9587a9cdd22b2d67edc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0217` | pylint | R0903 | temporary | diagnostic | symbol | typings/obs/__init__.pyi | ListObjectsBody | `sha256:27ea6a3da40442bb712fc570308e704e944c4af45f746c28767d5c67ffe8f77e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0218` | pylint | R0903 | temporary | diagnostic | symbol | typings/obs/__init__.pyi | ListObjectsResponse | `sha256:f650d953e8dfca4242cadee1342e6a2cf1f646c895af830e03904febff1ca070` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0219` | pylint | R0903 | temporary | diagnostic | symbol | typings/obs/__init__.pyi | ObjectSummary | `sha256:2cf1097236098490dea6ba9ab35034d84aaa518f3980cac0d8de72bd1a93c830` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0220` | pylint | R0903 | temporary | diagnostic | symbol | typings/obs/__init__.pyi | ObsResponse | `sha256:86477f709254d56c91dea64df5319161ffe7b5377e92dffa9911285e74c34411` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0221` | pylint | R0903 | temporary | diagnostic | symbol | typings/obs/__init__.pyi | PutObjectHeader | `sha256:f57100dd30cfc38f37a226a4092a97b7df38f3b10625cbf08caae5f436fae090` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0222` | pylint | broad-exception-caught | temporary | inline | symbol | e2e/helpers/polling.py | \_reconciled_task_state | `sha256:58b3b2f3bb4ee5b58ee8ca5380146a1ab5d43c18bff5e36510cb912eece854a3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0223` | pylint | broad-exception-caught | temporary | inline | symbol | src/mcp_server_phytomni/api/app.py | \_maybe_project_review_interrupt | `sha256:00283b9c5b01c64fbb2fbbd8564f6f8a84317997b467d41ffdac50f678c5fde0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0227` | pylint | broad-exception-caught | temporary | inline | symbol | src/mcp_server_phytomni/mcp/stream_lifecycle.py | project_stream_failures | `sha256:0fa2621f7153da1bff3a4df5a0a23d14425aa3d17b782f9545d0c2e657296557` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0228` | pylint | contextmanager-generator-missing-cleanup | temporary | inline | span | tests/agents/test_cache_candidates.py | — | `sha256:1a93e1b05a8cfa872aeddc39c7850189f9089c16b59a0d36c97909cc4341ae03` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0229` | pylint | contextmanager-generator-missing-cleanup | temporary | inline | span | tests/conftest.py | — | `sha256:8051cd3af754f03cba8b655218a54168e8867d393d6ed998ce98de611d0b7b9a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0232` | pylint | max-module-lines | temporary | config | config | pyproject.toml | tool.pylint.format.max-module-lines | `sha256:56ab2666391bfe20e49b31efb25773c9fa08523cec25d451bac69ed8516cd17f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0235` | pylint | path-ignore | temporary | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:2594f4f66df475f4c21526ce505b0814d4b10599e889277db5d89ee8b92bbb1e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0236` | pylint | path-ignore | temporary | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:38fd2748eed7f3803e3176f0ef992ae35b8441cfc99a8e873d01821f62c700eb` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0237` | pylint | path-ignore | temporary | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:3e1bc269c16210ee4149f6c708497a514291d2716f41ad7186c731fe6fce7ea3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0238` | pylint | path-ignore | temporary | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:829ec7992def978f01ad8efae0a0ee64c5e1767cfeb76f3a13236dc4ed5cef23` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -323,6 +321,12 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0345` | pylint | protected-access | temporary | inline | symbol | tests/server/test_run_gc_background.py | test_gc_dependency_and_background_task_are_native_async | `sha256:a56b1e9b1d28f2f6ef41e27dea435ec61af8684205df4ccc5b6404085dd27e87` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0346` | pylint | protected-access | temporary | inline | symbol | tests/server/test_run_gc_background.py | test_sync_write_routes_declare_gc_dependency | `sha256:aa43846d8f6ff46e20300d268aed091e8c2feb9cebc014c5a8f92c092d1512b8` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0347` | pylint | too-many-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | DeepGenomeDispatchMixin | `sha256:5718146c933edb576d220edaf4190c626b7966cf86d8097be352e92203b76c39` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0348` | pylint | C0103 | temporary | inline | span | typings/obs/__init__.pyi | — | `sha256:09aee44e3ac01f4a545115d3328a6fb65f01c5c33e02dd0377e0039056d5484e` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | typings/obs/__init__.pyi, tests/unit/test_style_naming.py, static-analysis-inventory |
+| `SAE-TMP-0349` | pylint | C0116 | temporary | inline | span | typings/obs/__init__.pyi | — | `sha256:2f9a477a4c23b20217aab2ea3567537fbb4c460a226ddff45484eb4db2d1f337` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | typings/obs/__init__.pyi, tests/unit/test_style_naming.py, static-analysis-inventory |
+| `SAE-TMP-0350` | pylint | R0903 | temporary | inline | span | typings/obs/__init__.pyi | — | `sha256:5c977671811194457cd243d6dd05218d1fc7f86882833161d8a50e2dfe5298f8` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | typings/obs/__init__.pyi, tests/unit/test_style_naming.py, static-analysis-inventory |
+| `SAE-TMP-0351` | pylint | R0913 | temporary | inline | span | typings/obs/__init__.pyi | — | `sha256:a15ec92995e4889b5cb4df0701e8c716d144aa145db9430f9e48cf5fb2f7d097` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | typings/obs/__init__.pyi, tests/unit/test_style_naming.py, static-analysis-inventory |
+| `SAE-TMP-0352` | pylint | R0917 | temporary | inline | span | typings/obs/__init__.pyi | — | `sha256:8af6543ba16f67381086f0353049a789f5614276cc7434e402f6f4567c5c46d3` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | typings/obs/__init__.pyi, tests/unit/test_style_naming.py, static-analysis-inventory |
+| `SAE-TMP-0353` | pylint | W0613 | temporary | inline | span | typings/obs/__init__.pyi | — | `sha256:f0fc55ced5b6b61c39a6343c9096d648e4ab54e91be08eb8ed93d449a49e297c` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | typings/obs/__init__.pyi, tests/unit/test_style_naming.py, static-analysis-inventory |
 
 ## Review fields
 
@@ -5271,126 +5275,6 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0216`
-
-Rationale:
-
-```text
-Too few public methods (0/2)
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0217`
-
-Rationale:
-
-```text
-Too few public methods (0/2)
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0218`
-
-Rationale:
-
-```text
-Too few public methods (0/2)
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0219`
-
-Rationale:
-
-```text
-Too few public methods (0/2)
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0220`
-
-Rationale:
-
-```text
-Too few public methods (0/2)
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0221`
-
-Rationale:
-
-```text
-Too few public methods (0/2)
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0222`
 
 Rationale:
@@ -5497,26 +5381,6 @@ Rationale:
 
 ```text
 tool.pylint.format.max-module-lines=1100
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0235`
-
-Rationale:
-
-```text
-tool.pylint.main.ignore='typings'
 ```
 
 Counterfactual:
@@ -7389,4 +7253,124 @@ Risk:
 
 ```text
 Suppression can hide a future regression.
+```
+
+### `SAE-TMP-0348`
+
+Rationale:
+
+```text
+pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613
+```
+
+Counterfactual:
+
+```text
+Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff.
+```
+
+Risk:
+
+```text
+A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules.
+```
+
+### `SAE-TMP-0349`
+
+Rationale:
+
+```text
+pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613
+```
+
+Counterfactual:
+
+```text
+Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff.
+```
+
+Risk:
+
+```text
+A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules.
+```
+
+### `SAE-TMP-0350`
+
+Rationale:
+
+```text
+pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613
+```
+
+Counterfactual:
+
+```text
+Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff.
+```
+
+Risk:
+
+```text
+A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules.
+```
+
+### `SAE-TMP-0351`
+
+Rationale:
+
+```text
+pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613
+```
+
+Counterfactual:
+
+```text
+Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff.
+```
+
+Risk:
+
+```text
+A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules.
+```
+
+### `SAE-TMP-0352`
+
+Rationale:
+
+```text
+pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613
+```
+
+Counterfactual:
+
+```text
+Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff.
+```
+
+Risk:
+
+```text
+A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules.
+```
+
+### `SAE-TMP-0353`
+
+Rationale:
+
+```text
+pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613
+```
+
+Counterfactual:
+
+```text
+Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff.
+```
+
+Risk:
+
+```text
+A broader directive could hide a real stub-shape regression if the mask is expanded beyond the six recorded rules.
 ```
