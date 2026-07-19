@@ -239,7 +239,7 @@ tests = ["static-analysis-inventory"]
 id = "SAE-TMP-0012"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "e2e/helpers/polling.py"
@@ -248,20 +248,18 @@ peer_path = "src/mcp_client_phytomni/http_client.py"
 peer_symbol = "370:379"
 fingerprint = "sha256:cddaaaa04f92a9fe57ff67e2ce0d4a24501907412ac56b79f71c5a4260150509"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==e2e.helpers.polling:[336:345]\n==mcp_client_phytomni.http_client:[370:379]\n    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:\n        return value\n    return 0\n\n\ndef _public_progress(value: Any) -> Mapping[str, int | bool | str]:\n    \"\"\"Keep only the documented public progress keys and value types.\"\"\"\n    if not isinstance(value, Mapping):\n        return {}"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The live E2E parser independently normalizes report revisions from public task payloads instead of importing the SDK parser. Repository owner approved this independent oracle on 2026-07-20."
+counterfactual = "Sharing the SDK helper would let a client regression redefine the live E2E compatibility oracle; keep the duplicate to detect server-payload and client-projection drift."
+risk = "A shared parser could mask either payload-shape or SDK-projection regressions; keep both paths in compatibility review."
+tests = ["e2e/helpers/polling.py", "e2e/test_deep_genome_agent_e2e.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0013"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "e2e/helpers/polling.py"
@@ -270,14 +268,12 @@ peer_path = "src/mcp_client_phytomni/http_client.py"
 peer_symbol = "278:284"
 fingerprint = "sha256:ef92dfc802b7295423a28a5b01598f3b642888f8ce21bbffbdaf6e62e2dae3c1"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==e2e.helpers.polling:[575:581]\n==mcp_client_phytomni.http_client:[278:284]\n    \"intermediate_report\",\n    \"final_report\",\n    \"report_stage\",\n    \"report_completeness\",\n    \"report_revision\",\n    \"report_updated_at\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The E2E projection independently fixes the documented progress and report keys exposed by task payloads instead of importing the SDK projection. Repository owner approved this public-field oracle on 2026-07-20."
+counterfactual = "Adding an undocumented progress or report key to the SDK and reusing its projection would let the compatibility test pass without detecting the public-shape drift."
+risk = "Client consumers depend on the documented field set; changes require E2E, SDK, and protocol review."
+tests = ["e2e/helpers/polling.py", "e2e/test_deep_genome_agent_e2e.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0014"
@@ -459,7 +455,7 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0024"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_client_phytomni/http_client.py"
@@ -468,14 +464,12 @@ peer_path = "tests/unit/test_deep_genome_contract_docs.py"
 peer_symbol = "65:76"
 fingerprint = "sha256:f52f7ed0f6653cde4b0ea03422f8fb7718558d2a4e875fa5bf2dc24a7a0bd91a"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_client_phytomni.http_client:[19:30]\n==test_deep_genome_contract_docs:[65:76]\n        \"planning_complete\",\n        \"brief_gene_status\",\n        \"total\",\n        \"planned\",\n        \"submitted\",\n        \"pending\",\n        \"running\",\n        \"succeeded\",\n        \"failed\",\n        \"cancelled\",\n        \"timed_out\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The DeepGenome contract fixture independently fixes the public status and progress vocabulary consumed by the SDK. Repository owner approved this compatibility oracle on 2026-07-20."
+counterfactual = "Importing the SDK status tuple would allow a removed required status to disappear from both serializer and fixture expectations without a failure."
+risk = "Status vocabulary changes are consumer-visible and require coordinated client and contract updates."
+tests = ["tests/unit/test_deep_genome_contract_docs.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0025"
@@ -525,7 +519,7 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0027"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_client_phytomni/http_client.py"
@@ -534,14 +528,12 @@ peer_path = "tests/unit/test_deep_genome_contract_docs.py"
 peer_symbol = "44:54"
 fingerprint = "sha256:c8759585f97690eb52cf5af8aec0c20c3f0e711d9cafb32317690f9eeec46e2d"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_client_phytomni.http_client:[278:288]\n==test_deep_genome_contract_docs:[44:54]\n    \"intermediate_report\",\n    \"final_report\",\n    \"report_stage\",\n    \"report_completeness\",\n    \"report_revision\",\n    \"report_updated_at\",\n    \"progress\",\n    \"degraded\",\n    \"degraded_reason\",\n    \"failures\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The DeepGenome contract fixture independently fixes the report and degraded-field projection consumed by the SDK. Repository owner approved this compatibility oracle on 2026-07-20."
+counterfactual = "Importing the SDK report-field tuple would allow a required field to be removed from both serializer and fixture expectations simultaneously."
+risk = "Report fields are public protocol data; changes require compatibility review and fixture updates."
+tests = ["tests/unit/test_deep_genome_contract_docs.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0028"
@@ -855,7 +847,7 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0042"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/core.py"
@@ -864,20 +856,18 @@ peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
 peer_symbol = "234:239"
 fingerprint = "sha256:1d150569c10458da8ffb018c145f78cbd52adf676e4b9a3dfb283b4d360e9063"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.core:[119:124]\n==tests.agents.test_deep_genome_brief_gene_mount:[234:239]\n        \"go_string\": \"\",\n        \"kegg_string\": \"\",\n        \"interpro_string\": \"\",\n        \"description_string\": \"\",\n        \"retrieved_docs\": [],"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The DeepGenome mount test uses an isolated BriefGene output fake for the optional annotation contract rather than production seed data. Repository owner approved this independent oracle on 2026-07-20."
+counterfactual = "Replacing the fake with production seed data would let a mount defaulting regression update both implementation and expected value, hiding the failure."
+risk = "Annotation defaults are consumed by the mounted graph; intentional field changes require mount-contract review."
+tests = ["tests/agents/test_deep_genome_brief_gene_mount.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0043"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/core.py"
@@ -886,14 +876,12 @@ peer_path = "tests/agents/test_brief_gene_knowledge_subgraph.py"
 peer_symbol = "81:89"
 fingerprint = "sha256:6d7890f810b669e5cdd6ab13fe90489027a9014d59885e33d60fbd9481c50147"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Shared BriefGene state fixture shape remains intentionally duplicated across the production schema and knowledge fan-out test."
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The knowledge-subgraph test independently fixes the BriefGene fan-out input state shape instead of importing the production seed. Repository owner approved this state oracle on 2026-07-20."
+counterfactual = "Importing the production seed would couple the expected state to implementation changes and stop the test from detecting retrieval-key drift."
+risk = "State-shape changes can break fan-out routing; update the independent fixture only with graph-contract review."
+tests = ["tests/agents/test_brief_gene_knowledge_subgraph.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0044"
@@ -1075,7 +1063,7 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0052"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/state.py"
@@ -1084,20 +1072,18 @@ peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
 peer_symbol = "41:46"
 fingerprint = "sha256:bced20b31d1f24e53dbf50abc7462eeaaa5c709ed8fc09081f208f3992fd09bb"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[106:111]\n==tests.agents.test_deep_genome_brief_gene_mount:[41:46]\n    go_string: str\n    kegg_string: str\n    interpro_string: str\n    description_string: str\n    retrieved_docs: list[dict[str, Any]]"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The DeepGenome mount test owns an isolated fake state schema for the mounted BriefGene subgraph. Repository owner approved this structural oracle on 2026-07-20."
+counterfactual = "Reusing BriefGeneState would make the fake mutate with the implementation and allow a removed annotation field to pass the mount contract."
+risk = "The fake must remain aligned with the mounted public state contract; changes require graph integration review."
+tests = ["tests/agents/test_deep_genome_brief_gene_mount.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0053"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/state.py"
@@ -1106,20 +1092,18 @@ peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
 peer_symbol = "54:66"
 fingerprint = "sha256:c09286b8f6a95ac45cc85c1daee7a3e0ca52fb6143482344b0841ba433d82290"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[130:143]\n==tests.agents.test_deep_genome_brief_gene_mount:[54:66]\n    section1_markdown: str\n    section2_markdown: str\n    section3_markdown: str\n    section4_markdown: str\n    introduction_report: str\n\n\ndef _build_fake_brief_gene_app(\n    output: dict[str, Any] | None = None,\n) -> CompiledStateGraph:\n    \"\"\"Build a compiled BriefGene fake with an independent state oracle.\"\"\"\n"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The mounted BriefGene fake independently fixes the preamble-section state shape used by the graph contract. Repository owner approved this structural oracle on 2026-07-20."
+counterfactual = "Importing the production state would let a removed section or introduction field disappear from both fake and implementation without a failure."
+risk = "Preamble fields are report-facing; intentional changes require mounted graph and contract review."
+tests = ["tests/agents/test_deep_genome_brief_gene_mount.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0054"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/state.py"
@@ -1128,20 +1112,18 @@ peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
 peer_symbol = "39:45"
 fingerprint = "sha256:f33cd96ed68f9985a80483c8f061112d267e9818e32b3ac5bbb2e47f31f2b2f6"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[61:67]\n==tests.agents.test_deep_genome_brief_gene_mount:[39:45]\n    gene_id: str\n    species_code: str\n    go_string: str\n    kegg_string: str\n    interpro_string: str\n    description_string: str"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The mounted BriefGene test independently fixes the nested annotation output fields expected from the subgraph. Repository owner approved this output oracle on 2026-07-20."
+counterfactual = "Importing the production state fields would let an annotation rename update the expected projection and mask the mount regression."
+risk = "Nested annotation fields are report-facing and require coordinated graph and fixture updates."
+tests = ["tests/agents/test_deep_genome_brief_gene_mount.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0055"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/state.py"
@@ -1150,20 +1132,18 @@ peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
 peer_symbol = "50:66"
 fingerprint = "sha256:250f8f011043370e361a2a149e6cd8517793e67631733c00cf8209112b9157dc"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[67:76]\n==tests.agents.test_deep_genome_brief_gene_mount:[50:66]\n    gene_structure_string: str\n    orthologs_data: dict[str, Any]\n    paralogs_data: dict[str, Any]\n    interaction_data: dict[str, Any]\n    section1_markdown: str\n    section2_markdown: str\n    section3_markdown: str\n    section4_markdown: str\n    introduction_report: str\n\n\ndef _build_fake_brief_gene_app(\n    output: dict[str, Any] | None = None,\n) -> CompiledStateGraph:\n    \"\"\"Build a compiled BriefGene fake with an independent state oracle.\"\"\"\n"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The mounted BriefGene test independently fixes the preamble output fields expected from the subgraph. Repository owner approved this output oracle on 2026-07-20."
+counterfactual = "Importing the production state would let a removed homology or section field mutate the expected output and hide the contract failure."
+risk = "Preamble output changes affect report assembly; update the independent oracle only after contract review."
+tests = ["tests/agents/test_deep_genome_brief_gene_mount.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0056"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/chat/a2ui_graph.py"
@@ -1172,14 +1152,12 @@ peer_path = "tests/server/test_a2ui_actions_http.py"
 peer_symbol = "169:179"
 fingerprint = "sha256:c2d9b397b9cf9fdf2daec3d5a3281cc05f7c974d14a938108a47e972dc4c9292"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.chat.a2ui_graph:[197:207]\n==test_a2ui_actions_http:[169:179]\n        \"response\": {\n            \"choices\": [\n                {\n                    \"message\": {\n                        \"content\": _CANCEL_MESSAGE,\n                        \"follow_up_questions\": [],\n                    }\n                }\n            ]\n        },"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The HTTP A2UI action test independently fixes the cancelled response shape and content. Repository owner approved this protocol oracle on 2026-07-20."
+counterfactual = "Importing the production cancel payload would make a response-shape regression update both implementation and expected value, defeating the HTTP contract test."
+risk = "Cancel semantics are consumer-visible; changes require coordinated A2UI contract review and golden updates."
+tests = ["tests/server/test_a2ui_actions_http.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0057"
@@ -1273,7 +1251,7 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0061"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/deep_genome/dispatch.py"
@@ -1282,14 +1260,12 @@ peer_path = "tests/unit/test_deep_genome_work_items.py"
 peer_symbol = "72:81"
 fingerprint = "sha256:2c939f306bfc192d1b4ccf2554102891e23b77d00d43855201693dcb676bfc6b"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.deep_genome.dispatch:[172:181]\n==test_deep_genome_work_items:[72:81]\n        \"gene_expression_tissues\",\n        \"gene_expression_cultivars\",\n        \"gene_expression_treatments\",\n        \"gene_expression_genotypes\",\n        \"single_cell_analysis\",\n        \"promoter_analysis\",\n        \"smep_analysis\",\n        \"smoc_analysis\",\n        \"protein_structure_analysis\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The work-item test independently enumerates the concrete DeepGenome job universe and section order. Repository owner approved this plan oracle on 2026-07-20."
+counterfactual = "Importing the production work-item list would allow a removed or reordered job to pass because the expected list would mutate with it."
+risk = "The explicit list must be updated with any intentional product-plan change and reviewed against report sections."
+tests = ["tests/unit/test_deep_genome_work_items.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0062"
@@ -1559,7 +1535,7 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0074"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/api/relay/audit_filter.py"
@@ -1568,20 +1544,18 @@ peer_path = "tests/unit/test_relay_audit_filter.py"
 peer_symbol = "30:40"
 fingerprint = "sha256:e403f78e603f501a9592111cdd3963a7670f069c42cb5d1e1755b764d1dc32e9"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.api.relay.audit_filter:[27:38]\n==test_relay_audit_filter:[30:40]\n    {\n        \"authorization\",\n        \"x-api-key\",\n        \"x-service-token\",\n        \"x-auth-token\",\n        \"token\",\n        \"cookie\",\n        \"set-cookie\",\n    }\n)\n"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The relay audit test independently owns the credential-header denylist and verifies redaction behavior. Repository owner approved this security oracle on 2026-07-20."
+counterfactual = "Sharing CREDENTIAL_HEADERS would make a removed secret header disappear from both implementation and expected set, masking credential leakage."
+risk = "A stale denylist can either leak a new credential header or over-redact safe metadata; security review is required for changes."
+tests = ["tests/unit/test_relay_audit_filter.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0075"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/config/required_env.py"
@@ -1590,20 +1564,18 @@ peer_path = "tests/unit/config/test_required_env.py"
 peer_symbol = "73:88"
 fingerprint = "sha256:0a106c71d1e188f33ba116a1a15980da2ccbd8924042f13b31d0dd5df3f2585c"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.config.required_env:[16:28]\n==test_required_env:[73:88]\n        \"TOKEN_URL\",\n        \"RETRIEVE_URL\",\n        \"RERANK_URL\",\n        \"DATABASE_URL\",\n        \"ANALYSIS_URL\",\n        \"REPO_ID\",\n        \"REPO_ID_DICT\",\n        \"WORKSPACE_ID\",\n        \"SUBJECT_ID\",\n        \"OBS_SERVER\",\n    )\n\n\ndef test_missing_environment_is_sorted_and_value_safe() -> None:\n    \"\"\"Only missing names are returned, in deterministic order.\"\"\""
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The configuration test independently enumerates the required deployment endpoint universe and its size. Repository owner approved this deployment oracle on 2026-07-20."
+counterfactual = "Importing REQUIRED_DEPLOYMENT_FIELDS would allow an omitted or accidental endpoint to pass because production and expected values would change together."
+risk = "The list is deployment-sensitive; intentional endpoint changes require synchronized environment, fixture, and documentation updates."
+tests = ["tests/unit/config/test_required_env.py", "tests/unit/test_defaults.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0076"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/config/required_env.py"
@@ -1612,14 +1584,12 @@ peer_path = "tests/unit/config/test_required_env.py"
 peer_symbol = "35:40"
 fingerprint = "sha256:b181294b667a5a5e3b3cc601d177d1d5e50806e12df472c917d370454afa17f9"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.config.required_env:[41:46]\n==test_required_env:[35:40]\n    \"DATA_REPO_ID\",\n    \"TOOL_REPO_ID\",\n    \"PROTOCOL_REPO_ID\",\n    \"SPA_REPO_ID\",\n    \"APP_ID\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The required endpoint test independently fixes the remaining operator and DeepGenome endpoint names. Repository owner approved this deployment oracle on 2026-07-20."
+counterfactual = "Sharing the production tuple would let an omitted operator endpoint disappear from both the validator and its expected contract."
+risk = "A stale expected tuple can block a legitimate deployment change; update it with the configuration contract and environment template."
+tests = ["tests/unit/config/test_required_env.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0077"
@@ -1669,7 +1639,7 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0079"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/mcp/result_formatting.py"
@@ -1678,20 +1648,18 @@ peer_path = "tests/unit/test_result_formatting_projection.py"
 peer_symbol = "222:229"
 fingerprint = "sha256:39bb04ba061c5c096516cd49aa3d965d902986d4ef683a93996c50dbee9472aa"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.mcp.result_formatting:[1168:1175]\n==test_result_formatting_projection:[222:229]\n        \"id\",\n        \"object\",\n        \"created\",\n        \"model\",\n        \"choices\",\n        \"usage\",\n        \"formatted\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The response projection test independently fixes the canonical OpenAI field order and presence contract. Repository owner approved this protocol oracle on 2026-07-20."
+counterfactual = "Importing the production field tuple would allow a canonical field to be removed from the response and expected value simultaneously."
+risk = "Consumers depend on canonical placement; any intentional field change requires compatibility review."
+tests = ["tests/unit/test_result_formatting_projection.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0080"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/mcp/result_formatting.py"
@@ -1700,14 +1668,12 @@ peer_path = "tests/unit/test_task_reconcile.py"
 peer_symbol = "160:171"
 fingerprint = "sha256:f5522e6938b71179fb0baf2e7eb8c4294d3891dd03b2475e5156e869a9a62647"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.mcp.result_formatting:[38:49]\n==test_task_reconcile:[160:171]\n        \"planning_complete\",\n        \"brief_gene_status\",\n        \"total\",\n        \"planned\",\n        \"submitted\",\n        \"pending\",\n        \"running\",\n        \"succeeded\",\n        \"failed\",\n        \"cancelled\",\n        \"timed_out\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The reconcile test independently fixes the public progress-key order emitted in serialized task snapshots. Repository owner approved this protocol oracle on 2026-07-20."
+counterfactual = "Sharing the formatter progress tuple would allow a removed or reordered public key to pass the reconcile contract test."
+risk = "Progress consumers may rely on stable names and order; update the independent list only with a protocol review."
+tests = ["tests/unit/test_task_reconcile.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0081"
@@ -1735,7 +1701,7 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0082"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/runtime/deep_genome_report_snapshot.py"
@@ -1744,14 +1710,12 @@ peer_path = "tests/unit/test_deep_genome_contract_docs.py"
 peer_symbol = "68:76"
 fingerprint = "sha256:ada3e86401e92e3bfc426af9b7194848762b2b4052c8e1df325025167c13594a"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.runtime.deep_genome_report_snapshot:[27:35]\n==test_deep_genome_contract_docs:[68:76]\n    \"planned\",\n    \"submitted\",\n    \"pending\",\n    \"running\",\n    \"succeeded\",\n    \"failed\",\n    \"cancelled\",\n    \"timed_out\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The public DeepGenome contract test independently fixes the report status vocabulary used by copyable fixtures. Repository owner approved this contract oracle on 2026-07-20."
+counterfactual = "Importing the snapshot status tuple would let a terminal state disappear from both serializer and fixture validation without a failure."
+risk = "Status vocabulary changes are consumer-visible and require fixture, client, and documentation coordination."
+tests = ["tests/unit/test_deep_genome_contract_docs.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0083"
@@ -1823,7 +1787,7 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0086"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/runtime/memory/migrations.py"
@@ -1832,14 +1796,12 @@ peer_path = "tests/unit/test_memory_migrations.py"
 peer_symbol = "26:34"
 fingerprint = "sha256:4f06fd5ec9e45a0c63ea3f65946f56998710e5123f0135fc1bc20ca49b9bbe3a"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.runtime.memory.migrations:[23:31]\n==test_memory_migrations:[26:34]\n        id TEXT PRIMARY KEY,\n        user_id TEXT NOT NULL,\n        kind TEXT NOT NULL,\n        content TEXT NOT NULL,\n        tags_json TEXT NOT NULL,\n        created_at TEXT NOT NULL,\n        updated_at TEXT NOT NULL,\n        expires_at TEXT,"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The memory migration test independently fixes the durable column contract used to validate legacy upgrades. Repository owner approved this migration oracle on 2026-07-20."
+counterfactual = "Importing the migration DDL would allow a missing column to pass schema and row-compatibility checks because implementation and expected schema would drift together."
+risk = "A stale schema oracle can reject a planned migration; update it only alongside migration and rollback evidence."
+tests = ["tests/unit/test_memory_migrations.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0087"

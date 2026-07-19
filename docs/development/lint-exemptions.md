@@ -65,8 +65,8 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0009` | mypy | misc | structural | inline | symbol | tests/unit/interop/test_capabilities.py | test_capability_is_frozen_and_qualified_name_is_canonical | `sha256:50c5686aeb514f0ea385b0f5efcb20543fb02b479f0a05b4b32116c2e38f65fe` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0010` | mypy | misc | structural | inline | symbol | tests/unit/test_deep_genome_store.py | test_store_exports_frozen_contract_models | `sha256:da11d568e3816c864121904ffa5d00103600ebf471ec6a5bbefc12277ad4761c` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0011` | mypy | prop-decorator | structural | inline | symbol | src/mcp_server_phytomni/api/schemas.py | FileUploadResponse | `sha256:243d7b24f3e529af946567903305f2f5f09ad24b6316e1063a7ed27a93107a6c` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0012` | pylint | R0801 | temporary | diagnostic | pair | e2e/helpers/polling.py | 336:345 | `sha256:cddaaaa04f92a9fe57ff67e2ce0d4a24501907412ac56b79f71c5a4260150509` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0013` | pylint | R0801 | temporary | diagnostic | pair | e2e/helpers/polling.py | 575:581 | `sha256:ef92dfc802b7295423a28a5b01598f3b642888f8ce21bbffbdaf6e62e2dae3c1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0012` | pylint | R0801 | structural | diagnostic | pair | e2e/helpers/polling.py | 336:345 | `sha256:cddaaaa04f92a9fe57ff67e2ce0d4a24501907412ac56b79f71c5a4260150509` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | e2e/helpers/polling.py, e2e/test_deep_genome_agent_e2e.py, static-analysis-inventory |
+| `SAE-TMP-0013` | pylint | R0801 | structural | diagnostic | pair | e2e/helpers/polling.py | 575:581 | `sha256:ef92dfc802b7295423a28a5b01598f3b642888f8ce21bbffbdaf6e62e2dae3c1` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | e2e/helpers/polling.py, e2e/test_deep_genome_agent_e2e.py, static-analysis-inventory |
 | `SAE-TMP-0014` | pylint | R0801 | temporary | diagnostic | pair | scripts/compare_gauss_queries.py | 294:301 | `sha256:ca2b6d468bc318f627b0fe79e4d2116a77ed25e26cc4ec75aff51feb8b8aab15` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0015` | pylint | R0801 | temporary | diagnostic | pair | scripts/compare_gauss_queries.py | 91:99 | `sha256:9f9f3a0f8627709ab7819ee411220c1052aca195cca63666c9e6cb61722409cf` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0017` | pylint | R0801 | temporary | diagnostic | pair | scripts/static_analysis/collectors/helpers.py | 17:25 | `sha256:2bde4ceca2e89f4d0dad6f8725a9c3d0c698832307b62142e73dbd56081c53ec` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -75,10 +75,10 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0020` | pylint | R0801 | temporary | diagnostic | pair | scripts/static_analysis/collectors/pylint.py | 342:348 | `sha256:b1101f1725b92758ac965df2e52c683ebb72eff13f3b3441df98302e87b3eb5e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0021` | pylint | R0801 | temporary | diagnostic | pair | scripts/static_analysis/collectors/pylint.py | 101:115 | `sha256:c87f948de5cea76c38e86b5c43164ae82e0768d8fd10d71b9dd6dce1af1ed334` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0022` | pylint | R0801 | temporary | diagnostic | pair | scripts/static_analysis/collectors/source.py | 84:98 | `sha256:67feab30f45f9e474e0c786410eb52f9e3d687f54cc727e088b39882af857abd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0024` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_client_phytomni/http_client.py | 19:30 | `sha256:f52f7ed0f6653cde4b0ea03422f8fb7718558d2a4e875fa5bf2dc24a7a0bd91a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0024` | pylint | R0801 | structural | diagnostic | pair | src/mcp_client_phytomni/http_client.py | 19:30 | `sha256:f52f7ed0f6653cde4b0ea03422f8fb7718558d2a4e875fa5bf2dc24a7a0bd91a` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_deep_genome_contract_docs.py, static-analysis-inventory |
 | `SAE-TMP-0025` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_client_phytomni/http_client.py | 19:32 | `sha256:8d4e94b19ed6a2d6acaf204a042d913ff743672ba85397bdc3858346fa355fcd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0026` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_client_phytomni/http_client.py | 22:32 | `sha256:0c9fe821cd42964efeb7bddee529465755dae050e0b18086624799fa7552e367` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0027` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_client_phytomni/http_client.py | 278:288 | `sha256:c8759585f97690eb52cf5af8aec0c20c3f0e711d9cafb32317690f9eeec46e2d` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0027` | pylint | R0801 | structural | diagnostic | pair | src/mcp_client_phytomni/http_client.py | 278:288 | `sha256:c8759585f97690eb52cf5af8aec0c20c3f0e711d9cafb32317690f9eeec46e2d` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_deep_genome_contract_docs.py, static-analysis-inventory |
 | `SAE-TMP-0028` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/__init__.py | 42:47 | `sha256:04b1f52c7567afcb17be02df79c0cadd82b90a00fa8a07e06ab48b5a2dafafb8` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0029` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/agent.py | 39:44 | `sha256:db1a39a7296629412f62345cacd4a0f73d49c06d2acf3b459fe10a81dcf460dc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0030` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/core.py | 107:113 | `sha256:fb6e27c1684c510fcf236b861bc91ebd92559e45b9e5136b2fffc917c859cd83` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -93,8 +93,8 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0039` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/graph_chat_subgraph.py | 555:583 | `sha256:a8e2eeb566bf1de32c539245d489884a5fa162eef25b65e00638de2ddaac938f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0040` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/planning.py | 101:107 | `sha256:aa9f030fa22f1341c154c9cfa1b703bee67e2fcb6e2aa47ea744319bd9039090` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0041` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/state.py | 114:119 | `sha256:b9c858b4756d1eeba0e3575fea150ea4750ceadcf06fb842cd871d087c87a349` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0042` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 119:124 | `sha256:1d150569c10458da8ffb018c145f78cbd52adf676e4b9a3dfb283b4d360e9063` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0043` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 119:130 | `sha256:6d7890f810b669e5cdd6ab13fe90489027a9014d59885e33d60fbd9481c50147` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0042` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 119:124 | `sha256:1d150569c10458da8ffb018c145f78cbd52adf676e4b9a3dfb283b4d360e9063` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
+| `SAE-TMP-0043` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 119:130 | `sha256:6d7890f810b669e5cdd6ab13fe90489027a9014d59885e33d60fbd9481c50147` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_brief_gene_knowledge_subgraph.py, static-analysis-inventory |
 | `SAE-TMP-0044` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 131:138 | `sha256:d2eb8102471c388d5ab72cb5468a375af44240897171a2a20c19bb8db477b15e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0045` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 264:277 | `sha256:71c51e7737eb6d61c69c8b052130cf106fa57d55217488c3520076465b9f19af` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0046` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py | 81:87 | `sha256:4e2efd035ff8c8489702efc9cd2c5821e6c43082be5bf553df9c94d573d2e4c0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -103,16 +103,16 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0049` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/resolve_query.py | 234:262 | `sha256:0081df1d9daeeb0d18bd417b93f290abbda31bd956894413bbfc245dee1d9190` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0050` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/resolve_query.py | 269:284 | `sha256:e77a387a221646f3099cfba8d658c6f9b821f7930d87d2066b947756d9ee18b9` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0051` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/resolve_query.py | 93:100 | `sha256:f6e6aecb155f6cc129c21888c259c70958bbc2696f1e0581f6c53a2818882b7b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0052` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 106:111 | `sha256:bced20b31d1f24e53dbf50abc7462eeaaa5c709ed8fc09081f208f3992fd09bb` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0053` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 130:143 | `sha256:c09286b8f6a95ac45cc85c1daee7a3e0ca52fb6143482344b0841ba433d82290` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0054` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 61:67 | `sha256:f33cd96ed68f9985a80483c8f061112d267e9818e32b3ac5bbb2e47f31f2b2f6` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0055` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 67:76 | `sha256:250f8f011043370e361a2a149e6cd8517793e67631733c00cf8209112b9157dc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0056` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/chat/a2ui_graph.py | 197:207 | `sha256:c2d9b397b9cf9fdf2daec3d5a3281cc05f7c974d14a938108a47e972dc4c9292` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0052` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 106:111 | `sha256:bced20b31d1f24e53dbf50abc7462eeaaa5c709ed8fc09081f208f3992fd09bb` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
+| `SAE-TMP-0053` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 130:143 | `sha256:c09286b8f6a95ac45cc85c1daee7a3e0ca52fb6143482344b0841ba433d82290` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
+| `SAE-TMP-0054` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 61:67 | `sha256:f33cd96ed68f9985a80483c8f061112d267e9818e32b3ac5bbb2e47f31f2b2f6` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
+| `SAE-TMP-0055` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 67:76 | `sha256:250f8f011043370e361a2a149e6cd8517793e67631733c00cf8209112b9157dc` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
+| `SAE-TMP-0056` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/chat/a2ui_graph.py | 197:207 | `sha256:c2d9b397b9cf9fdf2daec3d5a3281cc05f7c974d14a938108a47e972dc4c9292` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/server/test_a2ui_actions_http.py, static-analysis-inventory |
 | `SAE-TMP-0057` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/data/agent.py | 220:230 | `sha256:65eddedd74aa40ca4074fabf24d427ec56302be3fcad5c153dd081b9c1a54327` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0058` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/data/agent.py | 261:271 | `sha256:4f968cc4e8fae819dfd4eb099d32955d8fecb4ab8529cd76b6c0a040b8f458ef` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0059` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/data/agent.py | 261:274 | `sha256:67e3f7e920faa4c5565eecbd04ae955f65fad55ab92b2e69836511be429005b3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0060` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/deep_genome/agent.py | 89:109 | `sha256:b4b963480d858629b532c499ad4623327af6699366b96afb4f757636f3fce0d2` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0061` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | 172:181 | `sha256:2c939f306bfc192d1b4ccf2554102891e23b77d00d43855201693dcb676bfc6b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0061` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | 172:181 | `sha256:2c939f306bfc192d1b4ccf2554102891e23b77d00d43855201693dcb676bfc6b` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_deep_genome_work_items.py, static-analysis-inventory |
 | `SAE-TMP-0062` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 373:380 | `sha256:3c8069cc1e54f7418478fe01918e775f22ded1f6ac84a477a72872605e5d25e3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0063` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 501:513 | `sha256:e4338944c597b8c1519ad7ba8adab4416a20627173a8a2f833be300debd30149` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0064` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 553:562 | `sha256:ae438b318722e000d2af31f2c1812f8dbc8d60a336c9b40649bfb53b1e5370cb` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -125,19 +125,19 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0071` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/shared/chat_subgraph.py | 93:99 | `sha256:6165ee88078541c3c33262bd4a723df6d7bdd0feacd68b2c48d2e63bd71b3045` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0072` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/api/auth.py | 258:285 | `sha256:48767ad66c60c12e2c4e02c5e52f1b602a1f507b290cb63f106d52c5bfcca527` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0073` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/api/relay/__init__.py | 20:25 | `sha256:eec99e9b196bfe6a37ddc06107d9d5e5ac8401f4403c900f626c613979bf1d1d` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0074` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/api/relay/audit_filter.py | 27:38 | `sha256:e403f78e603f501a9592111cdd3963a7670f069c42cb5d1e1755b764d1dc32e9` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0075` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/config/required_env.py | 16:28 | `sha256:0a106c71d1e188f33ba116a1a15980da2ccbd8924042f13b31d0dd5df3f2585c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0076` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/config/required_env.py | 41:46 | `sha256:b181294b667a5a5e3b3cc601d177d1d5e50806e12df472c917d370454afa17f9` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0074` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/api/relay/audit_filter.py | 27:38 | `sha256:e403f78e603f501a9592111cdd3963a7670f069c42cb5d1e1755b764d1dc32e9` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_relay_audit_filter.py, static-analysis-inventory |
+| `SAE-TMP-0075` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/config/required_env.py | 16:28 | `sha256:0a106c71d1e188f33ba116a1a15980da2ccbd8924042f13b31d0dd5df3f2585c` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/config/test_required_env.py, tests/unit/test_defaults.py, static-analysis-inventory |
+| `SAE-TMP-0076` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/config/required_env.py | 41:46 | `sha256:b181294b667a5a5e3b3cc601d177d1d5e50806e12df472c917d370454afa17f9` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/config/test_required_env.py, static-analysis-inventory |
 | `SAE-TMP-0077` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/graphs/analyst_to_knowledge_adapters.py | 51:78 | `sha256:e14253a7a9e9e7b71513ae4cb71a3357c7df362eae880ee7ed1320287287495e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0078` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/mcp/app.py | 776:781 | `sha256:4a57d42c7066ead11e72824504ea38c35100a972dea9d50d624994daf75dfac4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0079` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/mcp/result_formatting.py | 1168:1175 | `sha256:39bb04ba061c5c096516cd49aa3d965d902986d4ef683a93996c50dbee9472aa` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0080` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/mcp/result_formatting.py | 38:49 | `sha256:f5522e6938b71179fb0baf2e7eb8c4294d3891dd03b2475e5156e869a9a62647` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0079` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/mcp/result_formatting.py | 1168:1175 | `sha256:39bb04ba061c5c096516cd49aa3d965d902986d4ef683a93996c50dbee9472aa` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_result_formatting_projection.py, static-analysis-inventory |
+| `SAE-TMP-0080` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/mcp/result_formatting.py | 38:49 | `sha256:f5522e6938b71179fb0baf2e7eb8c4294d3891dd03b2475e5156e869a9a62647` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_task_reconcile.py, static-analysis-inventory |
 | `SAE-TMP-0081` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/mcp/result_formatting.py | 922:932 | `sha256:5f656e069097320802fd3f0e8c41eb074bbbb6e62e9b5ed3fdc65efcc021facc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0082` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/runtime/deep_genome_report_snapshot.py | 27:35 | `sha256:ada3e86401e92e3bfc426af9b7194848762b2b4052c8e1df325025167c13594a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0082` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/deep_genome_report_snapshot.py | 27:35 | `sha256:ada3e86401e92e3bfc426af9b7194848762b2b4052c8e1df325025167c13594a` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_deep_genome_contract_docs.py, static-analysis-inventory |
 | `SAE-TMP-0083` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 45:52 | `sha256:781cbd4798bbd051136fe6306e69070b99da317486e9f110b66c4c53f764ebd8` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0084` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 59:64 | `sha256:dab91daad1dc692da89b2d3c4bedfcd081201a6cd5e592f6d9f289f0ad825f66` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0085` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 73:79 | `sha256:02a0ef0f7f5041c275b28c1c4c24c010eae62e1de902e15478e70af3b9aa9b42` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0086` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/migrations.py | 23:31 | `sha256:4f06fd5ec9e45a0c63ea3f65946f56998710e5123f0135fc1bc20ca49b9bbe3a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0086` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/migrations.py | 23:31 | `sha256:4f06fd5ec9e45a0c63ea3f65946f56998710e5123f0135fc1bc20ca49b9bbe3a` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_migrations.py, static-analysis-inventory |
 | `SAE-TMP-0087` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_analyst_graph_io.py | 36:59 | `sha256:8c0bc50fc7a752af732f2efb3751ab4a521b29e6e56b1ee64337753f3c4b4635` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0092` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_brief_gene_chat_subgraph.py | 48:56 | `sha256:999394a6dcd06fcd41f5edfaf3e04a364cea7b9fbae6094be2cab36c828840bf` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0093` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_brief_gene_knowledge_subgraph.py | 81:86 | `sha256:0c5f1d7ed62b15af3b87f94ba171987177371c7e209c1daad28c40fc6c396cad` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -508,30 +508,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==e2e.helpers.polling:[336:345]
-==mcp_client_phytomni.http_client:[370:379]
-    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-        return value
-    return 0
-
-
-def _public_progress(value: Any) -> Mapping[str, int | bool | str]:
-    """Keep only the documented public progress keys and value types."""
-    if not isinstance(value, Mapping):
-        return {}
+The live E2E parser independently normalizes report revisions from public task payloads instead of importing the SDK parser. Repository owner approved this independent oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Sharing the SDK helper would let a client regression redefine the live E2E compatibility oracle; keep the duplicate to detect server-payload and client-projection drift.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A shared parser could mask either payload-shape or SDK-projection regressions; keep both paths in compatibility review.
 ```
 
 ### `SAE-TMP-0013`
@@ -539,27 +528,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==e2e.helpers.polling:[575:581]
-==mcp_client_phytomni.http_client:[278:284]
-    "intermediate_report",
-    "final_report",
-    "report_stage",
-    "report_completeness",
-    "report_revision",
-    "report_updated_at",
+The E2E projection independently fixes the documented progress and report keys exposed by task payloads instead of importing the SDK projection. Repository owner approved this public-field oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Adding an undocumented progress or report key to the SDK and reusing its projection would let the compatibility test pass without detecting the public-shape drift.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Client consumers depend on the documented field set; changes require E2E, SDK, and protocol review.
 ```
 
 ### `SAE-TMP-0014`
@@ -814,32 +795,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_client_phytomni.http_client:[19:30]
-==test_deep_genome_contract_docs:[65:76]
-        "planning_complete",
-        "brief_gene_status",
-        "total",
-        "planned",
-        "submitted",
-        "pending",
-        "running",
-        "succeeded",
-        "failed",
-        "cancelled",
-        "timed_out",
+The DeepGenome contract fixture independently fixes the public status and progress vocabulary consumed by the SDK. Repository owner approved this compatibility oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Importing the SDK status tuple would allow a removed required status to disappear from both serializer and fixture expectations without a failure.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Status vocabulary changes are consumer-visible and require coordinated client and contract updates.
 ```
 
 ### `SAE-TMP-0025`
@@ -913,31 +881,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_client_phytomni.http_client:[278:288]
-==test_deep_genome_contract_docs:[44:54]
-    "intermediate_report",
-    "final_report",
-    "report_stage",
-    "report_completeness",
-    "report_revision",
-    "report_updated_at",
-    "progress",
-    "degraded",
-    "degraded_reason",
-    "failures",
+The DeepGenome contract fixture independently fixes the report and degraded-field projection consumed by the SDK. Repository owner approved this compatibility oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Importing the SDK report-field tuple would allow a required field to be removed from both serializer and fixture expectations simultaneously.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Report fields are public protocol data; changes require compatibility review and fixture updates.
 ```
 
 ### `SAE-TMP-0028`
@@ -1379,26 +1335,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.brief_gene.core:[119:124]
-==tests.agents.test_deep_genome_brief_gene_mount:[234:239]
-        "go_string": "",
-        "kegg_string": "",
-        "interpro_string": "",
-        "description_string": "",
-        "retrieved_docs": [],
+The DeepGenome mount test uses an isolated BriefGene output fake for the optional annotation contract rather than production seed data. Repository owner approved this independent oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Replacing the fake with production seed data would let a mount defaulting regression update both implementation and expected value, hiding the failure.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Annotation defaults are consumed by the mounted graph; intentional field changes require mount-contract review.
 ```
 
 ### `SAE-TMP-0043`
@@ -1406,19 +1355,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Shared BriefGene state fixture shape remains intentionally duplicated across the production schema and knowledge fan-out test.
+The knowledge-subgraph test independently fixes the BriefGene fan-out input state shape instead of importing the production seed. Repository owner approved this state oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Importing the production seed would couple the expected state to implementation changes and stop the test from detecting retrieval-key drift.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+State-shape changes can break fan-out routing; update the independent fixture only with graph-contract review.
 ```
 
 ### `SAE-TMP-0044`
@@ -1699,26 +1648,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.brief_gene.state:[106:111]
-==tests.agents.test_deep_genome_brief_gene_mount:[41:46]
-    go_string: str
-    kegg_string: str
-    interpro_string: str
-    description_string: str
-    retrieved_docs: list[dict[str, Any]]
+The DeepGenome mount test owns an isolated fake state schema for the mounted BriefGene subgraph. Repository owner approved this structural oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Reusing BriefGeneState would make the fake mutate with the implementation and allow a removed annotation field to pass the mount contract.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+The fake must remain aligned with the mounted public state contract; changes require graph integration review.
 ```
 
 ### `SAE-TMP-0053`
@@ -1726,33 +1668,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.brief_gene.state:[130:143]
-==tests.agents.test_deep_genome_brief_gene_mount:[54:66]
-    section1_markdown: str
-    section2_markdown: str
-    section3_markdown: str
-    section4_markdown: str
-    introduction_report: str
-
-
-def _build_fake_brief_gene_app(
-    output: dict[str, Any] | None = None,
-) -> CompiledStateGraph:
-    """Build a compiled BriefGene fake with an independent state oracle."""
-
+The mounted BriefGene fake independently fixes the preamble-section state shape used by the graph contract. Repository owner approved this structural oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Importing the production state would let a removed section or introduction field disappear from both fake and implementation without a failure.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Preamble fields are report-facing; intentional changes require mounted graph and contract review.
 ```
 
 ### `SAE-TMP-0054`
@@ -1760,27 +1688,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.brief_gene.state:[61:67]
-==tests.agents.test_deep_genome_brief_gene_mount:[39:45]
-    gene_id: str
-    species_code: str
-    go_string: str
-    kegg_string: str
-    interpro_string: str
-    description_string: str
+The mounted BriefGene test independently fixes the nested annotation output fields expected from the subgraph. Repository owner approved this output oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Importing the production state fields would let an annotation rename update the expected projection and mask the mount regression.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Nested annotation fields are report-facing and require coordinated graph and fixture updates.
 ```
 
 ### `SAE-TMP-0055`
@@ -1788,37 +1708,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.brief_gene.state:[67:76]
-==tests.agents.test_deep_genome_brief_gene_mount:[50:66]
-    gene_structure_string: str
-    orthologs_data: dict[str, Any]
-    paralogs_data: dict[str, Any]
-    interaction_data: dict[str, Any]
-    section1_markdown: str
-    section2_markdown: str
-    section3_markdown: str
-    section4_markdown: str
-    introduction_report: str
-
-
-def _build_fake_brief_gene_app(
-    output: dict[str, Any] | None = None,
-) -> CompiledStateGraph:
-    """Build a compiled BriefGene fake with an independent state oracle."""
-
+The mounted BriefGene test independently fixes the preamble output fields expected from the subgraph. Repository owner approved this output oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Importing the production state would let a removed homology or section field mutate the expected output and hide the contract failure.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Preamble output changes affect report assembly; update the independent oracle only after contract review.
 ```
 
 ### `SAE-TMP-0056`
@@ -1826,31 +1728,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.chat.a2ui_graph:[197:207]
-==test_a2ui_actions_http:[169:179]
-        "response": {
-            "choices": [
-                {
-                    "message": {
-                        "content": _CANCEL_MESSAGE,
-                        "follow_up_questions": [],
-                    }
-                }
-            ]
-        },
+The HTTP A2UI action test independently fixes the cancelled response shape and content. Repository owner approved this protocol oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Importing the production cancel payload would make a response-shape regression update both implementation and expected value, defeating the HTTP contract test.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Cancel semantics are consumer-visible; changes require coordinated A2UI contract review and golden updates.
 ```
 
 ### `SAE-TMP-0057`
@@ -1999,30 +1889,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.deep_genome.dispatch:[172:181]
-==test_deep_genome_work_items:[72:81]
-        "gene_expression_tissues",
-        "gene_expression_cultivars",
-        "gene_expression_treatments",
-        "gene_expression_genotypes",
-        "single_cell_analysis",
-        "promoter_analysis",
-        "smep_analysis",
-        "smoc_analysis",
-        "protein_structure_analysis",
+The work-item test independently enumerates the concrete DeepGenome job universe and section order. Repository owner approved this plan oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Importing the production work-item list would allow a removed or reordered job to pass because the expected list would mutate with it.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+The explicit list must be updated with any intentional product-plan change and reviewed against report sections.
 ```
 
 ### `SAE-TMP-0062`
@@ -2456,32 +2335,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.api.relay.audit_filter:[27:38]
-==test_relay_audit_filter:[30:40]
-    {
-        "authorization",
-        "x-api-key",
-        "x-service-token",
-        "x-auth-token",
-        "token",
-        "cookie",
-        "set-cookie",
-    }
-)
-
+The relay audit test independently owns the credential-header denylist and verifies redaction behavior. Repository owner approved this security oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Sharing CREDENTIAL_HEADERS would make a removed secret header disappear from both implementation and expected set, masking credential leakage.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A stale denylist can either leak a new credential header or over-redact safe metadata; security review is required for changes.
 ```
 
 ### `SAE-TMP-0075`
@@ -2489,36 +2355,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.config.required_env:[16:28]
-==test_required_env:[73:88]
-        "TOKEN_URL",
-        "RETRIEVE_URL",
-        "RERANK_URL",
-        "DATABASE_URL",
-        "ANALYSIS_URL",
-        "REPO_ID",
-        "REPO_ID_DICT",
-        "WORKSPACE_ID",
-        "SUBJECT_ID",
-        "OBS_SERVER",
-    )
-
-
-def test_missing_environment_is_sorted_and_value_safe() -> None:
-    """Only missing names are returned, in deterministic order."""
+The configuration test independently enumerates the required deployment endpoint universe and its size. Repository owner approved this deployment oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Importing REQUIRED_DEPLOYMENT_FIELDS would allow an omitted or accidental endpoint to pass because production and expected values would change together.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+The list is deployment-sensitive; intentional endpoint changes require synchronized environment, fixture, and documentation updates.
 ```
 
 ### `SAE-TMP-0076`
@@ -2526,26 +2375,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.config.required_env:[41:46]
-==test_required_env:[35:40]
-    "DATA_REPO_ID",
-    "TOOL_REPO_ID",
-    "PROTOCOL_REPO_ID",
-    "SPA_REPO_ID",
-    "APP_ID",
+The required endpoint test independently fixes the remaining operator and DeepGenome endpoint names. Repository owner approved this deployment oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Sharing the production tuple would let an omitted operator endpoint disappear from both the validator and its expected contract.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A stale expected tuple can block a legitimate deployment change; update it with the configuration contract and environment template.
 ```
 
 ### `SAE-TMP-0077`
@@ -2631,28 +2473,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.mcp.result_formatting:[1168:1175]
-==test_result_formatting_projection:[222:229]
-        "id",
-        "object",
-        "created",
-        "model",
-        "choices",
-        "usage",
-        "formatted",
+The response projection test independently fixes the canonical OpenAI field order and presence contract. Repository owner approved this protocol oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Importing the production field tuple would allow a canonical field to be removed from the response and expected value simultaneously.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Consumers depend on canonical placement; any intentional field change requires compatibility review.
 ```
 
 ### `SAE-TMP-0080`
@@ -2660,32 +2493,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.mcp.result_formatting:[38:49]
-==test_task_reconcile:[160:171]
-        "planning_complete",
-        "brief_gene_status",
-        "total",
-        "planned",
-        "submitted",
-        "pending",
-        "running",
-        "succeeded",
-        "failed",
-        "cancelled",
-        "timed_out",
+The reconcile test independently fixes the public progress-key order emitted in serialized task snapshots. Repository owner approved this protocol oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Sharing the formatter progress tuple would allow a removed or reordered public key to pass the reconcile contract test.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Progress consumers may rely on stable names and order; update the independent list only with a protocol review.
 ```
 
 ### `SAE-TMP-0081`
@@ -2725,29 +2545,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.runtime.deep_genome_report_snapshot:[27:35]
-==test_deep_genome_contract_docs:[68:76]
-    "planned",
-    "submitted",
-    "pending",
-    "running",
-    "succeeded",
-    "failed",
-    "cancelled",
-    "timed_out",
+The public DeepGenome contract test independently fixes the report status vocabulary used by copyable fixtures. Repository owner approved this contract oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Importing the snapshot status tuple would let a terminal state disappear from both serializer and fixture validation without a failure.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Status vocabulary changes are consumer-visible and require fixture, client, and documentation coordination.
 ```
 
 ### `SAE-TMP-0083`
@@ -2839,29 +2649,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.runtime.memory.migrations:[23:31]
-==test_memory_migrations:[26:34]
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        kind TEXT NOT NULL,
-        content TEXT NOT NULL,
-        tags_json TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        expires_at TEXT,
+The memory migration test independently fixes the durable column contract used to validate legacy upgrades. Repository owner approved this migration oracle on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Importing the migration DDL would allow a missing column to pass schema and row-compatibility checks because implementation and expected schema would drift together.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A stale schema oracle can reject a planned migration; update it only alongside migration and rollback evidence.
 ```
 
 ### `SAE-TMP-0087`
