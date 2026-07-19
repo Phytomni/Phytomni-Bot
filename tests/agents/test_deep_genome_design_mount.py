@@ -11,11 +11,9 @@ section from the mounted graph's protein-design task.
 from __future__ import annotations
 
 from functools import partial
-from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
-from langgraph.graph.state import CompiledStateGraph
 
 from mcp_server_phytomni.agents.deep_genome import design_mount
 from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
@@ -26,6 +24,13 @@ from mcp_server_phytomni.agents.deep_genome.coordinator import (
 from mcp_server_phytomni.agents.deep_genome.dispatch import (
     DeepGenomeDispatchMixin,
 )
+from tests.support.subgraph_fakes import (
+    DEEP_GENOME_GENERIC_NODE_NAMES,
+    assert_degraded_mount,
+    mount_app,
+    mount_host,
+    mount_state,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -33,58 +38,11 @@ pytestmark = pytest.mark.agent
 def _stub_host() -> Any:
     """Return a host stub exposing the dispatch helpers finalize uses.
 
-    A ``SimpleNamespace`` rather than a class keeps the test free of a
-    single-public-method stand-in (the canonical R0903 source), matching
-    how the evolution-mount test builds its mixin host. ``downloaded``
-    records the output dirs the finalize actually fetched.
+    ``mount_host`` supplies the shared coordinator callbacks and records the
+    output dirs the finalize actually fetched. The design-only callbacks stay
+    local because they bind the mixin's design work-item implementation.
     """
-    downloaded: list[str] = []
-
-    def _raise_if_agent_failed(result: dict) -> None:
-        if result.get("task_status") == "FAILED_AT_AGENT_LEVEL":
-            raise RuntimeError("agent failed")
-
-    async def _download_analysis_result(
-        _context: Any, output_path: str, _run_identity: Any
-    ) -> str:
-        downloaded.append(output_path)
-        return f"{output_path}/results"
-
-    async def _poll_remote_submission(
-        submission: RemoteSubmission,
-        context: Any,
-        run_identity: Any,
-        **_kwargs: Any,
-    ) -> tuple[WorkItemOutcome, str]:
-        results_dir = await _download_analysis_result(
-            context,
-            submission.output_dir,
-            run_identity,
-        )
-        return (
-            WorkItemOutcome("succeeded", "# usable result", None),
-            results_dir,
-        )
-
-    def _generate_sub_summary(
-        *,
-        analysis_type: str,
-        gene_id: str,
-        state: Any,
-        results_dir: Any = None,
-        display_order_override: int | None = None,
-    ) -> dict:
-        del state, display_order_override
-        return {"protein_summary": f"{analysis_type}:{gene_id}:{results_dir}"}
-
-    host = SimpleNamespace(
-        deep_genome_config=SimpleNamespace(USER_ID="u"),
-        _raise_if_agent_failed=_raise_if_agent_failed,
-        _download_analysis_result=_download_analysis_result,
-        _poll_remote_submission=_poll_remote_submission,
-        _generate_sub_summary=_generate_sub_summary,
-        downloaded=downloaded,
-    )
+    host = mount_host(summary_key="protein_summary")
     setattr(
         host,
         "_poll_design_work_item",
@@ -126,11 +84,7 @@ async def test_finalize_summarizes_protein_design_only() -> None:
             },
         ],
     }
-    state: Any = {
-        "species_code": "osa",
-        "target_gene": "g1",
-        "task_index": 6,
-    }
+    state: Any = mount_state("design", task_index=6)
 
     delta = await DeepGenomeDispatchMixin.finalize_design_result(
         host, design_output=design_output, state=state
@@ -178,15 +132,14 @@ async def test_finalize_polls_both_independent_design_work_items() -> None:
             output_dir="/obs/promoter",
         ),
     }
-    state: Any = {
-        "species_code": "osa",
-        "target_gene": "g1",
-        "task_index": 4,
-        "work_items": [
+    state: Any = mount_state(
+        "design",
+        task_index=4,
+        work_items=[
             {"work_item_key": "protein_design", "display_order": 10},
             {"work_item_key": "promoter_design", "display_order": 11},
         ],
-    }
+    )
 
     delta = await DeepGenomeDispatchMixin.finalize_design_result(
         host, design_output=design_output, state=state
@@ -241,11 +194,7 @@ async def test_finalize_keeps_partial_design_failure_and_blank_result() -> (
             output_dir="/obs/promoter",
         ),
     }
-    state: Any = {
-        "species_code": "osa",
-        "target_gene": "g1",
-        "task_index": 4,
-    }
+    state: Any = mount_state("design", task_index=4)
 
     delta = await DeepGenomeDispatchMixin.finalize_design_result(
         host, design_output=design_output, state=state
@@ -290,11 +239,7 @@ async def test_finalize_isolates_design_summary_failure() -> None:
             output_dir="/obs/promoter",
         ),
     }
-    state: Any = {
-        "species_code": "osa",
-        "target_gene": "g1",
-        "task_index": 4,
-    }
+    state: Any = mount_state("design", task_index=4)
 
     delta = await DeepGenomeDispatchMixin.finalize_design_result(
         host, design_output=design_output, state=state
@@ -309,27 +254,9 @@ async def test_finalize_isolates_design_summary_failure() -> None:
     assert delta["analyst_summaries"] == {"protein_summary": "usable"}
 
 
-def _fake_app(output: Any = None, boom: bool = False) -> Any:
-    """Return a fake compiled app capturing the projected input.
-
-    A ``SimpleNamespace`` with an ``ainvoke`` closure (rather than a
-    one-method class) avoids the R0903 too-few-public-methods report;
-    the captured payload is read back via ``app.captured['input']``.
-    """
-    captured: dict = {}
-
-    async def ainvoke(payload: Any) -> Any:
-        captured["input"] = payload
-        if boom:
-            raise RuntimeError("design graph crashed")
-        return output
-
-    return SimpleNamespace(ainvoke=ainvoke, captured=captured)
-
-
 async def test_mount_projects_input_and_finalizes() -> None:
     """The mount projects DigitalDesignState input and forwards output."""
-    app = _fake_app(
+    app = mount_app(
         output={
             "design_task_result": [
                 {
@@ -365,14 +292,8 @@ async def test_mount_projects_input_and_finalizes() -> None:
             )
         }
 
-    node = design_mount.make_design_mount_node(
-        cast(CompiledStateGraph, app), _finalize
-    )
-    payload: Any = {
-        "species_code": "osa",
-        "target_gene": "g1",
-        "task_index": 5,
-    }
+    node = design_mount.make_design_mount_node(app.compiled, _finalize)
+    payload: Any = mount_state("design", task_index=5)
     out = await node(payload)
 
     assert app.captured["input"]["is_polling"] is False
@@ -396,7 +317,7 @@ async def test_mount_projects_input_and_finalizes() -> None:
 
 async def test_mount_keeps_one_design_submission_when_sibling_fails() -> None:
     """A producer failure does not discard its independent sibling."""
-    app = _fake_app(
+    app = mount_app(
         output={
             "design_task_result": [
                 {
@@ -415,12 +336,8 @@ async def test_mount_keeps_one_design_submission_when_sibling_fails() -> None:
     async def _capture(submissions, _state):
         return {"submissions": submissions}
 
-    node = design_mount.make_design_mount_node(
-        cast(CompiledStateGraph, app), _capture
-    )
-    out = await node(
-        {"species_code": "osa", "target_gene": "g1", "task_index": 1}
-    )
+    node = design_mount.make_design_mount_node(app.compiled, _capture)
+    out = await node(mount_state("design", task_index=1))
 
     assert out["submissions"]["protein_design"] is not None
     assert out["submissions"]["promoter_design"] is None
@@ -428,7 +345,7 @@ async def test_mount_keeps_one_design_submission_when_sibling_fails() -> None:
 
 async def test_mount_keeps_valid_design_with_malformed_sibling() -> None:
     """Malformed optional entries do not discard a valid sibling."""
-    app = _fake_app(
+    app = mount_app(
         output={
             "design_task_result": [
                 {
@@ -446,12 +363,8 @@ async def test_mount_keeps_valid_design_with_malformed_sibling() -> None:
     async def _capture(submissions, _state):
         return {"submissions": submissions}
 
-    node = design_mount.make_design_mount_node(
-        cast(CompiledStateGraph, app), _capture
-    )
-    out = await node(
-        {"species_code": "osa", "target_gene": "g1", "task_index": 1}
-    )
+    node = design_mount.make_design_mount_node(app.compiled, _capture)
+    out = await node(mount_state("design", task_index=1))
 
     assert out["submissions"]["protein_design"] is not None
     assert out["submissions"]["promoter_design"] is None
@@ -503,38 +416,20 @@ def test_deep_genome_graph_registers_nine_generic_nodes() -> None:
     """
     agents = DeepGenomeAgents(knowledge_agent=None, analyst_agent=None)
     nodes = set(agents.app.get_graph().nodes)
-    expected = {
-        "gene_expression_tissues_node",
-        "gene_expression_cultivars_node",
-        "gene_expression_treatments_node",
-        "gene_expression_genotypes_node",
-        "single_cell_node",
-        "promoter_node",
-        "smep_node",
-        "smoc_node",
-        "protein_structure_node",
-    }
+    expected = set(DEEP_GENOME_GENERIC_NODE_NAMES)
     assert expected <= nodes
     assert "analyst_node" not in nodes
 
 
 async def test_mount_degrades_on_fault() -> None:
     """A subgraph fault yields a FailureRecord + failed branch, not a raise."""
-    app = _fake_app(boom=True)
+    app = mount_app(error=RuntimeError("design graph crashed"))
 
     async def _finalize(*_args, **_kwargs):
         raise AssertionError("finalize must not run on fault")
 
-    node = design_mount.make_design_mount_node(
-        cast(CompiledStateGraph, app), _finalize
-    )
-    payload: Any = {
-        "species_code": "osa",
-        "target_gene": "g1",
-        "task_index": 2,
-    }
+    node = design_mount.make_design_mount_node(app.compiled, _finalize)
+    payload: Any = mount_state("design", task_index=2)
     out = await node(payload)
 
-    assert out["analysis_completed_branches"] == 1
-    assert out["failures"][0]["task_label"] == "digital_design"
-    assert out["raw_analyst_data"]["task_2"]["status"] == "failed"
+    assert_degraded_mount(out, "design")

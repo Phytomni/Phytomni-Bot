@@ -25,6 +25,7 @@ from mcp_server_phytomni.agents.deep_genome.brief_gene_mount import (
     RequiredBriefGeneError,
     make_brief_gene_mount_node,
 )
+from tests.support.subgraph_fakes import mount_app
 
 from ._subgraph_branch_fakes import failing_async_object
 
@@ -61,15 +62,7 @@ class _FakeBriefGeneState(TypedDict, total=False):
 def _build_fake_brief_gene_app(
     output: dict[str, Any] | None = None,
 ) -> CompiledStateGraph:
-    """Compile a one-node ``StateGraph`` to stand in for BriefGeneAgent.
-
-    ``find_subgraph_pregel`` recognises ``CompiledStateGraph`` by
-    isinstance, so a SimpleNamespace cannot satisfy the xray
-    expansion. Compiling a trivial ``StateGraph`` keeps the test
-    fully offline while still presenting a real compiled subgraph
-    for the mount factory closure to hold. The optional ``output``
-    map stages the canned BriefGeneOutput keys the stub returns.
-    """
+    """Build a compiled BriefGene fake with an independent state oracle."""
 
     canned = output or {
         "gene_id": "AT1G01010",
@@ -81,15 +74,10 @@ def _build_fake_brief_gene_app(
         "final_response": {"choices": [{"message": {"content": "ans"}}]},
     }
 
-    async def _stub(state: _FakeBriefGeneState) -> dict[str, Any]:
-        del state
-        return dict(canned)
-
-    workflow: StateGraph = StateGraph(_FakeBriefGeneState)
-    workflow.add_node("stub", _stub)
-    workflow.add_edge(START, "stub")
-    workflow.add_edge("stub", END)
-    return workflow.compile()
+    return mount_app(
+        state_schema=_FakeBriefGeneState,
+        output=canned,
+    ).compiled
 
 
 def _deep_genome_state(gene_id: str = "AT1G01010") -> dict[str, Any]:

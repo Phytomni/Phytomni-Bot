@@ -34,6 +34,7 @@ from mcp_server_phytomni.graphs.manifest import (
     GraphNodeManifest,
     export_manifest,
 )
+from tests.support.subgraph_fakes import DEEP_GENOME_GENERIC_NODE_NAMES
 
 
 class _SimpleState(TypedDict):
@@ -361,15 +362,7 @@ def test_export_real_deep_genome_subgraph_node_set() -> None:
     documented = {
         "brief_gene_node",
         "prepare_tasks_node",
-        "gene_expression_tissues_node",
-        "gene_expression_cultivars_node",
-        "gene_expression_treatments_node",
-        "gene_expression_genotypes_node",
-        "single_cell_node",
-        "promoter_node",
-        "smep_node",
-        "smoc_node",
-        "protein_structure_node",
+        *DEEP_GENOME_GENERIC_NODE_NAMES,
         "evolution_node",
         "design_node",
         "synthesize_node",

@@ -861,12 +861,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/core.py"
 symbol = "119:124"
 peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
-peer_symbol = "246:251"
-fingerprint = "sha256:8abc75dc1000bf60d768999279807f0eeaddc148800ee6f2cd64db6d725b2794"
+peer_symbol = "234:239"
+fingerprint = "sha256:1d150569c10458da8ffb018c145f78cbd52adf676e4b9a3dfb283b4d360e9063"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.core:[119:124]\n==tests.agents.test_deep_genome_brief_gene_mount:[246:251]\n        \"go_string\": \"\",\n        \"kegg_string\": \"\",\n        \"interpro_string\": \"\",\n        \"description_string\": \"\",\n        \"retrieved_docs\": [],"
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.core:[119:124]\n==tests.agents.test_deep_genome_brief_gene_mount:[234:239]\n        \"go_string\": \"\",\n        \"kegg_string\": \"\",\n        \"interpro_string\": \"\",\n        \"description_string\": \"\",\n        \"retrieved_docs\": [],"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1081,12 +1081,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/state.py"
 symbol = "106:111"
 peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
-peer_symbol = "40:45"
-fingerprint = "sha256:f02e4bbecd4a1b24bb2ae00ecccaea982dc4fbf26f201be98c9d966f128b05fc"
+peer_symbol = "41:46"
+fingerprint = "sha256:bced20b31d1f24e53dbf50abc7462eeaaa5c709ed8fc09081f208f3992fd09bb"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[106:111]\n==tests.agents.test_deep_genome_brief_gene_mount:[40:45]\n    go_string: str\n    kegg_string: str\n    interpro_string: str\n    description_string: str\n    retrieved_docs: list[dict[str, Any]]"
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[106:111]\n==tests.agents.test_deep_genome_brief_gene_mount:[41:46]\n    go_string: str\n    kegg_string: str\n    interpro_string: str\n    description_string: str\n    retrieved_docs: list[dict[str, Any]]"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1103,12 +1103,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/state.py"
 symbol = "130:143"
 peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
-peer_symbol = "53:73"
-fingerprint = "sha256:b1d7c1fcd77ad6685f2801b25ed00d2269e547ad8d851dbdb8951f2444a0c485"
+peer_symbol = "54:66"
+fingerprint = "sha256:c09286b8f6a95ac45cc85c1daee7a3e0ca52fb6143482344b0841ba433d82290"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[130:143]\n==tests.agents.test_deep_genome_brief_gene_mount:[53:73]\n    section1_markdown: str\n    section2_markdown: str\n    section3_markdown: str\n    section4_markdown: str\n    introduction_report: str\n\n\ndef _build_fake_brief_gene_app(\n    output: dict[str, Any] | None = None,\n) -> CompiledStateGraph:\n    \"\"\"Compile a one-node ``StateGraph`` to stand in for BriefGeneAgent.\n\n    ``find_subgraph_pregel`` recognises ``CompiledStateGraph`` by\n    isinstance, so a SimpleNamespace cannot satisfy the xray\n    expansion. Compiling a trivial ``StateGraph`` keeps the test\n    fully offline while still presenting a real compiled subgraph\n    for the mount factory closure to hold. The optional ``output``\n    map stages the canned BriefGeneOutput keys the stub returns.\n    \"\"\"\n"
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[130:143]\n==tests.agents.test_deep_genome_brief_gene_mount:[54:66]\n    section1_markdown: str\n    section2_markdown: str\n    section3_markdown: str\n    section4_markdown: str\n    introduction_report: str\n\n\ndef _build_fake_brief_gene_app(\n    output: dict[str, Any] | None = None,\n) -> CompiledStateGraph:\n    \"\"\"Build a compiled BriefGene fake with an independent state oracle.\"\"\"\n"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1125,12 +1125,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/state.py"
 symbol = "61:67"
 peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
-peer_symbol = "38:44"
-fingerprint = "sha256:aee3dee7871954447218c5a5a668caa158aeb37441057a378e04fbe74b669950"
+peer_symbol = "39:45"
+fingerprint = "sha256:f33cd96ed68f9985a80483c8f061112d267e9818e32b3ac5bbb2e47f31f2b2f6"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[61:67]\n==tests.agents.test_deep_genome_brief_gene_mount:[38:44]\n    gene_id: str\n    species_code: str\n    go_string: str\n    kegg_string: str\n    interpro_string: str\n    description_string: str"
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[61:67]\n==tests.agents.test_deep_genome_brief_gene_mount:[39:45]\n    gene_id: str\n    species_code: str\n    go_string: str\n    kegg_string: str\n    interpro_string: str\n    description_string: str"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1147,12 +1147,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/state.py"
 symbol = "67:76"
 peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
-peer_symbol = "49:73"
-fingerprint = "sha256:3f43b1d6fcfe6a5ef7a39edf75acf4a56974ea0bfb37b807698d5dfa0046204f"
+peer_symbol = "50:66"
+fingerprint = "sha256:250f8f011043370e361a2a149e6cd8517793e67631733c00cf8209112b9157dc"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[67:76]\n==tests.agents.test_deep_genome_brief_gene_mount:[49:73]\n    gene_structure_string: str\n    orthologs_data: dict[str, Any]\n    paralogs_data: dict[str, Any]\n    interaction_data: dict[str, Any]\n    section1_markdown: str\n    section2_markdown: str\n    section3_markdown: str\n    section4_markdown: str\n    introduction_report: str"
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.state:[67:76]\n==tests.agents.test_deep_genome_brief_gene_mount:[50:66]\n    gene_structure_string: str\n    orthologs_data: dict[str, Any]\n    paralogs_data: dict[str, Any]\n    interaction_data: dict[str, Any]\n    section1_markdown: str\n    section2_markdown: str\n    section3_markdown: str\n    section4_markdown: str\n    introduction_report: str\n\n\ndef _build_fake_brief_gene_app(\n    output: dict[str, Any] | None = None,\n) -> CompiledStateGraph:\n    \"\"\"Build a compiled BriefGene fake with an independent state oracle.\"\"\"\n"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1895,100 +1895,12 @@ target_kind = "pair"
 path = "tests/agents/test_brief_gene_knowledge_subgraph.py"
 symbol = "81:86"
 peer_path = "tests/agents/test_deep_genome_brief_gene_mount.py"
-peer_symbol = "346:351"
-fingerprint = "sha256:d82f1f4b45e59bcdcc429ed0918e2bbab93b6e9962971bd907048d42ce98a40c"
+peer_symbol = "334:339"
+fingerprint = "sha256:0c5f1d7ed62b15af3b87f94ba171987177371c7e209c1daad28c40fc6c396cad"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "BriefGene knowledge state remains intentionally duplicated with the DeepGenome BriefGene mount contract."
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0096"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/agents/test_deep_genome_design_mount.py"
-symbol = "506:515"
-peer_path = "tests/agents/test_graphs_manifest_export.py"
-peer_symbol = "363:372"
-fingerprint = "sha256:379d69b825614f6c4622544ca3554760a749338730b42d6702a8b994879180dd"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==tests.agents.test_deep_genome_design_mount:[506:515]\n==tests.agents.test_graphs_manifest_export:[363:372]\n        \"gene_expression_tissues_node\",\n        \"gene_expression_cultivars_node\",\n        \"gene_expression_treatments_node\",\n        \"gene_expression_genotypes_node\",\n        \"single_cell_node\",\n        \"promoter_node\",\n        \"smep_node\",\n        \"smoc_node\",\n        \"protein_structure_node\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0097"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/agents/test_deep_genome_design_mount.py"
-symbol = "50:76"
-peer_path = "tests/agents/test_deep_genome_evolution_mount.py"
-peer_symbol = "46:71"
-fingerprint = "sha256:e81b26339ab9fe82dca21c97fe9d4b632d8466cc9d3bfe86a6a82950a9a6d178"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==tests.agents.test_deep_genome_design_mount:[50:76]\n==tests.agents.test_deep_genome_evolution_mount:[46:71]\n        return f\"{output_path}/results\"\n\n    async def _poll_remote_submission(\n        submission: RemoteSubmission,\n        context: Any,\n        run_identity: Any,\n        **_kwargs: Any,\n    ) -> tuple[WorkItemOutcome, str]:\n        results_dir = await _download_analysis_result(\n            context,\n            submission.output_dir,\n            run_identity,\n        )\n        return (\n            WorkItemOutcome(\"succeeded\", \"# usable result\", None),\n            results_dir,\n        )\n\n    def _generate_sub_summary(\n        *,\n        analysis_type: str,\n        gene_id: str,\n        state: Any,\n        results_dir: Any = None,\n    ) -> dict:"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0098"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/agents/test_deep_genome_design_mount.py"
-symbol = "528:538"
-peer_path = "tests/agents/test_deep_genome_evolution_mount.py"
-peer_symbol = "179:189"
-fingerprint = "sha256:071ce086a928f64d2ad3e849e3b6548346aa988cfe1ab79589bd375821d6c640"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==tests.agents.test_deep_genome_design_mount:[528:538]\n==tests.agents.test_deep_genome_evolution_mount:[179:189]\n        cast(CompiledStateGraph, app), _finalize\n    )\n    payload: Any = {\n        \"species_code\": \"osa\",\n        \"target_gene\": \"g1\",\n        \"task_index\": 2,\n    }\n    out = await node(payload)\n\n    assert out[\"analysis_completed_branches\"] == 1"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0099"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/agents/test_deep_genome_design_mount.py"
-symbol = "80:85"
-peer_path = "tests/agents/test_deep_genome_evolution_mount.py"
-peer_symbol = "75:80"
-fingerprint = "sha256:400841f01e9d8e3cb49687e6da6007ce61df9ead8fd96f286be1b280420ddd34"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==tests.agents.test_deep_genome_design_mount:[80:85]\n==tests.agents.test_deep_genome_evolution_mount:[75:80]\n        deep_genome_config=SimpleNamespace(USER_ID=\"u\"),\n        _raise_if_agent_failed=_raise_if_agent_failed,\n        _download_analysis_result=_download_analysis_result,\n        _poll_remote_submission=_poll_remote_submission,\n        _generate_sub_summary=_generate_sub_summary,"
+rationale = "Similar lines in 2 files\n==tests.agents.test_brief_gene_knowledge_subgraph:[81:86]\n==tests.agents.test_deep_genome_brief_gene_mount:[334:339]\n        \"go_string\": \"\",\n        \"kegg_string\": \"\",\n        \"interpro_string\": \"\",\n        \"description_string\": \"\",\n        \"retrieved_docs\": [],"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -2179,14 +2091,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "tests/agents/test_graphs_manifest_export.py"
-symbol = "178:193"
+symbol = "179:194"
 peer_path = "tests/agents/test_visualize_agent_graphs_cli.py"
 peer_symbol = "103:118"
-fingerprint = "sha256:04db7ecea1e9da5bd8060fda5b6806090e1033f622c378c61e05ab9f03af601b"
+fingerprint = "sha256:bf3ab1c0c50e8432330c1340c5fa446ca0e2f69697f51353579a6054cdff6615"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==tests.agents.test_graphs_manifest_export:[178:193]\n==tests.agents.test_visualize_agent_graphs_cli:[103:118]\n        \"query_judge_node\",\n        \"fetch_annotation_node\",\n        \"fetch_homology_interactions_node\",\n        \"retrieve_prep_tasks_node\",\n        \"retrieve_worker_node\",\n        \"retrieve_reduce_node\",\n        \"section_discovery_node\",\n        \"section_cloning_node\",\n        \"section_functional_node\",\n        \"section_application_node\",\n        \"introduction_node\",\n        \"render_node\",\n        \"follow_up_prep_node\",\n        \"follow_up_post_node\",\n        \"chat\","
+rationale = "Similar lines in 2 files\n==tests.agents.test_graphs_manifest_export:[179:194]\n==tests.agents.test_visualize_agent_graphs_cli:[103:118]\n        \"query_judge_node\",\n        \"fetch_annotation_node\",\n        \"fetch_homology_interactions_node\",\n        \"retrieve_prep_tasks_node\",\n        \"retrieve_worker_node\",\n        \"retrieve_reduce_node\",\n        \"section_discovery_node\",\n        \"section_cloning_node\",\n        \"section_functional_node\",\n        \"section_application_node\",\n        \"introduction_node\",\n        \"render_node\",\n        \"follow_up_prep_node\",\n        \"follow_up_post_node\",\n        \"chat\","
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]

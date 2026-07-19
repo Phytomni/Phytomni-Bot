@@ -10,20 +10,20 @@ compiled deep_genome graph registers ``evolution_node``.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import pytest
-from langgraph.graph.state import CompiledStateGraph
 
 from mcp_server_phytomni.agents.deep_genome import evolution_mount
 from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeAgents
-from mcp_server_phytomni.agents.deep_genome.coordinator import (
-    RemoteSubmission,
-    WorkItemOutcome,
-)
 from mcp_server_phytomni.agents.deep_genome.dispatch import (
     DeepGenomeDispatchMixin,
+)
+from tests.support.subgraph_fakes import (
+    assert_degraded_mount,
+    mount_app,
+    mount_host,
+    mount_state,
 )
 
 pytestmark = pytest.mark.agent
@@ -32,53 +32,10 @@ pytestmark = pytest.mark.agent
 def _stub_host() -> Any:
     """Return a host stub exposing the dispatch helpers finalize uses.
 
-    A ``SimpleNamespace`` rather than a class keeps the test free of a
-    single-public-method stand-in (the canonical R0903 source), matching
-    how ``test_deep_genome_dispatch_routing`` builds its mixin host.
+    ``mount_host`` supplies the shared coordinator callbacks while this file
+    selects the evolution-specific summary key.
     """
-
-    def _raise_if_agent_failed(result: dict) -> None:
-        if result.get("task_status") == "FAILED_AT_AGENT_LEVEL":
-            raise RuntimeError("agent failed")
-
-    async def _download_analysis_result(
-        _context: Any, output_path: str, _run_identity: Any
-    ) -> str:
-        return f"{output_path}/results"
-
-    async def _poll_remote_submission(
-        submission: RemoteSubmission,
-        context: Any,
-        run_identity: Any,
-        **_kwargs: Any,
-    ) -> tuple[WorkItemOutcome, str]:
-        results_dir = await _download_analysis_result(
-            context,
-            submission.output_dir,
-            run_identity,
-        )
-        return (
-            WorkItemOutcome("succeeded", "# usable result", None),
-            results_dir,
-        )
-
-    def _generate_sub_summary(
-        *,
-        analysis_type: str,
-        gene_id: str,
-        state: Any,
-        results_dir: Any = None,
-    ) -> dict:
-        del state
-        return {"tree_summary": f"{analysis_type}:{gene_id}:{results_dir}"}
-
-    return SimpleNamespace(
-        deep_genome_config=SimpleNamespace(USER_ID="u"),
-        _raise_if_agent_failed=_raise_if_agent_failed,
-        _download_analysis_result=_download_analysis_result,
-        _poll_remote_submission=_poll_remote_submission,
-        _generate_sub_summary=_generate_sub_summary,
-    )
+    return mount_host(summary_key="tree_summary")
 
 
 async def test_finalize_projects_download_and_summary() -> None:
@@ -89,11 +46,7 @@ async def test_finalize_projects_download_and_summary() -> None:
         "output_dir": "/obs/out",
         "task_status": "SUCCEEDED",
     }
-    state: Any = {
-        "species_code": "osa",
-        "target_gene": "g1",
-        "task_index": 0,
-    }
+    state: Any = mount_state("evolution", task_index=0)
     delta = await DeepGenomeDispatchMixin.finalize_evolution_result(
         host, task=task, state=state
     )
@@ -106,27 +59,9 @@ async def test_finalize_projects_download_and_summary() -> None:
     )
 
 
-def _fake_app(output: Any = None, boom: bool = False) -> Any:
-    """Return a fake compiled app capturing the projected input.
-
-    A ``SimpleNamespace`` with an ``ainvoke`` closure (rather than a
-    one-method class) avoids the R0903 too-few-public-methods report;
-    the captured payload is read back via ``app.captured['input']``.
-    """
-    captured: dict = {}
-
-    async def ainvoke(payload: Any) -> Any:
-        captured["input"] = payload
-        if boom:
-            raise RuntimeError("evolution graph crashed")
-        return output
-
-    return SimpleNamespace(ainvoke=ainvoke, captured=captured)
-
-
 async def test_mount_projects_input_and_finalizes() -> None:
     """The mount projects EvolutionInput and forwards (task, state)."""
-    app = _fake_app(
+    app = mount_app(
         output={
             "evolution_agents_task": {
                 "task_id": "t1",
@@ -146,14 +81,8 @@ async def test_mount_projects_input_and_finalizes() -> None:
             )
         }
 
-    node = evolution_mount.make_evolution_mount_node(
-        cast(CompiledStateGraph, app), _finalize
-    )
-    payload: Any = {
-        "species_code": "osa",
-        "target_gene": "g1",
-        "task_index": 3,
-    }
+    node = evolution_mount.make_evolution_mount_node(app.compiled, _finalize)
+    payload: Any = mount_state("evolution", task_index=3)
     out = await node(payload)
 
     assert app.captured["input"]["target_taxids"] == "All"
@@ -171,24 +100,16 @@ async def test_mount_projects_input_and_finalizes() -> None:
 
 async def test_mount_degrades_on_fault() -> None:
     """A subgraph fault yields a FailureRecord + failed branch, not a raise."""
-    app = _fake_app(boom=True)
+    app = mount_app(error=RuntimeError("evolution graph crashed"))
 
     async def _finalize(*_args, **_kwargs):
         raise AssertionError("finalize must not run on fault")
 
-    node = evolution_mount.make_evolution_mount_node(
-        cast(CompiledStateGraph, app), _finalize
-    )
-    payload: Any = {
-        "species_code": "osa",
-        "target_gene": "g1",
-        "task_index": 2,
-    }
+    node = evolution_mount.make_evolution_mount_node(app.compiled, _finalize)
+    payload: Any = mount_state("evolution", task_index=2)
     out = await node(payload)
 
-    assert out["analysis_completed_branches"] == 1
-    assert out["failures"][0]["task_label"] == "evolution_analysis"
-    assert out["raw_analyst_data"]["task_2"]["status"] == "failed"
+    assert_degraded_mount(out, "evolution")
 
 
 def test_deep_genome_graph_registers_evolution_node() -> None:
@@ -211,7 +132,7 @@ async def test_mount_node_with_real_finalize_projects_summary() -> None:
     host) so the EvolutionInput projection and the analyst-branch delta
     are asserted as one flow.
     """
-    app = _fake_app(
+    app = mount_app(
         output={
             "evolution_agents_task": {
                 "task_id": "t9",
@@ -228,13 +149,9 @@ async def test_mount_node_with_real_finalize_projects_summary() -> None:
         )
 
     node = evolution_mount.make_evolution_mount_node(
-        cast(CompiledStateGraph, app), _real_finalize
+        app.compiled, _real_finalize
     )
-    payload: Any = {
-        "species_code": "osa",
-        "target_gene": "g9",
-        "task_index": 1,
-    }
+    payload: Any = mount_state("evolution", target_gene="g9", task_index=1)
     out = await node(payload)
 
     assert app.captured["input"] == {
