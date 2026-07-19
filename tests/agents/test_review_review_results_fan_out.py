@@ -13,34 +13,38 @@ reduce ordering, and xray expansion.
 
 from __future__ import annotations
 
-from typing import Any, cast
-from unittest.mock import AsyncMock
+from typing import cast
 
 import pytest
-from langgraph.types import Send
 
-from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 from mcp_server_phytomni.agents.review.state import DeepResearchState
-from mcp_server_phytomni.config.defaults import ReviewConfig
-from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.review_fan_out import (
+    REVIEW_CHAT_APP_PATH,
+    FailureContract,
+    assert_chat_worker_success,
+    assert_send_common,
+    build_review_agent,
+    chat_response,
+    make_chat_app,
+    review_results_prepare_state,
+    review_results_route_state,
+    review_results_worker_state,
+    run_chat_worker_failure,
+)
 
 pytestmark = pytest.mark.agent
 
-_AGENT_MODULE = "mcp_server_phytomni.agents.review.agent"
 
-
-def _build_agent() -> DeepResearchAgent:
-    """Construct a ``DeepResearchAgent`` for the review_results fan-out."""
-    return DeepResearchAgent(
-        review_config=ReviewConfig(),
-        sensitive_config=SensitiveConfig.load(),
-    )
-
-
-def _ok_chat_response(text: str) -> dict[str, Any]:
-    """Build a minimal chat-completion response wrapping ``text``."""
-    return {"choices": [{"message": {"content": text}}]}
-
+_review_results_failure = cast(
+    FailureContract,
+    {
+        "result_key": "review_indexed_results",
+        "sentinel": "{}",
+        "task_index": 1,
+        "task_label": "review_results:1",
+        "message": "chat timeout",
+    },
+)
 
 # ---------------------------------------------------------------------------
 # Prepare node returns empty delta.
@@ -49,14 +53,8 @@ def _ok_chat_response(text: str) -> dict[str, Any]:
 
 async def test_review_results_prepare_tasks_node_returns_empty_delta() -> None:
     """``review_results_prepare_tasks_node`` acts as a no-op split node."""
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "research_dimensions": ["photosynthesis"],
-            "draft_contents": ["draft-A"],
-        },
-    )
+    agent = build_review_agent()
+    state = cast(DeepResearchState, review_results_prepare_state())
     result = await agent.review_results_prepare_tasks_node(state)
     assert result == {}
 
@@ -68,23 +66,14 @@ async def test_review_results_prepare_tasks_node_returns_empty_delta() -> None:
 
 def test_route_review_results_tasks_returns_n_sends() -> None:
     """``route_review_results_tasks`` returns one Send per draft entry."""
-    agent = _build_agent()
-    dimensions = ["photosynthesis", "chlorophyll", "stomatal"]
-    drafts = ["draft-A", "draft-B", "draft-C"]
-    state = cast(
-        DeepResearchState,
-        {
-            "research_dimensions": dimensions,
-            "draft_contents": drafts,
-        },
-    )
+    agent = build_review_agent()
+    state = cast(DeepResearchState, review_results_route_state())
+    dimensions = state["research_dimensions"]
+    drafts = state["draft_contents"]
     sends = agent.route_review_results_tasks(state)
 
-    assert len(sends) == 3
-    for i, (send, dim, draft) in enumerate(zip(sends, dimensions, drafts)):
-        assert isinstance(send, Send)
-        assert send.node == "review_results_worker_node"
-        assert send.arg["task_index"] == i
+    assert_send_common(sends, node="review_results_worker_node")
+    for send, dim, draft in zip(sends, dimensions, drafts):
         assert send.arg["subtopic"] == dim
         chat_payload = send.arg["chat_payload"]
         # The prompt-builder stitches current_subtopic / other_subtopics /
@@ -105,29 +94,25 @@ async def test_review_results_worker_node_success_writes_indexed_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Worker writes ``(task_index, content)`` on successful ainvoke."""
-    fake_app = AsyncMock(
-        ainvoke=AsyncMock(
-            return_value={"response": _ok_chat_response("review-A")}
-        )
-    )
-    monkeypatch.setattr(f"{_AGENT_MODULE}.CHAT_APP", fake_app)
-    agent = _build_agent()
+    fake_app = make_chat_app(response=chat_response("review-A"))
+    monkeypatch.setattr(REVIEW_CHAT_APP_PATH, fake_app)
+    agent = build_review_agent()
     state = cast(
         DeepResearchState,
-        {
-            "task_index": 2,
-            "subtopic": "auxin signalling",
-            "chat_payload": {
-                "user_query": "prompt",
-                "chat_kwargs": {},
-            },
-        },
+        review_results_worker_state(
+            task_index=2,
+            subtopic="auxin signalling",
+        ),
     )
     result = await agent.review_results_worker_node(state)
 
-    assert result["review_indexed_results"] == [(2, "review-A")]
-    assert "failures" not in result
-    assert fake_app.ainvoke.await_count == 1
+    assert_chat_worker_success(
+        result,
+        result_key="review_indexed_results",
+        task_index=2,
+        content="review-A",
+        app=fake_app,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -145,33 +130,15 @@ async def test_review_results_worker_exception_writes_sentinel_and_failure(
     ``_extract_json_object`` on each critique and a non-JSON empty
     string would deviate from the legacy "no gaps" fallback shape.
     """
-    fake_app = AsyncMock(
-        ainvoke=AsyncMock(side_effect=RuntimeError("chat timeout"))
+    await run_chat_worker_failure(
+        monkeypatch,
+        worker_name="review_results_worker_node",
+        state=review_results_worker_state(
+            task_index=1,
+            subtopic="drought tolerance",
+        ),
+        contract=_review_results_failure,
     )
-    monkeypatch.setattr(f"{_AGENT_MODULE}.CHAT_APP", fake_app)
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "task_index": 1,
-            "subtopic": "drought tolerance",
-            "chat_payload": {
-                "user_query": "prompt",
-                "chat_kwargs": {},
-            },
-        },
-    )
-    result = await agent.review_results_worker_node(state)
-
-    assert result["review_indexed_results"] == [(1, "{}")]
-    failures = result.get("failures", [])
-    assert len(failures) == 1
-    rec = failures[0]
-    # FailureRecord is a TypedDict — check structural keys, not isinstance.
-    assert rec["kind"] == "execute"
-    assert "chat timeout" in rec["message"]
-    assert rec["task_label"] == "review_results:1"
-    assert rec["traceback_digest"] is not None
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +152,7 @@ async def test_review_results_reduce_node_sorts_by_task_index() -> None:
     Delivers the same ``review_contents`` ordering regardless of the
     order concurrent workers completed.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     # Supply results out-of-order (task 1 arrives before task 0).
     state = cast(
         DeepResearchState,
@@ -211,7 +178,7 @@ async def test_review_results_reduce_keeps_partial_failure_sentinel() -> None:
     sentinel slot must travel through reduce without being skipped or
     rewritten.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     state = cast(
         DeepResearchState,
         {
@@ -246,7 +213,7 @@ def test_compiled_graph_flag_on_has_review_results_send_triad() -> None:
     NOT discover the chat subgraph; the prefixed form is the success
     signal.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     node_keys = set(agent.app.get_graph(xray=True).nodes.keys())
     assert "review_results_dispatch" in node_keys
     assert any(
@@ -275,7 +242,7 @@ def test_compiled_graph_xray_expands_chat_under_review_results_worker() -> (
     own name).  The presence of any ``review_results_worker_node:``
     prefixed key is the xray success signal.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     node_keys = list(agent.app.get_graph(xray=True).nodes.keys())
     assert any(
         key.startswith("review_results_worker_node:") for key in node_keys

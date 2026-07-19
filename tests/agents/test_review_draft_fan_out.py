@@ -13,34 +13,37 @@ reduce ordering, and xray subgraph expansion.
 
 from __future__ import annotations
 
-from typing import Any, cast
-from unittest.mock import AsyncMock
+from typing import cast
 
 import pytest
-from langgraph.types import Send
 
-from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 from mcp_server_phytomni.agents.review.state import DeepResearchState
-from mcp_server_phytomni.config.defaults import ReviewConfig
-from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.review_fan_out import (
+    REVIEW_CHAT_APP_PATH,
+    FailureContract,
+    assert_chat_worker_success,
+    assert_send_common,
+    build_review_agent,
+    chat_response,
+    draft_route_state,
+    draft_worker_state,
+    make_chat_app,
+    run_chat_worker_failure,
+)
 
 pytestmark = pytest.mark.agent
 
-_AGENT_MODULE = "mcp_server_phytomni.agents.review.agent"
 
-
-def _build_agent() -> DeepResearchAgent:
-    """Construct a ``DeepResearchAgent`` for the draft fan-out."""
-    return DeepResearchAgent(
-        review_config=ReviewConfig(),
-        sensitive_config=SensitiveConfig.load(),
-    )
-
-
-def _ok_chat_response(text: str) -> dict[str, Any]:
-    """Build a minimal chat-completion response wrapping ``text``."""
-    return {"choices": [{"message": {"content": text}}]}
-
+_draft_failure = cast(
+    FailureContract,
+    {
+        "result_key": "draft_indexed_results",
+        "sentinel": "",
+        "task_index": 1,
+        "task_label": "draft:1",
+        "message": "chat timeout",
+    },
+)
 
 # ---------------------------------------------------------------------------
 # Prepare node returns empty delta.
@@ -49,7 +52,7 @@ def _ok_chat_response(text: str) -> dict[str, Any]:
 
 async def test_draft_prepare_tasks_node_returns_empty_delta() -> None:
     """``draft_prepare_tasks_node`` acts as a no-op split node."""
-    agent = _build_agent()
+    agent = build_review_agent()
     state = cast(
         DeepResearchState,
         {
@@ -69,20 +72,13 @@ async def test_draft_prepare_tasks_node_returns_empty_delta() -> None:
 
 def test_route_draft_tasks_returns_n_sends() -> None:
     """``route_draft_tasks`` returns one Send per dimension_params entry."""
-    agent = _build_agent()
-    params = [
-        {"subtopic": "photosynthesis", "knowledge": "snippet-0"},
-        {"subtopic": "chlorophyll", "knowledge": "snippet-1"},
-        {"subtopic": "stomatal", "knowledge": "snippet-2"},
-    ]
-    state = cast(DeepResearchState, {"dimension_params": params})
+    agent = build_review_agent()
+    params = draft_route_state()["dimension_params"]
+    state = cast(DeepResearchState, draft_route_state())
     sends = agent.route_draft_tasks(state)
 
-    assert len(sends) == 3
-    for i, (send, param) in enumerate(zip(sends, params)):
-        assert isinstance(send, Send)
-        assert send.node == "draft_worker_node"
-        assert send.arg["task_index"] == i
+    assert_send_common(sends, node="draft_worker_node")
+    for send, param in zip(sends, params):
         assert send.arg["subtopic"] == param["subtopic"]
         assert send.arg["knowledge"] == param["knowledge"]
         chat_payload = send.arg["chat_payload"]
@@ -104,30 +100,26 @@ async def test_draft_worker_node_success_writes_indexed_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Worker writes ``(task_index, content)`` on successful ainvoke."""
-    fake_app = AsyncMock(
-        ainvoke=AsyncMock(
-            return_value={"response": _ok_chat_response("draft-A")}
-        )
-    )
-    monkeypatch.setattr(f"{_AGENT_MODULE}.CHAT_APP", fake_app)
-    agent = _build_agent()
+    fake_app = make_chat_app(response=chat_response("draft-A"))
+    monkeypatch.setattr(REVIEW_CHAT_APP_PATH, fake_app)
+    agent = build_review_agent()
     state = cast(
         DeepResearchState,
-        {
-            "task_index": 2,
-            "subtopic": "auxin signalling",
-            "knowledge": "snippet",
-            "chat_payload": {
-                "user_query": "prompt",
-                "chat_kwargs": {},
-            },
-        },
+        draft_worker_state(
+            task_index=2,
+            subtopic="auxin signalling",
+            knowledge="snippet",
+        ),
     )
     result = await agent.draft_worker_node(state)
 
-    assert result["draft_indexed_results"] == [(2, "draft-A")]
-    assert "failures" not in result
-    assert fake_app.ainvoke.await_count == 1
+    assert_chat_worker_success(
+        result,
+        result_key="draft_indexed_results",
+        task_index=2,
+        content="draft-A",
+        app=fake_app,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -139,34 +131,16 @@ async def test_draft_worker_node_exception_writes_sentinel_and_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Worker writes ``""`` sentinel AND FailureRecord dict on exception."""
-    fake_app = AsyncMock(
-        ainvoke=AsyncMock(side_effect=RuntimeError("chat timeout"))
+    await run_chat_worker_failure(
+        monkeypatch,
+        worker_name="draft_worker_node",
+        state=draft_worker_state(
+            task_index=1,
+            subtopic="drought tolerance",
+            knowledge="snippet",
+        ),
+        contract=_draft_failure,
     )
-    monkeypatch.setattr(f"{_AGENT_MODULE}.CHAT_APP", fake_app)
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "task_index": 1,
-            "subtopic": "drought tolerance",
-            "knowledge": "snippet",
-            "chat_payload": {
-                "user_query": "prompt",
-                "chat_kwargs": {},
-            },
-        },
-    )
-    result = await agent.draft_worker_node(state)
-
-    assert result["draft_indexed_results"] == [(1, "")]
-    failures = result.get("failures", [])
-    assert len(failures) == 1
-    rec = failures[0]
-    # FailureRecord is a TypedDict — check structural keys, not isinstance.
-    assert rec["kind"] == "execute"
-    assert "chat timeout" in rec["message"]
-    assert rec["task_label"] == "draft:1"
-    assert rec["traceback_digest"] is not None
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +154,7 @@ async def test_draft_reduce_node_sorts_by_task_index() -> None:
     Delivers the same ``draft_contents`` ordering regardless of the
     order concurrent workers completed.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     # Supply results out-of-order (task 1 arrives before task 0).
     state = cast(
         DeepResearchState,
@@ -205,7 +179,7 @@ async def test_draft_reduce_node_partial_failure_keeps_n_entries() -> None:
     does not skip it, so downstream ``review_node`` still receives a slot
     for every dimension.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     state = cast(
         DeepResearchState,
         {
@@ -236,7 +210,7 @@ def test_compiled_graph_flag_on_has_send_triad() -> None:
     discover the chat subgraph; the prefixed form is the success
     signal.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     node_keys = set(agent.app.get_graph(xray=True).nodes.keys())
     assert "draft_dispatch" in node_keys
     assert any(
@@ -263,7 +237,7 @@ def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
     The presence of any ``draft_worker_node:`` prefixed key is the
     xray success signal.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     node_keys = list(agent.app.get_graph(xray=True).nodes.keys())
     assert any(
         key.startswith("draft_worker_node:") for key in node_keys

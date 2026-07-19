@@ -12,91 +12,70 @@ non-review consumers keep their existing router default).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, cast
 
 import pytest
-from langgraph.types import Send
 
-from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 from mcp_server_phytomni.agents.review.state import DeepResearchState
-from mcp_server_phytomni.config.defaults import ReviewConfig
-from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.graphs.chat_adapters import build_chat_kwargs_for
 from tests.support.config_fakes import fake_chat_config, fake_sensitive_config
+from tests.support.review_fan_out import (
+    assert_send_common,
+    build_review_agent,
+    draft_route_state,
+    follow_up_state,
+    plan_query_state,
+    review_results_route_state,
+    review_summary_state,
+)
 
 pytestmark = pytest.mark.agent
 
 
-def _build_agent() -> DeepResearchAgent:
-    """Construct a ``DeepResearchAgent`` for prep-node assertions.
-
-    The prep / route helpers stage a ``chat_payload`` carrying the
-    explicit ``with_follow_up`` value for the shared chat subgraph.
-    """
-    return DeepResearchAgent(
-        review_config=ReviewConfig(),
-        sensitive_config=SensitiveConfig.load(),
-    )
-
-
 # ---------------------------------------------------------------------------
-# Per-site prep-node assertions.
+# Per-site prep-node parameter rows.
 # ---------------------------------------------------------------------------
 
+_PREP_ROWS = (
+    ("plan-query", "plan_query_prep_node", plan_query_state, False),
+    ("summary", "summary_prep_node", review_summary_state, False),
+    ("follow-up", "follow_up_prep_node", follow_up_state, True),
+)
+_PREP_PARAMS = tuple(pytest.param(*row, id=row[0]) for row in _PREP_ROWS)
 
-async def test_plan_query_prep_chat_kwargs_disables_follow_up() -> None:
-    """``plan_query_prep_node`` stages ``with_follow_up`` False."""
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "original_user_query": "How does photosynthesis work?",
-            "obs_file_list": [],
-        },
-    )
-    result = await agent.plan_query_prep_node(state)
+
+def test_review_chat_prep_rows_are_unique_and_complete() -> None:
+    """Keep one explicit parameter row for each Review chat call site."""
+    assert [row[0] for row in _PREP_ROWS] == [
+        "plan-query",
+        "summary",
+        "follow-up",
+    ]
+    assert len({row[0] for row in _PREP_ROWS}) == 3
+    assert [row[1] for row in _PREP_ROWS] == [
+        "plan_query_prep_node",
+        "summary_prep_node",
+        "follow_up_prep_node",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("_case_id", "node_name", "state_factory", "expected"),
+    _PREP_PARAMS,
+)
+async def test_review_chat_prep_follow_up_contract(
+    _case_id: str,
+    node_name: str,
+    state_factory: Callable[[], dict[str, Any]],
+    expected: bool,
+) -> None:
+    """Each named Review chat prep row preserves its follow-up flag."""
+    agent = build_review_agent()
+    state = cast(DeepResearchState, state_factory())
+    result = await getattr(agent, node_name)(state)
     chat_kwargs = result["chat_payload"]["chat_kwargs"]
-    assert chat_kwargs["with_follow_up"] is False
-
-
-async def test_summary_prep_chat_kwargs_disables_follow_up() -> None:
-    """``summary_prep_node`` stages ``with_follow_up`` False."""
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "original_user_query": "Photosynthesis",
-            "revised_reports": [
-                {"subtopic": "dim1", "revised_report": "Content 1"},
-            ],
-            "research_dimensions": ["dim1"],
-        },
-    )
-    result = await agent.summary_prep_node(state)
-    chat_kwargs = result["chat_payload"]["chat_kwargs"]
-    assert chat_kwargs["with_follow_up"] is False
-
-
-async def test_follow_up_prep_chat_kwargs_enables_follow_up() -> None:
-    """``follow_up_prep_node`` stages ``with_follow_up`` True.
-
-    This is the one ReviewAgent chat-subgraph site whose chat call
-    should emit follow-up questions — the terminal, user-facing
-    summary stage that renders into ``final_response``.
-    """
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "original_user_query": "Photosynthesis",
-            "summary_content": "A review of photosynthesis.",
-            "all_raw_doc_list": [],
-            "add_doc_list": [],
-        },
-    )
-    result = await agent.follow_up_prep_node(state)
-    chat_kwargs = result["chat_payload"]["chat_kwargs"]
-    assert chat_kwargs["with_follow_up"] is True
+    assert chat_kwargs["with_follow_up"] is expected
 
 
 # ---------------------------------------------------------------------------
@@ -106,41 +85,24 @@ async def test_follow_up_prep_chat_kwargs_enables_follow_up() -> None:
 
 def test_route_draft_tasks_payload_disables_follow_up() -> None:
     """Every ``route_draft_tasks`` Send carries ``with_follow_up`` False."""
-    agent = _build_agent()
-    params = [
-        {"subtopic": "photosynthesis", "knowledge": "snippet-0"},
-        {"subtopic": "chlorophyll", "knowledge": "snippet-1"},
-        {"subtopic": "stomatal", "knowledge": "snippet-2"},
-    ]
-    state = cast(DeepResearchState, {"dimension_params": params})
+    agent = build_review_agent()
+    state = cast(DeepResearchState, draft_route_state())
     sends = agent.route_draft_tasks(state)
 
-    assert len(sends) == 3
+    assert_send_common(sends, node="draft_worker_node")
     for send in sends:
-        assert isinstance(send, Send)
-        assert send.node == "draft_worker_node"
         chat_kwargs = send.arg["chat_payload"]["chat_kwargs"]
         assert chat_kwargs["with_follow_up"] is False
 
 
 def test_route_review_results_tasks_payload_disables_follow_up() -> None:
     """``route_review_results_tasks`` Sends carry ``with_follow_up`` False."""
-    agent = _build_agent()
-    dimensions = ["photosynthesis", "chlorophyll", "stomatal"]
-    drafts = ["draft-A", "draft-B", "draft-C"]
-    state = cast(
-        DeepResearchState,
-        {
-            "research_dimensions": dimensions,
-            "draft_contents": drafts,
-        },
-    )
+    agent = build_review_agent()
+    state = cast(DeepResearchState, review_results_route_state())
     sends = agent.route_review_results_tasks(state)
 
-    assert len(sends) == 3
+    assert_send_common(sends, node="review_results_worker_node")
     for send in sends:
-        assert isinstance(send, Send)
-        assert send.node == "review_results_worker_node"
         chat_kwargs = send.arg["chat_payload"]["chat_kwargs"]
         assert chat_kwargs["with_follow_up"] is False
 

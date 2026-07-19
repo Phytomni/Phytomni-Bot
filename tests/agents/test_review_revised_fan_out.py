@@ -18,22 +18,33 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
-from langgraph.types import Send
 
 from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 from mcp_server_phytomni.agents.review.state import DeepResearchState
-from mcp_server_phytomni.config.defaults import ReviewConfig
-from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.review_fan_out import (
+    FailureContract,
+    assert_failure_delta,
+    assert_send_common,
+    build_review_agent,
+    revised_prepare_state,
+    revised_worker_state,
+)
+from tests.support.subgraph_fakes import assert_subgraph_prefixes
 
 pytestmark = pytest.mark.agent
 
 
-def _build_agent() -> DeepResearchAgent:
-    """Construct a ``DeepResearchAgent`` for the revised fan-out."""
-    return DeepResearchAgent(
-        review_config=ReviewConfig(),
-        sensitive_config=SensitiveConfig.load(),
-    )
+_revised_failure = cast(
+    FailureContract,
+    {
+        "result_key": "revised_indexed_results",
+        "sentinel": "",
+        "task_index": 1,
+        "task_label": "revised:1",
+        "message": "supplementary retrieval timeout",
+        "extra_keys": {"add_doc_list": []},
+    },
+)
 
 
 # ---------------------------------------------------------------------------
@@ -43,16 +54,8 @@ def _build_agent() -> DeepResearchAgent:
 
 async def test_revised_prepare_tasks_node_returns_empty_delta() -> None:
     """``revised_prepare_tasks_node`` acts as a no-op split node."""
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "research_dimensions": ["photosynthesis"],
-            "draft_contents": ["draft-A"],
-            "review_contents": ["{}"],
-            "all_raw_doc_list": [],
-        },
-    )
+    agent = build_review_agent()
+    state = cast(DeepResearchState, revised_prepare_state())
     result = await agent.revised_prepare_tasks_node(state)
     assert result == {}
 
@@ -64,7 +67,7 @@ async def test_revised_prepare_tasks_node_returns_empty_delta() -> None:
 
 def test_route_revised_tasks_returns_n_sends() -> None:
     """``route_revised_tasks`` returns one Send per dimension entry."""
-    agent = _build_agent()
+    agent = build_review_agent()
     dimensions = ["photosynthesis", "chlorophyll", "stomatal"]
     drafts = ["draft-A", "draft-B", "draft-C"]
     reviews = ["{}", '{"has_critical_gaps": true}', "{}"]
@@ -80,11 +83,8 @@ def test_route_revised_tasks_returns_n_sends() -> None:
     )
     sends = agent.route_revised_tasks(state)
 
-    assert len(sends) == 3
+    assert_send_common(sends, node="revised_worker_node")
     for i, send in enumerate(sends):
-        assert isinstance(send, Send)
-        assert send.node == "revised_worker_node"
-        assert send.arg["task_index"] == i
         assert send.arg["subtopic"] == dimensions[i]
         assert send.arg["draft_content"] == drafts[i]
         assert send.arg["review_content"] == reviews[i]
@@ -117,16 +117,16 @@ async def test_revised_worker_node_success_writes_indexed_result_and_add_docs(
         }
     )
     monkeypatch.setattr(DeepResearchAgent, "_feedback_rag", fake_feedback_rag)
-    agent = _build_agent()
+    agent = build_review_agent()
     state = cast(
         DeepResearchState,
-        {
-            "task_index": 2,
-            "subtopic": "auxin signalling",
-            "draft_content": "draft-A",
-            "review_content": '{"has_critical_gaps": true}',
-            "raw_doc_list": [{"id": "doc-1"}],
-        },
+        revised_worker_state(
+            task_index=2,
+            subtopic="auxin signalling",
+            draft_content="draft-A",
+            review_content='{"has_critical_gaps": true}',
+            raw_doc_list=[{"id": "doc-1"}],
+        ),
     )
     result = await agent.revised_worker_node(state)
 
@@ -163,31 +163,20 @@ async def test_revised_worker_node_exception_writes_sentinel_and_failure(
         side_effect=RuntimeError("supplementary retrieval timeout")
     )
     monkeypatch.setattr(DeepResearchAgent, "_feedback_rag", fake_feedback_rag)
-    agent = _build_agent()
+    agent = build_review_agent()
     state = cast(
         DeepResearchState,
-        {
-            "task_index": 1,
-            "subtopic": "drought tolerance",
-            "draft_content": "draft-orig",
-            "review_content": '{"has_critical_gaps": true}',
-            "raw_doc_list": [],
-        },
+        revised_worker_state(
+            task_index=1,
+            subtopic="drought tolerance",
+            draft_content="draft-orig",
+            review_content='{"has_critical_gaps": true}',
+            raw_doc_list=[],
+        ),
     )
     result = await agent.revised_worker_node(state)
 
-    assert result["revised_indexed_results"] == [(1, "")]
-    # Empty list, NOT missing key — the operator.add reducer must
-    # receive a list, not None, for every worker.
-    assert result["add_doc_list"] == []
-    failures = result.get("failures", [])
-    assert len(failures) == 1
-    rec = failures[0]
-    # FailureRecord is a TypedDict — check structural keys, not isinstance.
-    assert rec["kind"] == "execute"
-    assert "supplementary retrieval timeout" in rec["message"]
-    assert rec["task_label"] == "revised:1"
-    assert rec["traceback_digest"] is not None
+    assert_failure_delta(result, _revised_failure)
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +190,7 @@ async def test_revised_reduce_node_sorts_by_task_index() -> None:
     Delivers the same ``revised_contents`` and ``revised_reports``
     ordering regardless of the order concurrent workers completed.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     # Supply results out-of-order (task 2 arrives first).
     state = cast(
         DeepResearchState,
@@ -235,7 +224,7 @@ async def test_revised_reduce_node_falls_back_to_original_draft_on_empty() -> (
     lines 159-165: a failed dimension surfaces its prior draft so the
     summary node still sees a non-empty subsection for that slot.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     state = cast(
         DeepResearchState,
         {
@@ -274,7 +263,7 @@ async def test_revised_reduce_node_mirror_writes_revised_reports() -> None:
     the new reduce node must keep emitting both ``subtopic`` and
     ``revised_report`` per dimension entry.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     state = cast(
         DeepResearchState,
         {
@@ -314,7 +303,7 @@ def test_compiled_graph_flag_on_has_revised_send_triad() -> None:
     and the flat worker key so a regression that loses either surfaces
     here.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     node_keys = set(agent.app.get_graph(xray=True).nodes.keys())
     assert "revised_dispatch" in node_keys
     assert "revised_worker_node" in node_keys
@@ -336,11 +325,9 @@ def test_compiled_graph_xray_expands_chat_under_revised_worker() -> None:
     worker continues to expose its xray-expanded chat subgraph so
     the broader render is unaffected by the revised triad insertion.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     node_keys = list(agent.app.get_graph(xray=True).nodes.keys())
-    assert any(
-        key.startswith("review_results_worker_node:") for key in node_keys
-    ), sorted(node_keys)
+    assert_subgraph_prefixes(node_keys, "review_results_worker_node:")
     assert "revised_dispatch" in node_keys
     assert "revised_worker_node" in node_keys
     assert "revised_reduce_node" in node_keys

@@ -16,20 +16,16 @@ from typing import cast
 
 import pytest
 
-from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 from mcp_server_phytomni.agents.review.state import DeepResearchState
-from mcp_server_phytomni.config.defaults import ReviewConfig
-from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.review_fan_out import (
+    build_review_agent,
+    follow_up_state,
+    plan_query_state,
+    review_summary_state,
+)
+from tests.support.subgraph_fakes import assert_subgraph_prefixes
 
 pytestmark = pytest.mark.agent
-
-
-def _build_agent() -> DeepResearchAgent:
-    """Construct a ``DeepResearchAgent`` for the single-shot chat sites."""
-    return DeepResearchAgent(
-        review_config=ReviewConfig(),
-        sensitive_config=SensitiveConfig.load(),
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -39,14 +35,8 @@ def _build_agent() -> DeepResearchAgent:
 
 async def test_plan_query_prep_node_stages_payload() -> None:
     """Prep node stages ``chat_payload`` + ``pending_post`` for plan_query."""
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "original_user_query": "How does photosynthesis work?",
-            "obs_file_list": [],
-        },
-    )
+    agent = build_review_agent()
+    state = cast(DeepResearchState, plan_query_state())
     result = await agent.plan_query_prep_node(state)
 
     assert result["pending_post"] == "plan_query_post_node"
@@ -60,18 +50,8 @@ async def test_plan_query_prep_node_stages_payload() -> None:
 
 async def test_summary_prep_node_stages_payload() -> None:
     """Prep node stages ``chat_payload`` + ``pending_post`` for summary."""
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "original_user_query": "Photosynthesis",
-            "revised_reports": [
-                {"subtopic": "dim1", "revised_report": "Content 1"},
-                {"subtopic": "dim2", "revised_report": "Content 2"},
-            ],
-            "research_dimensions": ["dim1", "dim2"],
-        },
-    )
+    agent = build_review_agent()
+    state = cast(DeepResearchState, review_summary_state())
     result = await agent.summary_prep_node(state)
 
     assert result["pending_post"] == "summary_post_node"
@@ -84,16 +64,8 @@ async def test_summary_prep_node_stages_payload() -> None:
 
 async def test_follow_up_prep_node_stages_payload() -> None:
     """Prep node stages ``chat_payload`` + ``pending_post`` for follow_up."""
-    agent = _build_agent()
-    state = cast(
-        DeepResearchState,
-        {
-            "original_user_query": "Photosynthesis",
-            "summary_content": "A review of photosynthesis.",
-            "all_raw_doc_list": [],
-            "add_doc_list": [],
-        },
-    )
+    agent = build_review_agent()
+    state = cast(DeepResearchState, follow_up_state())
     result = await agent.follow_up_prep_node(state)
 
     assert result["pending_post"] == "follow_up_post_node"
@@ -111,7 +83,7 @@ async def test_follow_up_prep_node_stages_payload() -> None:
 
 async def test_plan_query_post_node_parses_chat_response() -> None:
     """Post node parses ``chat_response`` into the plan_query delta."""
-    agent = _build_agent()
+    agent = build_review_agent()
     state = cast(
         DeepResearchState,
         {
@@ -136,7 +108,7 @@ async def test_plan_query_post_node_parses_chat_response() -> None:
 
 async def test_summary_post_node_parses_chat_response() -> None:
     """Post node parses ``chat_response`` into ``summary_content``."""
-    agent = _build_agent()
+    agent = build_review_agent()
     state = cast(
         DeepResearchState,
         {
@@ -154,7 +126,7 @@ async def test_summary_post_node_parses_chat_response() -> None:
 
 async def test_follow_up_post_node_parses_chat_response() -> None:
     """Post node assembles ``final_response`` from the follow-up response."""
-    agent = _build_agent()
+    agent = build_review_agent()
     state = cast(
         DeepResearchState,
         {
@@ -190,7 +162,7 @@ async def test_follow_up_prep_to_post_preserves_doc_list() -> None:
     ``final_response``. Drives the wired prep -> post sequence with
     NON-EMPTY doc lists, which the other follow_up tests omit.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     prep_state = cast(
         DeepResearchState,
         {
@@ -253,9 +225,9 @@ def test_compiled_graph_flag_on_xray_expands_chat_subgraph() -> None:
     discovers it and the xray render carries node keys prefixed with
     ``chat:`` (the parent node name plus the subgraph node names).
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     node_keys = agent.app.get_graph(xray=True).nodes.keys()
-    assert any(key.startswith("chat:") for key in node_keys), sorted(node_keys)
+    assert_subgraph_prefixes(node_keys, "chat:")
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +243,7 @@ def test_retrieve_send_triad_is_registered() -> None:
     ``retrieve_reduce_node``; no legacy single ``retrieve_node`` is
     registered.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     node_keys = set(agent.app.get_graph().nodes.keys())
     assert "retrieve_dispatch" in node_keys
     assert "retrieve_worker_node" in node_keys
@@ -286,7 +258,7 @@ def test_draft_send_triad_is_registered_flag_on() -> None:
     ``draft_dispatch`` → ``draft_worker_node`` × N →
     ``draft_reduce_node``; no legacy ``draft_node`` is registered.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     node_keys = set(agent.app.get_graph().nodes.keys())
     assert "draft_dispatch" in node_keys
     assert "draft_worker_node" in node_keys
@@ -302,7 +274,7 @@ def test_review_results_send_triad_is_registered_flag_on() -> None:
     ``review_results_reduce_node``; no legacy ``review_node`` is
     registered.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     node_keys = set(agent.app.get_graph().nodes.keys())
     assert "review_results_dispatch" in node_keys
     assert "review_results_worker_node" in node_keys
@@ -317,7 +289,7 @@ def test_revised_send_triad_is_registered_flag_on() -> None:
     ``revised_dispatch`` → ``revised_worker_node`` × N →
     ``revised_reduce_node``; no legacy ``revise_node`` is registered.
     """
-    agent = _build_agent()
+    agent = build_review_agent()
     node_keys = set(agent.app.get_graph().nodes.keys())
     assert "revised_dispatch" in node_keys
     assert "revised_worker_node" in node_keys
