@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `239`
+- Authorized records: `238`
 
 ## Informational counts
 
@@ -23,7 +23,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:prop-decorator`                                             |       1 |
 | `pylint:C0103`                                                    |       1 |
 | `pylint:C0116`                                                    |       1 |
-| `pylint:R0801`                                                    |     111 |
+| `pylint:R0801`                                                    |     110 |
 | `pylint:R0903`                                                    |       7 |
 | `pylint:R0913`                                                    |       1 |
 | `pylint:R0917`                                                    |       1 |
@@ -124,7 +124,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0074` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/api/relay/audit_filter.py | 27:38 | `sha256:e403f78e603f501a9592111cdd3963a7670f069c42cb5d1e1755b764d1dc32e9` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_relay_audit_filter.py, static-analysis-inventory |
 | `SAE-TMP-0075` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/config/required_env.py | 16:28 | `sha256:0a106c71d1e188f33ba116a1a15980da2ccbd8924042f13b31d0dd5df3f2585c` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/config/test_required_env.py, tests/unit/test_defaults.py, static-analysis-inventory |
 | `SAE-TMP-0076` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/config/required_env.py | 41:46 | `sha256:b181294b667a5a5e3b3cc601d177d1d5e50806e12df472c917d370454afa17f9` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/config/test_required_env.py, static-analysis-inventory |
-| `SAE-TMP-0077` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/graphs/analyst_to_knowledge_adapters.py | 51:78 | `sha256:e14253a7a9e9e7b71513ae4cb71a3357c7df362eae880ee7ed1320287287495e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0078` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/mcp/app.py | 776:781 | `sha256:4a57d42c7066ead11e72824504ea38c35100a972dea9d50d624994daf75dfac4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0079` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/mcp/result_formatting.py | 1168:1175 | `sha256:39bb04ba061c5c096516cd49aa3d965d902986d4ef683a93996c50dbee9472aa` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_result_formatting_projection.py, static-analysis-inventory |
 | `SAE-TMP-0080` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/mcp/result_formatting.py | 38:49 | `sha256:f5522e6938b71179fb0baf2e7eb8c4294d3891dd03b2475e5156e869a9a62647` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_task_reconcile.py, static-analysis-inventory |
@@ -2215,57 +2214,6 @@ Risk:
 
 ```text
 A stale expected tuple can block a legitimate deployment change; update it with the configuration contract and environment template.
-```
-
-### `SAE-TMP-0077`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==mcp_server_phytomni.graphs.analyst_to_knowledge_adapters:[51:78]
-==mcp_server_phytomni.graphs.review_to_knowledge_adapters:[51:80]
-        "repo_id_dict": dict(repo_id_dict),
-        "is_generate": False,
-        "is_follow_up": False,
-    }
-
-
-def extract_review_knowledge_response(
-    knowledge_output: Mapping[str, Any],
-) -> list[dict[str, Any]]:
-    """Project ``KnowledgeOutput.retrieved_docs`` into the doc list.
-
-    The review drafting step reads the raw doc list and runs its own
-    fragment formatting + token-budget truncation (via
-    ``_dimension_fragments``); the knowledge subgraph stores the docs
-    under ``KnowledgeOutput.retrieved_docs``. This helper unwraps the
-    list and defaults to ``[]`` when the upstream returned no docs so
-    the downstream fragment loop still iterates over a list rather
-    than ``None``.
-
-    Args:
-        knowledge_output: The knowledge subgraph's final state mapping
-            (``KnowledgeOutput``-shaped).
-
-    Returns:
-        The raw retrieved-doc list, or ``[]`` if the upstream returned
-        ``None`` or omitted the key.
-    """
-    docs = knowledge_output.get("retrieved_docs")
-    return list(docs) if docs is not None else []
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
 ```
 
 ### `SAE-TMP-0078`

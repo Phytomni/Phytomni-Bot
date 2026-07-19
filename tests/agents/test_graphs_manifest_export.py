@@ -295,6 +295,14 @@ def test_export_real_analyst_subgraph_node_set() -> None:
     assert documented <= names
 
 
+def test_export_analyst_knowledge_mount_remains_visible() -> None:
+    """Shared knowledge mappings do not hide the Analyst subgraph mount."""
+    app = AnalystAgent().app
+    names = set(app.get_graph(xray=True).nodes)
+
+    assert any(name.startswith("knowledge:") for name in names)
+
+
 def test_export_real_review_subgraph_node_set() -> None:
     """Real DeepResearchAgent export covers every compiled-graph node.
 
@@ -311,6 +319,14 @@ def test_export_real_review_subgraph_node_set() -> None:
     names = {node.name for node in manifest.nodes}
     compiled = {n.id for n in agent.app.get_graph().nodes.values()}
     assert compiled <= names
+
+
+def test_export_review_knowledge_mount_remains_visible() -> None:
+    """Shared knowledge mappings do not hide Review worker mounts."""
+    app = DeepResearchAgent().app
+    names = set(app.get_graph(xray=True).nodes)
+
+    assert any(name.startswith("retrieve_worker_node:") for name in names)
 
 
 def test_export_real_environment_subgraph_node_set() -> None:

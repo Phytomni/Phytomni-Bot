@@ -1504,28 +1504,6 @@ risk = "A stale expected tuple can block a legitimate deployment change; update 
 tests = ["tests/unit/config/test_required_env.py", "static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0077"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/graphs/analyst_to_knowledge_adapters.py"
-symbol = "51:78"
-peer_path = "src/mcp_server_phytomni/graphs/review_to_knowledge_adapters.py"
-peer_symbol = "51:80"
-fingerprint = "sha256:e14253a7a9e9e7b71513ae4cb71a3357c7df362eae880ee7ed1320287287495e"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.graphs.analyst_to_knowledge_adapters:[51:78]\n==mcp_server_phytomni.graphs.review_to_knowledge_adapters:[51:80]\n        \"repo_id_dict\": dict(repo_id_dict),\n        \"is_generate\": False,\n        \"is_follow_up\": False,\n    }\n\n\ndef extract_review_knowledge_response(\n    knowledge_output: Mapping[str, Any],\n) -> list[dict[str, Any]]:\n    \"\"\"Project ``KnowledgeOutput.retrieved_docs`` into the doc list.\n\n    The review drafting step reads the raw doc list and runs its own\n    fragment formatting + token-budget truncation (via\n    ``_dimension_fragments``); the knowledge subgraph stores the docs\n    under ``KnowledgeOutput.retrieved_docs``. This helper unwraps the\n    list and defaults to ``[]`` when the upstream returned no docs so\n    the downstream fragment loop still iterates over a list rather\n    than ``None``.\n\n    Args:\n        knowledge_output: The knowledge subgraph's final state mapping\n            (``KnowledgeOutput``-shaped).\n\n    Returns:\n        The raw retrieved-doc list, or ``[]`` if the upstream returned\n        ``None`` or omitted the key.\n    \"\"\"\n    docs = knowledge_output.get(\"retrieved_docs\")\n    return list(docs) if docs is not None else []"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0078"
 tool = "pylint"
 rule = "R0801"

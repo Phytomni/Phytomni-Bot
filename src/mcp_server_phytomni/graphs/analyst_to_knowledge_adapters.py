@@ -16,6 +16,13 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..agents.knowledge.state import KnowledgeInput
+from .knowledge_adapters import (
+    make_knowledge_input_adapter,
+    make_knowledge_output_adapter,
+)
+
+_build_input = make_knowledge_input_adapter("user_query", "repo_id_dict")
+_extract_output = make_knowledge_output_adapter("retrieved_docs")
 
 
 def build_analyst_knowledge_input(
@@ -47,12 +54,7 @@ def build_analyst_knowledge_input(
         overrides that pin the retrieve-only path
         (``is_generate=False``, ``is_follow_up=False``).
     """
-    return {
-        "user_query": user_query,
-        "repo_id_dict": dict(repo_id_dict),
-        "is_generate": False,
-        "is_follow_up": False,
-    }
+    return _build_input(user_query, repo_id_dict)
 
 
 def extract_analyst_knowledge_response(
@@ -74,5 +76,4 @@ def extract_analyst_knowledge_response(
         The raw retrieved-doc list, or ``[]`` if the upstream returned
         ``None`` or omitted the key.
     """
-    docs = knowledge_output.get("retrieved_docs")
-    return list(docs) if docs is not None else []
+    return _extract_output(knowledge_output)
