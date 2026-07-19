@@ -15,13 +15,13 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from typing import TYPE_CHECKING, Any
 
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
 from ...common.prompts import get_prompt
+from ...common.responses import message_content, parse_json_object_fragment
 from ...config.data_loaders import load_species_data
 from ...graphs.chat_adapters import (
     build_chat_input,
@@ -34,6 +34,16 @@ else:
     AnalystAgentsState = dict[str, Any]
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_json_object_preserving_errors(text: str) -> Any:
+    """Use the common object parser while retaining legacy JSON errors."""
+    parsed = parse_json_object_fragment(text)
+    if parsed:
+        return parsed
+    if text:
+        return json.loads(text)
+    return {}
 
 
 class AnalystChatSubgraphMixin:
@@ -110,23 +120,8 @@ class AnalystChatSubgraphMixin:
         """
         if state.get("chat_payload") is None:
             return {}
-        phyto_response = state.get("chat_response") or {}
-        content = "{}"
-        if (
-            phyto_response
-            and phyto_response.get("choices")
-            and len(phyto_response["choices"]) > 0
-            and phyto_response["choices"][0].get("message")
-            and phyto_response["choices"][0]["message"].get("content")
-        ):
-            content = phyto_response["choices"][0]["message"]["content"]
-        pattern = r"```json(.*?)```"
-        match = re.search(pattern, content, re.DOTALL)
-        if match:
-            json_string = match.group(1).strip()
-            result = json.loads(json_string)
-        else:
-            result = json.loads(content)
+        content = message_content(state.get("chat_response") or "") or "{}"
+        result = _parse_json_object_preserving_errors(content)
         return {
             "goal_description": (
                 result["goal_description"]
@@ -221,24 +216,13 @@ class AnalystChatSubgraphMixin:
         Raises:
             McpError: If parsing the LLM response fails.
         """
-        selection_response = state.get("chat_response") or {}
+        selection_response = state.get("chat_response") or ""
         data_list = state["data_list"]
         selected_data: dict[Any, Any] = {}
-        if (
-            selection_response
-            and selection_response.get("choices")
-            and len(selection_response["choices"]) > 0
-            and selection_response["choices"][0].get("message")
-            and selection_response["choices"][0]["message"].get("content")
-        ):
+        content = message_content(selection_response)
+        if content:
             try:
-                content = selection_response["choices"][0]["message"][
-                    "content"
-                ]
-                match = re.search(r"\{.*\}", content, re.DOTALL)
-                if match:
-                    content = match.group(0).strip()
-                parsed_response = json.loads(content)
+                parsed_response = _parse_json_object_preserving_errors(content)
                 if "selected_data" in parsed_response:
                     selected_data = parsed_response["selected_data"]
                 else:
@@ -369,16 +353,7 @@ class AnalystChatSubgraphMixin:
         Raises:
             McpError: If the LLM returned no usable content.
         """
-        phyto_response = state.get("chat_response") or {}
-        content = None
-        if (
-            phyto_response
-            and phyto_response.get("choices")
-            and len(phyto_response["choices"]) > 0
-            and phyto_response["choices"][0].get("message")
-            and phyto_response["choices"][0]["message"].get("content")
-        ):
-            content = phyto_response["choices"][0]["message"]["content"]
+        content = message_content(state.get("chat_response") or "")
         if not content:
             raise McpError(
                 ErrorData(
@@ -474,23 +449,8 @@ class AnalystChatSubgraphMixin:
         max_retries = self.analyst_config.MAX_RETRIES
         current_retries = state.get("plan_retries", 0)
         try:
-            phyto_response = state.get("chat_response") or {}
-            content = "{}"
-            if (
-                phyto_response
-                and phyto_response.get("choices")
-                and len(phyto_response["choices"]) > 0
-                and phyto_response["choices"][0].get("message")
-                and phyto_response["choices"][0]["message"].get("content")
-            ):
-                content = phyto_response["choices"][0]["message"]["content"]
-            pattern = r"```json(.*?)```"
-            match = re.search(pattern, content, re.DOTALL)
-            if match:
-                json_string = match.group(1).strip()
-                result = json.loads(json_string)
-            else:
-                result = json.loads(content)
+            content = message_content(state.get("chat_response") or "")
+            result = _parse_json_object_preserving_errors(content or "{}")
             score = result.get("score", 0)
             decision = result.get("decision", "REJECTED")
             feedback = result.get("feedback", "")
@@ -571,22 +531,7 @@ class AnalystChatSubgraphMixin:
         Returns:
             A state delta with the parsed ``extracted_tools`` list.
         """
-        phyto_response = state.get("chat_response") or {}
-        content = "{}"
-        if (
-            phyto_response
-            and phyto_response.get("choices")
-            and len(phyto_response["choices"]) > 0
-            and phyto_response["choices"][0].get("message")
-            and phyto_response["choices"][0]["message"].get("content")
-        ):
-            content = phyto_response["choices"][0]["message"]["content"]
-        pattern = r"```json(.*?)```"
-        match = re.search(pattern, content, re.DOTALL)
-        if match:
-            json_string = match.group(1).strip()
-            result = json.loads(json_string)
-        else:
-            result = json.loads(content)
+        content = message_content(state.get("chat_response") or "") or "{}"
+        result = _parse_json_object_preserving_errors(content)
         logger.debug("Extracted tools: %s", result["tools"])
         return {"extracted_tools": result["tools"]}

@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `238`
+- Authorized records: `233`
 
 ## Informational counts
 
@@ -23,7 +23,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:prop-decorator`                                             |       1 |
 | `pylint:C0103`                                                    |       1 |
 | `pylint:C0116`                                                    |       1 |
-| `pylint:R0801`                                                    |     110 |
+| `pylint:R0801`                                                    |     105 |
 | `pylint:R0903`                                                    |       7 |
 | `pylint:R0913`                                                    |       1 |
 | `pylint:R0917`                                                    |       1 |
@@ -86,11 +86,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0032` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/core.py | 234:244 | `sha256:5797dc0093813262892fe4d0b78be2f990a7a576bd4b844540d12cd2592c3e77` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0033` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/core.py | 457:463 | `sha256:baddf42588bca4446d3eb1e7102c40d9f5f00b15116258e0a5aa5dbdb055235e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0034` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/core.py | 500:509 | `sha256:00540296658667b0db8451f55e02e422f72522c0fca8a856b38a602915a8ef55` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0035` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/graph_chat_subgraph.py | 112:122 | `sha256:565a256502cfe4e73e0768809f450852215aad8bdf6936c3cd4433078c037174` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0036` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/graph_chat_subgraph.py | 114:121 | `sha256:f8d15ccac20acbf337cb053b0ded4b0c3103e110e88be02f8e9b0e6a70e92dbf` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0037` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/graph_chat_subgraph.py | 114:122 | `sha256:df636d63e90b624510fdad0c8130a2268202e15295c52dbcb72293b42568f70e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0038` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/graph_chat_subgraph.py | 373:381 | `sha256:46dbfac4d78a2c8e9ff0e0a65325fa3462e5d9ea4d2faf66e9016e4f0fd467a1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0039` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/graph_chat_subgraph.py | 555:583 | `sha256:a8e2eeb566bf1de32c539245d489884a5fa162eef25b65e00638de2ddaac938f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0040` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/planning.py | 101:107 | `sha256:aa9f030fa22f1341c154c9cfa1b703bee67e2fcb6e2aa47ea744319bd9039090` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0041` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/state.py | 114:119 | `sha256:b9c858b4756d1eeba0e3575fea150ea4750ceadcf06fb842cd871d087c87a349` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0042` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 119:124 | `sha256:1d150569c10458da8ffb018c145f78cbd52adf676e4b9a3dfb283b4d360e9063` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
@@ -1083,177 +1078,6 @@ Similar lines in 2 files
 
 def _sensitive_config_with_overrides(**kwargs: Any):
     """Build a SensitiveConfig copy from compatibility wrapper arguments."""
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0035`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.analyst.graph_chat_subgraph:[112:122]
-==mcp_server_phytomni.agents.review.planning:[164:174]
-        phyto_response = state.get("chat_response") or {}
-        content = "{}"
-        if (
-            phyto_response
-            and phyto_response.get("choices")
-            and len(phyto_response["choices"]) > 0
-            and phyto_response["choices"][0].get("message")
-            and phyto_response["choices"][0]["message"].get("content")
-        ):
-            content = phyto_response["choices"][0]["message"]["content"]
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0036`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.analyst.graph_chat_subgraph:[114:121]
-==mcp_server_phytomni.agents.review.summary:[203:210]
-        if (
-            phyto_response
-            and phyto_response.get("choices")
-            and len(phyto_response["choices"]) > 0
-            and phyto_response["choices"][0].get("message")
-            and phyto_response["choices"][0]["message"].get("content")
-        ):
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0037`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.analyst.graph_chat_subgraph:[114:122]
-==mcp_server_phytomni.agents.review.summary:[111:119]
-        if (
-            phyto_response
-            and phyto_response.get("choices")
-            and len(phyto_response["choices"]) > 0
-            and phyto_response["choices"][0].get("message")
-            and phyto_response["choices"][0]["message"].get("content")
-        ):
-            content = phyto_response["choices"][0]["message"]["content"]
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0038`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.analyst.graph_chat_subgraph:[373:381]
-==mcp_server_phytomni.agents.review.planning:[166:174]
-        if (
-            phyto_response
-            and phyto_response.get("choices")
-            and len(phyto_response["choices"]) > 0
-            and phyto_response["choices"][0].get("message")
-            and phyto_response["choices"][0]["message"].get("content")
-        ):
-            content = phyto_response["choices"][0]["message"]["content"]
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0039`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.analyst.graph_chat_subgraph:[555:583]
-==mcp_server_phytomni.agents.review.planning:[142:174]
-        }
-
-    async def tool_extract_post_node(
-        self: Any, state: AnalystAgentsState
-    ) -> dict[str, Any]:
-        """Parse the tool-extraction chat response into the legacy delta.
-
-        Mirrors the response-parsing half of ``tool_extract_node`` but
-        reads the chat response from ``state['chat_response']``
-        instead of awaiting a fresh ``phyto_chat`` call.
-
-        Args:
-            state: The current workflow state. Reads the upstream
-                ``chat_response`` written by the shared chat node.
-
-        Returns:
-            A state delta with the parsed ``extracted_tools`` list.
-        """
-        phyto_response = state.get("chat_response") or {}
-        content = "{}"
-        if (
-            phyto_response
-            and phyto_response.get("choices")
-            and len(phyto_response["choices"]) > 0
-            and phyto_response["choices"][0].get("message")
-            and phyto_response["choices"][0]["message"].get("content")
-        ):
-            content = phyto_response["choices"][0]["message"]["content"]
 ```
 
 Counterfactual:

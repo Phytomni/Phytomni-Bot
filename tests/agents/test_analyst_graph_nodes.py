@@ -192,6 +192,138 @@ async def test_plan_post_node_raises_when_llm_returns_empty_content() -> None:
     assert "Failed to generate plan" in excinfo.value.error.message
 
 
+@pytest.mark.parametrize(
+    "response",
+    [
+        None,
+        {},
+        {"choices": []},
+        {"choices": [{"message": "not-a-mapping"}]},
+        {"choices": [{"message": {"content": ""}}]},
+    ],
+)
+async def test_plan_post_node_rejects_malformed_response_shapes(
+    response: Any,
+) -> None:
+    """Every unusable OpenAI response keeps the plan failure contract."""
+    state = cast(
+        AnalystAgentsState,
+        {"plan_retries": 0, "chat_response": response},
+    )
+
+    with pytest.raises(McpError, match="Failed to generate plan"):
+        await AnalystChatSubgraphMixin.plan_post_node(_fake_self(), state)
+
+
+async def test_parse_query_post_node_uses_common_response_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Parse-query keeps domain fields while using canonical response walks."""
+    captured: dict[str, Any] = {}
+
+    def fake_message_content(response: Any) -> str:
+        captured["response"] = response
+        return "ignored"
+
+    def fake_parse_json_object(text: str) -> dict[str, Any]:
+        captured["text"] = text
+        return {
+            "goal_description": "goal",
+            "data_list": '{"/obs/data.tsv": "data"}',
+            "plan": "plan",
+        }
+
+    monkeypatch.setattr(analyst_chat, "message_content", fake_message_content)
+    monkeypatch.setattr(
+        analyst_chat,
+        "parse_json_object_fragment",
+        fake_parse_json_object,
+    )
+    response = {"choices": [{"message": {"content": "payload"}}]}
+    state = cast(
+        AnalystAgentsState,
+        {"chat_payload": {"staged": True}, "chat_response": response},
+    )
+
+    result = await AnalystChatSubgraphMixin.parse_query_post_node(
+        _fake_self(), state
+    )
+
+    assert captured == {"response": response, "text": "ignored"}
+    assert result == {
+        "goal_description": "goal",
+        "data_list": {"/obs/data.tsv": "data"},
+        "plan": "plan",
+    }
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"goal_description": "goal", "data_list": "{}", "plan": "plan"}',
+        (
+            '```json\n{"goal_description": "goal", '
+            '"data_list": "{}", "plan": "plan"}\n```'
+        ),
+    ],
+)
+async def test_parse_query_post_node_accepts_object_fragments(
+    content: str,
+) -> None:
+    """Plain and fenced objects retain parse-query's domain projection."""
+    state = cast(
+        AnalystAgentsState,
+        {
+            "chat_payload": {"staged": True},
+            "chat_response": {"choices": [{"message": {"content": content}}]},
+        },
+    )
+
+    result = await AnalystChatSubgraphMixin.parse_query_post_node(
+        _fake_self(), state
+    )
+
+    assert result == {
+        "goal_description": "goal",
+        "data_list": {},
+        "plan": "plan",
+    }
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        (
+            '{"selected_data": {"/obs/selected.tsv": "selected"}}',
+            {"/obs/selected.tsv": "selected"},
+        ),
+        (
+            '```json\n{"selected_data": {"/obs/fenced.tsv": "fenced"}}\n```',
+            {"/obs/fenced.tsv": "fenced"},
+        ),
+    ],
+)
+async def test_data_select_post_node_accepts_object_fragments(
+    content: str, expected: dict[str, str]
+) -> None:
+    """Data selection keeps the selected-data merge around common parsing."""
+    state = cast(
+        AnalystAgentsState,
+        {
+            "data_list": {"/obs/original.tsv": "original"},
+            "chat_response": {"choices": [{"message": {"content": content}}]},
+        },
+    )
+
+    result = await AnalystChatSubgraphMixin.data_select_post_node(
+        _fake_self(), state
+    )
+
+    assert result == {
+        "data_list": {"/obs/original.tsv": "original", **expected}
+    }
+
+
 def _make_agent(**config_overrides: Any) -> SimpleNamespace:
     """Build a duck-typed analyst host with explicit config overrides."""
     return SimpleNamespace(
@@ -252,6 +384,60 @@ async def test_check_post_node_treats_malformed_json_as_rejected() -> None:
     )
 
     assert result == {"plan_feedback": ""}
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"score": 1, "decision": "APPROVED", "feedback": ""}',
+        '```json\n{"score": 1, "decision": "APPROVED", "feedback": ""}\n```',
+    ],
+)
+async def test_check_post_node_accepts_object_fragments(content: str) -> None:
+    """Valid critic objects retain the approval decision."""
+    state = cast(
+        AnalystAgentsState,
+        {
+            "plan_retries": 1,
+            "chat_payload": {"staged": True},
+            "chat_response": {"choices": [{"message": {"content": content}}]},
+        },
+    )
+
+    result = await AnalystChatSubgraphMixin.check_post_node(
+        _fake_self(), state
+    )
+
+    assert result == {"plan_feedback": "APPROVED"}
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        '{"tools": ["tool_a", "tool_b"]}',
+        '```json\n{"tools": ["tool_fenced"]}\n```',
+    ],
+)
+async def test_tool_extract_post_node_accepts_object_fragments(
+    content: str,
+) -> None:
+    """Tool extraction keeps its list projection around common parsing."""
+    state = cast(
+        AnalystAgentsState,
+        {
+            "chat_response": {"choices": [{"message": {"content": content}}]},
+        },
+    )
+
+    result = await AnalystChatSubgraphMixin.tool_extract_post_node(
+        _fake_self(), state
+    )
+
+    assert result == {
+        "extracted_tools": (
+            ["tool_a", "tool_b"] if "tool_a" in content else ["tool_fenced"]
+        )
+    }
 
 
 def test_submit_output_dir_forwards_input_fingerprint(

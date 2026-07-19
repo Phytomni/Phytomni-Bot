@@ -140,6 +140,27 @@ async def test_summary_post_node_strips_backticks() -> None:
     assert result == {"summary_content": "Final report text"}
 
 
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        (
+            '```json\n{"summary": "fenced"}\n```',
+            'json\n{"summary": "fenced"}\n',
+        ),
+        ("plain summary", "plain summary"),
+    ],
+)
+async def test_summary_post_node_preserves_content_contract(
+    content: str, expected: str
+) -> None:
+    """Summary keeps text content while removing legacy backtick markers."""
+    result = await _build_agent().summary_post_node(
+        cast(DeepResearchState, {"chat_response": _chat_response(content)})
+    )
+
+    assert result == {"summary_content": expected}
+
+
 async def test_summary_post_node_falls_back_on_empty() -> None:
     """Empty chat content yields the ``No summary generated`` sentinel."""
     agent = _build_agent()
@@ -148,6 +169,43 @@ async def test_summary_post_node_falls_back_on_empty() -> None:
     result = await agent.summary_post_node(state)
 
     assert result == {"summary_content": "No summary generated"}
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        None,
+        {},
+        {"choices": []},
+        {"choices": [{"message": "not-a-mapping"}]},
+        {"choices": [{"message": {"content": ""}}]},
+    ],
+)
+async def test_summary_post_node_handles_malformed_response_shapes(
+    response: Any,
+) -> None:
+    """Malformed OpenAI envelopes keep the summary fallback sentinel."""
+    agent = _build_agent()
+
+    result = await agent.summary_post_node(
+        cast(DeepResearchState, {"chat_response": response})
+    )
+
+    assert result == {"summary_content": "No summary generated"}
+
+
+async def test_summary_post_node_uses_common_message_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Summary keeps its backtick policy around canonical message access."""
+    response = {"choices": [{"message": {"content": "payload"}}]}
+    monkeypatch.setattr(summary_module, "message_content", lambda value: "A")
+
+    result = await _build_agent().summary_post_node(
+        cast(DeepResearchState, {"chat_response": response})
+    )
+
+    assert result == {"summary_content": "A"}
 
 
 async def test_follow_up_renumbers_and_attaches_follow_ups() -> None:
@@ -178,6 +236,39 @@ async def test_follow_up_renumbers_and_attaches_follow_ups() -> None:
         "What about C4?",
         "Can we extend to wheat?",
     ]
+
+
+@pytest.mark.parametrize(
+    ("follow_up_text", "expected"),
+    [
+        ('["one", "two"]', ["one", "two"]),
+        ('```json\n["fenced"]\n```', ["fenced"]),
+        ("not-json", []),
+        ('{"question": "not-a-list"}', []),
+    ],
+)
+async def test_follow_up_post_node_parses_list_fragments(
+    follow_up_text: str, expected: list[str]
+) -> None:
+    """Follow-up parsing keeps list support and rejects other JSON shapes."""
+    agent = _build_agent()
+    state = cast(
+        DeepResearchState,
+        {
+            "summary_content": "Summary",
+            "ordered_doc_list": [],
+            "chat_response": _chat_response(follow_up_text),
+        },
+    )
+
+    result = await agent.follow_up_post_node(state)
+
+    assert (
+        result["final_response"]["choices"][0]["message"][
+            "follow_up_questions"
+        ]
+        == expected
+    )
 
 
 async def test_follow_up_merges_raw_and_add_doc_lists() -> None:

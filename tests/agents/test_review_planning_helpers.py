@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import re
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
+from mcp_server_phytomni.agents.review import planning as review_planning
 from mcp_server_phytomni.agents.review.helpers import (
     CITATION_PATTERN,
     _doc_content,
@@ -32,6 +33,7 @@ from mcp_server_phytomni.agents.review.planning import (
     RetrievalAccumulator,
     ReviewPlanningMixin,
 )
+from mcp_server_phytomni.agents.review.state import DeepResearchState
 
 pytestmark = pytest.mark.unit
 
@@ -159,6 +161,108 @@ class _PlanningProbe(ReviewPlanningMixin):
         """Public proxy for the protected ``_dimension_fragments`` helper."""
         return self._dimension_fragments(
             dimension_result, accumulator, length_limit
+        )
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        None,
+        {},
+        {"choices": []},
+        {"choices": [{"message": "not-a-mapping"}]},
+        {"choices": [{"message": {"content": ""}}]},
+    ],
+)
+async def test_plan_query_post_node_rejects_malformed_response_shapes(
+    response: Any,
+) -> None:
+    """Malformed OpenAI envelopes remain invalid review dimensions."""
+    probe = _PlanningProbe()
+
+    with pytest.raises(ValueError, match="Invalid research dimensions"):
+        await probe.plan_query_post_node(
+            cast(DeepResearchState, {"chat_response": response})
+        )
+
+
+async def test_plan_query_post_node_uses_common_response_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review-specific dimension validation wraps common parser output."""
+    captured: dict[str, Any] = {}
+
+    def fake_message_content(response: Any) -> str:
+        captured["response"] = response
+        return "ignored"
+
+    def fake_parse_json_object(text: str) -> dict[str, Any]:
+        captured["text"] = text
+        return {"Research_dimensions": ["one", "two", "three", "four"]}
+
+    monkeypatch.setattr(
+        review_planning, "message_content", fake_message_content
+    )
+    monkeypatch.setattr(
+        review_planning,
+        "parse_json_object_fragment",
+        fake_parse_json_object,
+    )
+    response = {"choices": [{"message": {"content": "payload"}}]}
+    result = await _PlanningProbe().plan_query_post_node(
+        cast(DeepResearchState, {"chat_response": response})
+    )
+
+    assert captured == {"response": response, "text": "ignored"}
+    assert result == {"research_dimensions": ["one", "two", "three", "four"]}
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        (
+            '{"Research_dimensions": ["plain", "second"]}',
+            ["plain", "second"],
+        ),
+        (
+            '```json\n{"Research_dimensions": ["fenced"]}\n```',
+            ["fenced"],
+        ),
+    ],
+)
+async def test_plan_query_post_node_accepts_object_fragments(
+    content: str, expected: list[str]
+) -> None:
+    """Valid plain and fenced dimension objects keep their domain shape."""
+    result = await _PlanningProbe().plan_query_post_node(
+        cast(
+            DeepResearchState,
+            {
+                "chat_response": {
+                    "choices": [{"message": {"content": content}}]
+                }
+            },
+        )
+    )
+
+    assert result == {"research_dimensions": expected}
+
+
+@pytest.mark.parametrize("content", ["not-json", '["not-an-object"]'])
+async def test_plan_query_post_node_rejects_non_object_fragments(
+    content: str,
+) -> None:
+    """Malformed and list JSON cannot satisfy review dimensions."""
+    with pytest.raises(ValueError, match="Invalid research dimensions"):
+        await _PlanningProbe().plan_query_post_node(
+            cast(
+                DeepResearchState,
+                {
+                    "chat_response": {
+                        "choices": [{"message": {"content": content}}]
+                    }
+                },
+            )
         )
 
 

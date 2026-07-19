@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from langgraph.types import Send
 
 from ...common.prompts import get_prompt
+from ...common.responses import message_content, parse_json_object_fragment
 from ...graphs.chat_adapters import build_chat_input, build_chat_kwargs_for
 from ...graphs.review_to_knowledge_adapters import (
     build_review_knowledge_input,
@@ -31,7 +32,7 @@ from ...mcp.progress_events import emit_progress
 from ...storage.downloads import download_upload_context
 from ..shared.analysis import _compute_traceback_digest
 from ..shared.parallel_dispatch import FailureRecord
-from .helpers import _extract_json_object, _format_doc_fragment
+from .helpers import _format_doc_fragment
 
 if TYPE_CHECKING:
     from .agent import DeepResearchState
@@ -162,17 +163,8 @@ class ReviewPlanningMixin:
         Raises:
             ValueError: If the LLM returns no valid dimensions.
         """
-        phyto_response = state.get("chat_response") or {}
-        content = "{}"
-        if (
-            phyto_response
-            and phyto_response.get("choices")
-            and len(phyto_response["choices"]) > 0
-            and phyto_response["choices"][0].get("message")
-            and phyto_response["choices"][0]["message"].get("content")
-        ):
-            content = phyto_response["choices"][0]["message"]["content"]
-        dimensions_json = _extract_json_object(content)
+        content = message_content(state.get("chat_response") or "")
+        dimensions_json = parse_json_object_fragment(content)
         dimensions = dimensions_json.get("Research_dimensions", [])
         if not isinstance(dimensions, list) or not dimensions:
             raise ValueError("Invalid research dimensions from phyto_chat")

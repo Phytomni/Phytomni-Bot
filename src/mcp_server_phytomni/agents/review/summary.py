@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from ...common.prompts import get_prompt
-from ...common.responses import parse_follow_up_questions
+from ...common.responses import message_content, parse_json_list_fragment
 from ...graphs.chat_adapters import build_chat_input, build_chat_kwargs_for
 from ...mcp.progress_events import emit_progress
 from .helpers import _renumber_citations
@@ -107,16 +107,7 @@ class ReviewSummaryMixin:
             ``summary_content``.
         """
         emit_progress("generating", 0, detail="composing summary")
-        phyto_response = state.get("chat_response") or {}
-        content = ""
-        if (
-            phyto_response
-            and phyto_response.get("choices")
-            and len(phyto_response["choices"]) > 0
-            and phyto_response["choices"][0].get("message")
-            and phyto_response["choices"][0]["message"].get("content")
-        ):
-            content = phyto_response["choices"][0]["message"]["content"]
+        content = message_content(state.get("chat_response") or "")
         return {
             "summary_content": (content or "No summary generated").replace(
                 "`", ""
@@ -199,19 +190,8 @@ class ReviewSummaryMixin:
             State delta with ``final_response`` carrying the chat-
             completions-style envelope.
         """
-        phyto_response = state.get("chat_response") or {}
-        follow_up_content = ""
-        if (
-            phyto_response
-            and phyto_response.get("choices")
-            and len(phyto_response["choices"]) > 0
-            and phyto_response["choices"][0].get("message")
-            and phyto_response["choices"][0]["message"].get("content")
-        ):
-            follow_up_content = phyto_response["choices"][0]["message"][
-                "content"
-            ]
-        follow_up_list = parse_follow_up_questions(follow_up_content)
+        follow_up_content = message_content(state.get("chat_response") or "")
+        follow_up_list = parse_json_list_fragment(follow_up_content)
         formatted_text = state["summary_content"]
         ordered_doc_list = state.get("ordered_doc_list") or []
         final_response = {
