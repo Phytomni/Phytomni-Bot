@@ -972,94 +972,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0048"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/agents/brief_gene/resolve_query.py"
-symbol = "172:182"
-peer_path = "src/mcp_server_phytomni/agents/network/resolve_query.py"
-peer_symbol = "182:192"
-fingerprint = "sha256:22c58e79ce545bc10e4774f09c0e67172a5f0ebc78bef0ac7dad1c90708fb2bf"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.resolve_query:[172:182]\n==mcp_server_phytomni.agents.network.resolve_query:[182:192]\n        sensitive_config,\n    )\n    chat_kwargs[\"response_format\"] = _RESOLVER_JSON_SCHEMA\n\n    try:\n        phyto_response = await asyncio.wait_for(\n            phyto_chat(user_query=rendered_user_query, **chat_kwargs),\n            timeout=timeout_seconds,\n        )\n    except TimeoutError as exc:"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0049"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/agents/brief_gene/resolve_query.py"
-symbol = "234:262"
-peer_path = "src/mcp_server_phytomni/agents/network/resolve_query.py"
-peer_symbol = "287:320"
-fingerprint = "sha256:0081df1d9daeeb0d18bd417b93f290abbda31bd956894413bbfc245dee1d9190"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.resolve_query:[234:262]\n==mcp_server_phytomni.agents.network.resolve_query:[287:320]\n    choices = phyto_response.get(\"choices\")\n    if not isinstance(choices, list) or not choices:\n        return None\n    first = choices[0]\n    if not isinstance(first, dict):\n        return None\n    message = first.get(\"message\")\n    if not isinstance(message, dict):\n        return None\n    content = message.get(\"content\")\n    if isinstance(content, str):\n        return content\n    return None\n\n\ndef _normalize_candidates(\n    top_to_id: Any,\n    candidates_field: Any,\n    valid_to_ids: set,\n    top_species_code: str,\n) -> list[GeneNetworkToIdCandidate]:\n    \"\"\"Build candidate list, dropping blanks and ids outside the catalog.\n\n    Validation against ``valid_to_ids`` is the resolver's last line\n    of defense against LLM hallucination: the system prompt instructs\n    the LLM to pick from the supplied catalog, but a non-compliant\n    completion still loses its bogus ids here rather than reaching\n    the downstream BI / agent layer that has no equivalent check.\n\n    Per-candidate ``species_code`` defaults to ``top_species_code``\n    when absent or blank so downstream consumers always see a\n    populated three-letter code.\n    \"\"\""
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0050"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/agents/brief_gene/resolve_query.py"
-symbol = "269:284"
-peer_path = "src/mcp_server_phytomni/agents/network/resolve_query.py"
-peer_symbol = "327:342"
-fingerprint = "sha256:e77a387a221646f3099cfba8d658c6f9b821f7930d87d2066b947756d9ee18b9"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.resolve_query:[269:284]\n==mcp_server_phytomni.agents.network.resolve_query:[327:342]\n                continue\n            confidence_raw = raw.get(\"confidence\", 0.0)\n            try:\n                confidence = float(confidence_raw)\n            except (TypeError, ValueError):\n                confidence = 0.0\n            confidence = max(0.0, min(1.0, confidence))\n            candidate_species_raw = raw.get(\"species_code\")\n            candidate_species = (\n                candidate_species_raw.strip()\n                if isinstance(candidate_species_raw, str)\n                else \"\"\n            )\n            species_code = candidate_species or top_species_code\n            out.append("
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0051"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/agents/brief_gene/resolve_query.py"
-symbol = "93:100"
-peer_path = "src/mcp_server_phytomni/agents/network/resolve_query.py"
-peer_symbol = "97:104"
-fingerprint = "sha256:f6e6aecb155f6cc129c21888c259c70958bbc2696f1e0581f6c53a2818882b7b"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.resolve_query:[93:100]\n==mcp_server_phytomni.agents.network.resolve_query:[97:104]\n            \"species_code\": {\"type\": \"string\"},\n            \"confidence\": {\n                \"type\": \"number\",\n                \"minimum\": props[\"confidence\"][\"minimum\"],\n                \"maximum\": props[\"confidence\"][\"maximum\"],\n            },\n        },"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0052"
 tool = "pylint"
 rule = "R0801"
@@ -2567,28 +2479,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "Similar lines in 2 files\n==test_a2a_client:[87:96]\n==test_fake_peer_e2e:[113:122]\n                protocol_binding=\"JSONRPC\",\n                protocol_version=\"1.0\",\n            )\n        ],\n        capabilities=AgentCapabilities(streaming=True),\n        skills=[\n            AgentSkill(\n                id=\"annotate\",\n                name=\"Annotate\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0170"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/unit/test_brief_gene_resolve_query.py"
-symbol = "367:374"
-peer_path = "tests/unit/test_deep_genome_resolve_query.py"
-peer_symbol = "57:64"
-fingerprint = "sha256:a0aa8303dfa11019175b5a3ab850b87ff714178c1ec022b762f235a78a782021"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_brief_gene_resolve_query:[367:374]\n==test_deep_genome_resolve_query:[57:64]\n        return _make_response(\n            {\n                \"gene_id\": \"Os01g0177400\",\n                \"species_code\": \"osa\",\n                \"candidates\": [\n                    {\n                        \"gene_id\": \"Os01g0177400\","
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]

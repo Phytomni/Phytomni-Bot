@@ -14,18 +14,24 @@ BriefGene's query_judge_node downstream of the resolved id.
 
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 from ...common.prompts import get_prompt
+from ...common.responses import message_content, parse_json_object_fragment
 from ...config.defaults import BriefGeneConfig
 from ...config.settings import SensitiveConfig
 from ..chat.service import phyto_chat
 from ..shared.options import build_chat_kwargs
+from ..shared.query_resolution import (
+    ResolverFailure,
+    build_candidate_item_schema,
+    invoke_resolver,
+    normalize_confidence,
+    normalize_species_code,
+)
 from ..shared.species_catalog import warn_if_unsupported_species
 
 __all__ = [
@@ -87,19 +93,11 @@ def _candidate_item_schema() -> dict[str, Any]:
     """
     model = BriefGeneIdCandidate.model_json_schema()
     props = model["properties"]
-    return {
-        "type": "object",
-        "properties": {
-            "gene_id": {"type": "string"},
-            "species_code": {"type": "string"},
-            "confidence": {
-                "type": "number",
-                "minimum": props["confidence"]["minimum"],
-                "maximum": props["confidence"]["maximum"],
-            },
-        },
-        "required": ["gene_id"],
-    }
+    return build_candidate_item_schema(
+        "gene_id",
+        props["confidence"]["minimum"],
+        props["confidence"]["maximum"],
+    )
 
 
 _RESOLVER_JSON_SCHEMA: dict[str, Any] = {
@@ -175,31 +173,31 @@ async def resolve_brief_gene_user_query(
     chat_kwargs["response_format"] = _RESOLVER_JSON_SCHEMA
 
     try:
-        phyto_response = await asyncio.wait_for(
-            phyto_chat(user_query=rendered_user_query, **chat_kwargs),
-            timeout=timeout_seconds,
+        phyto_response = await invoke_resolver(
+            lambda: phyto_chat(
+                user_query=rendered_user_query,
+                **chat_kwargs,
+            ),
+            timeout_seconds,
         )
-    except TimeoutError as exc:
-        raise BriefGeneResolveError(
-            f"resolver timeout after {timeout_seconds:.1f} s"
-        ) from exc
+    except ResolverFailure as exc:
+        if str(exc).startswith("resolver timeout after"):
+            raise BriefGeneResolveError(
+                f"resolver timeout after {timeout_seconds:.1f} s"
+            ) from exc
+        if str(exc) == "resolver returned no result":
+            raise BriefGeneResolveError(
+                "LLM returned no content after retries"
+            ) from exc
+        raise BriefGeneResolveError(str(exc)) from exc
 
-    if phyto_response is None:
-        raise BriefGeneResolveError("LLM returned no content after retries")
-
-    content = _first_message_content(phyto_response)
+    content = message_content(phyto_response)
     if not content:
         raise BriefGeneResolveError("LLM returned empty content")
 
-    try:
-        payload = json.loads(content)
-    except json.JSONDecodeError as exc:
-        raise BriefGeneResolveError(
-            f"non-parseable LLM output: {exc.msg}"
-        ) from exc
-
-    if not isinstance(payload, dict):
-        raise BriefGeneResolveError("LLM output is not a JSON object")
+    payload = parse_json_object_fragment(content)
+    if not payload:
+        raise BriefGeneResolveError("non-parseable LLM output")
 
     species_raw = payload.get("species_code")
     species_code = species_raw.strip() if isinstance(species_raw, str) else ""
@@ -228,25 +226,6 @@ async def resolve_brief_gene_user_query(
     )
 
 
-def _first_message_content(
-    phyto_response: dict[str, Any],
-) -> str | None:
-    """Pull the first assistant message content out of an OpenAI dict."""
-    choices = phyto_response.get("choices")
-    if not isinstance(choices, list) or not choices:
-        return None
-    first = choices[0]
-    if not isinstance(first, dict):
-        return None
-    message = first.get("message")
-    if not isinstance(message, dict):
-        return None
-    content = message.get("content")
-    if isinstance(content, str):
-        return content
-    return None
-
-
 def _normalize_candidates(
     top_gene_id: Any,
     candidates_field: Any,
@@ -270,17 +249,12 @@ def _normalize_candidates(
                 continue
             confidence_raw = raw.get("confidence", 0.0)
             try:
-                confidence = float(confidence_raw)
-            except (TypeError, ValueError):
+                confidence = normalize_confidence(confidence_raw)
+            except ResolverFailure:
                 confidence = 0.0
-            confidence = max(0.0, min(1.0, confidence))
-            candidate_species_raw = raw.get("species_code")
-            candidate_species = (
-                candidate_species_raw.strip()
-                if isinstance(candidate_species_raw, str)
-                else ""
+            species_code = normalize_species_code(
+                raw.get("species_code"), top_species_code
             )
-            species_code = candidate_species or top_species_code
             out.append(
                 BriefGeneIdCandidate(
                     gene_id=gene_id,

@@ -13,8 +13,10 @@ from typing import Any
 
 __all__ = [
     "ResolverFailure",
+    "build_candidate_item_schema",
     "invoke_resolver",
     "normalize_confidence",
+    "normalize_species_code",
 ]
 
 
@@ -23,6 +25,36 @@ class ResolverFailureError(ValueError):
 
 
 ResolverFailure = ResolverFailureError
+
+
+def build_candidate_item_schema(
+    identifier_field: str,
+    confidence_minimum: float,
+    confidence_maximum: float,
+) -> dict[str, Any]:
+    """Build the JSON-schema item shared by gene and trait candidates.
+
+    Args:
+        identifier_field: Domain-specific candidate id field name.
+        confidence_minimum: Inclusive lower confidence bound.
+        confidence_maximum: Inclusive upper confidence bound.
+
+    Returns:
+        A JSON-schema object without provider-specific title metadata.
+    """
+    return {
+        "type": "object",
+        "properties": {
+            identifier_field: {"type": "string"},
+            "species_code": {"type": "string"},
+            "confidence": {
+                "type": "number",
+                "minimum": confidence_minimum,
+                "maximum": confidence_maximum,
+            },
+        },
+        "required": [identifier_field],
+    }
 
 
 def normalize_confidence(value: Any) -> float:
@@ -46,6 +78,20 @@ def normalize_confidence(value: Any) -> float:
     if not math.isfinite(confidence):
         raise ResolverFailure("confidence must be numeric")
     return max(0.0, min(1.0, confidence))
+
+
+def normalize_species_code(value: Any, fallback: str) -> str:
+    """Return a stripped candidate species code or its domain fallback.
+
+    Args:
+        value: Candidate species code supplied by a model response.
+        fallback: Top-level species code selected by the domain resolver.
+
+    Returns:
+        A non-blank candidate code when supplied, otherwise ``fallback``.
+    """
+    candidate = value.strip() if isinstance(value, str) else ""
+    return candidate or fallback
 
 
 async def invoke_resolver(

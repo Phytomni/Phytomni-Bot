@@ -14,8 +14,10 @@ import pytest
 
 from mcp_server_phytomni.agents.shared.query_resolution import (
     ResolverFailure,
+    build_candidate_item_schema,
     invoke_resolver,
     normalize_confidence,
+    normalize_species_code,
 )
 
 pytestmark = pytest.mark.unit
@@ -70,6 +72,36 @@ def test_normalize_confidence_rejects_non_numeric_values(value: Any) -> None:
     """Non-numeric confidence values fail closed."""
     with pytest.raises(ResolverFailure, match="confidence must be numeric"):
         normalize_confidence(value)
+
+
+@pytest.mark.parametrize(
+    "value, fallback, expected",
+    [(" ath ", "osa", "ath"), (None, "osa", "osa"), ("   ", "osa", "osa")],
+)
+def test_normalize_species_code_uses_fallback(
+    value: Any,
+    fallback: str,
+    expected: str,
+) -> None:
+    """Candidate species codes are stripped and fall back when blank."""
+    assert normalize_species_code(value, fallback) == expected
+
+
+def test_build_candidate_item_schema_keeps_identifier_and_bounds() -> None:
+    """The shared schema builder preserves domain id names and limits."""
+    assert build_candidate_item_schema("gene_id", 0.0, 1.0) == {
+        "type": "object",
+        "properties": {
+            "gene_id": {"type": "string"},
+            "species_code": {"type": "string"},
+            "confidence": {
+                "type": "number",
+                "minimum": 0.0,
+                "maximum": 1.0,
+            },
+        },
+        "required": ["gene_id"],
+    }
 
 
 async def _return_result(result: Mapping[str, Any]) -> Mapping[str, Any]:

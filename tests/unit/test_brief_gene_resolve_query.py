@@ -20,6 +20,7 @@ from mcp_server_phytomni.agents.brief_gene.resolve_query import (
     resolve_brief_gene_user_query,
 )
 from mcp_server_phytomni.agents.chat import service as chat_service
+from mcp_server_phytomni.agents.shared.query_resolution import ResolverFailure
 from mcp_server_phytomni.config.defaults import BriefGeneConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
@@ -367,20 +368,20 @@ async def test_resolver_preserves_per_candidate_species_code(
     async def fake_phyto_chat(**_: Any) -> dict[str, Any]:
         return _make_response(
             {
-                "gene_id": "Os01g0177400",
+                "gene_id": "LOC_Os01g0177400",
                 "species_code": "osa",
                 "candidates": [
                     {
-                        "gene_id": "Os01g0177400",
+                        "gene_id": "LOC_Os01g0177400",
                         "confidence": 0.9,
                         "species_code": "osa",
                     },
                     {
-                        "gene_id": "AT1G01010",
+                        "gene_id": "AT2G01020",
                         "confidence": 0.4,
                         "species_code": "ath",
                     },
-                    {"gene_id": "X", "confidence": 0.1},
+                    {"gene_id": "GENE_X", "confidence": 0.1},
                 ],
             }
         )
@@ -396,7 +397,72 @@ async def test_resolver_preserves_per_candidate_species_code(
     assert result.species_code == "osa"
     species_by_gene = {c.gene_id: c.species_code for c in result.candidates}
     assert species_by_gene == {
-        "Os01g0177400": "osa",
-        "AT1G01010": "ath",
-        "X": "osa",
+        "LOC_Os01g0177400": "osa",
+        "AT2G01020": "ath",
+        "GENE_X": "osa",
     }
+
+
+async def test_resolver_translates_shared_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[BriefGeneConfig, SensitiveConfig],
+) -> None:
+    """Shared timeout failures keep the BriefGene-specific wording."""
+    brief_config, sensitive_config = configs
+
+    async def fake_invoke(*_: Any, **__: Any) -> dict[str, Any]:
+        raise ResolverFailure("resolver timeout after 2.00 s")
+
+    monkeypatch.setattr(resolve_query, "invoke_resolver", fake_invoke)
+
+    with pytest.raises(
+        BriefGeneResolveError, match=r"resolver timeout after 2\.0 s"
+    ):
+        await resolve_brief_gene_user_query(
+            "any query",
+            brief_config=brief_config,
+            sensitive_config=sensitive_config,
+            timeout_seconds=2.0,
+        )
+
+
+async def test_resolver_translates_shared_empty_result(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[BriefGeneConfig, SensitiveConfig],
+) -> None:
+    """Shared empty-result failures keep the retry-exhaustion wording."""
+    brief_config, sensitive_config = configs
+
+    async def fake_invoke(*_: Any, **__: Any) -> dict[str, Any]:
+        raise ResolverFailure("resolver returned no result")
+
+    monkeypatch.setattr(resolve_query, "invoke_resolver", fake_invoke)
+
+    with pytest.raises(
+        BriefGeneResolveError, match="LLM returned no content after retries"
+    ):
+        await resolve_brief_gene_user_query(
+            "any query",
+            brief_config=brief_config,
+            sensitive_config=sensitive_config,
+        )
+
+
+async def test_resolver_propagates_unexpected_resolver_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[BriefGeneConfig, SensitiveConfig],
+) -> None:
+    """Unexpected resolver failures stay visible to the outer HTTP layer."""
+    brief_config, sensitive_config = configs
+
+    async def fake_invoke(*_: Any, **__: Any) -> dict[str, Any]:
+        raise RuntimeError("backend unavailable")
+
+    monkeypatch.setattr(resolve_query, "invoke_resolver", fake_invoke)
+
+    with pytest.raises(RuntimeError, match="backend unavailable"):
+        await resolve_brief_gene_user_query(
+            "any query",
+            brief_config=brief_config,
+            sensitive_config=sensitive_config,
+        )

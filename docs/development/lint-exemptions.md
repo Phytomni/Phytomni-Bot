@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `245`
+- Authorized records: `240`
 
 ## Informational counts
 
@@ -23,7 +23,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:prop-decorator`                                             |       1 |
 | `pylint:C0103`                                                    |       1 |
 | `pylint:C0116`                                                    |       1 |
-| `pylint:R0801`                                                    |     116 |
+| `pylint:R0801`                                                    |     111 |
 | `pylint:R0903`                                                    |       7 |
 | `pylint:R0913`                                                    |       1 |
 | `pylint:R0917`                                                    |       1 |
@@ -99,10 +99,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0045` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 264:277 | `sha256:71c51e7737eb6d61c69c8b052130cf106fa57d55217488c3520076465b9f19af` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0046` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py | 81:87 | `sha256:4e2efd035ff8c8489702efc9cd2c5821e6c43082be5bf553df9c94d573d2e4c0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0047` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py | 88:95 | `sha256:207ed8d656c295eeb6fb6750c816cbed9878039f84fb4aa015d69afff7a66abc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0048` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/resolve_query.py | 172:182 | `sha256:22c58e79ce545bc10e4774f09c0e67172a5f0ebc78bef0ac7dad1c90708fb2bf` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0049` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/resolve_query.py | 234:262 | `sha256:0081df1d9daeeb0d18bd417b93f290abbda31bd956894413bbfc245dee1d9190` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0050` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/resolve_query.py | 269:284 | `sha256:e77a387a221646f3099cfba8d658c6f9b821f7930d87d2066b947756d9ee18b9` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0051` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/resolve_query.py | 93:100 | `sha256:f6e6aecb155f6cc129c21888c259c70958bbc2696f1e0581f6c53a2818882b7b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0052` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 106:111 | `sha256:bced20b31d1f24e53dbf50abc7462eeaaa5c709ed8fc09081f208f3992fd09bb` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
 | `SAE-TMP-0053` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 130:143 | `sha256:c09286b8f6a95ac45cc85c1daee7a3e0ca52fb6143482344b0841ba433d82290` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
 | `SAE-TMP-0054` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 61:67 | `sha256:f33cd96ed68f9985a80483c8f061112d267e9818e32b3ac5bbb2e47f31f2b2f6` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
@@ -173,7 +169,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0167` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/interop/test_a2a_client.py | 133:141 | `sha256:2c326a038c82a3e01dbe2752e30ce9836eebc95688bd6ae65fcefb2711623434` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0168` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/interop/test_a2a_client.py | 293:306 | `sha256:eb3e93560d9c6607712d8955e1858b2e712515c029d2c14977024abe120064e5` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0169` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/interop/test_a2a_client.py | 87:96 | `sha256:79e228ba92766d992ece14a5cc1de66540efa4031b0094d106a707ac6dbede6c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0170` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_brief_gene_resolve_query.py | 367:374 | `sha256:a0aa8303dfa11019175b5a3ab850b87ff714178c1ec022b762f235a78a782021` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0171` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_client_elicitation.py | 59:66 | `sha256:975f355cd6c2a65dca9d57186615c419eeda303eac5e94c7fdd0adfb91f399cf` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0172` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_admin.py | 38:46 | `sha256:d31703b04d8b444d3e963b1cc94534a6a2a39ec56fe231841e5ec923d2b20c11` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0173` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_admin.py | 41:48 | `sha256:5125884f84d157e2c66e315e2fa2e58b8a8b9d1bd8c812d3b7e98eca06f64ee4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -1476,159 +1471,6 @@ Similar lines in 2 files
         )
         workflow.add_node("retrieve_reduce_node", self.retrieve_reduce_node)
         workflow.add_conditional_edges(
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0048`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.brief_gene.resolve_query:[172:182]
-==mcp_server_phytomni.agents.network.resolve_query:[182:192]
-        sensitive_config,
-    )
-    chat_kwargs["response_format"] = _RESOLVER_JSON_SCHEMA
-
-    try:
-        phyto_response = await asyncio.wait_for(
-            phyto_chat(user_query=rendered_user_query, **chat_kwargs),
-            timeout=timeout_seconds,
-        )
-    except TimeoutError as exc:
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0049`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.brief_gene.resolve_query:[234:262]
-==mcp_server_phytomni.agents.network.resolve_query:[287:320]
-    choices = phyto_response.get("choices")
-    if not isinstance(choices, list) or not choices:
-        return None
-    first = choices[0]
-    if not isinstance(first, dict):
-        return None
-    message = first.get("message")
-    if not isinstance(message, dict):
-        return None
-    content = message.get("content")
-    if isinstance(content, str):
-        return content
-    return None
-
-
-def _normalize_candidates(
-    top_to_id: Any,
-    candidates_field: Any,
-    valid_to_ids: set,
-    top_species_code: str,
-) -> list[GeneNetworkToIdCandidate]:
-    """Build candidate list, dropping blanks and ids outside the catalog.
-
-    Validation against ``valid_to_ids`` is the resolver's last line
-    of defense against LLM hallucination: the system prompt instructs
-    the LLM to pick from the supplied catalog, but a non-compliant
-    completion still loses its bogus ids here rather than reaching
-    the downstream BI / agent layer that has no equivalent check.
-
-    Per-candidate ``species_code`` defaults to ``top_species_code``
-    when absent or blank so downstream consumers always see a
-    populated three-letter code.
-    """
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0050`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.brief_gene.resolve_query:[269:284]
-==mcp_server_phytomni.agents.network.resolve_query:[327:342]
-                continue
-            confidence_raw = raw.get("confidence", 0.0)
-            try:
-                confidence = float(confidence_raw)
-            except (TypeError, ValueError):
-                confidence = 0.0
-            confidence = max(0.0, min(1.0, confidence))
-            candidate_species_raw = raw.get("species_code")
-            candidate_species = (
-                candidate_species_raw.strip()
-                if isinstance(candidate_species_raw, str)
-                else ""
-            )
-            species_code = candidate_species or top_species_code
-            out.append(
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0051`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.brief_gene.resolve_query:[93:100]
-==mcp_server_phytomni.agents.network.resolve_query:[97:104]
-            "species_code": {"type": "string"},
-            "confidence": {
-                "type": "number",
-                "minimum": props["confidence"]["minimum"],
-                "maximum": props["confidence"]["maximum"],
-            },
-        },
 ```
 
 Counterfactual:
@@ -3697,35 +3539,6 @@ Similar lines in 2 files
             AgentSkill(
                 id="annotate",
                 name="Annotate",
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0170`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_brief_gene_resolve_query:[367:374]
-==test_deep_genome_resolve_query:[57:64]
-        return _make_response(
-            {
-                "gene_id": "Os01g0177400",
-                "species_code": "osa",
-                "candidates": [
-                    {
-                        "gene_id": "Os01g0177400",
 ```
 
 Counterfactual:
