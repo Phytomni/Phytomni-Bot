@@ -1034,28 +1034,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0072"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/api/auth.py"
-symbol = "258:285"
-peer_path = "src/mcp_server_phytomni/api/relay/audit.py"
-peer_symbol = "190:207"
-fingerprint = "sha256:48767ad66c60c12e2c4e02c5e52f1b602a1f507b290cb63f106d52c5bfcca527"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.api.auth:[258:285]\n==mcp_server_phytomni.api.relay.audit:[190:207]\n        try:\n            conn.execute(\"PRAGMA journal_mode=WAL\")\n            conn.execute(\"PRAGMA busy_timeout=5000\")\n            yield conn\n        finally:\n            conn.close()\n\n    def create(\n        self,\n        user_id: str,\n        name: str | None = None,\n        expires_at: datetime | None = None,\n        scopes: Sequence[str] | None = None,\n    ) -> CreatedApiKey:\n        \"\"\"Mint and persist a new key, returning the one-time plaintext.\n\n        Args:\n            user_id: The user the key authenticates.\n            name: Optional human label.\n            expires_at: Optional aware datetime after which the key fails.\n            scopes: Optional granted scopes; None or empty mints an\n                all-access key for backward compatibility.\n\n        Returns:\n            The created key; ``api_key`` is the only time the plaintext\n            is available.\n        \"\"\""
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0073"
 tool = "pylint"
 rule = "R0801"
@@ -1065,12 +1043,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/api/relay/__init__.py"
 symbol = "20:25"
 peer_path = "src/mcp_server_phytomni/api/relay/audit.py"
-peer_symbol = "27:32"
-fingerprint = "sha256:eec99e9b196bfe6a37ddc06107d9d5e5ac8401f4403c900f626c613979bf1d1d"
+peer_symbol = "28:33"
+fingerprint = "sha256:11110a31a61699cdd16bc8f75aa9c481305c2dad14bf2bb7471c6c45723cd27a"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.api.relay.__init__:[20:25]\n==mcp_server_phytomni.api.relay.audit:[27:32]\n__all__ = [\n    \"RelayAuditRecord\",\n    \"RelayAuditQuery\",\n    \"RelayAuditStore\",\n    \"get_audit_store\","
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.api.relay.__init__:[20:25]\n==mcp_server_phytomni.api.relay.audit:[28:33]\n__all__ = [\n    \"RelayAuditRecord\",\n    \"RelayAuditQuery\",\n    \"RelayAuditStore\",\n    \"get_audit_store\","
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]

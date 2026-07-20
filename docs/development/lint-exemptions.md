@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `217`
+- Authorized records: `216`
 
 ## Informational counts
 
@@ -23,7 +23,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:prop-decorator`                                             |       1 |
 | `pylint:C0103`                                                    |       1 |
 | `pylint:C0116`                                                    |       1 |
-| `pylint:R0801`                                                    |      89 |
+| `pylint:R0801`                                                    |      88 |
 | `pylint:R0903`                                                    |       7 |
 | `pylint:R0913`                                                    |       1 |
 | `pylint:R0917`                                                    |       1 |
@@ -102,8 +102,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0069` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/environment/graph.py | 181:187 | `sha256:50c4d2220d590f4303e8987fa4ce2430000db42288370545fbcd3e29d748d315` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0070` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/research/interop.py | 238:245 | `sha256:5100104b2803ff4bfed6614c72a1e1bdd6c12912c00e954b9f70e3317834d541` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0071` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/shared/chat_subgraph.py | 136:142 | `sha256:a4cfd38d8bffba66014ef7aa11a07464082638c7ee002f368791c1138b012e23` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0072` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/api/auth.py | 258:285 | `sha256:48767ad66c60c12e2c4e02c5e52f1b602a1f507b290cb63f106d52c5bfcca527` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0073` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/api/relay/__init__.py | 20:25 | `sha256:eec99e9b196bfe6a37ddc06107d9d5e5ac8401f4403c900f626c613979bf1d1d` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0073` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/api/relay/__init__.py | 20:25 | `sha256:11110a31a61699cdd16bc8f75aa9c481305c2dad14bf2bb7471c6c45723cd27a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0074` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/api/relay/audit_filter.py | 27:38 | `sha256:e403f78e603f501a9592111cdd3963a7670f069c42cb5d1e1755b764d1dc32e9` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_relay_audit_filter.py, static-analysis-inventory |
 | `SAE-TMP-0075` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/config/required_env.py | 16:28 | `sha256:0a106c71d1e188f33ba116a1a15980da2ccbd8924042f13b31d0dd5df3f2585c` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/config/test_required_env.py, tests/unit/test_defaults.py, static-analysis-inventory |
 | `SAE-TMP-0076` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/config/required_env.py | 41:46 | `sha256:b181294b667a5a5e3b3cc601d177d1d5e50806e12df472c917d370454afa17f9` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/config/test_required_env.py, static-analysis-inventory |
@@ -1537,55 +1536,6 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0072`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==mcp_server_phytomni.api.auth:[258:285]
-==mcp_server_phytomni.api.relay.audit:[190:207]
-        try:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=5000")
-            yield conn
-        finally:
-            conn.close()
-
-    def create(
-        self,
-        user_id: str,
-        name: str | None = None,
-        expires_at: datetime | None = None,
-        scopes: Sequence[str] | None = None,
-    ) -> CreatedApiKey:
-        """Mint and persist a new key, returning the one-time plaintext.
-
-        Args:
-            user_id: The user the key authenticates.
-            name: Optional human label.
-            expires_at: Optional aware datetime after which the key fails.
-            scopes: Optional granted scopes; None or empty mints an
-                all-access key for backward compatibility.
-
-        Returns:
-            The created key; ``api_key`` is the only time the plaintext
-            is available.
-        """
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0073`
 
 Rationale:
@@ -1593,7 +1543,7 @@ Rationale:
 ```text
 Similar lines in 2 files
 ==mcp_server_phytomni.api.relay.__init__:[20:25]
-==mcp_server_phytomni.api.relay.audit:[27:32]
+==mcp_server_phytomni.api.relay.audit:[28:33]
 __all__ = [
     "RelayAuditRecord",
     "RelayAuditQuery",

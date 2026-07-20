@@ -23,6 +23,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from ...runtime.sqlite import sqlite_connection
 from .audit_filter import redact_body_text
 
 __all__ = [
@@ -183,17 +184,12 @@ class RelayAuditStore:
     def _connect(self) -> Generator[sqlite3.Connection, None, None]:
         """Yield a short-lived autocommit WAL connection with Row access.
 
-        A fresh connection per operation mirrors ``ApiKeyStore``; relay
-        audit writes are interleaved with low-frequency admin queries.
+        The shared helper owns connection lifecycle and PRAGMAs; this wrapper
+        keeps the audit store's named-row projection local to its schema.
         """
-        conn = sqlite3.connect(self.db_path, timeout=10, isolation_level=None)
-        conn.row_factory = sqlite3.Row
-        try:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=5000")
+        with sqlite_connection(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
             yield conn
-        finally:
-            conn.close()
 
     def record(self, entry: RelayAuditRecord) -> int:
         """Persist one audit record atomically and return its row id.

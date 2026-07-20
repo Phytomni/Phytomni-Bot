@@ -16,9 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-import sqlite3
-from collections.abc import Generator, Sequence
-from contextlib import contextmanager
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import cache
@@ -29,6 +27,7 @@ from pydantic import BaseModel, ConfigDict
 
 from ..config.defaults import ApiConfig
 from ..runtime.request_context import bind_request_user
+from ..runtime.sqlite import sqlite_connection
 
 __all__ = [
     "ApiPrincipal",
@@ -218,7 +217,7 @@ class ApiKeyStore:
         """
         self.db_path = str(Path(db_path))
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
+        with sqlite_connection(self.db_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS api_keys (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -247,22 +246,6 @@ class ApiKeyStore:
             if "scopes" not in columns:
                 conn.execute("ALTER TABLE api_keys ADD COLUMN scopes TEXT")
 
-    @contextmanager
-    def _connect(self) -> Generator[sqlite3.Connection, None, None]:
-        """Yield a short-lived autocommit WAL connection.
-
-        Auth lookups are low frequency relative to agent calls, so a
-        fresh connection per operation is used instead of the pooled
-        thread-local model in func_cache.
-        """
-        conn = sqlite3.connect(self.db_path, timeout=10, isolation_level=None)
-        try:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA busy_timeout=5000")
-            yield conn
-        finally:
-            conn.close()
-
     def create(
         self,
         user_id: str,
@@ -286,7 +269,7 @@ class ApiKeyStore:
         api_key = _KEY_PREFIX + secrets.token_urlsafe(32)
         prefix = api_key[:_PREFIX_LEN]
         salt = secrets.token_hex(16)
-        with self._connect() as conn:
+        with sqlite_connection(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT INTO api_keys (
@@ -321,7 +304,7 @@ class ApiKeyStore:
                 expired.
         """
         prefix = presented_key[:_PREFIX_LEN]
-        with self._connect() as conn:
+        with sqlite_connection(self.db_path) as conn:
             rows = conn.execute(
                 """
                 SELECT id, user_id, salt, key_hash, revoked_at,
@@ -378,7 +361,7 @@ class ApiKeyStore:
         if conditions:
             query += " WHERE " + " AND ".join(conditions)
         query += " ORDER BY created_at"
-        with self._connect() as conn:
+        with sqlite_connection(self.db_path) as conn:
             rows = conn.execute(query, params).fetchall()
         records = [
             ApiKeyRecord(
@@ -406,7 +389,7 @@ class ApiKeyStore:
         Returns:
             True when an active key was revoked, False otherwise.
         """
-        with self._connect() as conn:
+        with sqlite_connection(self.db_path) as conn:
             cursor = conn.execute(
                 "UPDATE api_keys SET revoked_at = ? "
                 "WHERE key_prefix = ? AND revoked_at IS NULL",
