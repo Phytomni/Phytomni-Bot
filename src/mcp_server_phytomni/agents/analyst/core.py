@@ -14,6 +14,8 @@ prior late-import workaround in ``agent.py`` papered over.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -53,6 +55,68 @@ from .state import (
     AnalystState,
 )
 from .task_ops import task_status
+
+_ComputeResource = Literal["small", "medium", "large"]
+
+
+@dataclass(frozen=True)
+class SubmissionOptions:
+    """Resolved, non-secret options shared by Analyst submission paths."""
+
+    user_id: str
+    is_create_dir: bool
+    output_dir: str
+    compute_resource: _ComputeResource
+
+    def config_updates(self) -> dict[str, Any]:
+        """Return the fixed config fields used by compatibility copies."""
+        return {
+            "USER_ID": self.user_id,
+            "CREATE_DIR": self.is_create_dir,
+            "OUTPUT_DIR": self.output_dir,
+            "COMPUTE_RESOURCE": self.compute_resource,
+        }
+
+    @staticmethod
+    def build_arun_kwargs(
+        goal_description: str,
+        *,
+        output_dir: str,
+        compute_resource: str,
+        data_list: Any,
+    ) -> dict[str, Any]:
+        """Return the shared wrapper-to-``arun`` keyword projection."""
+        return {
+            "query": goal_description,
+            "goal_description": goal_description,
+            "output_dir": output_dir,
+            "compute_resource": compute_resource,
+            "preset_data_list": data_list,
+        }
+
+
+def resolve_submission_options(
+    config: Any,
+    overrides: Mapping[str, Any],
+) -> SubmissionOptions:
+    """Resolve non-secret Analyst submission options without side effects.
+
+    Explicit ``False`` and blank strings are retained; only omitted or
+    ``None`` values fall back to the supplied config. Unknown keys are not
+    interpreted here and remain available to the caller's config mapper.
+    """
+
+    def _value(name: str, default: Any) -> Any:
+        value = overrides.get(name)
+        return default if value is None else value
+
+    user_id = _value("user_id", config.USER_ID)
+    return SubmissionOptions(
+        user_id=str(user_id),
+        is_create_dir=_value("is_create_dir", config.CREATE_DIR),
+        output_dir=_value("output_dir", config.OUTPUT_DIR),
+        compute_resource=_value("compute_resource", config.COMPUTE_RESOURCE),
+    )
 
 
 class AnalystAgent(
@@ -445,13 +509,7 @@ class AnalystAgent(
         # Public wrappers bind these compatibility options into the cached
         # agent config. Direct arun callers may still pass them, so keep the
         # state-level overrides explicit without mutating shared config.
-        user_id = kwargs.get("user_id", ANALYST_CONFIG.USER_ID)
-        is_create_dir = kwargs.get("is_create_dir", ANALYST_CONFIG.CREATE_DIR)
-        output_dir = kwargs.get("output_dir", ANALYST_CONFIG.OUTPUT_DIR)
-        compute_resource = kwargs.get(
-            "compute_resource",
-            ANALYST_CONFIG.COMPUTE_RESOURCE,
-        )
+        options = resolve_submission_options(self.analyst_config, kwargs)
         compatibility_config = copy_config_with_overrides(
             self.analyst_config,
             {
@@ -490,12 +548,7 @@ class AnalystAgent(
                 ),
             },
             ANALYST_CONFIG_FIELD_MAP,
-            fixed_updates={
-                "USER_ID": user_id,
-                "CREATE_DIR": is_create_dir,
-                "OUTPUT_DIR": output_dir,
-                "COMPUTE_RESOURCE": compute_resource,
-            },
+            fixed_updates=options.config_updates(),
         )
 
         obs_file_list = kwargs.get("obs_file_list")
@@ -556,4 +609,6 @@ class AnalystAgent(
 __all__ = [
     "AnalystAgent",
     "AnalystAgentsState",
+    "SubmissionOptions",
+    "resolve_submission_options",
 ]

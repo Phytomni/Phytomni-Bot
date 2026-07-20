@@ -14,7 +14,8 @@ keep the import graph acyclic.
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from dataclasses import replace
+from typing import Any
 
 from ...config.overrides import (
     copy_config_with_overrides,
@@ -26,7 +27,11 @@ from ...runtime.agent_registry import (
     get_cached_agent,
 )
 from ...storage.path_policy import RunIdentity
-from .core import AnalystAgent
+from .core import (
+    AnalystAgent,
+    SubmissionOptions,
+    resolve_submission_options,
+)
 from .defaults import (
     ANALYST_CONFIG,
     ANALYST_CONFIG_FIELD_MAP,
@@ -47,27 +52,17 @@ def _shared_arun_kwargs(
     compute_resource: str,
     data_list: Any,
 ) -> dict[str, Any]:
-    """Return the AnalystAgent.arun kwarg block shared by submit wrappers.
-
-    ``submit`` (here) and ``retrieve_plan_submit`` (``.planning``) both
-    call ``agent.arun`` with the same first five kwargs in the same
-    order. Centralizing that block kills the pylint R0801 duplicate-code
-    warning and gives one seam to update when arun's signature evolves.
-    """
-    return {
-        "query": goal_description,
-        "goal_description": goal_description,
-        "output_dir": output_dir,
-        "compute_resource": compute_resource,
-        "preset_data_list": data_list,
-    }
+    """Return the shared AnalystAgent.arun keyword projection."""
+    return SubmissionOptions.build_arun_kwargs(
+        goal_description,
+        output_dir=output_dir,
+        compute_resource=compute_resource,
+        data_list=data_list,
+    )
 
 
 def _analyst_config_with_overrides(
-    user_id: str,
-    is_create_dir: bool,
-    output_dir: str,
-    compute_resource: Literal["small", "medium", "large"],
+    options: SubmissionOptions,
     **kwargs: Any,
 ):
     """Build an AnalystConfig copy from compatibility wrapper arguments."""
@@ -75,12 +70,7 @@ def _analyst_config_with_overrides(
         ANALYST_CONFIG,
         kwargs,
         ANALYST_CONFIG_FIELD_MAP,
-        fixed_updates={
-            "USER_ID": user_id,
-            "CREATE_DIR": is_create_dir,
-            "OUTPUT_DIR": output_dir,
-            "COMPUTE_RESOURCE": compute_resource,
-        },
+        fixed_updates=options.config_updates(),
     )
 
 
@@ -115,23 +105,14 @@ def _build_submit_agent(
     cache_label: str,
 ) -> tuple[Any, str, str, str]:
     """Resolve wrapper kwargs into a cached collision-safe AnalystAgent."""
-    user_id = kwargs.get("user_id", ANALYST_CONFIG.USER_ID)
+    options = resolve_submission_options(ANALYST_CONFIG, kwargs)
     user_id, thread_id = _submit_user_and_thread_id(
-        user_id,
+        options.user_id,
         scope,
         operation,
     )
-    is_create_dir = kwargs.get("is_create_dir", ANALYST_CONFIG.CREATE_DIR)
-    output_dir = kwargs.get("output_dir", ANALYST_CONFIG.OUTPUT_DIR)
-    compute_resource = kwargs.get(
-        "compute_resource",
-        ANALYST_CONFIG.COMPUTE_RESOURCE,
-    )
     analyst_config = _analyst_config_with_overrides(
-        user_id=user_id,
-        is_create_dir=is_create_dir,
-        output_dir=output_dir,
-        compute_resource=compute_resource,
+        replace(options, user_id=user_id),
         **{k: v for k, v in kwargs.items() if k not in _CONFIG_EXPLICIT_KEYS},
     )
     sensitive_config = _sensitive_config_with_overrides(**kwargs)
@@ -146,7 +127,7 @@ def _build_submit_agent(
             sensitive_config=sensitive_config,
         ),
     )
-    return agent, output_dir, compute_resource, thread_id
+    return agent, options.output_dir, options.compute_resource, thread_id
 
 
 async def submit(
@@ -177,10 +158,10 @@ async def submit(
     )
     return await agent.arun(
         **_shared_arun_kwargs(
-            goal_description=goal_description,
-            output_dir=output_dir,
-            compute_resource=compute_resource,
-            data_list=data_list,
+            goal_description,
+            output_dir,
+            compute_resource,
+            data_list,
         ),
         preset_plan=meta + (meta_meta or ""),
         thread_id=thread_id,

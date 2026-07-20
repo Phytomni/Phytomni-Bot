@@ -100,10 +100,10 @@ async def retrieve_plan_submit(
     )
     result = await agent.arun(
         **_shared_arun_kwargs(
-            goal_description=goal_description,
-            output_dir=output_dir,
-            compute_resource=compute_resource,
-            data_list=data_list,
+            goal_description,
+            output_dir,
+            compute_resource,
+            data_list,
         ),
         obs_file_list=obs_file_list or [],
         thread_id=thread_id,

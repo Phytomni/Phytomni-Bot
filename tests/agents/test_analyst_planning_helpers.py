@@ -225,6 +225,9 @@ async def test_fresh_submit_forwards_obs_file_list_default_empty(
         data_list={"/obs/c.csv": "c"},
     )
 
+    assert captured["arun_kwargs"]["query"] == "C"
+    assert captured["arun_kwargs"]["goal_description"] == "C"
+    assert captured["arun_kwargs"]["preset_data_list"] == {"/obs/c.csv": "c"}
     assert captured["arun_kwargs"]["obs_file_list"] == []
     assert captured["arun_kwargs"]["is_polling"] is False
     assert captured["arun_kwargs"]["is_auto_select"] is True
