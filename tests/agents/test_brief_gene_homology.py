@@ -23,6 +23,7 @@ from mcp_server_phytomni.agents.brief_gene.homology import (
     _run_fetch_homology_interactions_node,
 )
 from mcp_server_phytomni.agents.brief_gene.interactions import (
+    _empty_homology_interactions_result,
     _homology_gene_lists,
     _interaction_gene_list,
 )
@@ -73,6 +74,25 @@ def _interaction_response() -> dict[str, Any]:
             },
         ]
     }
+
+
+def test_empty_homology_interactions_result_is_fresh() -> None:
+    """The shared empty result keeps independent nested list objects."""
+    first = _empty_homology_interactions_result()
+    second = _empty_homology_interactions_result()
+
+    assert len(first) == 7
+    assert first["orthologs_data"] == {"gene_list": []}
+    assert first["paralogs_data"] == {"gene_list": []}
+    assert first["interaction_data"] == {"gene_list": []}
+    assert first["ortholog_count"] == 0
+    assert first["ortholog_species_count"] == 0
+    assert first["paralog_count"] == 0
+    assert first["interaction_count"] == 0
+    assert first == second
+    assert first["orthologs_data"] is not second["orthologs_data"]
+    first["orthologs_data"]["gene_list"].append({"gene_id": "mutated"})
+    assert second["orthologs_data"] == {"gene_list": []}
 
 
 def test_homology_gene_lists_separates_ortholog_and_paralog() -> None:

@@ -17,6 +17,25 @@ from __future__ import annotations
 from typing import Any
 
 
+def _empty_homology_interactions_result() -> dict[str, Any]:
+    """Return a fresh empty homology/interactions result shape.
+
+    The BriefGene seed and the unresolved-gene short circuit both need the
+    same zero-valued state delta. Constructing every nested dictionary here
+    keeps each caller independent, so one workflow cannot mutate another
+    caller's empty sentinel.
+    """
+    return {
+        "orthologs_data": {"gene_list": []},
+        "paralogs_data": {"gene_list": []},
+        "interaction_data": {"gene_list": []},
+        "ortholog_count": 0,
+        "ortholog_species_count": 0,
+        "paralog_count": 0,
+        "interaction_count": 0,
+    }
+
+
 def _homology_gene_lists(
     homology_response: dict[str, Any],
     species_code: str,

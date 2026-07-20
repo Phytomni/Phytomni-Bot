@@ -13,7 +13,7 @@ agent.py; pipeline helpers live in pipeline.py.
 """
 
 import asyncio
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
@@ -45,6 +45,7 @@ from .analytical_sections import (
 )
 from .graph_knowledge_subgraph import BriefGeneKnowledgeSubgraphMixin
 from .homology import _run_fetch_homology_interactions_node
+from .interactions import _empty_homology_interactions_result
 from .introduction import _run_introduction_node
 from .pipeline import (
     _alias_counts_delta,
@@ -97,63 +98,60 @@ def initial_brief_gene_state(
         A fully-seeded :class:`BriefGeneAgentState` dict with every
         key at its empty/zero default.
     """
-    return {
-        "user_query": user_query,
-        "is_follow_up": True,
-        "gene_found": False,
-        "gene_id": "",
-        "query_id_version": "",
-        "gene_id_version": "",
-        "species_code": "",
-        "species_latin_name": "",
-        "species_english_name": "",
-        "species_all_name": "",
-        "gene_name_symbol_list": [],
-        "gene_id_list": [],
-        "gene_chr": "",
-        "gene_start": "",
-        "gene_end": "",
-        "gene_strand": "",
-        "go_string": "",
-        "kegg_string": "",
-        "interpro_string": "",
-        "description_string": "",
-        "retrieved_docs": [],
-        "retrieve_context": "",
-        "follow_up_questions": [],
-        "final_response": {},
-        # X3b A architecture preamble fan-out fields.
-        # All seeded empty here so the TypedDict contract holds at
-        # ``arun`` entry; nodes populate them during the workflow.
-        "gene_structure_string": "",
-        "orthologs_data": {"gene_list": []},
-        "paralogs_data": {"gene_list": []},
-        "interaction_data": {"gene_list": []},
-        "ortholog_count": 0,
-        "ortholog_species_count": 0,
-        "paralog_count": 0,
-        "interaction_count": 0,
-        "cross_species_alias_count": 0,
-        "cross_species_alias_species_count": 0,
-        "section1_markdown": "",
-        "section2_markdown": "",
-        "section3_markdown": "",
-        "section4_markdown": "",
-        "introduction_report": "",
-        # Barrier counter reducer (replaces M5-era
-        # ``part1_completed_branches``); each section node writes
-        # +1 via ``operator.add``.
-        "gene_profile_completed_branches": 0,
-        # Seed the Send fan-out reducer channel so the TypedDict
-        # contract is satisfied at ``arun`` entry. The retrieve
-        # workers concat per-worker ``(task_index, doc_list)``
-        # tuples onto this list via ``operator.add``.
-        "retrieve_indexed_results": [],
-        # Seed the status-independent degraded reducer channel so the
-        # TypedDict contract holds at ``arun`` entry; retrieve workers
-        # append ``DegradedRecord`` entries via ``operator.add``.
-        "literature_degraded": [],
-    }
+    return cast(
+        BriefGeneAgentState,
+        {
+            "user_query": user_query,
+            "is_follow_up": True,
+            "gene_found": False,
+            "gene_id": "",
+            "query_id_version": "",
+            "gene_id_version": "",
+            "species_code": "",
+            "species_latin_name": "",
+            "species_english_name": "",
+            "species_all_name": "",
+            "gene_name_symbol_list": [],
+            "gene_id_list": [],
+            "gene_chr": "",
+            "gene_start": "",
+            "gene_end": "",
+            "gene_strand": "",
+            "go_string": "",
+            "kegg_string": "",
+            "interpro_string": "",
+            "description_string": "",
+            "retrieved_docs": [],
+            "retrieve_context": "",
+            "follow_up_questions": [],
+            "final_response": {},
+            # X3b A architecture preamble fan-out fields.
+            # All seeded empty here so the TypedDict contract holds at
+            # ``arun`` entry; nodes populate them during the workflow.
+            "gene_structure_string": "",
+            **_empty_homology_interactions_result(),
+            "cross_species_alias_count": 0,
+            "cross_species_alias_species_count": 0,
+            "section1_markdown": "",
+            "section2_markdown": "",
+            "section3_markdown": "",
+            "section4_markdown": "",
+            "introduction_report": "",
+            # Barrier counter reducer (replaces M5-era
+            # ``part1_completed_branches``); each section node writes
+            # +1 via ``operator.add``.
+            "gene_profile_completed_branches": 0,
+            # Seed the Send fan-out reducer channel so the TypedDict
+            # contract is satisfied at ``arun`` entry. The retrieve
+            # workers concat per-worker ``(task_index, doc_list)``
+            # tuples onto this list via ``operator.add``.
+            "retrieve_indexed_results": [],
+            # Seed the status-independent degraded reducer channel so the
+            # TypedDict contract holds at ``arun`` entry; retrieve workers
+            # append ``DegradedRecord`` entries via ``operator.add``.
+            "literature_degraded": [],
+        },
+    )
 
 
 class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):

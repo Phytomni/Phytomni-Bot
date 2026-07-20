@@ -17,7 +17,11 @@ from __future__ import annotations
 from typing import Any
 
 from ..shared.sql import sql_literal
-from .interactions import _homology_gene_lists, _interaction_gene_list
+from .interactions import (
+    _empty_homology_interactions_result,
+    _homology_gene_lists,
+    _interaction_gene_list,
+)
 from .pipeline import run_bi_api
 from .state import BriefGeneAgentState
 
@@ -48,15 +52,7 @@ async def _run_fetch_homology_interactions_node(
         # The node runs unconditionally off query_judge so the section
         # fan-in never waits on a branch that may not fire; an
         # unresolved gene (gene_found=False) has no homology to fetch.
-        return {
-            "orthologs_data": {"gene_list": []},
-            "paralogs_data": {"gene_list": []},
-            "interaction_data": {"gene_list": []},
-            "ortholog_count": 0,
-            "ortholog_species_count": 0,
-            "paralog_count": 0,
-            "interaction_count": 0,
-        }
+        return _empty_homology_interactions_result()
     species_code = state.get("species_code", "")
     gene_literal = sql_literal(gene_id)
 

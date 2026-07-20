@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `213`
+- Authorized records: `212`
 
 ## Informational counts
 
@@ -23,7 +23,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:prop-decorator`                                             |       1 |
 | `pylint:C0103`                                                    |       1 |
 | `pylint:C0116`                                                    |       1 |
-| `pylint:R0801`                                                    |      85 |
+| `pylint:R0801`                                                    |      84 |
 | `pylint:R0903`                                                    |       7 |
 | `pylint:R0913`                                                    |       1 |
 | `pylint:R0917`                                                    |       1 |
@@ -77,9 +77,8 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0029` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/agent.py | 39:44 | `sha256:db1a39a7296629412f62345cacd4a0f73d49c06d2acf3b459fe10a81dcf460dc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0040` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/planning.py | 101:107 | `sha256:1cc992aafdda044d48f51d390b1f04303cd2674f2a26b2c9b980e3a444116463` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0041` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/state.py | 114:119 | `sha256:b9c858b4756d1eeba0e3575fea150ea4750ceadcf06fb842cd871d087c87a349` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0042` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 116:121 | `sha256:a96c85c174105380ba2434924a5b605e588f2e7a7e2e197f77affa9544fcb65f` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
-| `SAE-TMP-0043` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 116:127 | `sha256:f6fe4aedc71865a6da2c058c4761abadd94f55fe5d74172793d417b35f4de79c` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_brief_gene_knowledge_subgraph.py, static-analysis-inventory |
-| `SAE-TMP-0044` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 128:135 | `sha256:84bd01d2f6d394d7bcbeb78ffce934c6708503d81ea5941fb1a16dafae5cbbba` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0042` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 119:124 | `sha256:acc5191ff5b112c006b066722a99e000b132a80da09bc5169648a61897a5962c` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
+| `SAE-TMP-0043` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 119:130 | `sha256:f033014ca9266166d94e7a23b1371c14297738e430692fed0237a39365206613` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_brief_gene_knowledge_subgraph.py, static-analysis-inventory |
 | `SAE-TMP-0046` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py | 81:87 | `sha256:18442c096ed583a858acc579252c4b83e8736b791721a8fc1410d959d20bc96a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0047` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py | 88:95 | `sha256:585e12c9cfdc39454cc842d0f5d994977f8f4b1883badbc2c8c7540676356192` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0052` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 106:111 | `sha256:bced20b31d1f24e53dbf50abc7462eeaaa5c709ed8fc09081f208f3992fd09bb` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
@@ -832,7 +831,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-The DeepGenome mount test independently fixes the empty BriefGene annotation output shape at src/mcp_server_phytomni/agents/brief_gene/core.py:[116:121] versus tests/agents/test_deep_genome_brief_gene_mount.py:[234:239]. Repository owner approved this independent oracle on 2026-07-20.
+The DeepGenome mount test independently fixes the empty BriefGene annotation output shape at src/mcp_server_phytomni/agents/brief_gene/core.py:[119:124] versus tests/agents/test_deep_genome_brief_gene_mount.py:[234:239]. Repository owner approved this independent oracle on 2026-07-20.
 ```
 
 Counterfactual:
@@ -852,7 +851,7 @@ Annotation defaults are consumed by the mounted graph; intentional field changes
 Rationale:
 
 ```text
-The knowledge-subgraph test independently fixes the BriefGene fan-out input state shape at src/mcp_server_phytomni/agents/brief_gene/core.py:[116:127] versus tests/agents/test_brief_gene_knowledge_subgraph.py:[81:89], instead of importing the production seed. Repository owner approved this state oracle on 2026-07-20.
+The knowledge-subgraph test independently fixes the BriefGene fan-out input state shape at src/mcp_server_phytomni/agents/brief_gene/core.py:[119:130] versus tests/agents/test_brief_gene_knowledge_subgraph.py:[81:89], instead of importing the production seed. Repository owner approved this state oracle on 2026-07-20.
 ```
 
 Counterfactual:
@@ -865,26 +864,6 @@ Risk:
 
 ```text
 State-shape changes can break fan-out routing; update the independent fixture only with graph-contract review.
-```
-
-### `SAE-TMP-0044`
-
-Rationale:
-
-```text
-The empty BriefGene seed and homology fallback still share the same intentional result shape at src/mcp_server_phytomni/agents/brief_gene/core.py:[128:135] and src/mcp_server_phytomni/agents/brief_gene/homology.py:[51:58]. The empty-result helper is remediated in AF-049-002.
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
 ```
 
 ### `SAE-TMP-0046`
