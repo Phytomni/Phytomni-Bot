@@ -15,14 +15,28 @@ import hashlib
 import inspect
 import json
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.routing import APIRoute
 
+from mcp_server_phytomni.agents.brief_gene.resolve_query import (
+    BriefGeneResolveError,
+)
+from mcp_server_phytomni.agents.deep_genome.resolve_query import (
+    DeepGenomeResolveError,
+)
+from mcp_server_phytomni.agents.design.resolve_query import (
+    DigitalDesignResolveError,
+)
+from mcp_server_phytomni.agents.network.resolve_query import (
+    GeneNetworkResolveError,
+)
 from mcp_server_phytomni.api import app as api_app_module
+from mcp_server_phytomni.api import resolvers as resolver_module
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
@@ -48,6 +62,18 @@ class _RouteContract:
     response: str | None
     scopes: tuple[str, ...]
     name: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolverContract:
+    """Direct resolver-module contract for one native agent."""
+
+    agent: str
+    flag: str
+    resolver_name: str
+    result: SimpleNamespace
+    target: tuple[str, str]
+    metadata: dict[str, str]
 
 
 def _route_response_name(route: APIRoute) -> str | None:
@@ -603,6 +629,9 @@ async def test_a2a_rejects_missing_protocol_version(
 def test_application_routes_keep_shared_mcp_seams() -> None:
     """Ensure HTTP handlers still delegate through shared MCP functions."""
     source = inspect.getsource(api_app_module.create_app)
+    run_source = inspect.getsource(
+        getattr(api_app_module, "_invoke_agent_run")
+    )
     for seam in (
         "invoke_tool_enveloped",
         "invoke_tool_streamed",
@@ -610,3 +639,196 @@ def test_application_routes_keep_shared_mcp_seams() -> None:
         "_route_expert_query",
     ):
         assert seam in source
+    assert "apply_runs_resolver" in run_source
+    assert "resolve_chat_query" in source
+    assert "_maybe_resolve_brief_gene_query" not in source
+    assert "_maybe_resolve_brief_gene_query" not in run_source
+    assert "_apply_runs_resolver" not in run_source
+
+
+@pytest.mark.parametrize(
+    "case",
+    (
+        _ResolverContract(
+            "brief_gene",
+            "resolve_gene_id",
+            "resolve_brief_gene_user_query",
+            SimpleNamespace(gene_id="AT1G01010", species_code="ath"),
+            ("user_query", "AT1G01010"),
+            {"resolved_gene_id": "AT1G01010"},
+        ),
+        _ResolverContract(
+            "deep_genome",
+            "resolve_gene_id",
+            "resolve_deep_genome_user_query",
+            SimpleNamespace(gene_id="Os01g0177400", species_code="osa"),
+            ("gene_id", "Os01g0177400"),
+            {"resolved_gene_id": "Os01g0177400"},
+        ),
+        _ResolverContract(
+            "design",
+            "resolve_gene_id",
+            "resolve_design_user_query",
+            SimpleNamespace(gene_id="AT1G01010", species_code="ath"),
+            ("gene_id", "AT1G01010"),
+            {"resolved_gene_id": "AT1G01010"},
+        ),
+        _ResolverContract(
+            "network",
+            "resolve_to_id",
+            "resolve_network_user_query",
+            SimpleNamespace(to_id="TO:0000207", species_code="osa"),
+            ("to_id", "TO:0000207"),
+            {"resolved_to_id": "TO:0000207"},
+        ),
+    ),
+)
+async def test_resolver_module_applies_native_contract(
+    case: _ResolverContract,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each supported native agent gets one typed metadata rewrite."""
+    calls: list[str] = []
+
+    async def fake_resolver(raw_query: str, **_kwargs: Any) -> Any:
+        """Return the typed-shaped fixture and retain the raw query."""
+        calls.append(raw_query)
+        return case.result
+
+    monkeypatch.setattr(resolver_module, case.resolver_name, fake_resolver)
+    arguments: dict[str, Any] = {
+        "user_query": "original resolver text",
+        case.flag: True,
+    }
+    resolved_metadata = await resolver_module.apply_runs_resolver(
+        case.agent, arguments
+    )
+
+    assert calls == ["original resolver text"]
+    assert arguments[case.target[0]] == case.target[1]
+    assert "resolve_gene_id" not in arguments
+    assert "resolve_to_id" not in arguments
+    assert resolved_metadata["original_query"] == "original resolver text"
+    assert (
+        resolved_metadata["resolved_species_code"] == case.result.species_code
+    )
+    assert all(
+        resolved_metadata[key] == value for key, value in case.metadata.items()
+    )
+
+
+async def test_resolver_module_chat_contract_and_false_flag() -> None:
+    """Chat resolves only when opted in and leaves false flags untouched."""
+    calls: list[str] = []
+
+    async def fake_resolver(raw_query: str, **_kwargs: Any) -> Any:
+        """Return one canonical BriefGene result."""
+        calls.append(raw_query)
+        return SimpleNamespace(gene_id="AT5G42800", species_code="ath")
+
+    resolved, metadata = await resolver_module.resolve_chat_query(
+        raw_query="find AT5G42800",
+        resolve_flag=True,
+        tool_name="BriefGeneAgent",
+        brief_gene_resolver=fake_resolver,
+    )
+    assert resolved == "AT5G42800"
+    assert metadata == {
+        "original_query": "find AT5G42800",
+        "resolved_gene_id": "AT5G42800",
+        "resolved_species_code": "ath",
+        "resolve_gene_id": True,
+    }
+    assert calls == ["find AT5G42800"]
+
+    untouched, no_metadata = await resolver_module.resolve_chat_query(
+        raw_query="structured brief gene input",
+        resolve_flag=False,
+        tool_name="ChatAgent",
+    )
+    assert untouched == "structured brief gene input"
+    assert no_metadata == {}
+
+
+async def test_resolver_module_rejects_missing_and_unsupported_flags() -> None:
+    """Missing input and cross-agent flags fail before resolver dispatch."""
+    missing: dict[str, Any] = {"resolve_gene_id": True}
+    with pytest.raises(HTTPException) as missing_error:
+        await resolver_module.apply_runs_resolver("brief_gene", missing)
+    assert missing_error.value.status_code == 400
+    assert "user_query is required" in str(missing_error.value.detail)
+    assert not missing
+
+    unsupported: dict[str, Any] = {
+        "user_query": "plant height",
+        "resolve_gene_id": True,
+    }
+    with pytest.raises(HTTPException) as unsupported_error:
+        await resolver_module.apply_runs_resolver("network", unsupported)
+    assert unsupported_error.value.status_code == 400
+    assert "BriefGene / DeepGenome / DigitalDesign" in str(
+        unsupported_error.value.detail
+    )
+    assert not unsupported
+
+    with pytest.raises(HTTPException) as chat_error:
+        await resolver_module.resolve_chat_query(
+            raw_query="not a BriefGene call",
+            resolve_flag=True,
+            tool_name="ChatAgent",
+        )
+    assert chat_error.value.status_code == 400
+    assert "only valid for BriefGene calls" in str(chat_error.value.detail)
+
+
+@pytest.mark.parametrize(
+    ("agent", "flag", "resolver_name", "error_type"),
+    (
+        (
+            "brief_gene",
+            "resolve_gene_id",
+            "resolve_brief_gene_user_query",
+            BriefGeneResolveError,
+        ),
+        (
+            "deep_genome",
+            "resolve_gene_id",
+            "resolve_deep_genome_user_query",
+            DeepGenomeResolveError,
+        ),
+        (
+            "design",
+            "resolve_gene_id",
+            "resolve_design_user_query",
+            DigitalDesignResolveError,
+        ),
+        (
+            "network",
+            "resolve_to_id",
+            "resolve_network_user_query",
+            GeneNetworkResolveError,
+        ),
+    ),
+)
+async def test_resolver_module_maps_domain_errors(
+    agent: str,
+    flag: str,
+    resolver_name: str,
+    error_type: type[Exception],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Domain resolver failures remain explicit HTTP 400 responses."""
+
+    async def fail_resolver(_raw_query: str, **_kwargs: Any) -> Any:
+        """Raise the domain-specific resolver error."""
+        raise error_type("resolver failed for contract test")
+
+    monkeypatch.setattr(resolver_module, resolver_name, fail_resolver)
+    arguments: dict[str, Any] = {
+        "user_query": "ambiguous input",
+        flag: True,
+    }
+    with pytest.raises(HTTPException) as error:
+        await resolver_module.apply_runs_resolver(agent, arguments)
+    assert error.value.status_code == 400
+    assert "resolver failed for contract test" in str(error.value.detail)

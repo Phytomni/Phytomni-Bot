@@ -56,27 +56,12 @@ from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from ..agents.brief_gene.resolve_query import (
-    BriefGeneResolveError,
-    resolve_brief_gene_user_query,
-)
+from ..agents.brief_gene.resolve_query import resolve_brief_gene_user_query
 from ..agents.chat.a2ui_builder import build_chat_a2ui_graph
-from ..agents.deep_genome.resolve_query import (
-    DeepGenomeResolveError,
-    DeepGenomeResolveResult,
-    resolve_deep_genome_user_query,
-)
-from ..agents.design.resolve_query import (
-    DigitalDesignResolveError,
-    DigitalDesignResolveResult,
-    resolve_design_user_query,
-)
+from ..agents.deep_genome.resolve_query import resolve_deep_genome_user_query
+from ..agents.design.resolve_query import resolve_design_user_query
 from ..agents.expert import select_agent_tool
-from ..agents.network.resolve_query import (
-    GeneNetworkResolveError,
-    GeneNetworkResolveResult,
-    resolve_network_user_query,
-)
+from ..agents.network.resolve_query import resolve_network_user_query
 from ..agents.review.agent import review_stream_target
 from ..agents.shared.a2ui import (
     A2UI_CUSTOM_NAME,
@@ -93,11 +78,7 @@ from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
 from ..config.defaults import (
     ApiConfig,
-    BriefGeneConfig,
     ChatConfig,
-    DeepGenomeConfig,
-    DigitalDesignConfig,
-    GeneNetworkConfig,
 )
 from ..config.settings import SensitiveConfig
 from ..interop.a2a_discovery import discover_external_a2a_capabilities
@@ -212,13 +193,17 @@ from .openai_mapping import (
     to_chat_completion,
     to_chat_completion_chunks,
     tool_accepts_obs,
-    tool_accepts_resolve_gene_id,
     tool_accepts_stream,
     tool_for_model,
 )
 from .ratelimit import make_rate_limiter
 from .relay import RelayAuditQuery, create_relay_router, get_audit_store
 from .relay.audit_filter import redact_body_text
+from .resolvers import (
+    ResolverDispatch,
+    apply_runs_resolver,
+    resolve_chat_query,
+)
 from .schemas import (
     A2uiActionRequest,
     AgentRunRequest,
@@ -1112,265 +1097,6 @@ async def _stream_chat_completion(  # pylint: disable=too-many-locals
     return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
-async def _maybe_resolve_brief_gene_query(
-    *,
-    raw_query: str,
-    resolve_flag: bool,
-    tool_name: str | None,
-    agent_slug: str | None = None,
-) -> tuple[str, dict[str, Any]]:
-    """Resolve free-form text into a gene id when ``resolve_gene_id`` is on.
-
-    Both the OpenAI-compatible chat-completions route and the native
-    ``/v1/agents/brief_gene/runs`` route funnel through here so the
-    flag has identical semantics on both surfaces: BriefGene-only,
-    explicit 400 on misuse, explicit 400 on resolver failure, and a
-    deterministic metadata patch describing the rewrite.
-
-    Args:
-        raw_query: The original ``user_query`` text from the request.
-        resolve_flag: Whether the caller opted into LLM preprocessing.
-        tool_name: MCP tool name when the chat-completions path resolved
-            it; ``None`` for the native runs path which gates on slug.
-        agent_slug: Native agent slug when the runs path supplied one;
-            ``None`` for the chat-completions path which gates on tool.
-
-    Returns:
-        Tuple of ``(user_query_for_tool, metadata_patch)``. The metadata
-        patch is empty when the flag is off and otherwise carries the
-        ``original_query`` / ``resolved_gene_id`` / ``resolved_species_code``
-        / ``resolve_gene_id`` keys for caller observability.
-
-    Raises:
-        HTTPException: 400 when the flag is set on a non-BriefGene
-            tool/slug or the resolver raises ``BriefGeneResolveError``.
-    """
-    if not resolve_flag:
-        return raw_query, {}
-    brief_tool = (
-        tool_name == "BriefGeneAgent"
-        and tool_accepts_resolve_gene_id(tool_name)
-    )
-    brief_slug = agent_slug == "brief_gene"
-    if not (brief_tool or brief_slug):
-        raise HTTPException(
-            status_code=400,
-            detail="resolve_gene_id is only valid for BriefGene calls",
-        )
-    try:
-        result = await resolve_brief_gene_user_query(
-            raw_query,
-            brief_config=BriefGeneConfig(),
-            sensitive_config=SensitiveConfig.load(),
-        )
-    except BriefGeneResolveError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return result.gene_id, {
-        "original_query": raw_query,
-        "resolved_gene_id": result.gene_id,
-        "resolved_species_code": result.species_code,
-        "resolve_gene_id": True,
-    }
-
-
-async def _maybe_resolve_deep_genome_query(
-    *,
-    raw_query: str,
-    resolve_flag: bool,
-    agent_slug: str | None = None,
-) -> tuple[DeepGenomeResolveResult | None, dict[str, Any]]:
-    """Mirror of ``_maybe_resolve_brief_gene_query`` for deep_genome.
-
-    Sibling helper kept per-domain so each agent's 400-on-misuse
-    string names the agent explicitly and the resolver call site
-    closes over the deep_genome-typed result + error class. Returns
-    the typed result (or ``None`` when ``resolve_flag`` is off) so
-    the caller can inject both ``gene_id`` and ``species_code`` into
-    the downstream agent arguments.
-    """
-    if not resolve_flag:
-        return None, {}
-    if agent_slug != "deep_genome":
-        raise HTTPException(
-            status_code=400,
-            detail="resolve_gene_id is only valid for DeepGenome calls",
-        )
-    try:
-        result = await resolve_deep_genome_user_query(
-            raw_query,
-            deep_genome_config=DeepGenomeConfig(),
-            sensitive_config=SensitiveConfig.load(),
-        )
-    except DeepGenomeResolveError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return result, {
-        "original_query": raw_query,
-        "resolved_gene_id": result.gene_id,
-        "resolved_species_code": result.species_code,
-        "resolve_gene_id": True,
-    }
-
-
-async def _maybe_resolve_design_query(
-    *,
-    raw_query: str,
-    resolve_flag: bool,
-    agent_slug: str | None = None,
-) -> tuple[DigitalDesignResolveResult | None, dict[str, Any]]:
-    """Mirror of ``_maybe_resolve_brief_gene_query`` for design.
-
-    Returns the typed result (or ``None`` when ``resolve_flag`` is
-    off) so the caller can inject both ``gene_id`` and
-    ``species_code`` into the DigitalDesignAgent arguments.
-    """
-    if not resolve_flag:
-        return None, {}
-    if agent_slug != "design":
-        raise HTTPException(
-            status_code=400,
-            detail=("resolve_gene_id is only valid for DigitalDesign calls"),
-        )
-    try:
-        result = await resolve_design_user_query(
-            raw_query,
-            design_config=DigitalDesignConfig(),
-            sensitive_config=SensitiveConfig.load(),
-        )
-    except DigitalDesignResolveError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return result, {
-        "original_query": raw_query,
-        "resolved_gene_id": result.gene_id,
-        "resolved_species_code": result.species_code,
-        "resolve_gene_id": True,
-    }
-
-
-async def _apply_runs_resolver(
-    agent: str,
-    arguments: dict[str, Any],
-) -> dict[str, Any]:
-    """Run the right resolver for ``/v1/agents/{agent}/runs`` calls.
-
-    Pops the ``resolve_gene_id`` / ``resolve_to_id`` flags and the
-    transient ``user_query`` field from ``arguments`` before forwarding
-    so the per-agent Pydantic schema never sees them. When a flag is
-    set, dispatches to the matching ``_maybe_resolve_<domain>_query``
-    helper, injects the resolved id into the agent-specific target
-    field (``user_query`` for BriefGene, ``gene_id`` for deep_genome /
-    design, ``to_id`` for network), and returns the metadata patch the
-    caller layers onto ``formatted.metadata``.
-    """
-    flag_gene_id = bool(arguments.pop("resolve_gene_id", False))
-    flag_to_id = bool(arguments.pop("resolve_to_id", False))
-    if not (flag_gene_id or flag_to_id):
-        # ``user_query`` is otherwise part of the brief_gene schema;
-        # only pop it when both flags are off AND the agent does not
-        # consume it directly, so we leave brief_gene's structured
-        # ``user_query`` untouched on the no-resolve path.
-        return {}
-    raw_query = arguments.pop("user_query", None)
-    if not isinstance(raw_query, str) or not raw_query.strip():
-        flag_label = "resolve_to_id" if flag_to_id else "resolve_gene_id"
-        raise HTTPException(
-            status_code=400,
-            detail=f"user_query is required when {flag_label} is true",
-        )
-    if flag_to_id and agent != "network":
-        raise HTTPException(
-            status_code=400,
-            detail="resolve_to_id is only valid for GeneNetwork calls",
-        )
-    if flag_to_id:
-        network_result, meta = await _maybe_resolve_network_query(
-            raw_query=raw_query,
-            resolve_flag=True,
-            agent_slug=agent,
-        )
-        assert network_result is not None
-        arguments["to_id"] = network_result.to_id
-        arguments["species_code"] = network_result.species_code
-        return meta
-    # flag_gene_id branch: dispatch by agent slug to the matching
-    # gene-id resolver and inject into the agent-shaped target field.
-    if agent == "brief_gene":
-        resolved, meta = await _maybe_resolve_brief_gene_query(
-            raw_query=raw_query,
-            resolve_flag=True,
-            tool_name=None,
-            agent_slug=agent,
-        )
-        arguments["user_query"] = resolved
-        return meta
-    if agent == "deep_genome":
-        deep_genome_result, meta = await _maybe_resolve_deep_genome_query(
-            raw_query=raw_query,
-            resolve_flag=True,
-            agent_slug=agent,
-        )
-        assert deep_genome_result is not None
-        arguments["gene_id"] = deep_genome_result.gene_id
-        arguments["species_code"] = deep_genome_result.species_code
-        return meta
-    if agent == "design":
-        design_result, meta = await _maybe_resolve_design_query(
-            raw_query=raw_query,
-            resolve_flag=True,
-            agent_slug=agent,
-        )
-        assert design_result is not None
-        arguments["gene_id"] = design_result.gene_id
-        arguments["species_code"] = design_result.species_code
-        return meta
-    raise HTTPException(
-        status_code=400,
-        detail=(
-            "resolve_gene_id is only valid for BriefGene / DeepGenome / "
-            f"DigitalDesign calls (received agent {agent!r})"
-        ),
-    )
-
-
-async def _maybe_resolve_network_query(
-    *,
-    raw_query: str,
-    resolve_flag: bool,
-    agent_slug: str | None = None,
-) -> tuple[GeneNetworkResolveResult | None, dict[str, Any]]:
-    """Mirror of the gene-id resolvers but for GeneNetwork's TO id.
-
-    The flag, target field, and metadata key all use ``to_id`` rather
-    than ``gene_id`` because the GeneNetwork tool dispatches on a
-    Trait Ontology identifier; the resolver itself injects the
-    committed TO catalog into the LLM prompt and validates the
-    returned id against that catalog. Returns the typed result (or
-    ``None`` when ``resolve_flag`` is off) so the caller can inject
-    both ``to_id`` and ``species_code`` into the GeneNetworkAgent
-    arguments.
-    """
-    if not resolve_flag:
-        return None, {}
-    if agent_slug != "network":
-        raise HTTPException(
-            status_code=400,
-            detail="resolve_to_id is only valid for GeneNetwork calls",
-        )
-    try:
-        result = await resolve_network_user_query(
-            raw_query,
-            network_config=GeneNetworkConfig(),
-            sensitive_config=SensitiveConfig.load(),
-        )
-    except GeneNetworkResolveError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return result, {
-        "original_query": raw_query,
-        "resolved_to_id": result.to_id,
-        "resolved_species_code": result.species_code,
-        "resolve_to_id": True,
-    }
-
-
 # pylint: disable=too-many-locals
 # Request validation -> DB lookup -> reconciliation -> response
 # assembly inline; helpers would require 5+ context args each.
@@ -1422,7 +1148,16 @@ async def _invoke_agent_run(
         raise HTTPException(
             status_code=404, detail=f"agent not found: {agent}"
         )
-    resolve_meta = await _apply_runs_resolver(agent, arguments)
+    resolve_meta = await apply_runs_resolver(
+        agent,
+        arguments,
+        dispatch=ResolverDispatch(
+            brief_gene_resolver=resolve_brief_gene_user_query,
+            deep_genome_resolver=resolve_deep_genome_user_query,
+            design_resolver=resolve_design_user_query,
+            network_resolver=resolve_network_user_query,
+        ),
+    )
     owner = current_request_user() or "anonymous"
     request_info = RunRequestInfo(
         dialogue_id=dialogue_id,
@@ -3341,10 +3076,11 @@ def create_app() -> FastAPI:
             user_query = flatten_messages(payload.messages)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        user_query, resolve_meta = await _maybe_resolve_brief_gene_query(
+        user_query, resolve_meta = await resolve_chat_query(
             raw_query=user_query,
             resolve_flag=bool(payload.resolve_gene_id),
             tool_name=tool_name,
+            brief_gene_resolver=resolve_brief_gene_user_query,
         )
         arguments: dict[str, object] = {"user_query": user_query}
         if accepts_obs:
