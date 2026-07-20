@@ -415,7 +415,7 @@ remediation = "SAE-WORK-INITIAL-AUDIT"
 id = "SAE-TMP-0028"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/analyst/__init__.py"
@@ -424,20 +424,18 @@ peer_path = "src/mcp_server_phytomni/agents/analyst/agent.py"
 peer_symbol = "41:46"
 fingerprint = "sha256:04b1f52c7567afcb17be02df79c0cadd82b90a00fa8a07e06ab48b5a2dafafb8"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.analyst.__init__:[42:47]\n==mcp_server_phytomni.agents.analyst.agent:[41:46]\n    \"ANALYST_CONFIG_FIELD_MAP\",\n    \"ANALYST_SECRET_FIELD_MAP\",\n    \"ANALYST_SENSITIVE_FIELD_MAP\",\n    \"AnalystAgent\",\n    \"AnalystAgentsState\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The Analyst package facade intentionally re-exports the public configuration and agent symbols independently from the implementation module. Repository owner approved this public API boundary on 2026-07-20."
+counterfactual = "Reusing the implementation __all__ would make package import stability depend on internal exports and expose refactor drift."
+risk = "Changing the facade can break downstream imports; public export changes require compatibility review."
+tests = ["tests/agents/test_analyst_graph_nodes.py", "tests/agents/test_analyst_routers.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0029"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/analyst/agent.py"
@@ -446,20 +444,18 @@ peer_path = "src/mcp_server_phytomni/agents/analyst/defaults.py"
 peer_symbol = "53:58"
 fingerprint = "sha256:db1a39a7296629412f62345cacd4a0f73d49c06d2acf3b459fe10a81dcf460dc"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.analyst.agent:[39:44]\n==mcp_server_phytomni.agents.analyst.defaults:[53:58]\n__all__ = [\n    \"ANALYST_CONFIG\",\n    \"ANALYST_CONFIG_FIELD_MAP\",\n    \"ANALYST_SECRET_FIELD_MAP\",\n    \"ANALYST_SENSITIVE_FIELD_MAP\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The Analyst agent and defaults modules intentionally maintain separate public export lists for runtime and configuration surfaces. Repository owner approved this public API boundary on 2026-07-20."
+counterfactual = "Aliasing defaults.__all__ to agent.__all__ would couple independent configuration and runtime exports and make a local refactor change the other surface."
+risk = "Changing either export list can break runtime or configuration imports; review the two public surfaces independently."
+tests = ["tests/agents/test_analyst_graph_nodes.py", "tests/agents/test_analyst_routers.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0040"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/analyst/planning.py"
@@ -468,20 +464,18 @@ peer_path = "src/mcp_server_phytomni/agents/analyst/submission.py"
 peer_symbol = "159:165"
 fingerprint = "sha256:1cc992aafdda044d48f51d390b1f04303cd2674f2a26b2c9b980e3a444116463"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.analyst.planning:[101:107]\n==mcp_server_phytomni.agents.analyst.submission:[159:165]\n        **_shared_arun_kwargs(\n            goal_description,\n            output_dir,\n            compute_resource,\n            data_list,\n        ),"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "Planning and submission wrappers share argument construction but intentionally keep independent deduplication, metadata, submit, and preset contracts. Repository owner approved this compatibility boundary on 2026-07-20."
+counterfactual = "A broader helper would couple planning and submission compatibility wrappers and could erase their distinct deduplication or preset behavior."
+risk = "Changing the shared argument projection can alter task submission semantics; preserve separate wrapper tests and review both contracts."
+tests = ["tests/agents/test_analyst_planning_helpers.py", "tests/agents/test_analyst_submission_helpers.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0041"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/analyst/state.py"
@@ -490,14 +484,12 @@ peer_path = "src/mcp_server_phytomni/agents/data/state.py"
 peer_symbol = "70:77"
 fingerprint = "sha256:b9c858b4756d1eeba0e3575fea150ea4750ceadcf06fb842cd871d087c87a349"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.analyst.state:[114:119]\n==mcp_server_phytomni.agents.data.state:[70:77]\n    chat_payload: dict[str, Any] | None\n    chat_response: dict[str, Any] | None\n    pending_post_knowledge: str | None\n    knowledge_payload: dict[str, Any] | None\n    knowledge_response: dict[str, Any] | None"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "Analyst and Data state TypedDicts intentionally repeat similarly named fields across independent graph contracts. Repository owner approved these separate state boundaries on 2026-07-20."
+counterfactual = "Aliasing the state fields would couple Analyst and Data reducers and make an independent graph-state change cross the agent boundary."
+risk = "State-key changes can break graph routing or persistence; update each contract with its owning graph tests."
+tests = ["tests/agents/test_analyst_graph_io.py", "tests/agents/test_data_chat_subgraph.py", "tests/agents/test_data_knowledge_subgraph.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0042"
@@ -543,7 +535,7 @@ tests = ["tests/agents/test_brief_gene_knowledge_subgraph.py", "static-analysis-
 id = "SAE-TMP-0046"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py"
@@ -552,20 +544,18 @@ peer_path = "src/mcp_server_phytomni/agents/review/agent.py"
 peer_symbol = "239:245"
 fingerprint = "sha256:18442c096ed583a858acc579252c4b83e8736b791721a8fc1410d959d20bc96a"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "The BriefGene and Review graph builders independently mount the same knowledge-node boundary at src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py:[81:87] and src/mcp_server_phytomni/agents/review/agent.py:[239:245]. The shared mount helper removes only the Analyst/Data duplicate; this domain-specific pair remains under structural review."
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "BriefGene and Review independently mount knowledge Send fan-out boundaries with different graph contracts. Repository owner approved this domain-specific topology boundary on 2026-07-20."
+counterfactual = "A generic mount would hide BriefGene and Review graph topology, worker failure redaction, reducers, node names, and downstream edges."
+risk = "A shared Send mount could route or redact the wrong domain state; preserve independent graph characterization tests."
+tests = ["tests/agents/test_brief_gene_knowledge_subgraph.py", "tests/agents/test_review_retrieve_fan_out.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0047"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py"
@@ -574,14 +564,12 @@ peer_path = "src/mcp_server_phytomni/agents/review/agent.py"
 peer_symbol = "246:253"
 fingerprint = "sha256:585e12c9cfdc39454cc842d0f5d994977f8f4b1883badbc2c8c7540676356192"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "The BriefGene and Review graph builders independently wire their retrieve worker and reducer after the knowledge mount at src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py:[88:95] and src/mcp_server_phytomni/agents/review/agent.py:[246:253]. Their graph-local edges remain domain-specific and are still under structural review."
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "BriefGene and Review independently wire retrieve workers and reducers after their knowledge mounts. Repository owner approved this domain-specific topology boundary on 2026-07-20."
+counterfactual = "A generic worker/reducer helper would obscure domain-specific node names, failure redaction, reducers, and graph edges."
+risk = "Changing one fan-out contract could silently alter the other agent; keep graph-local tests and review topology changes independently."
+tests = ["tests/agents/test_brief_gene_knowledge_subgraph.py", "tests/agents/test_review_retrieve_fan_out.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0052"
@@ -707,7 +695,7 @@ tests = ["tests/unit/test_deep_genome_work_items.py", "static-analysis-inventory
 id = "SAE-TMP-0062"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/design/agent.py"
@@ -716,20 +704,18 @@ peer_path = "src/mcp_server_phytomni/agents/research/agent.py"
 peer_symbol = "430:437"
 fingerprint = "sha256:e0cd24dbe16f751325b6a9d60a10e3a8e4fe6eccfba8cb586e3df4d1aa2eb7bd"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[378:385]\n==mcp_server_phytomni.agents.research.agent:[430:437]\n                dependencies=dependencies,\n            )\n            if result is not None:\n                if result[\"status\"] == \"input_required\":\n                    task_id = result.get(\"task_id\")\n                    if not task_id:\n                        raise RuntimeError("
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "Design and Research independently project interop task results into their domain states while sharing transport vocabulary. Repository owner approved this boundary on 2026-07-20."
+counterfactual = "A cross-domain result projection would couple Design and Research state schemas and could route input-required or failure outcomes incorrectly."
+risk = "Interop status or task-id changes can affect pause/resume behavior; preserve both domain characterization suites."
+tests = ["tests/agents/test_design_interop.py", "tests/agents/test_research_interop.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0063"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/design/agent.py"
@@ -738,20 +724,18 @@ peer_path = "src/mcp_server_phytomni/agents/research/agent.py"
 peer_symbol = "632:650"
 fingerprint = "sha256:eb821e4f9d43cb8e7d63842145181a1ce0917da9327a47d1b643eebf9e0bd456"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[506:518]\n==mcp_server_phytomni.agents.research.agent:[632:650]\n                    **interop_state_update(\n                        make_interop_record(\n                            target_id=pending[\"target_id\"],\n                            kind=\"a2a\",\n                            capability=pending[\"capability\"],\n                            status=\"input_required\",\n                            latency_seconds=perf_counter() - started,\n                        )\n                    ),\n                },\n            )\n\n        async def submit_call() -> dict[str, Any]:\n            \"\"\"Submit one research task and return its raw result.\n\n            Returns:\n                AnalystAgent payload with ``task_id`` and ``output_dir``.\n            \"\"\""
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "Design and Research independently submit interop tasks and record their own evidence updates. Repository owner approved this boundary on 2026-07-20."
+counterfactual = "A shared submit/evidence helper would couple capability names, state updates, and pause/resume payloads that are intentionally domain-specific."
+risk = "A shared submit path could leak the wrong capability or telemetry into a domain state; retain separate interop tests."
+tests = ["tests/agents/test_design_interop.py", "tests/agents/test_research_interop.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0064"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/design/agent.py"
@@ -760,20 +744,18 @@ peer_path = "src/mcp_server_phytomni/agents/research/agent.py"
 peer_symbol = "679:688"
 fingerprint = "sha256:0627fefe4483668befa42c7e51c26cd08660fe4b47df18739b5d4fe90ba74343"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[558:567]\n==mcp_server_phytomni.agents.research.agent:[679:688]\n                            \"degraded\",\n                            perf_counter() - started,\n                            True,\n                        )\n                    )\n                )\n            else:\n                updates.update(\n                    interop_evidence_update("
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "Design and Research independently encode interop degraded and evidence updates despite similar transport calls. Repository owner approved this boundary on 2026-07-20."
+counterfactual = "A cross-domain degraded-update helper would couple fallback and telemetry semantics that differ between Design and Research."
+risk = "Degraded outcomes are user-visible; preserve domain-specific redaction and evidence assertions."
+tests = ["tests/agents/test_design_interop.py", "tests/agents/test_research_interop.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0065"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/design/agent.py"
@@ -782,20 +764,18 @@ peer_path = "src/mcp_server_phytomni/agents/research/agent.py"
 peer_symbol = "772:800"
 fingerprint = "sha256:b2f685bc5dcf5396ad18b7e564ec17ea22990763b2a47f36e9c2a18ed52c5660"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[565:579]\n==mcp_server_phytomni.agents.research.agent:[772:800]\n                updates.update(\n                    interop_evidence_update(\n                        evidence,\n                        status=\"completed\",\n                        latency_seconds=perf_counter() - started,\n                    )\n                )\n        return updates\n\n    async def resume_design_a2a(\n        self,\n        state: DigitalDesignState,\n    ) -> dict[str, Any]:\n        \"\"\"Resume one paused A2A planning exchange before local dispatch.\"\"\""
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "Design and Research independently implement A2A resume and local-dispatch transitions with distinct state and protocol contracts. Repository owner approved this boundary on 2026-07-20."
+counterfactual = "A shared resume helper would couple A2A pause payloads, local fallback, and downstream dispatch behavior across the two agents."
+risk = "Resume changes can lose user input or dispatch the wrong task; retain separate interop and domain workflow tests."
+tests = ["tests/agents/test_design_interop.py", "tests/agents/test_research_interop.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0066"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/design/agent.py"
@@ -804,20 +784,18 @@ peer_path = "src/mcp_server_phytomni/agents/research/agent.py"
 peer_symbol = "689:705"
 fingerprint = "sha256:75d6daa79ef9e397412d70daa0a2ab61a54694ac206a3baa5519a136088e43cd"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[568:584]\n==mcp_server_phytomni.agents.research.agent:[689:705]\n                        status=\"completed\",\n                        latency_seconds=perf_counter() - started,\n                    )\n                )\n        return updates\n\n    async def resume_design_a2a(\n        self,\n        state: DigitalDesignState,\n    ) -> dict[str, Any]:\n        \"\"\"Resume one paused A2A planning exchange before local dispatch.\"\"\""
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "Design and Research independently finalize interop evidence and completion telemetry for their own state machines. Repository owner approved this boundary on 2026-07-20."
+counterfactual = "A shared completion helper would hide differences in state keys, telemetry, and failure fallback between Design and Research."
+risk = "Completion telemetry and degraded flags are part of the public task state; review each domain independently."
+tests = ["tests/agents/test_design_interop.py", "tests/agents/test_research_interop.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0067"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/design/agent.py"
@@ -826,20 +804,18 @@ peer_path = "src/mcp_server_phytomni/agents/research/agent.py"
 peer_symbol = "772:803"
 fingerprint = "sha256:aae20b708118a245d565bf4dba59ddfb08f4a2b3f5da3f168dd44d2f26201223"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.design.agent:[664:694]\n==mcp_server_phytomni.agents.research.agent:[772:803]\n        updates.update(\n            interop_evidence_update(\n                evidence,\n                status=\"completed\",\n                latency_seconds=perf_counter() - started,\n            )\n        )\n        return updates\n\n    async def arun(\n        self,\n        species_code: str,\n        gene_id: str,\n        **kwargs: Any,\n    ) -> dict[str, Any]:\n        \"\"\"Submit protein design tasks and return task_ids.\n\n        Args:\n            species_code: Three-letter species code (e.g., \"ath\", \"osa\").\n            gene_id: Gene identifier.\n            user_id: Optional user identifier.\n            batch: Whether this is batch processing.\n            thread_id: Optional thread ID for checkpointer.\n\n        Returns:\n            Dict with task_ids on success, or error on failure.\n        \"\"\"\n        return await run_analysis_graph(\n            self.app,\n            {"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "Design and Research independently combine interop evidence with their domain-specific local dispatch workflows. Repository owner approved this boundary on 2026-07-20."
+counterfactual = "A shared orchestration helper would couple target IDs, capability names, state schemas, and fallback semantics across independent workflows."
+risk = "Cross-domain orchestration changes can misroute analysis tasks; preserve separate graph and interop tests."
+tests = ["tests/agents/test_design_interop.py", "tests/agents/test_research_interop.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0068"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/environment/agent.py"
@@ -848,20 +824,18 @@ peer_path = "src/mcp_server_phytomni/agents/evolution/agent.py"
 peer_symbol = "151:158"
 fingerprint = "sha256:412bbae97443018da3d59a4a22453b8e01b100e4a28028e36d6dbf2ee3982c7b"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.environment.agent:[89:96]\n==mcp_server_phytomni.agents.evolution.agent:[151:158]\n    chat_output = await _cached_chat_app().ainvoke(\n        build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs_bag)\n    )\n    phyto_response = extract_chat_response(chat_output)\n    if not phyto_response:\n        return None\n    content = phyto_response[\"choices\"][0][\"message\"][\"content\"]"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "Environment and Evolution share chat extraction mechanics but intentionally parse different domain outputs. Repository owner approved this boundary on 2026-07-20."
+counterfactual = "A shared response parser would couple Environment region output and Evolution taxid output and could accept the wrong domain shape."
+risk = "Chat output parsing is domain-facing; preserve independent field validation and chat-subgraph tests."
+tests = ["tests/agents/test_environment_chat_subgraph.py", "tests/agents/test_evolution_chat_subgraph.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0069"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/environment/graph.py"
@@ -870,20 +844,18 @@ peer_path = "src/mcp_server_phytomni/agents/evolution/graph.py"
 peer_symbol = "188:194"
 fingerprint = "sha256:50c4d2220d590f4303e8987fa4ce2430000db42288370545fbcd3e29d748d315"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.environment.graph:[181:187]\n==mcp_server_phytomni.agents.evolution.graph:[188:194]\n        inputs.output_dir,\n        prompt_parts,\n        compute_resource,\n    ).to_payload()\n    return await submit_analyst_via_subgraph(\n        analyst_agent,"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "Environment and Evolution share low-level analyst request adapters but target different identifiers, configuration, and failure routes. Repository owner approved this boundary on 2026-07-20."
+counterfactual = "A cross-domain dispatch helper would couple target IDs and error handling and could submit the wrong analyst task."
+risk = "Dispatch changes can misroute or misreport analysis jobs; keep the two domain graph tests independent."
+tests = ["tests/agents/test_environment_analyst_subgraph.py", "tests/agents/test_evolution_analyst_subgraph.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0071"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/shared/chat_subgraph.py"
@@ -892,20 +864,18 @@ peer_path = "src/mcp_server_phytomni/agents/shared/knowledge_subgraph.py"
 peer_symbol = "126:163"
 fingerprint = "sha256:e6c553359093f37502c15611b3d82295a314c4d2579ff20ffb23bab3a54980de"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "The chat and knowledge subgraphs intentionally retain parallel wrapper and router seams with separate state keys at src/mcp_server_phytomni/agents/shared/chat_subgraph.py:[101:142] and src/mcp_server_phytomni/agents/shared/knowledge_subgraph.py:[126:163]. The knowledge helper added in AF-049-001 preserves the distinct router contract; this structural pair remains under review."
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "Chat and Knowledge subgraphs intentionally retain parallel wrappers and routers with separate state keys and error defaults. Repository owner approved this boundary on 2026-07-20."
+counterfactual = "Aliasing the chat and knowledge wrappers would couple independent router keys, defaults, and error semantics across public agent flows."
+risk = "Subgraph wrapper changes can alter routing or fallback behavior; preserve separate wrapper and support tests."
+tests = ["tests/agents/test_chat_subgraph_wrapper.py", "tests/agents/test_knowledge_subgraph_support.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0073"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/api/relay/__init__.py"
@@ -914,14 +884,12 @@ peer_path = "src/mcp_server_phytomni/api/relay/audit.py"
 peer_symbol = "28:33"
 fingerprint = "sha256:11110a31a61699cdd16bc8f75aa9c481305c2dad14bf2bb7471c6c45723cd27a"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.api.relay.__init__:[20:25]\n==mcp_server_phytomni.api.relay.audit:[28:33]\n__all__ = [\n    \"RelayAuditRecord\",\n    \"RelayAuditQuery\",\n    \"RelayAuditStore\",\n    \"get_audit_store\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The relay package facade intentionally exposes a narrow public API independently from the audit implementation exports. Repository owner approved this security-facing boundary on 2026-07-20."
+counterfactual = "Reusing the audit module __all__ would expose internal relay-audit symbols and make the public security boundary depend on implementation refactors."
+risk = "Facade drift can expose or hide relay audit capabilities; review public exports with relay route tests."
+tests = ["tests/server/test_relay_mount.py", "tests/server/test_relay_audit_routes.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0074"
@@ -987,7 +955,7 @@ tests = ["tests/unit/config/test_required_env.py", "static-analysis-inventory"]
 id = "SAE-TMP-0078"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/mcp/app.py"
@@ -996,14 +964,12 @@ peer_path = "src/mcp_server_phytomni/mcp/handlers.py"
 peer_symbol = "109:114"
 fingerprint = "sha256:4a57d42c7066ead11e72824504ea38c35100a972dea9d50d624994daf75dfac4"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.mcp.app:[776:781]\n==mcp_server_phytomni.mcp.handlers:[109:114]\n        user_query=args.user_query,\n        obs_file_list=args.obs_file_list,\n        server_dir=scratch_server_dir(chat_config, \"chat\"),\n        **chat_kwargs(chat_config, runtime.sensitive),\n        **obs_kwargs(chat_config, runtime.obs_credentials),"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The MCP app and handler modules independently bind arguments for raw/enveloped dispatch and domain handler calls. Repository owner approved this compatibility boundary on 2026-07-20."
+counterfactual = "Aliasing the argument projections would couple the raw/enveloped MCP seam to handler dispatch and make a local compatibility change cross the public boundary."
+risk = "Argument binding changes can alter validation or response envelopes; preserve app and handler characterization tests."
+tests = ["tests/server/test_mcp_app_invoke.py", "tests/server/test_mcp_app_validation.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0079"
@@ -1029,7 +995,7 @@ tests = ["tests/unit/test_result_formatting_projection.py", "static-analysis-inv
 id = "SAE-TMP-0083"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/runtime/memory/__init__.py"
@@ -1038,20 +1004,18 @@ peer_path = "src/mcp_server_phytomni/runtime/memory/models.py"
 peer_symbol = "385:392"
 fingerprint = "sha256:781cbd4798bbd051136fe6306e69070b99da317486e9f110b66c4c53f764ebd8"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.runtime.memory.__init__:[45:52]\n==mcp_server_phytomni.runtime.memory.models:[385:392]\n__all__ = [\n    \"DEFAULT_MEMORY_MAX_CONTENT_BYTES\",\n    \"DEFAULT_MEMORY_MAX_ITEMS\",\n    \"DEFAULT_MEMORY_MAX_RETRIEVAL\",\n    \"DEFAULT_MEMORY_MAX_TAG_BYTES\",\n    \"DEFAULT_MEMORY_MAX_TAGS\",\n    \"DEFAULT_MEMORY_MAX_TOTAL_BYTES\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The memory package facade intentionally re-exports policy constants independently from the memory model implementation. Repository owner approved this public boundary on 2026-07-20."
+counterfactual = "Reusing models.__all__ would expose internal memory-model symbols and make the package API depend on implementation refactors."
+risk = "Memory facade changes can break authenticated CRUD and prompt-recall consumers; preserve model and HTTP tests."
+tests = ["tests/unit/test_memory_models.py", "tests/server/test_memory_http.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0084"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/runtime/memory/__init__.py"
@@ -1060,20 +1024,18 @@ peer_path = "src/mcp_server_phytomni/runtime/memory/models.py"
 peer_symbol = "394:399"
 fingerprint = "sha256:dab91daad1dc692da89b2d3c4bedfcd081201a6cd5e592f6d9f289f0ad825f66"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.runtime.memory.__init__:[59:64]\n==mcp_server_phytomni.runtime.memory.models:[394:399]\n    \"MemoryId\",\n    \"MemoryItem\",\n    \"MemoryKind\",\n    \"MemoryPolicy\",\n    \"MemoryPolicyError\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The memory package facade intentionally re-exports public model types independently from the model module export list. Repository owner approved this public boundary on 2026-07-20."
+counterfactual = "Aliasing the facade to models.__all__ would make internal model additions externally visible and couple the memory API to implementation changes."
+risk = "Public memory type changes can break client imports and persistence contracts; review model and HTTP compatibility together."
+tests = ["tests/unit/test_memory_models.py", "tests/server/test_memory_http.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0085"
 tool = "pylint"
 rule = "R0801"
-classification = "temporary"
+classification = "structural"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/runtime/memory/__init__.py"
@@ -1082,14 +1044,12 @@ peer_path = "src/mcp_server_phytomni/runtime/memory/accessor.py"
 peer_symbol = "38:45"
 fingerprint = "sha256:02a0ef0f7f5041c275b28c1c4c24c010eae62e1de902e15478e70af3b9aa9b42"
 owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.runtime.memory.__init__:[73:79]\n==mcp_server_phytomni.runtime.memory.accessor:[38:45]\n    \"current_memory_accessor\",\n    \"get_default_memory_accessor\",\n    \"memory_accessor_context\",\n    \"memory_policy_from_config\",\n    \"resolve_memory_accessor\",\n]"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+introduced_on = 2026-07-20
+review_on = 2027-01-17
+rationale = "The memory package facade intentionally exposes accessor helpers independently from the runtime accessor implementation. Repository owner approved this runtime boundary on 2026-07-20."
+counterfactual = "Reusing accessor.__all__ would expose internal storage seams and make the memory package API depend on runtime implementation refactors."
+risk = "Accessor export changes can alter memory isolation or lifecycle entry points; preserve accessor and HTTP tests."
+tests = ["tests/unit/test_memory_accessor.py", "tests/server/test_memory_http.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0086"

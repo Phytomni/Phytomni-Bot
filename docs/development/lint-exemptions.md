@@ -73,38 +73,38 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0020` | pylint | R0801 | temporary | diagnostic | pair | scripts/static_analysis/collectors/pylint.py | 342:348 | `sha256:b1101f1725b92758ac965df2e52c683ebb72eff13f3b3441df98302e87b3eb5e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0021` | pylint | R0801 | temporary | diagnostic | pair | scripts/static_analysis/collectors/pylint.py | 101:115 | `sha256:c87f948de5cea76c38e86b5c43164ae82e0768d8fd10d71b9dd6dce1af1ed334` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0022` | pylint | R0801 | temporary | diagnostic | pair | scripts/static_analysis/collectors/source.py | 84:98 | `sha256:67feab30f45f9e474e0c786410eb52f9e3d687f54cc727e088b39882af857abd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0028` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/__init__.py | 42:47 | `sha256:04b1f52c7567afcb17be02df79c0cadd82b90a00fa8a07e06ab48b5a2dafafb8` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0029` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/agent.py | 39:44 | `sha256:db1a39a7296629412f62345cacd4a0f73d49c06d2acf3b459fe10a81dcf460dc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0040` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/planning.py | 101:107 | `sha256:1cc992aafdda044d48f51d390b1f04303cd2674f2a26b2c9b980e3a444116463` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0041` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/state.py | 114:119 | `sha256:b9c858b4756d1eeba0e3575fea150ea4750ceadcf06fb842cd871d087c87a349` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0028` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/__init__.py | 42:47 | `sha256:04b1f52c7567afcb17be02df79c0cadd82b90a00fa8a07e06ab48b5a2dafafb8` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_analyst_graph_nodes.py, tests/agents/test_analyst_routers.py, static-analysis-inventory |
+| `SAE-TMP-0029` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/agent.py | 39:44 | `sha256:db1a39a7296629412f62345cacd4a0f73d49c06d2acf3b459fe10a81dcf460dc` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_analyst_graph_nodes.py, tests/agents/test_analyst_routers.py, static-analysis-inventory |
+| `SAE-TMP-0040` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/planning.py | 101:107 | `sha256:1cc992aafdda044d48f51d390b1f04303cd2674f2a26b2c9b980e3a444116463` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_analyst_planning_helpers.py, tests/agents/test_analyst_submission_helpers.py, static-analysis-inventory |
+| `SAE-TMP-0041` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/state.py | 114:119 | `sha256:b9c858b4756d1eeba0e3575fea150ea4750ceadcf06fb842cd871d087c87a349` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_analyst_graph_io.py, tests/agents/test_data_chat_subgraph.py, tests/agents/test_data_knowledge_subgraph.py, static-analysis-inventory |
 | `SAE-TMP-0042` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 119:124 | `sha256:acc5191ff5b112c006b066722a99e000b132a80da09bc5169648a61897a5962c` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
 | `SAE-TMP-0043` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 119:130 | `sha256:f033014ca9266166d94e7a23b1371c14297738e430692fed0237a39365206613` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_brief_gene_knowledge_subgraph.py, static-analysis-inventory |
-| `SAE-TMP-0046` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py | 81:87 | `sha256:18442c096ed583a858acc579252c4b83e8736b791721a8fc1410d959d20bc96a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0047` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py | 88:95 | `sha256:585e12c9cfdc39454cc842d0f5d994977f8f4b1883badbc2c8c7540676356192` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0046` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py | 81:87 | `sha256:18442c096ed583a858acc579252c4b83e8736b791721a8fc1410d959d20bc96a` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_brief_gene_knowledge_subgraph.py, tests/agents/test_review_retrieve_fan_out.py, static-analysis-inventory |
+| `SAE-TMP-0047` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py | 88:95 | `sha256:585e12c9cfdc39454cc842d0f5d994977f8f4b1883badbc2c8c7540676356192` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_brief_gene_knowledge_subgraph.py, tests/agents/test_review_retrieve_fan_out.py, static-analysis-inventory |
 | `SAE-TMP-0052` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 106:111 | `sha256:bced20b31d1f24e53dbf50abc7462eeaaa5c709ed8fc09081f208f3992fd09bb` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
 | `SAE-TMP-0053` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 130:143 | `sha256:c09286b8f6a95ac45cc85c1daee7a3e0ca52fb6143482344b0841ba433d82290` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
 | `SAE-TMP-0054` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 61:67 | `sha256:f33cd96ed68f9985a80483c8f061112d267e9818e32b3ac5bbb2e47f31f2b2f6` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
 | `SAE-TMP-0055` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 67:76 | `sha256:250f8f011043370e361a2a149e6cd8517793e67631733c00cf8209112b9157dc` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
 | `SAE-TMP-0056` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/chat/a2ui_graph.py | 197:207 | `sha256:c2d9b397b9cf9fdf2daec3d5a3281cc05f7c974d14a938108a47e972dc4c9292` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/server/test_a2ui_actions_http.py, static-analysis-inventory |
 | `SAE-TMP-0061` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | 172:181 | `sha256:2c939f306bfc192d1b4ccf2554102891e23b77d00d43855201693dcb676bfc6b` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_deep_genome_work_items.py, static-analysis-inventory |
-| `SAE-TMP-0062` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 378:385 | `sha256:e0cd24dbe16f751325b6a9d60a10e3a8e4fe6eccfba8cb586e3df4d1aa2eb7bd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0063` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 506:518 | `sha256:eb821e4f9d43cb8e7d63842145181a1ce0917da9327a47d1b643eebf9e0bd456` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0064` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 558:567 | `sha256:0627fefe4483668befa42c7e51c26cd08660fe4b47df18739b5d4fe90ba74343` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0065` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 565:579 | `sha256:b2f685bc5dcf5396ad18b7e564ec17ea22990763b2a47f36e9c2a18ed52c5660` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0066` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 568:584 | `sha256:75d6daa79ef9e397412d70daa0a2ab61a54694ac206a3baa5519a136088e43cd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0067` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 664:694 | `sha256:aae20b708118a245d565bf4dba59ddfb08f4a2b3f5da3f168dd44d2f26201223` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0068` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/environment/agent.py | 89:96 | `sha256:412bbae97443018da3d59a4a22453b8e01b100e4a28028e36d6dbf2ee3982c7b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0069` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/environment/graph.py | 181:187 | `sha256:50c4d2220d590f4303e8987fa4ce2430000db42288370545fbcd3e29d748d315` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0071` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/shared/chat_subgraph.py | 101:142 | `sha256:e6c553359093f37502c15611b3d82295a314c4d2579ff20ffb23bab3a54980de` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0073` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/api/relay/__init__.py | 20:25 | `sha256:11110a31a61699cdd16bc8f75aa9c481305c2dad14bf2bb7471c6c45723cd27a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0062` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 378:385 | `sha256:e0cd24dbe16f751325b6a9d60a10e3a8e4fe6eccfba8cb586e3df4d1aa2eb7bd` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_design_interop.py, tests/agents/test_research_interop.py, static-analysis-inventory |
+| `SAE-TMP-0063` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 506:518 | `sha256:eb821e4f9d43cb8e7d63842145181a1ce0917da9327a47d1b643eebf9e0bd456` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_design_interop.py, tests/agents/test_research_interop.py, static-analysis-inventory |
+| `SAE-TMP-0064` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 558:567 | `sha256:0627fefe4483668befa42c7e51c26cd08660fe4b47df18739b5d4fe90ba74343` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_design_interop.py, tests/agents/test_research_interop.py, static-analysis-inventory |
+| `SAE-TMP-0065` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 565:579 | `sha256:b2f685bc5dcf5396ad18b7e564ec17ea22990763b2a47f36e9c2a18ed52c5660` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_design_interop.py, tests/agents/test_research_interop.py, static-analysis-inventory |
+| `SAE-TMP-0066` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 568:584 | `sha256:75d6daa79ef9e397412d70daa0a2ab61a54694ac206a3baa5519a136088e43cd` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_design_interop.py, tests/agents/test_research_interop.py, static-analysis-inventory |
+| `SAE-TMP-0067` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 664:694 | `sha256:aae20b708118a245d565bf4dba59ddfb08f4a2b3f5da3f168dd44d2f26201223` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_design_interop.py, tests/agents/test_research_interop.py, static-analysis-inventory |
+| `SAE-TMP-0068` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/environment/agent.py | 89:96 | `sha256:412bbae97443018da3d59a4a22453b8e01b100e4a28028e36d6dbf2ee3982c7b` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_environment_chat_subgraph.py, tests/agents/test_evolution_chat_subgraph.py, static-analysis-inventory |
+| `SAE-TMP-0069` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/environment/graph.py | 181:187 | `sha256:50c4d2220d590f4303e8987fa4ce2430000db42288370545fbcd3e29d748d315` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_environment_analyst_subgraph.py, tests/agents/test_evolution_analyst_subgraph.py, static-analysis-inventory |
+| `SAE-TMP-0071` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/shared/chat_subgraph.py | 101:142 | `sha256:e6c553359093f37502c15611b3d82295a314c4d2579ff20ffb23bab3a54980de` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_chat_subgraph_wrapper.py, tests/agents/test_knowledge_subgraph_support.py, static-analysis-inventory |
+| `SAE-TMP-0073` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/api/relay/__init__.py | 20:25 | `sha256:11110a31a61699cdd16bc8f75aa9c481305c2dad14bf2bb7471c6c45723cd27a` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/server/test_relay_mount.py, tests/server/test_relay_audit_routes.py, static-analysis-inventory |
 | `SAE-TMP-0074` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/api/relay/audit_filter.py | 27:38 | `sha256:e403f78e603f501a9592111cdd3963a7670f069c42cb5d1e1755b764d1dc32e9` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_relay_audit_filter.py, static-analysis-inventory |
 | `SAE-TMP-0075` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/config/required_env.py | 16:28 | `sha256:0a106c71d1e188f33ba116a1a15980da2ccbd8924042f13b31d0dd5df3f2585c` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/config/test_required_env.py, tests/unit/test_defaults.py, static-analysis-inventory |
 | `SAE-TMP-0076` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/config/required_env.py | 41:46 | `sha256:b181294b667a5a5e3b3cc601d177d1d5e50806e12df472c917d370454afa17f9` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/config/test_required_env.py, static-analysis-inventory |
-| `SAE-TMP-0078` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/mcp/app.py | 776:781 | `sha256:4a57d42c7066ead11e72824504ea38c35100a972dea9d50d624994daf75dfac4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0078` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/mcp/app.py | 776:781 | `sha256:4a57d42c7066ead11e72824504ea38c35100a972dea9d50d624994daf75dfac4` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/server/test_mcp_app_invoke.py, tests/server/test_mcp_app_validation.py, static-analysis-inventory |
 | `SAE-TMP-0079` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/mcp/result_formatting.py | 1148:1155 | `sha256:e30cd2c0562ade084c28cd8c70e311f403d6e4e7ba05409bd687cac3e3bacbc4` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_result_formatting_projection.py, static-analysis-inventory |
-| `SAE-TMP-0083` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 45:52 | `sha256:781cbd4798bbd051136fe6306e69070b99da317486e9f110b66c4c53f764ebd8` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0084` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 59:64 | `sha256:dab91daad1dc692da89b2d3c4bedfcd081201a6cd5e592f6d9f289f0ad825f66` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0085` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 73:79 | `sha256:02a0ef0f7f5041c275b28c1c4c24c010eae62e1de902e15478e70af3b9aa9b42` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0083` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 45:52 | `sha256:781cbd4798bbd051136fe6306e69070b99da317486e9f110b66c4c53f764ebd8` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_models.py, tests/server/test_memory_http.py, static-analysis-inventory |
+| `SAE-TMP-0084` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 59:64 | `sha256:dab91daad1dc692da89b2d3c4bedfcd081201a6cd5e592f6d9f289f0ad825f66` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_models.py, tests/server/test_memory_http.py, static-analysis-inventory |
+| `SAE-TMP-0085` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 73:79 | `sha256:02a0ef0f7f5041c275b28c1c4c24c010eae62e1de902e15478e70af3b9aa9b42` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_accessor.py, tests/server/test_memory_http.py, static-analysis-inventory |
 | `SAE-TMP-0086` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/migrations.py | 23:31 | `sha256:4f06fd5ec9e45a0c63ea3f65946f56998710e5123f0135fc1bc20ca49b9bbe3a` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_migrations.py, static-analysis-inventory |
 | `SAE-TMP-0087` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_analyst_graph_io.py | 37:60 | `sha256:7df9fed3886f917a843ce0b27b08bc06111ab61bf3f15c8d6cb7bc1c73814ba3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0092` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_brief_gene_chat_subgraph.py | 71:79 | `sha256:36c489b726b7409ac52d963563d5e3c3db3049c965e714694d291c98f53e459c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -720,26 +720,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.analyst.__init__:[42:47]
-==mcp_server_phytomni.agents.analyst.agent:[41:46]
-    "ANALYST_CONFIG_FIELD_MAP",
-    "ANALYST_SECRET_FIELD_MAP",
-    "ANALYST_SENSITIVE_FIELD_MAP",
-    "AnalystAgent",
-    "AnalystAgentsState",
+The Analyst package facade intentionally re-exports the public configuration and agent symbols independently from the implementation module. Repository owner approved this public API boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Reusing the implementation __all__ would make package import stability depend on internal exports and expose refactor drift.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Changing the facade can break downstream imports; public export changes require compatibility review.
 ```
 
 ### `SAE-TMP-0029`
@@ -747,26 +740,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.analyst.agent:[39:44]
-==mcp_server_phytomni.agents.analyst.defaults:[53:58]
-__all__ = [
-    "ANALYST_CONFIG",
-    "ANALYST_CONFIG_FIELD_MAP",
-    "ANALYST_SECRET_FIELD_MAP",
-    "ANALYST_SENSITIVE_FIELD_MAP",
+The Analyst agent and defaults modules intentionally maintain separate public export lists for runtime and configuration surfaces. Repository owner approved this public API boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Aliasing defaults.__all__ to agent.__all__ would couple independent configuration and runtime exports and make a local refactor change the other surface.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Changing either export list can break runtime or configuration imports; review the two public surfaces independently.
 ```
 
 ### `SAE-TMP-0040`
@@ -774,27 +760,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.analyst.planning:[101:107]
-==mcp_server_phytomni.agents.analyst.submission:[159:165]
-        **_shared_arun_kwargs(
-            goal_description,
-            output_dir,
-            compute_resource,
-            data_list,
-        ),
+Planning and submission wrappers share argument construction but intentionally keep independent deduplication, metadata, submit, and preset contracts. Repository owner approved this compatibility boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+A broader helper would couple planning and submission compatibility wrappers and could erase their distinct deduplication or preset behavior.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Changing the shared argument projection can alter task submission semantics; preserve separate wrapper tests and review both contracts.
 ```
 
 ### `SAE-TMP-0041`
@@ -802,26 +780,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.analyst.state:[114:119]
-==mcp_server_phytomni.agents.data.state:[70:77]
-    chat_payload: dict[str, Any] | None
-    chat_response: dict[str, Any] | None
-    pending_post_knowledge: str | None
-    knowledge_payload: dict[str, Any] | None
-    knowledge_response: dict[str, Any] | None
+Analyst and Data state TypedDicts intentionally repeat similarly named fields across independent graph contracts. Repository owner approved these separate state boundaries on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Aliasing the state fields would couple Analyst and Data reducers and make an independent graph-state change cross the agent boundary.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+State-key changes can break graph routing or persistence; update each contract with its owning graph tests.
 ```
 
 ### `SAE-TMP-0042`
@@ -869,19 +840,19 @@ State-shape changes can break fan-out routing; update the independent fixture on
 Rationale:
 
 ```text
-The BriefGene and Review graph builders independently mount the same knowledge-node boundary at src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py:[81:87] and src/mcp_server_phytomni/agents/review/agent.py:[239:245]. The shared mount helper removes only the Analyst/Data duplicate; this domain-specific pair remains under structural review.
+BriefGene and Review independently mount knowledge Send fan-out boundaries with different graph contracts. Repository owner approved this domain-specific topology boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+A generic mount would hide BriefGene and Review graph topology, worker failure redaction, reducers, node names, and downstream edges.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A shared Send mount could route or redact the wrong domain state; preserve independent graph characterization tests.
 ```
 
 ### `SAE-TMP-0047`
@@ -889,19 +860,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-The BriefGene and Review graph builders independently wire their retrieve worker and reducer after the knowledge mount at src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py:[88:95] and src/mcp_server_phytomni/agents/review/agent.py:[246:253]. Their graph-local edges remain domain-specific and are still under structural review.
+BriefGene and Review independently wire retrieve workers and reducers after their knowledge mounts. Repository owner approved this domain-specific topology boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+A generic worker/reducer helper would obscure domain-specific node names, failure redaction, reducers, and graph edges.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Changing one fan-out contract could silently alter the other agent; keep graph-local tests and review topology changes independently.
 ```
 
 ### `SAE-TMP-0052`
@@ -1029,28 +1000,19 @@ The explicit list must be updated with any intentional product-plan change and r
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.design.agent:[378:385]
-==mcp_server_phytomni.agents.research.agent:[430:437]
-                dependencies=dependencies,
-            )
-            if result is not None:
-                if result["status"] == "input_required":
-                    task_id = result.get("task_id")
-                    if not task_id:
-                        raise RuntimeError(
+Design and Research independently project interop task results into their domain states while sharing transport vocabulary. Repository owner approved this boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+A cross-domain result projection would couple Design and Research state schemas and could route input-required or failure outcomes incorrectly.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Interop status or task-id changes can affect pause/resume behavior; preserve both domain characterization suites.
 ```
 
 ### `SAE-TMP-0063`
@@ -1058,39 +1020,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.design.agent:[506:518]
-==mcp_server_phytomni.agents.research.agent:[632:650]
-                    **interop_state_update(
-                        make_interop_record(
-                            target_id=pending["target_id"],
-                            kind="a2a",
-                            capability=pending["capability"],
-                            status="input_required",
-                            latency_seconds=perf_counter() - started,
-                        )
-                    ),
-                },
-            )
-
-        async def submit_call() -> dict[str, Any]:
-            """Submit one research task and return its raw result.
-
-            Returns:
-                AnalystAgent payload with ``task_id`` and ``output_dir``.
-            """
+Design and Research independently submit interop tasks and record their own evidence updates. Repository owner approved this boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+A shared submit/evidence helper would couple capability names, state updates, and pause/resume payloads that are intentionally domain-specific.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A shared submit path could leak the wrong capability or telemetry into a domain state; retain separate interop tests.
 ```
 
 ### `SAE-TMP-0064`
@@ -1098,30 +1040,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.design.agent:[558:567]
-==mcp_server_phytomni.agents.research.agent:[679:688]
-                            "degraded",
-                            perf_counter() - started,
-                            True,
-                        )
-                    )
-                )
-            else:
-                updates.update(
-                    interop_evidence_update(
+Design and Research independently encode interop degraded and evidence updates despite similar transport calls. Repository owner approved this boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+A cross-domain degraded-update helper would couple fallback and telemetry semantics that differ between Design and Research.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Degraded outcomes are user-visible; preserve domain-specific redaction and evidence assertions.
 ```
 
 ### `SAE-TMP-0065`
@@ -1129,35 +1060,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.design.agent:[565:579]
-==mcp_server_phytomni.agents.research.agent:[772:800]
-                updates.update(
-                    interop_evidence_update(
-                        evidence,
-                        status="completed",
-                        latency_seconds=perf_counter() - started,
-                    )
-                )
-        return updates
-
-    async def resume_design_a2a(
-        self,
-        state: DigitalDesignState,
-    ) -> dict[str, Any]:
-        """Resume one paused A2A planning exchange before local dispatch."""
+Design and Research independently implement A2A resume and local-dispatch transitions with distinct state and protocol contracts. Repository owner approved this boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+A shared resume helper would couple A2A pause payloads, local fallback, and downstream dispatch behavior across the two agents.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Resume changes can lose user input or dispatch the wrong task; retain separate interop and domain workflow tests.
 ```
 
 ### `SAE-TMP-0066`
@@ -1165,32 +1080,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.design.agent:[568:584]
-==mcp_server_phytomni.agents.research.agent:[689:705]
-                        status="completed",
-                        latency_seconds=perf_counter() - started,
-                    )
-                )
-        return updates
-
-    async def resume_design_a2a(
-        self,
-        state: DigitalDesignState,
-    ) -> dict[str, Any]:
-        """Resume one paused A2A planning exchange before local dispatch."""
+Design and Research independently finalize interop evidence and completion telemetry for their own state machines. Repository owner approved this boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+A shared completion helper would hide differences in state keys, telemetry, and failure fallback between Design and Research.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Completion telemetry and degraded flags are part of the public task state; review each domain independently.
 ```
 
 ### `SAE-TMP-0067`
@@ -1198,51 +1100,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.design.agent:[664:694]
-==mcp_server_phytomni.agents.research.agent:[772:803]
-        updates.update(
-            interop_evidence_update(
-                evidence,
-                status="completed",
-                latency_seconds=perf_counter() - started,
-            )
-        )
-        return updates
-
-    async def arun(
-        self,
-        species_code: str,
-        gene_id: str,
-        **kwargs: Any,
-    ) -> dict[str, Any]:
-        """Submit protein design tasks and return task_ids.
-
-        Args:
-            species_code: Three-letter species code (e.g., "ath", "osa").
-            gene_id: Gene identifier.
-            user_id: Optional user identifier.
-            batch: Whether this is batch processing.
-            thread_id: Optional thread ID for checkpointer.
-
-        Returns:
-            Dict with task_ids on success, or error on failure.
-        """
-        return await run_analysis_graph(
-            self.app,
-            {
+Design and Research independently combine interop evidence with their domain-specific local dispatch workflows. Repository owner approved this boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+A shared orchestration helper would couple target IDs, capability names, state schemas, and fallback semantics across independent workflows.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Cross-domain orchestration changes can misroute analysis tasks; preserve separate graph and interop tests.
 ```
 
 ### `SAE-TMP-0068`
@@ -1250,28 +1120,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.environment.agent:[89:96]
-==mcp_server_phytomni.agents.evolution.agent:[151:158]
-    chat_output = await _cached_chat_app().ainvoke(
-        build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs_bag)
-    )
-    phyto_response = extract_chat_response(chat_output)
-    if not phyto_response:
-        return None
-    content = phyto_response["choices"][0]["message"]["content"]
+Environment and Evolution share chat extraction mechanics but intentionally parse different domain outputs. Repository owner approved this boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+A shared response parser would couple Environment region output and Evolution taxid output and could accept the wrong domain shape.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Chat output parsing is domain-facing; preserve independent field validation and chat-subgraph tests.
 ```
 
 ### `SAE-TMP-0069`
@@ -1279,27 +1140,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.environment.graph:[181:187]
-==mcp_server_phytomni.agents.evolution.graph:[188:194]
-        inputs.output_dir,
-        prompt_parts,
-        compute_resource,
-    ).to_payload()
-    return await submit_analyst_via_subgraph(
-        analyst_agent,
+Environment and Evolution share low-level analyst request adapters but target different identifiers, configuration, and failure routes. Repository owner approved this boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+A cross-domain dispatch helper would couple target IDs and error handling and could submit the wrong analyst task.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Dispatch changes can misroute or misreport analysis jobs; keep the two domain graph tests independent.
 ```
 
 ### `SAE-TMP-0071`
@@ -1307,19 +1160,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-The chat and knowledge subgraphs intentionally retain parallel wrapper and router seams with separate state keys at src/mcp_server_phytomni/agents/shared/chat_subgraph.py:[101:142] and src/mcp_server_phytomni/agents/shared/knowledge_subgraph.py:[126:163]. The knowledge helper added in AF-049-001 preserves the distinct router contract; this structural pair remains under review.
+Chat and Knowledge subgraphs intentionally retain parallel wrappers and routers with separate state keys and error defaults. Repository owner approved this boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Aliasing the chat and knowledge wrappers would couple independent router keys, defaults, and error semantics across public agent flows.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Subgraph wrapper changes can alter routing or fallback behavior; preserve separate wrapper and support tests.
 ```
 
 ### `SAE-TMP-0073`
@@ -1327,26 +1180,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.api.relay.__init__:[20:25]
-==mcp_server_phytomni.api.relay.audit:[28:33]
-__all__ = [
-    "RelayAuditRecord",
-    "RelayAuditQuery",
-    "RelayAuditStore",
-    "get_audit_store",
+The relay package facade intentionally exposes a narrow public API independently from the audit implementation exports. Repository owner approved this security-facing boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Reusing the audit module __all__ would expose internal relay-audit symbols and make the public security boundary depend on implementation refactors.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Facade drift can expose or hide relay audit capabilities; review public exports with relay route tests.
 ```
 
 ### `SAE-TMP-0074`
@@ -1414,26 +1260,19 @@ A stale expected tuple can block a legitimate deployment change; update it with 
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.mcp.app:[776:781]
-==mcp_server_phytomni.mcp.handlers:[109:114]
-        user_query=args.user_query,
-        obs_file_list=args.obs_file_list,
-        server_dir=scratch_server_dir(chat_config, "chat"),
-        **chat_kwargs(chat_config, runtime.sensitive),
-        **obs_kwargs(chat_config, runtime.obs_credentials),
+The MCP app and handler modules independently bind arguments for raw/enveloped dispatch and domain handler calls. Repository owner approved this compatibility boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Aliasing the argument projections would couple the raw/enveloped MCP seam to handler dispatch and make a local compatibility change cross the public boundary.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Argument binding changes can alter validation or response envelopes; preserve app and handler characterization tests.
 ```
 
 ### `SAE-TMP-0079`
@@ -1461,28 +1300,19 @@ Consumers depend on canonical placement; any intentional field change requires c
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.runtime.memory.__init__:[45:52]
-==mcp_server_phytomni.runtime.memory.models:[385:392]
-__all__ = [
-    "DEFAULT_MEMORY_MAX_CONTENT_BYTES",
-    "DEFAULT_MEMORY_MAX_ITEMS",
-    "DEFAULT_MEMORY_MAX_RETRIEVAL",
-    "DEFAULT_MEMORY_MAX_TAG_BYTES",
-    "DEFAULT_MEMORY_MAX_TAGS",
-    "DEFAULT_MEMORY_MAX_TOTAL_BYTES",
+The memory package facade intentionally re-exports policy constants independently from the memory model implementation. Repository owner approved this public boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Reusing models.__all__ would expose internal memory-model symbols and make the package API depend on implementation refactors.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Memory facade changes can break authenticated CRUD and prompt-recall consumers; preserve model and HTTP tests.
 ```
 
 ### `SAE-TMP-0084`
@@ -1490,26 +1320,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.runtime.memory.__init__:[59:64]
-==mcp_server_phytomni.runtime.memory.models:[394:399]
-    "MemoryId",
-    "MemoryItem",
-    "MemoryKind",
-    "MemoryPolicy",
-    "MemoryPolicyError",
+The memory package facade intentionally re-exports public model types independently from the model module export list. Repository owner approved this public boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Aliasing the facade to models.__all__ would make internal model additions externally visible and couple the memory API to implementation changes.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Public memory type changes can break client imports and persistence contracts; review model and HTTP compatibility together.
 ```
 
 ### `SAE-TMP-0085`
@@ -1517,27 +1340,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-Similar lines in 2 files
-==mcp_server_phytomni.runtime.memory.__init__:[73:79]
-==mcp_server_phytomni.runtime.memory.accessor:[38:45]
-    "current_memory_accessor",
-    "get_default_memory_accessor",
-    "memory_accessor_context",
-    "memory_policy_from_config",
-    "resolve_memory_accessor",
-]
+The memory package facade intentionally exposes accessor helpers independently from the runtime accessor implementation. Repository owner approved this runtime boundary on 2026-07-20.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Reusing accessor.__all__ would expose internal storage seams and make the memory package API depend on runtime implementation refactors.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Accessor export changes can alter memory isolation or lifecycle entry points; preserve accessor and HTTP tests.
 ```
 
 ### `SAE-TMP-0086`
