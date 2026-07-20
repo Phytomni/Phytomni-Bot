@@ -101,7 +101,10 @@ from ..config.defaults import (
 )
 from ..config.settings import SensitiveConfig
 from ..interop.a2a_discovery import discover_external_a2a_capabilities
-from ..interop.cache import DiscoveryCache
+from ..interop.cache import (
+    DiscoveryCache,
+    get_or_create_discovery_cache,
+)
 from ..interop.capabilities import (
     DiscoveryError,
     DiscoveryResult,
@@ -2650,13 +2653,11 @@ async def _discover_interop_targets(
 
     async def _one(target_id: str) -> DiscoveryResult:
         target = registry.require_target(target_id)
-        cache = caches.get(target.id)
-        if cache is None:
-            cache = DiscoveryCache(
-                ttl_seconds=target.discovery_ttl_seconds,
-                max_entries=ApiConfig().INTEROP_CACHE_MAX_ENTRIES,
-            )
-            caches[target.id] = cache
+        cache = get_or_create_discovery_cache(
+            caches,
+            target,
+            max_entries=ApiConfig().INTEROP_CACHE_MAX_ENTRIES,
+        )
         return await _discover_interop_target(
             target,
             registry=registry,

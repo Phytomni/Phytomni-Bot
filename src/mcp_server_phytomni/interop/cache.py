@@ -15,11 +15,12 @@ from __future__ import annotations
 import asyncio
 import math
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
 from .capabilities import DiscoveryError, DiscoveryResult
+from .models import InteropTarget
 
 DiscoveryLoader = Callable[[str], Awaitable[DiscoveryResult]]
 DEFAULT_MAX_ENTRIES = 256
@@ -174,8 +175,26 @@ def _validate_key(target_id: Any) -> None:
         raise ValueError("target_id must be a non-empty string")
 
 
+def get_or_create_discovery_cache(
+    caches: MutableMapping[str, DiscoveryCache],
+    target: InteropTarget,
+    *,
+    max_entries: int,
+) -> DiscoveryCache:
+    """Reuse or create one bounded discovery cache for a target."""
+    cache = caches.get(target.id)
+    if cache is None:
+        cache = DiscoveryCache(
+            ttl_seconds=target.discovery_ttl_seconds,
+            max_entries=max_entries,
+        )
+        caches[target.id] = cache
+    return cache
+
+
 __all__ = [
     "DEFAULT_MAX_ENTRIES",
     "DiscoveryCache",
     "DiscoveryLoader",
+    "get_or_create_discovery_cache",
 ]

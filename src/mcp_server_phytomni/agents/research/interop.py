@@ -30,7 +30,10 @@ from ...interop.a2a_discovery import (
     discover_external_a2a_capabilities,
 )
 from ...interop.a2a_mapping import ExternalA2AEvent
-from ...interop.cache import DiscoveryCache
+from ...interop.cache import (
+    DiscoveryCache,
+    get_or_create_discovery_cache,
+)
 from ...interop.capabilities import (
     DiscoveryResult,
     InteropCapability,
@@ -236,13 +239,11 @@ async def _discover_target(
     target = _target_for(registry, target_id)
     if target is None or target.kind != "mcp":
         return DiscoveryResult()
-    cache = caches.get(target.id)
-    if cache is None:
-        cache = DiscoveryCache(
-            ttl_seconds=target.discovery_ttl_seconds,
-            max_entries=ApiConfig().INTEROP_CACHE_MAX_ENTRIES,
-        )
-        caches[target.id] = cache
+    cache = get_or_create_discovery_cache(
+        caches,
+        target,
+        max_entries=ApiConfig().INTEROP_CACHE_MAX_ENTRIES,
+    )
     return await discover(
         target.id,
         registry=registry,

@@ -880,28 +880,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0070"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/agents/research/interop.py"
-symbol = "238:245"
-peer_path = "src/mcp_server_phytomni/api/app.py"
-peer_symbol = "2652:2659"
-fingerprint = "sha256:5100104b2803ff4bfed6614c72a1e1bdd6c12912c00e954b9f70e3317834d541"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.research.interop:[238:245]\n==mcp_server_phytomni.api.app:[2652:2659]\n        cache = caches.get(target.id)\n        if cache is None:\n            cache = DiscoveryCache(\n                ttl_seconds=target.discovery_ttl_seconds,\n                max_entries=ApiConfig().INTEROP_CACHE_MAX_ENTRIES,\n            )\n            caches[target.id] = cache"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0071"
 tool = "pylint"
 rule = "R0801"

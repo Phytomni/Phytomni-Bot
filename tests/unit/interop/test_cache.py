@@ -10,12 +10,16 @@ import asyncio
 
 import pytest
 
-from mcp_server_phytomni.interop.cache import DiscoveryCache
+from mcp_server_phytomni.interop.cache import (
+    DiscoveryCache,
+    get_or_create_discovery_cache,
+)
 from mcp_server_phytomni.interop.capabilities import (
     DiscoveryError,
     DiscoveryResult,
     InteropCapability,
 )
+from mcp_server_phytomni.interop.models import MCPStdioTarget
 
 pytestmark = pytest.mark.unit
 
@@ -48,6 +52,35 @@ def _result(target_id: str = "peer-cache") -> DiscoveryResult:
             ),
         )
     )
+
+
+def test_cache_factory_reuses_one_cache_per_target() -> None:
+    """The shared factory preserves injected per-target cache identity."""
+    caches: dict[str, DiscoveryCache] = {}
+    target = MCPStdioTarget.model_validate(
+        {
+            "id": "peer-cache",
+            "kind": "mcp",
+            "transport": "stdio",
+            "command": "/opt/phytomni/bin/mcp-peer",
+            "allowed_tools": ["lookup"],
+            "discovery_ttl_seconds": 30,
+        }
+    )
+
+    first = get_or_create_discovery_cache(
+        caches,
+        target,
+        max_entries=4,
+    )
+    second = get_or_create_discovery_cache(
+        caches,
+        target,
+        max_entries=1,
+    )
+
+    assert first is second
+    assert caches == {"peer-cache": first}
 
 
 async def test_success_is_cached_until_monotonic_expiry() -> None:

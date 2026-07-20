@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `211`
+- Authorized records: `210`
 
 ## Informational counts
 
@@ -23,7 +23,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:prop-decorator`                                             |       1 |
 | `pylint:C0103`                                                    |       1 |
 | `pylint:C0116`                                                    |       1 |
-| `pylint:R0801`                                                    |      83 |
+| `pylint:R0801`                                                    |      82 |
 | `pylint:R0903`                                                    |       7 |
 | `pylint:R0913`                                                    |       1 |
 | `pylint:R0917`                                                    |       1 |
@@ -95,7 +95,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0067` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 664:694 | `sha256:aae20b708118a245d565bf4dba59ddfb08f4a2b3f5da3f168dd44d2f26201223` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0068` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/environment/agent.py | 89:96 | `sha256:412bbae97443018da3d59a4a22453b8e01b100e4a28028e36d6dbf2ee3982c7b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0069` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/environment/graph.py | 181:187 | `sha256:50c4d2220d590f4303e8987fa4ce2430000db42288370545fbcd3e29d748d315` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0070` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/research/interop.py | 238:245 | `sha256:5100104b2803ff4bfed6614c72a1e1bdd6c12912c00e954b9f70e3317834d541` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0071` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/agents/shared/chat_subgraph.py | 101:142 | `sha256:e6c553359093f37502c15611b3d82295a314c4d2579ff20ffb23bab3a54980de` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0073` | pylint | R0801 | temporary | diagnostic | pair | src/mcp_server_phytomni/api/relay/__init__.py | 20:25 | `sha256:11110a31a61699cdd16bc8f75aa9c481305c2dad14bf2bb7471c6c45723cd27a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0074` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/api/relay/audit_filter.py | 27:38 | `sha256:e403f78e603f501a9592111cdd3963a7670f069c42cb5d1e1755b764d1dc32e9` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_relay_audit_filter.py, static-analysis-inventory |
@@ -1289,35 +1288,6 @@ Similar lines in 2 files
     ).to_payload()
     return await submit_analyst_via_subgraph(
         analyst_agent,
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0070`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==mcp_server_phytomni.agents.research.interop:[238:245]
-==mcp_server_phytomni.api.app:[2652:2659]
-        cache = caches.get(target.id)
-        if cache is None:
-            cache = DiscoveryCache(
-                ttl_seconds=target.discovery_ttl_seconds,
-                max_entries=ApiConfig().INTEROP_CACHE_MAX_ENTRIES,
-            )
-            caches[target.id] = cache
 ```
 
 Counterfactual:
