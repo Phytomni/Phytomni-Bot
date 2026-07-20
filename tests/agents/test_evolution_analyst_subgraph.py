@@ -21,6 +21,10 @@ from mcp_server_phytomni.agents.evolution.graph import (
     submit_evolution_task_node,
 )
 from mcp_server_phytomni.agents.evolution.state import EvolutionState
+from mcp_server_phytomni.agents.shared.analysis_requests import (
+    AnalystAnalysisRequest,
+    build_analyst_analysis_request,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -126,4 +130,31 @@ async def test_submit_evolution_subgraph_request_carries_target_and_polling(
     assert request["analysis_type"] == "evolution_analysis"
     assert request["target_id"] == "AT1G01010"
     assert request["prompt_parts"][0] == "prompt-stub"
+    assert (
+        request["output_dir"] == evolution_graph.DEEP_GENOME_CONFIG.OUTPUT_DIR
+    )
+    assert request["compute_resource"] == "medium"
+    assert request["prompt_parts"][1] == "prompt-stub"
+    assert request["prompt_parts"][2] == ["obs://data/evo-1"]
     assert call_args.kwargs["is_polling"] is False
+
+
+def test_analysis_request_builder_keeps_evolution_fields_domain_neutral() -> (
+    None
+):
+    """The same builder preserves an evolution target without branching."""
+    request = build_analyst_analysis_request(
+        analysis_type="evolution_analysis",
+        target_id="AT1G01010",
+        output_dir="obs://run/evolution-out",
+        prompt_parts=("goal", "meta", {"obs://data/evo-1": "evolution"}),
+        compute_resource="medium",
+    )
+
+    assert isinstance(request, AnalystAnalysisRequest)
+    assert request.to_payload()["target_id"] == "AT1G01010"
+    assert request.to_payload()["prompt_parts"] == (
+        "goal",
+        "meta",
+        {"obs://data/evo-1": "evolution"},
+    )

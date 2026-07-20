@@ -19,6 +19,10 @@ from typing import Any, Literal, NamedTuple
 from ...config.settings import get_sensitive_config
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
 from ..analyst.submission import _build_submit_agent
+from ..shared.analysis_requests import (
+    build_analyst_analysis_request,
+    build_analyst_prompt_parts,
+)
 from . import agent
 from .agent import (
     DEEP_GENOME_CONFIG,
@@ -173,19 +177,19 @@ async def _submit_evolution_via_subgraph(
             "AnalystAgent.evolution_submit",
         )
     )
-    request = {
-        "analysis_type": "evolution_analysis",
-        "target_id": gene_id,
-        "output_dir": inputs.output_dir,
-        "prompt_parts": (
-            inputs.goal_description,
-            inputs.meta,
-            inputs.data_list,
-        ),
-        "compute_resource": submit_kwargs.get(
-            "compute_resource", DEEP_GENOME_CONFIG.COMPUTE_RESOURCE
-        ),
-    }
+    compute_resource = submit_kwargs.get(
+        "compute_resource", DEEP_GENOME_CONFIG.COMPUTE_RESOURCE
+    )
+    prompt_parts = build_analyst_prompt_parts(
+        inputs.goal_description, inputs.meta, inputs.data_list
+    )
+    request = build_analyst_analysis_request(
+        "evolution_analysis",
+        gene_id,
+        inputs.output_dir,
+        prompt_parts,
+        compute_resource,
+    ).to_payload()
     return await submit_analyst_via_subgraph(
         analyst_agent,
         DEEP_GENOME_CONFIG,

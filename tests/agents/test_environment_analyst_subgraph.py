@@ -20,6 +20,10 @@ import pytest
 from mcp_server_phytomni.agents.environment import graph as environment_graph
 from mcp_server_phytomni.agents.environment.graph import submit_vci_task_node
 from mcp_server_phytomni.agents.environment.state import EnvironmentState
+from mcp_server_phytomni.agents.shared.analysis_requests import (
+    AnalystAnalysisRequest,
+    build_analyst_analysis_request,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -127,4 +131,31 @@ async def test_submit_vci_subgraph_request_carries_target_and_polling(
     assert request["analysis_type"] == "vci_analysis"
     assert request["target_id"] == "110000-110100-110108"
     assert request["prompt_parts"][0] == "prompt-stub"
+    assert (
+        request["output_dir"]
+        == environment_graph.ENVIRONMENT_CONFIG.OUTPUT_DIR
+    )
+    assert request["compute_resource"] == "large"
+    assert request["prompt_parts"][1] == "prompt-stub"
+    assert request["prompt_parts"][2] == ["obs://data/vci-1"]
     assert call_args.kwargs["is_polling"] is False
+
+
+def test_analysis_request_builder_keeps_the_shared_payload_immutable() -> None:
+    """Build one typed payload with the exact adapter-facing shape."""
+    request = build_analyst_analysis_request(
+        analysis_type="vci_analysis",
+        target_id="110000-110100-110108",
+        output_dir="obs://run/vci-out",
+        prompt_parts=("goal", "meta", {"obs://data/vci-1": "vci"}),
+        compute_resource="large",
+    )
+
+    assert isinstance(request, AnalystAnalysisRequest)
+    assert request.to_payload() == {
+        "analysis_type": "vci_analysis",
+        "target_id": "110000-110100-110108",
+        "output_dir": "obs://run/vci-out",
+        "prompt_parts": ("goal", "meta", {"obs://data/vci-1": "vci"}),
+        "compute_resource": "large",
+    }
