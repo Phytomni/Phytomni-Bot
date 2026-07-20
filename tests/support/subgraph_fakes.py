@@ -8,18 +8,29 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from copy import deepcopy
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Literal, TypedDict
 
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from mcp_server_phytomni.agents.deep_genome.coordinator import WorkItemOutcome
 
 __all__ = [
+    "ANALYST_CHAT_MOUNT_TOPOLOGY",
+    "BRIEF_GENE_CHAT_MOUNT_TOPOLOGY",
+    "BRIEF_GENE_STATE_PREAMBLE_FIELDS",
+    "ChatMountTopology",
+    "DATA_CHAT_MOUNT_TOPOLOGY",
+    "assert_agent_chat_mount_topology",
+    "assert_chat_mount_topology",
     "DEEP_GENOME_GENERIC_NODE_NAMES",
+    "KNOWLEDGE_CHAT_MOUNT_TOPOLOGY",
     "RecordingMountApp",
     "RecordingKnowledgeApp",
+    "REVIEW_CHAT_MOUNT_TOPOLOGY",
     "assert_degraded_mount",
     "assert_subgraph_prefixes",
     "install_knowledge_app",
@@ -42,6 +53,360 @@ DEEP_GENOME_GENERIC_NODE_NAMES = (
     "smoc_node",
     "protein_structure_node",
 )
+
+
+@dataclass(frozen=True)
+class ChatMountTopology:
+    """Expected public and structural contract for one chat-mount graph."""
+
+    input_fields: set[str]
+    required_input_fields: set[str]
+    output_fields: set[str]
+    expected_nodes: set[str]
+    expected_edges: set[tuple[str, str, bool]]
+
+
+ANALYST_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
+    input_fields={
+        "query",
+        "goal_description",
+        "preset_plan",
+        "data_list",
+        "obs_file_list",
+        "compute_resource",
+        "output_dir",
+        "is_polling",
+        "is_auto_select",
+        "is_preset_plan",
+    },
+    required_input_fields={"query"},
+    output_fields={
+        "task_id",
+        "output_dir",
+        "job_name",
+        "compute_resource",
+        "plan",
+        "tool_usages",
+        "task_status",
+        "goal_description",
+        "method_context",
+        "plan_feedback",
+        "plan_retries",
+        "extracted_tools",
+        "error_detail",
+    },
+    expected_nodes={
+        "__end__",
+        "__start__",
+        "chat",
+        "check_post_node",
+        "check_prep_node",
+        "data_select_post_node",
+        "data_select_prep_node",
+        "knowledge",
+        "method_retrieve_post_node",
+        "method_retrieve_prep_node",
+        "parse_query_post_node",
+        "parse_query_prep_node",
+        "plan_post_node",
+        "plan_prep_node",
+        "pooling_node",
+        "submit_node",
+        "tool_extract_post_node",
+        "tool_extract_prep_node",
+        "tool_retrieve_node",
+    },
+    expected_edges={
+        ("__start__", "parse_query_prep_node", False),
+        ("chat", "check_post_node", True),
+        ("chat", "data_select_post_node", True),
+        ("chat", "parse_query_post_node", True),
+        ("chat", "plan_post_node", True),
+        ("chat", "tool_extract_post_node", True),
+        ("check_post_node", "plan_prep_node", True),
+        ("check_post_node", "tool_extract_prep_node", True),
+        ("check_prep_node", "chat", True),
+        ("check_prep_node", "check_post_node", True),
+        ("data_select_post_node", "method_retrieve_prep_node", True),
+        ("data_select_post_node", "tool_extract_prep_node", True),
+        ("data_select_prep_node", "chat", False),
+        ("knowledge", "method_retrieve_post_node", True),
+        ("method_retrieve_post_node", "plan_prep_node", False),
+        ("method_retrieve_prep_node", "knowledge", False),
+        ("parse_query_post_node", "data_select_prep_node", True),
+        ("parse_query_post_node", "method_retrieve_prep_node", True),
+        ("parse_query_post_node", "tool_extract_prep_node", True),
+        ("parse_query_prep_node", "chat", True),
+        ("parse_query_prep_node", "parse_query_post_node", True),
+        ("plan_post_node", "check_prep_node", False),
+        ("plan_prep_node", "chat", False),
+        ("pooling_node", "__end__", True),
+        ("pooling_node", "pooling_node", True),
+        ("submit_node", "__end__", True),
+        ("submit_node", "pooling_node", True),
+        ("tool_extract_post_node", "tool_retrieve_node", False),
+        ("tool_extract_prep_node", "chat", False),
+        ("tool_retrieve_node", "submit_node", False),
+    },
+)
+
+
+BRIEF_GENE_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
+    input_fields={"user_query", "is_follow_up"},
+    required_input_fields={"user_query"},
+    output_fields={
+        "gene_id",
+        "species_code",
+        "go_string",
+        "kegg_string",
+        "interpro_string",
+        "description_string",
+        "gene_structure_string",
+        "orthologs_data",
+        "paralogs_data",
+        "interaction_data",
+        "section1_markdown",
+        "section2_markdown",
+        "section3_markdown",
+        "section4_markdown",
+        "introduction_report",
+        "retrieved_docs",
+        "final_response",
+        "follow_up_questions",
+    },
+    expected_nodes={
+        "__end__",
+        "__start__",
+        "chat",
+        "fetch_annotation_node",
+        "fetch_homology_interactions_node",
+        "follow_up_post_node",
+        "follow_up_prep_node",
+        "introduction_node",
+        "query_judge_node",
+        "render_node",
+        "retrieve_prep_tasks_node",
+        "retrieve_reduce_node",
+        "retrieve_worker_node",
+        "section_application_node",
+        "section_cloning_node",
+        "section_discovery_node",
+        "section_functional_node",
+    },
+    expected_edges={
+        ("__start__", "query_judge_node", False),
+        ("chat", "follow_up_post_node", True),
+        ("fetch_annotation_node", "retrieve_prep_tasks_node", False),
+        ("fetch_homology_interactions_node", "__end__", False),
+        ("follow_up_post_node", "__end__", False),
+        ("follow_up_prep_node", "chat", False),
+        ("introduction_node", "render_node", False),
+        ("query_judge_node", "fetch_annotation_node", True),
+        ("query_judge_node", "fetch_homology_interactions_node", False),
+        ("query_judge_node", "retrieve_prep_tasks_node", True),
+        ("render_node", "__end__", True),
+        ("render_node", "follow_up_prep_node", True),
+        ("retrieve_prep_tasks_node", "retrieve_worker_node", True),
+        ("retrieve_reduce_node", "section_application_node", False),
+        ("retrieve_reduce_node", "section_cloning_node", False),
+        ("retrieve_reduce_node", "section_discovery_node", False),
+        ("retrieve_reduce_node", "section_functional_node", False),
+        ("retrieve_worker_node", "retrieve_reduce_node", False),
+        ("section_application_node", "introduction_node", False),
+        ("section_cloning_node", "introduction_node", False),
+        ("section_discovery_node", "introduction_node", False),
+        ("section_functional_node", "introduction_node", False),
+    },
+)
+
+BRIEF_GENE_STATE_PREAMBLE_FIELDS = {
+    "orthologs_data",
+    "paralogs_data",
+    "interaction_data",
+    "ortholog_count",
+    "ortholog_species_count",
+    "paralog_count",
+    "interaction_count",
+    "cross_species_alias_count",
+    "cross_species_alias_species_count",
+    "gene_structure_string",
+    "section1_markdown",
+    "section2_markdown",
+    "section3_markdown",
+    "section4_markdown",
+    "introduction_report",
+    "gene_profile_completed_branches",
+}
+
+
+DATA_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
+    input_fields={"user_query", "is_rewrite"},
+    required_input_fields={"user_query"},
+    output_fields={"final_response"},
+    expected_nodes={
+        "__end__",
+        "__start__",
+        "chat",
+        "knowledge",
+        "retrieve_post_node",
+        "retrieve_prep_node",
+        "rewrite_post_node",
+        "rewrite_prep_node",
+        "search_node",
+    },
+    expected_edges={
+        ("__start__", "retrieve_prep_node", True),
+        ("__start__", "search_node", True),
+        ("chat", "rewrite_post_node", False),
+        ("knowledge", "retrieve_post_node", True),
+        ("retrieve_post_node", "rewrite_prep_node", False),
+        ("retrieve_prep_node", "knowledge", False),
+        ("rewrite_post_node", "search_node", False),
+        ("rewrite_prep_node", "chat", False),
+        ("search_node", "__end__", False),
+    },
+)
+
+
+KNOWLEDGE_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
+    input_fields={
+        "user_query",
+        "obs_file_list",
+        "repo_id_dict",
+        "is_generate",
+        "is_follow_up",
+    },
+    required_input_fields={"user_query"},
+    output_fields={"retrieved_docs", "final_response"},
+    expected_nodes={
+        "__end__",
+        "__start__",
+        "chat",
+        "follow_up_post_node",
+        "follow_up_prep_node",
+        "generate_post_node",
+        "generate_prep_node",
+        "process_files_node",
+        "retrieve_node",
+    },
+    expected_edges={
+        ("__start__", "process_files_node", True),
+        ("__start__", "retrieve_node", True),
+        ("chat", "follow_up_post_node", True),
+        ("chat", "generate_post_node", True),
+        ("follow_up_post_node", "__end__", False),
+        ("follow_up_prep_node", "chat", False),
+        ("generate_post_node", "__end__", True),
+        ("generate_post_node", "follow_up_prep_node", True),
+        ("generate_prep_node", "chat", False),
+        ("process_files_node", "retrieve_node", False),
+        ("retrieve_node", "__end__", True),
+        ("retrieve_node", "generate_prep_node", True),
+    },
+)
+
+
+REVIEW_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
+    input_fields={"original_user_query", "obs_file_list"},
+    required_input_fields={"original_user_query"},
+    output_fields={"final_response", "summary_content"},
+    expected_nodes={
+        "__end__",
+        "__start__",
+        "approval_node",
+        "chat",
+        "draft_dispatch",
+        "draft_reduce_node",
+        "draft_worker_node",
+        "follow_up_post_node",
+        "follow_up_prep_node",
+        "plan_query_post_node",
+        "plan_query_prep_node",
+        "retrieve_dispatch",
+        "retrieve_reduce_node",
+        "retrieve_worker_node",
+        "review_results_dispatch",
+        "review_results_reduce_node",
+        "review_results_worker_node",
+        "revised_dispatch",
+        "revised_reduce_node",
+        "revised_worker_node",
+        "summary_post_node",
+        "summary_prep_node",
+    },
+    expected_edges={
+        ("__start__", "plan_query_prep_node", False),
+        ("approval_node", "follow_up_prep_node", True),
+        ("approval_node", "summary_prep_node", True),
+        ("chat", "follow_up_post_node", True),
+        ("chat", "plan_query_post_node", True),
+        ("chat", "summary_post_node", True),
+        ("draft_dispatch", "draft_worker_node", True),
+        ("draft_reduce_node", "review_results_dispatch", False),
+        ("draft_worker_node", "draft_reduce_node", False),
+        ("follow_up_post_node", "__end__", False),
+        ("follow_up_prep_node", "chat", False),
+        ("plan_query_post_node", "retrieve_dispatch", False),
+        ("plan_query_prep_node", "chat", False),
+        ("retrieve_dispatch", "retrieve_worker_node", True),
+        ("retrieve_reduce_node", "draft_dispatch", False),
+        ("retrieve_worker_node", "retrieve_reduce_node", False),
+        ("review_results_dispatch", "review_results_worker_node", True),
+        ("review_results_reduce_node", "revised_dispatch", False),
+        ("review_results_worker_node", "review_results_reduce_node", False),
+        ("revised_dispatch", "revised_worker_node", True),
+        ("revised_reduce_node", "summary_prep_node", False),
+        ("revised_worker_node", "revised_reduce_node", False),
+        ("summary_post_node", "approval_node", False),
+        ("summary_prep_node", "chat", False),
+    },
+)
+
+
+def assert_chat_mount_topology(
+    app: Any,
+    checkpointer: Any,
+    topology: ChatMountTopology,
+) -> None:
+    """Assert the public and structural contract of a chat-mount graph.
+
+    The five consumer graphs intentionally keep different state schemas and
+    routes, but their shared ``chat`` mount must remain visible and
+    checkpointer-backed. Keeping the assertions here makes each consumer test
+    declare only its own contract data instead of duplicating inspection code.
+    """
+    input_schema = app.get_input_schema().model_json_schema()
+    definitions = input_schema.get("$defs", {})
+    assert len(definitions) == 1
+    input_definition = next(iter(definitions.values()))
+    assert set(input_definition["properties"]) == topology.input_fields
+    assert (
+        set(input_definition.get("required", ()))
+        == topology.required_input_fields
+    )
+
+    output_schema = app.get_output_schema().model_json_schema()
+    assert set(output_schema["properties"]) == topology.output_fields
+
+    graph = app.get_graph()
+    assert {
+        node.id for node in graph.nodes.values()
+    } == topology.expected_nodes
+    assert {
+        (edge.source, edge.target, edge.conditional) for edge in graph.edges
+    } == topology.expected_edges
+
+    xray_nodes = app.get_graph(xray=True).nodes
+    assert any(name.startswith("chat:") for name in xray_nodes)
+    assert isinstance(checkpointer, InMemorySaver)
+
+
+def assert_agent_chat_mount_topology(
+    agent: Any,
+    topology: ChatMountTopology,
+) -> None:
+    """Apply a topology contract to an agent's app and checkpoint."""
+    assert_chat_mount_topology(agent.app, agent.checkpointer, topology)
 
 
 class _MountState(TypedDict, total=False):

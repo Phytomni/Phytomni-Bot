@@ -6,7 +6,7 @@
 
 The three single-shot chat sites (``plan_query`` / ``summary`` /
 ``follow_up``) route through prep + post pairs surrounding a single
-shared chat node registered via ``add_node`` from the
+shared chat node registered via ``mount_chat_node`` from the
 ``agents/shared/chat_subgraph`` factory.
 """
 
@@ -23,9 +23,36 @@ from tests.support.review_fan_out import (
     plan_query_state,
     review_summary_state,
 )
-from tests.support.subgraph_fakes import assert_subgraph_prefixes
+from tests.support.subgraph_fakes import (
+    REVIEW_CHAT_MOUNT_TOPOLOGY,
+    assert_chat_mount_topology,
+    assert_subgraph_prefixes,
+)
 
 pytestmark = pytest.mark.agent
+
+
+def test_compiled_graph_preserves_chat_mount_topology() -> None:
+    """Pin Review's public schema, routes, xray, and checkpointer contract."""
+    agent = build_review_agent()
+    assert_chat_mount_topology(
+        agent.app,
+        agent.checkpointer,
+        REVIEW_CHAT_MOUNT_TOPOLOGY,
+    )
+
+    assert (
+        agent.route_after_approval(
+            cast(DeepResearchState, {"approval_decision": {"approved": True}})
+        )
+        == "follow_up_prep_node"
+    )
+    assert (
+        agent.route_after_approval(
+            cast(DeepResearchState, {"approval_decision": {}})
+        )
+        == "summary_prep_node"
+    )
 
 
 # ---------------------------------------------------------------------------

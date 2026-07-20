@@ -6,7 +6,7 @@
 
 The ``generate`` and ``follow_up`` chat calls route through prep +
 post pairs surrounding a single shared chat node registered via
-``add_node`` from the ``agents/shared/chat_subgraph`` factory.
+``mount_chat_node`` from the ``agents/shared/chat_subgraph`` factory.
 """
 
 from __future__ import annotations
@@ -22,6 +22,10 @@ from mcp_server_phytomni.agents.knowledge.state import (
 )
 from mcp_server_phytomni.config.defaults import KnowledgeConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.subgraph_fakes import (
+    KNOWLEDGE_CHAT_MOUNT_TOPOLOGY,
+    assert_chat_mount_topology,
+)
 
 from ._subgraph_branch_fakes import install_chat_subgraph_mocks
 
@@ -90,6 +94,48 @@ def _minimal_follow_up_state() -> KnowledgeState:
                 "choices": [{"message": {"content": "primary answer body"}}]
             },
         },
+    )
+
+
+def test_compiled_graph_preserves_chat_mount_topology() -> None:
+    """Pin Knowledge's schema, routes, xray, and checkpointer contract."""
+    agent = _build_agent()
+    assert_chat_mount_topology(
+        agent.app,
+        agent.checkpointer,
+        KNOWLEDGE_CHAT_MOUNT_TOPOLOGY,
+    )
+
+    assert (
+        agent.route_start(
+            cast(KnowledgeState, {"obs_file_list": ["obs://file"]})
+        )
+        == "process_files_node"
+    )
+    assert agent.route_start(cast(KnowledgeState, {"obs_file_list": []})) == (
+        "retrieve_node"
+    )
+    assert (
+        agent.route_after_retrieve(cast(KnowledgeState, {"is_generate": True}))
+        == "generate_node"
+    )
+    assert (
+        agent.route_after_retrieve(
+            cast(KnowledgeState, {"is_generate": False})
+        )
+        == "__end__"
+    )
+    assert (
+        agent.route_after_generate(
+            cast(KnowledgeState, {"is_follow_up": True})
+        )
+        == "follow_up_node"
+    )
+    assert (
+        agent.route_after_generate(
+            cast(KnowledgeState, {"is_follow_up": False})
+        )
+        == "__end__"
     )
 
 

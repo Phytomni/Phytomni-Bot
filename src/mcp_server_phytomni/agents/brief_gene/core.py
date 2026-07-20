@@ -35,7 +35,7 @@ from ..knowledge.agent import KnowledgeAgent
 from ..knowledge.state import KnowledgeInput, KnowledgeOutput, KnowledgeState
 from ..shared.chat_subgraph import (
     make_chat_after_router,
-    make_chat_node_wrapper,
+    mount_chat_node,
 )
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import build_knowledge_app
@@ -264,16 +264,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         workflow.add_node("render_node", _render_preamble_async_node)
         workflow.add_node("follow_up_prep_node", self.follow_up_prep_node)
         workflow.add_node("follow_up_post_node", self.follow_up_post_node)
-        workflow.add_node(
-            "chat",
-            make_chat_node_wrapper(
-                build_input_fn=lambda state: state["chat_payload"],
-                extract_output_fn=lambda chat_output: (
-                    chat_output.get("response") or {}
-                ),
-                response_key="chat_response",
-            ),
-        )
+        mount_chat_node(workflow)
 
         workflow.add_edge(START, "query_judge_node")
         workflow.add_edge(

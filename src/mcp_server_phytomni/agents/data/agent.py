@@ -47,7 +47,7 @@ from ...runtime.langgraph_runner import (
 )
 from ...runtime.memory import MemoryGraphContext
 from ..knowledge.state import KnowledgeInput, KnowledgeOutput, KnowledgeState
-from ..shared.chat_subgraph import make_chat_node_wrapper
+from ..shared.chat_subgraph import mount_chat_node
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import (
     build_knowledge_app,
@@ -259,16 +259,7 @@ class DataAgent:
 
         workflow.add_node("rewrite_prep_node", self.rewrite_prep_node)
         workflow.add_node("rewrite_post_node", self.rewrite_post_node)
-        workflow.add_node(
-            "chat",
-            make_chat_node_wrapper(
-                build_input_fn=lambda state: state["chat_payload"],
-                extract_output_fn=lambda chat_output: (
-                    chat_output.get("response") or {}
-                ),
-                response_key="chat_response",
-            ),
-        )
+        mount_chat_node(workflow)
         workflow.add_conditional_edges(
             START,
             make_async_router(self.route_start),

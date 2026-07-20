@@ -5,7 +5,7 @@
 """Tests for ``DataAgent`` chat invocations through the chat subgraph.
 
 The rewrite chat site routes through a prep + post pair surrounding a
-single shared chat node registered via ``add_node`` from the
+single shared chat node registered via ``mount_chat_node`` from the
 ``agents/shared/chat_subgraph`` factory.
 """
 
@@ -23,7 +23,11 @@ from mcp_server_phytomni.agents.data.state import (
 )
 from mcp_server_phytomni.config.defaults import DataConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
-from tests.support.subgraph_fakes import install_knowledge_app
+from tests.support.subgraph_fakes import (
+    DATA_CHAT_MOUNT_TOPOLOGY,
+    assert_chat_mount_topology,
+    install_knowledge_app,
+)
 
 from ._subgraph_branch_fakes import install_chat_subgraph_mocks
 
@@ -61,6 +65,18 @@ def _minimal_rewrite_state() -> DataAgentState:
     return cast(
         DataAgentState,
         {"retrieve_prompt": "stitched scenarios + user question"},
+    )
+
+
+def test_compiled_graph_preserves_chat_mount_topology(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pin Data's public schema, routes, xray, and checkpointer contract."""
+    agent = _build_agent(monkeypatch)
+    assert_chat_mount_topology(
+        agent.app,
+        agent.checkpointer,
+        DATA_CHAT_MOUNT_TOPOLOGY,
     )
 
 

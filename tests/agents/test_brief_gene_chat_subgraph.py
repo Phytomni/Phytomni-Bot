@@ -20,6 +20,10 @@ from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
 from mcp_server_phytomni.agents.brief_gene.state import BriefGeneAgentState
 from mcp_server_phytomni.config.defaults import BriefGeneConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.subgraph_fakes import (
+    BRIEF_GENE_CHAT_MOUNT_TOPOLOGY,
+    assert_agent_chat_mount_topology,
+)
 
 from ._subgraph_branch_fakes import install_chat_subgraph_mocks
 
@@ -37,6 +41,25 @@ def _build_agent() -> BriefGeneAgent:
     return BriefGeneAgent(
         brief_config=BriefGeneConfig(),
         sensitive_config=SensitiveConfig.load(),
+    )
+
+
+def test_compiled_graph_preserves_chat_mount_topology() -> None:
+    """Pin BriefGene's schema, routes, xray, and checkpointer contract."""
+    agent = _build_agent()
+    assert_agent_chat_mount_topology(agent, BRIEF_GENE_CHAT_MOUNT_TOPOLOGY)
+
+    assert (
+        agent.route_after_generate(
+            cast(BriefGeneAgentState, {"is_follow_up": True})
+        )
+        == "follow_up_node"
+    )
+    assert (
+        agent.route_after_generate(
+            cast(BriefGeneAgentState, {"is_follow_up": False})
+        )
+        == "__end__"
     )
 
 

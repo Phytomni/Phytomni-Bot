@@ -196,6 +196,25 @@ def test_export_real_brief_gene_agent_node_set() -> None:
     assert documented <= names
 
 
+def test_export_real_chat_mount_is_manifest_node_with_xray_children() -> None:
+    """Keep the wrapper manifest entry and xray expansion in sync.
+
+    ``mount_chat_node`` registers a wrapper callable, so the top-level
+    manifest intentionally classifies ``chat`` as a regular node while
+    LangGraph xray still discovers the compiled child graph through the
+    wrapper closure.
+    """
+    agent = BriefGeneAgent()
+    manifest = export_manifest(agent.app)
+    by_name = {node.name: node for node in manifest.nodes}
+
+    assert by_name["chat"].kind == "node"
+    assert any(
+        name.startswith("chat:")
+        for name in agent.app.get_graph(xray=True).nodes
+    )
+
+
 def test_export_real_chat_subgraph_node_set() -> None:
     """Real chat subgraph export matches the documented three-node graph.
 

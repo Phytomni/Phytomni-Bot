@@ -21,6 +21,7 @@ from langgraph.graph import END, START, StateGraph
 from mcp_server_phytomni.agents.shared.chat_subgraph import (
     make_chat_after_router,
     make_chat_node_wrapper,
+    mount_chat_node,
 )
 
 pytestmark = pytest.mark.agent
@@ -132,18 +133,18 @@ def test_factory_built_wrapper_triggers_xray_expansion() -> None:
     closure, so an xray render of the parent graph expands the chat
     subgraph's internal nodes under a ``chat:*`` prefix.
     """
-    wrapper = make_chat_node_wrapper(
-        build_input_fn=lambda s: {"user_query": s.get("user_query", "")},
-        extract_output_fn=lambda out: out.get("response") or {},
-        response_key="phyto_response",
-    )
 
     async def prep_node(state: _ConsumerState) -> dict[str, str]:
         return {"user_query": state.get("user_query") or "Q"}
 
     workflow = StateGraph(state_schema=_ConsumerState)
     workflow.add_node("prep", prep_node)
-    workflow.add_node("chat", wrapper)
+    mount_chat_node(
+        workflow,
+        build_input_fn=lambda s: {"user_query": s.get("user_query", "")},
+        extract_output_fn=lambda out: out.get("response") or {},
+        response_key="phyto_response",
+    )
     workflow.add_edge(START, "prep")
     workflow.add_edge("prep", "chat")
     workflow.add_edge("chat", END)

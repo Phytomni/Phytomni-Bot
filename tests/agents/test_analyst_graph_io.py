@@ -28,6 +28,7 @@ from mcp_server_phytomni.agents.analyst.state import (
     AnalystState,
 )
 from mcp_server_phytomni.config.defaults import AnalystConfig
+from tests.support.subgraph_fakes import ANALYST_CHAT_MOUNT_TOPOLOGY
 
 pytestmark = pytest.mark.agent
 
@@ -89,17 +90,9 @@ def test_analyst_input_optional_keys_match_arun_kwargs() -> None:
     the three boolean toggles). A future ``arun`` kwarg surfaces
     here before parent graphs can compose against it.
     """
-    assert _optional_keys(AnalystInput) == {
-        "goal_description",
-        "preset_plan",
-        "data_list",
-        "obs_file_list",
-        "compute_resource",
-        "output_dir",
-        "is_polling",
-        "is_auto_select",
-        "is_preset_plan",
-    }
+    assert _optional_keys(AnalystInput) == (
+        ANALYST_CHAT_MOUNT_TOPOLOGY.input_fields - {"query"}
+    )
 
 
 def test_analyst_output_carries_surface_keys_and_plan_contract() -> None:
@@ -112,21 +105,9 @@ def test_analyst_output_carries_surface_keys_and_plan_contract() -> None:
     task_status fields are what downstream adapters consume; and
     the observability intermediates feed ``phytomni_state``.
     """
-    assert set(get_type_hints(AnalystOutput).keys()) == {
-        "task_id",
-        "output_dir",
-        "job_name",
-        "compute_resource",
-        "plan",
-        "tool_usages",
-        "task_status",
-        "goal_description",
-        "method_context",
-        "plan_feedback",
-        "plan_retries",
-        "extracted_tools",
-        "error_detail",
-    }
+    assert set(get_type_hints(AnalystOutput).keys()) == (
+        ANALYST_CHAT_MOUNT_TOPOLOGY.output_fields
+    )
 
 
 def test_analyst_state_carries_full_field_union() -> None:

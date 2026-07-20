@@ -16,11 +16,22 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from ..chat.service import _cached_chat_app
 
 CHAT_APP: CompiledStateGraph = _cached_chat_app()
+
+
+def _default_chat_input(state: Any) -> dict[str, Any]:
+    """Project the common consumer payload into the chat input state."""
+    return state["chat_payload"]
+
+
+def _default_chat_output(chat_output: dict[str, Any]) -> Any:
+    """Project the common chat response into the consumer state."""
+    return chat_output.get("response") or {}
 
 
 def make_chat_node_wrapper(
@@ -61,6 +72,38 @@ def make_chat_node_wrapper(
         return {response_key: extract_output_fn(chat_output)}
 
     return _chat_node
+
+
+def mount_chat_node(
+    workflow: StateGraph[Any, Any, Any, Any],
+    *,
+    build_input_fn: Callable[[Any], dict[str, Any]] = _default_chat_input,
+    extract_output_fn: Callable[[dict[str, Any]], Any] = _default_chat_output,
+    response_key: str = "chat_response",
+) -> None:
+    """Register the shared ``chat`` wrapper on a consumer workflow.
+
+    This helper owns only the repeated node-registration call. Consumers may
+    provide their own state projections and response key, and remain
+    responsible for every edge and router around the node.
+
+    Args:
+        workflow: Uncompiled consumer ``StateGraph`` receiving the node.
+        build_input_fn: Consumer-state to ``ChatInput`` projection. Defaults
+            to the common ``state["chat_payload"]`` field.
+        extract_output_fn: Chat final-state to response projection. Defaults
+            to the common ``response`` field.
+        response_key: Consumer state key receiving the projected response.
+            Defaults to ``chat_response``.
+    """
+    workflow.add_node(
+        "chat",
+        make_chat_node_wrapper(
+            build_input_fn=build_input_fn,
+            extract_output_fn=extract_output_fn,
+            response_key=response_key,
+        ),
+    )
 
 
 def make_chat_after_router(

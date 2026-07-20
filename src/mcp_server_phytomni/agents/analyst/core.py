@@ -34,7 +34,7 @@ from ...runtime.memory import MemoryGraphContext
 from ..knowledge.state import KnowledgeInput, KnowledgeOutput, KnowledgeState
 from ..shared.chat_subgraph import (
     make_chat_after_router,
-    make_chat_node_wrapper,
+    mount_chat_node,
 )
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import (
@@ -232,16 +232,7 @@ class AnalystAgent(
         workflow.add_node("tool_retrieve_node", self.tool_retrieve_node)
         workflow.add_node("submit_node", self.submit_node)
         workflow.add_node("pooling_node", self.pooling_node)
-        workflow.add_node(
-            "chat",
-            make_chat_node_wrapper(
-                build_input_fn=lambda state: state["chat_payload"],
-                extract_output_fn=lambda chat_output: (
-                    chat_output.get("response") or {}
-                ),
-                response_key="chat_response",
-            ),
-        )
+        mount_chat_node(workflow)
         workflow.add_edge(START, "parse_query_prep_node")
         workflow.add_conditional_edges(
             "parse_query_prep_node",

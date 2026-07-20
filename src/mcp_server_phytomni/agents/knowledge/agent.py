@@ -47,7 +47,7 @@ from ...runtime.memory import MemoryGraphContext
 from ...storage.downloads import download_list_convert
 from ..shared.chat_subgraph import (
     make_chat_after_router,
-    make_chat_node_wrapper,
+    mount_chat_node,
 )
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.memory_context import memory_context_for_graph
@@ -159,16 +159,7 @@ class KnowledgeAgent:
         workflow.add_node("generate_post_node", self.generate_post_node)
         workflow.add_node("follow_up_prep_node", self.follow_up_prep_node)
         workflow.add_node("follow_up_post_node", self.follow_up_post_node)
-        workflow.add_node(
-            "chat",
-            make_chat_node_wrapper(
-                build_input_fn=lambda state: state["chat_payload"],
-                extract_output_fn=lambda chat_output: (
-                    chat_output.get("response") or {}
-                ),
-                response_key="chat_response",
-            ),
-        )
+        mount_chat_node(workflow)
         workflow.add_conditional_edges(
             START,
             make_async_router(self.route_start),

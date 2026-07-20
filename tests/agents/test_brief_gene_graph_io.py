@@ -24,6 +24,10 @@ from mcp_server_phytomni.agents.brief_gene.state import (
     BriefGeneState,
 )
 from mcp_server_phytomni.config.defaults import BriefGeneConfig
+from tests.support.subgraph_fakes import (
+    BRIEF_GENE_CHAT_MOUNT_TOPOLOGY,
+    BRIEF_GENE_STATE_PREAMBLE_FIELDS,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -43,7 +47,9 @@ def test_brief_gene_input_requires_only_user_query() -> None:
     ``is_follow_up`` toggle is optional and defaults via the state.
     """
     assert _required_keys(BriefGeneInput) == {"user_query"}
-    assert "is_follow_up" in _optional_keys(BriefGeneInput)
+    assert _optional_keys(BriefGeneInput) == (
+        BRIEF_GENE_CHAT_MOUNT_TOPOLOGY.input_fields - {"user_query"}
+    )
 
 
 def test_brief_gene_output_exposes_minimal_subset() -> None:
@@ -59,26 +65,7 @@ def test_brief_gene_output_exposes_minimal_subset() -> None:
     stays hidden.
     """
     hints = get_type_hints(BriefGeneOutput)
-    assert set(hints.keys()) == {
-        "gene_id",
-        "species_code",
-        "go_string",
-        "kegg_string",
-        "interpro_string",
-        "description_string",
-        "gene_structure_string",
-        "orthologs_data",
-        "paralogs_data",
-        "interaction_data",
-        "section1_markdown",
-        "section2_markdown",
-        "section3_markdown",
-        "section4_markdown",
-        "introduction_report",
-        "retrieved_docs",
-        "final_response",
-        "follow_up_questions",
-    }
+    assert set(hints.keys()) == BRIEF_GENE_CHAT_MOUNT_TOPOLOGY.output_fields
 
 
 def test_brief_gene_state_carries_preamble_fan_out_fields() -> None:
@@ -91,26 +78,8 @@ def test_brief_gene_state_carries_preamble_fan_out_fields() -> None:
     report, and the ``gene_profile_completed_branches`` barrier
     counter (renamed from M5-era ``part1_completed_branches``).
     """
-    preamble_required = {
-        "orthologs_data",
-        "paralogs_data",
-        "interaction_data",
-        "ortholog_count",
-        "ortholog_species_count",
-        "paralog_count",
-        "interaction_count",
-        "cross_species_alias_count",
-        "cross_species_alias_species_count",
-        "gene_structure_string",
-        "section1_markdown",
-        "section2_markdown",
-        "section3_markdown",
-        "section4_markdown",
-        "introduction_report",
-        "gene_profile_completed_branches",
-    }
     actual = set(get_type_hints(BriefGeneState).keys())
-    missing = preamble_required - actual
+    missing = BRIEF_GENE_STATE_PREAMBLE_FIELDS - actual
     assert (
         not missing
     ), f"BriefGeneState is missing preamble keys: {sorted(missing)}"

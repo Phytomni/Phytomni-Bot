@@ -7,7 +7,7 @@
 Each of the five chat sites (``parse_query`` / ``data_select`` /
 ``plan`` / ``check`` / ``tool_extract``) routes through prep + post
 pairs surrounding a single shared chat node registered via
-``add_node`` from the ``agents/shared/chat_subgraph`` factory.
+``mount_chat_node`` from the ``agents/shared/chat_subgraph`` factory.
 """
 
 from __future__ import annotations
@@ -22,6 +22,10 @@ from mcp_server_phytomni.agents.analyst.core import AnalystAgent
 from mcp_server_phytomni.agents.analyst.state import AnalystState
 from mcp_server_phytomni.config.defaults import AnalystConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.subgraph_fakes import (
+    ANALYST_CHAT_MOUNT_TOPOLOGY,
+    assert_agent_chat_mount_topology,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -36,6 +40,13 @@ def _build_agent() -> AnalystAgent:
     return AnalystAgent(
         analyst_config=AnalystConfig(),
         sensitive_config=SensitiveConfig.load(),
+    )
+
+
+def test_compiled_graph_preserves_chat_mount_topology() -> None:
+    """Pin Analyst's public schema, routes, xray, and checkpointer contract."""
+    assert_agent_chat_mount_topology(
+        _build_agent(), ANALYST_CHAT_MOUNT_TOPOLOGY
     )
 
 

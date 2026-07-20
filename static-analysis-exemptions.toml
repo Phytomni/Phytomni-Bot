@@ -611,34 +611,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/analyst/core.py"
 symbol = "178:187"
 peer_path = "src/mcp_server_phytomni/agents/data/agent.py"
-peer_symbol = "304:313"
-fingerprint = "sha256:1d5b8c90a4526dccbfbd591ede421e591b88150a115e07976c11832136044e44"
+peer_symbol = "295:304"
+fingerprint = "sha256:4388b8a9487278ea057484cb13218c99adf1b31f33f7e0a7e8839bebea83e4c2"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.analyst.core:[178:187]\n==mcp_server_phytomni.agents.data.agent:[304:313]\n        workflow.add_node(\n            \"knowledge\",\n            make_knowledge_node_wrapper(\n                knowledge_app=knowledge_app,\n                build_input_fn=lambda state: state[\"knowledge_payload\"],\n                extract_output_fn=lambda ko: ko,\n                response_key=\"knowledge_response\",\n            ),\n        )"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0032"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/agents/analyst/core.py"
-symbol = "234:244"
-peer_path = "src/mcp_server_phytomni/agents/brief_gene/core.py"
-peer_symbol = "266:277"
-fingerprint = "sha256:5797dc0093813262892fe4d0b78be2f990a7a576bd4b844540d12cd2592c3e77"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.analyst.core:[234:244]\n==mcp_server_phytomni.agents.brief_gene.core:[266:277]\n        workflow.add_node(\n            \"chat\",\n            make_chat_node_wrapper(\n                build_input_fn=lambda state: state[\"chat_payload\"],\n                extract_output_fn=lambda chat_output: (\n                    chat_output.get(\"response\") or {}\n                ),\n                response_key=\"chat_response\",\n            ),\n        )\n"
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.analyst.core:[178:187]\n==mcp_server_phytomni.agents.data.agent:[295:304]\n        workflow.add_node(\n            \"knowledge\",\n            make_knowledge_node_wrapper(\n                knowledge_app=knowledge_app,\n                build_input_fn=lambda state: state[\"knowledge_payload\"],\n                extract_output_fn=lambda ko: ko,\n                response_key=\"knowledge_response\",\n            ),\n        )"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -653,14 +631,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/analyst/core.py"
-symbol = "457:463"
+symbol = "448:454"
 peer_path = "src/mcp_server_phytomni/agents/analyst/submission.py"
 peer_symbol = "123:129"
-fingerprint = "sha256:baddf42588bca4446d3eb1e7102c40d9f5f00b15116258e0a5aa5dbdb055235e"
+fingerprint = "sha256:617c35ef5e3bc76aa6f9bb0ef8f00c456c0f5c518ca8649e583ca6a7b7f6251f"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.analyst.core:[457:463]\n==mcp_server_phytomni.agents.analyst.submission:[123:129]\n        is_create_dir = kwargs.get(\"is_create_dir\", ANALYST_CONFIG.CREATE_DIR)\n        output_dir = kwargs.get(\"output_dir\", ANALYST_CONFIG.OUTPUT_DIR)\n        compute_resource = kwargs.get(\n            \"compute_resource\",\n            ANALYST_CONFIG.COMPUTE_RESOURCE,\n        )"
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.analyst.core:[448:454]\n==mcp_server_phytomni.agents.analyst.submission:[123:129]\n    is_create_dir = kwargs.get(\"is_create_dir\", ANALYST_CONFIG.CREATE_DIR)\n    output_dir = kwargs.get(\"output_dir\", ANALYST_CONFIG.OUTPUT_DIR)\n    compute_resource = kwargs.get(\n        \"compute_resource\",\n        ANALYST_CONFIG.COMPUTE_RESOURCE,\n    )"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -675,14 +653,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/analyst/core.py"
-symbol = "500:509"
+symbol = "491:500"
 peer_path = "src/mcp_server_phytomni/agents/analyst/submission.py"
 peer_symbol = "76:88"
-fingerprint = "sha256:00540296658667b0db8451f55e02e422f72522c0fca8a856b38a602915a8ef55"
+fingerprint = "sha256:d81cc4ab2949875bce42f7dbf2ca833ead7698c8ad3cbbc7779cbe5f58124bfc"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.analyst.core:[500:509]\n==mcp_server_phytomni.agents.analyst.submission:[76:88]\n        ANALYST_CONFIG_FIELD_MAP,\n        fixed_updates={\n            \"USER_ID\": user_id,\n            \"CREATE_DIR\": is_create_dir,\n            \"OUTPUT_DIR\": output_dir,\n            \"COMPUTE_RESOURCE\": compute_resource,\n        },\n    )\n\n\ndef _sensitive_config_with_overrides(**kwargs: Any):\n    \"\"\"Build a SensitiveConfig copy from compatibility wrapper arguments.\"\"\""
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.analyst.core:[491:500]\n==mcp_server_phytomni.agents.analyst.submission:[76:88]\n            ANALYST_CONFIG_FIELD_MAP,\n            fixed_updates={\n                \"USER_ID\": user_id,\n                \"CREATE_DIR\": is_create_dir,\n                \"OUTPUT_DIR\": output_dir,\n                \"COMPUTE_RESOURCE\": compute_resource,\n            },\n        )"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -796,28 +774,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0045"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/agents/brief_gene/core.py"
-symbol = "264:277"
-peer_path = "src/mcp_server_phytomni/agents/knowledge/agent.py"
-peer_symbol = "159:171"
-fingerprint = "sha256:71c51e7737eb6d61c69c8b052130cf106fa57d55217488c3520076465b9f19af"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.core:[264:277]\n==mcp_server_phytomni.agents.knowledge.agent:[159:171]\n        workflow.add_node(\"follow_up_prep_node\", self.follow_up_prep_node)\n        workflow.add_node(\"follow_up_post_node\", self.follow_up_post_node)\n        workflow.add_node(\n            \"chat\",\n            make_chat_node_wrapper(\n                build_input_fn=lambda state: state[\"chat_payload\"],\n                extract_output_fn=lambda chat_output: (\n                    chat_output.get(\"response\") or {}\n                ),\n                response_key=\"chat_response\",\n            ),\n        )"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0046"
 tool = "pylint"
 rule = "R0801"
@@ -827,12 +783,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py"
 symbol = "81:87"
 peer_path = "src/mcp_server_phytomni/agents/review/agent.py"
-peer_symbol = "259:265"
-fingerprint = "sha256:4e2efd035ff8c8489702efc9cd2c5821e6c43082be5bf553df9c94d573d2e4c0"
+peer_symbol = "250:256"
+fingerprint = "sha256:636c40c07afed4061db02a69fea6bd0e4fceab1f6da737a5195c3fc97421d985"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.graph_knowledge_subgraph:[81:87]\n==mcp_server_phytomni.agents.review.agent:[259:265]\n        knowledge_app = self._knowledge_app\n        if knowledge_app is None:\n            raise RuntimeError(\n                \"unreachable: _knowledge_app must be built in __init__\"\n            )\n        workflow.add_node("
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.graph_knowledge_subgraph:[81:87]\n==mcp_server_phytomni.agents.review.agent:[250:256]\n        knowledge_app = self._knowledge_app\n        if knowledge_app is None:\n            raise RuntimeError(\n                \"unreachable: _knowledge_app must be built in __init__\"\n            )\n        workflow.add_node("
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -849,12 +805,12 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py"
 symbol = "88:95"
 peer_path = "src/mcp_server_phytomni/agents/review/agent.py"
-peer_symbol = "266:273"
-fingerprint = "sha256:207ed8d656c295eeb6fb6750c816cbed9878039f84fb4aa015d69afff7a66abc"
+peer_symbol = "257:264"
+fingerprint = "sha256:e63ee65d7e0bda92b26bcb21be07a250ffe49944614d1e0275cf9a2b6028898c"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.graph_knowledge_subgraph:[88:95]\n==mcp_server_phytomni.agents.review.agent:[266:273]\n        )\n        workflow.add_node(\n            \"retrieve_worker_node\",\n            self.make_retrieve_worker_node(knowledge_app),\n        )\n        workflow.add_node(\"retrieve_reduce_node\", self.retrieve_reduce_node)\n        workflow.add_conditional_edges("
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.brief_gene.graph_knowledge_subgraph:[88:95]\n==mcp_server_phytomni.agents.review.agent:[257:264]\n        )\n        workflow.add_node(\n            \"retrieve_worker_node\",\n            self.make_retrieve_worker_node(knowledge_app),\n        )\n        workflow.add_node(\"retrieve_reduce_node\", self.retrieve_reduce_node)\n        workflow.add_conditional_edges("
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -977,50 +933,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.data.agent:[220:230]\n==mcp_server_phytomni.agents.review.agent:[147:157]\n        self._knowledge_app: (\n            CompiledStateGraph[\n                KnowledgeState,\n                MemoryGraphContext,\n                KnowledgeInput,\n                KnowledgeOutput,\n            ]\n            | None\n        )\n        self._knowledge_app = build_knowledge_app("
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0058"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/agents/data/agent.py"
-symbol = "261:271"
-peer_path = "src/mcp_server_phytomni/agents/review/agent.py"
-peer_symbol = "247:259"
-fingerprint = "sha256:4f968cc4e8fae819dfd4eb099d32955d8fecb4ab8529cd76b6c0a040b8f458ef"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.data.agent:[261:271]\n==mcp_server_phytomni.agents.review.agent:[247:259]\n        workflow.add_node(\n            \"chat\",\n            make_chat_node_wrapper(\n                build_input_fn=lambda state: state[\"chat_payload\"],\n                extract_output_fn=lambda chat_output: (\n                    chat_output.get(\"response\") or {}\n                ),\n                response_key=\"chat_response\",\n            ),\n        )"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0059"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/agents/data/agent.py"
-symbol = "261:274"
-peer_path = "src/mcp_server_phytomni/agents/knowledge/agent.py"
-peer_symbol = "161:174"
-fingerprint = "sha256:67e3f7e920faa4c5565eecbd04ae955f65fad55ab92b2e69836511be429005b3"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.data.agent:[261:274]\n==mcp_server_phytomni.agents.knowledge.agent:[161:174]\n        workflow.add_node(\n            \"chat\",\n            make_chat_node_wrapper(\n                build_input_fn=lambda state: state[\"chat_payload\"],\n                extract_output_fn=lambda chat_output: (\n                    chat_output.get(\"response\") or {}\n                ),\n                response_key=\"chat_response\",\n            ),\n        )\n        workflow.add_conditional_edges(\n            START,\n            make_async_router(self.route_start),"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1275,14 +1187,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "src/mcp_server_phytomni/agents/shared/chat_subgraph.py"
-symbol = "93:99"
+symbol = "136:142"
 peer_path = "src/mcp_server_phytomni/agents/shared/knowledge_subgraph.py"
 peer_symbol = "107:113"
-fingerprint = "sha256:6165ee88078541c3c33262bd4a723df6d7bdd0feacd68b2c48d2e63bd71b3045"
+fingerprint = "sha256:a4cfd38d8bffba66014ef7aa11a07464082638c7ee002f368791c1138b012e23"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.shared.chat_subgraph:[93:99]\n==mcp_server_phytomni.agents.shared.knowledge_subgraph:[107:113]\n        pending = state.get(pending_post_key)\n        if isinstance(pending, str) and pending:\n            return pending\n        if default is not None:\n            return default\n        raise ValueError("
+rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.shared.chat_subgraph:[136:142]\n==mcp_server_phytomni.agents.shared.knowledge_subgraph:[107:113]\n        pending = state.get(pending_post_key)\n        if isinstance(pending, str) and pending:\n            return pending\n        if default is not None:\n            return default\n        raise ValueError("
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -1591,10 +1503,10 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "tests/agents/test_analyst_graph_io.py"
-symbol = "36:59"
+symbol = "37:60"
 peer_path = "tests/agents/test_review_retrieve_fan_out.py"
 peer_symbol = "32:57"
-fingerprint = "sha256:8c0bc50fc7a752af732f2efb3751ab4a521b29e6e56b1ee64337753f3c4b4635"
+fingerprint = "sha256:7df9fed3886f917a843ce0b27b08bc06111ab61bf3f15c8d6cb7bc1c73814ba3"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
@@ -1613,14 +1525,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "tests/agents/test_brief_gene_chat_subgraph.py"
-symbol = "48:56"
+symbol = "71:79"
 peer_path = "tests/agents/test_brief_gene_knowledge_subgraph.py"
 peer_symbol = "66:74"
-fingerprint = "sha256:999394a6dcd06fcd41f5edfaf3e04a364cea7b9fbae6094be2cab36c828840bf"
+fingerprint = "sha256:36c489b726b7409ac52d963563d5e3c3db3049c965e714694d291c98f53e459c"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "BriefGene chat and knowledge tests intentionally share the same seeded state fixture shape."
+rationale = "Similar lines in 2 files\n==tests.agents.test_brief_gene_chat_subgraph:[71:79]\n==tests.agents.test_brief_gene_knowledge_subgraph:[66:74]\n            \"is_follow_up\": False,\n            \"gene_found\": True,\n            \"gene_id\": \"AT1G01010\",\n            \"query_id_version\": \"tair10\",\n            \"gene_id_version\": \"tair10\",\n            \"species_code\": \"ath\",\n            \"species_latin_name\": \"Arabidopsis thaliana\",\n            \"species_english_name\": \"thale cress\","
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
