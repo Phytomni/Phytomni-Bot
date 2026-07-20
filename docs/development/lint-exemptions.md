@@ -210,7 +210,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0295` | pytest | error | structural | config | config | pyproject.toml | tool.pytest.ini_options.filterwarnings[0] | `sha256:0aa661937816a1fb17f333eb9a372e15f3093ed7bf8b75bc5d904d38422ef20f` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0298` | pytest | ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning | temporary | config | config | pyproject.toml | tool.pytest.ini_options.filterwarnings[1] | `sha256:3b0438047d9767b1eb34f8a245bfa1e11abe24c3fc8011aee6a4f08905aef12a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0300` | ruff | ASYNC110 | structural | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/report.py | \_write_async | `sha256:a7cb1e8424467f0727f7a3b99bf30356d9bb18b99462d892fbf92402f43dd198` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0301` | ruff | ASYNC110 | structural | inline | symbol | src/mcp_server_phytomni/api/app.py | \_purge_expired_runs_best_effort_async | `sha256:a52705825d478feeafb241f23127685f24facd52ebf4d62d6ed335d1dd04782d` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0301` | ruff | ASYNC110 | structural | inline | symbol | src/mcp_server_phytomni/api/run_lifecycle.py | purge_expired_runs_best_effort_async | `sha256:d9bfcdb38455dce2970fd011c237a1131de5632e63d545189a9d87480a21b017` | bot-maintainers | 2026-07-20 | 2027-01-20 | — | — | tests/server/test_run_gc_background.py |
 | `SAE-TMP-0302` | ruff | ASYNC110 | structural | inline | symbol | src/mcp_server_phytomni/api/relay/obs.py | \_wait_obs_future | `sha256:a8f3e3adef4dab97a6423e96bc1f91159c519a5060e52a58156302de97e99e33` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0310` | ruff | E402 | structural | inline | span | scripts/\_visualize_bootstrap.py | — | `sha256:5bb9d315b606c4e79f7f08a5a3896da1ae9fe6ea43c2d6d2055599a1c4e33f40` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0311` | ruff | E402 | structural | inline | span | scripts/\_visualize_bootstrap.py | — | `sha256:9e583e7c25de4e2c0f6b97674641e1e427cb71f230c2aa96fb00b4aa48ddf6cf` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
@@ -3910,19 +3910,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-noqa: ASYNC110
+Async GC waits for a worker-thread Event; polling keeps the request loop responsive without a thread-safe callback.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Replace worker completion polling with an equivalent non-blocking completion primitive before removing this directive.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+Suppression can hide a future regression in async GC completion handling.
 ```
 
 ### `SAE-TMP-0302`

@@ -18,7 +18,6 @@ import asyncio
 import logging
 import os
 import sqlite3
-import threading
 from collections.abc import (
     AsyncGenerator,
     AsyncIterator,
@@ -121,11 +120,6 @@ from ..mcp.stream_lifecycle import (
     prime_agui_stream,
     project_stream_failures,
 )
-from ..runtime.deep_genome_store import (
-    DeepGenomeStore,
-    snapshot_to_formatted_report_metadata,
-    snapshot_to_public_dict,
-)
 from ..runtime.langgraph_runner import (
     build_runnable_config,
     ensure_checkpointer,
@@ -165,6 +159,7 @@ from ..runtime.task_manager import resolve_tasks_db_path
 from ..runtime.task_reconcile import reconcile_task_log
 from ..storage.path_policy import IdFactory
 from ..version import __version__
+from . import run_lifecycle
 from .a2a.card import build_agent_card
 from .a2a.executor import (
     A2AHandlerOptions,
@@ -314,148 +309,47 @@ _LEGACY_ALIASES: dict[str, list[str]] = {
 
 
 _LOGGER = logging.getLogger(__name__)
-_RUN_GC_CAUGHT: tuple[type[Exception], ...] = (Exception,)
-_RUN_GC_LOCK = threading.Lock()
-_RUN_GC_ACTIVE = threading.Event()
-_RUN_GC_POLL_SECONDS = 0.01
 
 
 def _purge_expired_runs_best_effort() -> None:
-    """Run a single ``RunRegistry.purge_expired`` pass, swallowing errors.
-
-    Every API write path (sync chat completions, native agent runs,
-    and the registry listing) drives the lazy GC through this helper
-    so an expired row never outlives its TTL. A SQLite / OS
-    failure must never propagate — the user-facing write already
-    succeeded and the next request can re-trigger the purge — but
-    the failure does emit a sanitized ``warning`` log so ops can
-    notice a stuck GC. Only the exception class name is logged;
-    the message is dropped to avoid leaking on-disk paths or SQL
-    fragments that might appear in pysqlite error strings.
-    """
-    try:
-        RunRegistry(resolve_tasks_db_path()).purge_expired()
-    except (sqlite3.Error, OSError) as exc:
-        _LOGGER.warning("run TTL purge failed: %s", exc.__class__.__name__)
+    """Compatibility seam for the shared run-registry TTL purge."""
+    run_lifecycle.purge_expired_runs_best_effort(
+        db_path=resolve_tasks_db_path()
+    )
 
 
 async def _purge_expired_runs_best_effort_async() -> None:
-    """Run the local purge off-loop without a thread-safe callback."""
-    if not _claim_run_gc():
-        return
-    finished = threading.Event()
-    failures: list[Exception] = []
-
-    def _run() -> None:
-        try:
-            _purge_expired_runs_best_effort()
-        except _RUN_GC_CAUGHT as exc:
-            failures.append(exc)
-        finally:
-            _release_run_gc()
-            finished.set()
-
-    try:
-        threading.Thread(target=_run, daemon=True).start()
-    except RuntimeError:
-        _release_run_gc()
-        raise
-    while not finished.is_set():  # noqa: ASYNC110
-        await asyncio.sleep(_RUN_GC_POLL_SECONDS)
-    if failures:
-        raise failures[0]
+    """Compatibility seam for the off-loop coalesced TTL purge."""
+    await run_lifecycle.purge_expired_runs_best_effort_async(
+        purge=_purge_expired_runs_best_effort
+    )
 
 
 def _claim_run_gc() -> bool:
-    """Claim the process-local GC slot, or coalesce with its active pass."""
-    with _RUN_GC_LOCK:
-        if _RUN_GC_ACTIVE.is_set():
-            return False
-        _RUN_GC_ACTIVE.set()
-        return True
+    """Compatibility seam for the process-local GC slot."""
+    return run_lifecycle.claim_run_gc()
 
 
 def _release_run_gc() -> None:
-    """Release the process-local GC slot after its worker exits."""
-    with _RUN_GC_LOCK:
-        _RUN_GC_ACTIVE.clear()
+    """Compatibility seam for releasing the process-local GC slot."""
+    run_lifecycle.release_run_gc()
 
 
 async def _schedule_run_gc(background: BackgroundTasks) -> None:
-    """Schedule the run-registry GC to run after the response flushes.
-
-    FastAPI resolves BackgroundTasks by dependency injection, so a
-    write route declares this dependency instead of blocking its
-    response on the SQLite DELETE scan. The purge stays best-effort and
-    idempotent, so running it once per request (deduping the former
-    per-helper inline calls) carries no data risk. Both this dependency
-    and the task are native async so Starlette does not require a worker
-    thread to wake the request event loop after either callback.
-    """
-    background.add_task(_purge_expired_runs_best_effort_async)
+    """Compatibility seam for the FastAPI background GC dependency."""
+    await run_lifecycle.schedule_run_gc(
+        background, task=_purge_expired_runs_best_effort_async
+    )
 
 
 def _extract_answer(result: Any) -> str | None:
-    """Pull a display-ready answer string from a stored run result.
-
-    Tolerates the two envelope shapes the API writes today: the chat /
-    agent-run path stores ``{"formatted": {"answer": ...}, "raw": ...}``
-    while older sync writers may carry a top-level ``answer``. Returns
-    ``None`` when neither shape carries a string answer so chat-ai can
-    render an "ongoing" placeholder without crashing.
-    """
-    if not isinstance(result, dict):
-        return None
-    formatted = result.get("formatted")
-    if isinstance(formatted, dict):
-        candidate = formatted.get("answer")
-        if isinstance(candidate, str):
-            return candidate
-    candidate = result.get("answer")
-    if isinstance(candidate, str):
-        return candidate
-    return None
+    """Compatibility seam for answer extraction from a stored result."""
+    return run_lifecycle.extract_answer(result)
 
 
 def _run_record_to_dict(record: Any) -> dict[str, Any]:
-    """Flatten a ``RunRecord`` into the JSON envelope the API returns.
-
-    Unpacks ``spec`` (identity bundle), ``timestamps`` (lifecycle
-    bundle), and ``request_info`` (per-request metadata bundle) so the
-    on-wire shape stays a flat object rather than the nested dataclass
-    tree, and serialises ``task_ids`` as a list so clients consume it
-    as a JSON array. The ``answer`` shortcut surfaces the formatted
-    response text directly so chat-ai's history page does not have to
-    descend into ``result.formatted.answer`` per row.
-
-    Args:
-        record: The ``RunRegistry`` record to flatten.
-
-    Returns:
-        A JSON-serialisable dict.
-    """
-    info = record.request_info
-    return {
-        "run_id": record.spec.run_id,
-        "agent": record.spec.agent,
-        "origin": record.spec.origin,
-        "user_id": record.spec.user_id,
-        "status": record.status,
-        "result": record.result,
-        "error": record.error,
-        "created_at": record.timestamps.created_at,
-        "updated_at": record.timestamps.updated_at,
-        "expires_at": record.timestamps.expires_at,
-        "task_ids": list(record.task_ids),
-        "dialogue_id": info.dialogue_id,
-        "query": info.query,
-        "tool_name": info.tool_name,
-        "model": info.model,
-        "a2a_task_id": record.a2a.task_id,
-        "a2a_context_id": record.a2a.context_id,
-        "a2a_message_id": record.a2a.message_id,
-        "answer": _extract_answer(record.result),
-    }
+    """Compatibility seam for flattening a registry record."""
+    return run_lifecycle.run_record_to_dict(record)
 
 
 def _relay_audit_record_to_dict(
@@ -1229,39 +1123,12 @@ async def _invoke_agent_run(
 
 
 def _resolve_remote_run(owner: str) -> tuple[str | None, list[str]]:
-    """Read the chokepoint's run id from contextvar, then list its tasks.
-
-    The submit chokepoint in ``mcp/handlers`` calls ``bind_run_id``
-    after it writes the runs row plus its N child task rows, so the
-    HTTP layer can recover the run identity directly from the
-    per-request contextvar — no formatter-specific metadata key
-    (analyst's ``task_id`` vs deep_genome's ``server_id`` vs
-    research's missing entry) is consulted. The child task ids are
-    then sourced from ``RunRegistry.get_run`` so a multi-task
-    submission returns every task id the chokepoint persisted, not
-    just the primary one.
-
-    Args:
-        owner: Authenticated user id used for the registry read.
-
-    Returns:
-        ``(run_id, task_ids)`` where ``run_id`` is ``None`` and
-        ``task_ids`` is empty when the chokepoint did not bind a
-        run id. This arises only when the registry write failed
-        midway (see ``runtime.submit_recorder.record_submitted_task``
-        and ``current_recorder_degraded()``); ``_invoke_agent_run``
-        then adds ``degraded_tracking: True`` to the HTTP body.
-        Analysis dedup hits no longer produce this shape: a reuse
-        mints a caller-owned row through the normal chokepoint path
-        and binds a fresh ``run_id`` before returning.
-    """
-    run_id = current_run_id()
-    if run_id is None:
-        return None, []
-    record = RunRegistry(resolve_tasks_db_path()).get_run(run_id, owner=owner)
-    if record is None:
-        return run_id, []
-    return run_id, list(record.task_ids)
+    """Compatibility seam for remote-run context recovery."""
+    return run_lifecycle.resolve_remote_run(
+        owner,
+        run_id=current_run_id(),
+        db_path=resolve_tasks_db_path(),
+    )
 
 
 async def _route_expert_query(
@@ -1368,54 +1235,28 @@ def _list_owner_runs(
     offset: int,
     debug: bool = False,
 ) -> dict[str, Any]:
-    """Return one ``GET /v1/runs`` body scoped to ``owner``.
-
-    Drives the lazy GC via ``_purge_expired_runs_best_effort`` (the
-    same helper the sync chat and native agent run write paths use)
-    so the registry stays bounded under listing-heavy and
-    submission-heavy workloads alike.
-
-    Args:
-        owner: User id whose runs to return. Set by the route from
-            ``current_request_user()`` for owner-only calls, or from
-            the ``user_id`` query parameter for delegated calls that
-            already passed the service-token check.
-        status: Optional exact-match status filter.
-        agent: Optional exact-match agent slug filter.
-        origin: Optional exact-match origin filter.
-        dialogue_id: Optional exact-match dialogue id filter. Runs
-            before ``limit`` so a chat-ai history query for one
-            dialogue always retrieves every matching row.
-        created_after: Optional ISO-8601 lower bound (inclusive).
-        created_before: Optional ISO-8601 upper bound (inclusive).
-        limit: Max rows to return.
-        offset: Rows to skip (paging).
-        debug: Whether to retain private result fields.
-
-    Returns:
-        ``{"object", "data"}`` envelope with the flat run records.
-    """
-    _purge_expired_runs_best_effort()
-    records = RunRegistry(resolve_tasks_db_path()).list_runs(
-        owner=owner,
-        run_filter=RunFilter(
-            status=status,
-            agent=agent,
-            origin=origin,
-            dialogue_id=dialogue_id,
-            created_after=created_after,
-            created_before=created_before,
+    """Compatibility seam for owner-scoped run listing."""
+    return run_lifecycle.list_owner_runs(
+        owner,
+        run_lifecycle.RunListQuery(
+            run_filter=RunFilter(
+                status=status,
+                agent=agent,
+                origin=origin,
+                dialogue_id=dialogue_id,
+                created_after=created_after,
+                created_before=created_before,
+            ),
+            limit=limit,
+            offset=offset,
         ),
-        limit=limit,
-        offset=offset,
+        debug=debug,
+        context=run_lifecycle.RunLifecycleContext(
+            db_path=resolve_tasks_db_path(),
+            purge=_purge_expired_runs_best_effort,
+            project=_project_public_run_record,
+        ),
     )
-    return {
-        "object": "list",
-        "data": [
-            _project_public_run_record(record, debug=debug)
-            for record in records
-        ],
-    }
 
 
 # pylint: enable=too-many-arguments
@@ -1737,97 +1578,35 @@ async def _stream_chat_response(
 def _project_deep_genome_run(
     record: RunRecord, *, debug: bool = False
 ) -> dict[str, Any]:
-    """Merge the owner-scoped DeepGenome snapshot into one run envelope.
-
-    ``runs.task_ids`` contains exactly one umbrella id for DeepGenome. The
-    coordinator owns every concrete remote id, so this read follows only the
-    owner-checked umbrella and never accepts a child id from the request.
-    Public snapshot serialization removes raw child rows from the default
-    result while retaining the existing formatted answer when one exists.
-    """
-    payload = _run_record_to_dict(record)
-    result = payload.get("result")
-    merged = dict(result) if isinstance(result, Mapping) else {}
-    if not debug:
-        for private_key in (
-            "task_results",
-            "live_status",
-            "artifacts",
-            "raw",
-        ):
-            merged.pop(private_key, None)
-        payload["result"] = merged
-    if len(record.task_ids) != 1:
-        return payload
-    try:
-        snapshot = DeepGenomeStore(resolve_tasks_db_path()).get_snapshot(
-            record.task_ids[0]
-        )
-    except sqlite3.Error:
-        _LOGGER.warning(
-            "deep_genome run snapshot unavailable for owner-scoped run"
-        )
-        return payload
-    if snapshot is None:
-        return payload
-
-    merged.update(snapshot_to_public_dict(snapshot))
-    formatted = merged.get("formatted")
-    if isinstance(formatted, Mapping):
-        formatted_copy = dict(formatted)
-        existing_metadata = formatted_copy.get("metadata")
-        metadata = (
-            dict(existing_metadata)
-            if isinstance(existing_metadata, Mapping)
-            else {}
-        )
-        metadata["report"] = snapshot_to_formatted_report_metadata(snapshot)
-        formatted_copy["metadata"] = metadata
-        merged["formatted"] = formatted_copy
-    payload["status"] = snapshot.status
-    payload["result"] = merged
-    best_report = merged.get("final_report") or merged.get(
-        "intermediate_report"
+    """Compatibility seam for DeepGenome public projection."""
+    return run_lifecycle.project_deep_genome_run(
+        record,
+        debug=debug,
+        db_path=resolve_tasks_db_path(),
     )
-    if isinstance(best_report, str) and best_report.strip():
-        payload["answer"] = best_report
-    return payload
 
 
 def _project_public_run_record(
     record: RunRecord, *, debug: bool = False
 ) -> dict[str, Any]:
-    """Project one owner-scoped run through its public read contract."""
-    if record.spec.agent == "deep_genome":
-        return _project_deep_genome_run(record, debug=debug)
-    return _run_record_to_dict(record)
+    """Compatibility seam for the public run projection."""
+    return run_lifecycle.project_public_run_record(
+        record,
+        debug=debug,
+        db_path=resolve_tasks_db_path(),
+    )
 
 
 async def _fetch_owner_run(
     run_id: str, *, debug: bool = False
 ) -> dict[str, Any]:
-    """Reconcile + flatten one ``GET /v1/runs/{run_id}`` request body.
-
-    Args:
-        run_id: Run id to fetch.
-
-    Returns:
-        Flat JSON-serialisable run envelope.
-
-    Raises:
-        HTTPException: 404 when the run is unknown or foreign-owned.
-    """
-    owner = current_request_user() or "anonymous"
-    registry = RunRegistry(resolve_tasks_db_path())
-    record = registry.get_run(run_id, owner=owner)
-    if record is None:
-        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
-    if record.spec.agent == "deep_genome":
-        return _project_public_run_record(record, debug=debug)
-    record = await registry.reconcile(run_id, owner=owner)
-    if record is None:
-        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
-    return _project_public_run_record(record, debug=debug)
+    """Compatibility seam for owner-checked run lookup and reconciliation."""
+    return await run_lifecycle.fetch_owner_run(
+        run_id,
+        owner=current_request_user() or "anonymous",
+        debug=debug,
+        db_path=resolve_tasks_db_path(),
+    )
 
 
 def _record_sync_run(
@@ -1837,51 +1616,14 @@ def _record_sync_run(
     result: dict[str, Any],
     request_info: RunRequestInfo | None = None,
 ) -> str | None:
-    """Persist a terminal ``origin="local"`` run for a sync agent call.
-
-    Mints a fresh ``run_id`` via ``IdFactory().new_id("run", agent)``
-    and writes one ``runs`` row at terminal status ``"succeeded"`` so
-    the upcoming ``/v1/runs/{id}`` and ``/v1/runs`` endpoints replay
-    the formatted answer without re-invoking the agent. SQLite / OS
-    failures are swallowed — a successful HTTP completion must never
-    fail because the bookkeeping write hit the disk wrong.
-
-    The MCP stdio path never reaches this helper (it does not enter
-    the FastAPI request lifecycle), so the existing stdio MCP
-    contract stays byte-equivalent.
-
-    Args:
-        agent: Public agent alias (e.g. ``"chat"``).
-        owner: Authenticated user id (``"anonymous"`` for stdio).
-        result: The formatted result dict (stored as JSON in
-            ``result_json``).
-        request_info: Per-request metadata captured at the HTTP
-            boundary; ``None`` keeps every per-request column NULL.
-
-    Returns:
-        The minted ``run_id`` on a successful write, otherwise
-        ``None``.
-    """
-    run_id = IdFactory().new_id("run", agent)
-    try:
-        RunRegistry(resolve_tasks_db_path()).create_run(
-            RunSpec(
-                run_id=run_id,
-                user_id=owner,
-                agent=agent,
-                origin="local",
-            ),
-            outcome=RunOutcome(status="succeeded", result=result),
-            request_info=request_info,
-        )
-    except (sqlite3.Error, OSError) as exc:
-        _LOGGER.warning(
-            "sync run bookkeeping write failed for agent %s: %s",
-            agent,
-            exc.__class__.__name__,
-        )
-        return None
-    return run_id
+    """Compatibility seam for terminal synchronous run creation."""
+    return run_lifecycle.record_sync_run(
+        agent=agent,
+        owner=owner,
+        result=result,
+        request_info=request_info,
+        db_path=resolve_tasks_db_path(),
+    )
 
 
 def _record_a2a_registration(registration: A2ARegistration) -> None:
@@ -2082,36 +1824,14 @@ async def _resume_a2a_task(  # pylint: disable=too-many-locals
 def _create_running_stream_run(
     run_id: str, agent: str, owner: str, request_info: RunRequestInfo
 ) -> None:
-    """Write the initial running row for a streaming run (stage 1).
-
-    Best-effort: a SQLite / OS failure is swallowed so a bookkeeping
-    miss never blocks the stream. The RunStarted frame still carries
-    the minted id; the row simply may not exist for later polling.
-
-    Args:
-        run_id: Registry run id pre-minted by the caller.
-        agent: Public agent alias (e.g. ``"chat"``).
-        owner: Authenticated user id (``"anonymous"`` for stdio).
-        request_info: Per-request metadata captured at the HTTP
-            boundary.
-    """
-    try:
-        RunRegistry(resolve_tasks_db_path()).create_run(
-            RunSpec(
-                run_id=run_id,
-                user_id=owner,
-                agent=agent,
-                origin="local",
-            ),
-            outcome=RunOutcome(status="running"),
-            request_info=request_info,
-        )
-    except (sqlite3.Error, OSError) as exc:
-        _LOGGER.warning(
-            "stream run create failed for %s: %s",
-            agent,
-            exc.__class__.__name__,
-        )
+    """Compatibility seam for initial streaming run creation."""
+    run_lifecycle.create_running_stream_run(
+        run_id,
+        agent,
+        owner,
+        request_info,
+        db_path=resolve_tasks_db_path(),
+    )
 
 
 def _stream_answer_max_bytes() -> int:
@@ -2125,33 +1845,17 @@ def _settle_stream_run(
     status: str,
     result: dict[str, Any],
 ) -> None:
-    """Settle a streaming run to a terminal status (stage 2).
-
-    Targeted owner-scoped UPDATE via ``RunRegistry.settle_run`` so the
-    original ``created_at`` and request-info columns survive; a missing
-    or foreign row is a silent no-op. Best-effort, mirroring the
-    stage-1 swallow — bookkeeping must never break the stream.
-
-    Args:
-        run_id: Registry run id pre-minted for this stream.
-        owner: Authenticated user id used for the owner-scoped lookup.
-        status: Terminal status to write (``"succeeded"``/``"failed"``).
-        result: Terminal result payload written to ``result_json``.
-    """
-    try:
-        RunRegistry(resolve_tasks_db_path()).settle_run(
-            run_id,
-            owner=owner,
-            status=status,
-            result=result,
-        )
-    except (sqlite3.Error, OSError) as exc:
-        _LOGGER.warning(
-            "stream run settle failed for %s: %s",
-            run_id,
-            exc.__class__.__name__,
-        )
-    _purge_expired_runs_best_effort()
+    """Compatibility seam for streaming run settlement."""
+    run_lifecycle.settle_stream_run(
+        run_id,
+        owner,
+        status,
+        result,
+        context=run_lifecycle.RunLifecycleContext(
+            db_path=resolve_tasks_db_path(),
+            purge=_purge_expired_runs_best_effort,
+        ),
+    )
 
 
 def _stamp_remote_request_info(
@@ -2160,35 +1864,13 @@ def _stamp_remote_request_info(
     owner: str,
     request_info: RunRequestInfo,
 ) -> None:
-    """Back-fill request-info columns on a chokepoint-minted run row.
-
-    Remote agents (analyst / deep_genome / research / design / network)
-    have their run row created inside the submit chokepoint before the
-    API layer can attach request metadata. Once the response returns
-    and ``_resolve_remote_run`` recovers the run id, this helper
-    updates the five per-request columns owner-scoped so the history
-    page sees the same shape as sync runs. SQLite / OS failures are
-    swallowed — the user already got their 202 response.
-
-    Args:
-        run_id: Run id minted by the chokepoint; ``None`` skips the
-            write (analyst dedup-hit passthrough or chokepoint failure).
-        owner: Authenticated user id used for the owner check.
-        request_info: Field values to write.
-    """
-    if run_id is None:
-        return
-    try:
-        RunRegistry(resolve_tasks_db_path()).update_request_info(
-            run_id, owner=owner, request_info=request_info
-        )
-    except (sqlite3.Error, OSError) as exc:
-        _LOGGER.warning(
-            "remote run request-info back-fill failed for run %s: %s",
-            run_id,
-            exc.__class__.__name__,
-        )
-        return
+    """Compatibility seam for remote request metadata stamping."""
+    run_lifecycle.stamp_remote_request_info(
+        run_id=run_id,
+        owner=owner,
+        request_info=request_info,
+        db_path=resolve_tasks_db_path(),
+    )
 
 
 def _error_response(
@@ -2441,41 +2123,14 @@ def _interop_result_body(result: DiscoveryResult) -> dict[str, Any]:
 
 
 async def _reconcile_run_task_logs(run_id: str, debug: bool) -> dict[str, Any]:
-    """Reconcile task logs for every task in a run.
-
-    Fetches the run to verify ownership, iterates its task ids, and
-    returns a JSON-ready envelope with one reconciled log per task.
-    When ``debug`` is False, the raw handler payload is stripped from
-    each log via ``strip_agent_result`` so default-mode responses stay
-    compact.
-
-    Args:
-        run_id: Run whose task logs are being reconciled.
-        debug: When True, keep the raw handler payload in each log.
-
-    Returns:
-        ``{"run_id", "task_ids", "task_logs"}`` envelope ready for
-        ``JSONResponse``.
-
-    Raises:
-        HTTPException: Propagated from ``_fetch_owner_run`` when the
-            run is unknown or foreign-owned.
-    """
-    record = await _fetch_owner_run(run_id)
-    task_ids = record.get("task_ids", [])
-    task_logs: list[dict[str, Any]] = []
-    for task_id in task_ids:
-        log = await reconcile_task_log(task_id)
-        if log is None:
-            continue
-        if not debug:
-            log = strip_agent_result(log)
-        task_logs.append(log)
-    return {
-        "run_id": run_id,
-        "task_ids": task_ids,
-        "task_logs": task_logs,
-    }
+    """Compatibility seam for owner-scoped task-log reconciliation."""
+    return await run_lifecycle.reconcile_run_task_logs(
+        run_id,
+        debug,
+        fetch=_fetch_owner_run,
+        reconcile=reconcile_task_log,
+        strip=strip_agent_result,
+    )
 
 
 @asynccontextmanager
