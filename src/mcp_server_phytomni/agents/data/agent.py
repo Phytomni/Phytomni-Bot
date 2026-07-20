@@ -14,7 +14,6 @@ from typing import Any, Literal
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import CompiledStateGraph
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
@@ -45,14 +44,13 @@ from ...runtime.langgraph_runner import (
     ensure_checkpointer,
     make_async_router,
 )
-from ...runtime.memory import MemoryGraphContext
-from ..knowledge.state import KnowledgeInput, KnowledgeOutput, KnowledgeState
 from ..shared.chat_subgraph import mount_chat_node
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import (
+    KnowledgeApp,
     build_knowledge_app,
     make_knowledge_after_router,
-    make_knowledge_node_wrapper,
+    mount_knowledge_node,
 )
 from .nl2sql import (
     Nl2SqlRequest,
@@ -218,15 +216,7 @@ class DataAgent:
         self.data_config = data_config
         self.sensitive_config = sensitive_config or get_sensitive_config()
         self.checkpointer = ensure_checkpointer(checkpointer)
-        self._knowledge_app: (
-            CompiledStateGraph[
-                KnowledgeState,
-                MemoryGraphContext,
-                KnowledgeInput,
-                KnowledgeOutput,
-            ]
-            | None
-        )
+        self._knowledge_app: KnowledgeApp | None
         self._knowledge_app = build_knowledge_app(
             knowledge_config=self.data_config,
             sensitive_config=self.sensitive_config,
@@ -293,14 +283,9 @@ class DataAgent:
             )
         workflow.add_node("retrieve_prep_node", self.retrieve_prep_node)
         workflow.add_node("retrieve_post_node", self.retrieve_post_node)
-        workflow.add_node(
-            "knowledge",
-            make_knowledge_node_wrapper(
-                knowledge_app=knowledge_app,
-                build_input_fn=lambda state: state["knowledge_payload"],
-                extract_output_fn=lambda ko: ko,
-                response_key="knowledge_response",
-            ),
+        mount_knowledge_node(
+            workflow,
+            knowledge_app=knowledge_app,
         )
         workflow.add_edge("retrieve_prep_node", "knowledge")
         workflow.add_conditional_edges(

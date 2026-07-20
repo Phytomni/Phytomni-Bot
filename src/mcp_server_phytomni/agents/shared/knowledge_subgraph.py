@@ -16,19 +16,22 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Any, cast
 
+from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from ...runtime.memory import MemoryGraphContext
 from ..knowledge.agent import KnowledgeAgent
 from ..knowledge.state import KnowledgeInput, KnowledgeOutput, KnowledgeState
 
+type KnowledgeApp = CompiledStateGraph[
+    KnowledgeState, MemoryGraphContext, KnowledgeInput, KnowledgeOutput
+]
+
 
 def build_knowledge_app(
     knowledge_config: Any,
     sensitive_config: Any | None = None,
-) -> CompiledStateGraph[
-    KnowledgeState, MemoryGraphContext, KnowledgeInput, KnowledgeOutput
-]:
+) -> KnowledgeApp:
     """Compile a KnowledgeAgent subgraph for the given config.
 
     Each consumer agent should call this once at ``__init__`` time
@@ -79,6 +82,53 @@ def make_knowledge_node_wrapper(
         return {response_key: extract_output_fn(ko)}
 
     return _knowledge_node
+
+
+def _default_knowledge_input(state: Any) -> dict[str, Any]:
+    """Project the common consumer payload into KnowledgeAgent input."""
+    return state["knowledge_payload"]
+
+
+def _default_knowledge_output(knowledge_output: dict[str, Any]) -> Any:
+    """Keep the common KnowledgeAgent output unchanged."""
+    return knowledge_output
+
+
+def mount_knowledge_node(
+    workflow: StateGraph[Any, Any, Any, Any],
+    *,
+    knowledge_app: KnowledgeApp,
+    build_input_fn: Callable[[Any], dict[str, Any]] = _default_knowledge_input,
+    extract_output_fn: Callable[
+        [dict[str, Any]], Any
+    ] = _default_knowledge_output,
+    response_key: str = "knowledge_response",
+) -> None:
+    """Register the shared ``knowledge`` wrapper on a consumer workflow.
+
+    This helper owns only the repeated node-registration call. Consumers keep
+    their own prep/post nodes, graph edges, state keys, and projections while
+    the compiled app remains captured by the wrapper for xray discovery.
+
+    Args:
+        workflow: Uncompiled consumer ``StateGraph`` receiving the node.
+        knowledge_app: Consumer-specific compiled KnowledgeAgent subgraph.
+        build_input_fn: Consumer-state to ``KnowledgeInput`` projection.
+            Defaults to ``state["knowledge_payload"]``.
+        extract_output_fn: Knowledge final-state to response projection.
+            Defaults to the unchanged final state.
+        response_key: Consumer state key receiving the projected response.
+            Defaults to ``knowledge_response``.
+    """
+    workflow.add_node(
+        "knowledge",
+        make_knowledge_node_wrapper(
+            knowledge_app=knowledge_app,
+            build_input_fn=build_input_fn,
+            extract_output_fn=extract_output_fn,
+            response_key=response_key,
+        ),
+    )
 
 
 def make_knowledge_after_router(

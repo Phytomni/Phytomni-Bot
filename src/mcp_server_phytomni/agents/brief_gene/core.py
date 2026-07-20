@@ -17,7 +17,6 @@ from typing import Any, Literal
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import CompiledStateGraph
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content, parse_follow_up_questions
@@ -30,15 +29,13 @@ from ...runtime.langgraph_runner import (
     ensure_checkpointer,
     make_async_router,
 )
-from ...runtime.memory import MemoryGraphContext
 from ..knowledge.agent import KnowledgeAgent
-from ..knowledge.state import KnowledgeInput, KnowledgeOutput, KnowledgeState
 from ..shared.chat_subgraph import (
     make_chat_after_router,
     mount_chat_node,
 )
 from ..shared.intermediate_state import merge_intermediate_state
-from ..shared.knowledge_subgraph import build_knowledge_app
+from ..shared.knowledge_subgraph import KnowledgeApp, build_knowledge_app
 from ..shared.sql import sql_literal
 from .analytical_sections import (
     _run_section_application_node,
@@ -183,12 +180,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             knowledge_config=brief_config,
             sensitive_config=self.sensitive_config,
         )
-        self._knowledge_app: CompiledStateGraph[
-            KnowledgeState,
-            MemoryGraphContext,
-            KnowledgeInput,
-            KnowledgeOutput,
-        ] = build_knowledge_app(
+        self._knowledge_app: KnowledgeApp = build_knowledge_app(
             knowledge_config=self.brief_config,
             sensitive_config=self.sensitive_config,
         )

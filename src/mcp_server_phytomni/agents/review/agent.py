@@ -18,7 +18,6 @@ from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send, interrupt
 
 from ...common.prompts import get_prompt
@@ -48,10 +47,8 @@ from ...runtime.langgraph_runner import (
     ensure_checkpointer,
     make_async_router,
 )
-from ...runtime.memory import MemoryGraphContext
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
-from ..knowledge.state import KnowledgeInput, KnowledgeOutput, KnowledgeState
 from ..shared.a2ui.loop import A2UI_MAX_ROUNDS, next_a2ui_round
 from ..shared.analysis import _compute_traceback_digest
 from ..shared.chat_subgraph import (
@@ -60,7 +57,7 @@ from ..shared.chat_subgraph import (
     mount_chat_node,
 )
 from ..shared.intermediate_state import merge_intermediate_state
-from ..shared.knowledge_subgraph import build_knowledge_app
+from ..shared.knowledge_subgraph import KnowledgeApp, build_knowledge_app
 from ..shared.parallel_dispatch import FailureRecord
 from .planning import ReviewPlanningMixin
 from .report import ReviewReportMixin
@@ -145,15 +142,7 @@ class DeepResearchAgent(
             knowledge_config=review_config,
             sensitive_config=self.sensitive_config,
         )
-        self._knowledge_app: (
-            CompiledStateGraph[
-                KnowledgeState,
-                MemoryGraphContext,
-                KnowledgeInput,
-                KnowledgeOutput,
-            ]
-            | None
-        )
+        self._knowledge_app: KnowledgeApp | None
         self._knowledge_app = build_knowledge_app(
             knowledge_config=self.review_config,
             sensitive_config=self.sensitive_config,

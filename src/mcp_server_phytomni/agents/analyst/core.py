@@ -20,7 +20,6 @@ from typing import Any, Literal
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import CompiledStateGraph
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
@@ -32,17 +31,16 @@ from ...runtime.langgraph_runner import (
     ensure_checkpointer,
     make_async_router,
 )
-from ...runtime.memory import MemoryGraphContext
-from ..knowledge.state import KnowledgeInput, KnowledgeOutput, KnowledgeState
 from ..shared.chat_subgraph import (
     make_chat_after_router,
     mount_chat_node,
 )
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import (
+    KnowledgeApp,
     build_knowledge_app,
     make_knowledge_after_router,
-    make_knowledge_node_wrapper,
+    mount_knowledge_node,
 )
 from .defaults import ANALYST_CONFIG, ANALYST_CONFIG_FIELD_MAP
 from .graph import AnalystGraphMixin
@@ -169,12 +167,7 @@ class AnalystAgent(
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.analyst_config = analyst_config
         self.sensitive_config = sensitive_config or get_sensitive_config()
-        self._knowledge_app: CompiledStateGraph[
-            KnowledgeState,
-            MemoryGraphContext,
-            KnowledgeInput,
-            KnowledgeOutput,
-        ] = build_knowledge_app(
+        self._knowledge_app: KnowledgeApp = build_knowledge_app(
             knowledge_config=self.analyst_config,
             sensitive_config=self.sensitive_config,
         )
@@ -189,7 +182,7 @@ class AnalystAgent(
         ``make_chat_node_wrapper``. The ``method_retrieve`` site is
         split into a prep + post pair surrounding a
         per-instance compiled ``knowledge`` node mounted via
-        ``make_knowledge_node_wrapper``. Each chat post node reads
+        ``mount_knowledge_node``. Each chat post node reads
         ``chat_response`` set by a router on ``pending_post``; each
         knowledge post node reads ``knowledge_response`` set by a router
         on ``pending_post_knowledge``. The two routers use distinct state
@@ -240,14 +233,9 @@ class AnalystAgent(
         workflow.add_node(
             "method_retrieve_post_node", self.method_retrieve_post_node
         )
-        workflow.add_node(
-            "knowledge",
-            make_knowledge_node_wrapper(
-                knowledge_app=knowledge_app,
-                build_input_fn=lambda state: state["knowledge_payload"],
-                extract_output_fn=lambda ko: ko,
-                response_key="knowledge_response",
-            ),
+        mount_knowledge_node(
+            workflow,
+            knowledge_app=knowledge_app,
         )
         workflow.add_edge("method_retrieve_prep_node", "knowledge")
         workflow.add_conditional_edges(
