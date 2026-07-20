@@ -20,6 +20,11 @@ from datetime import UTC, datetime
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
+from ..contracts.deep_genome import (
+    DEEP_GENOME_PROGRESS_FIELDS,
+    DEEP_GENOME_REPORT_FIELDS,
+    sanitize_nonnegative_int,
+)
 from .deep_genome_transitions import (
     _TERMINAL_WORK_ITEM_STATUSES,
     _WORK_ITEM_STATUSES,
@@ -49,19 +54,6 @@ __all__ = [
     "snapshot_to_public_dict",
 ]
 
-_PUBLIC_PROGRESS_KEYS = (
-    "planning_complete",
-    "brief_gene_status",
-    "total",
-    "planned",
-    "submitted",
-    "pending",
-    "running",
-    "succeeded",
-    "failed",
-    "cancelled",
-    "timed_out",
-)
 _PUBLIC_FAILURE_MESSAGES = {
     "failed": "analysis task failed",
     "cancelled": "analysis task cancelled",
@@ -196,15 +188,9 @@ def _public_progress(
         "planning_complete": planning_complete,
         "brief_gene_status": brief_gene_status,
     }
-    for key in _PUBLIC_PROGRESS_KEYS[2:]:
+    for key in DEEP_GENOME_PROGRESS_FIELDS[2:]:
         value = progress.get(key)
-        projected[key] = (
-            value
-            if isinstance(value, int)
-            and not isinstance(value, bool)
-            and value >= 0
-            else 0
-        )
+        projected[key] = sanitize_nonnegative_int(value)
     return projected
 
 
@@ -277,7 +263,7 @@ def snapshot_to_public_dict(
         or revision < 0
     ):
         revision = 0
-    return {
+    public = {
         "intermediate_report": (
             snapshot.intermediate_report
             if isinstance(snapshot.intermediate_report, str)
@@ -297,6 +283,7 @@ def snapshot_to_public_dict(
         "degraded_reason": _public_degraded_reason(snapshot.degraded_reason),
         "failures": _public_failures(snapshot.failures),
     }
+    return {field: public[field] for field in DEEP_GENOME_REPORT_FIELDS}
 
 
 def snapshot_to_formatted_report_metadata(

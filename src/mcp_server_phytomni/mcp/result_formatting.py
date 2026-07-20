@@ -23,6 +23,10 @@ from typing import Any
 
 from ..agents.shared.citation_enrichment import CITATION_BIBLIO_FIELDS
 from ..common.reasoning_content import normalize_chat_completion_dict
+from ..contracts.deep_genome import (
+    DEEP_GENOME_PROGRESS_FIELDS,
+    sanitize_nonnegative_int,
+)
 from ..runtime.terminal_artifacts import collect_terminal_artifacts
 from .universal_failures import (
     project_degraded_metadata,
@@ -35,19 +39,6 @@ _CITATION_PATTERN = re.compile(r"\[(?:[A-Za-z]+[:\s]*)?(\d+(?:,\s*\d+)*)\]")
 
 _PHYTOMNI_STATE_KEY = "phytomni_state"
 _METADATA_TEXT_TRUNCATE_BYTES = 4096
-_DEEP_GENOME_PROGRESS_KEYS = (
-    "planning_complete",
-    "brief_gene_status",
-    "total",
-    "planned",
-    "submitted",
-    "pending",
-    "running",
-    "succeeded",
-    "failed",
-    "cancelled",
-    "timed_out",
-)
 _DEEP_GENOME_FAILURE_MESSAGES = {
     "succeeded": "analysis task unavailable",
     "failed": "analysis task failed",
@@ -862,7 +853,7 @@ def _format_task_status_result(
             "artifacts": artifacts,
             "report_stage": report_stage,
             "report_completeness": report_completeness,
-            "report_revision": _nonnegative_int(
+            "report_revision": sanitize_nonnegative_int(
                 content.get("report_revision")
             ),
             "report_updated_at": _string_or_none(
@@ -917,23 +908,12 @@ def _report_completeness(
     return None
 
 
-def _nonnegative_int(value: Any) -> int:
-    """Return a non-negative integer, excluding booleans and invalid values."""
-    return (
-        value
-        if isinstance(value, int)
-        and not isinstance(value, bool)
-        and value >= 0
-        else 0
-    )
-
-
 def _deep_genome_progress(value: Any) -> dict[str, Any]:
     """Copy only the public DeepGenome progress counters."""
     if not isinstance(value, Mapping):
         return {}
     progress: dict[str, Any] = {}
-    for key in _DEEP_GENOME_PROGRESS_KEYS:
+    for key in DEEP_GENOME_PROGRESS_FIELDS:
         raw = value.get(key)
         if key == "planning_complete":
             progress[key] = raw if isinstance(raw, bool) else False
@@ -944,7 +924,7 @@ def _deep_genome_progress(value: Any) -> dict[str, Any]:
                 else "unknown"
             )
         else:
-            progress[key] = _nonnegative_int(raw)
+            progress[key] = sanitize_nonnegative_int(raw)
     return progress
 
 

@@ -17,6 +17,10 @@ from typing import Any
 
 import pytest
 
+from mcp_server_phytomni.contracts.deep_genome import (
+    DEEP_GENOME_PROGRESS_FIELDS,
+    DEEP_GENOME_REPORT_FIELDS,
+)
 from mcp_server_phytomni.mcp.result_formatting import format_tool_result
 from mcp_server_phytomni.runtime.run_registry import _terminal_payload
 
@@ -117,6 +121,41 @@ def _gene_network_payload() -> dict[str, Any]:
 def _deep_genome_arguments() -> dict[str, Any]:
     """DeepGenomeAgent arguments for formatter routing."""
     return {"species_code": "osa", "gene_id": "Os01g0177400"}
+
+
+def test_deep_genome_contract_field_order_is_immutable() -> None:
+    """The neutral contract owns the public report/progress field order."""
+    assert isinstance(DEEP_GENOME_REPORT_FIELDS, tuple)
+    assert isinstance(DEEP_GENOME_PROGRESS_FIELDS, tuple)
+    assert len(DEEP_GENOME_REPORT_FIELDS) == 10
+    assert len(DEEP_GENOME_PROGRESS_FIELDS) == 11
+    assert len(set(DEEP_GENOME_REPORT_FIELDS)) == len(
+        DEEP_GENOME_REPORT_FIELDS
+    )
+    assert len(set(DEEP_GENOME_PROGRESS_FIELDS)) == len(
+        DEEP_GENOME_PROGRESS_FIELDS
+    )
+
+
+def test_deep_genome_status_uses_only_contract_progress_fields() -> None:
+    """MCP status metadata drops private progress keys and preserves order."""
+    result = format_tool_result(
+        "GetTaskStatus",
+        {
+            "task_id": "dg-task-1",
+            "status": "running",
+            "progress": {
+                "total": 12,
+                "running": 3,
+                "submitted_task_id": "must-drop",
+            },
+        },
+    )
+
+    assert tuple(result.metadata["progress"]) == DEEP_GENOME_PROGRESS_FIELDS
+    assert result.metadata["progress"]["total"] == 12
+    assert result.metadata["progress"]["running"] == 3
+    assert "submitted_task_id" not in result.metadata["progress"]
 
 
 @pytest.mark.parametrize(

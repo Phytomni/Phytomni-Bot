@@ -15,6 +15,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from ..contracts.deep_genome import DEEP_GENOME_PROGRESS_FIELDS
+
 __all__ = (
     "ReportRows",
     "assemble_intermediate_report",
@@ -24,16 +26,7 @@ __all__ = (
     "render_failure_notices",
 )
 
-_WORK_ITEM_STATES = (
-    "planned",
-    "submitted",
-    "pending",
-    "running",
-    "succeeded",
-    "failed",
-    "cancelled",
-    "timed_out",
-)
+_WORK_ITEM_STATES = DEEP_GENOME_PROGRESS_FIELDS[3:]
 _NONTERMINAL_STATES = frozenset(
     {"planned", "submitted", "pending", "running", "queued", "waiting"}
 )
@@ -167,7 +160,7 @@ def derive_progress(
     planning_complete = bool(normalized.work_items) or any(
         row.get("section_kind") == "analysis" for row in normalized.sections
     )
-    return {
+    progress: dict[str, int | bool | str] = {
         "planning_complete": planning_complete,
         "brief_gene_status": (
             _status(brief) if brief is not None else "unknown"
@@ -175,6 +168,7 @@ def derive_progress(
         "total": len(normalized.work_items),
         **counts,
     }
+    return {key: progress[key] for key in DEEP_GENOME_PROGRESS_FIELDS}
 
 
 def _degraded(normalized: ReportRows) -> bool:

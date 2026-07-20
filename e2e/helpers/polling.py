@@ -40,6 +40,11 @@ from typing import Any
 import httpx
 
 from mcp_client_phytomni import McpToolResponse, PhytomniMcpClient
+from mcp_server_phytomni.contracts.deep_genome import (
+    DEEP_GENOME_PROGRESS_FIELDS,
+    DEEP_GENOME_REPORT_FIELDS,
+    sanitize_nonnegative_int,
+)
 from mcp_server_phytomni.runtime.task_reconcile import reconcile_task
 
 from .client import call_tool, submit_timeout_seconds
@@ -302,7 +307,9 @@ def task_state_from_mapping(
             {"none", "partial", "complete"},
             "none",
         ),
-        report_revision=_nonnegative_int(payload.get("report_revision")),
+        report_revision=sanitize_nonnegative_int(
+            payload.get("report_revision")
+        ),
         report_updated_at=_optional_text(payload.get("report_updated_at")),
         progress=progress,
         degraded=bool(payload.get("degraded", False)),
@@ -332,24 +339,34 @@ def _choice(value: Any, allowed: set[str], default: str) -> str:
     return value if isinstance(value, str) and value in allowed else default
 
 
-def _nonnegative_int(value: Any) -> int:
-    """Return a nonnegative integer, rejecting booleans and floats."""
-    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-        return value
-    return 0
-
-
 def _mapping_progress(value: Any) -> dict[str, int | bool | str]:
     """Copy only scalar progress values from a reconciled mapping."""
     if not isinstance(value, Mapping):
         return {}
     return {
-        str(key): item
-        for key, item in value.items()
-        if isinstance(key, str)
-        and isinstance(item, (int, bool, str))
-        and not isinstance(item, (bytes, bytearray))
+        key: item
+        for key in DEEP_GENOME_PROGRESS_FIELDS
+        if (item := _progress_value(key, value.get(key))) is not None
     }
+
+
+def _progress_value(key: str, value: Any) -> int | bool | str | None:
+    """Validate one E2E progress value without retaining private keys."""
+    if key == "planning_complete":
+        return value if isinstance(value, bool) else None
+    if key == "brief_gene_status":
+        return (
+            value.strip().lower()
+            if isinstance(value, str) and value.strip()
+            else None
+        )
+    return (
+        value
+        if isinstance(value, int)
+        and not isinstance(value, bool)
+        and value >= 0
+        else None
+    )
 
 
 def _failure_tuple(value: Any) -> tuple[Mapping[str, str], ...]:
@@ -572,16 +589,11 @@ def _read_task_state(
             for row in conn.execute("PRAGMA table_info(tasks)").fetchall()
         }
         selected = ["task_id", "status", "analysis_id", "output_dir"]
-        optional = (
-            "intermediate_report",
-            "final_report",
-            "report_stage",
-            "report_completeness",
-            "report_revision",
-            "report_updated_at",
-            "progress_json",
-            "degraded_reason",
-        )
+        optional = tuple(
+            field
+            for field in DEEP_GENOME_REPORT_FIELDS
+            if field not in {"progress", "degraded", "failures"}
+        ) + ("progress_json",)
         selected.extend(name for name in optional if name in columns)
         row = conn.execute(
             f"SELECT {', '.join(selected)} FROM tasks WHERE task_id = ?",

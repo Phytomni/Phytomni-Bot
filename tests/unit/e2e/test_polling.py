@@ -72,7 +72,11 @@ def test_task_state_mapping_projects_report_and_failure_fields() -> None:
             "report_completeness": "partial",
             "report_revision": 4,
             "report_updated_at": "2026-07-15T00:00:00Z",
-            "progress": {"brief_gene_status": "succeeded"},
+            "progress": {
+                "brief_gene_status": " SUCCEEDED ",
+                "running": -1,
+                "submitted_task_id": "must-drop",
+            },
             "degraded": True,
             "degraded_reason": "1 of 12 optional analyses unavailable",
             "brief_gene_status": "succeeded",
@@ -87,6 +91,7 @@ def test_task_state_mapping_projects_report_and_failure_fields() -> None:
     assert state.intermediate_report == "# profile"
     assert state.report_revision == 4
     assert state.brief_gene_status == "succeeded"
+    assert state.progress == {"brief_gene_status": "succeeded"}
     assert state.artifacts[0]["output_dir"] == "/obs/report"
 
 

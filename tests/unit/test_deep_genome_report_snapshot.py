@@ -16,6 +16,9 @@ from mcp_server_phytomni.agents.deep_genome.report_snapshot import (
     derive_progress,
     derive_report_classification,
 )
+from mcp_server_phytomni.contracts.deep_genome import (
+    DEEP_GENOME_PROGRESS_FIELDS,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -130,6 +133,7 @@ def test_progress_contains_all_local_work_item_states() -> None:
     rows = partial_rows()
     progress = derive_progress(rows)
 
+    assert tuple(progress) == DEEP_GENOME_PROGRESS_FIELDS
     assert progress["planning_complete"] is True
     assert progress["brief_gene_status"] == "succeeded"
     assert progress["total"] == 2

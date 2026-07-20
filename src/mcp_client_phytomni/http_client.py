@@ -13,22 +13,15 @@ from urllib.parse import quote, urlsplit, urlunsplit
 
 import httpx
 
+from mcp_server_phytomni.contracts.deep_genome import (
+    DEEP_GENOME_PROGRESS_FIELDS,
+    DEEP_GENOME_REPORT_FIELDS,
+    sanitize_nonnegative_int,
+)
+
 _RUN_STATUSES = frozenset({"running", "input_required", "succeeded", "failed"})
 _REPORT_STAGES = frozenset({"waiting_for_brief_gene", "intermediate", "final"})
 _REPORT_COMPLETENESS = frozenset({"none", "partial", "complete"})
-_PROGRESS_KEYS = (
-    "planning_complete",
-    "brief_gene_status",
-    "total",
-    "planned",
-    "submitted",
-    "pending",
-    "running",
-    "succeeded",
-    "failed",
-    "cancelled",
-    "timed_out",
-)
 
 __all__ = [
     "HttpClientError",
@@ -211,7 +204,7 @@ class PhytomniHttpClient:
                     "report completeness",
                     "none",
                 ),
-                "report_revision": _nonnegative_int(
+                "report_revision": sanitize_nonnegative_int(
                     result.get("report_revision")
                 ),
                 "report_updated_at": _optional_text(
@@ -276,16 +269,7 @@ _RUN_SNAPSHOT_FIELDS = (
     "run_id",
     "status",
     "answer",
-    "intermediate_report",
-    "final_report",
-    "report_stage",
-    "report_completeness",
-    "report_revision",
-    "report_updated_at",
-    "progress",
-    "degraded",
-    "degraded_reason",
-    "failures",
+    *DEEP_GENOME_REPORT_FIELDS,
 )
 
 
@@ -366,19 +350,12 @@ def _optional_choice(
     return value
 
 
-def _nonnegative_int(value: Any) -> int:
-    """Return a nonnegative JSON integer or the public default."""
-    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-        return value
-    return 0
-
-
 def _public_progress(value: Any) -> Mapping[str, int | bool | str]:
     """Keep only the documented public progress keys and value types."""
     if not isinstance(value, Mapping):
         return {}
     projected: dict[str, int | bool | str] = {}
-    for key in _PROGRESS_KEYS:
+    for key in DEEP_GENOME_PROGRESS_FIELDS:
         item = value.get(key)
         if (
             isinstance(item, bool)

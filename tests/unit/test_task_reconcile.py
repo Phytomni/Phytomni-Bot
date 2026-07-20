@@ -28,6 +28,10 @@ from mcp.types import INTERNAL_ERROR, ErrorData
 from mcp_server_phytomni.agents.deep_genome.work_items import (
     build_work_item_plan,
 )
+from mcp_server_phytomni.contracts.deep_genome import (
+    DEEP_GENOME_PROGRESS_FIELDS,
+    DEEP_GENOME_REPORT_FIELDS,
+)
 from mcp_server_phytomni.runtime.deep_genome_store import (
     DeepGenomeSnapshot,
     DeepGenomeStore,
@@ -145,31 +149,8 @@ def test_snapshot_public_serializer_whitelists_report_fields() -> None:
 
     payload = snapshot_to_public_dict(snapshot)
 
-    assert list(payload) == [
-        "intermediate_report",
-        "final_report",
-        "report_stage",
-        "report_completeness",
-        "report_revision",
-        "report_updated_at",
-        "progress",
-        "degraded",
-        "degraded_reason",
-        "failures",
-    ]
-    assert list(payload["progress"]) == [
-        "planning_complete",
-        "brief_gene_status",
-        "total",
-        "planned",
-        "submitted",
-        "pending",
-        "running",
-        "succeeded",
-        "failed",
-        "cancelled",
-        "timed_out",
-    ]
+    assert tuple(payload) == DEEP_GENOME_REPORT_FIELDS
+    assert tuple(payload["progress"]) == DEEP_GENOME_PROGRESS_FIELDS
     assert payload["report_updated_at"] == "2026-07-15T12:00:00Z"
     assert payload["degraded_reason"] == (
         "analysis results are partially unavailable"

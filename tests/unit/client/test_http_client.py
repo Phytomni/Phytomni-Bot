@@ -17,6 +17,7 @@ from mcp_client_phytomni.http_client import (
     PhytomniHttpClient,
     RunProtocolError,
 )
+from mcp_server_phytomni.contracts.deep_genome import DEEP_GENOME_REPORT_FIELDS
 
 pytestmark = pytest.mark.unit
 
@@ -122,6 +123,12 @@ async def test_http_client_submits_and_reads_run() -> None:
     assert submitted.run_id == "run-1"
     assert submitted.task_ids == ("task-1",)
     assert snapshot.status == "running"
+    assert tuple(snapshot.__dict__) == (
+        "run_id",
+        "status",
+        "answer",
+        *DEEP_GENOME_REPORT_FIELDS,
+    )
     assert snapshot.intermediate_report == "# partial"
     assert snapshot.report_revision == 2
     assert snapshot.progress == {"total": 12, "running": 3}
