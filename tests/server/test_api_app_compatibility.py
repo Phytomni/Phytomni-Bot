@@ -1,0 +1,612 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+"""Compatibility contracts for the FastAPI application factory.
+
+These tests are intentionally literal: route order, public methods, status
+codes, response models, and authorization seams are the HTTP contract that
+route extraction must preserve.
+"""
+
+from __future__ import annotations
+
+import copy
+import hashlib
+import inspect
+import json
+from dataclasses import dataclass
+from typing import Any
+
+import httpx
+import pytest
+from fastapi import FastAPI
+from fastapi.routing import APIRoute
+
+from mcp_server_phytomni.api import app as api_app_module
+from mcp_server_phytomni.api.app import create_app
+from mcp_server_phytomni.runtime.run_registry import (
+    RunOutcome,
+    RunRegistry,
+    RunSpec,
+)
+
+pytestmark = pytest.mark.server
+
+_REAL_ASYNC_REQUEST = httpx.AsyncClient.request
+_OPENAPI_HASH = (
+    "881e33fda651ceacc95126e91f58e9f9cf7bc15ad4290b21586c5d8d4d78c762"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _RouteContract:
+    """Stable, client-visible fields for one registered route."""
+
+    path: str
+    methods: tuple[str, ...]
+    status: int
+    response: str | None
+    scopes: tuple[str, ...]
+    name: str
+
+
+def _route_response_name(route: APIRoute) -> str | None:
+    """Return a stable response-model name for a route."""
+    model = route.response_model
+    if model is None:
+        return None
+    if getattr(model, "__origin__", None) is not None:
+        return str(model).replace("typing.", "")
+    return getattr(model, "__name__", str(model).replace("typing.", ""))
+
+
+def _dependency_scopes(route: APIRoute) -> tuple[str, ...]:
+    """Extract semantic auth requirements from FastAPI dependencies."""
+    labels: set[str] = set()
+    pending = list(route.dependant.dependencies)
+    while pending:
+        dependency = pending.pop()
+        call = dependency.call
+        if call is None:
+            continue
+        name = getattr(call, "__name__", "")
+        nonlocals = inspect.getclosurevars(call).nonlocals
+        if name == "_scoped":
+            labels.update(nonlocals.get("needed", ()))
+        elif name == "_gated":
+            service = nonlocals.get("service")
+            if isinstance(service, str):
+                labels.add(f"relay:{service}")
+        elif name == "relay_enabled_guard":
+            labels.add("relay_enabled")
+        elif name == "require_service_principal":
+            labels.add("service")
+        pending.extend(dependency.dependencies)
+    return tuple(sorted(labels))
+
+
+def _route_manifest(app: FastAPI) -> tuple[_RouteContract, ...]:
+    """Return the ordered public route manifest for ``app``."""
+    return tuple(
+        _RouteContract(
+            path=route.path,
+            methods=tuple(sorted(route.methods or ())),
+            status=route.status_code or 200,
+            response=_route_response_name(route),
+            scopes=_dependency_scopes(route),
+            name=route.name,
+        )
+        for route in app.routes
+        if isinstance(route, APIRoute)
+    )
+
+
+_route = _RouteContract
+
+
+_DEFAULT_ROUTES = (
+    _route("/healthz", ("GET",), 200, "dict[str, str]", (), "healthz"),
+    _route("/readyz", ("GET",), 200, None, (), "readyz"),
+    _route("/v1/models", ("GET",), 200, None, ("agents",), "list_models"),
+    _route(
+        "/v1/api-keys",
+        ("POST",),
+        201,
+        "ApiKeyCreateResponse",
+        ("service",),
+        "issue_api_key",
+    ),
+    _route(
+        "/v1/api-keys",
+        ("GET",),
+        200,
+        "ApiKeyListResponse",
+        ("service",),
+        "list_api_keys",
+    ),
+    _route(
+        "/v1/api-keys/{prefix}",
+        ("DELETE",),
+        200,
+        "ApiKeyDeleteResponse",
+        ("service",),
+        "revoke_api_key",
+    ),
+    _route(
+        "/v1/relay/audit",
+        ("GET",),
+        200,
+        None,
+        ("service",),
+        "list_relay_audit",
+    ),
+    _route(
+        "/v1/relay/audit/{request_id}",
+        ("GET",),
+        200,
+        None,
+        ("service",),
+        "get_relay_audit",
+    ),
+    _route(
+        "/v1/chat/completions",
+        ("POST",),
+        200,
+        None,
+        ("agents",),
+        "chat_completions",
+    ),
+    _route("/v1/agents", ("GET",), 200, None, ("agents",), "list_agents"),
+    _route(
+        "/v1/agents/{agent}/runs",
+        ("POST",),
+        200,
+        None,
+        ("agents",),
+        "create_agent_run",
+    ),
+    _route(
+        "/v1/query/route",
+        ("POST",),
+        200,
+        None,
+        ("agents",),
+        "route_query",
+    ),
+    _route(
+        "/v1/files",
+        ("POST",),
+        201,
+        "FileUploadResponse",
+        ("agents",),
+        "upload_file",
+    ),
+    _route(
+        "/v1/runs/{run_id}/logs",
+        ("GET",),
+        200,
+        None,
+        ("agents",),
+        "get_run_logs",
+    ),
+    _route(
+        "/v1/runs/{run_id}",
+        ("GET",),
+        200,
+        None,
+        ("agents",),
+        "get_run",
+    ),
+    _route(
+        "/v1/runs/{run_id}/a2ui-actions",
+        ("POST",),
+        200,
+        None,
+        ("agents",),
+        "post_a2ui_action",
+    ),
+    _route(
+        "/v1/runs/{thread_id}/resume",
+        ("POST",),
+        200,
+        None,
+        ("agents",),
+        "resume_run",
+    ),
+    _route(
+        "/v1/runs",
+        ("GET",),
+        200,
+        None,
+        ("agents",),
+        "list_runs",
+    ),
+    _route(
+        "/v1/relay/healthz",
+        ("GET",),
+        200,
+        "dict[str, str]",
+        ("relay_enabled",),
+        "relay_healthz",
+    ),
+    _route(
+        "/v1/relay/llm/chat/completions",
+        ("POST",),
+        200,
+        None,
+        ("relay:llm", "relay_enabled"),
+        "_handler",
+    ),
+    _route(
+        "/v1/relay/coder/chat/completions",
+        ("POST",),
+        200,
+        None,
+        ("relay:coder", "relay_enabled"),
+        "_handler",
+    ),
+    _route(
+        "/v1/relay/embed/embeddings",
+        ("POST",),
+        200,
+        None,
+        ("relay:embed", "relay_enabled"),
+        "_handler",
+    ),
+    _route(
+        "/v1/relay/retrieve/search",
+        ("POST",),
+        200,
+        None,
+        ("relay:retrieve", "relay_enabled"),
+        "_handler",
+    ),
+    _route(
+        "/v1/relay/rerank/rank",
+        ("POST",),
+        200,
+        None,
+        ("relay:rerank", "relay_enabled"),
+        "_handler",
+    ),
+    _route(
+        "/v1/relay/database/nl2sql",
+        ("POST",),
+        200,
+        None,
+        ("relay:database", "relay_enabled"),
+        "_handler",
+    ),
+    _route(
+        "/v1/relay/analysis/tasks",
+        ("POST",),
+        200,
+        None,
+        ("relay:analysis", "relay_enabled"),
+        "_handler",
+    ),
+    _route(
+        "/v1/relay/bi/query",
+        ("POST",),
+        200,
+        None,
+        ("relay:bi", "relay_enabled"),
+        "_handler",
+    ),
+    _route(
+        "/v1/relay/analysis/{task_id}",
+        ("GET",),
+        200,
+        None,
+        ("relay:analysis", "relay_enabled"),
+        "_handler",
+    ),
+    _route(
+        "/v1/relay/analysis/{task_id}/logs",
+        ("GET",),
+        200,
+        None,
+        ("relay:analysis", "relay_enabled"),
+        "_handler",
+    ),
+    _route(
+        "/v1/relay/analysis/{task_id}/terminate",
+        ("POST",),
+        200,
+        None,
+        ("relay:analysis", "relay_enabled"),
+        "_handler",
+    ),
+    _route(
+        "/v1/relay/spa-faq/{repo_id}",
+        ("GET",),
+        200,
+        None,
+        ("relay:spa-faq", "relay_enabled"),
+        "_handler",
+    ),
+    _route(
+        "/v1/relay/obs/object",
+        ("PUT",),
+        200,
+        None,
+        ("relay:obs", "relay_enabled"),
+        "_put_object",
+    ),
+    _route(
+        "/v1/relay/obs/object",
+        ("GET",),
+        200,
+        None,
+        ("relay:obs", "relay_enabled"),
+        "_get_object",
+    ),
+    _route(
+        "/v1/relay/obs/list",
+        ("GET",),
+        200,
+        None,
+        ("relay:obs", "relay_enabled"),
+        "_list_objects",
+    ),
+    _route(
+        "/v1/relay/obs/dir",
+        ("PUT",),
+        200,
+        None,
+        ("relay:obs", "relay_enabled"),
+        "_put_dir",
+    ),
+)
+
+_MEMORY_ROUTES = (
+    _route(
+        "/v1/memories",
+        ("POST",),
+        201,
+        "MemoryResponse",
+        ("agents",),
+        "create_memory",
+    ),
+    _route(
+        "/v1/memories",
+        ("GET",),
+        200,
+        "MemoryListResponse",
+        ("agents",),
+        "list_memories",
+    ),
+    _route(
+        "/v1/memories/export",
+        ("GET",),
+        200,
+        "MemoryExportResponse",
+        ("agents",),
+        "export_memories",
+    ),
+    _route(
+        "/v1/memories/audit",
+        ("GET",),
+        200,
+        "MemoryAuditListResponse",
+        ("service",),
+        "list_memory_audit",
+    ),
+    _route(
+        "/v1/memories/{memory_id}",
+        ("GET",),
+        200,
+        "MemoryResponse",
+        ("agents",),
+        "get_memory",
+    ),
+    _route(
+        "/v1/memories/{memory_id}",
+        ("PUT",),
+        200,
+        "MemoryResponse",
+        ("agents",),
+        "update_memory",
+    ),
+    _route(
+        "/v1/memories/{memory_id}",
+        ("DELETE",),
+        200,
+        "MemoryDeleteResponse",
+        ("agents",),
+        "delete_memory",
+    ),
+)
+
+_INTEROP_ROUTE = _route(
+    "/v1/interop/capabilities",
+    ("GET",),
+    200,
+    None,
+    ("agents",),
+    "list_interop_capabilities",
+)
+
+_A2A_ROUTES = (
+    _route(
+        "/.well-known/agent-card.json",
+        ("GET",),
+        200,
+        None,
+        (),
+        "a2a_agent_card",
+    ),
+    _route("/a2a", ("POST",), 200, None, ("agents",), "a2a_jsonrpc"),
+)
+
+
+def _all_flag_routes() -> tuple[_RouteContract, ...]:
+    """Build the expected order when every optional surface is enabled."""
+    return (
+        (_INTEROP_ROUTE,)
+        + _DEFAULT_ROUTES[:3]
+        + _MEMORY_ROUTES
+        + _DEFAULT_ROUTES[3:18]
+        + _A2A_ROUTES
+        + _DEFAULT_ROUTES[18:]
+    )
+
+
+def _normalized_openapi(app: FastAPI) -> dict[str, Any]:
+    """Remove only documented unstable OpenAPI metadata."""
+    document = copy.deepcopy(app.openapi())
+    info = document.get("info")
+    if isinstance(info, dict):
+        info.pop("version", None)
+    document.pop("servers", None)
+    return document
+
+
+def _openapi_hash(app: FastAPI) -> str:
+    """Hash canonical OpenAPI JSON after the minimal normalization."""
+    payload = json.dumps(
+        _normalized_openapi(app), sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _original_lifespan_name(app: FastAPI) -> str | None:
+    """Find the application lifespan inside FastAPI's merged wrapper."""
+    current: Any = app.router.lifespan_context
+    for _ in range(3):
+        if not callable(current):
+            return None
+        nonlocals = inspect.getclosurevars(current).nonlocals
+        original = nonlocals.get("original_context")
+        if callable(original):
+            return getattr(original, "__name__", None)
+        current = nonlocals.get("func")
+    return None
+
+
+def test_default_application_contract_is_literal() -> None:
+    """Lock default routes, middleware, lifespan, and OpenAPI identity."""
+    app = create_app()
+
+    assert _route_manifest(app) == _DEFAULT_ROUTES
+    assert tuple(
+        getattr(item.cls, "__name__", "") for item in app.user_middleware
+    ) == ("request_context_middleware",)
+    assert _original_lifespan_name(app) == "_http_lifespan"
+    document = _normalized_openapi(app)
+    assert _openapi_hash(app) == _OPENAPI_HASH
+    assert len(document["paths"]) == 33
+    assert len(document["components"]["schemas"]) == 14
+    assert all(
+        operation.get("operationId")
+        for path_item in document["paths"].values()
+        for operation in path_item.values()
+        if isinstance(operation, dict) and "responses" in operation
+    )
+
+
+def test_optional_application_contract_is_literal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lock every feature-flag route and its scope boundary."""
+    for name in (
+        "PHYTOMNI_MEMORY_ENABLED",
+        "PHYTOMNI_INTEROP_ENABLED",
+        "PHYTOMNI_A2A_ENABLED",
+        "PHYTOMNI_A2UI_ENABLED",
+        "PHYTOMNI_RELAY_ENABLED",
+    ):
+        monkeypatch.setenv(name, "1")
+    monkeypatch.setenv(
+        "PHYTOMNI_A2A_PUBLIC_BASE_URL", "https://compat.example"
+    )
+
+    app = create_app()
+
+    assert _route_manifest(app) == _all_flag_routes()
+    assert len(app.openapi()["paths"]) == 40
+    assert _original_lifespan_name(app) == "_http_lifespan"
+
+
+def _error_code(response: httpx.Response) -> int:
+    """Return the unified numeric error code from an HTTP response."""
+    body = response.json()
+    assert set(body) >= {"error"}
+    assert isinstance(body["error"], dict)
+    return body["error"]["code"]
+
+
+async def test_auth_owner_and_disabled_scope_boundaries(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lock unauthenticated, wrong-scope, and foreign-owner failures."""
+    unauthenticated = await api_client.get("/v1/models")
+    assert unauthenticated.status_code == 401
+    assert _error_code(unauthenticated) == 401
+
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec("foreign-run", "other-user", "chat", "local"),
+        outcome=RunOutcome(status="succeeded", result={"answer": "hidden"}),
+    )
+    foreign = await api_client.get(
+        "/v1/runs/foreign-run",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert foreign.status_code == 404
+    assert _error_code(foreign) == 404
+
+    monkeypatch.setenv("PHYTOMNI_RELAY_ENABLED", "1")
+    relay = await api_client.post(
+        "/v1/relay/llm/chat/completions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={},
+    )
+    assert relay.status_code == 403
+    assert _error_code(relay) == 403
+
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "1")
+    malformed_a2ui = await api_client.post(
+        "/v1/runs/missing/a2ui-actions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        content=b"{",
+    )
+    assert malformed_a2ui.status_code == 400
+    assert _error_code(malformed_a2ui) == 400
+
+
+async def test_a2a_rejects_missing_protocol_version(
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Lock A2A transport validation before JSON-RPC dispatch."""
+    monkeypatch.setenv("PHYTOMNI_A2A_ENABLED", "1")
+    monkeypatch.setenv(
+        "PHYTOMNI_A2A_PUBLIC_BASE_URL", "https://compat.example"
+    )
+    monkeypatch.setattr(httpx.AsyncClient, "request", _REAL_ASYNC_REQUEST)
+    app = create_app()
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://api.test"
+    ) as client:
+        response = await client.post(
+            "/a2a",
+            headers={"Authorization": f"Bearer {issued_api_key}"},
+            json={"jsonrpc": "2.0", "id": 1, "method": "GetTask"},
+        )
+    assert response.status_code == 400
+    assert _error_code(response) == 400
+
+
+def test_application_routes_keep_shared_mcp_seams() -> None:
+    """Ensure HTTP handlers still delegate through shared MCP functions."""
+    source = inspect.getsource(api_app_module.create_app)
+    for seam in (
+        "invoke_tool_enveloped",
+        "invoke_tool_streamed",
+        "_invoke_agent_run",
+        "_route_expert_query",
+    ):
+        assert seam in source
