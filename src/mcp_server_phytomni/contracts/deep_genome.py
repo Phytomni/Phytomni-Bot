@@ -46,6 +46,19 @@ DEEP_GENOME_REPORT_FIELDS: Final[tuple[str, ...]] = tuple(
 DEEP_GENOME_PROGRESS_FIELDS: Final[tuple[str, ...]] = tuple(
     field.value for field in _DeepGenomeProgressField
 )
+DEEP_GENOME_FINAL_FAILURE_REASONS: Final[frozenset[str]] = frozenset(
+    {
+        "brief gene profile failed",
+        "final synthesis failed",
+        "final report unavailable",
+        "final report publication failed",
+        "no usable analysis result",
+        "workflow interrupted by service restart",
+        "local coordinator failed to start",
+        "submission tracking failed",
+        "remote analysis tracking failed",
+    }
+)
 
 
 def sanitize_nonnegative_int(value: object) -> int:
@@ -56,6 +69,7 @@ def sanitize_nonnegative_int(value: object) -> int:
 
 
 __all__ = [
+    "DEEP_GENOME_FINAL_FAILURE_REASONS",
     "DEEP_GENOME_PROGRESS_FIELDS",
     "DEEP_GENOME_REPORT_FIELDS",
     "sanitize_nonnegative_int",

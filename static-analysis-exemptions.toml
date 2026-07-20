@@ -684,28 +684,6 @@ risk = "Cancel semantics are consumer-visible; changes require coordinated A2UI 
 tests = ["tests/server/test_a2ui_actions_http.py", "static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0060"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/agents/deep_genome/agent.py"
-symbol = "89:109"
-peer_path = "src/mcp_server_phytomni/runtime/deep_genome_store.py"
-peer_symbol = "62:74"
-fingerprint = "sha256:c6556f3fdd8a01d1f3aff30bcd73342d541035b294daf3031c4cc0f8226ad409"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==mcp_server_phytomni.agents.deep_genome.agent:[89:109]\n==mcp_server_phytomni.runtime.deep_genome_store:[62:74]\n    {\n        \"brief gene profile failed\",\n        \"final synthesis failed\",\n        \"final report unavailable\",\n        \"final report publication failed\",\n        \"no usable analysis result\",\n        \"workflow interrupted by service restart\",\n        \"local coordinator failed to start\",\n        \"submission tracking failed\",\n        \"remote analysis tracking failed\",\n    }\n)"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0061"
 tool = "pylint"
 rule = "R0801"
@@ -1999,14 +1977,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "tests/unit/test_deep_genome_store.py"
-symbol = "36:47"
+symbol = "39:50"
 peer_path = "tests/unit/test_task_registry_migration.py"
 peer_symbol = "44:55"
-fingerprint = "sha256:c745b76ae3ca2d6d7f4539177b39872d80bcf54b0b9d11bec0acbc5dfa2d7ee3"
+fingerprint = "sha256:aa7f4443755b41ff47174f62a6aac518efd4fb796d5af7db82650ceb763d6560"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_deep_genome_store:[36:47]\n==test_task_registry_migration:[44:55]\n    \"intermediate_report\",\n    \"report_revision\",\n    \"report_stage\",\n    \"report_completeness\",\n    \"report_updated_at\",\n    \"progress_json\",\n}\n\n\ndef _legacy_db(tmp_path: Path) -> Path:\n    \"\"\"Create the original four-column task registry schema.\"\"\""
+rationale = "Similar lines in 2 files\n==test_deep_genome_store:[39:50]\n==test_task_registry_migration:[44:55]\n    \"intermediate_report\",\n    \"report_revision\",\n    \"report_stage\",\n    \"report_completeness\",\n    \"report_updated_at\",\n    \"progress_json\",\n}\n\n\ndef _legacy_db(tmp_path: Path) -> Path:\n    \"\"\"Create the original four-column task registry schema.\"\"\""
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -2021,14 +1999,14 @@ classification = "temporary"
 mechanism = "diagnostic"
 target_kind = "pair"
 path = "tests/unit/test_deep_genome_store.py"
-symbol = "49:62"
+symbol = "52:65"
 peer_path = "tests/unit/test_task_registry_migration.py"
 peer_symbol = "81:122"
-fingerprint = "sha256:838d045a66d38a592d0d88e73bb8fdfd07daf6af2726fc2a439e63f69209d0fa"
+fingerprint = "sha256:7196ce45cf674e83d55488b732a0eea6b247a4fc6e465683d083bcd6ed0c2b9c"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_deep_genome_store:[49:62]\n==test_task_registry_migration:[81:122]\n    conn.execute(\"\"\"\n        CREATE TABLE tasks (\n            task_id TEXT PRIMARY KEY,\n            status TEXT,\n            analysis_id TEXT,\n            output_dir TEXT\n        )\n        \"\"\")\n    conn.execute(\n        \"INSERT INTO tasks VALUES (?, ?, ?, ?)\",\n        (\"legacy-1\", \"submitted\", \"\", \"/legacy/out\"),\n    )\n    conn.commit()\n    conn.close()\n\n    TaskManager(db)\n\n    assert _columns(db) == _EXPECTED_COLUMNS\n    conn = sqlite3.connect(db)\n    try:\n        row = conn.execute(\n            \"SELECT status, output_dir, run_id, user_id, agent, origin, \"\n            \"created_at, updated_at FROM tasks WHERE task_id = ?\",\n            (\"legacy-1\",),\n        ).fetchone()\n    finally:\n        conn.close()\n    assert row == (\n        \"submitted\",\n        \"/legacy/out\",\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n    )\n\n\ndef test_init_db_is_idempotent(tmp_path: Path) -> None:\n    \"\"\"Re-initializing an already-migrated database is a no-op.\"\"\""
+rationale = "Similar lines in 2 files\n==test_deep_genome_store:[52:65]\n==test_task_registry_migration:[81:122]\n    conn.execute(\"\"\"\n        CREATE TABLE tasks (\n            task_id TEXT PRIMARY KEY,\n            status TEXT,\n            analysis_id TEXT,\n            output_dir TEXT\n        )\n        \"\"\")\n    conn.execute(\n        \"INSERT INTO tasks VALUES (?, ?, ?, ?)\",\n        (\"legacy-1\", \"submitted\", \"\", \"/legacy/out\"),\n    )\n    conn.commit()\n    conn.close()\n\n    TaskManager(db)\n\n    assert _columns(db) == _EXPECTED_COLUMNS\n    conn = sqlite3.connect(db)\n    try:\n        row = conn.execute(\n            \"SELECT status, output_dir, run_id, user_id, agent, origin, \"\n            \"created_at, updated_at FROM tasks WHERE task_id = ?\",\n            (\"legacy-1\",),\n        ).fetchone()\n    finally:\n        conn.close()\n    assert row == (\n        \"submitted\",\n        \"/legacy/out\",\n        None,\n        None,\n        None,\n        None,\n        None,\n        None,\n    )\n\n\ndef test_init_db_is_idempotent(tmp_path: Path) -> None:\n    \"\"\"Re-initializing an already-migrated database is a no-op.\"\"\""
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]

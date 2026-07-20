@@ -21,6 +21,7 @@ from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
 from ..contracts.deep_genome import (
+    DEEP_GENOME_FINAL_FAILURE_REASONS,
     DEEP_GENOME_PROGRESS_FIELDS,
     DEEP_GENOME_REPORT_FIELDS,
     sanitize_nonnegative_int,
@@ -59,19 +60,6 @@ _PUBLIC_FAILURE_MESSAGES = {
     "cancelled": "analysis task cancelled",
     "timed_out": "analysis task timed out",
 }
-_PUBLIC_FINAL_REASONS = frozenset(
-    {
-        "brief gene profile failed",
-        "final synthesis failed",
-        "final report unavailable",
-        "final report publication failed",
-        "no usable analysis result",
-        "workflow interrupted by service restart",
-        "local coordinator failed to start",
-        "submission tracking failed",
-        "remote analysis tracking failed",
-    }
-)
 _PUBLIC_GENERATED_REASON = re.compile(
     r"^[0-9]+ of 12 optional analyses unavailable$"
 )
@@ -228,7 +216,7 @@ def _public_degraded_reason(value: str | None) -> str | None:
     normalized = value.strip()
     if _PUBLIC_GENERATED_REASON.fullmatch(normalized):
         return normalized
-    if normalized in _PUBLIC_FINAL_REASONS:
+    if normalized in DEEP_GENOME_FINAL_FAILURE_REASONS:
         return normalized
     return _PUBLIC_REASON_FALLBACK
 

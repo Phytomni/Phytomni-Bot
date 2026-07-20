@@ -28,6 +28,7 @@ from ...config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from ...config.settings import get_sensitive_config
+from ...contracts.deep_genome import DEEP_GENOME_FINAL_FAILURE_REASONS
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
@@ -86,20 +87,6 @@ from .report import DeepGenomeReportMixin
 
 logger = logging.getLogger(__name__)
 
-_FINALIZATION_FAILURE_REASONS = frozenset(
-    {
-        "brief gene profile failed",
-        "final synthesis failed",
-        "final report unavailable",
-        "final report publication failed",
-        "no usable analysis result",
-        "workflow interrupted by service restart",
-        "local coordinator failed to start",
-        "submission tracking failed",
-        "remote analysis tracking failed",
-    }
-)
-
 
 def _finalization_failure_reason(
     exc: BaseException | None,
@@ -114,7 +101,7 @@ def _finalization_failure_reason(
     if isinstance(exc, (DeepGenomeTrackingError, DeepGenomeTransitionError)):
         return "remote analysis tracking failed"
     message = str(exc).strip() if exc is not None else ""
-    if message in _FINALIZATION_FAILURE_REASONS:
+    if message in DEEP_GENOME_FINAL_FAILURE_REASONS:
         return message
     return "final synthesis failed"
 

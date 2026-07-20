@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
+from ..contracts.deep_genome import DEEP_GENOME_FINAL_FAILURE_REASONS
 from .deep_genome_report_snapshot import (
     _WORK_ITEM_STATES,
     ReportRows,
@@ -37,19 +38,6 @@ _FIXED_FAILURE_REASONS = {
     "cancelled": "analysis task cancelled",
     "timed_out": "analysis task timed out",
 }
-_FINAL_FAILURE_REASONS = frozenset(
-    {
-        "brief gene profile failed",
-        "final synthesis failed",
-        "final report unavailable",
-        "final report publication failed",
-        "no usable analysis result",
-        "workflow interrupted by service restart",
-        "local coordinator failed to start",
-        "submission tracking failed",
-        "remote analysis tracking failed",
-    }
-)
 _DEFAULT_FINAL_FAILURE_REASON = "final synthesis failed"
 
 
@@ -482,7 +470,7 @@ class DeepGenomeTransitionMixin:
         """Keep terminal failure text within the local fixed vocabulary."""
         if isinstance(reason, str):
             normalized = reason.strip()
-            if normalized in _FINAL_FAILURE_REASONS:
+            if normalized in DEEP_GENOME_FINAL_FAILURE_REASONS:
                 return normalized
         return _DEFAULT_FINAL_FAILURE_REASON
 

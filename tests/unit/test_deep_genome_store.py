@@ -21,6 +21,9 @@ from mcp_server_phytomni.agents.deep_genome.work_items import (
     WorkItemSpec,
     build_work_item_plan,
 )
+from mcp_server_phytomni.contracts.deep_genome import (
+    DEEP_GENOME_FINAL_FAILURE_REASONS,
+)
 from mcp_server_phytomni.runtime.deep_genome_store import (
     DeepGenomeReservation,
     DeepGenomeSnapshot,
@@ -1072,6 +1075,9 @@ def test_failed_umbrella_keeps_intermediate_and_clears_final(
         reason="final synthesis failed",
     )
 
+    assert isinstance(DEEP_GENOME_FINAL_FAILURE_REASONS, frozenset)
+    assert len(DEEP_GENOME_FINAL_FAILURE_REASONS) == 9
+    assert "final synthesis failed" in DEEP_GENOME_FINAL_FAILURE_REASONS
     assert snapshot.status == "failed"
     assert snapshot.intermediate_report == before.intermediate_report
     assert snapshot.final_report is None
