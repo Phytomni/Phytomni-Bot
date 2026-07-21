@@ -39,6 +39,7 @@ from ..runtime.task_manager import resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
 
 __all__ = [
+    "agent_run_response",
     "claim_run_gc",
     "create_running_stream_run",
     "fetch_owner_run",
@@ -196,6 +197,28 @@ def run_record_to_dict(record: Any) -> dict[str, Any]:
         "a2a_message_id": record.a2a.message_id,
         "answer": extract_answer(record.result),
     }
+
+
+def agent_run_response(
+    *,
+    run_id: str | None,
+    agent: str,
+    status: str,
+    result: dict[str, Any],
+    include_run_id: bool = True,
+) -> dict[str, Any]:
+    """Build the shared public ``agent.run`` response envelope."""
+    body: dict[str, Any] = {
+        "id": run_id,
+        "object": "agent.run",
+        "agent": agent,
+        "status": status,
+        "task_ids": [],
+        "result": result,
+    }
+    if include_run_id:
+        body["run_id"] = run_id
+    return body
 
 
 def project_deep_genome_run(

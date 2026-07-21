@@ -2103,21 +2103,19 @@ tests = ["static-analysis-inventory"]
 id = "SAE-TMP-0223"
 tool = "pylint"
 rule = "broad-exception-caught"
-classification = "temporary"
+classification = "structural"
 mechanism = "inline"
 target_kind = "symbol"
-path = "src/mcp_server_phytomni/api/app.py"
-symbol = "_maybe_project_review_interrupt"
-fingerprint = "sha256:00283b9c5b01c64fbb2fbbd8564f6f8a84317997b467d41ffdac50f678c5fde0"
+path = "src/mcp_server_phytomni/api/a2ui_runtime.py"
+symbol = "project_review_interrupt"
+fingerprint = "sha256:54078161cb8bf1725f6e4eec15a243bb9cd8318b335fa825016ecc66e0f40d2c"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=broad-exception-caught"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
+review_on = 2027-01-17
+rationale = "Review A2UI authoring is best effort; malformed or unexpected projection inputs must fall back to the raw interrupt so the graph pause and resume contract remains usable."
+counterfactual = "Removing the catch would let authoring failures break Review pause/resume; narrowing it to currently observed exception classes would leave unknown authoring failures unhandled."
+risk = "A broad catch can hide a projection regression; the fallback emits a class-only log and the A2UI HTTP tests cover the enabled and fallback paths."
+tests = ["tests/server/test_a2ui_review_http.py", "tests/server/test_a2ui_runtime.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0227"
@@ -2867,46 +2865,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0283"
-tool = "pylint"
-rule = "too-many-locals"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/api/app.py"
-symbol = "_resume_a2ui_run"
-fingerprint = "sha256:09933681134a0fe09554c54288f03b7f7bffe7939439e79ae36d0b1d8821d20a"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=too-many-locals"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0284"
-tool = "pylint"
-rule = "too-many-locals"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/api/app.py"
-symbol = "_resume_review_run"
-fingerprint = "sha256:4d087aa10fc4bc07a1db0099971c761aa153b3c68a4ba44adcb1af6783b176e9"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=too-many-locals"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0285"
 tool = "pylint"
 rule = "too-many-locals"
@@ -2916,26 +2874,6 @@ target_kind = "symbol"
 path = "src/mcp_server_phytomni/api/app.py"
 symbol = "_stream_chat_completion"
 fingerprint = "sha256:8564f40fa2157f740ee9f7bff75d93ae929acea50965d862fbdd951cee5c5ecd"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=too-many-locals"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0286"
-tool = "pylint"
-rule = "too-many-locals"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/api/app.py"
-symbol = "_stream_review_a2ui_pause"
-fingerprint = "sha256:1b5e7ee2821e52528a7c5b95ad412cbe7f2646d465c0b31dabe61ec0be04cfc5"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15

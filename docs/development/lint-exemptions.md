@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `210`
+- Authorized records: `207`
 
 ## Informational counts
 
@@ -37,7 +37,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `pylint:too-many-arguments`                                       |      10 |
 | `pylint:too-many-instance-attributes`                             |       3 |
 | `pylint:too-many-lines`                                           |       3 |
-| `pylint:too-many-locals`                                          |      12 |
+| `pylint:too-many-locals`                                          |       9 |
 | `pylint:too-many-positional-arguments`                            |       2 |
 | `pylint:too-many-statements`                                      |       1 |
 | `pylint:wrong-import-position`                                    |       1 |
@@ -154,7 +154,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0214` | pylint | R0903 | structural | diagnostic | symbol | tests/unit/test_api_file_upload.py | \_ChunkedUpload | `sha256:eda00c1f02071e7fa974cdef673f09b7b2efc3b1302890c475dbc5ed46cefe1d` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0215` | pylint | R0903 | structural | diagnostic | symbol | tests/unit/test_storage_error_sanitization.py | \_ExplodingObsClient | `sha256:826980652eb87a9cc733947dd7a6328efa942f2f98b5cb373e5db5d4ae417825` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0222` | pylint | broad-exception-caught | structural | inline | symbol | e2e/helpers/polling.py | \_reconciled_task_state | `sha256:58b3b2f3bb4ee5b58ee8ca5380146a1ab5d43c18bff5e36510cb912eece854a3` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0223` | pylint | broad-exception-caught | temporary | inline | symbol | src/mcp_server_phytomni/api/app.py | \_maybe_project_review_interrupt | `sha256:00283b9c5b01c64fbb2fbbd8564f6f8a84317997b467d41ffdac50f678c5fde0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0223` | pylint | broad-exception-caught | structural | inline | symbol | src/mcp_server_phytomni/api/a2ui_runtime.py | project_review_interrupt | `sha256:54078161cb8bf1725f6e4eec15a243bb9cd8318b335fa825016ecc66e0f40d2c` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | tests/server/test_a2ui_review_http.py, tests/server/test_a2ui_runtime.py, static-analysis-inventory |
 | `SAE-TMP-0227` | pylint | broad-exception-caught | temporary | inline | symbol | src/mcp_server_phytomni/mcp/stream_lifecycle.py | project_stream_failures | `sha256:0fa2621f7153da1bff3a4df5a0a23d14425aa3d17b782f9545d0c2e657296557` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0228` | pylint | contextmanager-generator-missing-cleanup | structural | inline | span | tests/agents/test_cache_candidates.py | — | `sha256:1a93e1b05a8cfa872aeddc39c7850189f9089c16b59a0d36c97909cc4341ae03` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0229` | pylint | contextmanager-generator-missing-cleanup | structural | inline | span | tests/conftest.py | — | `sha256:8051cd3af754f03cba8b655218a54168e8867d393d6ed998ce98de611d0b7b9a` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
@@ -195,10 +195,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0280` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:d98c5d2f2fd683297caf6428dd7821e725b53234dc57162abb2e03b63f0d8b1a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0281` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:fca70926837df2569a4ae2b4c8be446ca58aefd1a8367b32c8d63f7f391d0589` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0282` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/api/app.py | \_resume_a2a_task | `sha256:b4a78c743023a86c2bafe52e9900deaea4beaf22c69ecc45afd8726fa7676c02` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0283` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/api/app.py | \_resume_a2ui_run | `sha256:09933681134a0fe09554c54288f03b7f7bffe7939439e79ae36d0b1d8821d20a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0284` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/api/app.py | \_resume_review_run | `sha256:4d087aa10fc4bc07a1db0099971c761aa153b3c68a4ba44adcb1af6783b176e9` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0285` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/api/app.py | \_stream_chat_completion | `sha256:8564f40fa2157f740ee9f7bff75d93ae929acea50965d862fbdd951cee5c5ecd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0286` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/api/app.py | \_stream_review_a2ui_pause | `sha256:1b5e7ee2821e52528a7c5b95ad412cbe7f2646d465c0b31dabe61ec0be04cfc5` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0287` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/mcp/result_formatting.py | \_format_design_result | `sha256:8628b792cea0d61f8299df4d795e861c92b404813e5abe827b980f211edbe83f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0288` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/storage/uploads.py | — | `sha256:d713586935bbfb52b818a5e473e7d2169737526f18839e9196e5831051e4c466` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0289` | pylint | too-many-locals | temporary | inline | span | tests/agents/test_deep_genome_lifecycle.py | — | `sha256:c89456f6ae1c750fc0f451d10d4b0885a15b45a3ff3d5623b86b86decb5721ba` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -2790,19 +2787,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=broad-exception-caught
+Review A2UI authoring is best effort; malformed or unexpected projection inputs must fall back to the raw interrupt so the graph pause and resume contract remains usable.
 ```
 
 Counterfactual:
 
 ```text
-Remove or refactor after review.
+Removing the catch would let authoring failures break Review pause/resume; narrowing it to currently observed exception classes would leave unknown authoring failures unhandled.
 ```
 
 Risk:
 
 ```text
-Suppression can hide a future regression.
+A broad catch can hide a projection regression; the fallback emits a class-only log and the A2UI HTTP tests cover the enabled and fallback paths.
 ```
 
 ### `SAE-TMP-0227`
@@ -3605,67 +3602,7 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0283`
-
-Rationale:
-
-```text
-pylint: disable=too-many-locals
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0284`
-
-Rationale:
-
-```text
-pylint: disable=too-many-locals
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0285`
-
-Rationale:
-
-```text
-pylint: disable=too-many-locals
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0286`
 
 Rationale:
 

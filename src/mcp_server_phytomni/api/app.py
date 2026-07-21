@@ -26,9 +26,8 @@ from collections.abc import (
     Mapping,
 )
 from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -56,29 +55,17 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..agents.brief_gene.resolve_query import resolve_brief_gene_user_query
-from ..agents.chat.a2ui_builder import build_chat_a2ui_graph
 from ..agents.deep_genome.resolve_query import resolve_deep_genome_user_query
 from ..agents.design.resolve_query import resolve_design_user_query
 from ..agents.expert import select_agent_tool
 from ..agents.network.resolve_query import resolve_network_user_query
-from ..agents.review.agent import review_stream_target
 from ..agents.shared.a2ui import (
-    A2UI_CUSTOM_NAME,
-    A2uiActionEnvelope,
-    action_to_resume_payload,
-    attach_review_a2ui,
-    build_submitted_value,
-    review_action_to_resume,
     select_chat_a2ui_widget,
 )
 from ..agents.shared.gauss import aclose_gauss_pool
-from ..agents.shared.intermediate_state import merge_intermediate_state
 from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
-from ..config.defaults import (
-    ApiConfig,
-    ChatConfig,
-)
+from ..config.defaults import ApiConfig
 from ..config.settings import SensitiveConfig
 from ..interop.a2a_discovery import discover_external_a2a_capabilities
 from ..interop.cache import (
@@ -101,14 +88,9 @@ from ..mcp.app import (
     invoke_tool_streamed,
     prepare_tool_stream,
 )
-from ..mcp.handler_support import chat_kwargs, load_handler_runtime
 from ..mcp.result_formatting import (
     AguiEvent,
-    build_tool_result_envelope,
-    custom,
     resolve_debug,
-    run_finished,
-    run_started,
     strip_agent_result,
     strip_chat_completion,
 )
@@ -119,10 +101,6 @@ from ..mcp.stream_lifecycle import (
     StreamLifecycleState,
     prime_agui_stream,
     project_stream_failures,
-)
-from ..runtime.langgraph_runner import (
-    build_runnable_config,
-    ensure_checkpointer,
 )
 from ..runtime.memory import (
     MemoryConflictError,
@@ -146,7 +124,7 @@ from ..runtime.request_context import (
     current_run_id,
     reset_request_var,
 )
-from ..runtime.resume import NoCheckpointError, aresume_graph, detect_interrupt
+from ..runtime.resume import NoCheckpointError, detect_interrupt
 from ..runtime.run_registry import (
     RunFilter,
     RunOutcome,
@@ -159,7 +137,7 @@ from ..runtime.task_manager import resolve_tasks_db_path
 from ..runtime.task_reconcile import reconcile_task_log
 from ..storage.path_policy import IdFactory
 from ..version import __version__
-from . import run_lifecycle
+from . import a2ui_runtime, run_lifecycle
 from .a2a.card import build_agent_card
 from .a2a.executor import (
     A2AHandlerOptions,
@@ -366,59 +344,29 @@ def _relay_audit_record_to_dict(
     return payload
 
 
-@lru_cache(maxsize=1)
 def _chat_a2ui_stream_app() -> Any:
-    """Return the cached Chat A2UI compiled graph app."""
-    return build_chat_a2ui_graph(
-        checkpointer=ensure_checkpointer(),
-    )
+    """Compatibility seam for the cached Chat A2UI graph."""
+    return a2ui_runtime.build_chat_stream_app()
 
 
 def _chat_a2ui_initial_state(arguments: Mapping[str, Any]) -> dict[str, Any]:
-    """Build initial state for one Chat A2UI confirm graph invoke."""
-    chat_config = ChatConfig()
-    runtime = load_handler_runtime()
-    return {
-        "user_query": str(arguments["user_query"]),
-        "obs_file_list": list(arguments.get("obs_file_list") or []),
-        "chat_kwargs": chat_kwargs(chat_config, runtime.sensitive),
-    }
+    """Compatibility seam for Chat A2UI initial-state construction."""
+    return a2ui_runtime.build_chat_initial_state(arguments)
 
 
 def _chat_a2ui_interrupt_result(
     interrupt: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Return the registry payload stored for a paused chat A2UI run."""
-    return {
-        "interrupt": dict(interrupt),
-        "status": "input_required",
-    }
+    """Compatibility seam for paused Chat A2UI result projection."""
+    return a2ui_runtime.chat_interrupt_result(interrupt)
 
 
 def _submitted_a2ui_value(
     prior_surface: Mapping[str, Any],
     resume_payload: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Build the submitted downlink from an A2UI resume payload."""
-    accepted = resume_payload.get("accepted")
-    if not isinstance(accepted, bool):
-        # Review confirm maps approved → accepted for the echo.
-        approved = resume_payload.get("approved")
-        if (
-            isinstance(approved, bool)
-            and resume_payload.get("cancelled") is not True
-            and "fields" not in resume_payload
-            and "selected" not in resume_payload
-        ):
-            accepted = approved
-    fields = resume_payload.get("fields")
-    return build_submitted_value(
-        prior_surface,
-        accepted=accepted if isinstance(accepted, bool) else None,
-        cancelled=(True if resume_payload.get("cancelled") is True else None),
-        fields=fields if isinstance(fields, Mapping) else None,
-        selected=resume_payload.get("selected"),
-    )
+    """Compatibility seam for submitted A2UI result projection."""
+    return a2ui_runtime.submitted_a2ui_value(prior_surface, resume_payload)
 
 
 def _format_chat_a2ui_result(
@@ -427,18 +375,12 @@ def _format_chat_a2ui_result(
     prior_surface: Mapping[str, Any],
     resume_payload: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Format a terminal Chat A2UI graph state for registry storage."""
-    raw_payload = merge_intermediate_state(
+    """Compatibility seam for terminal Chat A2UI result formatting."""
+    return a2ui_runtime.format_chat_result(
         final_state,
-        final_response_key="response",
+        prior_surface=prior_surface,
+        resume_payload=resume_payload,
     )
-    envelope = build_tool_result_envelope("ChatAgent", raw_payload)
-    submitted = _submitted_a2ui_value(prior_surface, resume_payload)
-    return {
-        "formatted": asdict(envelope.formatted),
-        "raw": envelope.raw,
-        "a2ui": submitted,
-    }
 
 
 def _a2ui_interrupt_body(
@@ -446,16 +388,11 @@ def _a2ui_interrupt_body(
     run_id: str,
     interrupt: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Return the HTTP body for a paused chat A2UI run."""
-    return {
-        "id": run_id,
-        "run_id": run_id,
-        "object": "agent.run",
-        "agent": "chat",
-        "status": "input_required",
-        "task_ids": [],
-        "interrupt": dict(interrupt),
-    }
+    """Compatibility seam for the paused Chat A2UI HTTP body."""
+    return a2ui_runtime.chat_interrupt_body(
+        run_id=run_id,
+        interrupt=interrupt,
+    )
 
 
 async def _resume_paused_run(
@@ -463,8 +400,12 @@ async def _resume_paused_run(
     thread_id: str,
     resume_payload: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Resume a paused graph via the shared aresume kernel."""
-    return await aresume_graph(app, thread_id, dict(resume_payload))
+    """Compatibility seam for the shared paused-graph resume kernel."""
+    return await a2ui_runtime.resume_paused_graph(
+        app,
+        thread_id,
+        resume_payload,
+    )
 
 
 def _open_a2ui_surface_for_action(
@@ -473,155 +414,26 @@ def _open_a2ui_surface_for_action(
     surface_id: str,
     widget: str,
 ) -> Mapping[str, Any]:
-    """Return the open A2UI draft surface or raise HTTP conflicts."""
-    if record.status != "input_required":
-        raise HTTPException(
-            status_code=409,
-            detail="run is not awaiting input",
-        )
-    stored = record.result or {}
-    interrupt = stored.get("interrupt") or {}
-    draft = interrupt.get("draft") or {}
-    open_surface = draft.get("a2ui")
-    if not isinstance(open_surface, Mapping):
-        raise HTTPException(
-            status_code=409,
-            detail="no open a2ui surface",
-        )
-    if open_surface.get("surface_id") != surface_id:
-        raise HTTPException(
-            status_code=409,
-            detail="surface_id mismatch",
-        )
-    if open_surface.get("widget") != widget:
-        raise HTTPException(
-            status_code=400,
-            detail="widget mismatch",
-        )
-    return open_surface
+    """Compatibility seam for open-surface validation."""
+    return a2ui_runtime.open_surface_for_action(
+        record,
+        surface_id=surface_id,
+        widget=widget,
+    )
 
 
-async def _resume_a2ui_run(  # pylint: disable=too-many-locals
+async def _resume_a2ui_run(
     *,
     run_id: str,
     body: A2uiActionRequest,
     debug: bool = False,
 ) -> tuple[dict[str, Any], int]:
-    """Resume a paused A2UI run from a Web action envelope."""
-    if not ApiConfig().A2UI_ENABLED:
-        raise HTTPException(status_code=403, detail="a2ui disabled")
-    if run_id != body.run_id:
-        raise HTTPException(status_code=400, detail="run_id mismatch")
-
-    owner = current_request_user() or "anonymous"
-    registry = RunRegistry(resolve_tasks_db_path())
-    record = registry.get_run(run_id, owner=owner)
-    if record is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"run not found: {run_id}",
-        )
-    agent = record.spec.agent
-    if agent not in ("chat", "review"):
-        raise HTTPException(
-            status_code=400,
-            detail="unsupported agent for a2ui",
-        )
-    open_surface = _open_a2ui_surface_for_action(
-        record,
-        surface_id=body.surface_id,
-        widget=body.widget,
-    )
-
-    try:
-        envelope = A2uiActionEnvelope.model_validate(body.model_dump())
-        if agent == "chat":
-            resume_payload = action_to_resume_payload(envelope)
-            app = _chat_a2ui_stream_app()
-        else:
-            resume_payload = review_action_to_resume(envelope)
-            app = _review_stream_app()
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    try:
-        final_state = await _resume_paused_run(
-            app,
-            run_id,
-            resume_payload,
-        )
-    except NoCheckpointError as exc:
-        _LOGGER.exception(
-            "a2ui resume checkpoint missing for run %s",
-            run_id,
-        )
-        raise HTTPException(
-            status_code=409,
-            detail="no pause point for run",
-        ) from exc
-
-    interrupt_after = detect_interrupt(final_state, run_id)
-    if interrupt_after is not None:
-        if agent == "chat":
-            interrupt_dict = dict(interrupt_after)
-            registry.settle_run(
-                run_id,
-                owner=owner,
-                status="input_required",
-                result=_chat_a2ui_interrupt_result(interrupt_dict),
-            )
-            return (
-                _a2ui_interrupt_body(
-                    run_id=run_id,
-                    interrupt=interrupt_dict,
-                ),
-                200,
-            )
-        interrupt_dict = _maybe_project_review_interrupt(interrupt_after)
-        registry.settle_run(
-            run_id,
-            owner=owner,
-            status="input_required",
-            result=_review_interrupt_result(interrupt_dict),
-        )
-        return (
-            _review_interrupt_body(
-                thread_id=run_id,
-                interrupt=interrupt_dict,
-            ),
-            200,
-        )
-
-    if agent == "chat":
-        result = _format_chat_a2ui_result(
-            final_state,
-            prior_surface=open_surface,
-            resume_payload=resume_payload,
-        )
-    else:
-        result = _format_review_result(final_state)
-        result = {
-            **result,
-            "a2ui": _submitted_a2ui_value(open_surface, resume_payload),
-        }
-    registry.settle_run(
-        run_id,
-        owner=owner,
-        status="succeeded",
-        result=result,
-    )
-    response_result = result if debug else strip_agent_result(result)
-    return (
-        {
-            "id": run_id,
-            "run_id": run_id,
-            "object": "agent.run",
-            "agent": agent,
-            "status": "succeeded",
-            "task_ids": [],
-            "result": response_result,
-        },
-        200,
+    """Compatibility seam for the Web A2UI action resume runtime."""
+    return await a2ui_runtime.resume_a2ui_run(
+        run_id=run_id,
+        body=body,
+        debug=debug,
+        dependencies=_a2ui_runtime_dependencies(),
     )
 
 
@@ -692,21 +504,45 @@ async def _project_primed_stream(
         yield event
 
 
+def _a2ui_runtime_dependencies() -> a2ui_runtime.A2UIRuntimeDependencies:
+    """Bind app compatibility seams into the A2UI runtime record."""
+    return a2ui_runtime.A2UIRuntimeDependencies(
+        graphs=a2ui_runtime.A2UIGraphDependencies(
+            chat_graph=_chat_a2ui_stream_app,
+            chat_initial_state=_chat_a2ui_initial_state,
+            review_graph=_review_stream_app,
+            review_initial_state=_review_initial_state,
+            validate_review=_validate_review_arguments,
+            resume_graph=_resume_paused_run,
+        ),
+        persistence=a2ui_runtime.A2UIPersistenceDependencies(
+            registry_factory=RunRegistry,
+            current_user=current_request_user,
+            tasks_db_path=resolve_tasks_db_path,
+            create_stream_run=_create_running_stream_run,
+            settle_stream_run=_settle_stream_run,
+            format_review_result=_format_review_result,
+        ),
+        stream=a2ui_runtime.A2UIStreamDependencies(
+            stream_setup_error=_stream_setup_error,
+            failed_stream_result=_failed_stream_result,
+            project_stream=_project_primed_stream,
+        ),
+    )
+
+
 def _settle_a2ui_stream_failure(
     run_id: str,
     owner: str,
     settled_terminal: list[bool],
 ) -> None:
-    """Settle an A2UI stream failed when no domain terminal was committed."""
-    if settled_terminal[0]:
-        return
-    _settle_stream_run(
+    """Compatibility seam for failed A2UI stream settlement."""
+    a2ui_runtime.settle_a2ui_stream_failure(
         run_id,
         owner,
-        "failed",
-        _failed_stream_result(),
+        settled_terminal,
+        dependencies=_a2ui_runtime_dependencies(),
     )
-    settled_terminal[0] = True
 
 
 async def _stream_chat_a2ui_confirm(
@@ -715,168 +551,28 @@ async def _stream_chat_a2ui_confirm(
     payload: ChatCompletionRequest,
     user_query: str,
 ) -> StreamingResponse:
-    """Short-circuit chat streaming into an A2UI pause.
-
-    Runs the dedicated Chat A2UI graph until its ``interrupt()`` point
-    for confirm, form, or choice surfaces, emits ``phyto.a2ui`` over
-    SSE, and settles the run as ``input_required`` so Web can resume
-    via ``/a2ui-actions`` while the LangGraph checkpoint stays keyed
-    on ``run_id``.
-    """
-    agent_slug = "chat"
-    owner = current_request_user() or "anonymous"
-    try:
-        app = _chat_a2ui_stream_app()
-        initial_state = _chat_a2ui_initial_state(arguments)
-    except Exception as exc:
-        raise _stream_setup_error(exc, priming=False) from exc
-    run_id = IdFactory().new_id("run", agent_slug)
-    request_info = RunRequestInfo(
-        dialogue_id=payload.dialogue_id,
-        query=user_query,
-        tool_name="ChatAgent",
-        model=payload.model,
-        request_json=payload.model_dump_json(),
+    """Compatibility seam for the Chat A2UI stream runtime."""
+    return await a2ui_runtime.stream_chat_a2ui_confirm(
+        arguments=arguments,
+        payload=payload,
+        user_query=user_query,
+        dependencies=_a2ui_runtime_dependencies(),
     )
-    _create_running_stream_run(run_id, agent_slug, owner, request_info)
-
-    async def _agui_events(
-        settled: list[bool],
-    ) -> AsyncIterator[AguiEvent]:
-        """Yield AG-UI frames for one A2UI confirm pause."""
-        yield run_started(run_id, payload.dialogue_id)
-        final_state = await app.ainvoke(
-            initial_state,
-            config=build_runnable_config(run_id),
-        )
-        interrupt = detect_interrupt(final_state, run_id)
-        if interrupt is not None:
-            a2ui_value = interrupt["draft"]["a2ui"]
-            _settle_stream_run(
-                run_id,
-                owner,
-                "input_required",
-                _chat_a2ui_interrupt_result(interrupt),
-            )
-            settled[0] = True
-            yield custom(A2UI_CUSTOM_NAME, a2ui_value)
-        yield run_finished(run_id)
-
-    lifecycle_state = StreamLifecycleState()
-    settled_terminal = [False]
-    try:
-        primed = await prime_agui_stream(_agui_events(settled_terminal))
-    except Exception as exc:
-        _settle_stream_run(run_id, owner, "failed", _failed_stream_result())
-        raise _stream_setup_error(exc, priming=True) from exc
-
-    async def _wrapped() -> AsyncIterator[str]:
-        """Forward SSE; settle failed only when pause was not recorded."""
-        try:
-            async for line in to_chat_completion_chunks(
-                _project_primed_stream(
-                    primed,
-                    run_id=run_id,
-                    lifecycle_state=lifecycle_state,
-                ),
-                payload.model,
-            ):
-                yield line
-        finally:
-            _settle_a2ui_stream_failure(
-                run_id,
-                owner,
-                settled_terminal,
-            )
-
-    return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
-async def _stream_review_a2ui_pause(  # pylint: disable=too-many-locals
+async def _stream_review_a2ui_pause(
     *,
     arguments: dict[str, Any],
     payload: ChatCompletionRequest,
     user_query: str,
 ) -> StreamingResponse:
-    """Stream Review until interrupt, emit phyto.a2ui, pause input_required.
-
-    When ``A2UI_ENABLED`` is on, ``stream=true`` for ``phyto-review`` runs
-    the graph to the approval interrupt, settles ``input_required``, and
-    emits one ``phyto.a2ui`` frame. Resume stays on ``/resume`` or
-    ``/a2ui-actions`` (non-stream JSON), mirroring the Chat A2UI slice.
-    """
-    agent_slug = "review"
-    owner = current_request_user() or "anonymous"
-    try:
-        args = _validate_review_arguments(arguments)
-        app = _review_stream_app()
-        initial_state = _review_initial_state(args)
-    except Exception as exc:
-        raise _stream_setup_error(exc, priming=False) from exc
-    run_id = IdFactory().new_id("run", agent_slug)
-    request_info = RunRequestInfo(
-        dialogue_id=payload.dialogue_id,
-        query=user_query,
-        tool_name="ReviewAgent",
-        model=payload.model,
-        request_json=payload.model_dump_json(),
+    """Compatibility seam for the Review A2UI stream runtime."""
+    return await a2ui_runtime.stream_review_a2ui_pause(
+        arguments=arguments,
+        payload=payload,
+        user_query=user_query,
+        dependencies=_a2ui_runtime_dependencies(),
     )
-    _create_running_stream_run(run_id, agent_slug, owner, request_info)
-
-    async def _agui_events(settled: list[bool]) -> AsyncIterator[AguiEvent]:
-        yield run_started(run_id, payload.dialogue_id)
-        final_state = await app.ainvoke(
-            initial_state,
-            config=build_runnable_config(run_id),
-        )
-        interrupt = detect_interrupt(final_state, run_id)
-        if interrupt is not None:
-            interrupt_dict = _maybe_project_review_interrupt(dict(interrupt))
-            _settle_stream_run(
-                run_id,
-                owner,
-                "input_required",
-                _review_interrupt_result(interrupt_dict),
-            )
-            settled[0] = True
-            draft = interrupt_dict.get("draft")
-            if isinstance(draft, Mapping):
-                a2ui_value = draft.get("a2ui")
-                if isinstance(a2ui_value, Mapping):
-                    yield custom(A2UI_CUSTOM_NAME, dict(a2ui_value))
-        else:
-            result = _format_review_result(final_state, arguments=arguments)
-            _settle_stream_run(run_id, owner, "succeeded", result)
-            settled[0] = True
-        yield run_finished(run_id)
-
-    lifecycle_state = StreamLifecycleState()
-    settled_terminal = [False]
-    try:
-        primed = await prime_agui_stream(_agui_events(settled_terminal))
-    except Exception as exc:
-        _settle_stream_run(run_id, owner, "failed", _failed_stream_result())
-        raise _stream_setup_error(exc, priming=True) from exc
-
-    async def _wrapped() -> AsyncIterator[str]:
-        try:
-            async for line in to_chat_completion_chunks(
-                _project_primed_stream(
-                    primed,
-                    run_id=run_id,
-                    lifecycle_state=lifecycle_state,
-                ),
-                payload.model,
-            ):
-                yield line
-        finally:
-            _settle_a2ui_stream_failure(
-                run_id,
-                owner,
-                settled_terminal,
-            )
-
-    return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
 async def _stream_chat_completion(  # pylint: disable=too-many-locals
@@ -1111,14 +807,13 @@ async def _invoke_agent_run(
         result=result,
         request_info=request_info,
     )
-    body = {
-        "id": run_id,
-        "object": "agent.run",
-        "agent": agent,
-        "status": "succeeded",
-        "task_ids": [],
-        "result": response_result,
-    }
+    body = run_lifecycle.agent_run_response(
+        run_id=run_id,
+        agent=agent,
+        status="succeeded",
+        result=response_result,
+        include_run_id=False,
+    )
     return body, 200
 
 
@@ -1262,60 +957,34 @@ def _list_owner_runs(
 # pylint: enable=too-many-arguments
 
 
-@dataclass(frozen=True)
-class _ReviewExecution:
-    """Internal result of one interrupt-aware ReviewAgent graph run."""
-
-    run_id: str
-    status: str
-    result: dict[str, Any] | None = None
-    interrupt: dict[str, Any] | None = None
+_ReviewExecution = a2ui_runtime.ReviewExecution
 
 
 def _review_stream_app() -> Any:
-    """Return the cached ReviewAgent compiled graph app."""
-    app, _ = review_stream_target("", [])
-    return app
+    """Compatibility seam for the ReviewAgent compiled graph."""
+    return a2ui_runtime.build_review_stream_app()
 
 
 def _review_initial_state(args: ReviewAgentArgs) -> Mapping[str, Any]:
-    """Build the ReviewAgent initial graph state for one request."""
-    _, initial_state = review_stream_target(
-        args.user_query, args.obs_file_list
-    )
-    return initial_state
+    """Compatibility seam for ReviewAgent initial-state construction."""
+    return a2ui_runtime.build_review_initial_state(args)
 
 
 def _validate_review_arguments(arguments: dict[str, Any]) -> ReviewAgentArgs:
-    """Validate a ReviewAgent argument dict with the MCP schema."""
-    try:
-        return ReviewAgentArgs(**arguments)
-    except ValidationError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail="invalid ReviewAgent arguments",
-        ) from exc
+    """Compatibility seam for ReviewAgent argument validation."""
+    return a2ui_runtime.validate_review_arguments(arguments)
 
 
 def _review_interrupt_result(interrupt: Mapping[str, Any]) -> dict[str, Any]:
-    """Return the registry payload stored for a paused review run."""
-    return {
-        "interrupt": dict(interrupt),
-        "status": "input_required",
-    }
+    """Compatibility seam for paused Review result projection."""
+    return a2ui_runtime.review_interrupt_result(interrupt)
 
 
 def _maybe_project_review_interrupt(
     interrupt: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Attach a2ui to a Review interrupt when A2UI is enabled."""
-    if not ApiConfig().A2UI_ENABLED:
-        return dict(interrupt)
-    try:
-        return attach_review_a2ui(interrupt)
-    except Exception:  # pylint: disable=broad-exception-caught
-        _LOGGER.exception("review a2ui projection failed; continuing without")
-        return dict(interrupt)
+    """Compatibility seam for Review interrupt projection."""
+    return a2ui_runtime.project_review_interrupt(interrupt)
 
 
 def _review_interrupt_body(
@@ -1323,16 +992,11 @@ def _review_interrupt_body(
     thread_id: str,
     interrupt: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Return the HTTP body for a paused review run."""
-    return {
-        "id": thread_id,
-        "run_id": thread_id,
-        "object": "agent.run",
-        "agent": "review",
-        "status": "input_required",
-        "task_ids": [],
-        "interrupt": dict(interrupt),
-    }
+    """Compatibility seam for the paused Review HTTP body."""
+    return a2ui_runtime.review_interrupt_body(
+        thread_id=thread_id,
+        interrupt=interrupt,
+    )
 
 
 def _format_review_result(
@@ -1340,17 +1004,11 @@ def _format_review_result(
     *,
     arguments: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Format a terminal ReviewAgent graph state like MCP dispatch."""
-    raw_payload = merge_intermediate_state(final_state)
-    envelope = build_tool_result_envelope(
-        "ReviewAgent",
-        raw_payload,
+    """Compatibility seam for terminal Review result formatting."""
+    return a2ui_runtime.format_review_result(
+        final_state,
         arguments=arguments,
     )
-    return {
-        "formatted": asdict(envelope.formatted),
-        "raw": envelope.raw,
-    }
 
 
 def _review_run_body(
@@ -1358,23 +1016,8 @@ def _review_run_body(
     *,
     debug: bool,
 ) -> dict[str, Any]:
-    """Shape a ReviewAgent execution as an ``agent.run`` response."""
-    if execution.interrupt is not None:
-        return _review_interrupt_body(
-            thread_id=execution.run_id,
-            interrupt=execution.interrupt,
-        )
-    result = execution.result or {"formatted": {"answer": ""}, "raw": None}
-    response_result = result if debug else strip_agent_result(result)
-    return {
-        "id": execution.run_id,
-        "run_id": execution.run_id,
-        "object": "agent.run",
-        "agent": "review",
-        "status": execution.status,
-        "task_ids": [],
-        "result": response_result,
-    }
+    """Compatibility seam for Review run response shaping."""
+    return a2ui_runtime.review_run_body(execution, debug=debug)
 
 
 async def _run_review_with_interrupt(
@@ -1382,128 +1025,27 @@ async def _run_review_with_interrupt(
     arguments: dict[str, Any],
     request_info: RunRequestInfo,
 ) -> _ReviewExecution:
-    """Run ReviewAgent once, surfacing a LangGraph interrupt if present."""
-    args = _validate_review_arguments(arguments)
-    owner = current_request_user() or "anonymous"
-    run_id = IdFactory().new_id("run", "review")
-    app = _review_stream_app()
-    initial_state = _review_initial_state(args)
-    final_state = await app.ainvoke(
-        initial_state,
-        config=build_runnable_config(run_id),
-    )
-    interrupt = detect_interrupt(final_state, run_id)
-    registry = RunRegistry(resolve_tasks_db_path())
-    if interrupt is not None:
-        interrupt_dict = _maybe_project_review_interrupt(interrupt)
-        registry.create_run(
-            RunSpec(
-                run_id=run_id,
-                user_id=owner,
-                agent="review",
-                origin="local",
-            ),
-            outcome=RunOutcome(
-                status="input_required",
-                result=_review_interrupt_result(interrupt_dict),
-            ),
-            request_info=request_info,
-        )
-        return _ReviewExecution(
-            run_id=run_id,
-            status="input_required",
-            interrupt=interrupt_dict,
-        )
-    result = _format_review_result(final_state, arguments=arguments)
-    registry.create_run(
-        RunSpec(
-            run_id=run_id,
-            user_id=owner,
-            agent="review",
-            origin="local",
-        ),
-        outcome=RunOutcome(status="succeeded", result=result),
+    """Compatibility seam for interrupt-aware Review execution."""
+    return await a2ui_runtime.run_review_with_interrupt(
+        arguments=arguments,
         request_info=request_info,
+        dependencies=_a2ui_runtime_dependencies(),
     )
-    return _ReviewExecution(run_id=run_id, status="succeeded", result=result)
 
 
-async def _resume_review_run(  # pylint: disable=too-many-locals
+async def _resume_review_run(
     *,
     thread_id: str,
     payload: ResumeRequest,
     debug: bool = False,
 ) -> tuple[dict[str, Any], int]:
-    """Resume a paused ReviewAgent graph thread and settle its run row."""
-    owner = current_request_user() or "anonymous"
-    registry = RunRegistry(resolve_tasks_db_path())
-    record = registry.get_run(thread_id, owner=owner)
-    if record is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"run not found: {thread_id}",
-        )
-    if record.status != "input_required":
-        raise HTTPException(
-            status_code=409,
-            detail="run is not awaiting input",
-        )
-    prior_surface: Mapping[str, Any] | None = None
-    stored = record.result or {}
-    interrupt_stored = stored.get("interrupt") or {}
-    draft = interrupt_stored.get("draft") or {}
-    candidate = draft.get("a2ui")
-    if isinstance(candidate, Mapping):
-        prior_surface = candidate
-    try:
-        final_state = await _resume_paused_run(
-            _review_stream_app(),
-            thread_id,
-            {"approved": payload.approved, "edits": payload.edits},
-        )
-    except NoCheckpointError as exc:
-        _LOGGER.exception("resume checkpoint missing for run %s", thread_id)
-        raise HTTPException(
-            status_code=409,
-            detail="no pause point for run",
-        ) from exc
-    interrupt = detect_interrupt(final_state, thread_id)
-    if interrupt is not None:
-        interrupt_dict = _maybe_project_review_interrupt(interrupt)
-        registry.settle_run(
-            thread_id,
-            owner=owner,
-            status="input_required",
-            result=_review_interrupt_result(interrupt_dict),
-        )
-        return (
-            _review_interrupt_body(
-                thread_id=thread_id,
-                interrupt=interrupt_dict,
-            ),
-            200,
-        )
-    result = _format_review_result(final_state)
-    if prior_surface is not None:
-        result = {
-            **result,
-            "a2ui": build_submitted_value(
-                prior_surface,
-                accepted=payload.approved,
-            ),
-        }
-    registry.settle_run(
-        thread_id,
-        owner=owner,
-        status="succeeded",
-        result=result,
+    """Compatibility seam for Review pause/resume execution."""
+    return await a2ui_runtime.resume_review_run(
+        thread_id=thread_id,
+        payload=payload,
+        debug=debug,
+        dependencies=_a2ui_runtime_dependencies(),
     )
-    execution = _ReviewExecution(
-        run_id=thread_id,
-        status="succeeded",
-        result=result,
-    )
-    return _review_run_body(execution, debug=debug), 200
 
 
 async def _review_chat_completion_response(
@@ -1515,12 +1057,8 @@ async def _review_chat_completion_response(
     """Return the ReviewAgent non-stream chat response or interrupt body."""
     execution = await _run_review_with_interrupt(
         arguments=dict(arguments),
-        request_info=RunRequestInfo(
-            dialogue_id=payload.dialogue_id,
-            query=user_query,
-            tool_name="ReviewAgent",
-            model=payload.model,
-            request_json=payload.model_dump_json(),
+        request_info=a2ui_runtime.build_review_request_info(
+            payload, user_query
         ),
     )
     if execution.interrupt is not None:
