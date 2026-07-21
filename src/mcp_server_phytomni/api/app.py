@@ -46,7 +46,6 @@ from fastapi import (
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from google.protobuf import json_format
-from httpx import ConnectError, TimeoutException
 from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS
 from pydantic import ValidationError
@@ -96,11 +95,8 @@ from ..mcp.result_formatting import (
 )
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
 from ..mcp.stream_lifecycle import (
-    EmptyStreamError,
     PrimedAguiStream,
     StreamLifecycleState,
-    prime_agui_stream,
-    project_stream_failures,
 )
 from ..runtime.memory import (
     MemoryConflictError,
@@ -134,7 +130,7 @@ from ..runtime.task_manager import resolve_tasks_db_path
 from ..runtime.task_reconcile import reconcile_task_log
 from ..storage.path_policy import IdFactory
 from ..version import __version__
-from . import a2ui_runtime, run_lifecycle
+from . import a2ui_runtime, run_lifecycle, streaming
 from .a2a import runtime as a2a_runtime
 from .a2a.card import build_agent_card
 from .a2a.executor import (
@@ -161,7 +157,6 @@ from .openai_mapping import (
     MODEL_TO_TOOL,
     flatten_messages,
     to_chat_completion,
-    to_chat_completion_chunks,
     tool_accepts_obs,
     tool_accepts_stream,
     tool_for_model,
@@ -198,10 +193,7 @@ from .schemas import (
     ResumeRequest,
     UploadPurpose,
 )
-from .stream_answer import (
-    StreamAnswerAccumulator,
-    resolve_stream_answer_max_bytes,
-)
+from .stream_answer import resolve_stream_answer_max_bytes
 
 __all__ = ["create_app"]
 
@@ -436,47 +428,19 @@ async def _resume_a2ui_run(
 
 def _stream_setup_error(exc: Exception, *, priming: bool) -> HTTPException:
     """Map stream setup/prime failures to fixed pre-header HTTP errors."""
-    if isinstance(exc, HTTPException):
-        return exc
-    status_code = 500
-    detail = "stream setup failed"
-    if isinstance(exc, ConnectError):
-        status_code = 502
-        detail = "stream upstream unavailable"
-    elif isinstance(exc, TimeoutException):
-        status_code = 504
-        detail = "stream upstream timed out"
-    elif not priming and isinstance(exc, NotImplementedError):
-        status_code = 400
-        detail = "streaming is not supported for this model"
-    elif (
-        not priming
-        and isinstance(exc, McpError)
-        and exc.error.code == (INVALID_PARAMS)
-    ):
-        status_code = 400
-        detail = "invalid streaming request"
-    elif isinstance(exc, EmptyStreamError):
-        detail = "stream produced no data"
-    return HTTPException(status_code=status_code, detail=detail)
+    return streaming.stream_setup_error(exc, priming=priming)
 
 
 def _failed_stream_result() -> dict[str, Any]:
     """Return the minimal failed result persisted after pre-open failure."""
-    return {
-        "formatted": {"answer": ""},
-        "raw": None,
-        "stream": True,
-        "partial": True,
-    }
+    return streaming.failed_stream_result()
 
 
 async def _replay_primed_stream(
     primed: PrimedAguiStream,
 ) -> AsyncIterator[AguiEvent]:
     """Replay a primed first event before consuming its raw remainder."""
-    yield primed.first
-    async for event in primed.remainder:
+    async for event in streaming.replay_primed_stream(primed):
         yield event
 
 
@@ -487,16 +451,11 @@ async def _project_primed_stream(
     lifecycle_state: StreamLifecycleState | None = None,
 ) -> AsyncIterator[AguiEvent]:
     """Project a primed raw stream through one typed lifecycle state."""
-    state = (
-        lifecycle_state
-        if lifecycle_state is not None
-        else StreamLifecycleState()
-    )
-    async for event in project_stream_failures(
-        _replay_primed_stream(primed),
-        state=state,
+    async for event in streaming.project_primed_stream(
+        primed,
         run_id=run_id,
         request_id=current_request_id() or "unknown",
+        lifecycle_state=lifecycle_state,
     ):
         yield event
 
@@ -542,6 +501,44 @@ def _settle_a2ui_stream_failure(
     )
 
 
+def _stream_a2ui_enabled() -> bool:
+    """Read the current A2UI flag for the streaming runtime."""
+    return ApiConfig().A2UI_ENABLED
+
+
+def _new_stream_run_id(prefix: str, kind: str) -> str:
+    """Mint a registry id without exposing the storage factory to streaming."""
+    return IdFactory().new_id(prefix, kind)
+
+
+def _stream_agent_slug(model: str) -> str | None:
+    """Resolve the registry slug for one streamed public model."""
+    return _MODEL_TO_AGENT_SLUG.get(model)
+
+
+def _streaming_dependencies() -> streaming.StreamingDependencies:
+    """Bind app-owned seams into the extracted streaming runtime."""
+    return streaming.StreamingDependencies(
+        request=streaming.StreamingRequestDependencies(
+            prepare_tool_stream=prepare_tool_stream,
+            current_user=current_request_user,
+            current_request_id=current_request_id,
+            new_run_id=_new_stream_run_id,
+            agent_slug=_stream_agent_slug,
+        ),
+        a2ui=streaming.StreamingA2UIDependencies(
+            enabled=_stream_a2ui_enabled,
+            select_widget=select_chat_a2ui_widget,
+            runtime=_a2ui_runtime_dependencies,
+        ),
+        persistence=streaming.StreamingPersistenceDependencies(
+            create_running_stream_run=_create_running_stream_run,
+            settle_stream_run=_settle_stream_run,
+            stream_answer_max_bytes=_stream_answer_max_bytes,
+        ),
+    )
+
+
 async def _stream_chat_a2ui_confirm(
     *,
     arguments: dict[str, Any],
@@ -549,11 +546,11 @@ async def _stream_chat_a2ui_confirm(
     user_query: str,
 ) -> StreamingResponse:
     """Compatibility seam for the Chat A2UI stream runtime."""
-    return await a2ui_runtime.stream_chat_a2ui_confirm(
+    return await streaming.stream_chat_a2ui_confirm(
         arguments=arguments,
         payload=payload,
         user_query=user_query,
-        dependencies=_a2ui_runtime_dependencies(),
+        dependencies=_streaming_dependencies(),
     )
 
 
@@ -564,124 +561,29 @@ async def _stream_review_a2ui_pause(
     user_query: str,
 ) -> StreamingResponse:
     """Compatibility seam for the Review A2UI stream runtime."""
-    return await a2ui_runtime.stream_review_a2ui_pause(
+    return await streaming.stream_review_a2ui_pause(
         arguments=arguments,
         payload=payload,
         user_query=user_query,
-        dependencies=_a2ui_runtime_dependencies(),
+        dependencies=_streaming_dependencies(),
     )
 
 
-async def _stream_chat_completion(  # pylint: disable=too-many-locals
+async def _stream_chat_completion(
     *,
     tool_name: str,
     arguments: dict[str, Any],
     payload: ChatCompletionRequest,
     user_query: str,
 ) -> StreamingResponse:
-    """Prepare, prime, and wrap one streamed tool response.
-
-    The wrapper is an async generator: each emitted SSE line forwards
-    immediately to the client (no buffering). The run row is written
-    twice: a ``running`` row before the first frame so ``RunStarted``
-    carries a real, persisted registry id, then a terminal
-    ``succeeded``/``failed`` settle from the ``finally`` block keyed
-    on the shared typed lifecycle state (finish observed and no error). A
-    client that disconnects right after ``RunFinished`` still settles
-    succeeded — the answer was produced regardless of whether the
-    socket stayed open to see it. Every ordinary streamed agent persists
-    its accumulated answer under a soft byte cap; A2UI pause paths settle
-    their structured interrupt result separately.
-
-    Auth, rate-limit, request-id, and OBS argument prep all happen
-    before this helper is called, mirroring the non-stream branch.
-    """
-    if (
-        tool_name == "ChatAgent"
-        and ApiConfig().A2UI_ENABLED
-        and select_chat_a2ui_widget(user_query) is not None
-    ):
-        return await _stream_chat_a2ui_confirm(
-            arguments=arguments,
-            payload=payload,
-            user_query=user_query,
-        )
-    agent_slug = _MODEL_TO_AGENT_SLUG.get(payload.model)
-    owner = current_request_user() or "anonymous"
-    run_id = IdFactory().new_id("run", agent_slug or "chat")
-    try:
-        raw_events = prepare_tool_stream(
-            tool_name,
-            arguments,
-            run_id=run_id,
-            dialogue_id=payload.dialogue_id,
-        )
-    except Exception as exc:
-        raise _stream_setup_error(exc, priming=False) from exc
-
-    request_info = RunRequestInfo(
-        dialogue_id=payload.dialogue_id,
-        query=user_query,
+    """Compatibility seam for the extracted HTTP streaming runtime."""
+    return await streaming.stream_chat_completion(
         tool_name=tool_name,
-        model=payload.model,
-        request_json=payload.model_dump_json(),
+        arguments=arguments,
+        payload=payload,
+        user_query=user_query,
+        dependencies=_streaming_dependencies(),
     )
-    # Stage 1: pre-mint + write running so RunStarted carries the real
-    # registry id instead of an unpersisted placeholder.
-    if agent_slug is not None:
-        _create_running_stream_run(run_id, agent_slug, owner, request_info)
-    try:
-        primed = await prime_agui_stream(raw_events)
-    except Exception as exc:
-        if agent_slug is not None:
-            _settle_stream_run(
-                run_id,
-                owner,
-                "failed",
-                _failed_stream_result(),
-            )
-        raise _stream_setup_error(exc, priming=True) from exc
-
-    lifecycle_state = StreamLifecycleState()
-    events = _project_primed_stream(
-        primed,
-        run_id=run_id,
-        lifecycle_state=lifecycle_state,
-    )
-    accumulator = StreamAnswerAccumulator(
-        events,
-        max_bytes=_stream_answer_max_bytes(),
-        lifecycle_state=lifecycle_state,
-    )
-    events = accumulator
-    sse_lines = to_chat_completion_chunks(events, payload.model)
-
-    async def _wrapped() -> AsyncIterator[str]:
-        """Forward each SSE line, then settle the run from ``finally``."""
-        try:
-            async for line in sse_lines:
-                yield line
-        finally:
-            # Stage 2: settle terminal keyed on reaching RunFinished,
-            # not on connection close.
-            if agent_slug is not None:
-                status = (
-                    "succeeded"
-                    if lifecycle_state.reached_finish
-                    and not lifecycle_state.saw_error
-                    else "failed"
-                )
-                snap = accumulator.snapshot
-                result: dict[str, Any] = {
-                    "formatted": {"answer": snap.answer},
-                    "raw": None,
-                    "stream": True,
-                    "truncated": snap.truncated,
-                    "partial": status == "failed",
-                }
-                _settle_stream_run(run_id, owner, status, result)
-
-    return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
 # pylint: disable=too-many-locals
