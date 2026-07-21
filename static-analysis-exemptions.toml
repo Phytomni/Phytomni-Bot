@@ -1822,28 +1822,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0174"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/unit/test_deep_genome_dispatch.py"
-symbol = "97:103"
-peer_path = "tests/agents/test_deep_genome_dispatch_routing.py"
-peer_symbol = "451:457"
-fingerprint = "sha256:edba189ae68899ee52de5400d60bd3c2e65782e445172a0b6860ace817535c43"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "DeepGenome routing tests intentionally share concrete work-item fixtures with report tests."
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0175"
 tool = "pylint"
 rule = "R0801"

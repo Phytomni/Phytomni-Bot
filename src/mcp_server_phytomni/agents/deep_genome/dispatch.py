@@ -19,11 +19,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import deque
 from collections.abc import Callable
 from dataclasses import asdict
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from typing import TYPE_CHECKING, Any, NamedTuple, TypedDict, Unpack, cast
 
 from langgraph.graph import END
 from langgraph.types import Send
@@ -37,9 +35,9 @@ from ...runtime.deep_genome_store import (
     DeepGenomeTrackingError,
 )
 from ...runtime.task_manager import resolve_tasks_db_path
-from ...storage.obs_storage import normalize_obs_object_key, obsfs_path_for
+from ...storage.obs_storage import obsfs_path_for
 from ...storage.path_policy import RunIdentity
-from ...storage.scratch import ScratchTarget, resolve_scratch_dir
+from ...storage.scratch import resolve_scratch_dir
 from ..analyst.storage import download_obs_out, download_obs_out_via_relay
 from ..analyst.task_ops import task_delete, task_status
 from ..design.agent import (
@@ -51,11 +49,11 @@ from ..shared.analysis_storage import (
     get_data_list,
 )
 from ..shared.sql import gauss_query, relay_bi_query, sql_literal
+from . import remote_io as deep_genome_remote_io
 from .coordinator import (
     DeepGenomeWorkflowError,
     RemoteSubmission,
     WorkItemOutcome,
-    normalize_submission,
     poll_work_item,
     workflow_outcome_for_state,
 )
@@ -68,7 +66,22 @@ if TYPE_CHECKING:
 else:
     DeepGenomeState = dict[str, Any]
 
+
+class _DispatchPollOptions(TypedDict, total=False):
+    """Optional compatibility bindings for one remote poll."""
+
+    summary_builder: Callable[[str], str] | None
+    tracking: DeepGenomeTransitionSink | None
+    work_item_key: str | None
+
+
 logger = logging.getLogger(__name__)
+
+DeepGenomeRemoteIO = deep_genome_remote_io.DeepGenomeRemoteIO
+ANALYSIS_TARGET_FILE_FEATURE_MAP = (
+    deep_genome_remote_io.ANALYSIS_TARGET_FILE_FEATURE_MAP
+)
+DEFAULT_TARGET_FILE_FEATURE = deep_genome_remote_io.DEFAULT_TARGET_FILE_FEATURE
 
 _BEST_EFFORT_ERRORS: tuple[type[Exception], ...] = (Exception,)
 
@@ -98,37 +111,7 @@ ANALYSIS_META_TEMPLATE_MAP = {
     "smoc_analysis": "user/smoc_analysis_meta",
 }
 
-ANALYSIS_TARGET_FILE_FEATURE_MAP = {
-    "evolution_analysis": [".md", ".png", ".summary", ".legend"],
-    "haplotypes_analysis": [".png", ".summary", ".legend"],
-    "fst_analysis": [".png"],
-    "enrichment_analysis": [".png", ".summary", ".legend"],
-    "protein_structure_analysis": ["sample_0.cif", ".summary", ".legend"],
-    "promoter_analysis": ["motif_all_logo.png", ".summary", ".legend"],
-    "gene_expression_tissues": [".png", ".summary", ".legend"],
-    "gene_expression_cultivars": [".png", ".summary", ".legend"],
-    "gene_expression_genotypes": [".png", ".summary", ".legend"],
-    "gene_expression_treatments": [".png", ".summary", ".legend"],
-    "single_cell_analysis": [".png", ".summary", ".legend"],
-    "smep_analysis": [".png", ".summary", ".legend"],
-    "smoc_analysis": [".png", ".summary", ".legend"],
-}
-
-DEFAULT_TARGET_FILE_FEATURE = [".png", ".summary", ".legend"]
 _DESIGN_SUMMARY_ERRORS: tuple[type[Exception], ...] = (Exception,)
-
-
-def _read_result_markdown(results_dir: str) -> str:
-    """Read deterministic nonblank Markdown summaries from a result dir."""
-    root = Path(results_dir)
-    summaries: list[str] = []
-    for summary_path in sorted(root.rglob("*.summary")):
-        if not summary_path.is_file():
-            continue
-        content = summary_path.read_text(encoding="utf-8").strip()
-        if content:
-            summaries.append(content)
-    return "\n\n".join(summaries)
 
 
 def _outcome_work_item_delta(
@@ -208,6 +191,37 @@ class DeepGenomeDispatchMixin:
     """Routing, dispatch, and analysis-task nodes for DeepGenome.
     Dispatch methods share durable lifecycle and remote-submission state."""
 
+    def _remote_io(self: Any) -> DeepGenomeRemoteIO:
+        """Build the typed adapter with the current runtime seams."""
+        return DeepGenomeRemoteIO(
+            config=self.deep_genome_config,
+            sensitive_config=getattr(self, "sensitive_config", None),
+            analyst_agent=getattr(
+                getattr(self, "_agents", None), "analyst_agent", None
+            ),
+            hooks={
+                "task_status": task_status,
+                "task_delete": task_delete,
+                "analyst_submit": submit_analyst_via_subgraph,
+                "protein_structure": protein_structure_for_gene,
+                "promoter_design": promoter_design_for_gene,
+                "obsfs_path": obsfs_path_for,
+                "relay_enabled": relay_mode_enabled,
+                "relay_download": download_obs_out_via_relay,
+                "sdk_download": download_obs_out,
+                "scratch_dir": resolve_scratch_dir,
+                "poll_work_item": poll_work_item,
+            },
+        )
+
+    @staticmethod
+    def _remote_io_for(instance: Any) -> DeepGenomeRemoteIO:
+        """Resolve the adapter for real agents and lightweight test hosts."""
+        factory = getattr(instance, "_remote_io", None)
+        if callable(factory):
+            return cast(DeepGenomeRemoteIO, factory())
+        return DeepGenomeDispatchMixin._remote_io(instance)
+
     def _transition_sink(
         self: Any,
         state: DeepGenomeState | None,
@@ -221,17 +235,9 @@ class DeepGenomeDispatchMixin:
 
     def _analysis_request_kwargs(self: Any) -> dict[str, Any]:
         """Build bounded platform kwargs for status and cancellation calls."""
-        values: dict[str, Any] = {}
-        for config_name, argument_name in (
-            ("ANALYSIS_URL", "analysis_url"),
-            ("ANALYSIS_REGION", "region"),
-            ("RETRIABLE_CODES", "retriable_codes"),
-            ("MAX_RETRIES", "max_retries"),
-        ):
-            value = getattr(self.deep_genome_config, config_name, None)
-            if value is not None:
-                values[argument_name] = value
-        return values
+        return DeepGenomeDispatchMixin._remote_io_for(
+            self
+        ).analysis_request_kwargs()
 
     async def _cancel_submission(
         self: Any, submission: RemoteSubmission
@@ -242,17 +248,9 @@ class DeepGenomeDispatchMixin:
         job.  It is intentionally never cancelled from this owner-scoped
         failure path; only the accepted caller-owned id is eligible.
         """
-        try:
-            await task_delete(
-                submission.submitted_task_id,
-                timeout=getattr(self.deep_genome_config, "TIMEOUT", 600.0),
-                **DeepGenomeDispatchMixin._analysis_request_kwargs(self),
-            )
-        except _BEST_EFFORT_ERRORS as exc:
-            logger.warning(
-                "DeepGenome cancellation unavailable; error_type=%s",
-                type(exc).__name__,
-            )
+        await DeepGenomeDispatchMixin._remote_io_for(self).cancel_submission(
+            submission
+        )
 
     def _route_start(self: Any, state: DeepGenomeState):
         """Return BriefGene as the only initial node and launch barrier."""
@@ -870,100 +868,25 @@ class DeepGenomeDispatchMixin:
 
     # pylint: enable=too-many-locals
 
-    # pylint: disable=too-many-arguments
-    # pylint: disable=too-many-locals
     async def _poll_remote_submission(
         self: Any,
         submission: RemoteSubmission,
         context: AnalysisDispatchContext,
         run_identity: RunIdentity,
-        *,
-        summary_builder: Callable[[str], str] | None = None,
-        tracking: DeepGenomeTransitionSink | None = None,
-        work_item_key: str | None = None,
+        **options: Unpack[_DispatchPollOptions],
     ) -> tuple[WorkItemOutcome, str | None]:
-        """Poll and resolve one accepted submission through the coordinator."""
-        resolved_results_dir: str | None = None
-        tracked_work_item = work_item_key or context.analysis_type
-
-        async def read_remote_status(
-            poll_task_id: str,
-            request_timeout: float,
-        ) -> Any:
-            """Read one remote status through the shared task seam."""
-            status_kwargs: dict[str, Any] = {
-                "timeout": request_timeout,
-                **DeepGenomeDispatchMixin._analysis_request_kwargs(self),
-            }
-            return await task_status(poll_task_id, **status_kwargs)
-
-        async def resolve_remote_result(
-            accepted: RemoteSubmission,
-        ) -> str:
-            """Download and resolve nonblank local Markdown content."""
-            nonlocal resolved_results_dir
-            resolved_results_dir = await self._download_analysis_result(
-                context,
-                accepted.output_dir,
-                run_identity,
-            )
-            if resolved_results_dir is None:
-                raise RuntimeError("analysis result directory unavailable")
-            resolver = summary_builder
-            if (
-                resolver is None
-                and context.analysis_type == "promoter_analysis"
-            ):
-
-                def resolve_promoter(path: str) -> str:
-                    """Build the promoter artifact fallback summary."""
-                    return build_design_work_item_summary(
-                        "promoter_design", path
-                    )
-
-                resolver = resolve_promoter
-            resolver = resolver or _read_result_markdown
-            return resolver(resolved_results_dir)
-
-        async def record_transition(
-            status: str,
-            summary: str | None,
-            failure_reason: str | None,
-        ) -> WorkItemOutcome:
-            """Persist one local transition before continuing the poll."""
-            sink = tracking or DeepGenomeDispatchMixin._transition_sink(
-                self, None
-            )
-            return await sink.persist_work_item_transition(
-                tracked_work_item,
-                submission,
-                status,
-                summary,
-                failure_reason,
-            )
-
-        request_timeout = float(
-            getattr(self.deep_genome_config, "TIMEOUT", 600.0)
-        )
-        poll_interval = float(
-            getattr(self.deep_genome_config, "POLL_INTERVAL", 300.0)
-        )
-        deadline_seconds = float(
-            getattr(self.deep_genome_config, "MAX_POLL", 86400.0)
-        )
-        outcome = await poll_work_item(
+        """Poll and resolve one accepted submission through the adapter."""
+        remote_io = DeepGenomeDispatchMixin._remote_io_for(self)
+        override = self.__dict__.get("_download_analysis_result")
+        if override is not None:
+            remote_io.hooks["download_result"] = override
+        return await remote_io.poll_remote_submission(
             submission,
-            status_reader=read_remote_status,
-            result_resolver=resolve_remote_result,
-            transition_sink=record_transition,
-            request_timeout=request_timeout,
-            poll_interval=poll_interval,
-            deadline_seconds=deadline_seconds,
+            context,
+            run_identity,
+            **options,
+            transition_sink_factory=lambda: self._transition_sink(None),
         )
-        return outcome, resolved_results_dir
-
-    # pylint: enable=too-many-arguments,too-many-positional-arguments
-    # pylint: enable=too-many-locals
 
     # pylint: disable=too-many-locals
     async def _dispatch_and_wait_analysis(
@@ -1081,56 +1004,13 @@ class DeepGenomeDispatchMixin:
         self: Any,
         context: AnalysisDispatchContext,
     ) -> dict | RemoteSubmission:
-        """Submit one resolved analysis task to AnalystAgent.
-
-        For the two design analysis types (protein_structure /
-        promoter), dispatch through the matching design producer
-        wrapper. For the remaining types, build the request dict and
-        route through ``submit_analyst_via_subgraph``. The shared
-        helper internally mints its own run identity via
-        ``prepare_analyst_dispatch_context`` so the per-call
-        ``run_identity`` argument the caller used to thread through
-        has retired. Evolution is no longer dispatched here; it routes
-        to the mounted ``evolution_node``.
-        """
-        analysis_type = context.analysis_type
-        config = self.deep_genome_config
-        if analysis_type == "protein_structure_analysis":
-            return normalize_submission(
-                await protein_structure_for_gene(
-                    species_code=context.species_code,
-                    gene_id=context.gene_id,
-                    output_dir=context.output_dir,
-                    is_polling=False,
-                )
-            )
-        if analysis_type == "promoter_analysis":
-            return normalize_submission(
-                await promoter_design_for_gene(
-                    species_code=context.species_code,
-                    gene_id=context.gene_id,
-                    output_dir=context.output_dir,
-                    is_polling=False,
-                )
-            )
-        goal_description, data_list, meta, compute_resource = (
-            self._analysis_prompt_parts(context)
+        """Submit one resolved analysis task through the remote adapter."""
+        return await DeepGenomeDispatchMixin._remote_io_for(
+            self
+        ).submit_analysis_task(
+            context,
+            prompt_parts=self._analysis_prompt_parts,
         )
-        request = {
-            "analysis_type": analysis_type,
-            "target_id": context.gene_id,
-            "output_dir": context.output_dir,
-            "prompt_parts": (goal_description, meta, data_list),
-            "compute_resource": compute_resource,
-        }
-        submission = await submit_analyst_via_subgraph(
-            self._agents.analyst_agent,
-            config,
-            self.sensitive_config,
-            request,
-            is_polling=False,
-        )
-        return normalize_submission(submission)
 
     @staticmethod
     def _raise_if_agent_failed(result: dict) -> None:
@@ -1146,79 +1026,20 @@ class DeepGenomeDispatchMixin:
         output_path: str,
         run_identity: RunIdentity,
     ) -> str:
-        """Return a readable result directory, downloading only if needed."""
-        obsfs_result_dir = self._obsfs_analysis_result_dir(output_path)
-        if obsfs_result_dir is not None:
-            return obsfs_result_dir
-        obs_output_path = normalize_obs_object_key(
+        """Return a readable result directory through the remote adapter."""
+        return await DeepGenomeDispatchMixin._remote_io_for(
+            self
+        ).download_analysis_result(
+            context,
             output_path,
-            self.deep_genome_config.BUCKET_NAME,
-        )
-        scratch_root = resolve_scratch_dir(
-            "downloads",
             run_identity,
-            context.analysis_type,
-            ScratchTarget(
-                bucket_name=self.deep_genome_config.BUCKET_NAME,
-                local_fallback=Path(self.deep_genome_config.DEEPGENOME_OUT),
-            ),
         )
-        local_results_dir = Path(scratch_root) / context.gene_id
-        target_file_feature = ANALYSIS_TARGET_FILE_FEATURE_MAP.get(
-            context.analysis_type,
-            DEFAULT_TARGET_FILE_FEATURE,
-        )
-        if relay_mode_enabled():
-            statuses = await download_obs_out_via_relay(
-                task_dir=context.gene_id,
-                obs_output_path=obs_output_path,
-                download_path=scratch_root,
-                target_file_feature=target_file_feature,
-                if_download_all=False,
-            )
-            if not statuses:
-                raise RuntimeError(
-                    "relay returned no analysis results for "
-                    f"{obs_output_path}"
-                )
-            return str(local_results_dir)
-        try:
-            access_key_id, secret_access_key = (
-                self.sensitive_config.obs_credentials()
-            )
-            deque(
-                download_obs_out(
-                    task_dir=context.gene_id,
-                    obs_output_path=obs_output_path,
-                    download_path=scratch_root,
-                    access_key_id=access_key_id,
-                    secret_access_key=secret_access_key,
-                    obs_server=self.deep_genome_config.OBS_SERVER,
-                    bucket_name=self.deep_genome_config.BUCKET_NAME,
-                    target_file_feature=target_file_feature,
-                    if_download_all=False,
-                ),
-                maxlen=0,
-            )
-        except OSError as exc:
-            logger.warning("Failed to download results (continuing): %s", exc)
-        return str(local_results_dir)
 
     def _obsfs_analysis_result_dir(self: Any, output_path: str) -> str | None:
         """Return the obsfs result directory when it is directly readable."""
-        try:
-            obsfs_path = obsfs_path_for(
-                output_path,
-                self.deep_genome_config.BUCKET_NAME,
-            )
-            if obsfs_path.is_dir():
-                return str(obsfs_path)
-        except OSError:
-            return None
-        local_path = Path(output_path)
-        if local_path.is_dir():
-            return str(local_path)
-        return None
+        return DeepGenomeDispatchMixin._remote_io_for(
+            self
+        ).obsfs_analysis_result_dir(output_path)
 
     def _chat_kwargs(self: Any) -> dict[str, Any]:
         """Return shared Phyto chat kwargs for report nodes."""

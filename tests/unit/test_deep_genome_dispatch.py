@@ -30,6 +30,10 @@ from mcp_server_phytomni.agents.deep_genome.dispatch import (
     DeepGenomeDispatchMixin,
     _analyst_node_name,
 )
+from mcp_server_phytomni.agents.deep_genome.remote_io import (
+    DeepGenomeRemoteIO,
+    RemoteIOHooks,
+)
 from mcp_server_phytomni.storage.path_policy import IdFactory, RunIdentity
 
 pytestmark = pytest.mark.unit
@@ -95,11 +99,7 @@ async def test_dispatch_polls_normalized_submit_ack_before_download(
     setattr(harness.deep_genome_config, "TIMEOUT", 4.0)
     setattr(harness.deep_genome_config, "POLL_INTERVAL", 2.0)
     setattr(harness.deep_genome_config, "MAX_POLL", 10.0)
-    submission = RemoteSubmission(
-        submitted_task_id="caller-1",
-        poll_task_id="remote-1",
-        output_dir="/obs/out",
-    )
+    submission = RemoteSubmission("caller-1", "remote-1", "/obs/out")
     submit = AsyncMock(return_value=submission)
     results_dir = tmp_path / "results"
     results_dir.mkdir()
@@ -470,3 +470,224 @@ async def test_prepare_analysis_tasks_generic_types_match_node_constant() -> (
     prepared = {task["analysis_type"] for task in result["analysis_tasks"]}
     mounts = {"evolution_analysis", "digital_design"}
     assert prepared - mounts == set(GENERIC_ANALYSIS_NODE_TYPES)
+
+
+def _remote_config(deepgenome_out: str) -> SimpleNamespace:
+    """Return the explicit remote-I/O configuration used by protocol tests."""
+    return SimpleNamespace(
+        ANALYSIS_URL="https://analysis.example",
+        ANALYSIS_REGION="cn-test",
+        RETRIABLE_CODES=[429, 503],
+        MAX_RETRIES=3,
+        TIMEOUT=7.0,
+        BUCKET_NAME="phytomni",
+        DEEPGENOME_OUT=deepgenome_out,
+        OBS_SERVER="https://obs.example",
+    )
+
+
+async def test_remote_io_cancellation_scopes_id_and_redacts_errors(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Cancellation targets only the caller id and never logs secrets."""
+    delete = AsyncMock(side_effect=RuntimeError("secret-token-should-not-log"))
+    remote_io = DeepGenomeRemoteIO(
+        config=_remote_config("/tmp/deep-out"),
+        sensitive_config=FakeSensitiveConfig(),
+        hooks={"task_delete": delete},
+    )
+
+    with caplog.at_level("WARNING"):
+        await remote_io.cancel_submission(
+            RemoteSubmission("caller-1", "shared-source-1", "/obs/out")
+        )
+
+    delete.assert_awaited_once_with(
+        "caller-1",
+        timeout=7.0,
+        analysis_url="https://analysis.example",
+        region="cn-test",
+        retriable_codes=[429, 503],
+        max_retries=3,
+    )
+    assert "secret-token-should-not-log" not in caplog.text
+    assert "RuntimeError" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("analysis_type", "expected_key"),
+    [
+        ("protein_structure_analysis", "protein"),
+        ("promoter_analysis", "promoter"),
+    ],
+)
+async def test_remote_io_submit_selects_design_feature(
+    analysis_type: str,
+    expected_key: str,
+) -> None:
+    """Design analysis types use their dedicated producer wrappers."""
+    producer = AsyncMock(
+        return_value={
+            "task_id": f"{expected_key}-task",
+            "source_task_id": f"{expected_key}-source",
+            "output_dir": "/obs/out",
+        }
+    )
+    hooks: RemoteIOHooks = {}
+    hooks[
+        "protein_structure" if expected_key == "protein" else "promoter_design"
+    ] = producer
+    remote_io = DeepGenomeRemoteIO(
+        config=_remote_config("/tmp/deep-out"),
+        sensitive_config=FakeSensitiveConfig(),
+        hooks=hooks,
+    )
+    context = AnalysisDispatchContext(
+        analysis_type=analysis_type,
+        species_code="ath",
+        gene_id="GeneA",
+        output_dir="/obs/out",
+    )
+
+    result = await remote_io.submit_analysis_task(context, prompt_parts=None)
+
+    assert result == RemoteSubmission(
+        f"{expected_key}-task", f"{expected_key}-source", "/obs/out"
+    )
+    producer.assert_awaited_once_with(
+        species_code="ath",
+        gene_id="GeneA",
+        output_dir="/obs/out",
+        is_polling=False,
+    )
+
+
+async def test_remote_io_submit_rejects_blank_ack_and_preserves_reused_id():
+    """The adapter validates acknowledgements at the protocol boundary."""
+    submit = AsyncMock(
+        return_value={
+            "task_id": "caller-2",
+            "source_task_id": "source-2",
+            "output_dir": "/obs/out",
+        }
+    )
+    remote_io = DeepGenomeRemoteIO(
+        config=_remote_config("/tmp/deep-out"),
+        sensitive_config=FakeSensitiveConfig(),
+        analyst_agent="analyst",
+        hooks={"analyst_submit": submit},
+    )
+    context = AnalysisDispatchContext(
+        analysis_type="haplotypes_analysis",
+        species_code="ath",
+        gene_id="GeneA",
+        output_dir="/obs/out",
+    )
+
+    result = await remote_io.submit_analysis_task(
+        context,
+        prompt_parts=lambda _: ("goal", {"data": 1}, "meta", "small"),
+    )
+
+    assert result == RemoteSubmission("caller-2", "source-2", "/obs/out")
+    assert submit.await_args is not None
+    assert submit.await_args.args[0] == "analyst"
+    submit.return_value = {"task_id": " ", "output_dir": "/obs/out"}
+    with pytest.raises(ValueError, match="invalid analysis submission"):
+        await remote_io.submit_analysis_task(
+            context,
+            prompt_parts=lambda _: ("goal", {"data": 1}, "meta", "small"),
+        )
+
+
+async def test_remote_io_poll_uses_effective_id_and_timeout_kwargs() -> None:
+    """Polling delegates timing while binding status calls to the source id."""
+    status = AsyncMock(return_value={"status": "SUCCEEDED"})
+    download = AsyncMock(return_value="/tmp/results")
+    observed: dict[str, Any] = {}
+
+    async def fake_poll(
+        submission: RemoteSubmission,
+        *,
+        status_reader,
+        result_resolver,
+        transition_sink,
+        **kwargs: Any,
+    ) -> WorkItemOutcome:
+        observed.update(kwargs)
+        assert await status_reader(submission.poll_task_id, 7.0) == {
+            "status": "SUCCEEDED"
+        }
+        assert await result_resolver(submission) == "/tmp/results"
+        return await transition_sink("succeeded", "# summary", None)
+
+    transition = AsyncMock(
+        return_value=WorkItemOutcome("succeeded", "# summary", None)
+    )
+    remote_io = DeepGenomeRemoteIO(
+        config=_remote_config("/tmp/deep-out"),
+        sensitive_config=FakeSensitiveConfig(),
+        hooks={
+            "task_status": status,
+            "download_result": download,
+            "poll_work_item": fake_poll,
+        },
+    )
+    context = AnalysisDispatchContext(
+        analysis_type="haplotypes_analysis",
+        species_code="ath",
+        gene_id="GeneA",
+        output_dir="/obs/out",
+    )
+    submission = RemoteSubmission("caller-1", "source-1", "/obs/out")
+
+    outcome, result_dir = await remote_io.poll_remote_submission(
+        submission,
+        context,
+        _fixed_run_identity(),
+        summary_builder=lambda path: path,
+        tracking=SimpleNamespace(persist_work_item_transition=transition),
+        work_item_key="haplotypes_analysis",
+    )
+
+    assert outcome.status == "succeeded"
+    assert result_dir == "/tmp/results"
+    assert observed == {
+        "request_timeout": 7.0,
+        "poll_interval": 300.0,
+        "deadline_seconds": 86400.0,
+    }
+    status.assert_awaited_once_with(
+        "source-1",
+        timeout=7.0,
+        analysis_url="https://analysis.example",
+        region="cn-test",
+        retriable_codes=[429, 503],
+        max_retries=3,
+    )
+    download.assert_awaited_once_with(
+        context,
+        "/obs/out",
+        _fixed_run_identity(),
+    )
+
+
+async def test_remote_io_download_rejects_unsafe_obs_path(tmp_path) -> None:
+    """OBS paths leaving the configured bucket fail before any download."""
+    remote_io = DeepGenomeRemoteIO(
+        config=_remote_config(str(tmp_path / "deep-out")),
+        sensitive_config=FakeSensitiveConfig(),
+    )
+    context = AnalysisDispatchContext(
+        analysis_type="haplotypes_analysis",
+        species_code="ath",
+        gene_id="GeneA",
+        output_dir="/obs/out",
+    )
+
+    with pytest.raises(ValueError, match="escapes bucket root"):
+        await remote_io.download_analysis_result(
+            context,
+            "/obs/phytomni/../secrets",
+            _fixed_run_identity(),
+        )
