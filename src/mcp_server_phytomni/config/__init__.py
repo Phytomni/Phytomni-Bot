@@ -11,6 +11,7 @@ and override helpers used by MCP handlers and compatibility wrappers.
 from .data_loaders import load_prompt_templates, load_species_data
 from .defaults import (
     AnalystConfig,
+    ApiConfig,
     ChatConfig,
     DataConfig,
     DeepGenomeConfig,
@@ -19,6 +20,7 @@ from .defaults import (
     PromptTemplates,
     RegionMap,
     ReviewConfig,
+    ServerConfig,
     SpeciesDataIndex,
 )
 from .secret_envelope import (
@@ -30,6 +32,7 @@ from .settings import SensitiveConfig
 
 __all__ = [
     "AnalystConfig",
+    "ApiConfig",
     "ChatConfig",
     "DataConfig",
     "DeepGenomeConfig",
@@ -39,6 +42,7 @@ __all__ = [
     "RegionMap",
     "ReviewConfig",
     "SecretEnvelopeError",
+    "ServerConfig",
     "SensitiveConfig",
     "SpeciesDataIndex",
     "decrypt_env_blob",

@@ -1,0 +1,216 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+"""HTTP API settings model."""
+
+from pathlib import Path
+from typing import Annotated
+from urllib.parse import urlsplit
+
+from pydantic import (
+    AliasChoices,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
+
+from ..api_limits import ApiLimitsConfig
+
+_API_CACHE_DIR = Path(".cache") / "phytomni"
+
+
+class ApiConfig(ApiLimitsConfig):
+    """Non-secret configuration for the external HTTP API service."""
+
+    API_HOST: str = "127.0.0.1"
+    API_PORT: int = 8080
+    API_GRACEFUL_SHUTDOWN: int = 30
+    API_KEYS_DB_PATH: str = Field(
+        default=str(_API_CACHE_DIR / "api_keys.sqlite"),
+        validation_alias=AliasChoices(
+            "API_KEYS_DB_PATH", "PHYTOMNI_API_KEYS_DB"
+        ),
+    )
+    API_TASKS_DB_PATH: str = Field(
+        default="server_tasks.db",
+        validation_alias=AliasChoices(
+            "API_TASKS_DB_PATH", "PHYTOMNI_TASKS_DB"
+        ),
+    )
+    MEMORY_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "MEMORY_ENABLED", "PHYTOMNI_MEMORY_ENABLED"
+        ),
+    )
+    MEMORY_DB_PATH: str = Field(
+        default=str(_API_CACHE_DIR / "memory.sqlite"),
+        validation_alias=AliasChoices(
+            "MEMORY_DB_PATH", "PHYTOMNI_MEMORY_DB_PATH"
+        ),
+    )
+    API_REQUEST_TIMEOUT: float = 600.0
+    API_RATE_LIMIT_PER_MIN: int = 120
+    API_RUN_TTL_OK_HOURS: int = 24
+    API_RUN_TTL_FAIL_DAYS: int = 7
+    API_SERVICE_TOKEN: Annotated[
+        SecretStr | None,
+        Field(
+            validation_alias=AliasChoices(
+                "API_SERVICE_TOKEN", "PHYTOMNI_API_SERVICE_TOKEN"
+            ),
+        ),
+    ] = None
+    API_UPLOAD_MAX_BYTES: int = 26_214_400
+    API_UPLOAD_PREFIX: str = "agent_data/uploads"
+    STREAM_ANSWER_MAX_BYTES: int = Field(
+        default=1_048_576,
+        validation_alias=AliasChoices(
+            "STREAM_ANSWER_MAX_BYTES",
+            "PHYTOMNI_STREAM_ANSWER_MAX_BYTES",
+        ),
+    )
+    A2UI_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("A2UI_ENABLED", "PHYTOMNI_A2UI_ENABLED"),
+    )
+    A2UI_TOOL_CALL: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "A2UI_TOOL_CALL", "PHYTOMNI_A2UI_TOOL_CALL"
+        ),
+    )
+    A2A_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("A2A_ENABLED", "PHYTOMNI_A2A_ENABLED"),
+    )
+    A2A_PUBLIC_BASE_URL: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "A2A_PUBLIC_BASE_URL", "PHYTOMNI_A2A_PUBLIC_BASE_URL"
+        ),
+    )
+    INTEROP_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "INTEROP_ENABLED", "PHYTOMNI_INTEROP_ENABLED"
+        ),
+    )
+    INTEROP_TARGETS: Annotated[
+        SecretStr,
+        Field(
+            default=SecretStr("[]"),
+            validation_alias=AliasChoices(
+                "INTEROP_TARGETS", "PHYTOMNI_INTEROP_TARGETS"
+            ),
+        ),
+    ] = SecretStr("[]")
+    RELAY_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "RELAY_ENABLED", "PHYTOMNI_RELAY_ENABLED"
+        ),
+    )
+
+    @field_validator("A2A_PUBLIC_BASE_URL", mode="after")
+    @classmethod
+    def _normalize_a2a_public_base_url(cls, value: str | None) -> str | None:
+        """Validate and normalize the public A2A URL prefix."""
+        if value is None:
+            return None
+        normalized = value.strip().rstrip("/")
+        if not normalized:
+            return None
+        parsed = urlsplit(normalized)
+        has_url_restriction = any(
+            (
+                parsed.username is not None,
+                parsed.password is not None,
+                bool(parsed.query),
+                bool(parsed.fragment),
+            )
+        )
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or has_url_restriction
+        ):
+            raise ValueError(
+                "A2A_PUBLIC_BASE_URL must be an absolute HTTP(S) URL "
+                "without credentials, query, or fragment."
+            )
+        return normalized
+
+    @model_validator(mode="after")
+    def _require_a2a_public_base_url(self) -> "ApiConfig":
+        """Fail at settings construction when enabled A2A lacks a URL."""
+        if self.A2A_ENABLED and not self.A2A_PUBLIC_BASE_URL:
+            raise ValueError(
+                "A2A_PUBLIC_BASE_URL is required when A2A_ENABLED is true; "
+                "set A2A_PUBLIC_BASE_URL or PHYTOMNI_A2A_PUBLIC_BASE_URL."
+            )
+        return self
+
+    RELAY_AUDIT_DB_PATH: str = Field(
+        default=str(_API_CACHE_DIR / "relay_audit.sqlite"),
+        validation_alias=AliasChoices(
+            "RELAY_AUDIT_DB_PATH", "PHYTOMNI_RELAY_AUDIT_DB_PATH"
+        ),
+    )
+    RELAY_AUDIT_RETENTION_DAYS: int = Field(
+        default=90,
+        validation_alias=AliasChoices(
+            "RELAY_AUDIT_RETENTION_DAYS",
+            "PHYTOMNI_RELAY_AUDIT_RETENTION_DAYS",
+        ),
+    )
+    RELAY_REQUEST_MAX_BYTES: int = Field(
+        default=10_485_760,
+        validation_alias=AliasChoices(
+            "RELAY_REQUEST_MAX_BYTES", "PHYTOMNI_RELAY_REQUEST_MAX_BYTES"
+        ),
+    )
+    RELAY_REQUEST_AUDIT_MAX_BYTES: int = Field(
+        default=65_536,
+        validation_alias=AliasChoices(
+            "RELAY_REQUEST_AUDIT_MAX_BYTES",
+            "PHYTOMNI_RELAY_REQUEST_AUDIT_MAX_BYTES",
+        ),
+    )
+    RELAY_TIMEOUT_SECONDS: float = Field(
+        default=600.0,
+        validation_alias=AliasChoices(
+            "RELAY_TIMEOUT_SECONDS", "PHYTOMNI_RELAY_TIMEOUT_SECONDS"
+        ),
+    )
+    RELAY_RESPONSE_AUDIT_MAX_BYTES: int = Field(
+        default=10_485_760,
+        validation_alias=AliasChoices(
+            "RELAY_RESPONSE_AUDIT_MAX_BYTES",
+            "PHYTOMNI_RELAY_RESPONSE_AUDIT_MAX_BYTES",
+        ),
+    )
+    RELAY_RESPONSE_MAX_BYTES: int = Field(
+        default=1024 * 1024 * 1024,
+        validation_alias=AliasChoices(
+            "RELAY_RESPONSE_MAX_BYTES", "PHYTOMNI_RELAY_RESPONSE_MAX_BYTES"
+        ),
+    )
+    RELAY_RATE_LIMIT_PER_MIN: int = Field(
+        default=60,
+        validation_alias=AliasChoices(
+            "RELAY_RATE_LIMIT_PER_MIN", "PHYTOMNI_RELAY_RATE_LIMIT_PER_MIN"
+        ),
+    )
+    RELAY_MAX_CONCURRENT_PER_KEY: int = Field(
+        default=8,
+        validation_alias=AliasChoices(
+            "RELAY_MAX_CONCURRENT_PER_KEY",
+            "PHYTOMNI_RELAY_MAX_CONCURRENT_PER_KEY",
+        ),
+    )
+
+
+__all__ = ["ApiConfig"]
