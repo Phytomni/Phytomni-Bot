@@ -10,23 +10,16 @@ LangGraph branches, prepares Analyst task prompts, dispatches deep analyses,
 downloads OBS results, and builds analyst sub-summaries.
 """
 
-# The dispatch mixin is the single DeepGenome coordinator boundary; keeping
-# routing, submission, polling, and result projection together preserves one
-# owner-scoped transition seam. See the lint-exemption catalog.
-# pylint: disable=too-many-lines
-
 from __future__ import annotations
 
 import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import asdict
-from typing import TYPE_CHECKING, Any, NamedTuple, TypedDict, Unpack, cast
+from typing import TYPE_CHECKING, Any, TypedDict, Unpack, cast
 
 from langgraph.graph import END
-from langgraph.types import Send
 
-from ...common.prompts import get_prompt
 from ...config.relay_mode import relay_mode_enabled
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
 from ...runtime.deep_genome_store import (
@@ -44,18 +37,13 @@ from ..design.agent import (
     promoter_design_for_gene,
     protein_structure_for_gene,
 )
-from ..shared.analysis_storage import (
-    ANALYSIS_DATA_LIST_MAP,
-    get_data_list,
-)
 from ..shared.sql import gauss_query, relay_bi_query, sql_literal
 from . import remote_io as deep_genome_remote_io
+from . import routing as deep_genome_routing
 from .coordinator import (
-    DeepGenomeWorkflowError,
     RemoteSubmission,
     WorkItemOutcome,
     poll_work_item,
-    workflow_outcome_for_state,
 )
 from .summary import build_design_work_item_summary, build_sub_summary
 from .tracking import DeepGenomeTransitionSink
@@ -78,38 +66,18 @@ class _DispatchPollOptions(TypedDict, total=False):
 logger = logging.getLogger(__name__)
 
 DeepGenomeRemoteIO = deep_genome_remote_io.DeepGenomeRemoteIO
+ANALYSIS_DATA_LIST_MAP = deep_genome_routing.ANALYSIS_DATA_LIST_MAP
+ANALYSIS_GOAL_TEMPLATE_MAP = deep_genome_routing.ANALYSIS_GOAL_TEMPLATE_MAP
+ANALYSIS_META_TEMPLATE_MAP = deep_genome_routing.ANALYSIS_META_TEMPLATE_MAP
 ANALYSIS_TARGET_FILE_FEATURE_MAP = (
-    deep_genome_remote_io.ANALYSIS_TARGET_FILE_FEATURE_MAP
+    deep_genome_routing.ANALYSIS_TARGET_FILE_FEATURE_MAP
 )
-DEFAULT_TARGET_FILE_FEATURE = deep_genome_remote_io.DEFAULT_TARGET_FILE_FEATURE
+AnalysisDispatchContext = deep_genome_routing.AnalysisDispatchContext
+DEFAULT_TARGET_FILE_FEATURE = deep_genome_routing.DEFAULT_TARGET_FILE_FEATURE
+GENERIC_ANALYSIS_NODE_TYPES = deep_genome_routing.GENERIC_ANALYSIS_NODE_TYPES
+_analyst_node_name = deep_genome_routing.analyst_node_name
 
 _BEST_EFFORT_ERRORS: tuple[type[Exception], ...] = (Exception,)
-
-ANALYSIS_GOAL_TEMPLATE_MAP = {
-    "haplotypes_analysis": "user/haplotypes_analysis",
-    "fst_analysis": "user/fst_analysis",
-    "enrichment_analysis": "user/enrichment_analysis",
-    "gene_expression_tissues": "user/gene_expression_analysis/tissue",
-    "gene_expression_cultivars": "user/gene_expression_analysis/cultivar",
-    "gene_expression_genotypes": "user/gene_expression_analysis/genotype",
-    "gene_expression_treatments": "user/gene_expression_analysis/treatment",
-    "single_cell_analysis": "user/single_cell_analysis",
-    "smep_analysis": "user/smep_analysis",
-    "smoc_analysis": "user/smoc_analysis",
-}
-
-ANALYSIS_META_TEMPLATE_MAP = {
-    "haplotypes_analysis": "user/haplotypes_analysis_meta",
-    "fst_analysis": "user/fst_analysis_meta",
-    "enrichment_analysis": "user/enrichment_analysis_meta",
-    "gene_expression_tissues": "user/gene_expression_analysis_meta",
-    "gene_expression_cultivars": "user/gene_expression_analysis_meta",
-    "gene_expression_genotypes": "user/gene_expression_analysis_meta",
-    "gene_expression_treatments": "user/gene_expression_analysis_meta",
-    "single_cell_analysis": "user/single_cell_analysis_meta",
-    "smep_analysis": "user/smep_analysis_meta",
-    "smoc_analysis": "user/smoc_analysis_meta",
-}
 
 _DESIGN_SUMMARY_ERRORS: tuple[type[Exception], ...] = (Exception,)
 
@@ -141,50 +109,6 @@ def _outcome_work_item_delta(
     if summary_data is not None:
         delta["analyst_summaries"] = summary_data
     return delta
-
-
-# Generic types use worker nodes; evolution/design use mounted subgraphs.
-# Keep this ordered source aligned with the work-item plan and its test oracle.
-_GENERIC_ANALYSIS_NODE_TYPE_SOURCE = (
-    "gene_expression_tissues|gene_expression_cultivars|"
-    "gene_expression_treatments|gene_expression_genotypes|"
-    "single_cell_analysis|promoter_analysis|smep_analysis|smoc_analysis|"
-    "protein_structure_analysis"
-)
-GENERIC_ANALYSIS_NODE_TYPES: tuple[str, ...] = tuple(
-    _GENERIC_ANALYSIS_NODE_TYPE_SOURCE.split("|")
-)
-
-
-def _analyst_node_name(analysis_type: str) -> str:
-    """Map a generic ``analysis_type`` to its LangGraph node name.
-
-    Deterministic: strip a trailing ``_analysis`` and append ``_node``
-    (``smep_analysis`` -> ``smep_node``; ``gene_expression_tissues`` ->
-    ``gene_expression_tissues_node``). Yields nine distinct names for
-    :data:`GENERIC_ANALYSIS_NODE_TYPES`. It also maps
-    ``evolution_analysis`` -> ``evolution_node`` (the SP1 mount), but
-    ``digital_design`` has no ``_analysis`` suffix and keeps its explicit
-    ``design_node`` special-case in
-    :meth:`DeepGenomeDispatchMixin._route_analyst_tasks`.
-    """
-    return analysis_type.removesuffix("_analysis") + "_node"
-
-
-class AnalysisDispatchContext(NamedTuple):
-    """Resolved request context for one deep analysis task.
-
-    Attributes:
-        analysis_type: DeepGenome analysis task type.
-        species_code: Three-letter species code used in get_data_list lookup.
-        gene_id: Target gene identifier.
-        output_dir: OBS output directory for task results.
-    """
-
-    analysis_type: str
-    species_code: str
-    gene_id: str
-    output_dir: str
 
 
 class DeepGenomeDispatchMixin:
@@ -254,49 +178,19 @@ class DeepGenomeDispatchMixin:
 
     def _route_start(self: Any, state: DeepGenomeState):
         """Return BriefGene as the only initial node and launch barrier."""
-        del state
-        return ["brief_gene_node"]
+        return deep_genome_routing.route_start(state)
 
     def _route_after_brief_gene(self: Any, state: DeepGenomeState):
         """Gate analyst preparation on successful BriefGene completion."""
-        use_analyst = state.get("config_params", {}).get(
-            "use_analyst_agent", True
-        )
-        if use_analyst:
-            return ["prepare_tasks_node", "experiment_node"]
-        return "experiment_node"
+        return deep_genome_routing.route_after_brief_gene(state)
 
     def _route_synthesize_barrier(self: Any, state: DeepGenomeState):
         """Route from concrete outcomes and require usable synthesis."""
-        if state.get("skip_synthesize"):
-            if not state.get("synthesize_report"):
-                raise DeepGenomeWorkflowError("final synthesis unavailable")
-            return "experiment_node"
-        outcome = workflow_outcome_for_state(state)
-        if not outcome.all_terminal:
-            return "synthesize_node"
-        if not outcome.may_synthesize:
-            raise DeepGenomeWorkflowError("no usable analysis result")
-        if not state.get("synthesize_report"):
-            raise DeepGenomeWorkflowError("final synthesis unavailable")
-        return "experiment_node"
+        return deep_genome_routing.route_synthesize_barrier(state)
 
     def _route_experiment_barrier(self: Any, state: DeepGenomeState):
         """Route only after BriefGene and synthesis are available."""
-        use_analyst = state.get("config_params", {}).get(
-            "use_analyst_agent", True
-        )
-        if not use_analyst:
-            return (
-                "discussion_node"
-                if state.get("report_triggered")
-                else "experiment_node"
-            )
-        if not state.get("preamble") or not state.get("synthesize_report"):
-            return "experiment_node"
-        if state.get("report_triggered"):
-            return "protocol_node"
-        return "experiment_node"
+        return deep_genome_routing.route_experiment_barrier(state)
 
     def _route_analyst_tasks(self: Any, state: DeepGenomeState):
         """Dispatch analysis tasks in parallel using the Send API.
@@ -314,50 +208,7 @@ class DeepGenomeDispatchMixin:
         Returns:
             List of Send objects for dynamic task dispatch.
         """
-        sleep_time = state.get("task_submit_sleep", 10)
-        sends = []
-        for i, task in enumerate(state.get("analysis_tasks", [])):
-            analysis_type = task.get("analysis_type")
-            if analysis_type == "evolution_analysis":
-                node = "evolution_node"
-            elif analysis_type == "digital_design":
-                node = "design_node"
-            else:
-                node = _analyst_node_name(str(analysis_type))
-            send_payload: dict[str, Any] = {
-                "task_index": i,
-                "task_submit_sleep": i * sleep_time,
-                **task,
-            }
-            # ``Send`` receives a fresh partial state rather than inheriting
-            # the parent state. Carry the reserved owner identity into every
-            # branch so submission and poll transitions stay scoped to the
-            # same DeepGenome umbrella.
-            for identity_key in ("task_id", "run_id", "owner", "output_dir"):
-                send_payload[identity_key] = state.get(identity_key)
-            work_item = next(
-                (
-                    item
-                    for item in state.get("work_items", [])
-                    if item.get("section_key") == analysis_type
-                    or item.get("work_item_key") == analysis_type
-                ),
-                None,
-            )
-            if work_item is not None:
-                send_payload.update(
-                    {
-                        "work_item_key": work_item.get("work_item_key"),
-                        "display_order": work_item.get("display_order"),
-                    }
-                )
-            sends.append(
-                Send(
-                    node,
-                    send_payload,
-                )
-            )
-        return sends
+        return deep_genome_routing.build_analyst_sends(state)
 
     def _route_after_analyst(self: Any, state: DeepGenomeState):
         """Signal to end Send instance execution.
@@ -480,7 +331,7 @@ class DeepGenomeDispatchMixin:
                 user_id=self.deep_genome_config.USER_ID,
                 scope="evolution_analysis",
             )
-            context = AnalysisDispatchContext(
+            context = deep_genome_routing.build_analysis_context(
                 analysis_type="evolution_analysis",
                 species_code=species_code,
                 gene_id=gene_id,
@@ -521,7 +372,7 @@ class DeepGenomeDispatchMixin:
             user_id=self.deep_genome_config.USER_ID,
             scope="evolution_analysis",
         )
-        context = AnalysisDispatchContext(
+        context = deep_genome_routing.build_analysis_context(
             analysis_type="evolution_analysis",
             species_code=species_code,
             gene_id=gene_id,
@@ -578,7 +429,7 @@ class DeepGenomeDispatchMixin:
             "protein_design": "protein_design_analysis",
             "promoter_design": "promoter_analysis",
         }[work_item_key]
-        context = AnalysisDispatchContext(
+        context = deep_genome_routing.build_analysis_context(
             analysis_type=analysis_type,
             species_code=state["species_code"],
             gene_id=state["target_gene"],
@@ -703,7 +554,7 @@ class DeepGenomeDispatchMixin:
             user_id=self.deep_genome_config.USER_ID,
             scope="protein_design_analysis",
         )
-        context = AnalysisDispatchContext(
+        context = deep_genome_routing.build_analysis_context(
             analysis_type="protein_design_analysis",
             species_code=state["species_code"],
             gene_id=state["target_gene"],
@@ -902,7 +753,7 @@ class DeepGenomeDispatchMixin:
             user_id=self.deep_genome_config.USER_ID,
             scope=analysis_type,
         )
-        context = AnalysisDispatchContext(
+        context = deep_genome_routing.build_analysis_context(
             analysis_type=analysis_type,
             species_code=species_code,
             gene_id=gene_id,
@@ -972,33 +823,11 @@ class DeepGenomeDispatchMixin:
         context: AnalysisDispatchContext,
     ) -> tuple[str, dict[str, Any], str, str]:
         """Build goal, data list, meta prompt, and compute resource."""
-        analysis_type = context.analysis_type
-        goal_path = ANALYSIS_GOAL_TEMPLATE_MAP.get(analysis_type)
-        meta_path = ANALYSIS_META_TEMPLATE_MAP.get(analysis_type)
-        if not goal_path or not meta_path:
-            raise ValueError(f"Unknown analysis type: {analysis_type}")
-
-        goal_description = get_prompt(
-            self.deep_genome_config.PROMPT_FILE,
-            goal_path,
-            {"gene_id": context.gene_id},
+        return deep_genome_routing.build_analysis_prompt_parts(
+            context,
+            prompt_file=self.deep_genome_config.PROMPT_FILE,
+            data_file=self.deep_genome_config.DEEPGENOME_DATA,
         )
-        meta = get_prompt(self.deep_genome_config.PROMPT_FILE, meta_path)
-        data_json_path = ANALYSIS_DATA_LIST_MAP.get(analysis_type, "")
-        if "/" in data_json_path:
-            data_json_path, sub_title = data_json_path.split("/")
-        else:
-            sub_title = None
-        data_list = get_data_list(
-            self.deep_genome_config.DEEPGENOME_DATA,
-            data_json_path,
-            context.species_code,
-        )
-        if sub_title:
-            data_list = data_list[sub_title]
-        # Evolution/protein structure set medium tier; the rest use small.
-        compute_resource = "small"
-        return goal_description, data_list, meta, compute_resource
 
     async def _submit_analysis_task(
         self: Any,

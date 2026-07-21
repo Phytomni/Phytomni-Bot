@@ -35,28 +35,16 @@ from .coordinator import (
     normalize_submission,
     poll_work_item,
 )
+from .routing import (
+    ANALYSIS_TARGET_FILE_FEATURE_MAP,
+    DEFAULT_TARGET_FILE_FEATURE,
+    target_file_features,
+)
 from .summary import build_design_work_item_summary
 
 logger = logging.getLogger(__name__)
 
 _BEST_EFFORT_ERRORS: tuple[type[Exception], ...] = (Exception,)
-
-ANALYSIS_TARGET_FILE_FEATURE_MAP = {
-    "evolution_analysis": [".md", ".png", ".summary", ".legend"],
-    "haplotypes_analysis": [".png", ".summary", ".legend"],
-    "fst_analysis": [".png"],
-    "enrichment_analysis": [".png", ".summary", ".legend"],
-    "protein_structure_analysis": ["sample_0.cif", ".summary", ".legend"],
-    "promoter_analysis": ["motif_all_logo.png", ".summary", ".legend"],
-    "gene_expression_tissues": [".png", ".summary", ".legend"],
-    "gene_expression_cultivars": [".png", ".summary", ".legend"],
-    "gene_expression_genotypes": [".png", ".summary", ".legend"],
-    "gene_expression_treatments": [".png", ".summary", ".legend"],
-    "single_cell_analysis": [".png", ".summary", ".legend"],
-    "smep_analysis": [".png", ".summary", ".legend"],
-    "smoc_analysis": [".png", ".summary", ".legend"],
-}
-DEFAULT_TARGET_FILE_FEATURE = [".png", ".summary", ".legend"]
 
 StatusCall = Callable[..., Awaitable[Any]]
 DeleteCall = Callable[..., Awaitable[Any]]
@@ -384,7 +372,7 @@ class DeepGenomeRemoteIO:
             ),
         )
         local_results_dir = Path(scratch_root) / context.gene_id
-        target_file_feature = _target_file_features(context.analysis_type)
+        target_file_feature = target_file_features(context.analysis_type)
         return (
             obs_output_path,
             scratch_root,
@@ -461,15 +449,6 @@ class DeepGenomeRemoteIO:
         if local_path.is_dir():
             return str(local_path)
         return None
-
-
-def _target_file_features(analysis_type: str) -> list[str]:
-    """Return the stable output filter for one analysis type."""
-    return list(
-        ANALYSIS_TARGET_FILE_FEATURE_MAP.get(
-            analysis_type, DEFAULT_TARGET_FILE_FEATURE
-        )
-    )
 
 
 __all__ = [

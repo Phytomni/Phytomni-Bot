@@ -24,6 +24,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from mcp_server_phytomni.agents.deep_genome import dispatch as dispatch_module
+from mcp_server_phytomni.agents.deep_genome import routing as routing_module
 from mcp_server_phytomni.agents.deep_genome.coordinator import (
     DeepGenomeWorkflowError,
     RemoteSubmission,
@@ -637,3 +638,160 @@ def test_transferred_types_dropped_from_prompt_maps() -> None:
         == "structure_analysis"
     )
     assert transferred <= set(dispatch_module.ANALYSIS_TARGET_FILE_FEATURE_MAP)
+
+
+@pytest.mark.parametrize(
+    ("analysis_type", "expected_node"),
+    [
+        ("evolution_analysis", "evolution_node"),
+        ("digital_design", "design_node"),
+        ("single_cell_analysis", "single_cell_node"),
+        ("smep_analysis", "smep_node"),
+    ],
+)
+def test_routing_table_maps_special_and_generic_nodes(
+    analysis_type: str, expected_node: str
+) -> None:
+    """The pure routing table keeps mounted and worker destinations stable."""
+    assert (
+        routing_module.node_for_analysis_type(analysis_type) == expected_node
+    )
+
+
+def test_routing_sends_preserve_order_identity_and_work_item_keys() -> None:
+    """Send creation carries identity without mutating source state."""
+    state: dict[str, Any] = {
+        "task_submit_sleep": 3,
+        "task_id": "umbrella-1",
+        "run_id": "run-1",
+        "owner": "alice",
+        "output_dir": "/obs/umbrella-1",
+        "analysis_tasks": [
+            {"analysis_type": "smep_analysis", "target_gene": "g1"},
+            {"analysis_type": "digital_design", "target_gene": "g1"},
+        ],
+        "work_items": [
+            {
+                "section_key": "smep_analysis",
+                "work_item_key": "smep_analysis",
+                "display_order": 7,
+            },
+            {
+                "section_key": "digital_design",
+                "work_item_key": "protein_design",
+                "display_order": 10,
+            },
+        ],
+    }
+
+    sends = routing_module.build_analyst_sends(state)
+
+    assert [send.node for send in sends] == ["smep_node", "design_node"]
+    assert [send.arg["task_index"] for send in sends] == [0, 1]
+    assert [send.arg["task_submit_sleep"] for send in sends] == [0, 3]
+    assert sends[0].arg["work_item_key"] == "smep_analysis"
+    assert sends[1].arg["work_item_key"] == "protein_design"
+    assert all(send.arg["owner"] == "alice" for send in sends)
+    assert state["analysis_tasks"][0]["analysis_type"] == "smep_analysis"
+
+
+def test_routing_sends_skip_empty_and_keep_duplicate_task_indices() -> None:
+    """Skipped work emits no Send; duplicate logical keys remain distinct."""
+    duplicate_tasks = [
+        {"analysis_type": "smoc_analysis", "target_gene": "g1"},
+        {"analysis_type": "smoc_analysis", "target_gene": "g2"},
+    ]
+    sends = routing_module.build_analyst_sends(
+        {"analysis_tasks": duplicate_tasks, "task_submit_sleep": 0}
+    )
+
+    assert [send.arg["task_index"] for send in sends] == [0, 1]
+    assert [send.arg["target_gene"] for send in sends] == ["g1", "g2"]
+    assert not routing_module.build_analyst_sends({"analysis_tasks": []})
+
+
+def test_routing_prompt_parts_split_data_subtitle_and_propagate_lookup_errors(
+    tmp_path,
+) -> None:
+    """Prompt preparation is deterministic and exposes loader failures."""
+    context = routing_module.AnalysisDispatchContext(
+        analysis_type="gene_expression_tissues",
+        species_code="ath",
+        gene_id="AT1G01010",
+        output_dir="/obs/out",
+    )
+    prompt_calls: list[tuple[str, str, object]] = []
+
+    def fake_prompt(path: str, template: str, parameters=None) -> str:
+        prompt_calls.append((path, template, parameters))
+        return template
+
+    data_calls: list[tuple[str, str, str]] = []
+
+    def fake_data(path: str, key: str, species: str) -> dict[str, Any]:
+        data_calls.append((path, key, species))
+        return {"tissues": {"/obs/a": "description"}}
+
+    result = routing_module.build_analysis_prompt_parts(
+        context,
+        prompt_file=str(tmp_path / "prompts.yaml"),
+        data_file=str(tmp_path / "data.json"),
+        prompt_loader=fake_prompt,
+        data_loader=fake_data,
+    )
+
+    assert result == (
+        "user/gene_expression_analysis/tissue",
+        {"/obs/a": "description"},
+        "user/gene_expression_analysis_meta",
+        "small",
+    )
+    assert prompt_calls[0][2] == {"gene_id": "AT1G01010"}
+    assert data_calls == [
+        (str(tmp_path / "data.json"), "gene_expression_analysis", "ath")
+    ]
+
+    def failing_data(*_args: object) -> dict[str, Any]:
+        raise KeyError("missing species")
+
+    with pytest.raises(KeyError, match="missing species"):
+        routing_module.build_analysis_prompt_parts(
+            context,
+            prompt_file="prompts.yaml",
+            data_file="data.json",
+            prompt_loader=fake_prompt,
+            data_loader=failing_data,
+        )
+
+
+def test_routing_prompt_parts_reject_unknown_type_before_loaders() -> None:
+    """Unknown analysis slugs fail before prompt or metadata I/O."""
+    context = routing_module.AnalysisDispatchContext(
+        analysis_type="unknown_analysis",
+        species_code="ath",
+        gene_id="AT1G01010",
+        output_dir="/obs/out",
+    )
+    with pytest.raises(ValueError, match="unknown_analysis"):
+        routing_module.build_analysis_prompt_parts(
+            context,
+            prompt_file="prompts.yaml",
+            data_file="data.json",
+            prompt_loader=lambda *_args, **_kwargs: pytest.fail("prompt load"),
+            data_loader=lambda *_args: pytest.fail("data load"),
+        )
+
+
+def test_routing_target_file_lookup_returns_copy_and_default() -> None:
+    """Output feature lookup is isolated from mutable caller changes."""
+    features = routing_module.target_file_features("smoc_analysis")
+    features.append("caller-only")
+
+    assert "caller-only" not in routing_module.target_file_features(
+        "smoc_analysis"
+    )
+    assert routing_module.target_file_features("not-registered") == [
+        ".png",
+        ".summary",
+        ".legend",
+    ]

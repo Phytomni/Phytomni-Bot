@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `198`
+- Authorized records: `197`
 
 ## Informational counts
 
@@ -148,7 +148,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0272` | pylint | too-many-instance-attributes | temporary | inline | span | e2e/helpers/polling.py | — | `sha256:ff614cad455dfea7ce48195584275f9faa4773dffacf4088e3341222c8bfc4b1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0273` | pylint | too-many-instance-attributes | temporary | inline | symbol | scripts/static_analysis/model.py | Exemption | `sha256:eeb04531fd760d523b2fd486a640c3ea24dabd91f85e0b47a52bcafdc31d251d` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0274` | pylint | too-many-instance-attributes | temporary | inline | symbol | scripts/static_analysis/model.py | Finding | `sha256:661b324cf7d8671f2ab7caf8bee1839f24b77a0de25723c26767926e3a4ba4d8` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0275` | pylint | too-many-lines | temporary | inline | span | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | — | `sha256:309fe61bb354c9fc9d3020133970dcff287458c0dcad8a7c86224baae953716c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0276` | pylint | too-many-lines | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:a301ef88f14d3dd14fabdf89188852adf8ca15118b49e67eb1345231652dc7f0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0277` | pylint | too-many-lines | temporary | inline | span | src/mcp_server_phytomni/mcp/result_formatting.py | — | `sha256:70b34244fbe17b8196a2dc327969febd7f2be17c37563661b5bf523edf2c16c7` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0278` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/agents/chat/service.py | — | `sha256:619fb3f18b0672ce5a813d4a2f3c75fc0e1a731df01e119a42c8705bfb1766a9` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -3021,24 +3020,6 @@ Rationale:
 
 ```text
 pylint: disable=too-many-instance-attributes
-```
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0275`
-
-Rationale:
-
-```text
-pylint: disable=too-many-lines
 ```
 Counterfactual:
 

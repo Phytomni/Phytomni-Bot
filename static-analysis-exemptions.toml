@@ -2605,25 +2605,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0275"
-tool = "pylint"
-rule = "too-many-lines"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "span"
-path = "src/mcp_server_phytomni/agents/deep_genome/dispatch.py"
-fingerprint = "sha256:309fe61bb354c9fc9d3020133970dcff287458c0dcad8a7c86224baae953716c"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=too-many-lines"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0276"
 tool = "pylint"
 rule = "too-many-lines"
