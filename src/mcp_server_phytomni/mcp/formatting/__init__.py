@@ -2,9 +2,9 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Leaf formatting models, AG-UI constructors, and redaction helpers."""
+"""Leaf result-formatting modules and compatibility helpers."""
 
-from . import agui, models, redaction
+from . import agui, cited, dispatch, models, redaction, tasks
 from .agui import (
     AguiEvent,
     custom,
@@ -34,6 +34,8 @@ __all__ = [
     "agui",
     "AguiEvent",
     "custom",
+    "cited",
+    "dispatch",
     "models",
     "FormattedToolChunk",
     "FormattedToolResult",
@@ -49,6 +51,7 @@ __all__ = [
     "step_started",
     "strip_agent_result",
     "strip_chat_completion",
+    "tasks",
     "text_message_content",
     "text_message_end",
     "text_message_start",

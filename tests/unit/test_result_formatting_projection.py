@@ -22,12 +22,127 @@ from mcp_server_phytomni.mcp.formatting import (
 from mcp_server_phytomni.mcp.result_formatting import (
     FormattedToolResult,
     ToolResultEnvelope,
+    build_tool_result_envelope,
+    format_tool_result,
     resolve_debug,
     strip_agent_result,
     strip_chat_completion,
 )
 
 pytestmark = pytest.mark.unit
+
+
+_CANONICAL_SUCCESS_CASES = [
+    (
+        "ChatAgent",
+        {"choices": [{"message": {"content": "chat"}}]},
+        None,
+    ),
+    (
+        "KnowledgeAgent",
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "[1]",
+                        "doc_list": [{"file_id": "doc-1", "title": "A"}],
+                    }
+                }
+            ]
+        },
+        None,
+    ),
+    (
+        "ReviewAgent",
+        {"choices": [{"message": {"content": "review"}}]},
+        None,
+    ),
+    (
+        "BriefGeneAgent",
+        {"choices": [{"message": {"content": "gene"}}]},
+        None,
+    ),
+    (
+        "DataAgent",
+        {"header": [{"caption": "gene"}], "data": [["Os01"]]},
+        None,
+    ),
+    (
+        "AnalystAgent",
+        {"task_id": "analyst-1", "output_dir": "/obs/analyst"},
+        None,
+    ),
+    (
+        "DeepGenomeAgent",
+        {"task_id": "deep-1", "output_dir": "/obs/deep"},
+        {"species_code": "ath", "gene_id": "AT1G01010"},
+    ),
+    (
+        "GeneNetworkAgent",
+        {"network_task": {"task_id": "network-1"}},
+        None,
+    ),
+    (
+        "InSilicoResearchAgent",
+        {"task_ids": {"goal-0": "research-1"}, "goals": [{"goal": "g"}]},
+        None,
+    ),
+    (
+        "DigitalDesignAgent",
+        {
+            "design_task_result": [
+                {"task_id": "protein-1", "output_dir": "/obs/protein"},
+                {"task_id": "promoter-1", "output_dir": "/obs/promoter"},
+            ]
+        },
+        None,
+    ),
+    (
+        "GetTaskStatus",
+        {"task_id": "status-1", "status": "running"},
+        None,
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "payload", "arguments"),
+    _CANONICAL_SUCCESS_CASES,
+)
+def test_canonical_formatter_success_matrix(
+    tool_name: str,
+    payload: dict,
+    arguments: dict | None,
+) -> None:
+    """Every canonical tool has a stable structured success projection."""
+    result = format_tool_result(tool_name, payload, arguments=arguments)
+    assert isinstance(result, FormattedToolResult)
+    assert result.answer
+
+
+def test_formatter_matrix_preserves_partial_reports_and_extensions() -> None:
+    """Partial reports and unknown extension fields remain observable."""
+    payload = {
+        "task_id": "deep-1",
+        "status": "running",
+        "intermediate_report": "# BriefGene\npartial",
+        "degraded": True,
+        "degraded_reason": "optional analysis pending",
+        "extension_field": {"vendor_value": 3},
+    }
+    envelope = build_tool_result_envelope("GetTaskStatus", payload)
+    assert envelope.formatted.answer == "# BriefGene\npartial"
+    assert envelope.formatted.metadata["report_completeness"] == "partial"
+    assert envelope.formatted.metadata["degraded"] is True
+    assert envelope.raw["extension_field"] == {"vendor_value": 3}
+
+
+def test_formatter_matrix_rejects_malformed_task_payload() -> None:
+    """Malformed task responses stay explicit failures, never false success."""
+    result = format_tool_result("AnalystAgent", {"extension_field": 3})
+    assert result.metadata["task_id"] is None
+    assert result.metadata["status"] == "FAILED"
+    assert "missing task_id" in result.answer
 
 
 def test_projection_facade_reexports_redaction_helpers() -> None:

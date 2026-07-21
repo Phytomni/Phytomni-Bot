@@ -961,8 +961,8 @@ target_kind = "pair"
 path = "src/mcp_server_phytomni/mcp/formatting/redaction.py"
 symbol = "96:103"
 peer_path = "tests/unit/test_result_formatting_projection.py"
-peer_symbol = "262:269"
-fingerprint = "sha256:e7047ffdfdaaab76f59b54867bf290f5dc32de290bb49720af4c1382e43b5c13"
+peer_symbol = "377:384"
+fingerprint = "sha256:c86ec598be4d49f7c482637da7fe2718b2d0255d1e71da2ce15a11632488de4a"
 owner = "bot-maintainers"
 introduced_on = 2026-07-20
 review_on = 2027-01-17
@@ -2624,25 +2624,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0277"
-tool = "pylint"
-rule = "too-many-lines"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "span"
-path = "src/mcp_server_phytomni/mcp/result_formatting.py"
-fingerprint = "sha256:70b34244fbe17b8196a2dc327969febd7f2be17c37563661b5bf523edf2c16c7"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=too-many-lines"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0278"
 tool = "pylint"
 rule = "too-many-locals"
@@ -2713,26 +2694,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "pylint: disable=too-many-arguments,too-many-locals,too-many-statements"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0287"
-tool = "pylint"
-rule = "too-many-locals"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/mcp/result_formatting.py"
-symbol = "_format_design_result"
-fingerprint = "sha256:8628b792cea0d61f8299df4d795e861c92b404813e5abe827b980f211edbe83f"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=too-many-locals"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
