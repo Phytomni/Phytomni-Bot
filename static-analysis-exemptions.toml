@@ -2086,26 +2086,6 @@ risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0232"
-tool = "pylint"
-rule = "max-module-lines"
-classification = "temporary"
-mechanism = "config"
-target_kind = "config"
-path = "pyproject.toml"
-symbol = "tool.pylint.format.max-module-lines"
-fingerprint = "sha256:56ab2666391bfe20e49b31efb25773c9fa08523cec25d451bac69ed8516cd17f"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "tool.pylint.format.max-module-lines=1100"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0236"
 tool = "pylint"
 rule = "path-ignore"

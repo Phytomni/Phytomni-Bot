@@ -16,11 +16,54 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+import mcp_server_phytomni.config as config_package
+from mcp_server_phytomni.config import (
+    AnalystConfig as PackageAnalystConfig,
+)
 from mcp_server_phytomni.config import (
     ApiConfig as PackageApiConfig,
 )
 from mcp_server_phytomni.config import (
+    BriefGeneConfig as PackageBriefGeneConfig,
+)
+from mcp_server_phytomni.config import (
+    ChatConfig as PackageChatConfig,
+)
+from mcp_server_phytomni.config import (
+    DataConfig as PackageDataConfig,
+)
+from mcp_server_phytomni.config import (
+    DeepGenomeConfig as PackageDeepGenomeConfig,
+)
+from mcp_server_phytomni.config import (
+    DigitalDesignConfig as PackageDigitalDesignConfig,
+)
+from mcp_server_phytomni.config import (
+    EnvironmentConfig as PackageEnvironmentConfig,
+)
+from mcp_server_phytomni.config import (
+    GeneNetworkConfig as PackageGeneNetworkConfig,
+)
+from mcp_server_phytomni.config import (
+    InSilicoResearchConfig as PackageInSilicoResearchConfig,
+)
+from mcp_server_phytomni.config import (
+    KnowledgeConfig as PackageKnowledgeConfig,
+)
+from mcp_server_phytomni.config import (
+    PromptTemplates as PackagePromptTemplates,
+)
+from mcp_server_phytomni.config import (
+    RegionMap as PackageRegionMap,
+)
+from mcp_server_phytomni.config import (
+    ReviewConfig as PackageReviewConfig,
+)
+from mcp_server_phytomni.config import (
     ServerConfig as PackageServerConfig,
+)
+from mcp_server_phytomni.config import (
+    SpeciesDataIndex as PackageSpeciesDataIndex,
 )
 from mcp_server_phytomni.config.defaults import (
     SERVER_REQUIRED_ENDPOINT_FIELDS,
@@ -30,18 +73,125 @@ from mcp_server_phytomni.config.defaults import (
     ChatConfig,
     DataConfig,
     DeepGenomeConfig,
+    DigitalDesignConfig,
+    EnvironmentConfig,
+    GeneNetworkConfig,
+    InSilicoResearchConfig,
     KnowledgeConfig,
+    ReviewConfig,
     ServerConfig,
+)
+from mcp_server_phytomni.config.models.agents import (
+    AnalystConfig as LeafAnalystConfig,
+)
+from mcp_server_phytomni.config.models.agents import (
+    BriefGeneConfig as LeafBriefGeneConfig,
+)
+from mcp_server_phytomni.config.models.agents import (
+    ChatConfig as LeafChatConfig,
+)
+from mcp_server_phytomni.config.models.agents import (
+    DataConfig as LeafDataConfig,
+)
+from mcp_server_phytomni.config.models.agents import (
+    DeepGenomeConfig as LeafDeepGenomeConfig,
+)
+from mcp_server_phytomni.config.models.agents import (
+    DigitalDesignConfig as LeafDigitalDesignConfig,
+)
+from mcp_server_phytomni.config.models.agents import (
+    EnvironmentConfig as LeafEnvironmentConfig,
+)
+from mcp_server_phytomni.config.models.agents import (
+    GeneNetworkConfig as LeafGeneNetworkConfig,
+)
+from mcp_server_phytomni.config.models.agents import (
+    InSilicoResearchConfig as LeafInSilicoResearchConfig,
+)
+from mcp_server_phytomni.config.models.agents import (
+    KnowledgeConfig as LeafKnowledgeConfig,
+)
+from mcp_server_phytomni.config.models.agents import (
+    ReviewConfig as LeafReviewConfig,
 )
 from mcp_server_phytomni.config.models.api import ApiConfig as LeafApiConfig
 from mcp_server_phytomni.config.models.base import (
     ServerConfig as LeafServerConfig,
+)
+from mcp_server_phytomni.config.models.reference import (
+    PromptTemplates as LeafPromptTemplates,
+)
+from mcp_server_phytomni.config.models.reference import (
+    RegionMap as LeafRegionMap,
+)
+from mcp_server_phytomni.config.models.reference import (
+    SpeciesDataIndex as LeafSpeciesDataIndex,
 )
 from mcp_server_phytomni.config.relay_mode import relay_mode_enabled
 from mcp_server_phytomni.config.required_env import REQUIRED_DEPLOYMENT_FIELDS
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
 pytestmark = pytest.mark.unit
+
+
+_AGENT_MODEL_MANIFEST = (
+    ("AnalystConfig", AnalystConfig, LeafAnalystConfig, PackageAnalystConfig),
+    (
+        "BriefGeneConfig",
+        BriefGeneConfig,
+        LeafBriefGeneConfig,
+        PackageBriefGeneConfig,
+    ),
+    ("ChatConfig", ChatConfig, LeafChatConfig, PackageChatConfig),
+    ("DataConfig", DataConfig, LeafDataConfig, PackageDataConfig),
+    (
+        "DeepGenomeConfig",
+        DeepGenomeConfig,
+        LeafDeepGenomeConfig,
+        PackageDeepGenomeConfig,
+    ),
+    (
+        "DigitalDesignConfig",
+        DigitalDesignConfig,
+        LeafDigitalDesignConfig,
+        PackageDigitalDesignConfig,
+    ),
+    (
+        "EnvironmentConfig",
+        EnvironmentConfig,
+        LeafEnvironmentConfig,
+        PackageEnvironmentConfig,
+    ),
+    (
+        "GeneNetworkConfig",
+        GeneNetworkConfig,
+        LeafGeneNetworkConfig,
+        PackageGeneNetworkConfig,
+    ),
+    (
+        "InSilicoResearchConfig",
+        InSilicoResearchConfig,
+        LeafInSilicoResearchConfig,
+        PackageInSilicoResearchConfig,
+    ),
+    (
+        "KnowledgeConfig",
+        KnowledgeConfig,
+        LeafKnowledgeConfig,
+        PackageKnowledgeConfig,
+    ),
+    ("ReviewConfig", ReviewConfig, LeafReviewConfig, PackageReviewConfig),
+)
+
+_REFERENCE_MODEL_MANIFEST = (
+    (
+        "PromptTemplates",
+        PackagePromptTemplates,
+        LeafPromptTemplates,
+    ),
+    ("RegionMap", PackageRegionMap, LeafRegionMap),
+    ("SpeciesDataIndex", PackageSpeciesDataIndex, LeafSpeciesDataIndex),
+)
 
 
 def test_interop_config_defaults_disabled_and_keeps_json_lazy(
@@ -102,6 +252,40 @@ def test_split_config_models_preserve_legacy_identity_and_shape() -> None:
     assert tuple(ApiConfig.model_fields) == tuple(LeafApiConfig.model_fields)
     assert ServerConfig().model_dump() == LeafServerConfig().model_dump()
     assert ApiConfig().model_dump() == LeafApiConfig().model_dump()
+
+
+@pytest.mark.parametrize(
+    ("name", "legacy", "leaf", "package"),
+    _AGENT_MODEL_MANIFEST,
+)
+def test_agent_model_manifest_preserves_legacy_exports(
+    name,
+    legacy,
+    leaf,
+    package,
+) -> None:
+    """Every agent model keeps identity, MRO, schema, and field defaults."""
+    assert legacy is leaf is package
+    assert legacy.__mro__ == leaf.__mro__
+    assert tuple(legacy.model_fields) == tuple(leaf.model_fields)
+    assert legacy.model_json_schema() == leaf.model_json_schema()
+    assert legacy().model_dump() == leaf().model_dump()
+    assert name in config_package.__all__
+
+
+@pytest.mark.parametrize(
+    ("name", "package", "leaf"), _REFERENCE_MODEL_MANIFEST
+)
+def test_reference_model_manifest_preserves_legacy_exports(
+    name,
+    package,
+    leaf,
+) -> None:
+    """Reference models keep identity, schema, and package exports."""
+    assert package is leaf
+    assert package.__mro__ == leaf.__mro__
+    assert package.model_json_schema() == leaf.model_json_schema()
+    assert name in config_package.__all__
 
 
 def test_config_inheritance_keeps_agent_defaults_available():

@@ -4,10 +4,46 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Configuration model leaves."""
 
+from .agents import (
+    AnalystConfig,
+    BriefGeneConfig,
+    ChatConfig,
+    DataConfig,
+    DeepGenomeConfig,
+    DigitalDesignConfig,
+    EnvironmentConfig,
+    GeneNetworkConfig,
+    InSilicoResearchConfig,
+    KnowledgeConfig,
+    ReviewConfig,
+)
 from .api import ApiConfig
 from .base import ServerConfig
+from .reference import (
+    PromptLeaf,
+    PromptTemplates,
+    RegionMap,
+    SpeciesDataIndex,
+    SpeciesEntryValue,
+)
 
 __all__ = [
+    "AnalystConfig",
     "ApiConfig",
+    "BriefGeneConfig",
+    "PromptLeaf",
+    "ChatConfig",
+    "DataConfig",
+    "DeepGenomeConfig",
+    "DigitalDesignConfig",
+    "SpeciesDataIndex",
+    "EnvironmentConfig",
+    "GeneNetworkConfig",
+    "PromptTemplates",
+    "InSilicoResearchConfig",
+    "KnowledgeConfig",
+    "RegionMap",
+    "ReviewConfig",
     "ServerConfig",
+    "SpeciesEntryValue",
 ]

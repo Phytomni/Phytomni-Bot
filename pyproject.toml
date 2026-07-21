@@ -249,15 +249,6 @@ ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"]
 
 [tool.pylint.design]
 
-[tool.pylint.format]
-# Bumped from the default 1000 because ``config/defaults.py`` holds
-# every customer-facing settings class plus their per-field
-# ``AliasChoices`` envelopes. Each new endpoint or feature flag adds
-# ~10 lines and Step 6.5 pushed the file past 1000. Splitting the
-# module would force consumers to track which class lives where; the
-# encapsulated single file is the simpler invariant.
-max-module-lines = 1100
-
 [tool.pylint.similarities]
 
 [tool.pymarkdown]
