@@ -3,4 +3,6 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """A2A v1 protocol adapters for the authenticated HTTP service."""
 
-__all__: list[str] = []
+from . import runtime
+
+__all__ = ["runtime"]
