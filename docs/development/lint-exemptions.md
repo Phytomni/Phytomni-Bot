@@ -140,8 +140,8 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0171` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_client_elicitation.py | 59:66 | `sha256:975f355cd6c2a65dca9d57186615c419eeda303eac5e94c7fdd0adfb91f399cf` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0172` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_admin.py | 38:46 | `sha256:d31703b04d8b444d3e963b1cc94534a6a2a39ec56fe231841e5ec923d2b20c11` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0173` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_admin.py | 41:48 | `sha256:4303b679e5e955b1be7936f32b4fc48d9634ff57857c088f074419720f9f5cd2` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0175` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_store.py | 39:50 | `sha256:aa7f4443755b41ff47174f62a6aac518efd4fb796d5af7db82650ceb763d6560` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0176` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_store.py | 52:65 | `sha256:7196ce45cf674e83d55488b732a0eea6b247a4fc6e465683d083bcd6ed0c2b9c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0175` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_store.py | 33:44 | `sha256:04ea50c325614cef7978749ada27ba074a61b1439457e41b3c47889e3fe83294` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0176` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_store.py | 46:59 | `sha256:eb638789573cbe2acbeece54860c9517f5ed9bb9e78512eeb2b273710012c118` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0177` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_stream_lifecycle.py | 228:241 | `sha256:9841db38ab87a9cc9ea8495614647541015f3013773fa3a52a42c315377a2dd6` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0194` | pylint | R0903 | structural | diagnostic | symbol | tests/agents/test_deep_genome_submit.py | \_FakeApp | `sha256:1f7f51708ece122db06fccc8c565c771ccda09fd3dab04360277d25248e3fef0` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0200` | pylint | R0903 | structural | diagnostic | symbol | tests/conftest.py | \_build_fake_obs_client.\_FakeObsClient | `sha256:2dc747295b1e436a070df77a883fd813565b56d9c86de87801b81cfbb178fae7` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
@@ -2412,7 +2412,7 @@ Rationale:
 
 ```text
 Similar lines in 2 files
-==test_deep_genome_store:[39:50]
+==test_deep_genome_store:[33:44]
 ==test_task_registry_migration:[44:55]
     "intermediate_report",
     "report_revision",
@@ -2445,49 +2445,21 @@ Rationale:
 
 ```text
 Similar lines in 2 files
-==test_deep_genome_store:[52:65]
+==test_deep_genome_store:[46:59]
 ==test_task_registry_migration:[81:122]
-    conn.execute("""
-        CREATE TABLE tasks (
-            task_id TEXT PRIMARY KEY,
-            status TEXT,
-            analysis_id TEXT,
-            output_dir TEXT
-        )
-        """)
-    conn.execute(
-        "INSERT INTO tasks VALUES (?, ?, ?, ?)",
-        ("legacy-1", "submitted", "", "/legacy/out"),
-    )
-    conn.commit()
-    conn.close()
-
-    TaskManager(db)
-
-    assert _columns(db) == _EXPECTED_COLUMNS
-    conn = sqlite3.connect(db)
-    try:
-        row = conn.execute(
-            "SELECT status, output_dir, run_id, user_id, agent, origin, "
-            "created_at, updated_at FROM tasks WHERE task_id = ?",
-            ("legacy-1",),
-        ).fetchone()
-    finally:
-        conn.close()
-    assert row == (
-        "submitted",
-        "/legacy/out",
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
+        conn.execute("""
+            CREATE TABLE tasks (
+                task_id TEXT PRIMARY KEY,
+                status TEXT,
+                analysis_id TEXT,
+                output_dir TEXT
+            )
+            """)
+    return db_path
 
 
-def test_init_db_is_idempotent(tmp_path: Path) -> None:
-    """Re-initializing an already-migrated database is a no-op."""
+def _store(tmp_path: Path) -> DeepGenomeStore:
+    """Build a store rooted at a temporary task registry."""
 ```
 
 Counterfactual:
