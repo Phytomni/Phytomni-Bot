@@ -1413,12 +1413,12 @@ target_kind = "pair"
 path = "tests/server/test_api_runs_list.py"
 symbol = "550:559"
 peer_path = "tests/unit/test_run_registry.py"
-peer_symbol = "463:472"
-fingerprint = "sha256:0d25731b5f8cd95112099bf4a63f1347f6a749a52a53df03a1139f9b11af45d4"
+peer_symbol = "240:249"
+fingerprint = "sha256:8aca2706a3ad7cdf858e8259cadf45b5cb0f7c37b5020d4c6080af798b67e934"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_runs_list:[550:559]\n==test_run_registry:[463:472]\n        conn.executemany(\n            \"UPDATE runs SET created_at = ? WHERE run_id = ?\",\n            [\n                (\"2026-01-01T00:00:00+00:00\", \"run-old\"),\n                (\"2026-06-01T00:00:00+00:00\", \"run-new\"),\n            ],\n        )\n        conn.commit()\n"
+rationale = "Similar lines in 2 files\n==test_api_runs_list:[550:559]\n==test_run_registry:[240:249]\n        conn.executemany(\n            \"UPDATE runs SET created_at = ? WHERE run_id = ?\",\n            [\n                (\"2026-01-01T00:00:00+00:00\", \"run-old\"),\n                (\"2026-06-01T00:00:00+00:00\", \"run-new\"),\n            ],\n        )\n        conn.commit()\n"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]

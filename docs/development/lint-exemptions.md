@@ -121,7 +121,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0143` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_chat_completions.py | 273:280 | `sha256:2852957544508ff8577b6510cde1ecef104df64ae5747843bbce8dca9f8bd965` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0144` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_chat_completions.py | 275:287 | `sha256:0fb6f140928817f551fd6985f2a15f52d38bdff2afe1280eb3308002f92ac9ce` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0150` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_run_logs.py | 266:280 | `sha256:a50099a104216d972c604e94c37fd02ad914cb71b6efddf52a2497c4b71c2afe` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0151` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_runs_list.py | 550:559 | `sha256:0d25731b5f8cd95112099bf4a63f1347f6a749a52a53df03a1139f9b11af45d4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0151` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_runs_list.py | 550:559 | `sha256:8aca2706a3ad7cdf858e8259cadf45b5cb0f7c37b5020d4c6080af798b67e934` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0152` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_user_context.py | 40:51 | `sha256:d070c5d26bcb1a3a76655010cc1e2066842679987463a6520c2e4f896470af51` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0155` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_mcp_app_invoke.py | 266:272 | `sha256:d9de635699bc578f421c3644b7ff9abc081f843d958ad095ef928d79c44b11cc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0156` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_mcp_app_invoke.py | 304:317 | `sha256:dcae06efbd18ca68f59fe40a6423ffb225829b863f996396b99c7fae74cba608` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -1806,7 +1806,7 @@ Rationale:
 ```text
 Similar lines in 2 files
 ==test_api_runs_list:[550:559]
-==test_run_registry:[463:472]
+==test_run_registry:[240:249]
         conn.executemany(
             "UPDATE runs SET created_at = ? WHERE run_id = ?",
             [
