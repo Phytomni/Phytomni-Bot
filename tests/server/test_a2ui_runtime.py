@@ -18,7 +18,7 @@ from mcp_server_phytomni.agents.shared.a2ui import (
     A2UI_MAX_ROUNDS,
     should_reenter_a2ui,
 )
-from mcp_server_phytomni.api import a2ui_runtime
+from mcp_server_phytomni.api import a2ui_projection, a2ui_runtime
 from mcp_server_phytomni.api.schemas import A2uiActionRequest
 from mcp_server_phytomni.runtime.resume import NoCheckpointError
 from mcp_server_phytomni.runtime.run_registry import (
@@ -92,6 +92,12 @@ def _failed_stream_result() -> dict[str, Any]:
 async def _project_stream(*_args: Any, **_kwargs: Any) -> AsyncIterator[Any]:
     if _args or _kwargs:
         yield cast(Any, None)
+
+
+def test_projection_helpers_remain_runtime_facade_exports() -> None:
+    """Keep the historical runtime import path as a compatibility facade."""
+    for name in a2ui_projection.__all__:
+        assert getattr(a2ui_runtime, name) is getattr(a2ui_projection, name)
 
 
 def _dependencies(
