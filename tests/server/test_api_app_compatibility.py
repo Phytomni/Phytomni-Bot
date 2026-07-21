@@ -97,6 +97,9 @@ def _dependency_scopes(route: APIRoute) -> tuple[str, ...]:
         call = dependency.call
         if call is None:
             continue
+        if not inspect.isfunction(call):
+            pending.extend(dependency.dependencies)
+            continue
         name = getattr(call, "__name__", "")
         nonlocals = inspect.getclosurevars(call).nonlocals
         if name == "_scoped":

@@ -27,7 +27,6 @@ from collections.abc import (
 )
 from contextlib import asynccontextmanager
 from dataclasses import asdict
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -99,14 +98,9 @@ from ..mcp.stream_lifecycle import (
     StreamLifecycleState,
 )
 from ..runtime.memory import (
-    MemoryConflictError,
-    MemoryNotFoundError,
-    MemoryPolicyError,
     MemorySchemaError,
     MemoryStore,
-    MemoryStoreError,
     MemoryWrite,
-    memory_audit_context,
     memory_policy_from_config,
 )
 from ..runtime.request_context import (
@@ -138,17 +132,10 @@ from .a2a.executor import (
     A2ARegistration,
     A2ARequestHandler,
 )
-from .a2ui_limits import (
-    A2uiPayloadError,
-    A2uiPayloadTooLargeError,
-    ensure_a2ui_response_size,
-    read_a2ui_action_request,
-)
 from .admin_auth import is_service_token_valid, require_service_principal
 from .agent_capabilities import serialize_agent_capability
 from .auth import (
     ApiPrincipal,
-    get_key_store,
     require_principal,
     scopes_satisfy,
 )
@@ -162,34 +149,26 @@ from .openai_mapping import (
     tool_for_model,
 )
 from .ratelimit import make_rate_limiter
-from .relay import RelayAuditQuery, create_relay_router, get_audit_store
+from .relay import create_relay_router
 from .relay.audit_filter import redact_body_text
 from .resolvers import (
     ResolverDispatch,
     apply_runs_resolver,
     resolve_chat_query,
 )
+from .routes import admin as admin_routes
+from .routes import memory as memory_routes
+from .routes import runs as run_routes
 from .schemas import (
     A2uiActionRequest,
     AgentRunRequest,
     ApiErrorDetail,
     ApiErrorResponse,
-    ApiKeyCreateRequest,
-    ApiKeyCreateResponse,
-    ApiKeyDeleteResponse,
-    ApiKeyListResponse,
-    ApiKeyRecordResponse,
     ChatCompletionRequest,
     ExpertQueryRequest,
     FileUploadResponse,
-    MemoryAuditListResponse,
     MemoryAuditRecordResponse,
-    MemoryCreateRequest,
-    MemoryDeleteResponse,
-    MemoryExportResponse,
-    MemoryListResponse,
     MemoryResponse,
-    MemoryUpdateRequest,
     ResumeRequest,
     UploadPurpose,
 )
@@ -281,7 +260,9 @@ _LOGGER = logging.getLogger(__name__)
 def _purge_expired_runs_best_effort() -> None:
     """Compatibility seam for the shared run-registry TTL purge."""
     run_lifecycle.purge_expired_runs_best_effort(
-        db_path=resolve_tasks_db_path()
+        db_path=resolve_tasks_db_path(),
+        registry_factory=RunRegistry,
+        logger=_LOGGER,
     )
 
 
@@ -1546,6 +1527,70 @@ def create_app() -> FastAPI:
 
         return _scoped
 
+    # Route modules receive explicit adapters, but the adapters resolve the
+    # compatibility seams at request time. Existing tests and integrations
+    # patch these app-level helpers after ``create_app`` returns.
+    def _route_memory_write(owner: str, payload: Any) -> MemoryWrite:
+        return _memory_write(owner, payload)
+
+    def _route_memory_response(record: Any) -> MemoryResponse:
+        return _memory_response(record)
+
+    def _route_memory_audit_response(
+        record: Any,
+    ) -> MemoryAuditRecordResponse:
+        return _memory_audit_response(record)
+
+    def _route_memory_revision(
+        value: str | None, *, required: bool
+    ) -> int | None:
+        return _memory_revision(value, required=required)
+
+    def _route_audit_record_to_dict(
+        record: Any, config: ApiConfig
+    ) -> dict[str, Any]:
+        return _relay_audit_record_to_dict(record, config)
+
+    async def _route_reconcile_task_logs(
+        run_id: str, debug: bool
+    ) -> dict[str, Any]:
+        return await _reconcile_run_task_logs(run_id, debug)
+
+    async def _route_fetch_owner_run(
+        run_id: str, *, debug: bool = False
+    ) -> dict[str, Any]:
+        return await _fetch_owner_run(run_id, debug=debug)
+
+    def _route_list_owner_runs(**kwargs: Any) -> dict[str, Any]:
+        return _list_owner_runs(**kwargs)
+
+    def _route_strip_run_result(record: dict[str, Any]) -> dict[str, Any]:
+        return _strip_run_result(record)
+
+    async def _route_resume_a2ui(
+        *, run_id: str, body: A2uiActionRequest, debug: bool = False
+    ) -> tuple[dict[str, Any], int]:
+        return await _resume_a2ui_run(
+            run_id=run_id,
+            body=body,
+            debug=debug,
+        )
+
+    async def _route_resume_review(
+        *, thread_id: str, payload: ResumeRequest, debug: bool = False
+    ) -> tuple[dict[str, Any], int]:
+        return await _resume_review_run(
+            thread_id=thread_id,
+            payload=payload,
+            debug=debug,
+        )
+
+    def _route_a2ui_enabled() -> bool:
+        return ApiConfig().A2UI_ENABLED
+
+    def _route_a2ui_max_response_bytes() -> int:
+        return ApiConfig().A2UI_MAX_RESPONSE_BYTES
+
     if ApiConfig().INTEROP_ENABLED:
 
         @app.get("/v1/interop/capabilities")
@@ -1633,382 +1678,35 @@ def create_app() -> FastAPI:
         )
 
     if ApiConfig().MEMORY_ENABLED:
-
-        @app.post(
-            "/v1/memories",
-            status_code=201,
-            response_model=MemoryResponse,
+        memory_agents = require_scope("agents")
+        memory_routes.register_memory_routes(
+            app,
+            memory_routes.MemoryRouteDependencies(
+                get_store=get_memory_store,
+                auth=memory_routes.MemoryAuthDependencies(
+                    require_agents=memory_agents,
+                    require_service=require_service_principal,
+                ),
+                context=memory_routes.MemoryContextDependencies(
+                    current_user=current_request_user,
+                    current_request_id=current_request_id,
+                ),
+                projection=memory_routes.MemoryProjectionDependencies(
+                    memory_write=_route_memory_write,
+                    memory_response=_route_memory_response,
+                    memory_audit_response=_route_memory_audit_response,
+                    memory_revision=_route_memory_revision,
+                ),
+            ),
         )
-        async def create_memory(
-            payload: MemoryCreateRequest,
-            principal: ApiPrincipal = Depends(require_scope("agents")),
-        ) -> MemoryResponse:
-            """Create one memory in the authenticated user's namespace."""
-            del principal
-            owner = current_request_user()
-            if not owner:
-                raise HTTPException(
-                    status_code=401, detail="user context missing"
-                )
-            write = _memory_write(owner, payload)
-            try:
-                with memory_audit_context(owner, current_request_id()):
-                    record = get_memory_store().create(write)
-            except MemoryPolicyError as exc:
-                raise HTTPException(status_code=413, detail=str(exc)) from exc
-            except (ValidationError, ValueError) as exc:
-                raise HTTPException(
-                    status_code=400, detail="invalid memory"
-                ) from exc
-            except (MemoryStoreError, OSError, sqlite3.Error) as exc:
-                raise HTTPException(
-                    status_code=503, detail="memory store unavailable"
-                ) from exc
-            return _memory_response(record)
 
-        @app.get(
-            "/v1/memories",
-            response_model=MemoryListResponse,
-        )
-        async def list_memories(
-            kind: str | None = None,
-            limit: int | None = None,
-            principal: ApiPrincipal = Depends(require_scope("agents")),
-        ) -> MemoryListResponse:
-            """List live memories owned by the authenticated user."""
-            del principal
-            owner = current_request_user()
-            if not owner:
-                raise HTTPException(
-                    status_code=401, detail="user context missing"
-                )
-            try:
-                records = get_memory_store().list(
-                    owner, kind=kind, limit=limit
-                )
-            except MemoryPolicyError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-            except (ValidationError, ValueError) as exc:
-                raise HTTPException(
-                    status_code=400, detail="invalid memory query"
-                ) from exc
-            except (MemoryStoreError, OSError, sqlite3.Error) as exc:
-                raise HTTPException(
-                    status_code=503, detail="memory store unavailable"
-                ) from exc
-            return MemoryListResponse(
-                data=[_memory_response(record) for record in records]
-            )
-
-        @app.get(
-            "/v1/memories/export",
-            response_model=MemoryExportResponse,
-        )
-        async def export_memories(
-            principal: ApiPrincipal = Depends(require_scope("agents")),
-        ) -> MemoryExportResponse:
-            """Export live memories owned by the authenticated user."""
-            del principal
-            owner = current_request_user()
-            if not owner:
-                raise HTTPException(
-                    status_code=401, detail="user context missing"
-                )
-            try:
-                records = get_memory_store().export(owner)
-            except (ValidationError, ValueError) as exc:
-                raise HTTPException(
-                    status_code=400, detail="invalid memory export"
-                ) from exc
-            except (MemoryStoreError, OSError, sqlite3.Error) as exc:
-                raise HTTPException(
-                    status_code=503, detail="memory store unavailable"
-                ) from exc
-            return MemoryExportResponse(
-                data=[_memory_response(record) for record in records]
-            )
-
-        @app.get(
-            "/v1/memories/audit",
-            response_model=MemoryAuditListResponse,
-        )
-        async def list_memory_audit(
-            user_id: str | None = None,
-            operation: str | None = None,
-            memory_id: str | None = None,
-            limit: int = 100,
-            offset: int = 0,
-            _admin: None = Depends(require_service_principal),
-        ) -> MemoryAuditListResponse:
-            """List digest-only memory mutations for service operators."""
-            del _admin
-            try:
-                records = get_memory_store().list_audit(
-                    user_id=user_id,
-                    operation=operation,
-                    memory_id=memory_id,
-                    limit=limit,
-                    offset=offset,
-                )
-            except (MemoryPolicyError, ValidationError, ValueError) as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-            except (MemoryStoreError, OSError, sqlite3.Error) as exc:
-                raise HTTPException(
-                    status_code=503, detail="memory store unavailable"
-                ) from exc
-            return MemoryAuditListResponse(
-                data=[_memory_audit_response(record) for record in records]
-            )
-
-        @app.get(
-            "/v1/memories/{memory_id}",
-            response_model=MemoryResponse,
-        )
-        async def get_memory(
-            memory_id: str,
-            principal: ApiPrincipal = Depends(require_scope("agents")),
-        ) -> MemoryResponse:
-            """Return one live memory only when it belongs to the caller."""
-            del principal
-            owner = current_request_user()
-            if not owner:
-                raise HTTPException(
-                    status_code=401, detail="user context missing"
-                )
-            try:
-                record = get_memory_store().get(owner, memory_id)
-            except (ValidationError, ValueError) as exc:
-                raise HTTPException(
-                    status_code=400, detail="invalid memory id"
-                ) from exc
-            except (MemoryStoreError, OSError, sqlite3.Error) as exc:
-                raise HTTPException(
-                    status_code=503, detail="memory store unavailable"
-                ) from exc
-            if record is None:
-                raise HTTPException(status_code=404, detail="memory not found")
-            return _memory_response(record)
-
-        @app.put(
-            "/v1/memories/{memory_id}",
-            response_model=MemoryResponse,
-        )
-        async def update_memory(
-            memory_id: str,
-            payload: MemoryUpdateRequest,
-            if_match: str | None = Header(default=None, alias="If-Match"),
-            principal: ApiPrincipal = Depends(require_scope("agents")),
-        ) -> MemoryResponse:
-            """Replace one memory when ``If-Match`` is its current revision."""
-            del principal
-            owner = current_request_user()
-            if not owner:
-                raise HTTPException(
-                    status_code=401, detail="user context missing"
-                )
-            expected_revision = _memory_revision(if_match, required=True)
-            assert expected_revision is not None
-            write = _memory_write(owner, payload)
-            try:
-                with memory_audit_context(owner, current_request_id()):
-                    record = get_memory_store().update(
-                        owner,
-                        memory_id,
-                        write,
-                        expected_revision=expected_revision,
-                    )
-            except MemoryNotFoundError as exc:
-                raise HTTPException(
-                    status_code=404, detail="memory not found"
-                ) from exc
-            except MemoryConflictError as exc:
-                raise HTTPException(status_code=409, detail=str(exc)) from exc
-            except MemoryPolicyError as exc:
-                raise HTTPException(status_code=413, detail=str(exc)) from exc
-            except (ValidationError, ValueError) as exc:
-                raise HTTPException(
-                    status_code=400, detail="invalid memory id"
-                ) from exc
-            except (MemoryStoreError, OSError, sqlite3.Error) as exc:
-                raise HTTPException(
-                    status_code=503, detail="memory store unavailable"
-                ) from exc
-            return _memory_response(record)
-
-        @app.delete(
-            "/v1/memories/{memory_id}",
-            response_model=MemoryDeleteResponse,
-        )
-        async def delete_memory(
-            memory_id: str,
-            if_match: str | None = Header(default=None, alias="If-Match"),
-            principal: ApiPrincipal = Depends(require_scope("agents")),
-        ) -> MemoryDeleteResponse:
-            """Delete one caller-owned memory, idempotently."""
-            del principal
-            owner = current_request_user()
-            if not owner:
-                raise HTTPException(
-                    status_code=401, detail="user context missing"
-                )
-            expected_revision = _memory_revision(if_match, required=False)
-            try:
-                with memory_audit_context(owner, current_request_id()):
-                    deleted = get_memory_store().delete(
-                        owner,
-                        memory_id,
-                        expected_revision=expected_revision,
-                    )
-            except MemoryConflictError as exc:
-                raise HTTPException(status_code=409, detail=str(exc)) from exc
-            except (ValidationError, ValueError) as exc:
-                raise HTTPException(
-                    status_code=400, detail="invalid memory id"
-                ) from exc
-            except (MemoryStoreError, OSError, sqlite3.Error) as exc:
-                raise HTTPException(
-                    status_code=503, detail="memory store unavailable"
-                ) from exc
-            return MemoryDeleteResponse(id=memory_id, deleted=deleted)
-
-    @app.post(
-        "/v1/api-keys",
-        status_code=201,
-        response_model=ApiKeyCreateResponse,
+    admin_routes.register_admin_routes(
+        app,
+        admin_routes.AdminRouteDependencies(
+            require_service=require_service_principal,
+            audit_record_to_dict=_route_audit_record_to_dict,
+        ),
     )
-    async def issue_api_key(
-        payload: ApiKeyCreateRequest,
-        _admin: None = Depends(require_service_principal),
-    ) -> ApiKeyCreateResponse:
-        """Mint a per-user API key for the upstream service.
-
-        The plaintext key is shown exactly once in the response. The
-        service-token dependency is the only gate so a leaked user key
-        cannot escalate to issuance.
-        """
-        del _admin  # Auth side-effect only.
-        expires_at: datetime | None = None
-        if payload.expires_days is not None:
-            expires_at = datetime.now(UTC) + timedelta(
-                days=payload.expires_days
-            )
-        store = get_key_store(ApiConfig().API_KEYS_DB_PATH)
-        created = store.create(
-            user_id=payload.user_id,
-            name=payload.name,
-            expires_at=expires_at,
-        )
-        return ApiKeyCreateResponse(
-            api_key=created.api_key,
-            prefix=created.prefix,
-            user_id=created.user_id,
-            expires_at=(expires_at.isoformat() if expires_at else None),
-        )
-
-    @app.get("/v1/api-keys", response_model=ApiKeyListResponse)
-    async def list_api_keys(
-        user_id: str | None = None,
-        _admin: None = Depends(require_service_principal),
-    ) -> ApiKeyListResponse:
-        """List per-user API keys; ``user_id`` filters to one user."""
-        del _admin  # Auth side-effect only.
-        store = get_key_store(ApiConfig().API_KEYS_DB_PATH)
-        records = store.list(user_id=user_id)
-        return ApiKeyListResponse(
-            data=[
-                ApiKeyRecordResponse(
-                    user_id=record.user_id,
-                    name=record.name,
-                    prefix=record.prefix,
-                    created_at=record.created_at,
-                    revoked_at=record.revoked_at,
-                    last_used_at=record.last_used_at,
-                    expires_at=record.expires_at,
-                    active=record.active,
-                    scopes=sorted(record.scopes),
-                )
-                for record in records
-            ],
-        )
-
-    @app.delete(
-        "/v1/api-keys/{prefix}",
-        response_model=ApiKeyDeleteResponse,
-    )
-    async def revoke_api_key(
-        prefix: str,
-        _admin: None = Depends(require_service_principal),
-    ) -> ApiKeyDeleteResponse:
-        """Revoke an active key by its public prefix."""
-        del _admin  # Auth side-effect only.
-        store = get_key_store(ApiConfig().API_KEYS_DB_PATH)
-        deleted = store.revoke(prefix)
-        return ApiKeyDeleteResponse(prefix=prefix, deleted=deleted)
-
-    @app.get("/v1/relay/audit")
-    async def list_relay_audit(
-        _admin: None = Depends(require_service_principal),
-        *,
-        user_id: str | None = None,
-        key_prefix: str | None = None,
-        service: str | None = None,
-        status_code: int | None = None,
-        created_after: str | None = None,
-        created_before: str | None = None,
-        limit: int = 100,
-        offset: int = 0,
-    ) -> JSONResponse:
-        """List relay audit records, gated by the service token.
-
-        Only the service token may read the audit trail; a per-user
-        ``ptm_...`` key alone cannot. The returned records carry no key
-        hash, salt, or plaintext key, only the public ``key_prefix``.
-        """
-        del _admin  # Auth side-effect only.
-        config = ApiConfig()
-        store = get_audit_store(config.RELAY_AUDIT_DB_PATH)
-        records = store.query(
-            RelayAuditQuery(
-                user_id=user_id,
-                key_prefix=key_prefix,
-                service=service,
-                status_code=status_code,
-                created_after=created_after,
-                created_before=created_before,
-                limit=limit,
-                offset=offset,
-            )
-        )
-        return JSONResponse(
-            {
-                "object": "list",
-                "data": [
-                    _relay_audit_record_to_dict(record, config)
-                    for record in records
-                ],
-            }
-        )
-
-    @app.get("/v1/relay/audit/{request_id}")
-    async def get_relay_audit(
-        request_id: str,
-        _admin: None = Depends(require_service_principal),
-    ) -> JSONResponse:
-        """Fetch relay audit records by request id, service-token gated."""
-        del _admin  # Auth side-effect only.
-        config = ApiConfig()
-        store = get_audit_store(config.RELAY_AUDIT_DB_PATH)
-        records = store.get_by_request_id(request_id)
-        return JSONResponse(
-            {
-                "object": "list",
-                "request_id": request_id,
-                "data": [
-                    _relay_audit_record_to_dict(record, config)
-                    for record in records
-                ],
-            }
-        )
 
     @app.post(
         "/v1/chat/completions",
@@ -2201,160 +1899,29 @@ def create_app() -> FastAPI:
             error_response=_error_response,
         )
 
-    @app.get("/v1/runs/{run_id}/logs")
-    async def get_run_logs(
-        run_id: str,
-        principal: ApiPrincipal = Depends(require_scope("agents")),
-        debug: bool = False,
-    ) -> JSONResponse:
-        """Return reconciled task logs for a run.
-
-        Fetches the run to verify ownership, then reconciles logs for
-        each task in the run. Default mode strips the raw handler
-        payload from each task log; pass ``debug=true`` to include it.
-        """
-        del principal
-        return JSONResponse(
-            await _reconcile_run_task_logs(run_id, resolve_debug(debug))
-        )
-
-    @app.get("/v1/runs/{run_id}")
-    async def get_run(
-        run_id: str,
-        principal: ApiPrincipal = Depends(require_scope("agents")),
-        debug: bool = False,
-    ) -> JSONResponse:
-        """Return one owner-scoped run record by id.
-
-        Default mode strips the raw handler payload from result;
-        pass ``debug=true`` to include it.
-        """
-        del principal
-        record = await _fetch_owner_run(run_id, debug=resolve_debug(debug))
-        if not resolve_debug(debug) and isinstance(record.get("result"), dict):
-            record = {
-                **record,
-                "result": strip_agent_result(record["result"]),
-            }
-        return JSONResponse(record)
-
-    @app.post("/v1/runs/{run_id}/a2ui-actions")
-    async def post_a2ui_action(
-        run_id: str,
-        request: Request,
-        principal: ApiPrincipal = Depends(require_scope("agents")),
-        debug: bool = False,
-    ) -> JSONResponse:
-        """Resume a paused Chat A2UI run from a Web action envelope."""
-        del principal
-        if not ApiConfig().A2UI_ENABLED:
-            raise HTTPException(status_code=403, detail="a2ui disabled")
-        try:
-            body = await read_a2ui_action_request(request)
-        except A2uiPayloadTooLargeError as exc:
-            raise HTTPException(status_code=413, detail=str(exc)) from exc
-        except A2uiPayloadError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        response_body, status_code = await _resume_a2ui_run(
-            run_id=run_id,
-            body=body,
-            debug=resolve_debug(debug),
-        )
-        try:
-            ensure_a2ui_response_size(
-                response_body,
-                max_bytes=ApiConfig().A2UI_MAX_RESPONSE_BYTES,
-            )
-        except A2uiPayloadTooLargeError as exc:
-            raise HTTPException(status_code=413, detail=str(exc)) from exc
-        except A2uiPayloadError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-        return JSONResponse(response_body, status_code=status_code)
-
-    @app.post("/v1/runs/{thread_id}/resume")
-    async def resume_run(
-        thread_id: str,
-        body: ResumeRequest,
-        principal: ApiPrincipal = Depends(require_scope("agents")),
-        debug: bool = False,
-    ) -> JSONResponse:
-        """Resume a paused ReviewAgent run by LangGraph thread id."""
-        del principal
-        response_body, status_code = await _resume_review_run(
-            thread_id=thread_id,
-            payload=body,
-            debug=resolve_debug(debug),
-        )
-        return JSONResponse(response_body, status_code=status_code)
-
-    @app.get("/v1/runs")
-    async def list_runs(
-        principal: ApiPrincipal = Depends(require_scope("agents")),
-        *,
-        status: str | None = None,
-        agent: str | None = None,
-        origin: str | None = None,
-        user_id: str | None = None,
-        dialogue_id: str | None = None,
-        created_after: str | None = None,
-        created_before: str | None = None,
-        limit: int = 10,
-        offset: int = 0,
-        debug: bool = False,
-        authorization: str | None = Header(default=None),
-        x_service_token: str | None = Header(
-            default=None, alias="X-Service-Token"
+    run_agents = require_scope("agents")
+    run_routes.register_run_routes(
+        app,
+        run_routes.RunRouteDependencies(
+            auth=run_routes.RunAuthDependencies(require_agents=run_agents),
+            context=run_routes.RunContextDependencies(
+                current_user=current_request_user,
+                service_token_valid=is_service_token_valid,
+            ),
+            projection=run_routes.RunProjectionDependencies(
+                reconcile_task_logs=_route_reconcile_task_logs,
+                fetch_owner_run=_route_fetch_owner_run,
+                list_owner_runs=_route_list_owner_runs,
+                strip_run_result=_route_strip_run_result,
+            ),
+            pause=run_routes.RunPauseDependencies(
+                a2ui_enabled=_route_a2ui_enabled,
+                a2ui_max_response_bytes=_route_a2ui_max_response_bytes,
+                resume_a2ui=_route_resume_a2ui,
+                resume_review=_route_resume_review,
+            ),
         ),
-    ) -> JSONResponse:
-        """List runs with owner-only or service-token-delegated scoping.
-
-        Without ``user_id`` the route returns the authenticated user's
-        runs only. With ``user_id`` it requires a valid service token
-        in addition to the user key, then scopes the listing to that
-        user instead of the caller — the path Phytomni-Web Go uses to
-        render history pages for any tenant. Acts as the lazy GC
-        trigger via ``_purge_expired_runs_best_effort``.
-
-        ``dialogue_id`` runs as a server-side ``WHERE`` predicate
-        before ``limit`` / ``offset`` so a chat-ai history query for
-        one dialogue always retrieves every matching row regardless
-        of the caller's total run count.
-
-        Default mode strips the raw handler payload from each result;
-        pass ``debug=true`` to include it.
-        """
-        del principal
-        is_service = is_service_token_valid(authorization, x_service_token)
-        if user_id is not None and not is_service:
-            raise HTTPException(
-                status_code=403,
-                detail=("user_id query parameter requires the service token"),
-            )
-        owner = (
-            user_id
-            if user_id is not None
-            else (current_request_user() or "anonymous")
-        )
-        body = _list_owner_runs(
-            owner=owner,
-            status=status,
-            agent=agent,
-            origin=origin,
-            dialogue_id=dialogue_id,
-            created_after=created_after,
-            created_before=created_before,
-            limit=limit,
-            offset=offset,
-            debug=resolve_debug(debug),
-        )
-        if not resolve_debug(debug):
-            data = body.get("data")
-            if isinstance(data, list):
-                body = {
-                    **body,
-                    "data": [_strip_run_result(r) for r in data],
-                }
-        return JSONResponse(body)
+    )
 
     a2a_config = ApiConfig()
     if a2a_config.A2A_ENABLED:

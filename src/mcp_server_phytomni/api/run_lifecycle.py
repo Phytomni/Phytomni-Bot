@@ -72,6 +72,7 @@ type ProjectRun = Callable[..., dict[str, Any]]
 type FetchOwnerRun = Callable[..., Awaitable[dict[str, Any]]]
 type ReconcileTaskLog = Callable[[str], Awaitable[dict[str, Any] | None]]
 type StripResult = Callable[[dict[str, Any]], dict[str, Any]]
+type RegistryFactory = Callable[[str], Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,12 +98,17 @@ def _database_path(db_path: str | None) -> str:
     return db_path if db_path is not None else resolve_tasks_db_path()
 
 
-def purge_expired_runs_best_effort(*, db_path: str | None = None) -> None:
+def purge_expired_runs_best_effort(
+    *,
+    db_path: str | None = None,
+    registry_factory: RegistryFactory = RunRegistry,
+    logger: logging.Logger = _LOGGER,
+) -> None:
     """Run one registry TTL purge, swallowing SQLite and OS failures."""
     try:
-        RunRegistry(_database_path(db_path)).purge_expired()
+        registry_factory(_database_path(db_path)).purge_expired()
     except (sqlite3.Error, OSError) as exc:
-        _LOGGER.warning("run TTL purge failed: %s", exc.__class__.__name__)
+        logger.warning("run TTL purge failed: %s", exc.__class__.__name__)
 
 
 async def purge_expired_runs_best_effort_async(
