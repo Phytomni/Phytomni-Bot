@@ -19,6 +19,7 @@ from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -33,6 +34,9 @@ from mcp_server_phytomni.agents.deep_genome.coordinator import (
 from mcp_server_phytomni.agents.deep_genome.dispatch import (
     GENERIC_ANALYSIS_NODE_TYPES,
 )
+from mcp_server_phytomni.agents.deep_genome.tracking import (
+    DeepGenomeTransitionSink,
+)
 from mcp_server_phytomni.agents.deep_genome.work_items import (
     build_work_item_plan,
     section_keys,
@@ -40,6 +44,7 @@ from mcp_server_phytomni.agents.deep_genome.work_items import (
 from mcp_server_phytomni.runtime.deep_genome_store import (
     DeepGenomeReservation,
     DeepGenomeStore,
+    DeepGenomeTrackingError,
 )
 
 pytestmark = pytest.mark.agent
@@ -47,23 +52,23 @@ pytestmark = pytest.mark.agent
 
 def _seed_store(
     tmp_path: Path,
-) -> tuple[DeepGenomeStore, DeepGenomeReservation, tuple[Any, ...]]:
+) -> tuple[DeepGenomeStore, DeepGenomeReservation]:
     """Reserve an owner, persist BriefGene, and seed all optional work."""
     store = DeepGenomeStore(str(tmp_path / "tasks.db"))
     reservation = store.reserve_run(
-        run_id="run-contract",
-        umbrella_task_id="task-contract",
-        owner="alice",
-        output_dir="/obs/contract",
+        run_id="run-contract-oracle",
+        umbrella_task_id="task-contract-oracle",
+        owner="contract-owner",
+        output_dir="/obs/contract-oracle",
     )
     store.apply_brief_gene_transition(
         reservation.umbrella_task_id,
         status="succeeded",
-        summary_markdown="# BriefGene\n\nprofile",
+        summary_markdown="# Contract profile",
     )
-    plan = build_work_item_plan("osa", "Os01g0100100", "Os01g0100100")
+    plan = build_work_item_plan("ath", "AT1G01010", "AT1G01010")
     store.seed_plan(reservation, plan)
-    return store, reservation, plan
+    return store, reservation
 
 
 def test_work_item_plan_contract_matrix() -> None:
@@ -166,37 +171,33 @@ def test_route_contract_maps_every_logical_branch() -> None:
     )
 
 
-def test_acceptance_transition_and_restart_contract(
+async def test_acceptance_transition_and_restart_contract(
     tmp_path: Path,
 ) -> None:
     """Accepted IDs and every local transition survive a fresh store read."""
-    store, reservation, plan = _seed_store(tmp_path)
+    store, reservation = _seed_store(tmp_path)
+    sink = DeepGenomeTransitionSink(store, reservation.umbrella_task_id)
     submission = RemoteSubmission(
         submitted_task_id="caller-smoc",
         poll_task_id="source-smoc",
         output_dir="/obs/smoc",
     )
-    store.accept_remote_submission(
-        reservation.umbrella_task_id,
-        work_item_key="smoc_analysis",
-        submission=submission,
+    await sink.accept_remote_submission("smoc_analysis", submission)
+    await sink.persist_work_item_transition(
+        "smoc_analysis", submission, "pending", None, None
     )
-    pending = store.apply_work_item_transition(
-        reservation.umbrella_task_id,
-        work_item_key="smoc_analysis",
-        status="pending",
+    pending = store.get_snapshot(reservation.umbrella_task_id)
+    assert pending is not None
+    await sink.persist_work_item_transition(
+        "smoc_analysis", submission, "running", None, None
     )
-    running = store.apply_work_item_transition(
-        reservation.umbrella_task_id,
-        work_item_key="smoc_analysis",
-        status="running",
+    running = store.get_snapshot(reservation.umbrella_task_id)
+    assert running is not None
+    await sink.persist_work_item_transition(
+        "smoc_analysis", submission, "succeeded", "# SMOC summary", None
     )
-    succeeded = store.apply_work_item_transition(
-        reservation.umbrella_task_id,
-        work_item_key="smoc_analysis",
-        status="succeeded",
-        summary_markdown="# SMOC summary",
-    )
+    succeeded = store.get_snapshot(reservation.umbrella_task_id)
+    assert succeeded is not None
 
     assert [
         pending.report_revision,
@@ -209,29 +210,171 @@ def test_acceptance_transition_and_restart_contract(
     assert "SMOC" in (succeeded.intermediate_report or "")
     assert succeeded.final_report is None
 
-    reloaded = DeepGenomeStore(str(tmp_path / "tasks.db"))
-    restored = reloaded.get_snapshot(reservation.umbrella_task_id)
-    assert restored == succeeded
-    with sqlite3.connect(tmp_path / "tasks.db") as connection:
-        query = (
-            "SELECT status, submitted_task_id, poll_task_id "
-            + "FROM deep_genome_remote_tasks "
-            + "WHERE umbrella_task_id = ? AND work_item_key = ?"
+    assert (
+        DeepGenomeStore(str(tmp_path / "tasks.db")).get_snapshot(
+            reservation.umbrella_task_id
         )
-        row = connection.execute(
-            query,
+        == succeeded
+    )
+    with sqlite3.connect(tmp_path / "tasks.db") as connection:
+        assert connection.execute(
+            "SELECT status, submitted_task_id, poll_task_id "
+            "FROM deep_genome_remote_tasks "
+            "WHERE umbrella_task_id = ? AND work_item_key = ?",
             (reservation.umbrella_task_id, "smoc_analysis"),
-        ).fetchone()
-    assert row == ("succeeded", "caller-smoc", "source-smoc")
-    assert len(plan) == 12
+        ).fetchone() == ("succeeded", "caller-smoc", "source-smoc")
 
     # A retry after restart is idempotent and cannot replace either identity.
-    retried = reloaded.accept_remote_submission(
-        reservation.umbrella_task_id,
-        work_item_key="smoc_analysis",
-        submission=submission,
+    retry_store = DeepGenomeStore(str(tmp_path / "tasks.db"))
+    retry_sink = DeepGenomeTransitionSink(
+        retry_store, reservation.umbrella_task_id
     )
-    assert retried == succeeded
+    await retry_sink.accept_remote_submission("smoc_analysis", submission)
+    retried_snapshot = retry_store.get_snapshot(reservation.umbrella_task_id)
+    assert retried_snapshot is not None
+    assert retried_snapshot == succeeded
+
+
+@pytest.mark.parametrize(
+    "status",
+    ["pending", "running", "succeeded", "failed", "cancelled", "timed_out"],
+)
+async def test_transition_sink_persists_every_local_status(
+    tmp_path: Path,
+    status: str,
+) -> None:
+    """Every coordinator lifecycle status reaches the durable report."""
+    store, reservation = _seed_store(tmp_path)
+    sink = DeepGenomeTransitionSink(store, reservation.umbrella_task_id)
+    submission = RemoteSubmission(
+        f"caller-{status}", f"source-{status}", "/obs/status"
+    )
+    await sink.accept_remote_submission("smoc_analysis", submission)
+    summary = "# usable summary" if status == "succeeded" else None
+    outcome = await sink.persist_work_item_transition(
+        "smoc_analysis", submission, status, summary, "ignored upstream text"
+    )
+
+    assert outcome.status == status
+    snapshot = store.get_snapshot(reservation.umbrella_task_id)
+    assert snapshot is not None
+    assert snapshot.report_revision == 2
+    with sqlite3.connect(tmp_path / "tasks.db") as connection:
+        row = connection.execute(
+            "SELECT status, summary_markdown, failure_reason "
+            "FROM deep_genome_remote_tasks "
+            "WHERE umbrella_task_id = ? AND work_item_key = ?",
+            (reservation.umbrella_task_id, "smoc_analysis"),
+        ).fetchone()
+    expected_reason = {
+        "failed": "analysis task failed",
+        "cancelled": "analysis task cancelled",
+        "timed_out": "analysis task timed out",
+    }.get(status)
+    assert row == (status, summary, expected_reason)
+
+
+async def test_transition_sink_ignores_invalid_untracked_task_id() -> None:
+    """Anonymous or malformed graph state keeps in-memory outcomes only."""
+    sink = DeepGenomeTransitionSink.from_state(
+        {"task_id": "   "},
+        cancel_submission=AsyncMock(),
+    )
+    submission = RemoteSubmission("caller", "source", "/obs/out")
+
+    await sink.accept_remote_submission("smoc_analysis", submission)
+    outcome = await sink.persist_work_item_transition(
+        "smoc_analysis", submission, "running", None, None
+    )
+
+    assert outcome == WorkItemOutcome("running")
+    assert sink.store is None
+    assert sink.umbrella_task_id is None
+
+
+async def test_transition_sink_missing_row_fails_owner_and_cancels(
+    tmp_path: Path,
+) -> None:
+    """An unknown work item cannot be accepted or left remotely running."""
+    store, reservation = _seed_store(tmp_path)
+    cancel = AsyncMock()
+    sink = DeepGenomeTransitionSink(
+        store,
+        reservation.umbrella_task_id,
+        cancel,
+    )
+    submission = RemoteSubmission("caller-missing", "source-missing", "/obs")
+
+    with pytest.raises(DeepGenomeTrackingError, match="remote analysis"):
+        await sink.accept_remote_submission("missing_work_item", submission)
+
+    cancel.assert_awaited_once_with(submission)
+    snapshot = store.get_snapshot(reservation.umbrella_task_id)
+    assert snapshot is not None
+    assert snapshot.status == "failed"
+
+
+async def test_transition_sink_store_error_fails_owner_and_cancels(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A transition write error settles the owner and cancels caller work."""
+    store, reservation = _seed_store(tmp_path)
+    submission = RemoteSubmission("caller-error", "source-error", "/obs")
+    await DeepGenomeTransitionSink(
+        store,
+        reservation.umbrella_task_id,
+    ).accept_remote_submission("smoc_analysis", submission)
+    cancel = AsyncMock()
+    sink = DeepGenomeTransitionSink(
+        store,
+        reservation.umbrella_task_id,
+        cancel,
+    )
+
+    monkeypatch.setattr(
+        DeepGenomeStore,
+        "apply_work_item_transition",
+        Mock(side_effect=sqlite3.OperationalError("database is locked")),
+    )
+
+    with pytest.raises(DeepGenomeTrackingError, match="remote analysis"):
+        await sink.persist_work_item_transition(
+            "smoc_analysis", submission, "running", None, None
+        )
+
+    cancel.assert_awaited_once_with(submission)
+    snapshot = store.get_snapshot(reservation.umbrella_task_id)
+    assert snapshot is not None
+    assert snapshot.status == "failed"
+
+
+async def test_transition_sink_rejects_double_terminal_and_records_cancel(
+    tmp_path: Path,
+) -> None:
+    """A terminal row cannot be rewritten as success or failure."""
+    store, reservation = _seed_store(tmp_path)
+    cancel = AsyncMock()
+    sink = DeepGenomeTransitionSink(
+        store,
+        reservation.umbrella_task_id,
+        cancel,
+    )
+    submission = RemoteSubmission("caller-terminal", "source-terminal", "/obs")
+    await sink.accept_remote_submission("smoc_analysis", submission)
+    await sink.persist_work_item_transition(
+        "smoc_analysis", submission, "succeeded", "# summary", None
+    )
+
+    with pytest.raises(DeepGenomeTrackingError, match="remote analysis"):
+        await sink.persist_work_item_transition(
+            "smoc_analysis", submission, "failed", None, None
+        )
+
+    cancel.assert_awaited_once_with(submission)
+    snapshot = store.get_snapshot(reservation.umbrella_task_id)
+    assert snapshot is not None
+    assert snapshot.status == "failed"
 
 
 async def test_poll_contract_emits_ordered_transitions_and_summary() -> None:

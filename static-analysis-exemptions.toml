@@ -672,26 +672,6 @@ risk = "Cancel semantics are consumer-visible; changes require coordinated A2UI 
 tests = ["tests/server/test_a2ui_actions_http.py", "static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0061"
-tool = "pylint"
-rule = "R0801"
-classification = "structural"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/agents/deep_genome/dispatch.py"
-symbol = "172:181"
-peer_path = "tests/unit/test_deep_genome_work_items.py"
-peer_symbol = "72:81"
-fingerprint = "sha256:2c939f306bfc192d1b4ccf2554102891e23b77d00d43855201693dcb676bfc6b"
-owner = "bot-maintainers"
-introduced_on = 2026-07-20
-review_on = 2027-01-17
-rationale = "The work-item test independently enumerates the concrete DeepGenome job universe and section order. Repository owner approved this plan oracle on 2026-07-20."
-counterfactual = "Importing the production work-item list would allow a removed or reordered job to pass because the expected list would mutate with it."
-risk = "The explicit list must be updated with any intentional product-plan change and reviewed against report sections."
-tests = ["tests/unit/test_deep_genome_work_items.py", "static-analysis-inventory"]
-
-[[exemptions]]
 id = "SAE-TMP-0062"
 tool = "pylint"
 rule = "R0801"
@@ -1461,50 +1441,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "Similar lines in 2 files\n==test_api_user_context:[40:51]\n==test_handlers_scratch:[30:50]\n    return cast(\n        ServerConfig,\n        SimpleNamespace(\n            BUCKET_NAME=\"phytomni\",\n            TEMP_DIR=str(tmp_path / \"fallback\"),\n        ),\n    )\n\n\ndef test_context_helpers_default_to_none() -> None:\n    \"\"\"Verify the contextvars are unset outside a request context.\"\"\""
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0153"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/server/test_get_task_status.py"
-symbol = "39:49"
-peer_path = "tests/agents/test_deep_genome_lifecycle.py"
-peer_symbol = "54:64"
-fingerprint = "sha256:6c428246112060c3705f0bd8095bd141da283c3bd9c6ceda5da9009c926a6cbd"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_get_task_status:[39:49]\n==tests.agents.test_deep_genome_lifecycle:[54:64]\n    )\n    store.apply_brief_gene_transition(\n        reservation.umbrella_task_id,\n        status=\"succeeded\",\n        summary_markdown=\"# BriefGene profile\",\n    )\n    store.seed_plan(\n        reservation,\n        build_work_item_plan(\"osa\", \"Os01g0100100\", \"Os01g0100100\"),\n    )"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0154"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/server/test_get_task_status.py"
-symbol = "54:60"
-peer_path = "tests/agents/test_deep_genome_lifecycle.py"
-peer_symbol = "537:543"
-fingerprint = "sha256:d2d3b3f8667794cb7d5957c08d3d429d4c37c0ab86972dbef5b65d510c4b53cd"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Task-status and lifecycle tests intentionally share the same durable transition fixture."
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -2556,26 +2492,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0267"
-tool = "pylint"
-rule = "too-many-arguments"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/agents/deep_genome/dispatch.py"
-symbol = "DeepGenomeDispatchMixin"
-fingerprint = "sha256:b20197eb42c0782169622e60d20915ebe11b19b8d0759e2273072356ec65cdc6"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=too-many-arguments,too-many-positional-arguments"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0268"
 tool = "pylint"
 rule = "too-many-arguments"
@@ -2795,13 +2711,13 @@ mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/agents/deep_genome/dispatch.py"
 symbol = "DeepGenomeDispatchMixin"
-fingerprint = "sha256:f448c3daf964aa5c4402edbe600c046c6aa04060521ad616ade6e97f5aa403ce"
+fingerprint = "sha256:8b9c182976fd0dbd7b32a83526a7dc30a188ff01fbec3853ac002a0ea013fc35"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
-rationale = "pylint: disable=too-many-locals"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
+rationale = "The mounted Design polling adapter keeps submission normalization, result download, feature-summary extraction, and transition projection together until the planned remote-I/O seam is available."
+counterfactual = "Extracting these locals before the remote-I/O boundary is characterized would duplicate dispatch state and could change optional-failure semantics."
+risk = "The exception can hide accidental growth in mounted Design polling; the remote-I/O extraction must preserve its failure and report contracts."
 tests = ["static-analysis-inventory"]
 expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
@@ -2911,26 +2827,6 @@ mechanism = "inline"
 target_kind = "span"
 path = "src/mcp_server_phytomni/agents/data/nl2sql.py"
 fingerprint = "sha256:5070abd4d3f8904dfe8375cdec6872bd6d155615cc6bd4b54f914cf5e07c75d2"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=too-many-arguments,too-many-positional-arguments"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0291"
-tool = "pylint"
-rule = "too-many-positional-arguments"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/agents/deep_genome/dispatch.py"
-symbol = "DeepGenomeDispatchMixin"
-fingerprint = "sha256:0798e8ccfb5acef4a3251eb0b379d705d9bd8adf987f3f9f95c931665356ccbc"
 owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
@@ -3518,24 +3414,6 @@ risk = "A protected-access exception can hide unintended coupling or stale priva
 tests = ["static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0331"
-tool = "pylint"
-rule = "protected-access"
-classification = "structural"
-mechanism = "inline"
-target_kind = "symbol"
-path = "tests/agents/test_deep_genome_lifecycle.py"
-symbol = "test_design_mount_failure_settles_both_concrete_items"
-fingerprint = "sha256:bb7677591f5e7d2b7ca017f2d6db17a9ced78263ff7ba6b2f907b30ae82bfe8c"
-owner = "bot-maintainers"
-introduced_on = 2026-07-19
-review_on = 2027-01-17
-rationale = "test_design_mount_failure_settles_both_concrete_items isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution."
-counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
-risk = "A protected-access exception can hide unintended coupling or stale private invariants."
-tests = ["static-analysis-inventory"]
-
-[[exemptions]]
 id = "SAE-TMP-0332"
 tool = "pylint"
 rule = "protected-access"
@@ -3814,13 +3692,13 @@ mechanism = "inline"
 target_kind = "symbol"
 path = "src/mcp_server_phytomni/agents/deep_genome/dispatch.py"
 symbol = "DeepGenomeDispatchMixin"
-fingerprint = "sha256:5718146c933edb576d220edaf4190c626b7966cf86d8097be352e92203b76c39"
+fingerprint = "sha256:d25cda03cb836ca2762993e039b797c3cf086b83adc97e96d0b5434c166411fe"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
 review_on = 2026-08-15
-rationale = "pylint: disable=too-many-arguments"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
+rationale = "The remote-submission poller coordinates status reads, bounded timeout budgeting, result resolution, transition callbacks, and outcome projection until the planned remote-I/O adapter is available."
+counterfactual = "Extracting those concerns before the protocol-boundary tests exist would duplicate remote identities or alter cancellation and degraded-report behavior."
+risk = "The exception can hide accidental growth in the polling coordinator; the remote-I/O extraction must preserve timeout, cancellation, and transition ordering."
 tests = ["static-analysis-inventory"]
 expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"

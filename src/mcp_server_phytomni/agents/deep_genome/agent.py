@@ -424,6 +424,14 @@ class DeepGenomeAgents(
     def _build_graph(self):
         workflow = StateGraph(DeepGenomeState)
 
+        async def record_mount_failure(
+            state: DeepGenomeState,
+            work_item_keys: tuple[str, ...],
+        ) -> None:
+            """Persist mounted-producer failures through the typed sink."""
+            tracking = DeepGenomeDispatchMixin._transition_sink(self, state)
+            await tracking.record_mount_failure(work_item_keys)
+
         # M11 — X3b A architecture topology completion. brief_gene's
         # mount node (``brief_gene_node`` slot) substitutes for the
         # entire preamble pipeline (data_node + orthologs / paralogs /
@@ -457,7 +465,7 @@ class DeepGenomeAgents(
             make_design_mount_node(
                 self._agents.design_app,
                 self.finalize_design_result,
-                self._record_mount_failure,
+                record_mount_failure,
             ),
         )
         workflow.add_node(
@@ -465,7 +473,7 @@ class DeepGenomeAgents(
             make_evolution_mount_node(
                 self._agents.evolution_app,
                 self.finalize_evolution_result,
-                self._record_mount_failure,
+                record_mount_failure,
             ),
         )
 

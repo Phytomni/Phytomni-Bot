@@ -31,6 +31,9 @@ from mcp_server_phytomni.agents.deep_genome.coordinator import (
     RemoteSubmission,
 )
 from mcp_server_phytomni.agents.deep_genome.report import DeepGenomeReportMixin
+from mcp_server_phytomni.agents.deep_genome.tracking import (
+    DeepGenomeTransitionSink,
+)
 from mcp_server_phytomni.agents.deep_genome.work_items import (
     build_work_item_plan,
 )
@@ -58,9 +61,10 @@ def _seed_store(tmp_path: Path) -> tuple[DeepGenomeStore, Any]:
         status="succeeded",
         summary_markdown="# BriefGene\n\nprofile",
     )
+    plan = build_work_item_plan("osa", "Os01g0100100", "Os01g0100100")
     store.seed_plan(
         reservation,
-        build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"),
+        plan,
     )
     return store, reservation
 
@@ -433,14 +437,12 @@ async def test_design_mount_failure_settles_both_concrete_items(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A mounted Design fault marks protein and promoter unavailable."""
-    # pylint: disable=protected-access
     reservation = _seed_store(tmp_path)[1]
     monkeypatch.setattr(
         dispatch_module,
         "resolve_tasks_db_path",
         lambda: str(tmp_path / "tasks.db"),
     )
-    harness = _dispatch_harness()
 
     async def broken_design_ainvoke(*_args: Any, **_kwargs: Any) -> Any:
         """Raise a deterministic producer error."""
@@ -450,17 +452,29 @@ async def test_design_mount_failure_settles_both_concrete_items(
         """The finalize callback must not run after a mount fault."""
         raise AssertionError("finalize must not run")
 
-    node = design_mount.make_design_mount_node(
-        cast(Any, SimpleNamespace(ainvoke=broken_design_ainvoke)),
-        finalize,
-        harness._record_mount_failure,
-    )
     state: Any = {
         "species_code": "osa",
         "target_gene": "Os01g0100100",
         "task_index": 1,
         "task_id": reservation.umbrella_task_id,
     }
+
+    async def record_mount_failure(
+        callback_state: Any,
+        work_item_keys: tuple[str, ...],
+    ) -> None:
+        """Adapt the graph callback shape to the bound transition sink."""
+        tracking = DeepGenomeTransitionSink.from_state(
+            callback_state,
+            store_path=dispatch_module.resolve_tasks_db_path(),
+        )
+        await tracking.record_mount_failure(work_item_keys)
+
+    node = design_mount.make_design_mount_node(
+        cast(Any, SimpleNamespace(ainvoke=broken_design_ainvoke)),
+        finalize,
+        record_mount_failure,
+    )
 
     out = await node(state)
 
@@ -530,16 +544,24 @@ def test_all_optional_failures_preserve_profile_and_fail_owner(
     assert snapshot.degraded_reason == "12 of 12 optional analyses unavailable"
 
 
-def test_partial_fake_backend_publishes_final_report_after_cas(
+async def test_partial_fake_backend_publishes_final_report_after_cas(
     tmp_path: Path,
 ) -> None:
     """A usable optional result permits degraded final publication."""
     store, reservation = _seed_store(tmp_path)
-    store.apply_work_item_transition(
-        reservation.umbrella_task_id,
-        work_item_key="smep_analysis",
-        status="succeeded",
-        summary_markdown="# SMEP",
+    submission = RemoteSubmission(
+        "caller-smep",
+        "source-smep",
+        "/obs/smep",
+    )
+    tracking = DeepGenomeTransitionSink(store, reservation.umbrella_task_id)
+    await tracking.accept_remote_submission("smep_analysis", submission)
+    await tracking.persist_work_item_transition(
+        "smep_analysis",
+        submission,
+        "succeeded",
+        "# SMEP",
+        None,
     )
     for item in build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"):
         if item.work_item_key != "smep_analysis":

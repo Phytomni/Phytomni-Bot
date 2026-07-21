@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sqlite3
 from collections import deque
 from collections.abc import Callable
 from dataclasses import asdict
@@ -36,7 +35,6 @@ from ...runtime.deep_genome_store import (
     DeepGenomeReservation,
     DeepGenomeStore,
     DeepGenomeTrackingError,
-    DeepGenomeTransitionError,
 )
 from ...runtime.task_manager import resolve_tasks_db_path
 from ...storage.obs_storage import normalize_obs_object_key, obsfs_path_for
@@ -62,6 +60,7 @@ from .coordinator import (
     workflow_outcome_for_state,
 )
 from .summary import build_design_work_item_summary, build_sub_summary
+from .tracking import DeepGenomeTransitionSink
 from .work_items import build_work_item_plan, section_keys
 
 if TYPE_CHECKING:
@@ -71,12 +70,6 @@ else:
 
 logger = logging.getLogger(__name__)
 
-_TRACKING_ERRORS: tuple[type[Exception], ...] = (
-    DeepGenomeTrackingError,
-    DeepGenomeTransitionError,
-    sqlite3.Error,
-    OSError,
-)
 _BEST_EFFORT_ERRORS: tuple[type[Exception], ...] = (Exception,)
 
 ANALYSIS_GOAL_TEMPLATE_MAP = {
@@ -168,17 +161,15 @@ def _outcome_work_item_delta(
 
 
 # Generic types use worker nodes; evolution/design use mounted subgraphs.
-# Keep this ordered list aligned with the work-item plan and its test oracle.
-GENERIC_ANALYSIS_NODE_TYPES: tuple[str, ...] = (
-    "gene_expression_tissues",
-    "gene_expression_cultivars",
-    "gene_expression_treatments",
-    "gene_expression_genotypes",
-    "single_cell_analysis",
-    "promoter_analysis",
-    "smep_analysis",
-    "smoc_analysis",
-    "protein_structure_analysis",
+# Keep this ordered source aligned with the work-item plan and its test oracle.
+_GENERIC_ANALYSIS_NODE_TYPE_SOURCE = (
+    "gene_expression_tissues|gene_expression_cultivars|"
+    "gene_expression_treatments|gene_expression_genotypes|"
+    "single_cell_analysis|promoter_analysis|smep_analysis|smoc_analysis|"
+    "protein_structure_analysis"
+)
+GENERIC_ANALYSIS_NODE_TYPES: tuple[str, ...] = tuple(
+    _GENERIC_ANALYSIS_NODE_TYPE_SOURCE.split("|")
 )
 
 
@@ -217,14 +208,16 @@ class DeepGenomeDispatchMixin:
     """Routing, dispatch, and analysis-task nodes for DeepGenome.
     Dispatch methods share durable lifecycle and remote-submission state."""
 
-    def _lifecycle_store(
-        self: Any, state: DeepGenomeState | None
-    ) -> tuple[DeepGenomeStore | None, str | None]:
-        """Resolve durable DeepGenome tracking for one graph state."""
-        task_id = state.get("task_id") if state is not None else None
-        if not isinstance(task_id, str) or not task_id.strip():
-            return None, None
-        return DeepGenomeStore(resolve_tasks_db_path()), task_id
+    def _transition_sink(
+        self: Any,
+        state: DeepGenomeState | None,
+    ) -> DeepGenomeTransitionSink:
+        """Bind one graph state to the shared durable transition sink."""
+        return DeepGenomeTransitionSink.from_state(
+            state,
+            store_path=resolve_tasks_db_path(),
+            cancel_submission=getattr(self, "_cancel_submission", None),
+        )
 
     def _analysis_request_kwargs(self: Any) -> dict[str, Any]:
         """Build bounded platform kwargs for status and cancellation calls."""
@@ -259,129 +252,6 @@ class DeepGenomeDispatchMixin:
             logger.warning(
                 "DeepGenome cancellation unavailable; error_type=%s",
                 type(exc).__name__,
-            )
-
-    async def _fail_tracking(
-        self: Any,
-        store: DeepGenomeStore | None,
-        umbrella_task_id: str | None,
-        submission: RemoteSubmission | None,
-        cause: Exception,
-    ) -> None:
-        """Cancel accepted work and fail the umbrella after tracking loss."""
-        if submission is not None:
-            await DeepGenomeDispatchMixin._cancel_submission(self, submission)
-        if store is not None and umbrella_task_id is not None:
-            try:
-                store.fail_umbrella(
-                    umbrella_task_id,
-                    reason="remote analysis tracking failed",
-                )
-            except _TRACKING_ERRORS as exc:
-                logger.warning(
-                    "DeepGenome tracking failure settlement unavailable; "
-                    "error_type=%s",
-                    type(exc).__name__,
-                )
-        raise DeepGenomeTrackingError(
-            "remote analysis tracking failed"
-        ) from cause
-
-    async def _accept_remote_submission(
-        self: Any,
-        store: DeepGenomeStore | None,
-        umbrella_task_id: str | None,
-        work_item_key: str,
-        submission: RemoteSubmission,
-    ) -> None:
-        """Persist an accepted remote identity before polling starts."""
-        if store is None or umbrella_task_id is None:
-            return
-        try:
-            store.accept_remote_submission(
-                umbrella_task_id,
-                work_item_key=work_item_key,
-                submission=submission,
-            )
-        except _TRACKING_ERRORS as exc:
-            await DeepGenomeDispatchMixin._fail_tracking(
-                self,
-                store,
-                umbrella_task_id,
-                submission,
-                exc,
-            )
-
-    # pylint: disable=too-many-arguments,too-many-positional-arguments
-    async def _persist_work_item_transition(
-        self: Any,
-        store: DeepGenomeStore | None,
-        umbrella_task_id: str | None,
-        work_item_key: str,
-        submission: RemoteSubmission,
-        status: str,
-        summary: str | None,
-        failure_reason: str | None,
-    ) -> WorkItemOutcome:
-        """Persist one poll observation, aborting on local tracking loss."""
-        if store is None or umbrella_task_id is None:
-            return WorkItemOutcome(status, summary, failure_reason)
-        try:
-            store.apply_work_item_transition(
-                umbrella_task_id,
-                work_item_key=work_item_key,
-                status=status,
-                summary_markdown=summary,
-                failure_reason=failure_reason,
-            )
-        except _TRACKING_ERRORS as exc:
-            await DeepGenomeDispatchMixin._fail_tracking(
-                self,
-                store,
-                umbrella_task_id,
-                submission,
-                exc,
-            )
-        return WorkItemOutcome(status, summary, failure_reason)
-
-    # pylint: enable=too-many-arguments,too-many-positional-arguments
-
-    async def _record_work_item_failure(
-        self: Any,
-        state: DeepGenomeState,
-        work_item_key: str,
-    ) -> None:
-        """Persist an optional item that failed before remote acceptance."""
-        store, umbrella_task_id = DeepGenomeDispatchMixin._lifecycle_store(
-            self, state
-        )
-        if store is None or umbrella_task_id is None:
-            return
-        try:
-            store.apply_work_item_transition(
-                umbrella_task_id,
-                work_item_key=work_item_key,
-                status="failed",
-                failure_reason="analysis task failed",
-            )
-        except _TRACKING_ERRORS as exc:
-            await DeepGenomeDispatchMixin._fail_tracking(
-                self,
-                store,
-                umbrella_task_id,
-                None,
-                exc,
-            )
-
-    async def _record_mount_failure(
-        self: Any,
-        state: DeepGenomeState,
-        work_item_keys: tuple[str, ...],
-    ) -> None:
-        """Persist every concrete item when a mounted producer fails."""
-        for work_item_key in work_item_keys:
-            await DeepGenomeDispatchMixin._record_work_item_failure(
-                self, state, work_item_key
             )
 
     def _route_start(self: Any, state: DeepGenomeState):
@@ -618,13 +488,8 @@ class DeepGenomeDispatchMixin:
                 gene_id=gene_id,
                 output_dir=task.output_dir,
             )
-            store, umbrella_task_id = DeepGenomeDispatchMixin._lifecycle_store(
-                self, state
-            )
-            await DeepGenomeDispatchMixin._accept_remote_submission(
-                self,
-                store,
-                umbrella_task_id,
+            tracking = DeepGenomeDispatchMixin._transition_sink(self, state)
+            await tracking.accept_remote_submission(
                 "evolution_analysis",
                 task,
             )
@@ -632,8 +497,7 @@ class DeepGenomeDispatchMixin:
                 task,
                 context,
                 run_identity,
-                store=store,
-                umbrella_task_id=umbrella_task_id,
+                tracking=tracking,
                 work_item_key="evolution_analysis",
             )
             summary_data = None
@@ -696,29 +560,9 @@ class DeepGenomeDispatchMixin:
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Poll one independent Design item and return raw/report deltas."""
         task_key = f"task_{state.get('task_index')}:{work_item_key}"
-        persist_transition = (
-            DeepGenomeDispatchMixin._persist_work_item_transition
-        )
-        store, umbrella_task_id = DeepGenomeDispatchMixin._lifecycle_store(
-            self, state
-        )
+        tracking = DeepGenomeDispatchMixin._transition_sink(self, state)
         if submission is None:
-            if store is not None and umbrella_task_id is not None:
-                try:
-                    store.apply_work_item_transition(
-                        umbrella_task_id,
-                        work_item_key=work_item_key,
-                        status="failed",
-                        failure_reason="analysis task failed",
-                    )
-                except _TRACKING_ERRORS as exc:
-                    await DeepGenomeDispatchMixin._fail_tracking(
-                        self,
-                        store,
-                        umbrella_task_id,
-                        None,
-                        exc,
-                    )
+            await tracking.record_work_item_failure(work_item_key)
             return (
                 {
                     task_key: {
@@ -746,13 +590,7 @@ class DeepGenomeDispatchMixin:
             user_id=self.deep_genome_config.USER_ID,
             scope=work_item_key,
         )
-        await DeepGenomeDispatchMixin._accept_remote_submission(
-            self,
-            store,
-            umbrella_task_id,
-            work_item_key,
-            submission,
-        )
+        await tracking.accept_remote_submission(work_item_key, submission)
         outcome, results_dir = await self._poll_remote_submission(
             submission,
             context,
@@ -760,8 +598,7 @@ class DeepGenomeDispatchMixin:
             summary_builder=lambda path: build_design_work_item_summary(
                 work_item_key, path
             ),
-            store=store,
-            umbrella_task_id=umbrella_task_id,
+            tracking=tracking,
             work_item_key=work_item_key,
         )
         summary_data: dict[str, Any] = {}
@@ -783,10 +620,7 @@ class DeepGenomeDispatchMixin:
                     display_order_override=display_order,
                 )
             except _DESIGN_SUMMARY_ERRORS:
-                outcome = await persist_transition(
-                    self,
-                    store,
-                    umbrella_task_id,
+                outcome = await tracking.persist_work_item_transition(
                     work_item_key,
                     submission,
                     "failed",
@@ -1045,8 +879,7 @@ class DeepGenomeDispatchMixin:
         run_identity: RunIdentity,
         *,
         summary_builder: Callable[[str], str] | None = None,
-        store: DeepGenomeStore | None = None,
-        umbrella_task_id: str | None = None,
+        tracking: DeepGenomeTransitionSink | None = None,
         work_item_key: str | None = None,
     ) -> tuple[WorkItemOutcome, str | None]:
         """Poll and resolve one accepted submission through the coordinator."""
@@ -1098,10 +931,10 @@ class DeepGenomeDispatchMixin:
             failure_reason: str | None,
         ) -> WorkItemOutcome:
             """Persist one local transition before continuing the poll."""
-            return await DeepGenomeDispatchMixin._persist_work_item_transition(
-                self,
-                store,
-                umbrella_task_id,
+            sink = tracking or DeepGenomeDispatchMixin._transition_sink(
+                self, None
+            )
+            return await sink.persist_work_item_transition(
                 tracked_work_item,
                 submission,
                 status,
@@ -1152,9 +985,7 @@ class DeepGenomeDispatchMixin:
             gene_id=gene_id,
             output_dir=output_dir or "",
         )
-        store, umbrella_task_id = DeepGenomeDispatchMixin._lifecycle_store(
-            self, state
-        )
+        tracking = DeepGenomeDispatchMixin._transition_sink(self, state)
         work_item_value = (
             state.get("work_item_key") if state is not None else None
         )
@@ -1171,24 +1002,15 @@ class DeepGenomeDispatchMixin:
             raise
         except _BEST_EFFORT_ERRORS:
             if state is not None:
-                await DeepGenomeDispatchMixin._record_work_item_failure(
-                    self, state, work_item_key
-                )
+                await tracking.record_work_item_failure(work_item_key)
             raise
         if isinstance(result, RemoteSubmission):
-            await DeepGenomeDispatchMixin._accept_remote_submission(
-                self,
-                store,
-                umbrella_task_id,
-                work_item_key,
-                result,
-            )
+            await tracking.accept_remote_submission(work_item_key, result)
             outcome, resolved_results_dir = await self._poll_remote_submission(
                 result,
                 context,
                 run_identity,
-                store=store,
-                umbrella_task_id=umbrella_task_id,
+                tracking=tracking,
                 work_item_key=work_item_key,
             )
             if outcome.status != "succeeded":
