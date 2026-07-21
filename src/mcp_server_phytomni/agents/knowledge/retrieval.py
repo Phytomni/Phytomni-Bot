@@ -2,15 +2,15 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Cached knowledge retrieval and reranking helpers.
+"""Cached knowledge retrieval and reranking orchestration.
 
-This module exposes retrieval option models plus `retrieve`,
-`multi_retrieve`, and `rerank` for cached document search and reranking.
+Typed request options live in :mod:`retrieval_options`; this module retains
+the historical public helpers and owns only HTTP orchestration and cache
+coordination.
 """
 
 import asyncio
 from contextlib import nullcontext
-from dataclasses import dataclass
 from typing import Any
 from weakref import WeakKeyDictionary
 
@@ -32,35 +32,25 @@ from ...common.http import (
 from ...common.httpx_client import get_async_client
 from ...common.lists import split_list
 from ...common.relay_client import current_relay_client
-from ...config.defaults import KnowledgeConfig
 from ...config.relay_mode import relay_mode_enabled
 from ...func_cache import LONG_TTL_SECONDS, func_cache
+from .retrieval_options import (
+    KNOWLEDGE_CONFIG,
+    MultiRetrieveOptions,
+    MultiRetrievePayloadOptions,
+    RerankOptions,
+    RetrieveOptions,
+    RetrievePayloadOptions,
+    RetryOptions,
+)
 
-KNOWLEDGE_CONFIG = KnowledgeConfig()
-
-# Per-event-loop rerank concurrency limiter. ``asyncio.Semaphore`` binds
-# to the loop on first use, so a module-level singleton would raise
-# "bound to a different event loop" across the project's MCP serve loop,
-# API lifespan loop, and per-test loops. A WeakKeyDictionary keyed by the
-# running loop hands each loop its own semaphore and auto-evicts the entry
-# when the loop is garbage-collected (no id(loop) reuse trap).
 _RERANK_SEM_STATE: WeakKeyDictionary[
     asyncio.AbstractEventLoop, asyncio.Semaphore
 ] = WeakKeyDictionary()
 
 
 def _rerank_semaphore() -> Any:
-    """Return the current loop's rerank semaphore, or a nullcontext.
-
-    Reads the deployment-level ``RERANK_CONCURRENCY`` cap from the
-    module-level config. A cap of 0 or less disables throttling and
-    returns ``contextlib.nullcontext()`` so callers can ``async with``
-    it unconditionally.
-
-    Returns:
-        An async context manager: a per-loop ``asyncio.Semaphore`` when
-        throttling is enabled, otherwise a ``nullcontext``.
-    """
+    """Return the current loop's rerank semaphore or a null context."""
     cap = KNOWLEDGE_CONFIG.RERANK_CONCURRENCY
     if cap <= 0:
         return nullcontext()
@@ -73,373 +63,13 @@ def _rerank_semaphore() -> Any:
 
 
 def reset_rerank_semaphore_state() -> None:
-    """Clear the per-loop rerank semaphore registry (test/admin helper)."""
+    """Clear the per-loop rerank semaphore registry."""
     _RERANK_SEM_STATE.clear()
 
 
 def rerank_semaphore_state_size() -> int:
-    """Return the count of live per-loop semaphores (test/admin helper)."""
+    """Return the number of live per-loop semaphores."""
     return len(_RERANK_SEM_STATE)
-
-
-@dataclass(frozen=True)
-class RetryOptions:
-    """HTTP retry settings shared by retrieval requests.
-
-    Attributes:
-        timeout: HTTP timeout in seconds.
-        retriable_codes: HTTP status codes that trigger retries.
-        max_retries: Maximum retry attempts.
-    """
-
-    timeout: float = KNOWLEDGE_CONFIG.TIMEOUT
-    retriable_codes: tuple[int, ...] = tuple(KNOWLEDGE_CONFIG.RETRIABLE_CODES)
-    max_retries: int = KNOWLEDGE_CONFIG.MAX_RETRIES
-
-
-@dataclass(frozen=True)
-class RetrievePayloadOptions:
-    """Payload settings for one repository retrieval request.
-
-    Attributes:
-        repo_id: Repository ID to search.
-        page_num: Page number requested from the retrieval service.
-        page_size: Number of documents requested from one repository.
-        filter_string: Optional metadata filter expression.
-        scope: Retrieval scope, such as doc, keyword, or both.
-        extra_repo_ids: Optional extra repository IDs included in search.
-    """
-
-    repo_id: str = KNOWLEDGE_CONFIG.REPO_ID
-    page_num: int = KNOWLEDGE_CONFIG.PAGE_NUM
-    page_size: int = KNOWLEDGE_CONFIG.PAGE_SIZE
-    filter_string: str | None = KNOWLEDGE_CONFIG.FILTER_STRING
-    scope: str = KNOWLEDGE_CONFIG.SCOPE
-    extra_repo_ids: tuple[str, ...] | None = None
-
-
-@dataclass(frozen=True)
-class MultiRetrievePayloadOptions:
-    """Payload settings for multi-repository retrieval.
-
-    Attributes:
-        page_num: Page number requested from the retrieval service.
-        filter_string: Optional metadata filter expression.
-        scope: Retrieval scope, such as doc, keyword, or both.
-        extra_repo_ids: Optional extra repository IDs included in search.
-    """
-
-    page_num: int = KNOWLEDGE_CONFIG.PAGE_NUM
-    filter_string: str | None = KNOWLEDGE_CONFIG.FILTER_STRING
-    scope: str = KNOWLEDGE_CONFIG.SCOPE
-    extra_repo_ids: tuple[str, ...] | None = None
-
-
-@dataclass(frozen=True)
-class RetrieveOptions:
-    """Resolved options for one retrieval request.
-
-    Attributes:
-        retrieve_url: Retrieval service endpoint URL.
-        payload_options: Repository and payload settings.
-        rerank_url: Rerank service endpoint URL.
-        rerank_batch_size: Maximum docs per rerank request.
-        score_threshold: Minimum accepted rerank score.
-        retry_options: HTTP retry settings.
-    """
-
-    retrieve_url: str = KNOWLEDGE_CONFIG.RETRIEVE_URL
-    payload_options: RetrievePayloadOptions = RetrievePayloadOptions()
-    rerank_url: str = KNOWLEDGE_CONFIG.RERANK_URL
-    rerank_batch_size: int = KNOWLEDGE_CONFIG.RERANK_BATCH_SIZE
-    score_threshold: float = KNOWLEDGE_CONFIG.SCORE_THRESHOLD
-    retry_options: RetryOptions = RetryOptions()
-
-    @classmethod
-    def from_kwargs(cls, values: dict[str, Any]):
-        """Build options from keyword-compatible overrides.
-
-        Args:
-            values: Keyword-compatible retrieval and retry overrides.
-
-        Returns:
-            Resolved retrieval options.
-        """
-        options = dict(values)
-        if options.get("retriable_codes") is None:
-            options.pop("retriable_codes", None)
-        else:
-            options["retriable_codes"] = tuple(options["retriable_codes"])
-        if options.get("extra_repo_ids") is None:
-            options.pop("extra_repo_ids", None)
-        else:
-            options["extra_repo_ids"] = tuple(options["extra_repo_ids"])
-        return cls(
-            retrieve_url=options.get(
-                "retrieve_url", KNOWLEDGE_CONFIG.RETRIEVE_URL
-            ),
-            payload_options=RetrievePayloadOptions(
-                repo_id=options.get("repo_id", KNOWLEDGE_CONFIG.REPO_ID),
-                page_num=options.get("page_num", KNOWLEDGE_CONFIG.PAGE_NUM),
-                page_size=options.get("page_size", KNOWLEDGE_CONFIG.PAGE_SIZE),
-                filter_string=options.get(
-                    "filter_string", KNOWLEDGE_CONFIG.FILTER_STRING
-                ),
-                scope=options.get("scope", KNOWLEDGE_CONFIG.SCOPE),
-                extra_repo_ids=options.get("extra_repo_ids"),
-            ),
-            rerank_url=options.get("rerank_url", KNOWLEDGE_CONFIG.RERANK_URL),
-            rerank_batch_size=options.get(
-                "rerank_batch_size", KNOWLEDGE_CONFIG.RERANK_BATCH_SIZE
-            ),
-            score_threshold=options.get(
-                "score_threshold", KNOWLEDGE_CONFIG.SCORE_THRESHOLD
-            ),
-            retry_options=RetryOptions(
-                timeout=options.get("timeout", KNOWLEDGE_CONFIG.TIMEOUT),
-                retriable_codes=options.get(
-                    "retriable_codes",
-                    tuple(KNOWLEDGE_CONFIG.RETRIABLE_CODES),
-                ),
-                max_retries=options.get(
-                    "max_retries", KNOWLEDGE_CONFIG.MAX_RETRIES
-                ),
-            ),
-        )
-
-    @property
-    def page_size(self) -> int:
-        """Return the retrieval page size.
-
-        Returns:
-            Number of documents requested from one repository.
-        """
-        return self.payload_options.page_size
-
-    @property
-    def scope(self) -> str:
-        """Return the retrieval scope.
-
-        Returns:
-            Retrieval scope such as doc, keyword, or both.
-        """
-        return self.payload_options.scope
-
-    @property
-    def timeout(self) -> float:
-        """Return the HTTP timeout.
-
-        Returns:
-            HTTP timeout in seconds.
-        """
-        return self.retry_options.timeout
-
-    @property
-    def retriable_codes(self) -> tuple[int, ...]:
-        """Return retryable HTTP status codes.
-
-        Returns:
-            HTTP status codes that trigger retries.
-        """
-        return self.retry_options.retriable_codes
-
-    @property
-    def max_retries(self) -> int:
-        """Return max HTTP retry attempts.
-
-        Returns:
-            Maximum retry attempts for retrieval and rerank calls.
-        """
-        return self.retry_options.max_retries
-
-    def payload(self, user_query: str, scope: str) -> dict[str, Any]:
-        """Return the HTTP JSON payload for one retrieve scope.
-
-        Args:
-            user_query: User query to send to the retrieval service.
-            scope: Retrieval scope for this payload.
-
-        Returns:
-            JSON payload for one retrieval service request.
-        """
-        return {
-            "repo_id": self.payload_options.repo_id,
-            "content": user_query,
-            "page_num": self.payload_options.page_num,
-            "page_size": self.payload_options.page_size,
-            "filter_string": self.payload_options.filter_string,
-            "scope": scope,
-            "extra_repo_ids": list(self.payload_options.extra_repo_ids or ()),
-        }
-
-
-@dataclass(frozen=True)
-class MultiRetrieveOptions:
-    """Resolved options for multiple repository retrieval.
-
-    Attributes:
-        retrieve_url: Retrieval service endpoint URL.
-        payload_options: Multi-repository payload settings.
-        rerank_url: Rerank service endpoint URL.
-        rerank_batch_size: Maximum docs per rerank request.
-        score_threshold: Minimum accepted rerank score.
-        top_n: Maximum number of merged documents to keep.
-        retry_options: HTTP retry settings.
-    """
-
-    retrieve_url: str = KNOWLEDGE_CONFIG.RETRIEVE_URL
-    payload_options: MultiRetrievePayloadOptions = (
-        MultiRetrievePayloadOptions()
-    )
-    rerank_url: str = KNOWLEDGE_CONFIG.RERANK_URL
-    rerank_batch_size: int = KNOWLEDGE_CONFIG.RERANK_BATCH_SIZE
-    score_threshold: float = KNOWLEDGE_CONFIG.SCORE_THRESHOLD
-    top_n: int = KNOWLEDGE_CONFIG.TOP_N
-    retry_options: RetryOptions = RetryOptions()
-
-    @classmethod
-    def from_kwargs(cls, values: dict[str, Any]):
-        """Build options from keyword-compatible overrides.
-
-        Args:
-            values: Keyword-compatible multi-retrieval and retry overrides.
-
-        Returns:
-            Resolved multi-retrieval options.
-        """
-        options = dict(values)
-        if options.get("retriable_codes") is None:
-            options.pop("retriable_codes", None)
-        else:
-            options["retriable_codes"] = tuple(options["retriable_codes"])
-        if options.get("extra_repo_ids") is None:
-            options.pop("extra_repo_ids", None)
-        else:
-            options["extra_repo_ids"] = tuple(options["extra_repo_ids"])
-        return cls(
-            retrieve_url=options.get(
-                "retrieve_url", KNOWLEDGE_CONFIG.RETRIEVE_URL
-            ),
-            payload_options=MultiRetrievePayloadOptions(
-                page_num=options.get("page_num", KNOWLEDGE_CONFIG.PAGE_NUM),
-                filter_string=options.get(
-                    "filter_string", KNOWLEDGE_CONFIG.FILTER_STRING
-                ),
-                scope=options.get("scope", KNOWLEDGE_CONFIG.SCOPE),
-                extra_repo_ids=options.get("extra_repo_ids"),
-            ),
-            rerank_url=options.get("rerank_url", KNOWLEDGE_CONFIG.RERANK_URL),
-            rerank_batch_size=options.get(
-                "rerank_batch_size", KNOWLEDGE_CONFIG.RERANK_BATCH_SIZE
-            ),
-            score_threshold=options.get(
-                "score_threshold", KNOWLEDGE_CONFIG.SCORE_THRESHOLD
-            ),
-            top_n=options.get("top_n", KNOWLEDGE_CONFIG.TOP_N),
-            retry_options=RetryOptions(
-                timeout=options.get("timeout", KNOWLEDGE_CONFIG.TIMEOUT),
-                retriable_codes=options.get(
-                    "retriable_codes",
-                    tuple(KNOWLEDGE_CONFIG.RETRIABLE_CODES),
-                ),
-                max_retries=options.get(
-                    "max_retries", KNOWLEDGE_CONFIG.MAX_RETRIES
-                ),
-            ),
-        )
-
-    @property
-    def timeout(self) -> float:
-        """Return the HTTP timeout.
-
-        Returns:
-            HTTP timeout in seconds.
-        """
-        return self.retry_options.timeout
-
-    @property
-    def retriable_codes(self) -> tuple[int, ...]:
-        """Return retryable HTTP status codes.
-
-        Returns:
-            HTTP status codes that trigger retries.
-        """
-        return self.retry_options.retriable_codes
-
-    @property
-    def max_retries(self) -> int:
-        """Return max HTTP retry attempts.
-
-        Returns:
-            Maximum retry attempts for retrieval and rerank calls.
-        """
-        return self.retry_options.max_retries
-
-    def retrieve_kwargs(self, repo_id: str, page_size: int) -> dict[str, Any]:
-        """Return keyword arguments for a single retrieve call.
-
-        Args:
-            repo_id: Repository ID to search.
-            page_size: Number of documents requested from the repository.
-
-        Returns:
-            Keyword arguments accepted by `retrieve`.
-        """
-        return {
-            "retrieve_url": self.retrieve_url,
-            "repo_id": repo_id,
-            "page_num": self.payload_options.page_num,
-            "page_size": page_size,
-            "filter_string": self.payload_options.filter_string,
-            "scope": self.payload_options.scope,
-            "extra_repo_ids": list(self.payload_options.extra_repo_ids or ()),
-            "rerank_url": self.rerank_url,
-            "rerank_batch_size": self.rerank_batch_size,
-            "score_threshold": self.score_threshold,
-            "timeout": self.timeout,
-            "retriable_codes": list(self.retriable_codes),
-            "max_retries": self.max_retries,
-        }
-
-
-@dataclass(frozen=True)
-class RerankOptions:
-    """Resolved options for one rerank request.
-
-    Attributes:
-        rerank_url: Rerank service endpoint URL.
-        top_n: Maximum number of ranked documents to keep.
-        rerank_batch_size: Maximum docs per rerank request.
-        score_threshold: Minimum accepted rerank score.
-        timeout: HTTP timeout in seconds.
-        retriable_codes: HTTP status codes that trigger retries.
-        max_retries: Maximum retry attempts.
-    """
-
-    rerank_url: str = KNOWLEDGE_CONFIG.RERANK_URL
-    top_n: int = KNOWLEDGE_CONFIG.TOP_N
-    rerank_batch_size: int = KNOWLEDGE_CONFIG.RERANK_BATCH_SIZE
-    score_threshold: float = KNOWLEDGE_CONFIG.SCORE_THRESHOLD
-    timeout: float = KNOWLEDGE_CONFIG.TIMEOUT
-    retriable_codes: tuple[int, ...] = tuple(KNOWLEDGE_CONFIG.RETRIABLE_CODES)
-    max_retries: int = KNOWLEDGE_CONFIG.MAX_RETRIES
-
-    @classmethod
-    def from_kwargs(cls, values: dict[str, Any]):
-        """Build options from keyword-compatible overrides.
-
-        Args:
-            values: Keyword-compatible rerank and retry overrides.
-
-        Returns:
-            Resolved rerank options.
-        """
-        options = dict(values)
-        if options.get("retriable_codes") is None:
-            options.pop("retriable_codes", None)
-        else:
-            options["retriable_codes"] = tuple(options["retriable_codes"])
-        return cls(**options)
 
 
 @func_cache(
@@ -456,9 +86,7 @@ class RerankOptions:
     ttl=LONG_TTL_SECONDS,
 )
 # pylint: disable=too-many-arguments
-# Cache primitive: every named parameter is part of the @func_cache
-# key, so semantic inputs must stay flat. See
-# docs/development/lint-exemptions.md.
+# Cache primitive: every named parameter is part of the @func_cache key.
 async def _retrieve_cached(
     user_query: str,
     *,
@@ -472,32 +100,7 @@ async def _retrieve_cached(
     score_threshold: float,
     options: RetrieveOptions,
 ) -> dict[str, Any]:
-    """Cache the merged retrieve + rerank answer per user query.
-
-    The cache key is anchored on ``user_query`` plus the minimum set
-    of semantic parameters needed to keep the result correct (which
-    repos are searched, page slice, scope, filter, and score
-    threshold). Infrastructure parameters carried inside ``options``
-    (URLs, timeouts, retry policy, rerank batching) are deliberately
-    excluded so rotating an endpoint or tuning retries never
-    invalidates the cached answer. ``options`` is forwarded to the
-    cache-miss path that runs ``_retrieve_raw_docs`` + ``rerank``;
-    on a hit the cached doc_list is returned directly so the rerank
-    HTTP is not paid again.
-
-    ``top_n`` is kept in the signature for ``retrieve()`` wrapper
-    compatibility but is *not* in ``key_params``: the wrapper threads
-    ``top_n=options.page_size`` so the two parameters always carry
-    the same value and using both as cache bits added no
-    discrimination. ``page_size`` alone owns the per-call slice size.
-
-    ``_retrieve_scope_docs`` keeps its own primitive cache as a
-    second defensive layer: two different ``user_query`` strings that
-    happen to share the same (repo, scope, page) tuple still benefit
-    from primitive-level dedup. ``_rerank_batch`` no longer caches —
-    rerank cost is small compared to retrieval and the composite
-    cache here already covers the user-facing repeat-question case.
-    """
+    """Cache the merged retrieve and rerank answer per user query."""
     del repo_id, scope, page_num, page_size, filter_string
     del extra_repo_ids, top_n, score_threshold
     doc_list = await _retrieve_raw_docs(user_query, options)
@@ -521,22 +124,7 @@ async def _retrieve_cached(
 
 
 async def retrieve(user_query: str, **kwargs: Any) -> dict[str, Any]:
-    """Keyword-compatible cached knowledge-base retrieval.
-
-    Thin wrapper that resolves ``RetrieveOptions`` from kwargs and
-    forwards to ``_retrieve_cached``. The cache key is anchored on
-    ``user_query`` plus the semantic retrieve parameters; URLs /
-    timeouts / retries / rerank batching live inside ``options`` and
-    are excluded from the key so the cached answer is shared across
-    deployments and retry-policy tweaks.
-
-    Args:
-        user_query: Query text to search in the knowledge base.
-        **kwargs: Keyword-compatible retrieval, rerank, and retry overrides.
-
-    Returns:
-        Dictionary with retrieved document list and total count.
-    """
+    """Retrieve and rerank documents for one user query."""
     options = RetrieveOptions.from_kwargs(kwargs)
     return await _retrieve_cached(
         user_query,
@@ -556,7 +144,7 @@ async def _retrieve_raw_docs(
     user_query: str,
     options: RetrieveOptions,
 ) -> list[dict[str, Any]]:
-    """Return raw retrieve docs for the configured search scope."""
+    """Return raw documents for the configured retrieval scope."""
     async with get_async_client(timeout=_timeout(options.timeout)) as client:
         if options.scope in ("doc", "keyword"):
             docs = await _retrieve_scope_docs(
@@ -613,22 +201,7 @@ async def _retrieve_scope_docs(
     max_retries: int,
     retriable_codes: tuple[int, ...],
 ) -> Any:
-    """Retrieve docs for a single knowledge-base scope.
-
-    Cached on the semantic inputs only (query, repo, scope, paging,
-    filter, extras) using LONG_TTL_SECONDS so identical retrieval
-    requests skip the remote HTTP roundtrip. Infrastructure parameters
-    — ``client`` / ``timeout`` / ``max_retries`` / ``retriable_codes``
-    — are intentionally absent from ``key_params`` so flipping a retry
-    policy or rotating the HTTP client does not invalidate the cache.
-
-    ``retrieve_url`` is also infrastructure and is excluded from the
-    key: the composite ``_retrieve_cached`` and ``_multi_retrieve``
-    layers above already exclude URLs, so a deploy URL rotation always
-    short-circuits on the composite layer first and would never reach
-    this primitive — keeping it in the key here was a dead bit that
-    contradicted the documented "key is semantic input only" policy.
-    """
+    """Retrieve documents for one knowledge-base scope."""
     body = {
         "repo_id": repo_id,
         "content": user_query,
@@ -672,7 +245,7 @@ async def _retrieve_both_scopes(
     user_query: str,
     options: RetrieveOptions,
 ) -> list[dict[str, Any]]:
-    """Retrieve and merge docs from document and keyword scopes."""
+    """Retrieve and merge document and keyword scopes."""
     tasks = [
         _retrieve_scope_docs(
             client,
@@ -715,18 +288,7 @@ async def _multi_retrieve(
     *,
     options: MultiRetrieveOptions,
 ) -> dict[str, Any]:
-    """Retrieve from multiple repositories and cache the merged result.
-
-    The composite cache key is anchored on ``user_query`` plus the
-    sorted ``repo_items`` (repo id + page size pairs) and the merged
-    ``top_n`` so identical user-facing requests collapse into one
-    stored answer. ``options`` carries the rerank URL / retry / timeout
-    knobs into the cache-miss path but is excluded from ``key_params``
-    so deploys can rotate those without invalidating the cached
-    answer. On a miss the helper fans out per-repo ``retrieve`` calls
-    (themselves cached at the ``_retrieve_cached`` layer) and merges
-    the results; on a hit the merged doc_list returns directly.
-    """
+    """Retrieve, rerank, and merge documents from multiple repositories."""
     del top_n
     try:
         tasks = [
@@ -760,17 +322,7 @@ async def multi_retrieve(
     semaphore: asyncio.Semaphore | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
-    """Keyword-compatible cached retrieval from multiple repositories.
-
-    Args:
-        user_query: Query text to search across repositories.
-        repo_id_dict: Optional mapping of repository IDs to page sizes.
-        semaphore: Optional semaphore limiting concurrent multi-retrieval.
-        **kwargs: Keyword-compatible retrieval, rerank, and retry overrides.
-
-    Returns:
-        Dictionary with merged document list and total count.
-    """
+    """Retrieve and merge documents from multiple repositories."""
     if repo_id_dict is None:
         repo_id_dict = dict(KNOWLEDGE_CONFIG.REPO_ID_DICT)
     options = MultiRetrieveOptions.from_kwargs(kwargs)
@@ -796,16 +348,7 @@ async def rerank(
     doc_list: list[dict[str, Any]],
     **kwargs: Any,
 ) -> list:
-    """Rerank a list of documents based on a user query.
-
-    Args:
-        user_query: Query text used for reranking.
-        doc_list: Documents to rerank.
-        **kwargs: Keyword-compatible rerank and retry overrides.
-
-    Returns:
-        Documents sorted by rerank score and filtered by threshold.
-    """
+    """Rerank documents by score and apply the configured threshold."""
     options = RerankOptions.from_kwargs(kwargs)
     docs, id_doc_dict = _rerank_docs(doc_list)
     async with get_async_client(timeout=_timeout(options.timeout)) as client:
@@ -822,16 +365,8 @@ async def _rank_docs(
     user_query: str,
     docs: list[dict[str, Any]],
     options: RerankOptions,
-):
-    """Rank docs, batching when needed.
-
-    Rerank batches are no longer individually cached: the composite
-    ``_retrieve_cached`` layer above already memoizes the full
-    rerank-merged answer per user query, so an additional per-batch
-    cache only adds storage churn for a cheap operation. On a cache
-    miss in the composite layer this helper still fans out batches
-    in parallel against the rerank HTTP endpoint.
-    """
+) -> Any:
+    """Rank docs, batching when the configured limit is exceeded."""
     if len(docs) > options.rerank_batch_size:
         chunks = split_list(docs, options.rerank_batch_size)
         tasks = [
@@ -875,21 +410,8 @@ async def _rerank_batch(
     timeout: float,  # noqa: ASYNC109
     max_retries: int,
     retriable_codes: tuple[int, ...],
-):
-    """Send one rerank request batch (uncached).
-
-    Caching the rerank step individually was removed in favor of the
-    composite ``_retrieve_cached`` cache one layer up: rerank cost is
-    small compared to retrieval, and the composite cache already
-    suppresses repeat work whenever the user issues the same query
-    again. Keeping a per-batch cache here would only add SQLite
-    maintenance load without measurable savings.
-
-    The body runs under the per-loop rerank semaphore so a fan-out (e.g.
-    ReviewAgent across dimensions x repos x batches) cannot overload the
-    rerank backend; ``async with`` releases the permit on the error path
-    too, so a retry-exhausted failure never leaks a slot.
-    """
+) -> list[dict[str, Any]]:
+    """Send one rerank request batch under the per-loop semaphore."""
     async with _rerank_semaphore():
         body = {
             "query": user_query,
@@ -930,7 +452,7 @@ async def _rerank_batch(
 def _collect_rank_results(
     results: list[Any], top_n: int
 ) -> list[dict[str, Any]]:
-    """Flatten rank results or raise on batch errors."""
+    """Flatten rank results or raise on a failed batch."""
     all_results: list[dict[str, Any]] = []
     for result in results:
         if isinstance(result, BaseException):
@@ -982,7 +504,7 @@ def _sorted_merged_docs(
 
 
 def _list_or_empty(value: Any) -> list:
-    """Return list values as-is, convert iterables, and treat None as empty."""
+    """Return list values as-is and treat ``None`` as empty."""
     if value is None:
         return []
     if isinstance(value, list):
@@ -996,15 +518,22 @@ def _timeout(timeout: float) -> Timeout:
 
 
 def clear_retrieval_caches() -> None:
-    """Drop cached retrieval results across all layers.
-
-    The retrieval stack now caches in three places: the composite
-    ``_multi_retrieve`` layer (per user_query + repo set + top_n),
-    the per-repo ``_retrieve_cached`` layer (per user_query + repo
-    page slice), and the underlying ``_retrieve_scope_docs`` HTTP
-    primitive. All three are cleared together because they cooperate
-    on the same call path and are always purged as a unit.
-    """
+    """Drop all composite and primitive retrieval caches."""
     _multi_retrieve.cache_clear()
     _retrieve_cached.cache_clear()
     _retrieve_scope_docs.cache_clear()
+
+
+__all__ = [
+    "KNOWLEDGE_CONFIG",
+    "MultiRetrieveOptions",
+    "MultiRetrievePayloadOptions",
+    "RerankOptions",
+    "RetrieveOptions",
+    "RetrievePayloadOptions",
+    "RetryOptions",
+    "clear_retrieval_caches",
+    "multi_retrieve",
+    "rerank",
+    "retrieve",
+]

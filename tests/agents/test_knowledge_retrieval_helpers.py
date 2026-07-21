@@ -38,9 +38,17 @@ from mcp_server_phytomni.agents.knowledge.retrieval import (
     rerank_semaphore_state_size,
     reset_rerank_semaphore_state,
 )
+from mcp_server_phytomni.agents.knowledge.retrieval_options import (
+    RerankOptions as LeafRerankOptions,
+)
 from mcp_server_phytomni.config.overrides import RETRIEVAL_CONFIG_FIELD_MAP
 
 pytestmark = pytest.mark.unit
+
+
+def test_retrieval_facade_reexports_option_models() -> None:
+    """The legacy retrieval module remains the option-model facade."""
+    assert RerankOptions is LeafRerankOptions
 
 
 def test_collect_rank_results_flattens_and_sorts_by_score() -> None:
