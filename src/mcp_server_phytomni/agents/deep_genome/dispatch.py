@@ -400,7 +400,6 @@ class DeepGenomeDispatchMixin:
             "analysis_completed_branches": 1,
         }
 
-    # pylint: disable=too-many-locals
     async def _poll_design_work_item(
         self: Any,
         work_item_key: str,

@@ -24,6 +24,9 @@ from mcp.types import INTERNAL_ERROR, ErrorData
 from tests.agents._network_escape import install_network_escape_guard
 
 from mcp_server_phytomni.mcp import app as mcp_app
+from mcp_server_phytomni.mcp.formatting.models import (
+    FormattedToolChunk as LeafFormattedToolChunk,
+)
 from mcp_server_phytomni.mcp.result_formatting import (
     AguiEvent,
     FormattedToolChunk,
@@ -32,6 +35,11 @@ from mcp_server_phytomni.mcp.result_formatting import (
 from mcp_server_phytomni.mcp.schemas import PhytomniAgents
 
 pytestmark = pytest.mark.server
+
+
+def test_streaming_facade_reexports_chunk_model() -> None:
+    """The streamed chunk class keeps one identity across import paths."""
+    assert FormattedToolChunk is LeafFormattedToolChunk
 
 
 def _chat_payload(demo_data_dir: Path) -> dict[str, Any]:

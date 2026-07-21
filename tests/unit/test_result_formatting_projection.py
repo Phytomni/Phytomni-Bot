@@ -11,16 +11,56 @@ Covers ``resolve_debug`` (env override + per-request flag),
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import make_dataclass
 
 import pytest
 
+from mcp_server_phytomni.mcp.formatting import models as formatting_models
+from mcp_server_phytomni.mcp.formatting import (
+    redaction as formatting_redaction,
+)
 from mcp_server_phytomni.mcp.result_formatting import (
+    FormattedToolResult,
+    ToolResultEnvelope,
     resolve_debug,
     strip_agent_result,
     strip_chat_completion,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_projection_facade_reexports_redaction_helpers() -> None:
+    """Debug and default projection helpers remain leaf identities."""
+    assert resolve_debug is formatting_redaction.resolve_debug
+    assert strip_agent_result is formatting_redaction.strip_agent_result
+    assert strip_chat_completion is formatting_redaction.strip_chat_completion
+
+
+def test_formatting_facade_reexports_leaf_models() -> None:
+    """Legacy model imports remain the exact leaf class objects."""
+    assert FormattedToolResult is formatting_models.FormattedToolResult
+    assert ToolResultEnvelope is formatting_models.ToolResultEnvelope
+
+
+def test_leaf_redaction_handles_dataclasses_sequences_and_unknown_values() -> (
+    None
+):
+    """Redaction drops credential fields without touching unknown objects."""
+    fixture_type = make_dataclass("RedactionFixture", ["token", "value"])
+    unknown = object()
+
+    sanitized = formatting_redaction.sanitize_raw(
+        {
+            "fixture": fixture_type("secret", "kept"),
+            "items": ("plain", {"api_key": "drop", "value": 2}),
+            "unknown": unknown,
+        }
+    )
+
+    assert sanitized["fixture"] == {"value": "kept"}
+    assert sanitized["items"] == ("plain", {"value": 2})
+    assert sanitized["unknown"] is unknown
 
 
 # --- resolve_debug ---

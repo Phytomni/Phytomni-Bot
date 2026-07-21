@@ -8,6 +8,10 @@ from __future__ import annotations
 
 import pytest
 
+from mcp_server_phytomni.mcp.formatting import agui as formatting_agui
+from mcp_server_phytomni.mcp.formatting.models import (
+    AguiEvent as LeafAguiEvent,
+)
 from mcp_server_phytomni.mcp.result_formatting import (
     AguiEvent,
     custom,
@@ -21,6 +25,13 @@ from mcp_server_phytomni.mcp.result_formatting import (
 )
 
 pytestmark = pytest.mark.server
+
+
+def test_agui_facade_reexports_leaf_factories() -> None:
+    """Legacy AG-UI imports remain the exact leaf functions and model."""
+    assert AguiEvent is LeafAguiEvent
+    assert run_started is formatting_agui.run_started
+    assert custom is formatting_agui.custom
 
 
 def test_run_started_carries_ids_and_redundant_type() -> None:

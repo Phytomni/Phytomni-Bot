@@ -15,10 +15,8 @@ citations and ``_sanitize_raw`` strips credential-pattern keys.
 # pylint: disable=too-many-lines
 
 import json
-import os
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
 from typing import Any
 
 from ..agents.shared.citation_enrichment import CITATION_BIBLIO_FIELDS
@@ -28,6 +26,9 @@ from ..contracts.deep_genome import (
     sanitize_nonnegative_int,
 )
 from ..runtime.terminal_artifacts import collect_terminal_artifacts
+from .formatting import agui as _formatting_agui
+from .formatting import models as _formatting_models
+from .formatting import redaction as _formatting_redaction
 from .universal_failures import (
     project_degraded_metadata,
     project_interop_metadata,
@@ -45,245 +46,24 @@ _DEEP_GENOME_FAILURE_MESSAGES = {
     "cancelled": "analysis task cancelled",
     "timed_out": "analysis task timed out",
 }
-
-
-@dataclass(frozen=True)
-class FormattedToolResult:
-    """Normalized client-facing representation of one tool response.
-
-    Attributes:
-        answer: Client-facing answer text or a human-readable summary
-            for tabular responses.
-        follow_up_questions: Suggested follow-up questions.
-        metadata: Additional structured metadata for task-style
-            responses.
-        references: Normalized cited references for retrieval-style
-            tools.
-        tabular: Optional tabular payload with ``headers`` / ``rows``
-            keys for DataAgent-style responses; ``None`` when the tool
-            does not produce a table.
-        output_dirs: Output directories for fan-out task agents (e.g.
-            DigitalDesign protein / promoter / terminator). Empty
-            tuple for single-task agents that surface one path via
-            ``metadata["output_dir"]``.
-    """
-
-    answer: str
-    follow_up_questions: tuple[str, ...] = ()
-    metadata: Mapping[str, Any] = field(default_factory=dict)
-    references: tuple[Mapping[str, Any], ...] = ()
-    tabular: Mapping[str, Any] | None = None
-    output_dirs: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class ToolResultEnvelope:
-    """Full tool response carrying display and raw payloads.
-
-    The ``raw`` field receives the handler payload after
-    ``_sanitize_raw`` recursively strips credential-pattern keys, so
-    HTTP and MCP clients can inspect provider-returned fields
-    (reasoning_content, usage, finish_reason, tool_calls, unknown
-    extensions) without leaking secrets.
-
-    Attributes:
-        formatted: Normalized display-oriented result.
-        raw: Sanitized handler payload returned by the agent path.
-    """
-
-    formatted: FormattedToolResult
-    raw: Any
-
-
-@dataclass(frozen=True)
-class FormattedToolChunk:
-    """One streamed chunk emitted by ``invoke_tool_streamed``.
-
-    Wraps a single provider chunk so the streaming seam returns a
-    typed object parallel to :class:`FormattedToolResult`, while
-    preserving the full chunk dict (including unknown vendor
-    extensions) for downstream SSE shaping in
-    ``api/openai_mapping.py``. Unlike :class:`ToolResultEnvelope`
-    there is no ``raw`` split because a streamed chunk carries no
-    handler-side aggregate — each chunk is already the raw provider
-    shape the client needs.
-
-    Attributes:
-        payload: One OpenAI ``chat.completion.chunk`` dict.
-    """
-
-    payload: Mapping[str, Any]
-
-
-@dataclass(frozen=True)
-class AguiEvent:
-    """One AG-UI SSE event frame.
-
-    Carries the three heterogeneous frame kinds the streaming seam
-    emits (P0 token deltas, P1 stage events, terminal text / custom
-    blocks) under one type so the SSE shaper renders any of them
-    uniformly. ``data`` already embeds a redundant ``"type"`` key so
-    Web can parse without relying on the ``event:`` line.
-
-    Attributes:
-        type: AG-UI event type (e.g. ``"RunStarted"``).
-        data: The event payload, including its own ``"type"`` key.
-    """
-
-    type: str
-    data: Mapping[str, Any]
-
-
-def run_started(run_id: str, dialogue_id: str | None) -> AguiEvent:
-    """Return the opening ``RunStarted`` frame carrying the registry id."""
-    return AguiEvent(
-        type="RunStarted",
-        data={
-            "type": "RunStarted",
-            "run_id": run_id,
-            "dialogue_id": dialogue_id,
-        },
-    )
-
-
-def text_message_start(message_id: str) -> AguiEvent:
-    """Return the ``TextMessageStart`` frame opening one assistant message."""
-    return AguiEvent(
-        type="TextMessageStart",
-        data={"type": "TextMessageStart", "message_id": message_id},
-    )
-
-
-def text_message_content(message_id: str, delta: str) -> AguiEvent:
-    """Return one ``TextMessageContent`` delta frame."""
-    return AguiEvent(
-        type="TextMessageContent",
-        data={
-            "type": "TextMessageContent",
-            "message_id": message_id,
-            "delta": delta,
-        },
-    )
-
-
-def text_message_end(message_id: str) -> AguiEvent:
-    """Return the ``TextMessageEnd`` frame closing one assistant message."""
-    return AguiEvent(
-        type="TextMessageEnd",
-        data={"type": "TextMessageEnd", "message_id": message_id},
-    )
-
-
-def run_finished(run_id: str) -> AguiEvent:
-    """Return the terminal ``RunFinished`` frame."""
-    return AguiEvent(
-        type="RunFinished",
-        data={"type": "RunFinished", "run_id": run_id},
-    )
-
-
-def run_error(code: str, message: str) -> AguiEvent:
-    """Return a ``RunError`` frame with a stable code and safe message."""
-    return AguiEvent(
-        type="RunError",
-        data={"type": "RunError", "code": code, "message": message},
-    )
-
-
-def step_started(step_name: str) -> AguiEvent:
-    """Return a ``StepStarted`` frame naming one semantic stage."""
-    return AguiEvent(
-        type="StepStarted",
-        data={"type": "StepStarted", "step_name": step_name},
-    )
-
-
-def custom(name: str, value: Any) -> AguiEvent:
-    """Return a ``Custom`` profile frame (e.g. phyto.references)."""
-    return AguiEvent(
-        type="Custom",
-        data={"type": "Custom", "name": name, "value": value},
-    )
-
-
-def format_tool_chunk(payload: Mapping[str, Any]) -> FormattedToolChunk:
-    """Wrap one streamed chunk payload in a :class:`FormattedToolChunk`.
-
-    Args:
-        payload: One OpenAI ``chat.completion.chunk`` dict produced by
-            ``stream_phyto_chat_chunks``.
-
-    Returns:
-        The chunk wrapped in a frozen :class:`FormattedToolChunk` so
-        callers cannot mutate the streaming timeline by editing fields
-        in-place.
-    """
-    return FormattedToolChunk(payload=payload)
-
-
-_SECRET_KEY_PATTERNS: frozenset[str] = frozenset(
-    {
-        "api_key",
-        "apikey",
-        "secret",
-        "token",
-        "bearer",
-        "authorization",
-        "session_id",
-        "password",
-        "credential",
-    }
-)
-_NON_SECRET_OVERRIDES: frozenset[str] = frozenset(
-    {
-        "tokens",
-        "prompt_tokens",
-        "completion_tokens",
-        "total_tokens",
-        "max_tokens",
-        "max_completion_tokens",
-        "n_tokens",
-    }
-)
-
-
-def _is_sensitive_key(key: Any) -> bool:
-    """Return True when a mapping key looks like it carries a secret.
-
-    Lowercased key names containing any pattern in
-    ``_SECRET_KEY_PATTERNS`` are sensitive, except for explicit
-    overrides in ``_NON_SECRET_OVERRIDES`` (e.g. tokenizer counts
-    ``prompt_tokens`` / ``completion_tokens`` that share the word
-    "token" with the credential pattern but are plain metrics).
-    """
-    if not isinstance(key, str) or not key:
-        return False
-    lowered = key.lower()
-    if lowered in _NON_SECRET_OVERRIDES:
-        return False
-    return any(pattern in lowered for pattern in _SECRET_KEY_PATTERNS)
-
-
-def _sanitize_raw(payload: Any) -> Any:
-    """Return ``payload`` with secret-pattern keys recursively removed.
-
-    Walks mappings and list / tuple sequences. Drops mapping entries
-    whose key satisfies ``_is_sensitive_key``. Lists return as lists,
-    tuples as tuples; scalars (including strings and bytes) pass
-    through unchanged. The result is a fresh structure so callers can
-    mutate it without affecting the original payload.
-    """
-    if isinstance(payload, Mapping):
-        return {
-            key: _sanitize_raw(value)
-            for key, value in payload.items()
-            if not _is_sensitive_key(key)
-        }
-    if isinstance(payload, list):
-        return [_sanitize_raw(item) for item in payload]
-    if isinstance(payload, tuple):
-        return tuple(_sanitize_raw(item) for item in payload)
-    return payload
+AguiEvent = _formatting_agui.AguiEvent
+custom = _formatting_agui.custom
+run_error = _formatting_agui.run_error
+run_finished = _formatting_agui.run_finished
+run_started = _formatting_agui.run_started
+step_started = _formatting_agui.step_started
+text_message_content = _formatting_agui.text_message_content
+text_message_end = _formatting_agui.text_message_end
+text_message_start = _formatting_agui.text_message_start
+FormattedToolChunk = _formatting_models.FormattedToolChunk
+FormattedToolResult = _formatting_models.FormattedToolResult
+ToolResultEnvelope = _formatting_models.ToolResultEnvelope
+format_tool_chunk = _formatting_models.format_tool_chunk
+_is_sensitive_key = _formatting_redaction.is_sensitive_key
+resolve_debug = _formatting_redaction.resolve_debug
+_sanitize_raw = _formatting_redaction.sanitize_raw
+strip_agent_result = _formatting_redaction.strip_agent_result
+strip_chat_completion = _formatting_redaction.strip_chat_completion
 
 
 def build_tool_result_envelope(
@@ -1101,141 +881,3 @@ def _string_or_none(value: Any) -> str | None:
 def _json_dumps(value: Any) -> str:
     """Serialize a value using the repository JSON conventions."""
     return json.dumps(value, ensure_ascii=False)
-
-
-# --- Response projection (debug / default mode) ---
-
-_DEBUG_ENV = "PHYTOMNI_DEBUG"
-_TRUTHY = frozenset({"1", "true", "yes", "on"})
-
-
-def resolve_debug(per_request: bool | None) -> bool:
-    """Return True when debug mode is active.
-
-    PHYTOMNI_DEBUG=1 env var is a global operator override that
-    forces debug mode regardless of the per-request flag.
-
-    Args:
-        per_request: Per-request debug flag from HTTP API payload.
-            MCP stdio passes None since there is no per-request flag.
-
-    Returns:
-        True if either the env var or the per-request flag is truthy.
-    """
-    if _env_debug_enabled():
-        return True
-    return bool(per_request)
-
-
-def strip_agent_result(result: dict) -> dict:
-    """Remove 'raw' from a {formatted, raw} result dict.
-
-    Used by MCP dispatch_tool and agent runs endpoints to hide the
-    sanitized handler payload in default (non-debug) mode.
-
-    Returns a new dict; the original is not mutated.
-    """
-    return {k: v for k, v in result.items() if k != "raw"}
-
-
-def _env_debug_enabled() -> bool:
-    """Check whether PHYTOMNI_DEBUG env var is set to a truthy value."""
-    raw = os.getenv(_DEBUG_ENV, "").strip().lower()
-    return raw in _TRUTHY
-
-
-_CHAT_COMPLETION_KEEP = frozenset(
-    {
-        "id",
-        "object",
-        "created",
-        "model",
-        "choices",
-        "usage",
-        "formatted",
-        "run_id",
-        "degraded_tracking",
-    }
-)
-_MESSAGE_KEEP = frozenset(
-    {
-        "role",
-        "content",
-        "reasoning_content",
-        "tool_calls",
-        "finish_reason",
-        "index",
-    }
-)
-_USAGE_KEEP = frozenset(
-    {
-        "prompt_tokens",
-        "completion_tokens",
-        "total_tokens",
-    }
-)
-
-
-def strip_chat_completion(completion: dict) -> dict:
-    """Remove debug-only fields from a to_chat_completion() result.
-
-    Replaces ``choices[].message.content`` with ``formatted.answer``
-    (normalized ``[N]`` citation format consistent with references),
-    strips ``answer`` from ``formatted`` (already in content),
-    trims ``usage`` to three token fields, and drops provider
-    extensions (``raw``, ``phytomni_state``, ``system_fingerprint``,
-    ``service_tier``, ``prompt_logprobs``).
-
-    Returns a new dict; the original is not mutated.
-    """
-    normalized_answer = _extract_formatted_answer(completion)
-    result = {
-        k: v for k, v in completion.items() if k in _CHAT_COMPLETION_KEEP
-    }
-    if "choices" in result:
-        result["choices"] = [
-            _strip_choice(c, normalized_answer) for c in result["choices"]
-        ]
-    if "usage" in result and isinstance(result["usage"], dict):
-        result["usage"] = {
-            k: v for k, v in result["usage"].items() if k in _USAGE_KEEP
-        }
-    if "formatted" in result and isinstance(result["formatted"], dict):
-        result["formatted"] = {
-            k: v for k, v in result["formatted"].items() if k != "answer"
-        }
-    return result
-
-
-def _extract_formatted_answer(
-    completion: dict,
-) -> str | None:
-    """Read formatted.answer for content normalization."""
-    formatted = completion.get("formatted")
-    if isinstance(formatted, dict):
-        answer = formatted.get("answer")
-        if isinstance(answer, str):
-            return answer
-    return None
-
-
-def _strip_choice(
-    choice: dict,
-    normalized_answer: str | None,
-) -> dict:
-    """Keep only standard fields in one choice dict.
-
-    When normalized_answer is provided, it replaces the message
-    content so the consumer sees the [N]-style citations that
-    match formatted.references.
-    """
-    stripped = {k: v for k, v in choice.items() if k != "message"}
-    message = choice.get("message")
-    if isinstance(message, dict):
-        clean_message = {
-            k: v for k, v in message.items() if k in _MESSAGE_KEEP
-        }
-        if normalized_answer is not None:
-            clean_message["content"] = normalized_answer
-        stripped["message"] = clean_message
-    return stripped

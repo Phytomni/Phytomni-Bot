@@ -10,17 +10,51 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `197`
+- Authorized records: `196`
 
 ## Informational counts
 
-| Tool and rule | Records |
-| --- | ---: |
+| Tool and rule                                                     | Records |
+| ----------------------------------------------------------------- | ------: |
+| `flake8:E203`                                                     |       1 |
+| `flake8:W503`                                                     |       1 |
+| `mypy:ignore_missing_imports`                                     |       2 |
+| `mypy:misc`                                                       |       2 |
+| `mypy:prop-decorator`                                             |       1 |
+| `pylint:C0103`                                                    |       1 |
+| `pylint:C0116`                                                    |       1 |
+| `pylint:R0801`                                                    |      78 |
+| `pylint:R0903`                                                    |       7 |
+| `pylint:R0913`                                                    |       1 |
+| `pylint:R0917`                                                    |       1 |
+| `pylint:W0613`                                                    |       1 |
+| `pylint:broad-exception-caught`                                   |       3 |
+| `pylint:contextmanager-generator-missing-cleanup`                 |       2 |
+| `pylint:max-module-lines`                                         |       1 |
+| `pylint:path-ignore`                                              |       4 |
+| `pylint:protected-access`                                         |      43 |
+| `pylint:too-few-public-methods`                                   |       3 |
+| `pylint:too-many-arguments`                                       |       8 |
+| `pylint:too-many-instance-attributes`                             |       3 |
+| `pylint:too-many-lines`                                           |       2 |
+| `pylint:too-many-locals`                                          |       7 |
+| `pylint:too-many-positional-arguments`                            |       1 |
+| `pylint:too-many-statements`                                      |       1 |
+| `pylint:wrong-import-position`                                    |       1 |
+| `pymarkdown:md013`                                                |       1 |
+| `pytest:error`                                                    |       1 |
+| `pytest:ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning` |       1 |
+| `ruff:ASYNC109`                                                   |       9 |
+| `ruff:ASYNC110`                                                   |       3 |
+| `ruff:E402`                                                       |       2 |
+| `ruff:N802`                                                       |       1 |
+| `ruff:N803`                                                       |       1 |
+| `ruff:N815`                                                       |       1 |
 
 ## Exact records
 
 | ID | Tool | Rule | Classification | Mechanism | Target | Path | Symbol | Fingerprint | Owner | Introduced | Review | Expiry | Remediation | Tests |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| \--- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `SAE-STR-0001` | pylint | too-few-public-methods | structural | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/profile.py | DeepGenomeProfileMixin | `sha256:f919078a50df4db511f41d14935848003d67ff934117be82f1f237cc9b4cf6f4` | bot-maintainers | 2026-07-18 | 2027-01-18 | — | — | tests/agents/test_cache_candidates.py, tests/agents/test_deep_genome_sql.py |
 | `SAE-STR-0002` | pylint | too-few-public-methods | structural | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/report.py | DeepGenomeReportMixin | `sha256:4b34b5b2a359f15b41ff6c5f9b12ab49cb33631f7f5f1982518b4458f4ac89e5` | bot-maintainers | 2026-07-18 | 2027-01-18 | — | — | tests/agents/test_deep_genome_chat_subgraph.py, tests/agents/test_deep_genome_knowledge_subgraph.py, tests/agents/test_deep_genome_lifecycle.py, tests/agents/test_deep_genome_report.py |
 | `SAE-STR-0003` | pylint | too-few-public-methods | structural | inline | symbol | src/mcp_server_phytomni/agents/review/report.py | ReviewReportMixin | `sha256:1437a6aeed48bfca0a47bfe423e9f70a2258c20f3ae7e558805dfc7cc19af8a8` | bot-maintainers | 2026-07-18 | 2027-01-18 | — | — | tests/agents/test_review_add_query_failures.py, tests/agents/test_review_report_helpers.py, tests/agents/test_review_revised_fan_out.py |
@@ -66,7 +100,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0075` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/config/required_env.py | 16:28 | `sha256:0a106c71d1e188f33ba116a1a15980da2ccbd8924042f13b31d0dd5df3f2585c` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/config/test_required_env.py, tests/unit/test_defaults.py, static-analysis-inventory |
 | `SAE-TMP-0076` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/config/required_env.py | 41:46 | `sha256:b181294b667a5a5e3b3cc601d177d1d5e50806e12df472c917d370454afa17f9` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/config/test_required_env.py, static-analysis-inventory |
 | `SAE-TMP-0078` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/mcp/app.py | 776:781 | `sha256:4a57d42c7066ead11e72824504ea38c35100a972dea9d50d624994daf75dfac4` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/server/test_mcp_app_invoke.py, tests/server/test_mcp_app_validation.py, static-analysis-inventory |
-| `SAE-TMP-0079` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/mcp/result_formatting.py | 1148:1155 | `sha256:e30cd2c0562ade084c28cd8c70e311f403d6e4e7ba05409bd687cac3e3bacbc4` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_result_formatting_projection.py, static-analysis-inventory |
+| `SAE-TMP-0079` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/mcp/formatting/redaction.py | 96:103 | `sha256:e7047ffdfdaaab76f59b54867bf290f5dc32de290bb49720af4c1382e43b5c13` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_result_formatting_projection.py, static-analysis-inventory |
 | `SAE-TMP-0083` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 45:52 | `sha256:781cbd4798bbd051136fe6306e69070b99da317486e9f110b66c4c53f764ebd8` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_models.py, tests/server/test_memory_http.py, static-analysis-inventory |
 | `SAE-TMP-0084` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 59:64 | `sha256:dab91daad1dc692da89b2d3c4bedfcd081201a6cd5e592f6d9f289f0ad825f66` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_models.py, tests/server/test_memory_http.py, static-analysis-inventory |
 | `SAE-TMP-0085` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 73:79 | `sha256:02a0ef0f7f5041c275b28c1c4c24c010eae62e1de902e15478e70af3b9aa9b42` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_accessor.py, tests/server/test_memory_http.py, static-analysis-inventory |
@@ -74,9 +108,9 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0087` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_analyst_graph_io.py | 37:60 | `sha256:7df9fed3886f917a843ce0b27b08bc06111ab61bf3f15c8d6cb7bc1c73814ba3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0092` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_brief_gene_chat_subgraph.py | 71:79 | `sha256:36c489b726b7409ac52d963563d5e3c3db3049c965e714694d291c98f53e459c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0093` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_brief_gene_knowledge_subgraph.py | 81:86 | `sha256:0c5f1d7ed62b15af3b87f94ba171987177371c7e209c1daad28c40fc6c396cad` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0100` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_dispatch_routing.py | 208:218 | `sha256:6ec90dba8d40b01c4189bf5264b3872181875855cfee0dfb11b5277a33bbd81e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0101` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_dispatch_routing.py | 236:246 | `sha256:e755caa3cded6202c151581162fcd5492923c77cec5bf4cd06c61650cbd88ebe` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0102` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_dispatch_routing.py | 247:256 | `sha256:14cda471c334b08b8932ae449953e69923ce5a21b05940575ba4bcb750879d89` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0100` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_dispatch_routing.py | 209:219 | `sha256:ec70d662608b3e5ed97720466b6aca559171cc99bd4f5537cf6ee84ee39db3e7` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0101` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_dispatch_routing.py | 237:247 | `sha256:88facf0a1eaf91e36dc340fb0da1d0ed2a6a13d280d7bbeba5a851c08e5576fb` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0102` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_deep_genome_dispatch_routing.py | 248:257 | `sha256:1eb27c37f95e00b9fe73cb20478b0f747bdf699f651be407296a966c746ab0d1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0107` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_environment_agent.py | 168:176 | `sha256:4620aee296dabe883d84e3fc303a3a4d7fd87eee6bff62a845d9ed2318b34a74` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0108` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_graphs_manifest_export.py | 179:194 | `sha256:bf3ab1c0c50e8432330c1340c5fa446ca0e2f69697f51353579a6054cdff6615` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0109` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_resume_kernel.py | 25:42 | `sha256:4ad39b4ad4b4823fe799020de33c01bfd5161991446aff20e5be60d87f550eae` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -109,13 +143,13 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0175` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_store.py | 39:50 | `sha256:aa7f4443755b41ff47174f62a6aac518efd4fb796d5af7db82650ceb763d6560` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0176` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_store.py | 52:65 | `sha256:7196ce45cf674e83d55488b732a0eea6b247a4fc6e465683d083bcd6ed0c2b9c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0177` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_stream_lifecycle.py | 228:241 | `sha256:9841db38ab87a9cc9ea8495614647541015f3013773fa3a52a42c315377a2dd6` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0194` | pylint | R0903 | structural | diagnostic | symbol | tests/agents/test_deep_genome_submit.py | _FakeApp | `sha256:1f7f51708ece122db06fccc8c565c771ccda09fd3dab04360277d25248e3fef0` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0200` | pylint | R0903 | structural | diagnostic | symbol | tests/conftest.py | _build_fake_obs_client._FakeObsClient | `sha256:2dc747295b1e436a070df77a883fd813565b56d9c86de87801b81cfbb178fae7` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0194` | pylint | R0903 | structural | diagnostic | symbol | tests/agents/test_deep_genome_submit.py | \_FakeApp | `sha256:1f7f51708ece122db06fccc8c565c771ccda09fd3dab04360277d25248e3fef0` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0200` | pylint | R0903 | structural | diagnostic | symbol | tests/conftest.py | \_build_fake_obs_client.\_FakeObsClient | `sha256:2dc747295b1e436a070df77a883fd813565b56d9c86de87801b81cfbb178fae7` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0211` | pylint | R0903 | structural | diagnostic | symbol | tests/unit/e2e/test_polling.py | test_http_poll_records_distinct_monotonic_revisions.Client | `sha256:f4a6bb85b202f6f9be1a4bdf895fd80b219a442eab4fd5f04fb29cd46b4c3d93` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0213` | pylint | R0903 | structural | diagnostic | symbol | tests/unit/interop/test_fake_peer_e2e.py | _FakeMCPServer | `sha256:0dcf2d975d525a931a08dd914e21c20836ea700969650768d93515b034f55122` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0214` | pylint | R0903 | structural | diagnostic | symbol | tests/unit/test_api_file_upload.py | _ChunkedUpload | `sha256:eda00c1f02071e7fa974cdef673f09b7b2efc3b1302890c475dbc5ed46cefe1d` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0215` | pylint | R0903 | structural | diagnostic | symbol | tests/unit/test_storage_error_sanitization.py | _ExplodingObsClient | `sha256:826980652eb87a9cc733947dd7a6328efa942f2f98b5cb373e5db5d4ae417825` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0222` | pylint | broad-exception-caught | structural | inline | symbol | e2e/helpers/polling.py | _reconciled_task_state | `sha256:58b3b2f3bb4ee5b58ee8ca5380146a1ab5d43c18bff5e36510cb912eece854a3` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0213` | pylint | R0903 | structural | diagnostic | symbol | tests/unit/interop/test_fake_peer_e2e.py | \_FakeMCPServer | `sha256:0dcf2d975d525a931a08dd914e21c20836ea700969650768d93515b034f55122` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0214` | pylint | R0903 | structural | diagnostic | symbol | tests/unit/test_api_file_upload.py | \_ChunkedUpload | `sha256:eda00c1f02071e7fa974cdef673f09b7b2efc3b1302890c475dbc5ed46cefe1d` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0215` | pylint | R0903 | structural | diagnostic | symbol | tests/unit/test_storage_error_sanitization.py | \_ExplodingObsClient | `sha256:826980652eb87a9cc733947dd7a6328efa942f2f98b5cb373e5db5d4ae417825` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0222` | pylint | broad-exception-caught | structural | inline | symbol | e2e/helpers/polling.py | \_reconciled_task_state | `sha256:58b3b2f3bb4ee5b58ee8ca5380146a1ab5d43c18bff5e36510cb912eece854a3` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0223` | pylint | broad-exception-caught | structural | inline | symbol | src/mcp_server_phytomni/api/a2ui_runtime.py | project_review_interrupt | `sha256:54078161cb8bf1725f6e4eec15a243bb9cd8318b335fa825016ecc66e0f40d2c` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | tests/server/test_a2ui_review_http.py, tests/server/test_a2ui_runtime.py, static-analysis-inventory |
 | `SAE-TMP-0227` | pylint | broad-exception-caught | temporary | inline | symbol | src/mcp_server_phytomni/mcp/stream_lifecycle.py | project_stream_failures | `sha256:0fa2621f7153da1bff3a4df5a0a23d14425aa3d17b782f9545d0c2e657296557` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0228` | pylint | contextmanager-generator-missing-cleanup | structural | inline | span | tests/agents/test_cache_candidates.py | — | `sha256:1a93e1b05a8cfa872aeddc39c7850189f9089c16b59a0d36c97909cc4341ae03` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
@@ -125,7 +159,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0237` | pylint | path-ignore | structural | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:3e1bc269c16210ee4149f6c708497a514291d2716f41ad7186c731fe6fce7ea3` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0238` | pylint | path-ignore | structural | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:829ec7992def978f01ad8efae0a0ee64c5e1767cfeb76f3a13236dc4ed5cef23` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0239` | pylint | path-ignore | structural | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:b7c41d52ad3e667583ed5bc27c3cffee33f6c621371befb228c17357718fc94a` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0241` | pylint | protected-access | structural | inline | symbol | tests/agents/test_analyst_graph_nodes.py | _capture_create_payload | `sha256:cd6697f92e2f53b8be8ff1d45348694b78b636827525788f5ca1dab931844253` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0241` | pylint | protected-access | structural | inline | symbol | tests/agents/test_analyst_graph_nodes.py | \_capture_create_payload | `sha256:cd6697f92e2f53b8be8ff1d45348694b78b636827525788f5ca1dab931844253` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0245` | pylint | protected-access | structural | inline | symbol | tests/agents/test_deep_genome_chat_subgraph.py | test_dispatch_chat_uses_subgraph | `sha256:dc8cf6a9d64081107dcb8c0509cf9b38ffc98a1931b77e52d26b7fee2d4383eb` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0246` | pylint | protected-access | structural | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_deep_genome_generic_dispatch_is_submit_only | `sha256:d7231430fe9c4901f96ab215506cd45a2986336a0c009b0bf3ebb77dc60d81da` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0247` | pylint | protected-access | structural | inline | symbol | tests/agents/test_deep_genome_knowledge_subgraph.py | test_dispatch_knowledge_uses_subgraph | `sha256:e738b7820e753539f447e164a30d465df7abba5f27a3730d42851135fa2b38aa` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
@@ -151,26 +185,26 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0276` | pylint | too-many-lines | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:a301ef88f14d3dd14fabdf89188852adf8ca15118b49e67eb1345231652dc7f0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0277` | pylint | too-many-lines | temporary | inline | span | src/mcp_server_phytomni/mcp/result_formatting.py | — | `sha256:70b34244fbe17b8196a2dc327969febd7f2be17c37563661b5bf523edf2c16c7` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0278` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/agents/chat/service.py | — | `sha256:619fb3f18b0672ce5a813d4a2f3c75fc0e1a731df01e119a42c8705bfb1766a9` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0279` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | DeepGenomeDispatchMixin | `sha256:8b9c182976fd0dbd7b32a83526a7dc30a188ff01fbec3853ac002a0ea013fc35` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0279` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | DeepGenomeDispatchMixin | `sha256:b62e929137df8fed1262575b6b082989b386a2ce9c379c604be6d2ec0c710dad` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0280` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:d98c5d2f2fd683297caf6428dd7821e725b53234dc57162abb2e03b63f0d8b1a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0281` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:fca70926837df2569a4ae2b4c8be446ca58aefd1a8367b32c8d63f7f391d0589` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0287` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/mcp/result_formatting.py | _format_design_result | `sha256:8628b792cea0d61f8299df4d795e861c92b404813e5abe827b980f211edbe83f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0287` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/mcp/result_formatting.py | \_format_design_result | `sha256:8628b792cea0d61f8299df4d795e861c92b404813e5abe827b980f211edbe83f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0288` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/storage/uploads.py | — | `sha256:d713586935bbfb52b818a5e473e7d2169737526f18839e9196e5831051e4c466` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0289` | pylint | too-many-locals | temporary | inline | span | tests/agents/test_deep_genome_lifecycle.py | — | `sha256:c89456f6ae1c750fc0f451d10d4b0885a15b45a3ff3d5623b86b86decb5721ba` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0290` | pylint | too-many-positional-arguments | temporary | inline | span | src/mcp_server_phytomni/agents/data/nl2sql.py | — | `sha256:5070abd4d3f8904dfe8375cdec6872bd6d155615cc6bd4b54f914cf5e07c75d2` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0292` | pylint | too-many-statements | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:d31ea0d7a171aebd3fbf1bd2c0eca47443f9cf55147649ba476c187710e62378` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0293` | pylint | wrong-import-position | structural | inline | span | scripts/_visualize_bootstrap.py | — | `sha256:637afabc246f45d9145f3aa93a39fe94d65fb830b2067196e8f33d8b77ed1847` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0293` | pylint | wrong-import-position | structural | inline | span | scripts/\_visualize_bootstrap.py | — | `sha256:637afabc246f45d9145f3aa93a39fe94d65fb830b2067196e8f33d8b77ed1847` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0294` | pymarkdown | md013 | structural | config | config | pyproject.toml | tool.pymarkdown.plugins.md013.enabled | `sha256:34d8c475a236a211d36db927ee2de462f03fdb4f3f07864359540255c750bf01` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0295` | pytest | error | structural | config | config | pyproject.toml | tool.pytest.ini_options.filterwarnings[0] | `sha256:0aa661937816a1fb17f333eb9a372e15f3093ed7bf8b75bc5d904d38422ef20f` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0298` | pytest | ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning | temporary | config | config | pyproject.toml | tool.pytest.ini_options.filterwarnings[1] | `sha256:3b0438047d9767b1eb34f8a245bfa1e11abe24c3fc8011aee6a4f08905aef12a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0300` | ruff | ASYNC110 | structural | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/report.py | _write_async | `sha256:a7cb1e8424467f0727f7a3b99bf30356d9bb18b99462d892fbf92402f43dd198` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0300` | ruff | ASYNC110 | structural | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/report.py | \_write_async | `sha256:a7cb1e8424467f0727f7a3b99bf30356d9bb18b99462d892fbf92402f43dd198` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0301` | ruff | ASYNC110 | structural | inline | symbol | src/mcp_server_phytomni/api/run_lifecycle.py | purge_expired_runs_best_effort_async | `sha256:d9bfcdb38455dce2970fd011c237a1131de5632e63d545189a9d87480a21b017` | bot-maintainers | 2026-07-20 | 2027-01-20 | — | — | tests/server/test_run_gc_background.py |
-| `SAE-TMP-0302` | ruff | ASYNC110 | structural | inline | symbol | src/mcp_server_phytomni/api/relay/obs.py | _wait_obs_future | `sha256:a8f3e3adef4dab97a6423e96bc1f91159c519a5060e52a58156302de97e99e33` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0310` | ruff | E402 | structural | inline | span | scripts/_visualize_bootstrap.py | — | `sha256:5bb9d315b606c4e79f7f08a5a3896da1ae9fe6ea43c2d6d2055599a1c4e33f40` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0311` | ruff | E402 | structural | inline | span | scripts/_visualize_bootstrap.py | — | `sha256:9e583e7c25de4e2c0f6b97674641e1e427cb71f230c2aa96fb00b4aa48ddf6cf` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0312` | ruff | N802 | structural | config | config | pyproject.toml | tool.ruff.lint.per-file-ignores.typings/**/*.pyi | `sha256:bf0326cb042985ec93478cbec49d2e724864485a45acf6ad1e15bc9d520eb9a4` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0302` | ruff | ASYNC110 | structural | inline | symbol | src/mcp_server_phytomni/api/relay/obs.py | \_wait_obs_future | `sha256:a8f3e3adef4dab97a6423e96bc1f91159c519a5060e52a58156302de97e99e33` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0310` | ruff | E402 | structural | inline | span | scripts/\_visualize_bootstrap.py | — | `sha256:5bb9d315b606c4e79f7f08a5a3896da1ae9fe6ea43c2d6d2055599a1c4e33f40` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0311` | ruff | E402 | structural | inline | span | scripts/\_visualize_bootstrap.py | — | `sha256:9e583e7c25de4e2c0f6b97674641e1e427cb71f230c2aa96fb00b4aa48ddf6cf` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0312` | ruff | N802 | structural | config | config | pyproject.toml | tool.ruff.lint.per-file-ignores.typings/**/\*.pyi | `sha256:bf0326cb042985ec93478cbec49d2e724864485a45acf6ad1e15bc9d520eb9a4` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0313` | ruff | N803 | structural | config | config | pyproject.toml | tool.ruff.lint.per-file-ignores.typings/**/*.pyi | `sha256:04fd5950474f7a9f1e297946d6fbe12928593497186dbe231583d79859f82d30` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0314` | ruff | N815 | structural | config | config | pyproject.toml | tool.ruff.lint.per-file-ignores.typings/**/*.pyi | `sha256:c46f9c1d9fbddac831ac4f216f43c4ff6703ad4274821d10b4f0186703a912e0` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
+| `SAE-TMP-0314` | ruff | N815 | structural | config | config | pyproject.toml | tool.ruff.lint.per-file-ignores.typings/\*\*/*.pyi | `sha256:c46f9c1d9fbddac831ac4f216f43c4ff6703ad4274821d10b4f0186703a912e0` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0315` | pylint | protected-access | structural | inline | symbol | tests/agents/test_analyst_graph_nodes.py | test_submit_output_dir_forwards_input_fingerprint | `sha256:854cb4451cc07c0b5a5399e4c782adb77e2a6ce896ed0e39709ba05851d78eaa` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0316` | pylint | protected-access | structural | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_dispatch_coordinator_receives_effective_poll_id | `sha256:ff5a3cfe8bf5d4cf7443bd0ec5540f676d620ffcb1e4139a1f5057275463540b` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0317` | pylint | protected-access | structural | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_non_transferred_type_routes_subgraph | `sha256:23079a67586d9358ab26bd2222ab2d62c607ad2726a4303a8ca7ff4c34b09458` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
@@ -202,7 +236,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0344` | pylint | protected-access | structural | inline | symbol | tests/server/test_run_gc_background.py | test_async_gc_reraises_unexpected_worker_failure | `sha256:7730531788cdeed258784f623dcfaab9c7c60b7b090a8e6a9f7489044aba5d96` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0345` | pylint | protected-access | structural | inline | symbol | tests/server/test_run_gc_background.py | test_gc_dependency_and_background_task_are_native_async | `sha256:a56b1e9b1d28f2f6ef41e27dea435ec61af8684205df4ccc5b6404085dd27e87` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0346` | pylint | protected-access | structural | inline | symbol | tests/server/test_run_gc_background.py | test_sync_write_routes_declare_gc_dependency | `sha256:aa43846d8f6ff46e20300d268aed091e8c2feb9cebc014c5a8f92c092d1512b8` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0347` | pylint | too-many-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | DeepGenomeDispatchMixin | `sha256:d25cda03cb836ca2762993e039b797c3cf086b83adc97e96d0b5434c166411fe` | bot-maintainers | 2026-07-19 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0348` | pylint | C0103 | structural | inline | span | typings/obs/__init__.pyi | — | `sha256:09aee44e3ac01f4a545115d3328a6fb65f01c5c33e02dd0377e0039056d5484e` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | typings/obs/__init__.pyi, tests/unit/test_style_naming.py, static-analysis-inventory |
 | `SAE-TMP-0349` | pylint | C0116 | structural | inline | span | typings/obs/__init__.pyi | — | `sha256:2f9a477a4c23b20217aab2ea3567537fbb4c460a226ddff45484eb4db2d1f337` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | typings/obs/__init__.pyi, tests/unit/test_style_naming.py, static-analysis-inventory |
 | `SAE-TMP-0350` | pylint | R0903 | structural | inline | span | typings/obs/__init__.pyi | — | `sha256:5c977671811194457cd243d6dd05218d1fc7f86882833161d8a50e2dfe5298f8` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | typings/obs/__init__.pyi, tests/unit/test_style_naming.py, static-analysis-inventory |
@@ -210,12 +243,12 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0352` | pylint | R0917 | structural | inline | span | typings/obs/__init__.pyi | — | `sha256:8af6543ba16f67381086f0353049a789f5614276cc7434e402f6f4567c5c46d3` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | typings/obs/__init__.pyi, tests/unit/test_style_naming.py, static-analysis-inventory |
 | `SAE-TMP-0353` | pylint | W0613 | structural | inline | span | typings/obs/__init__.pyi | — | `sha256:f0fc55ced5b6b61c39a6343c9096d648e4ab54e91be08eb8ed93d449a49e297c` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | typings/obs/__init__.pyi, tests/unit/test_style_naming.py, static-analysis-inventory |
 | `SAE-TMP-0354` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/chat/service.py | run_phyto_chat_cached | `sha256:7c8abf6977bb26a0953727ea231b896bacab040602ba7337e7a037e5d24f7c0d` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/chat/service.py, static-analysis-inventory |
-| `SAE-TMP-0355` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/profile.py | _post_bi_sql | `sha256:e9b02987d1e2de686402c3ea46f0b75ae6f86cf4a2b350217807b3727273b550` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/deep_genome/profile.py, static-analysis-inventory |
-| `SAE-TMP-0356` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/profile.py | _cached_gene_symbol_lookup | `sha256:063f0eeece2e09a0127065a7fb7888cd0028cf66cc935056a403369974743e09` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/deep_genome/profile.py, static-analysis-inventory |
-| `SAE-TMP-0357` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/profile.py | _cached_gene_annotation_lookup | `sha256:e7e9cea52b216d68a49a1cad774cd5d5e3a0b2f9e2b314b54c6436ed31eaf6a7` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/deep_genome/profile.py, static-analysis-inventory |
+| `SAE-TMP-0355` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/profile.py | \_post_bi_sql | `sha256:e9b02987d1e2de686402c3ea46f0b75ae6f86cf4a2b350217807b3727273b550` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/deep_genome/profile.py, static-analysis-inventory |
+| `SAE-TMP-0356` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/profile.py | \_cached_gene_symbol_lookup | `sha256:063f0eeece2e09a0127065a7fb7888cd0028cf66cc935056a403369974743e09` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/deep_genome/profile.py, static-analysis-inventory |
+| `SAE-TMP-0357` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/profile.py | \_cached_gene_annotation_lookup | `sha256:e7e9cea52b216d68a49a1cad774cd5d5e3a0b2f9e2b314b54c6436ed31eaf6a7` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/deep_genome/profile.py, static-analysis-inventory |
 | `SAE-TMP-0358` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/evolution/agent.py | find_spa_taxids | `sha256:9b1db3e2c21f23bbdfc39763a9fee97b55fb045dbc6abd84b744aa9df2be511f` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/evolution/agent.py, static-analysis-inventory |
-| `SAE-TMP-0359` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | _retrieve_scope_docs | `sha256:2d450f9fdf3c5d37449bc7d68f8e5757884d952f8eefc3677e0cb58736dd6063` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/knowledge/retrieval.py, static-analysis-inventory |
-| `SAE-TMP-0360` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | _rerank_batch | `sha256:4de11f90d993c77a4329ab5845fef2ae2a326f2617324c1929fed665b7389c9d` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/knowledge/retrieval.py, static-analysis-inventory |
+| `SAE-TMP-0359` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | \_retrieve_scope_docs | `sha256:2d450f9fdf3c5d37449bc7d68f8e5757884d952f8eefc3677e0cb58736dd6063` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/knowledge/retrieval.py, static-analysis-inventory |
+| `SAE-TMP-0360` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | \_rerank_batch | `sha256:4de11f90d993c77a4329ab5845fef2ae2a326f2617324c1929fed665b7389c9d` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/knowledge/retrieval.py, static-analysis-inventory |
 | `SAE-TMP-0361` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/auth/iam.py | get_token | `sha256:86c7b9c1162e4bb19a32a5e178c0a2f362018486f6aa8c0efd145e60dafaa822` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/auth/iam.py, static-analysis-inventory |
 | `SAE-TMP-0362` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/common/httpx_client.py | get_async_client | `sha256:d902f3079846e17beb3ccdcc68c0bd432c3e473f0171b0c54c975be37ee154c9` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/common/httpx_client.py, static-analysis-inventory |
 
@@ -228,11 +261,13 @@ Rationale:
 ```text
 The profile mixin keeps two graph-bound BI/cache helpers on the consuming agent.
 ```
+
 Counterfactual:
 
 ```text
 Extracting free functions would re-thread shared configuration and BI/cache context and weaken the profile boundary.
 ```
+
 Risk:
 
 ```text
@@ -246,11 +281,13 @@ Rationale:
 ```text
 The report mixin groups graph nodes that share DeepGenome stores, mounted subgraphs, provider dispatch, and durable finalization.
 ```
+
 Counterfactual:
 
 ```text
 Extracting the thirteen stateful helpers would fragment the finalization barrier and enlarge the error-prone argument surface.
 ```
+
 Risk:
 
 ```text
@@ -264,11 +301,13 @@ Rationale:
 ```text
 The report mixin keeps critique, supplementary retrieval formatting, and citation auditing on the review agent.
 ```
+
 Counterfactual:
 
 ```text
 Extracting the helpers would re-thread retrieval, citation, and failure-accumulator state and split the report invariant.
 ```
+
 Risk:
 
 ```text
@@ -282,11 +321,13 @@ Rationale:
 ```text
 [flake8].extend-ignore='E203,W503'
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -300,11 +341,13 @@ Rationale:
 ```text
 [flake8].extend-ignore='E203,W503'
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -318,11 +361,13 @@ Rationale:
 ```text
 tool.mypy.overrides[0].ignore_missing_imports=True
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -336,11 +381,13 @@ Rationale:
 ```text
 tool.mypy.overrides[1].ignore_missing_imports=True
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -354,11 +401,13 @@ Rationale:
 ```text
 type: ignore[misc]
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -372,11 +421,13 @@ Rationale:
 ```text
 type: ignore[misc]
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -390,11 +441,13 @@ Rationale:
 ```text
 type: ignore[prop-decorator]
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -417,11 +470,13 @@ Similar lines in 2 files
         "--output",
         type=Path,
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -445,11 +500,13 @@ Similar lines in 2 files
     except (OSError, subprocess.SubprocessError):
         return "unknown"
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -473,11 +530,13 @@ Similar lines in 2 files
     peer_path: str | None
     peer_symbol: str | None
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -499,11 +558,13 @@ Similar lines in 2 files
     peer_path: str | None
     peer_symbol: str | None
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -527,11 +588,13 @@ Similar lines in 2 files
         )
     except (FileNotFoundError, OSError) as exc:
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -553,11 +616,13 @@ Similar lines in 2 files
                 check=False,
             )
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -587,11 +652,13 @@ Similar lines in 2 files
 def tracked_python_files(root: Path) -> tuple[str, ...]:
     """Return tracked implementation Python paths in Git order."""
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -621,11 +688,13 @@ Similar lines in 2 files
             ):
                 matches.append(
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -639,11 +708,13 @@ Rationale:
 ```text
 The Analyst package facade intentionally re-exports the public configuration and agent symbols independently from the implementation module. Repository owner approved this public API boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Reusing the implementation __all__ would make package import stability depend on internal exports and expose refactor drift.
 ```
+
 Risk:
 
 ```text
@@ -657,11 +728,13 @@ Rationale:
 ```text
 The Analyst agent and defaults modules intentionally maintain separate public export lists for runtime and configuration surfaces. Repository owner approved this public API boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Aliasing defaults.__all__ to agent.__all__ would couple independent configuration and runtime exports and make a local refactor change the other surface.
 ```
+
 Risk:
 
 ```text
@@ -675,11 +748,13 @@ Rationale:
 ```text
 Planning and submission wrappers share argument construction but intentionally keep independent deduplication, metadata, submit, and preset contracts. Repository owner approved this compatibility boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 A broader helper would couple planning and submission compatibility wrappers and could erase their distinct deduplication or preset behavior.
 ```
+
 Risk:
 
 ```text
@@ -693,11 +768,13 @@ Rationale:
 ```text
 Analyst and Data state TypedDicts intentionally repeat similarly named fields across independent graph contracts. Repository owner approved these separate state boundaries on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Aliasing the state fields would couple Analyst and Data reducers and make an independent graph-state change cross the agent boundary.
 ```
+
 Risk:
 
 ```text
@@ -711,11 +788,13 @@ Rationale:
 ```text
 The DeepGenome mount test independently fixes the empty BriefGene annotation output shape at src/mcp_server_phytomni/agents/brief_gene/core.py:[119:124] versus tests/agents/test_deep_genome_brief_gene_mount.py:[234:239]. Repository owner approved this independent oracle on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Replacing the fake with production seed data would let a mount defaulting regression update both implementation and expected value, hiding the failure.
 ```
+
 Risk:
 
 ```text
@@ -729,11 +808,13 @@ Rationale:
 ```text
 The knowledge-subgraph test independently fixes the BriefGene fan-out input state shape at src/mcp_server_phytomni/agents/brief_gene/core.py:[119:130] versus tests/agents/test_brief_gene_knowledge_subgraph.py:[81:89], instead of importing the production seed. Repository owner approved this state oracle on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Importing the production seed would couple the expected state to implementation changes and stop the test from detecting retrieval-key drift.
 ```
+
 Risk:
 
 ```text
@@ -747,11 +828,13 @@ Rationale:
 ```text
 BriefGene and Review independently mount knowledge Send fan-out boundaries with different graph contracts. Repository owner approved this domain-specific topology boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 A generic mount would hide BriefGene and Review graph topology, worker failure redaction, reducers, node names, and downstream edges.
 ```
+
 Risk:
 
 ```text
@@ -765,11 +848,13 @@ Rationale:
 ```text
 BriefGene and Review independently wire retrieve workers and reducers after their knowledge mounts. Repository owner approved this domain-specific topology boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 A generic worker/reducer helper would obscure domain-specific node names, failure redaction, reducers, and graph edges.
 ```
+
 Risk:
 
 ```text
@@ -783,11 +868,13 @@ Rationale:
 ```text
 The DeepGenome mount test owns an isolated fake state schema for the mounted BriefGene subgraph. Repository owner approved this structural oracle on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Reusing BriefGeneState would make the fake mutate with the implementation and allow a removed annotation field to pass the mount contract.
 ```
+
 Risk:
 
 ```text
@@ -801,11 +888,13 @@ Rationale:
 ```text
 The mounted BriefGene fake independently fixes the preamble-section state shape used by the graph contract. Repository owner approved this structural oracle on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Importing the production state would let a removed section or introduction field disappear from both fake and implementation without a failure.
 ```
+
 Risk:
 
 ```text
@@ -819,11 +908,13 @@ Rationale:
 ```text
 The mounted BriefGene test independently fixes the nested annotation output fields expected from the subgraph. Repository owner approved this output oracle on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Importing the production state fields would let an annotation rename update the expected projection and mask the mount regression.
 ```
+
 Risk:
 
 ```text
@@ -837,11 +928,13 @@ Rationale:
 ```text
 The mounted BriefGene test independently fixes the preamble output fields expected from the subgraph. Repository owner approved this output oracle on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Importing the production state would let a removed homology or section field mutate the expected output and hide the contract failure.
 ```
+
 Risk:
 
 ```text
@@ -855,11 +948,13 @@ Rationale:
 ```text
 The HTTP A2UI action test independently fixes the cancelled response shape and content. Repository owner approved this protocol oracle on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Importing the production cancel payload would make a response-shape regression update both implementation and expected value, defeating the HTTP contract test.
 ```
+
 Risk:
 
 ```text
@@ -873,11 +968,13 @@ Rationale:
 ```text
 Design and Research independently project interop task results into their domain states while sharing transport vocabulary. Repository owner approved this boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 A cross-domain result projection would couple Design and Research state schemas and could route input-required or failure outcomes incorrectly.
 ```
+
 Risk:
 
 ```text
@@ -891,11 +988,13 @@ Rationale:
 ```text
 Design and Research independently submit interop tasks and record their own evidence updates. Repository owner approved this boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 A shared submit/evidence helper would couple capability names, state updates, and pause/resume payloads that are intentionally domain-specific.
 ```
+
 Risk:
 
 ```text
@@ -909,11 +1008,13 @@ Rationale:
 ```text
 Design and Research independently encode interop degraded and evidence updates despite similar transport calls. Repository owner approved this boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 A cross-domain degraded-update helper would couple fallback and telemetry semantics that differ between Design and Research.
 ```
+
 Risk:
 
 ```text
@@ -927,11 +1028,13 @@ Rationale:
 ```text
 Design and Research independently implement A2A resume and local-dispatch transitions with distinct state and protocol contracts. Repository owner approved this boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 A shared resume helper would couple A2A pause payloads, local fallback, and downstream dispatch behavior across the two agents.
 ```
+
 Risk:
 
 ```text
@@ -945,11 +1048,13 @@ Rationale:
 ```text
 Design and Research independently finalize interop evidence and completion telemetry for their own state machines. Repository owner approved this boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 A shared completion helper would hide differences in state keys, telemetry, and failure fallback between Design and Research.
 ```
+
 Risk:
 
 ```text
@@ -963,11 +1068,13 @@ Rationale:
 ```text
 Design and Research independently combine interop evidence with their domain-specific local dispatch workflows. Repository owner approved this boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 A shared orchestration helper would couple target IDs, capability names, state schemas, and fallback semantics across independent workflows.
 ```
+
 Risk:
 
 ```text
@@ -981,11 +1088,13 @@ Rationale:
 ```text
 Environment and Evolution share chat extraction mechanics but intentionally parse different domain outputs. Repository owner approved this boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 A shared response parser would couple Environment region output and Evolution taxid output and could accept the wrong domain shape.
 ```
+
 Risk:
 
 ```text
@@ -999,11 +1108,13 @@ Rationale:
 ```text
 Environment and Evolution share low-level analyst request adapters but target different identifiers, configuration, and failure routes. Repository owner approved this boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 A cross-domain dispatch helper would couple target IDs and error handling and could submit the wrong analyst task.
 ```
+
 Risk:
 
 ```text
@@ -1017,11 +1128,13 @@ Rationale:
 ```text
 Chat and Knowledge subgraphs intentionally retain parallel wrappers and routers with separate state keys and error defaults. Repository owner approved this boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Aliasing the chat and knowledge wrappers would couple independent router keys, defaults, and error semantics across public agent flows.
 ```
+
 Risk:
 
 ```text
@@ -1035,11 +1148,13 @@ Rationale:
 ```text
 The relay package facade intentionally exposes a narrow public API independently from the audit implementation exports. Repository owner approved this security-facing boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Reusing the audit module __all__ would expose internal relay-audit symbols and make the public security boundary depend on implementation refactors.
 ```
+
 Risk:
 
 ```text
@@ -1053,11 +1168,13 @@ Rationale:
 ```text
 The relay audit test independently owns the credential-header denylist and verifies redaction behavior. Repository owner approved this security oracle on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Sharing CREDENTIAL_HEADERS would make a removed secret header disappear from both implementation and expected set, masking credential leakage.
 ```
+
 Risk:
 
 ```text
@@ -1071,11 +1188,13 @@ Rationale:
 ```text
 The configuration test independently enumerates the required deployment endpoint universe and its size. Repository owner approved this deployment oracle on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Importing REQUIRED_DEPLOYMENT_FIELDS would allow an omitted or accidental endpoint to pass because production and expected values would change together.
 ```
+
 Risk:
 
 ```text
@@ -1089,11 +1208,13 @@ Rationale:
 ```text
 The required endpoint test independently fixes the remaining operator and DeepGenome endpoint names. Repository owner approved this deployment oracle on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Sharing the production tuple would let an omitted operator endpoint disappear from both the validator and its expected contract.
 ```
+
 Risk:
 
 ```text
@@ -1107,11 +1228,13 @@ Rationale:
 ```text
 The MCP app and handler modules independently bind arguments for raw/enveloped dispatch and domain handler calls. Repository owner approved this compatibility boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Aliasing the argument projections would couple the raw/enveloped MCP seam to handler dispatch and make a local compatibility change cross the public boundary.
 ```
+
 Risk:
 
 ```text
@@ -1125,11 +1248,13 @@ Rationale:
 ```text
 The response projection test independently fixes the canonical OpenAI field order and presence contract. Repository owner approved this protocol oracle on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Importing the production field tuple would allow a canonical field to be removed from the response and expected value simultaneously.
 ```
+
 Risk:
 
 ```text
@@ -1143,11 +1268,13 @@ Rationale:
 ```text
 The memory package facade intentionally re-exports policy constants independently from the memory model implementation. Repository owner approved this public boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Reusing models.__all__ would expose internal memory-model symbols and make the package API depend on implementation refactors.
 ```
+
 Risk:
 
 ```text
@@ -1161,11 +1288,13 @@ Rationale:
 ```text
 The memory package facade intentionally re-exports public model types independently from the model module export list. Repository owner approved this public boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Aliasing the facade to models.__all__ would make internal model additions externally visible and couple the memory API to implementation changes.
 ```
+
 Risk:
 
 ```text
@@ -1179,11 +1308,13 @@ Rationale:
 ```text
 The memory package facade intentionally exposes accessor helpers independently from the runtime accessor implementation. Repository owner approved this runtime boundary on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Reusing accessor.__all__ would expose internal storage seams and make the memory package API depend on runtime implementation refactors.
 ```
+
 Risk:
 
 ```text
@@ -1197,11 +1328,13 @@ Rationale:
 ```text
 The memory migration test independently fixes the durable column contract used to validate legacy upgrades. Repository owner approved this migration oracle on 2026-07-20.
 ```
+
 Counterfactual:
 
 ```text
 Importing the migration DDL would allow a missing column to pass schema and row-compatibility checks because implementation and expected schema would drift together.
 ```
+
 Risk:
 
 ```text
@@ -1215,11 +1348,13 @@ Rationale:
 ```text
 Analyst and review knowledge graph fixture shapes remain intentionally duplicated across graph-I/O and fan-out characterization tests.
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1243,11 +1378,13 @@ Similar lines in 2 files
             "species_latin_name": "Arabidopsis thaliana",
             "species_english_name": "thale cress",
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1268,11 +1405,13 @@ Similar lines in 2 files
         "description_string": "",
         "retrieved_docs": [],
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1286,11 +1425,13 @@ Rationale:
 ```text
 DeepGenome routing tests intentionally share concrete work-item fixtures with report tests.
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1304,11 +1445,13 @@ Rationale:
 ```text
 DeepGenome routing tests intentionally share concrete work-item fixtures with report tests.
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1322,11 +1465,13 @@ Rationale:
 ```text
 DeepGenome routing tests intentionally share concrete work-item fixtures with report tests.
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1353,11 +1498,13 @@ Similar lines in 2 files
         lambda *_a, **_kw: ("analyst-agent-stub", "", "small", "thread-x"),
     )
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1388,11 +1535,13 @@ Similar lines in 2 files
         "follow_up_post_node",
         "chat",
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1425,11 +1574,13 @@ def _build_restart_app(checkpointer: AsyncSqliteSaver) -> Any:
         return {"final": "ok" if approved else "redo"}
 
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1450,11 +1601,13 @@ Similar lines in 2 files
     graph.add_edge("gate", "finalize")
     graph.add_edge("finalize", END)
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1479,11 +1632,13 @@ Similar lines in 2 files
         }
     ],
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1505,11 +1660,13 @@ Similar lines in 2 files
                     "role": "assistant",
                     "content": "",
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1532,11 +1689,13 @@ Similar lines in 2 files
                     "content": "",
                     "reasoning_content": (
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1559,11 +1718,13 @@ Similar lines in 2 files
                             "Leaves capture light."
                         ),
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1591,11 +1752,13 @@ Similar lines in 2 files
         }
 
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1625,11 +1788,13 @@ async def test_get_run_logs_foreign_owner_is_404(
     RunRegistry(tasks_db_path).create_run(
         RunSpec(
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1654,11 +1819,13 @@ Similar lines in 2 files
         conn.commit()
 
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1685,11 +1852,13 @@ Similar lines in 2 files
 def test_context_helpers_default_to_none() -> None:
     """Verify the contextvars are unset outside a request context."""
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1711,11 +1880,13 @@ Similar lines in 2 files
         },
         "phytomni_state": {
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1744,11 +1915,13 @@ Similar lines in 2 files
         ],
         "phytomni_state": {
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1769,11 +1942,13 @@ Similar lines in 2 files
         transport=transport, base_url="http://api.test"
     ) as client:
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1799,11 +1974,13 @@ Similar lines in 2 files
 async def _openai_inject() -> dict[str, str]:
     """Return an OpenAI-style operator credential header."""
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1824,11 +2001,13 @@ Similar lines in 2 files
     store = ApiKeyStore(str(db))
     return lambda svc: store.create(
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1856,11 +2035,13 @@ def _reset_inflight(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1911,11 +2092,13 @@ async def test_llm_route_injects_bearer_and_drops_query(
     """The llm route strips the caller key, injects the operator Bearer,
     and forwards to the config URL without the client query string."""
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1940,11 +2123,13 @@ Similar lines in 2 files
         "literature": {"hits": []},
     },
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1970,11 +2155,13 @@ Similar lines in 2 files
     monkeypatch.setattr(
         app_mod,
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -1998,11 +2185,13 @@ Similar lines in 2 files
         "report_stage": "intermediate",
         "report_completeness": "partial",
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2024,11 +2213,13 @@ Similar lines in 2 files
             if not message.get("more_body", False):
                 break
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2052,11 +2243,13 @@ Similar lines in 2 files
                 }
             )
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2085,11 +2278,13 @@ Similar lines in 2 files
             )
         ],
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2114,11 +2309,13 @@ Similar lines in 2 files
                 id="annotate",
                 name="Annotate",
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2139,11 +2336,13 @@ Similar lines in 2 files
     fake_result.isError = False
     fake_result.content = []
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2167,11 +2366,13 @@ Similar lines in 2 files
     store.seed_plan(
         reservation,
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2194,11 +2395,13 @@ Similar lines in 2 files
         build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"),
     )
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2225,11 +2428,13 @@ Similar lines in 2 files
 def _legacy_db(tmp_path: Path) -> Path:
     """Create the original four-column task registry schema."""
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2286,11 +2491,13 @@ Similar lines in 2 files
 def test_init_db_is_idempotent(tmp_path: Path) -> None:
     """Re-initializing an already-migrated database is a no-op."""
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2319,11 +2526,13 @@ async def test_unexpected_error_logs_location_without_message(
 ) -> None:
     """Unexpected logs include identity/location but not raw exception text."""
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2337,11 +2546,13 @@ Rationale:
 ```text
 Too few public methods (1/2)
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2355,11 +2566,13 @@ Rationale:
 ```text
 The fake deliberately models one OBS lifecycle with class-level objects, pagination, captured SDK calls, and dynamic camelCase dispatch; replacing it with a value-only fake would lose the shared external-state contract.
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2373,11 +2586,13 @@ Rationale:
 ```text
 The polling client owns a response iterator and request-path capture so the test proves sequential HTTP status/JSON handling and monotonic revision collection.
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2391,11 +2606,13 @@ Rationale:
 ```text
 The fake MCP server retains constructor instances, tool catalogs, and requested server names across discovery and invocation to prove the external lifecycle boundary.
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2409,11 +2626,13 @@ Rationale:
 ```text
 The upload fake models a one-shot mutable chunk stream and records read offsets so the byte-budget guard can prove it stops at the first overflow.
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2427,11 +2646,13 @@ Rationale:
 ```text
 The fake must accept the SDK constructor and dynamically synthesize arbitrary camelCase methods that raise a sentinel, proving storage sanitization preserves the cause without leaking its text.
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2445,11 +2666,13 @@ Rationale:
 ```text
 pylint: disable=broad-exception-caught
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2463,11 +2686,13 @@ Rationale:
 ```text
 Review A2UI authoring is best effort; malformed or unexpected projection inputs must fall back to the raw interrupt so the graph pause and resume contract remains usable.
 ```
+
 Counterfactual:
 
 ```text
 Removing the catch would let authoring failures break Review pause/resume; narrowing it to currently observed exception classes would leave unknown authoring failures unhandled.
 ```
+
 Risk:
 
 ```text
@@ -2481,11 +2706,13 @@ Rationale:
 ```text
 pylint: disable=broad-exception-caught
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2499,11 +2726,13 @@ Rationale:
 ```text
 pylint: disable=contextmanager-generator-missing-cleanup
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2517,11 +2746,13 @@ Rationale:
 ```text
 pylint: disable=contextmanager-generator-missing-cleanup
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2535,11 +2766,13 @@ Rationale:
 ```text
 tool.pylint.format.max-module-lines=1100
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2553,11 +2786,13 @@ Rationale:
 ```text
 tool.pylint.main.ignore='.venv'
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2571,11 +2806,13 @@ Rationale:
 ```text
 tool.pylint.main.ignore='.mypy_cache'
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2589,11 +2826,13 @@ Rationale:
 ```text
 tool.pylint.main.ignore='.ruff_cache'
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2607,11 +2846,13 @@ Rationale:
 ```text
 tool.pylint.main.ignore='.pytest_cache'
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2625,11 +2866,13 @@ Rationale:
 ```text
 _capture_create_payload isolates an analyst graph payload/path seam so its private invariant is asserted without invoking the full graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -2643,11 +2886,13 @@ Rationale:
 ```text
 test_dispatch_chat_uses_subgraph isolates a DeepGenome report adapter seam so the mounted subgraph contract is asserted without unrelated stages.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -2661,11 +2906,13 @@ Rationale:
 ```text
 test_deep_genome_generic_dispatch_is_submit_only pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -2679,11 +2926,13 @@ Rationale:
 ```text
 test_dispatch_knowledge_uses_subgraph isolates a DeepGenome report adapter seam so the mounted subgraph contract is asserted without unrelated stages.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -2697,11 +2946,13 @@ Rationale:
 ```text
 test_all_optional_failures_preserve_profile_and_fail_owner isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -2715,11 +2966,13 @@ Rationale:
 ```text
 test_analysis_prompt_parts_rejects_unknown_type pins a design resource or prompt guard at its smallest decision seam rather than through a full graph invocation.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -2733,11 +2986,13 @@ Rationale:
 ```text
 test_dispatch_request_carries_to_id_as_target isolates network analyst dispatch so target mapping and subgraph routing remain explicit.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -2751,11 +3006,13 @@ Rationale:
 ```text
 test_submit_task_propagates_failed_status isolates research analyst dispatch so routing and failure propagation are checked without a remote task.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -2769,11 +3026,13 @@ Rationale:
 ```text
 test_extract_goals_uses_chat_subgraph isolates the research chat goal-parser seam so the compiled chat adapter contract is asserted directly.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -2787,11 +3046,13 @@ Rationale:
 ```text
 test_feedback_rag_failures_empty_when_no_add_queries isolates review supplementary-query failure accumulation so each degraded record remains attributable to its query.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -2805,11 +3066,13 @@ Rationale:
 ```text
 test_async_gc_coalesces_concurrent_passes isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -2823,11 +3086,13 @@ Rationale:
 ```text
 test_progress_forwarded_when_token_present isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -2841,11 +3106,13 @@ Rationale:
 ```text
 pylint: disable=too-many-arguments
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2859,11 +3126,13 @@ Rationale:
 ```text
 pylint: disable=too-many-arguments,too-many-locals
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2877,11 +3146,13 @@ Rationale:
 ```text
 pylint: disable=too-many-arguments,too-many-positional-arguments
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2895,11 +3166,13 @@ Rationale:
 ```text
 pylint: disable=too-many-arguments
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2913,11 +3186,13 @@ Rationale:
 ```text
 pylint: disable=too-many-arguments
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2931,11 +3206,13 @@ Rationale:
 ```text
 pylint: disable=too-many-arguments,too-many-locals,too-many-statements
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2949,11 +3226,13 @@ Rationale:
 ```text
 pylint: disable=too-many-arguments
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2967,11 +3246,13 @@ Rationale:
 ```text
 pylint: disable=too-many-arguments,too-many-locals
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -2985,11 +3266,13 @@ Rationale:
 ```text
 pylint: disable=too-many-instance-attributes
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3003,11 +3286,13 @@ Rationale:
 ```text
 pylint: disable=too-many-instance-attributes
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3021,11 +3306,13 @@ Rationale:
 ```text
 pylint: disable=too-many-instance-attributes
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3039,11 +3326,13 @@ Rationale:
 ```text
 pylint: disable=too-many-lines
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3057,11 +3346,13 @@ Rationale:
 ```text
 pylint: disable=too-many-lines
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3075,11 +3366,13 @@ Rationale:
 ```text
 pylint: disable=too-many-arguments,too-many-locals
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3091,17 +3384,19 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-The mounted Design polling adapter keeps submission normalization, result download, feature-summary extraction, and transition projection together until the planned remote-I/O seam is available.
+Two DeepGenome orchestration methods still exceed the local-variable threshold after remote I/O extraction; their transition and task-plan state remains one compatibility boundary until the next coordinator split.
 ```
+
 Counterfactual:
 
 ```text
-Extracting these locals before the remote-I/O boundary is characterized would duplicate dispatch state and could change optional-failure semantics.
+Extracting these locals without a characterization seam could duplicate dispatch state and change optional-failure or task-plan semantics.
 ```
+
 Risk:
 
 ```text
-The exception can hide accidental growth in mounted Design polling; the remote-I/O extraction must preserve its failure and report contracts.
+The exception can hide accidental growth in DeepGenome orchestration; the next coordinator split must preserve transition ordering and task-plan contracts.
 ```
 
 ### `SAE-TMP-0280`
@@ -3111,11 +3406,13 @@ Rationale:
 ```text
 pylint: disable=too-many-locals
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3129,11 +3426,13 @@ Rationale:
 ```text
 pylint: disable=too-many-arguments,too-many-locals,too-many-statements
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3147,11 +3446,13 @@ Rationale:
 ```text
 pylint: disable=too-many-locals
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3165,11 +3466,13 @@ Rationale:
 ```text
 pylint: disable=too-many-arguments,too-many-locals
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3183,11 +3486,13 @@ Rationale:
 ```text
 The lifecycle test keeps its coordinator setup in one scenario so persistence and failure ordering remain readable.
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3201,11 +3506,13 @@ Rationale:
 ```text
 pylint: disable=too-many-arguments,too-many-positional-arguments
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3219,11 +3526,13 @@ Rationale:
 ```text
 pylint: disable=too-many-arguments,too-many-locals,too-many-statements
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3237,11 +3546,13 @@ Rationale:
 ```text
 pylint: disable=wrong-import-position
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3255,11 +3566,13 @@ Rationale:
 ```text
 tool.pymarkdown.plugins.md013.enabled=False
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3273,11 +3586,13 @@ Rationale:
 ```text
 error
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3291,11 +3606,13 @@ Rationale:
 ```text
 ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3309,11 +3626,13 @@ Rationale:
 ```text
 noqa: ASYNC110
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3327,11 +3646,13 @@ Rationale:
 ```text
 Async GC waits for a worker-thread Event; polling keeps the request loop responsive without a thread-safe callback.
 ```
+
 Counterfactual:
 
 ```text
 Replace worker completion polling with an equivalent non-blocking completion primitive before removing this directive.
 ```
+
 Risk:
 
 ```text
@@ -3345,11 +3666,13 @@ Rationale:
 ```text
 noqa: ASYNC110
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3363,11 +3686,13 @@ Rationale:
 ```text
 noqa: E402
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3381,11 +3706,13 @@ Rationale:
 ```text
 noqa: E402
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3399,11 +3726,13 @@ Rationale:
 ```text
 tool.ruff.lint.per-file-ignores.typings/**/*.pyi=['N802', 'N803', 'N815']
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3417,11 +3746,13 @@ Rationale:
 ```text
 tool.ruff.lint.per-file-ignores.typings/**/*.pyi=['N802', 'N803', 'N815']
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3435,11 +3766,13 @@ Rationale:
 ```text
 tool.ruff.lint.per-file-ignores.typings/**/*.pyi=['N802', 'N803', 'N815']
 ```
+
 Counterfactual:
 
 ```text
 Remove or refactor after review.
 ```
+
 Risk:
 
 ```text
@@ -3453,11 +3786,13 @@ Rationale:
 ```text
 test_submit_output_dir_forwards_input_fingerprint isolates an analyst graph payload/path seam so its private invariant is asserted without invoking the full graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3471,11 +3806,13 @@ Rationale:
 ```text
 test_dispatch_coordinator_receives_effective_poll_id pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3489,11 +3826,13 @@ Rationale:
 ```text
 test_non_transferred_type_routes_subgraph pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3507,11 +3846,13 @@ Rationale:
 ```text
 test_prepare_tasks_includes_protein_structure pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3525,11 +3866,13 @@ Rationale:
 ```text
 test_promoter_routes_to_wrapper pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3543,11 +3886,13 @@ Rationale:
 ```text
 test_protein_structure_routes_to_wrapper pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3561,11 +3906,13 @@ Rationale:
 ```text
 test_route_after_brief_gene_reaches_preparation_only_when_enabled pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3579,11 +3926,13 @@ Rationale:
 ```text
 test_route_analyst_tasks_sends_design_to_design_node pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3597,11 +3946,13 @@ Rationale:
 ```text
 test_route_analyst_tasks_sends_each_generic_to_its_own_node pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3615,11 +3966,13 @@ Rationale:
 ```text
 test_route_analyst_tasks_sends_evolution_to_evolution_node pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3633,11 +3986,13 @@ Rationale:
 ```text
 test_route_experiment_skips_protocol_when_analyst_disabled pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3651,11 +4006,13 @@ Rationale:
 ```text
 test_route_start_waits_for_brief_gene_before_task_preparation pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3669,11 +4026,13 @@ Rationale:
 ```text
 test_route_synthesize_preserves_skip_fixture pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3687,11 +4046,13 @@ Rationale:
 ```text
 test_route_synthesize_rejects_all_terminal_failures pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3705,11 +4066,13 @@ Rationale:
 ```text
 test_route_synthesize_waits_for_every_concrete_work_item pins a DeepGenome routing or submit branch at the smallest coordinator seam without running the full report graph.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3723,11 +4086,13 @@ Rationale:
 ```text
 test_brief_gene_success_is_durable_before_optional_planning isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3741,11 +4106,13 @@ Rationale:
 ```text
 test_fake_backend_persists_acceptance_before_poll_and_snapshots isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3759,11 +4126,13 @@ Rationale:
 ```text
 test_reserved_profile_seeds_concrete_plan_before_submission isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3777,11 +4146,13 @@ Rationale:
 ```text
 test_send_payload_carries_reserved_lifecycle_identity isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3795,11 +4166,13 @@ Rationale:
 ```text
 test_tracking_write_failure_cancels_and_fails_umbrella isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3813,11 +4186,13 @@ Rationale:
 ```text
 test_unsubmitted_failure_is_persisted_before_branch_degrades isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3831,11 +4206,13 @@ Rationale:
 ```text
 test_get_compute_resource_protein_design_returns_medium pins a design resource or prompt guard at its smallest decision seam rather than through a full graph invocation.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3849,11 +4226,13 @@ Rationale:
 ```text
 test_get_compute_resource_unknown_falls_back_to_small pins a design resource or prompt guard at its smallest decision seam rather than through a full graph invocation.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3867,11 +4246,13 @@ Rationale:
 ```text
 test_dispatch_routes_through_subgraph_submit isolates network analyst dispatch so target mapping and subgraph routing remain explicit.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3885,11 +4266,13 @@ Rationale:
 ```text
 test_submit_task_uses_subgraph isolates research analyst dispatch so routing and failure propagation are checked without a remote task.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3903,11 +4286,13 @@ Rationale:
 ```text
 test_feedback_rag_records_failure_for_single_failed_query isolates review supplementary-query failure accumulation so each degraded record remains attributable to its query.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3921,11 +4306,13 @@ Rationale:
 ```text
 test_feedback_rag_records_failures_for_all_failed_queries isolates review supplementary-query failure accumulation so each degraded record remains attributable to its query.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3939,11 +4326,13 @@ Rationale:
 ```text
 test_async_gc_keeps_the_request_loop_responsive isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3957,11 +4346,13 @@ Rationale:
 ```text
 test_async_gc_reraises_unexpected_worker_failure isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3975,11 +4366,13 @@ Rationale:
 ```text
 test_gc_dependency_and_background_task_are_native_async isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
@@ -3993,33 +4386,17 @@ Rationale:
 ```text
 test_sync_write_routes_declare_gc_dependency isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport.
 ```
+
 Counterfactual:
 
 ```text
 Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
 ```
+
 Risk:
 
 ```text
 A protected-access exception can hide unintended coupling or stale private invariants.
-```
-
-### `SAE-TMP-0347`
-
-Rationale:
-
-```text
-The remote-submission poller coordinates status reads, bounded timeout budgeting, result resolution, transition callbacks, and outcome projection until the planned remote-I/O adapter is available.
-```
-Counterfactual:
-
-```text
-Extracting those concerns before the protocol-boundary tests exist would duplicate remote identities or alter cancellation and degraded-report behavior.
-```
-Risk:
-
-```text
-The exception can hide accidental growth in the polling coordinator; the remote-I/O extraction must preserve timeout, cancellation, and transition ordering.
 ```
 
 ### `SAE-TMP-0348`
@@ -4029,11 +4406,13 @@ Rationale:
 ```text
 pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613
 ```
+
 Counterfactual:
 
 ```text
 Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff.
 ```
+
 Risk:
 
 ```text
@@ -4047,11 +4426,13 @@ Rationale:
 ```text
 pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613
 ```
+
 Counterfactual:
 
 ```text
 Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff.
 ```
+
 Risk:
 
 ```text
@@ -4065,11 +4446,13 @@ Rationale:
 ```text
 pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613
 ```
+
 Counterfactual:
 
 ```text
 Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff.
 ```
+
 Risk:
 
 ```text
@@ -4083,11 +4466,13 @@ Rationale:
 ```text
 pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613
 ```
+
 Counterfactual:
 
 ```text
 Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff.
 ```
+
 Risk:
 
 ```text
@@ -4101,11 +4486,13 @@ Rationale:
 ```text
 pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613
 ```
+
 Counterfactual:
 
 ```text
 Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff.
 ```
+
 Risk:
 
 ```text
@@ -4119,11 +4506,13 @@ Rationale:
 ```text
 pylint: disable=C0103,C0116,R0903,R0913,R0917,W0613
 ```
+
 Counterfactual:
 
 ```text
 Keep the OBS SDK names and signatures in a file-local stub mask while validating the stub with mypy, pyright, and Ruff.
 ```
+
 Risk:
 
 ```text
@@ -4137,11 +4526,13 @@ Rationale:
 ```text
 noqa: ASYNC109
 ```
+
 Counterfactual:
 
 ```text
 Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
 ```
+
 Risk:
 
 ```text
@@ -4155,11 +4546,13 @@ Rationale:
 ```text
 noqa: ASYNC109
 ```
+
 Counterfactual:
 
 ```text
 Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
 ```
+
 Risk:
 
 ```text
@@ -4173,11 +4566,13 @@ Rationale:
 ```text
 noqa: ASYNC109
 ```
+
 Counterfactual:
 
 ```text
 Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
 ```
+
 Risk:
 
 ```text
@@ -4191,11 +4586,13 @@ Rationale:
 ```text
 noqa: ASYNC109
 ```
+
 Counterfactual:
 
 ```text
 Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
 ```
+
 Risk:
 
 ```text
@@ -4209,11 +4606,13 @@ Rationale:
 ```text
 noqa: ASYNC109
 ```
+
 Counterfactual:
 
 ```text
 Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
 ```
+
 Risk:
 
 ```text
@@ -4227,11 +4626,13 @@ Rationale:
 ```text
 noqa: ASYNC109
 ```
+
 Counterfactual:
 
 ```text
 Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
 ```
+
 Risk:
 
 ```text
@@ -4245,11 +4646,13 @@ Rationale:
 ```text
 noqa: ASYNC109
 ```
+
 Counterfactual:
 
 ```text
 Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
 ```
+
 Risk:
 
 ```text
@@ -4263,11 +4666,13 @@ Rationale:
 ```text
 noqa: ASYNC109
 ```
+
 Counterfactual:
 
 ```text
 Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
 ```
+
 Risk:
 
 ```text
@@ -4281,11 +4686,13 @@ Rationale:
 ```text
 noqa: ASYNC109
 ```
+
 Counterfactual:
 
 ```text
 Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
 ```
+
 Risk:
 
 ```text
