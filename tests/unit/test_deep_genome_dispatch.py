@@ -10,9 +10,10 @@ and the small harness used to exercise private download helpers.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -23,6 +24,7 @@ from mcp_server_phytomni.agents.deep_genome import (
 from mcp_server_phytomni.agents.deep_genome.coordinator import (
     RemoteSubmission,
     WorkItemOutcome,
+    WorkItemPollRequest,
 )
 from mcp_server_phytomni.agents.deep_genome.dispatch import (
     GENERIC_ANALYSIS_NODE_TYPES,
@@ -115,23 +117,25 @@ async def test_dispatch_polls_normalized_submit_ack_before_download(
     monkeypatch.setattr(deep_genome_dispatch, "task_status", status)
 
     async def poll(
-        received: RemoteSubmission,
-        *,
-        status_reader,
-        result_resolver,
-        transition_sink,
-        **kwargs: Any,
+        request: WorkItemPollRequest,
     ) -> WorkItemOutcome:
         """Drive the injected seams once and return their settled result."""
+        received = request.submission
         assert received.poll_task_id == "remote-1"
-        assert kwargs["request_timeout"] == 4.0
-        assert kwargs["poll_interval"] == 2.0
-        assert kwargs["deadline_seconds"] == 10.0
-        assert await status_reader(received.poll_task_id, 4.0) == {
-            "status": "SUCCEEDED"
-        }
-        summary = await result_resolver(received)
-        return await transition_sink("succeeded", summary, None)
+        assert request.options.request_timeout == 4.0
+        assert request.options.poll_interval == 2.0
+        assert request.options.deadline_seconds == 10.0
+        assert await request.callbacks.status_reader(
+            received.poll_task_id, 4.0
+        ) == {"status": "SUCCEEDED"}
+        summary = await cast(
+            Awaitable[str | None],
+            request.callbacks.result_resolver(received),
+        )
+        return await cast(
+            Awaitable[WorkItemOutcome],
+            request.callbacks.transition_sink("succeeded", summary, None),
+        )
 
     monkeypatch.setattr(deep_genome_dispatch, "poll_work_item", poll)
 
@@ -607,19 +611,30 @@ async def test_remote_io_poll_uses_effective_id_and_timeout_kwargs() -> None:
     observed: dict[str, Any] = {}
 
     async def fake_poll(
-        submission: RemoteSubmission,
-        *,
-        status_reader,
-        result_resolver,
-        transition_sink,
-        **kwargs: Any,
+        request: WorkItemPollRequest,
     ) -> WorkItemOutcome:
-        observed.update(kwargs)
-        assert await status_reader(submission.poll_task_id, 7.0) == {
-            "status": "SUCCEEDED"
-        }
-        assert await result_resolver(submission) == "/tmp/results"
-        return await transition_sink("succeeded", "# summary", None)
+        submission = request.submission
+        observed.update(
+            {
+                "request_timeout": request.options.request_timeout,
+                "poll_interval": request.options.poll_interval,
+                "deadline_seconds": request.options.deadline_seconds,
+            }
+        )
+        assert await request.callbacks.status_reader(
+            submission.poll_task_id, 7.0
+        ) == {"status": "SUCCEEDED"}
+        assert (
+            await cast(
+                Awaitable[str | None],
+                request.callbacks.result_resolver(submission),
+            )
+            == "/tmp/results"
+        )
+        return await cast(
+            Awaitable[WorkItemOutcome],
+            request.callbacks.transition_sink("succeeded", "# summary", None),
+        )
 
     transition = AsyncMock(
         return_value=WorkItemOutcome("succeeded", "# summary", None)

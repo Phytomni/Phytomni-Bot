@@ -12,7 +12,80 @@ from typing import Any
 from mcp_server_phytomni.agents.deep_genome.work_items import (
     build_work_item_plan,
 )
-from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
+from mcp_server_phytomni.runtime.deep_genome_store import (
+    DeepGenomeReservation,
+    DeepGenomeStore,
+)
+
+
+def concrete_barrier_work_items() -> list[dict[str, Any]]:
+    """Return the two-row barrier fixture used by routing/report tests."""
+    return [
+        {
+            "work_item_key": "evolution_analysis",
+            "analysis_type": "evolution_analysis",
+        },
+        {
+            "work_item_key": "promoter_design",
+            "analysis_type": "promoter_design_analysis",
+            "section_key": "digital_design",
+        },
+    ]
+
+
+def seed_brief_gene_plan(
+    store: DeepGenomeStore,
+    reservation: DeepGenomeReservation,
+    gene_id: str,
+) -> None:
+    """Seed the common BriefGene-success and twelve-item plan fixture."""
+    store.apply_brief_gene_transition(
+        reservation.umbrella_task_id,
+        status="succeeded",
+        summary_markdown="BriefGene summary",
+    )
+    store.seed_plan(
+        reservation,
+        build_work_item_plan("osa", gene_id, gene_id),
+    )
+
+
+def successful_concrete_barrier_data() -> dict[str, dict[str, str]]:
+    """Return one successful row with one planned row still missing."""
+    return {
+        "task_0:evolution_analysis": {
+            "analysis_type": "evolution_analysis",
+            "status": "success",
+        }
+    }
+
+
+def failed_concrete_barrier_data() -> dict[str, dict[str, str]]:
+    """Return terminal failures for both planned barrier rows."""
+    return {
+        "task_0:evolution_analysis": {
+            "analysis_type": "evolution_analysis",
+            "status": "failed",
+        },
+        "task_10": {
+            "analysis_type": "digital_design",
+            "status": "failed",
+        },
+    }
+
+
+def partially_failed_concrete_barrier_data() -> dict[str, dict[str, str]]:
+    """Return one successful and one failed terminal barrier row."""
+    return {
+        "task_0:evolution_analysis": {
+            "analysis_type": "evolution_analysis",
+            "status": "success",
+        },
+        "task_10": {
+            "analysis_type": "digital_design",
+            "status": "failed",
+        },
+    }
 
 
 def seed_partial_deep_genome_run(

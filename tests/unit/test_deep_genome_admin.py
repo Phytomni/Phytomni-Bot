@@ -12,10 +12,8 @@ import stat
 from pathlib import Path
 
 import pytest
+from tests.agents.shared.deep_genome_fixtures import seed_brief_gene_plan
 
-from mcp_server_phytomni.agents.deep_genome.work_items import (
-    build_work_item_plan,
-)
 from mcp_server_phytomni.runtime.deep_genome_admin import (
     RollbackRefusedError,
     main,
@@ -37,15 +35,7 @@ def _seed_database(tmp_path: Path, *, terminal: bool) -> Path:
         owner="alice",
         output_dir="/obs/dg",
     )
-    store.apply_brief_gene_transition(
-        reservation.umbrella_task_id,
-        status="succeeded",
-        summary_markdown="BriefGene summary",
-    )
-    store.seed_plan(
-        reservation,
-        build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"),
-    )
+    seed_brief_gene_plan(store, reservation, "Os01g0100100")
     if terminal:
         with sqlite3.connect(db) as conn:
             conn.execute(

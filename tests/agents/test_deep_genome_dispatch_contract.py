@@ -27,6 +27,9 @@ from mcp_server_phytomni.agents.deep_genome import dispatch as dispatch_module
 from mcp_server_phytomni.agents.deep_genome.coordinator import (
     RemoteSubmission,
     WorkItemOutcome,
+    WorkItemPollCallbacks,
+    WorkItemPollOptions,
+    WorkItemPollRequest,
     concrete_work_item_outcomes,
     derive_workflow_outcome,
     poll_work_item,
@@ -405,14 +408,20 @@ async def test_poll_contract_emits_ordered_transitions_and_summary() -> None:
         return None
 
     outcome = await poll_work_item(
-        submission,
-        status_reader=read_status,
-        result_resolver=resolve_result,
-        transition_sink=record,
-        request_timeout=4,
-        poll_interval=0,
-        deadline_seconds=10,
-        sleep=no_sleep,
+        WorkItemPollRequest(
+            submission=submission,
+            callbacks=WorkItemPollCallbacks(
+                status_reader=read_status,
+                result_resolver=resolve_result,
+                transition_sink=record,
+            ),
+            options=WorkItemPollOptions(
+                request_timeout=4,
+                poll_interval=0,
+                deadline_seconds=10,
+                sleep=no_sleep,
+            ),
+        )
     )
 
     assert outcome == WorkItemOutcome("succeeded", "# usable summary", None)
@@ -444,14 +453,20 @@ async def test_poll_optional_failure_and_cancel() -> None:
         return None
 
     failed = await poll_work_item(
-        submission,
-        status_reader=broken_status,
-        result_resolver=lambda _submission: "unused",
-        transition_sink=record_failure,
-        request_timeout=4,
-        poll_interval=0,
-        deadline_seconds=10,
-        sleep=no_sleep,
+        WorkItemPollRequest(
+            submission=submission,
+            callbacks=WorkItemPollCallbacks(
+                status_reader=broken_status,
+                result_resolver=lambda _submission: "unused",
+                transition_sink=record_failure,
+            ),
+            options=WorkItemPollOptions(
+                request_timeout=4,
+                poll_interval=0,
+                deadline_seconds=10,
+                sleep=no_sleep,
+            ),
+        )
     )
     assert failed == WorkItemOutcome(
         "failed", None, "analysis status lookup failed"
@@ -475,14 +490,20 @@ async def test_poll_optional_failure_and_cancel() -> None:
 
     with pytest.raises(asyncio.CancelledError):
         await poll_work_item(
-            submission,
-            status_reader=cancelled_status,
-            result_resolver=lambda _submission: "unused",
-            transition_sink=record_cancellation,
-            request_timeout=4,
-            poll_interval=0,
-            deadline_seconds=10,
-            sleep=no_sleep,
+            WorkItemPollRequest(
+                submission=submission,
+                callbacks=WorkItemPollCallbacks(
+                    status_reader=cancelled_status,
+                    result_resolver=lambda _submission: "unused",
+                    transition_sink=record_cancellation,
+                ),
+                options=WorkItemPollOptions(
+                    request_timeout=4,
+                    poll_interval=0,
+                    deadline_seconds=10,
+                    sleep=no_sleep,
+                ),
+            )
         )
     assert not cancellation_transitions
 

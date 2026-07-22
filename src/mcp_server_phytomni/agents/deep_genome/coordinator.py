@@ -27,6 +27,9 @@ __all__ = [
     "DeepGenomeWorkflowError",
     "WorkflowOutcome",
     "WorkItemOutcome",
+    "WorkItemPollCallbacks",
+    "WorkItemPollOptions",
+    "WorkItemPollRequest",
     "concrete_work_item_outcomes",
     "derive_workflow_outcome",
     "normalize_submission",
@@ -214,15 +217,33 @@ Clock = Callable[[], float]
 Sleep = Callable[[float], Awaitable[Any] | Any]
 
 
-@dataclass(frozen=True)
-class _PollOptions:
+@dataclass(frozen=True, slots=True)
+class WorkItemPollCallbacks:
+    """Side-effecting callbacks used by one polling request."""
+
+    status_reader: StatusReader
+    result_resolver: ResultResolver
+    transition_sink: TransitionSink
+
+
+@dataclass(frozen=True, slots=True)
+class WorkItemPollOptions:
     """Runtime knobs for one coordinator polling loop."""
 
     request_timeout: float
     poll_interval: float
     deadline_seconds: float
-    monotonic: Clock
-    sleep: Sleep
+    monotonic: Clock = time.monotonic
+    sleep: Sleep = asyncio.sleep
+
+
+@dataclass(frozen=True)
+class WorkItemPollRequest:
+    """Bind one submission to callbacks and its timing policy."""
+
+    submission: RemoteSubmission
+    callbacks: WorkItemPollCallbacks
+    options: WorkItemPollOptions
 
 
 _REMOTE_TO_LOCAL = {
@@ -321,18 +342,8 @@ async def _emit_transition(
     return WorkItemOutcome(status, summary, failure_reason)
 
 
-# pylint: disable=too-many-arguments
 async def poll_work_item(
-    submission: RemoteSubmission,
-    *,
-    status_reader: StatusReader,
-    result_resolver: ResultResolver,
-    transition_sink: TransitionSink,
-    request_timeout: float,
-    poll_interval: float,
-    deadline_seconds: float,
-    monotonic: Clock = time.monotonic,
-    sleep: Sleep = asyncio.sleep,
+    request: WorkItemPollRequest,
 ) -> WorkItemOutcome:
     """Poll one remote job until a bounded local terminal outcome.
 
@@ -346,23 +357,16 @@ async def poll_work_item(
     fixed sanitized reason.  ``asyncio.CancelledError`` is intentionally not
     caught and therefore propagates to the parent coordinator unchanged.
     """
-    poll_options = _PollOptions(
-        request_timeout=float(request_timeout),
-        poll_interval=float(poll_interval),
-        deadline_seconds=float(deadline_seconds),
-        monotonic=monotonic,
-        sleep=sleep,
-    )
+    poll_options = request.options
     return await _poll_work_item(
-        submission,
-        status_reader,
-        result_resolver,
-        transition_sink,
+        request.submission,
+        request.callbacks.status_reader,
+        request.callbacks.result_resolver,
+        request.callbacks.transition_sink,
         poll_options,
     )
 
 
-# pylint: enable=too-many-arguments
 async def _resolve_success(
     submission: RemoteSubmission,
     result_resolver: ResultResolver,
@@ -406,7 +410,7 @@ async def _poll_work_item(
     status_reader: StatusReader,
     result_resolver: ResultResolver,
     transition_sink: TransitionSink,
-    options: _PollOptions,
+    options: WorkItemPollOptions,
 ) -> WorkItemOutcome:
     """Run the bounded status loop with validated runtime options."""
     deadline = options.monotonic() + max(0.0, options.deadline_seconds)

@@ -29,11 +29,15 @@ from mcp_server_phytomni.agents.deep_genome.report import (
     DeepGenomeReportMixin,
     _state_gene_string,
 )
-from mcp_server_phytomni.agents.deep_genome.work_items import (
-    build_work_item_plan,
-)
 from mcp_server_phytomni.config.defaults import DeepGenomeConfig
 from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
+from tests.agents.shared.deep_genome_fixtures import (
+    concrete_barrier_work_items,
+    failed_concrete_barrier_data,
+    partially_failed_concrete_barrier_data,
+    seed_brief_gene_plan,
+    successful_concrete_barrier_data,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -229,27 +233,8 @@ async def test_experiment_barrier_skips_analyst_work_when_disabled() -> None:
 async def test_synthesizer_rejects_all_terminal_failures() -> None:
     """No usable concrete result raises a fixed workflow error."""
     state = _state(
-        work_items=[
-            {
-                "work_item_key": "evolution_analysis",
-                "analysis_type": "evolution_analysis",
-            },
-            {
-                "work_item_key": "promoter_design",
-                "analysis_type": "promoter_design_analysis",
-                "section_key": "digital_design",
-            },
-        ],
-        raw_analyst_data={
-            "task_0:evolution_analysis": {
-                "analysis_type": "evolution_analysis",
-                "status": "failed",
-            },
-            "task_10": {
-                "analysis_type": "digital_design",
-                "status": "failed",
-            },
-        },
+        work_items=concrete_barrier_work_items(),
+        raw_analyst_data=failed_concrete_barrier_data(),
     )
 
     with pytest.raises(
@@ -261,23 +246,8 @@ async def test_synthesizer_rejects_all_terminal_failures() -> None:
 async def test_synthesizer_waits_for_missing_concrete_outcome() -> None:
     """Missing planned rows keep synthesis pending without a sticky flag."""
     state = _state(
-        work_items=[
-            {
-                "work_item_key": "evolution_analysis",
-                "analysis_type": "evolution_analysis",
-            },
-            {
-                "work_item_key": "promoter_design",
-                "analysis_type": "promoter_design_analysis",
-                "section_key": "digital_design",
-            },
-        ],
-        raw_analyst_data={
-            "task_0:evolution_analysis": {
-                "analysis_type": "evolution_analysis",
-                "status": "success",
-            }
-        },
+        work_items=concrete_barrier_work_items(),
+        raw_analyst_data=successful_concrete_barrier_data(),
     )
 
     assert await _ReportProbe().run_synthesizer(state) == {}
@@ -288,27 +258,8 @@ async def test_synthesizer_rejects_missing_final_synthesis() -> None:
     state = _state(
         synthesize_report=None,
         analyst_summaries={},
-        work_items=[
-            {
-                "work_item_key": "evolution_analysis",
-                "analysis_type": "evolution_analysis",
-            },
-            {
-                "work_item_key": "promoter_design",
-                "analysis_type": "promoter_design_analysis",
-                "section_key": "digital_design",
-            },
-        ],
-        raw_analyst_data={
-            "task_0:evolution_analysis": {
-                "analysis_type": "evolution_analysis",
-                "status": "success",
-            },
-            "task_10": {
-                "analysis_type": "digital_design",
-                "status": "failed",
-            },
-        },
+        work_items=concrete_barrier_work_items(),
+        raw_analyst_data=partially_failed_concrete_barrier_data(),
     )
 
     with pytest.raises(
@@ -329,15 +280,7 @@ def _finalization_fixture(
         owner="alice",
         output_dir="/obs/run",
     )
-    store.apply_brief_gene_transition(
-        reservation.umbrella_task_id,
-        status="succeeded",
-        summary_markdown="BriefGene summary",
-    )
-    store.seed_plan(
-        reservation,
-        build_work_item_plan("osa", "Os01g0177400", "Os01g0177400"),
-    )
+    seed_brief_gene_plan(store, reservation, "Os01g0177400")
     with sqlite3.connect(db_path) as conn:
         conn.execute(
             "UPDATE deep_genome_remote_tasks SET status = 'failed', "

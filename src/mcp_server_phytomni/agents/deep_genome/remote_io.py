@@ -32,6 +32,9 @@ from ..design.agent import promoter_design_for_gene, protein_structure_for_gene
 from .coordinator import (
     RemoteSubmission,
     WorkItemOutcome,
+    WorkItemPollCallbacks,
+    WorkItemPollOptions,
+    WorkItemPollRequest,
     normalize_submission,
     poll_work_item,
 )
@@ -52,7 +55,7 @@ SubmitCall = Callable[..., Awaitable[Any]]
 DownloadCall = Callable[..., Any]
 RelayDownloadCall = Callable[..., Awaitable[list[str]]]
 PromptParts = Callable[[Any], tuple[str, dict[str, Any], str, str]]
-PollCall = Callable[..., Awaitable[WorkItemOutcome]]
+PollCall = Callable[[WorkItemPollRequest], Awaitable[WorkItemOutcome]]
 SummaryBuilder = Callable[[str], str]
 
 
@@ -307,13 +310,25 @@ class DeepGenomeRemoteIO:
         )
         poller = self.hook("poll_work_item", poll_work_item)
         outcome = await poller(
-            submission,
-            status_reader=binding.read_remote_status,
-            result_resolver=binding.resolve_remote_result,
-            transition_sink=binding.record_transition,
-            request_timeout=float(getattr(self.config, "TIMEOUT", 600.0)),
-            poll_interval=float(getattr(self.config, "POLL_INTERVAL", 300.0)),
-            deadline_seconds=float(getattr(self.config, "MAX_POLL", 86400.0)),
+            WorkItemPollRequest(
+                submission=submission,
+                callbacks=WorkItemPollCallbacks(
+                    status_reader=binding.read_remote_status,
+                    result_resolver=binding.resolve_remote_result,
+                    transition_sink=binding.record_transition,
+                ),
+                options=WorkItemPollOptions(
+                    request_timeout=float(
+                        getattr(self.config, "TIMEOUT", 600.0)
+                    ),
+                    poll_interval=float(
+                        getattr(self.config, "POLL_INTERVAL", 300.0)
+                    ),
+                    deadline_seconds=float(
+                        getattr(self.config, "MAX_POLL", 86400.0)
+                    ),
+                ),
+            )
         )
         return outcome, binding.resolved_results_dir
 

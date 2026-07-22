@@ -24,10 +24,8 @@ from unittest.mock import AsyncMock
 import pytest
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
+from tests.agents.shared.deep_genome_fixtures import seed_brief_gene_plan
 
-from mcp_server_phytomni.agents.deep_genome.work_items import (
-    build_work_item_plan,
-)
 from mcp_server_phytomni.contracts.deep_genome import (
     DEEP_GENOME_PROGRESS_FIELDS,
     DEEP_GENOME_REPORT_FIELDS,
@@ -100,15 +98,7 @@ def _reserve_deep_genome(
         owner="alice",
         output_dir="/obs/run",
     )
-    store.apply_brief_gene_transition(
-        task_id,
-        status="succeeded",
-        summary_markdown="BriefGene summary",
-    )
-    store.seed_plan(
-        reservation,
-        build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"),
-    )
+    seed_brief_gene_plan(store, reservation, "Os01g0100100")
     store.apply_work_item_transition(
         task_id,
         work_item_key="smep_analysis",

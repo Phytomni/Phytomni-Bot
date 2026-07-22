@@ -16,9 +16,10 @@ through ``submit_analyst_via_subgraph``.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from functools import partial
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -29,12 +30,18 @@ from mcp_server_phytomni.agents.deep_genome.coordinator import (
     DeepGenomeWorkflowError,
     RemoteSubmission,
     WorkItemOutcome,
+    WorkItemPollRequest,
 )
 from mcp_server_phytomni.agents.deep_genome.dispatch import (
     AnalysisDispatchContext,
 )
 from mcp_server_phytomni.config.defaults import DeepGenomeConfig
 from mcp_server_phytomni.graphs import analyst_dispatch_adapters
+from tests.agents.shared.deep_genome_fixtures import (
+    concrete_barrier_work_items,
+    failed_concrete_barrier_data,
+    successful_concrete_barrier_data,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -207,22 +214,9 @@ def test_route_synthesize_waits_for_every_concrete_work_item() -> None:
     # pylint: disable=protected-access
     state: Any = {
         "work_items": [
-            {
-                "work_item_key": "evolution_analysis",
-                "analysis_type": "evolution_analysis",
-            },
-            {
-                "work_item_key": "promoter_design",
-                "analysis_type": "promoter_design_analysis",
-                "section_key": "digital_design",
-            },
+            *concrete_barrier_work_items(),
         ],
-        "raw_analyst_data": {
-            "task_0:evolution_analysis": {
-                "analysis_type": "evolution_analysis",
-                "status": "success",
-            }
-        },
+        "raw_analyst_data": successful_concrete_barrier_data(),
     }
 
     route = dispatch_module.DeepGenomeDispatchMixin._route_synthesize_barrier
@@ -234,27 +228,8 @@ def test_route_synthesize_rejects_all_terminal_failures() -> None:
     """The all-failed concrete matrix raises instead of reaching END."""
     # pylint: disable=protected-access
     state: Any = {
-        "work_items": [
-            {
-                "work_item_key": "evolution_analysis",
-                "analysis_type": "evolution_analysis",
-            },
-            {
-                "work_item_key": "promoter_design",
-                "analysis_type": "promoter_design_analysis",
-                "section_key": "digital_design",
-            },
-        ],
-        "raw_analyst_data": {
-            "task_0:evolution_analysis": {
-                "analysis_type": "evolution_analysis",
-                "status": "failed",
-            },
-            "task_10": {
-                "analysis_type": "digital_design",
-                "status": "failed",
-            },
-        },
+        "work_items": [*concrete_barrier_work_items()],
+        "raw_analyst_data": failed_concrete_barrier_data(),
     }
 
     route = dispatch_module.DeepGenomeDispatchMixin._route_synthesize_barrier
@@ -475,20 +450,24 @@ async def test_dispatch_coordinator_receives_effective_poll_id(
     seen: dict[str, Any] = {}
 
     async def poll(
-        received: RemoteSubmission,
-        *,
-        status_reader,
-        result_resolver,
-        transition_sink,
-        **_kwargs: Any,
+        request: WorkItemPollRequest,
     ) -> WorkItemOutcome:
         """Exercise status and result seams rather than submission success."""
+        received = request.submission
         seen["poll_task_id"] = received.poll_task_id
-        remote_status = await status_reader(received.poll_task_id, 4.0)
+        remote_status = await request.callbacks.status_reader(
+            received.poll_task_id, 4.0
+        )
         assert remote_status["status"] == "SUCCEEDED"
-        summary = await result_resolver(received)
+        summary = await cast(
+            Awaitable[str | None],
+            request.callbacks.result_resolver(received),
+        )
         assert summary == "# usable result"
-        return await transition_sink("succeeded", summary, None)
+        return await cast(
+            Awaitable[WorkItemOutcome],
+            request.callbacks.transition_sink("succeeded", summary, None),
+        )
 
     monkeypatch.setattr(dispatch_module, "poll_work_item", poll)
     poll_remote = getattr(

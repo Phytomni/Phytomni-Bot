@@ -884,72 +884,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0100"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/agents/test_deep_genome_dispatch_routing.py"
-symbol = "209:219"
-peer_path = "tests/agents/test_deep_genome_report.py"
-peer_symbol = "232:242"
-fingerprint = "sha256:ec70d662608b3e5ed97720466b6aca559171cc99bd4f5537cf6ee84ee39db3e7"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "DeepGenome routing tests intentionally share concrete work-item fixtures with report tests."
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0101"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/agents/test_deep_genome_dispatch_routing.py"
-symbol = "237:247"
-peer_path = "tests/agents/test_deep_genome_report.py"
-peer_symbol = "264:274"
-fingerprint = "sha256:88facf0a1eaf91e36dc340fb0da1d0ed2a6a13d280d7bbeba5a851c08e5576fb"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "DeepGenome routing tests intentionally share concrete work-item fixtures with report tests."
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0102"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/agents/test_deep_genome_dispatch_routing.py"
-symbol = "248:257"
-peer_path = "tests/agents/test_deep_genome_report.py"
-peer_symbol = "243:252"
-fingerprint = "sha256:1eb27c37f95e00b9fe73cb20478b0f747bdf699f651be407296a966c746ab0d1"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "DeepGenome routing tests intentionally share concrete work-item fixtures with report tests."
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0107"
 tool = "pylint"
 rule = "R0801"
@@ -1449,50 +1383,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "Similar lines in 2 files\n==test_client_elicitation:[59:66]\n==test_client_progress_callback:[18:23]\n    client = PhytomniMcpClient()\n    fake_session = AsyncMock()\n    fake_result = AsyncMock()\n    fake_result.isError = False\n    fake_result.content = []"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0172"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/unit/test_deep_genome_admin.py"
-symbol = "38:46"
-peer_path = "tests/agents/test_deep_genome_report.py"
-peer_symbol = "330:338"
-fingerprint = "sha256:d31703b04d8b444d3e963b1cc94534a6a2a39ec56fe231841e5ec923d2b20c11"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_deep_genome_admin:[38:46]\n==tests.agents.test_deep_genome_report:[330:338]\n    )\n    store.apply_brief_gene_transition(\n        reservation.umbrella_task_id,\n        status=\"succeeded\",\n        summary_markdown=\"BriefGene summary\",\n    )\n    store.seed_plan(\n        reservation,"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0173"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/unit/test_deep_genome_admin.py"
-symbol = "41:48"
-peer_path = "tests/unit/test_task_reconcile.py"
-peer_symbol = "104:111"
-fingerprint = "sha256:4303b679e5e955b1be7936f32b4fc48d9634ff57857c088f074419720f9f5cd2"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_deep_genome_admin:[41:48]\n==test_task_reconcile:[104:111]\n        status=\"succeeded\",\n        summary_markdown=\"BriefGene summary\",\n    )\n    store.seed_plan(\n        reservation,\n        build_work_item_plan(\"osa\", \"Os01g0100100\", \"Os01g0100100\"),\n    )"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -2052,25 +1942,6 @@ risk = "A protected-access exception can hide unintended coupling or stale priva
 tests = ["static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0266"
-tool = "pylint"
-rule = "too-many-arguments"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "span"
-path = "src/mcp_server_phytomni/agents/deep_genome/coordinator.py"
-fingerprint = "sha256:6d9bf21762df6cec5ca632c7fa0145f019ce0d56231f6e3cab1d6591eaca2e30"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=too-many-arguments"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0269"
 tool = "pylint"
 rule = "too-many-arguments"
@@ -2576,7 +2447,7 @@ mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
 symbol = "test_dispatch_coordinator_receives_effective_poll_id"
-fingerprint = "sha256:ff5a3cfe8bf5d4cf7443bd0ec5540f676d620ffcb1e4139a1f5057275463540b"
+fingerprint = "sha256:1c42ef10ae7bdea7aa74fa1ae078e594510e910150e967a6338e882ccf466278"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
 review_on = 2027-01-17
@@ -2792,7 +2663,7 @@ mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
 symbol = "test_route_synthesize_rejects_all_terminal_failures"
-fingerprint = "sha256:9fb0e72047279d6da6017157a24f27374ff7e97110369dc5423f1a7b497244a1"
+fingerprint = "sha256:1c5dd8189d6a4d1ec4e26252e089d222cd7059fe5bd79b3ba64f4e1b38293db8"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
 review_on = 2027-01-17
@@ -2810,7 +2681,7 @@ mechanism = "inline"
 target_kind = "symbol"
 path = "tests/agents/test_deep_genome_dispatch_routing.py"
 symbol = "test_route_synthesize_waits_for_every_concrete_work_item"
-fingerprint = "sha256:6038e2fff5d817a8a2b2ef2b9b9966da39c514e167d4039a52a046cc28760666"
+fingerprint = "sha256:96e07ad2d7daf4e8e9186fa1e14673d96fb80a59ffc8dcde07cedd2ba8730ca0"
 owner = "bot-maintainers"
 introduced_on = 2026-07-19
 review_on = 2027-01-17

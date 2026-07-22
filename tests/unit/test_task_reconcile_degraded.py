@@ -10,10 +10,8 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from tests.agents.shared.deep_genome_fixtures import seed_brief_gene_plan
 
-from mcp_server_phytomni.agents.deep_genome.work_items import (
-    build_work_item_plan,
-)
 from mcp_server_phytomni.runtime import task_reconcile
 from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 from mcp_server_phytomni.runtime.task_manager import TaskManager
@@ -82,15 +80,7 @@ async def test_restart_orphan_projects_local_snapshot_without_remote_probe(
         owner="alice",
         output_dir="/obs/orphan",
     )
-    store.apply_brief_gene_transition(
-        "dg-orphan",
-        status="succeeded",
-        summary_markdown="BriefGene summary",
-    )
-    store.seed_plan(
-        reservation,
-        build_work_item_plan("osa", "Os01g0100100", "Os01g0100100"),
-    )
+    seed_brief_gene_plan(store, reservation, "Os01g0100100")
 
     result = await task_reconcile.reconcile_task("dg-orphan")
 

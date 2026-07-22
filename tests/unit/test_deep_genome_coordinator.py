@@ -16,6 +16,9 @@ from mcp_server_phytomni.agents.deep_genome.coordinator import (
     SubmissionProtocolError,
     WorkflowOutcome,
     WorkItemOutcome,
+    WorkItemPollCallbacks,
+    WorkItemPollOptions,
+    WorkItemPollRequest,
     concrete_work_item_outcomes,
     derive_workflow_outcome,
     normalize_submission,
@@ -180,15 +183,21 @@ async def _run_poll_fixture(
         sleeps.append(delay)
 
     outcome = await poll_work_item(
-        _submission(),
-        status_reader=status_reader,
-        result_resolver=result_resolver,
-        transition_sink=transition_sink,
-        request_timeout=4.0,
-        poll_interval=2.0,
-        deadline_seconds=10.0,
-        monotonic=monotonic,
-        sleep=sleep,
+        WorkItemPollRequest(
+            submission=_submission(),
+            callbacks=WorkItemPollCallbacks(
+                status_reader=status_reader,
+                result_resolver=result_resolver,
+                transition_sink=transition_sink,
+            ),
+            options=WorkItemPollOptions(
+                request_timeout=4.0,
+                poll_interval=2.0,
+                deadline_seconds=10.0,
+                monotonic=monotonic,
+                sleep=sleep,
+            ),
+        )
     )
     return outcome, transitions, sleeps
 
@@ -344,15 +353,21 @@ async def test_result_resolver_error_is_sanitized() -> None:
         """No terminal poll should sleep."""
 
     outcome = await poll_work_item(
-        _submission(),
-        status_reader=status_reader,
-        result_resolver=resolver,
-        transition_sink=sink,
-        request_timeout=4.0,
-        poll_interval=2.0,
-        deadline_seconds=10.0,
-        monotonic=lambda: 0.0,
-        sleep=no_sleep,
+        WorkItemPollRequest(
+            submission=_submission(),
+            callbacks=WorkItemPollCallbacks(
+                status_reader=status_reader,
+                result_resolver=resolver,
+                transition_sink=sink,
+            ),
+            options=WorkItemPollOptions(
+                request_timeout=4.0,
+                poll_interval=2.0,
+                deadline_seconds=10.0,
+                monotonic=lambda: 0.0,
+                sleep=no_sleep,
+            ),
+        )
     )
 
     assert outcome == WorkItemOutcome(
@@ -383,15 +398,21 @@ async def test_status_reader_error_is_sanitized() -> None:
         return WorkItemOutcome(status, summary, reason)
 
     outcome = await poll_work_item(
-        _submission(),
-        status_reader=status_reader,
-        result_resolver=resolver,
-        transition_sink=sink,
-        request_timeout=4.0,
-        poll_interval=2.0,
-        deadline_seconds=10.0,
-        monotonic=lambda: 0.0,
-        sleep=asyncio.sleep,
+        WorkItemPollRequest(
+            submission=_submission(),
+            callbacks=WorkItemPollCallbacks(
+                status_reader=status_reader,
+                result_resolver=resolver,
+                transition_sink=sink,
+            ),
+            options=WorkItemPollOptions(
+                request_timeout=4.0,
+                poll_interval=2.0,
+                deadline_seconds=10.0,
+                monotonic=lambda: 0.0,
+                sleep=asyncio.sleep,
+            ),
+        )
     )
 
     assert outcome.status == "failed"
@@ -420,13 +441,19 @@ async def test_cancelled_error_propagates_from_status_reader() -> None:
 
     with pytest.raises(asyncio.CancelledError):
         await poll_work_item(
-            _submission(),
-            status_reader=status_reader,
-            result_resolver=resolver,
-            transition_sink=sink,
-            request_timeout=4.0,
-            poll_interval=2.0,
-            deadline_seconds=10.0,
-            monotonic=lambda: 0.0,
-            sleep=asyncio.sleep,
+            WorkItemPollRequest(
+                submission=_submission(),
+                callbacks=WorkItemPollCallbacks(
+                    status_reader=status_reader,
+                    result_resolver=resolver,
+                    transition_sink=sink,
+                ),
+                options=WorkItemPollOptions(
+                    request_timeout=4.0,
+                    poll_interval=2.0,
+                    deadline_seconds=10.0,
+                    monotonic=lambda: 0.0,
+                    sleep=asyncio.sleep,
+                ),
+            )
         )
