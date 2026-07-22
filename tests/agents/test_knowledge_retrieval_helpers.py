@@ -14,6 +14,7 @@ and the multi-layer clear_retrieval_caches admin seam.
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import fields
 from typing import Any, cast
 
@@ -40,6 +41,9 @@ from mcp_server_phytomni.agents.knowledge.retrieval import (
 )
 from mcp_server_phytomni.agents.knowledge.retrieval_options import (
     RerankOptions as LeafRerankOptions,
+)
+from mcp_server_phytomni.agents.knowledge.retrieval_options import (
+    RetrieveOptions,
 )
 from mcp_server_phytomni.config.overrides import RETRIEVAL_CONFIG_FIELD_MAP
 
@@ -153,6 +157,24 @@ def test_timeout_returns_httpx_timeout_with_matching_connect() -> None:
     assert isinstance(timeout, Timeout)
     assert timeout.read == 12.5
     assert timeout.connect == 12.5
+
+
+async def test_retrieve_raw_docs_rejects_unknown_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject unsupported retrieval scopes before issuing an HTTP request."""
+
+    @asynccontextmanager
+    async def fake_client(**kwargs: Any):
+        del kwargs
+        yield cast(AsyncClient, None)
+
+    monkeypatch.setattr(retrieval_mod, "get_async_client", fake_client)
+    options = RetrieveOptions.from_kwargs({"scope": "unsupported"})
+
+    with pytest.raises(ValueError, match="Invalid scope value"):
+        retrieve_raw_docs = getattr(retrieval_mod, "_retrieve_raw_docs")
+        await retrieve_raw_docs("query", options)
 
 
 def test_clear_retrieval_caches_invokes_each_layer(
