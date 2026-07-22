@@ -52,6 +52,22 @@ class Mechanism(_ValueEnum):
     MARKER = "marker"
 
 
+class FindingParts(TypedDict):
+    """Normalized fields shared by every collector finding builder."""
+
+    tool: str
+    rule: str
+    mechanism: Mechanism
+    target_kind: TargetKind
+    path: str
+    symbol: str | None
+    peer_path: str | None
+    peer_symbol: str | None
+    location: str
+    message: str
+    source: str
+
+
 @dataclass(frozen=True, slots=True)
 class Finding:  # pylint: disable=too-many-instance-attributes
     """One observed static-analysis exception or diagnostic."""

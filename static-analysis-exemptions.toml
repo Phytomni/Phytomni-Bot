@@ -222,50 +222,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0017"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "scripts/static_analysis/collectors/helpers.py"
-symbol = "17:25"
-peer_path = "scripts/static_analysis/model.py"
-peer_symbol = "58:66"
-fingerprint = "sha256:2bde4ceca2e89f4d0dad6f8725a9c3d0c698832307b62142e73dbd56081c53ec"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==scripts.static_analysis.collectors.helpers:[17:25]\n==scripts.static_analysis.model:[58:66]\n    tool: str\n    rule: str\n    mechanism: Mechanism\n    target_kind: TargetKind\n    path: str\n    symbol: str | None\n    peer_path: str | None\n    peer_symbol: str | None"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0018"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "scripts/static_analysis/collectors/helpers.py"
-symbol = "19:25"
-peer_path = "scripts/static_analysis/model.py"
-peer_symbol = "80:86"
-fingerprint = "sha256:c3d8f0f3bfc38a05eedccf0a9944fa14e3875058532624f30f85eb678652d56c"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==scripts.static_analysis.collectors.helpers:[19:25]\n==scripts.static_analysis.model:[80:86]\n    mechanism: Mechanism\n    target_kind: TargetKind\n    path: str\n    symbol: str | None\n    peer_path: str | None\n    peer_symbol: str | None"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0019"
 tool = "pylint"
 rule = "R0801"

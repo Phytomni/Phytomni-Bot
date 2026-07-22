@@ -6,26 +6,8 @@
 
 from __future__ import annotations
 
-from typing import TypedDict
-
 from ..fingerprints import Endpoint, finding_fingerprint
-from ..model import Finding, Mechanism, TargetKind
-
-
-class FindingParts(TypedDict):
-    """Complete normalized fields needed to construct one finding."""
-
-    tool: str
-    rule: str
-    mechanism: Mechanism
-    target_kind: TargetKind
-    path: str
-    symbol: str | None
-    peer_path: str | None
-    peer_symbol: str | None
-    location: str
-    message: str
-    source: str
+from ..model import Finding, FindingParts
 
 
 def make_finding(parts: FindingParts) -> Finding:
