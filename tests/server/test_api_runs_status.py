@@ -22,6 +22,7 @@ from tests.agents.shared.deep_genome_fixtures import (
     attach_formatted_result,
     seed_partial_deep_genome_run,
 )
+from tests.support.run_registry_fakes import seed_foreign_run
 
 from mcp_server_phytomni.runtime import run_registry as run_registry_module
 from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
@@ -103,14 +104,13 @@ async def test_get_run_foreign_owner_is_404(
     tasks_db_path: str,
 ) -> None:
     """A run owned by another user is invisible (same 404 envelope)."""
-    RunRegistry(tasks_db_path).create_run(
-        RunSpec(
-            run_id="run-other-1",
-            user_id="someone-else",
-            agent="chat",
-            origin="local",
-        ),
-        outcome=RunOutcome(status="succeeded", result={"answer": "secret"}),
+    seed_foreign_run(
+        tasks_db_path,
+        run_id="run-other-1",
+        user_id="someone-else",
+        agent="chat",
+        origin="local",
+        result={"answer": "secret"},
     )
 
     response = await api_client.get(

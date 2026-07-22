@@ -12,29 +12,16 @@ TEMP_DIR when it is not.
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
-from typing import cast
 
 import pytest
+from tests.support.config_fakes import fake_scratch_config
 
-from mcp_server_phytomni.config.defaults import ServerConfig
 from mcp_server_phytomni.mcp import handlers as mcp_handlers
 from mcp_server_phytomni.storage import scratch as scratch_module
 
 scratch_server_dir = mcp_handlers.scratch_server_dir
 
 pytestmark = pytest.mark.unit
-
-
-def _fake_config(tmp_path: Path) -> ServerConfig:
-    """Return a minimal config namespace usable by scratch_server_dir."""
-    return cast(
-        ServerConfig,
-        SimpleNamespace(
-            BUCKET_NAME="phytomni",
-            TEMP_DIR=str(tmp_path / "fallback"),
-        ),
-    )
 
 
 def testscratch_server_dir_uses_obsfs_when_bucket_mounted(
@@ -65,7 +52,7 @@ def testscratch_server_dir_uses_obsfs_when_bucket_mounted(
 
     monkeypatch.setattr(scratch_module, "obsfs_path_for", fake_obsfs_path_for)
 
-    result = scratch_server_dir(_fake_config(tmp_path), "chat")
+    result = scratch_server_dir(fake_scratch_config(tmp_path), "chat")
 
     assert result.startswith("/obs/phytomni/agent_data/user_data/anonymous/")
     assert result.endswith("/chat/tmp/")
@@ -88,7 +75,7 @@ def testscratch_server_dir_falls_back_locally_when_bucket_missing(
         "obsfs_bucket_available",
         lambda *_args, **_kwargs: False,
     )
-    config = _fake_config(tmp_path)
+    config = fake_scratch_config(tmp_path)
 
     result = scratch_server_dir(config, "knowledge")
 

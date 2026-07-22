@@ -12,15 +12,14 @@ X-Request-Id header / error-envelope correlation.
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 from typing import cast
 
 import httpx
 import pytest
 from starlette.types import Message, Receive, Scope, Send
+from tests.support.config_fakes import fake_scratch_config
 
 from mcp_server_phytomni.api.app import request_context_middleware
-from mcp_server_phytomni.config.defaults import ServerConfig
 from mcp_server_phytomni.mcp import handlers as mcp_handlers
 from mcp_server_phytomni.runtime.request_context import (
     bind_pre_recorded_task_id,
@@ -34,17 +33,6 @@ from mcp_server_phytomni.storage import scratch as scratch_module
 pytestmark = pytest.mark.server
 
 scratch_server_dir = mcp_handlers.scratch_server_dir
-
-
-def _fake_config(tmp_path: Path) -> ServerConfig:
-    """Return a minimal config namespace usable by scratch_server_dir."""
-    return cast(
-        ServerConfig,
-        SimpleNamespace(
-            BUCKET_NAME="phytomni",
-            TEMP_DIR=str(tmp_path / "fallback"),
-        ),
-    )
 
 
 def test_context_helpers_default_to_none() -> None:
@@ -71,7 +59,7 @@ def test_no_context_scratch_is_anonymous(
         "obsfs_bucket_available",
         lambda *_a, **_k: False,
     )
-    path = scratch_server_dir(_fake_config(tmp_path), "chat")
+    path = scratch_server_dir(fake_scratch_config(tmp_path), "chat")
 
     assert "anonymous" in path
 
@@ -86,7 +74,7 @@ def test_request_context_user_reaches_scratch(
         lambda *_a, **_k: False,
     )
     with request_context(user_id="alice", request_id="rid-2"):
-        path = scratch_server_dir(_fake_config(tmp_path), "chat")
+        path = scratch_server_dir(fake_scratch_config(tmp_path), "chat")
 
     assert "alice" in path
     assert "anonymous" not in path

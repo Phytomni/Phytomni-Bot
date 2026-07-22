@@ -17,6 +17,7 @@ from typing import Any
 
 import httpx
 import pytest
+from tests.support.run_registry_fakes import seed_foreign_run
 
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
@@ -276,14 +277,12 @@ async def test_get_run_logs_foreign_owner_is_404(
     tasks_db_path: str,
 ) -> None:
     """A run owned by another user is invisible (404)."""
-    RunRegistry(tasks_db_path).create_run(
-        RunSpec(
-            run_id="run-foreign-1",
-            user_id="u2",
-            agent="analyst",
-            origin="remote",
-        ),
-        outcome=RunOutcome(status="succeeded"),
+    seed_foreign_run(
+        tasks_db_path,
+        run_id="run-foreign-1",
+        user_id="u2",
+        agent="analyst",
+        origin="remote",
     )
 
     response = await api_client.get(

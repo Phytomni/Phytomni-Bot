@@ -26,6 +26,7 @@ from tests.agents.shared.deep_genome_fixtures import (
     seed_terminal_deep_genome_run,
 )
 from tests.support.chat_fakes import install_chat_handler
+from tests.support.run_registry_fakes import stamp_run_created_at
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.runtime import run_registry as run_registry_module
@@ -547,15 +548,7 @@ async def test_list_runs_created_after_filter(
         agent="chat",
         origin="local",
     )
-    with sqlite3.connect(tasks_db_path) as conn:
-        conn.executemany(
-            "UPDATE runs SET created_at = ? WHERE run_id = ?",
-            [
-                ("2026-01-01T00:00:00+00:00", "run-old"),
-                ("2026-06-01T00:00:00+00:00", "run-new"),
-            ],
-        )
-        conn.commit()
+    stamp_run_created_at(tasks_db_path, "run-old", "run-new")
 
     response = await api_client.get(
         "/v1/runs?created_after=2026-03-01T00:00:00%2B00:00",

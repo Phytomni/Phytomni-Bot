@@ -15,6 +15,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from tests.support.run_registry_fakes import stamp_run_created_at
 
 from mcp_server_phytomni.runtime.run_registry import (
     RunFilter,
@@ -237,15 +238,7 @@ def test_list_runs_filters_by_created_after(tmp_path: Path) -> None:
     registry.create_run(RunSpec("run-old", "alice", "chat", "local"))
     registry.create_run(RunSpec("run-new", "alice", "chat", "local"))
     # Stamp deterministic created_at so the bound comparison is stable.
-    with sqlite3.connect(db) as conn:
-        conn.executemany(
-            "UPDATE runs SET created_at = ? WHERE run_id = ?",
-            [
-                ("2026-01-01T00:00:00+00:00", "run-old"),
-                ("2026-06-01T00:00:00+00:00", "run-new"),
-            ],
-        )
-        conn.commit()
+    stamp_run_created_at(db, "run-old", "run-new")
 
     listing = registry.list_runs(
         owner="alice",

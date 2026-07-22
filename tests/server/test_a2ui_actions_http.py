@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 import pytest
+from tests.support.a2ui_contract_fakes import gene_id_form_props
 
 from mcp_server_phytomni.agents.chat.a2ui_graph import _CANCEL_MESSAGE
 from mcp_server_phytomni.agents.shared.a2ui import A2UI_CATALOG_VERSION
@@ -807,17 +808,7 @@ def _open_review_form_surface(surface_id: str) -> dict[str, Any]:
         "catalog_version": A2UI_CATALOG_VERSION,
         "surface_id": surface_id,
         "widget": "form",
-        "props": {
-            "title": "Gene ID",
-            "fields": [
-                {
-                    "name": "gene_id",
-                    "label": "Gene ID",
-                    "type": "text",
-                    "required": True,
-                }
-            ],
-        },
+        "props": gene_id_form_props(),
     }
 
 

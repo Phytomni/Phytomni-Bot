@@ -6,9 +6,28 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
-__all__ = ["fake_chat_config", "fake_sensitive_config"]
+from mcp_server_phytomni.config.defaults import ServerConfig
+
+__all__ = [
+    "fake_chat_config",
+    "fake_sensitive_config",
+    "fake_scratch_config",
+]
+
+
+def fake_scratch_config(tmp_path: Path) -> ServerConfig:
+    """Build the minimal config surface used by ``scratch_server_dir``."""
+    return cast(
+        ServerConfig,
+        SimpleNamespace(
+            BUCKET_NAME="phytomni",
+            TEMP_DIR=str(tmp_path / "fallback"),
+        ),
+    )
 
 
 def fake_chat_config(**overrides: object) -> SimpleNamespace:

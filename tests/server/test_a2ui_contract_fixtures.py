@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.support.a2ui_contract_fakes import gene_id_form_props
 
 from mcp_server_phytomni.agents.shared.a2ui import (
     A2UI_CATALOG_VERSION,
@@ -72,17 +73,7 @@ _CONFIRM_CONTRACTS = (
     ),
 )
 
-_GENE_ID_PROPS = {
-    "title": "Gene ID",
-    "fields": [
-        {
-            "name": "gene_id",
-            "label": "Gene ID",
-            "type": "text",
-            "required": True,
-        }
-    ],
-}
+_GENE_ID_PROPS = gene_id_form_props()
 
 _YES_NO_PROPS = {
     "title": "Yes / No",
