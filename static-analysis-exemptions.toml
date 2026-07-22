@@ -2018,46 +2018,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0273"
-tool = "pylint"
-rule = "too-many-instance-attributes"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "scripts/static_analysis/model.py"
-symbol = "Exemption"
-fingerprint = "sha256:eeb04531fd760d523b2fd486a640c3ea24dabd91f85e0b47a52bcafdc31d251d"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=too-many-instance-attributes"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0274"
-tool = "pylint"
-rule = "too-many-instance-attributes"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "scripts/static_analysis/model.py"
-symbol = "Finding"
-fingerprint = "sha256:661b324cf7d8671f2ab7caf8bee1839f24b77a0de25723c26767926e3a4ba4d8"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=too-many-instance-attributes"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0276"
 tool = "pylint"
 rule = "too-many-lines"

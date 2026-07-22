@@ -69,17 +69,29 @@ class FindingParts(TypedDict):
 
 
 @dataclass(frozen=True, slots=True)
-class Finding:  # pylint: disable=too-many-instance-attributes
-    """One observed static-analysis exception or diagnostic."""
+class _FindingCore:
+    """Tool identity shared by observed findings."""
 
     tool: str
     rule: str
     mechanism: Mechanism
     target_kind: TargetKind
+
+
+@dataclass(frozen=True, slots=True)
+class _FindingTarget(_FindingCore):
+    """Repository target identity shared by observed findings."""
+
     path: str
     symbol: str | None
     peer_path: str | None
     peer_symbol: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class Finding(_FindingTarget):
+    """One observed static-analysis exception or diagnostic."""
+
     fingerprint: str
     location: str
     message: str
@@ -87,8 +99,8 @@ class Finding:  # pylint: disable=too-many-instance-attributes
 
 
 @dataclass(frozen=True, slots=True)
-class Exemption:  # pylint: disable=too-many-instance-attributes
-    """One exact, reviewed authorization in the registry."""
+class _ExemptionCore:
+    """Stable policy identity shared by registry authorizations."""
 
     id: str
     tool: str
@@ -96,11 +108,23 @@ class Exemption:  # pylint: disable=too-many-instance-attributes
     classification: Classification
     mechanism: Mechanism
     target_kind: TargetKind
+
+
+@dataclass(frozen=True, slots=True)
+class _ExemptionTarget(_ExemptionCore):
+    """Repository target identity shared by registry authorizations."""
+
     path: str
     symbol: str | None
     peer_path: str | None
     peer_symbol: str | None
     fingerprint: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ExemptionReview(_ExemptionTarget):
+    """Review evidence shared by registry authorizations."""
+
     owner: str
     introduced_on: date
     review_on: date
@@ -108,6 +132,12 @@ class Exemption:  # pylint: disable=too-many-instance-attributes
     counterfactual: str
     risk: str
     tests: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class Exemption(_ExemptionReview):
+    """One exact, reviewed authorization in the registry."""
+
     expires_on: date | None
     remediation: str | None
 
