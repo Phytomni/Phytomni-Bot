@@ -14,11 +14,9 @@ coverage there.
 
 from __future__ import annotations
 
-from typing import Any, TypedDict, get_type_hints
+from typing import get_type_hints
 
 import pytest
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import CompiledStateGraph
 
 from mcp_server_phytomni.agents.analyst.core import AnalystAgent
 from mcp_server_phytomni.agents.analyst.state import (
@@ -28,39 +26,21 @@ from mcp_server_phytomni.agents.analyst.state import (
     AnalystState,
 )
 from mcp_server_phytomni.config.defaults import AnalystConfig
-from tests.support.subgraph_fakes import ANALYST_CHAT_MOUNT_TOPOLOGY
+from tests.support.subgraph_fakes import (
+    ANALYST_CHAT_MOUNT_TOPOLOGY,
+    install_knowledge_app,
+)
 
 pytestmark = pytest.mark.agent
 
 _CORE_MODULE = "mcp_server_phytomni.agents.analyst.core"
 
 
-class _FakeKnowledgeState(TypedDict, total=False):
-    """Minimal state shape for the offline knowledge-subgraph stub."""
-
-    retrieved_docs: list[dict[str, Any]]
-
-
 def _install_fake_knowledge_app(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Patch ``build_knowledge_app`` to return a trivial compiled stub.
-
-    The ``method_retrieve`` site always mounts the per-instance
-    compiled KnowledgeAgent app in ``AnalystAgent.__init__``; this
-    substitutes a tiny compiled subgraph so construction stays fully
-    offline (no real KnowledgeAgent compile, no real retrieve).
-    """
-
-    async def _noop(state: _FakeKnowledgeState) -> dict[str, Any]:
-        del state
-        return {"retrieved_docs": []}
-
-    workflow: StateGraph = StateGraph(_FakeKnowledgeState)
-    workflow.add_node("noop", _noop)
-    workflow.add_edge(START, "noop")
-    workflow.add_edge("noop", END)
-    fake_app: CompiledStateGraph = workflow.compile()
-    monkeypatch.setattr(
-        f"{_CORE_MODULE}.build_knowledge_app", lambda **_kwargs: fake_app
+    """Patch the knowledge mount with a deterministic compiled subgraph."""
+    install_knowledge_app(
+        monkeypatch,
+        f"{_CORE_MODULE}.build_knowledge_app",
     )
 
 

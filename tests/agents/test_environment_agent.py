@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from mcp_server_phytomni.agents.environment import agent as environment_agent
-from mcp_server_phytomni.agents.environment import graph as environment_graph
+from tests.support.environment_fakes import install_environment_submitter
 
 pytestmark = pytest.mark.agent
 
@@ -166,14 +166,7 @@ async def test_region_vci_analysis_extracts_codes_and_submits_task(
     # Region-code extraction always runs through the compiled chat
     # subgraph, so ``_cached_chat_app`` is stubbed below to drive it.
     subgraph_mock = AsyncMock(side_effect=fake_submit_via_subgraph)
-    monkeypatch.setattr(
-        environment_graph, "submit_analyst_via_subgraph", subgraph_mock
-    )
-    monkeypatch.setattr(
-        environment_graph,
-        "_build_submit_agent",
-        lambda *_a, **_kw: ("analyst-agent-stub", "", "small", "thread-x"),
-    )
+    install_environment_submitter(monkeypatch, subgraph_mock)
     monkeypatch.setattr(
         environment_agent, "_cached_chat_app", lambda: fake_chat_app
     )

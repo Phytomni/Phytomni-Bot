@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `150`
+- Authorized records: `146`
 
 ## Informational counts
 
@@ -22,7 +22,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:prop-decorator`                             |       1 |
 | `pylint:C0103`                                    |       1 |
 | `pylint:C0116`                                    |       1 |
-| `pylint:R0801`                                    |      55 |
+| `pylint:R0801`                                    |      51 |
 | `pylint:R0903`                                    |       7 |
 | `pylint:R0913`                                    |       1 |
 | `pylint:R0917`                                    |       1 |
@@ -89,10 +89,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0084` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 59:64 | `sha256:dab91daad1dc692da89b2d3c4bedfcd081201a6cd5e592f6d9f289f0ad825f66` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_models.py, tests/server/test_memory_http.py, static-analysis-inventory |
 | `SAE-TMP-0085` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 73:79 | `sha256:02a0ef0f7f5041c275b28c1c4c24c010eae62e1de902e15478e70af3b9aa9b42` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_accessor.py, tests/server/test_memory_http.py, static-analysis-inventory |
 | `SAE-TMP-0086` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/migrations.py | 23:31 | `sha256:4f06fd5ec9e45a0c63ea3f65946f56998710e5123f0135fc1bc20ca49b9bbe3a` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_migrations.py, static-analysis-inventory |
-| `SAE-TMP-0087` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_analyst_graph_io.py | 37:60 | `sha256:7df9fed3886f917a843ce0b27b08bc06111ab61bf3f15c8d6cb7bc1c73814ba3` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0092` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_brief_gene_chat_subgraph.py | 71:79 | `sha256:36c489b726b7409ac52d963563d5e3c3db3049c965e714694d291c98f53e459c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0093` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_brief_gene_knowledge_subgraph.py | 81:86 | `sha256:0c5f1d7ed62b15af3b87f94ba171987177371c7e209c1daad28c40fc6c396cad` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0107` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_environment_agent.py | 168:176 | `sha256:4620aee296dabe883d84e3fc303a3a4d7fd87eee6bff62a845d9ed2318b34a74` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0125` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_actions_http.py | 810:819 | `sha256:d30623a9d2caa6c8f0ea3c64da0ad0d8b8d7ed8e0e45dfa8300d9198f8efbda1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0150` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_run_logs.py | 266:280 | `sha256:a50099a104216d972c604e94c37fd02ad914cb71b6efddf52a2497c4b71c2afe` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0151` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_runs_list.py | 550:559 | `sha256:8aca2706a3ad7cdf858e8259cadf45b5cb0f7c37b5020d4c6080af798b67e934` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -981,116 +977,6 @@ Risk:
 
 ```text
 A stale schema oracle can reject a planned migration; update it only alongside migration and rollback evidence.
-```
-
-### `SAE-TMP-0087`
-
-Rationale:
-
-```text
-Analyst and review knowledge graph fixture shapes remain intentionally duplicated across graph-I/O and fan-out characterization tests.
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0092`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==tests.agents.test_brief_gene_chat_subgraph:[71:79]
-==tests.agents.test_brief_gene_knowledge_subgraph:[66:74]
-            "is_follow_up": False,
-            "gene_found": True,
-            "gene_id": "AT1G01010",
-            "query_id_version": "tair10",
-            "gene_id_version": "tair10",
-            "species_code": "ath",
-            "species_latin_name": "Arabidopsis thaliana",
-            "species_english_name": "thale cress",
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0093`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==tests.agents.test_brief_gene_knowledge_subgraph:[81:86]
-==tests.agents.test_deep_genome_brief_gene_mount:[334:339]
-        "go_string": "",
-        "kegg_string": "",
-        "interpro_string": "",
-        "description_string": "",
-        "retrieved_docs": [],
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0107`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==tests.agents.test_environment_agent:[168:176]
-==tests.agents.test_environment_analyst_subgraph:[85:97]
-    monkeypatch.setattr(
-        environment_graph, "submit_analyst_via_subgraph", subgraph_mock
-    )
-    # _build_submit_agent must be stubbed because constructing a real
-    # AnalystAgent reaches into cached-agent registry + IAM token
-    # acquisition, neither of which is available offline.
-    monkeypatch.setattr(
-        environment_graph,
-        "_build_submit_agent",
-        lambda *_a, **_kw: ("analyst-agent-stub", "", "small", "thread-x"),
-    )
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
 ```
 
 ### `SAE-TMP-0125`

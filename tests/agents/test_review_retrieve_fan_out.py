@@ -12,61 +12,29 @@ ordering, and xray subgraph expansion.
 
 from __future__ import annotations
 
-from typing import Any, TypedDict, cast
+from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
-from langgraph.graph import END, START, StateGraph
-from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Send
 
 from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
 from mcp_server_phytomni.agents.review.state import DeepResearchState
 from mcp_server_phytomni.config.defaults import ReviewConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.subgraph_fakes import install_knowledge_app
 
 pytestmark = pytest.mark.agent
 
 _AGENT_MODULE = "mcp_server_phytomni.agents.review.agent"
 
 
-class _FakeKnowledgeState(TypedDict, total=False):
-    """Minimal state shape for the offline knowledge-subgraph stub."""
-
-    retrieved_docs: list[dict[str, Any]]
-
-
-def _build_fake_knowledge_app() -> CompiledStateGraph:
-    """Compile a one-node ``StateGraph`` to stand in for the KA subgraph.
-
-    ``find_subgraph_pregel`` recognises ``CompiledStateGraph`` instances
-    by isinstance, not by duck typing, so a ``SimpleNamespace`` cannot
-    satisfy the xray expansion. Compiling a trivial ``StateGraph`` that
-    returns an empty ``retrieved_docs`` list keeps the test fully offline
-    while still presenting a real compiled subgraph for the worker's
-    ``self._knowledge_app`` attribute to hold.
-    """
-
-    async def _noop(state: _FakeKnowledgeState) -> dict[str, Any]:
-        del state
-        return {"retrieved_docs": []}
-
-    workflow: StateGraph = StateGraph(_FakeKnowledgeState)
-    workflow.add_node("noop", _noop)
-    workflow.add_edge(START, "noop")
-    workflow.add_edge("noop", END)
-    return workflow.compile()
-
-
-def _install_fake_knowledge_app(
-    monkeypatch: pytest.MonkeyPatch,
-) -> CompiledStateGraph:
+def _install_fake_knowledge_app(monkeypatch: pytest.MonkeyPatch) -> None:
     """Patch ``build_knowledge_app`` to return a deterministic stub."""
-    fake_app = _build_fake_knowledge_app()
-    monkeypatch.setattr(
-        f"{_AGENT_MODULE}.build_knowledge_app", lambda **_kwargs: fake_app
+    install_knowledge_app(
+        monkeypatch,
+        f"{_AGENT_MODULE}.build_knowledge_app",
     )
-    return fake_app
 
 
 def _build_agent(

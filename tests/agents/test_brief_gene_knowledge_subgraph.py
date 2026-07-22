@@ -23,6 +23,10 @@ from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
 from mcp_server_phytomni.agents.brief_gene.state import BriefGeneAgentState
 from mcp_server_phytomni.config.defaults import BriefGeneConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.brief_gene_states import (
+    brief_gene_identity_fields,
+    empty_brief_gene_annotation_fields,
+)
 from tests.support.subgraph_fakes import install_knowledge_app
 
 from ._subgraph_branch_fakes import failing_async_object
@@ -64,14 +68,7 @@ def _gene_found_state() -> BriefGeneAgentState:
         BriefGeneAgentState,
         {
             "user_query": "AT1G01010",
-            "is_follow_up": False,
-            "gene_found": True,
-            "gene_id": "AT1G01010",
-            "query_id_version": "tair10",
-            "gene_id_version": "tair10",
-            "species_code": "ath",
-            "species_latin_name": "Arabidopsis thaliana",
-            "species_english_name": "thale cress",
+            **brief_gene_identity_fields(),
             "species_all_name": "Arabidopsis thaliana",
             "gene_name_symbol_list": ["AT1G01010"],
             "gene_id_list": ["AT1G01010", "NAC001"],
@@ -79,11 +76,7 @@ def _gene_found_state() -> BriefGeneAgentState:
             "gene_start": "3631",
             "gene_end": "5899",
             "gene_strand": "+",
-            "go_string": "",
-            "kegg_string": "",
-            "interpro_string": "",
-            "description_string": "",
-            "retrieved_docs": [],
+            **empty_brief_gene_annotation_fields(),
             "retrieve_context": "",
             "follow_up_questions": [],
             "final_response": {},

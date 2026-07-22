@@ -25,6 +25,7 @@ from mcp_server_phytomni.agents.deep_genome.brief_gene_mount import (
     RequiredBriefGeneError,
     make_brief_gene_mount_node,
 )
+from tests.support.brief_gene_states import empty_brief_gene_annotation_fields
 from tests.support.subgraph_fakes import mount_app
 
 from ._subgraph_branch_fakes import failing_async_object
@@ -332,11 +333,7 @@ async def test_mount_success_rolls_up_literature_degraded() -> None:
     """
     canned = {
         "gene_id": "AT1G01010",
-        "go_string": "",
-        "kegg_string": "",
-        "interpro_string": "",
-        "description_string": "",
-        "retrieved_docs": [],
+        **empty_brief_gene_annotation_fields(),
         "literature_degraded": [{"task_label": "OsCAB1", "message": "boom"}],
     }
     mount = make_brief_gene_mount_node(

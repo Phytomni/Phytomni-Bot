@@ -24,6 +24,7 @@ from mcp_server_phytomni.agents.shared.analysis_requests import (
     AnalystAnalysisRequest,
     build_analyst_analysis_request,
 )
+from tests.support.environment_fakes import install_environment_submitter
 
 pytestmark = pytest.mark.agent
 
@@ -83,17 +84,7 @@ async def test_submit_vci_task_uses_subgraph(
             "task_status": "SUCCEEDED",
         }
     )
-    monkeypatch.setattr(
-        environment_graph, "submit_analyst_via_subgraph", subgraph_mock
-    )
-    # _build_submit_agent must be stubbed because constructing a real
-    # AnalystAgent reaches into cached-agent registry + IAM token
-    # acquisition, neither of which is available offline.
-    monkeypatch.setattr(
-        environment_graph,
-        "_build_submit_agent",
-        lambda *_a, **_kw: ("analyst-agent-stub", "", "small", "thread-x"),
-    )
+    install_environment_submitter(monkeypatch, subgraph_mock)
 
     result = await submit_vci_task_node(_state_with_codes())
 
@@ -117,11 +108,7 @@ async def test_submit_vci_subgraph_request_carries_target_and_polling(
     monkeypatch.setattr(
         environment_graph, "submit_analyst_via_subgraph", subgraph_mock
     )
-    monkeypatch.setattr(
-        environment_graph,
-        "_build_submit_agent",
-        lambda *_a, **_kw: ("analyst-agent-stub", "", "small", "thread-x"),
-    )
+    install_environment_submitter(monkeypatch, subgraph_mock)
 
     await submit_vci_task_node(_state_with_codes())
 

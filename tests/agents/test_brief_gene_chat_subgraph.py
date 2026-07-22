@@ -20,6 +20,7 @@ from mcp_server_phytomni.agents.brief_gene.core import BriefGeneAgent
 from mcp_server_phytomni.agents.brief_gene.state import BriefGeneAgentState
 from mcp_server_phytomni.config.defaults import BriefGeneConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.brief_gene_states import brief_gene_identity_fields
 from tests.support.subgraph_fakes import (
     BRIEF_GENE_CHAT_MOUNT_TOPOLOGY,
     assert_agent_chat_mount_topology,
@@ -69,14 +70,7 @@ def _gene_found_state() -> BriefGeneAgentState:
         BriefGeneAgentState,
         {
             "user_query": "What does AT1G01010 do?",
-            "is_follow_up": False,
-            "gene_found": True,
-            "gene_id": "AT1G01010",
-            "query_id_version": "tair10",
-            "gene_id_version": "tair10",
-            "species_code": "ath",
-            "species_latin_name": "Arabidopsis thaliana",
-            "species_english_name": "thale cress",
+            **brief_gene_identity_fields(),
             "species_all_name": "Arabidopsis thaliana / thale cress",
             "gene_name_symbol_list": ["AT1G01010"],
             "gene_id_list": ["AT1G01010"],
