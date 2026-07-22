@@ -15,6 +15,7 @@ from langgraph.graph import END, START, StateGraph
 from mcp_server_phytomni.agents.deep_genome.agent import DeepGenomeState
 from mcp_server_phytomni.agents.deep_genome.work_items import (
     WorkItemSpec,
+    build_logical_analysis_tasks,
     build_work_item_plan,
     section_keys,
 )
@@ -95,6 +96,32 @@ def test_work_item_keys_and_sections_are_deterministic() -> None:
         "protein_structure_analysis",
         "digital_design",
     )
+
+
+def test_logical_task_projection_keeps_design_as_one_branch() -> None:
+    """The legacy branch projection preserves concrete target semantics."""
+    items = build_work_item_plan("osa", "Os01g0100100", "LOC_Os01g01010")
+
+    tasks = build_logical_analysis_tasks(
+        items,
+        species_code="osa",
+        gene_id="Os01g0100100",
+    )
+
+    assert len(tasks) == 11
+    assert tasks[-1] == {
+        "target_gene": "Os01g0100100",
+        "species_code": "osa",
+        "analysis_type": "digital_design",
+        "compute": "medium",
+        "func_name": "digital_design",
+    }
+    expression = next(
+        task
+        for task in tasks
+        if task["analysis_type"] == "gene_expression_tissues"
+    )
+    assert expression["target_gene"] == "LOC_Os01g01010"
 
 
 def test_deep_genome_state_graph_retains_all_work_items() -> None:

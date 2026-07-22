@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `163`
+- Authorized records: `161`
 
 ## Informational counts
 
@@ -35,7 +35,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `pylint:too-many-arguments`                       |       3 |
 | `pylint:too-many-instance-attributes`             |       3 |
 | `pylint:too-many-lines`                           |       1 |
-| `pylint:too-many-locals`                          |       6 |
+| `pylint:too-many-locals`                          |       4 |
 | `pylint:too-many-statements`                      |       1 |
 | `pylint:wrong-import-position`                    |       1 |
 | `pymarkdown:md013`                                |       1 |
@@ -212,8 +212,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0358` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/evolution/agent.py | find_spa_taxids | `sha256:9b1db3e2c21f23bbdfc39763a9fee97b55fb045dbc6abd84b744aa9df2be511f` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/evolution/agent.py, static-analysis-inventory |
 | `SAE-TMP-0361` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/auth/iam.py | get_token | `sha256:86c7b9c1162e4bb19a32a5e178c0a2f362018486f6aa8c0efd145e60dafaa822` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/auth/iam.py, static-analysis-inventory |
 | `SAE-TMP-0362` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/common/httpx_client.py | get_async_client | `sha256:d902f3079846e17beb3ccdcc68c0bd432c3e473f0171b0c54c975be37ee154c9` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/common/httpx_client.py, static-analysis-inventory |
-| `SAE-TMP-0365` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | DeepGenomeDispatchMixin.\_prepare_analysis_tasks | `sha256:b3b20b0c9824d10effeca2aba17cec3267456dc9ef174b4e20e8ff4bba08a57c` | bot-maintainers | 2026-07-22 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | tests/agents/test_deep_genome_dispatch_routing.py, tests/unit/test_deep_genome_dispatch.py, static-analysis-inventory |
-| `SAE-TMP-0366` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | DeepGenomeDispatchMixin.\_dispatch_and_wait_analysis | `sha256:c39727b8da09946785aaee90fd61f0ac9918f9033e8e1dce2d137a60b7896327` | bot-maintainers | 2026-07-22 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | tests/agents/test_deep_genome_dispatch_routing.py, tests/unit/test_deep_genome_dispatch.py, static-analysis-inventory |
 
 ## Review fields
 
@@ -3786,44 +3784,4 @@ Risk:
 
 ```text
 The exemption could hide an accidental timeout that is not forwarded to the underlying client.
-```
-
-### `SAE-TMP-0365`
-
-Rationale:
-
-```text
-The task-preparation seam keeps gene identity resolution, concrete work-item planning, and legacy logical branch construction together until a characterization-preserving coordinator extraction lands.
-```
-
-Counterfactual:
-
-```text
-Splitting the locals without a shared plan oracle could change twelve-row task coverage, species-specific identity resolution, or optional-branch ordering.
-```
-
-Risk:
-
-```text
-The explicit plan state can grow and hide a missed analysis row; dispatch routing and lifecycle tests must remain the required review gate.
-```
-
-### `SAE-TMP-0366`
-
-Rationale:
-
-```text
-The remote-analysis seam keeps submission, polling, result download, and lifecycle transition context explicit until the coordinator extraction proves ordering and redaction compatibility.
-```
-
-Counterfactual:
-
-```text
-Wrapping these values prematurely could hide terminal-state transitions or make optional analysis failures appear successful.
-```
-
-Risk:
-
-```text
-The polling context can accumulate backend-specific fields; lifecycle, failure, and redaction tests must cover every retained field.
 ```

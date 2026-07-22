@@ -47,7 +47,11 @@ from .coordinator import (
 )
 from .summary import build_design_work_item_summary, build_sub_summary
 from .tracking import DeepGenomeTransitionSink
-from .work_items import build_work_item_plan, section_keys
+from .work_items import (
+    WorkItemSpec,
+    build_logical_analysis_tasks,
+    build_work_item_plan,
+)
 
 if TYPE_CHECKING:
     from .agent import DeepGenomeState
@@ -80,6 +84,7 @@ _analyst_node_name = deep_genome_routing.analyst_node_name
 _BEST_EFFORT_ERRORS: tuple[type[Exception], ...] = (Exception,)
 
 _DESIGN_SUMMARY_ERRORS: tuple[type[Exception], ...] = (Exception,)
+_RESOLVED_GENE_ID_COLUMNS = {"osa": "msu_gene_id", "zma": "v4_id"}
 
 
 def _outcome_work_item_delta(
@@ -626,6 +631,52 @@ class DeepGenomeDispatchMixin:
             return await relay_bi_query(sql, message="BI query failed")
         return await gauss_query(sql)
 
+    async def _resolve_analysis_gene_id(
+        self: Any,
+        species_code: str,
+        gene_id: str,
+    ) -> str:
+        """Resolve the species-specific id required by expression tables."""
+        column = _RESOLVED_GENE_ID_COLUMNS.get(species_code)
+        if column is None:
+            return (
+                gene_id.replace("_", "") if species_code == "gma" else gene_id
+            )
+        response = await self._bi_json(
+            f"SELECT * FROM id_table WHERE gene_id = "
+            f"{sql_literal(gene_id)} AND species_code = '{species_code}'"
+        )
+        return response["data"][0][column]
+
+    def _seed_analysis_plan(
+        self: Any,
+        state: DeepGenomeState,
+        plan: tuple[WorkItemSpec, ...],
+    ) -> None:
+        """Persist the plan when the graph carries reservation data."""
+        task_id = state.get("task_id")
+        run_id = state.get("run_id")
+        if not (
+            isinstance(task_id, str)
+            and isinstance(run_id, str)
+            and task_id.strip()
+            and run_id.strip()
+        ):
+            return
+        store = DeepGenomeStore(resolve_tasks_db_path())
+        store.seed_plan(
+            DeepGenomeReservation(
+                run_id=run_id,
+                umbrella_task_id=task_id,
+                owner=str(
+                    state.get("owner")
+                    or getattr(self.deep_genome_config, "USER_ID", "anonymous")
+                ),
+                output_dir=str(state.get("output_dir") or ""),
+            ),
+            plan,
+        )
+
     async def _prepare_analysis_tasks(self: Any, state: DeepGenomeState):
         """Initialize analysis tasks for parallel execution.
 
@@ -642,81 +693,25 @@ class DeepGenomeDispatchMixin:
             Dict with the legacy logical ``analysis_tasks`` list and the
             serialized concrete ``work_items`` list.
         """
-        # pylint: disable=too-many-locals
         gene_id = state["gene_id"]
         species_code = state.get("species_code", "")
-        match species_code:
-            case "osa":
-                gene_id_reponse = await self._bi_json(
-                    f"SELECT * FROM id_table WHERE gene_id = "
-                    f"{sql_literal(gene_id)} AND species_code = 'osa'"
-                )
-                gene_idv2 = gene_id_reponse["data"][0]["msu_gene_id"]
-            case "zma":
-                gene_id_reponse = await self._bi_json(
-                    f"SELECT * FROM id_table WHERE gene_id = "
-                    f"{sql_literal(gene_id)} AND species_code = 'zma'"
-                )
-                gene_idv2 = gene_id_reponse["data"][0]["v4_id"]
-            case "gma":
-                gene_idv2 = gene_id.replace("_", "")
-            case _:
-                gene_idv2 = gene_id
-        plan = build_work_item_plan(species_code, gene_id, gene_idv2)
-        task_id = state.get("task_id")
-        run_id = state.get("run_id")
-        if (
-            isinstance(task_id, str)
-            and isinstance(run_id, str)
-            and task_id.strip()
-            and run_id.strip()
-        ):
-            store = DeepGenomeStore(resolve_tasks_db_path())
-            store.seed_plan(
-                DeepGenomeReservation(
-                    run_id=run_id,
-                    umbrella_task_id=task_id,
-                    owner=str(
-                        state.get("owner")
-                        or getattr(
-                            self.deep_genome_config, "USER_ID", "anonymous"
-                        )
-                    ),
-                    output_dir=str(state.get("output_dir") or ""),
-                ),
-                plan,
+        resolved_gene_id = (
+            await DeepGenomeDispatchMixin._resolve_analysis_gene_id(
+                self,
+                species_code,
+                gene_id,
             )
-        concrete_items = [asdict(item) for item in plan]
-        logical_tasks = []
-        for section_key in section_keys(plan):
-            section_items = [
-                item for item in plan if item.section_key == section_key
-            ]
-            representative = section_items[0]
-            analysis_type = (
-                "digital_design"
-                if section_key == "digital_design"
-                else representative.analysis_type
-            )
-            logical_tasks.append(
-                {
-                    "target_gene": (
-                        gene_id
-                        if section_key == "digital_design"
-                        else representative.target_gene
-                    ),
-                    "species_code": species_code,
-                    "analysis_type": analysis_type,
-                    "compute": representative.compute_resource,
-                    "func_name": analysis_type,
-                }
-            )
+        )
+        plan = build_work_item_plan(species_code, gene_id, resolved_gene_id)
+        DeepGenomeDispatchMixin._seed_analysis_plan(self, state, plan)
         return {
-            "analysis_tasks": logical_tasks,
-            "work_items": concrete_items,
+            "analysis_tasks": build_logical_analysis_tasks(
+                plan,
+                species_code,
+                gene_id,
+            ),
+            "work_items": [asdict(item) for item in plan],
         }
-
-    # pylint: enable=too-many-locals
 
     async def _poll_remote_submission(
         self: Any,
@@ -738,6 +733,52 @@ class DeepGenomeDispatchMixin:
             transition_sink_factory=lambda: self._transition_sink(None),
         )
 
+    async def _resolve_remote_analysis(
+        self: Any,
+        submission: RemoteSubmission,
+        context: AnalysisDispatchContext,
+        run_identity: RunIdentity,
+        tracking: DeepGenomeTransitionSink,
+        work_item_key: str,
+    ) -> tuple[object, str, str]:
+        """Track, poll, and resolve one caller-owned remote submission."""
+        await tracking.accept_remote_submission(work_item_key, submission)
+        outcome, results_dir = await self._poll_remote_submission(
+            submission,
+            context,
+            run_identity,
+            tracking=tracking,
+            work_item_key=work_item_key,
+        )
+        if outcome.status != "succeeded":
+            raise RuntimeError(
+                outcome.failure_reason or "analysis task failed"
+            )
+        if results_dir is None:
+            raise RuntimeError("analysis result resolution failed")
+        return submission.submitted_task_id, submission.output_dir, results_dir
+
+    async def _resolve_direct_analysis(
+        self: Any,
+        result: dict,
+        context: AnalysisDispatchContext,
+        analysis_type: str,
+        run_identity: RunIdentity,
+    ) -> tuple[object, str, str]:
+        """Validate and download a direct AnalystAgent result."""
+        self._raise_if_agent_failed(result)
+        task_id = result.get("task_id")
+        output_path = result.get("output_dir")
+        if not isinstance(output_path, str):
+            raise RuntimeError("AnalystAgent returned no output directory")
+        logger.info("Preparing %s results", analysis_type)
+        results_dir = await self._download_analysis_result(
+            context,
+            output_path,
+            run_identity,
+        )
+        return task_id, output_path, results_dir
+
     async def _dispatch_and_wait_analysis(
         self: Any,
         analysis_type: str,
@@ -747,7 +788,6 @@ class DeepGenomeDispatchMixin:
         state: DeepGenomeState | None = None,
     ) -> dict:
         """Submit an analysis task, poll it, and download its result."""
-        # pylint: disable=too-many-locals
         run_identity = RunIdentity.create(
             user_id=self.deep_genome_config.USER_ID,
             scope=analysis_type,
@@ -759,54 +799,40 @@ class DeepGenomeDispatchMixin:
             output_dir=output_dir or "",
         )
         tracking = DeepGenomeDispatchMixin._transition_sink(self, state)
-        work_item_value = (
-            state.get("work_item_key") if state is not None else None
-        )
-        work_item_key = (
-            work_item_value
-            if isinstance(work_item_value, str)
-            else analysis_type
-        )
+        work_item_key = analysis_type
+        if state is not None and isinstance(state.get("work_item_key"), str):
+            work_item_key = cast(str, state.get("work_item_key"))
         logger.info("Submitting %s task via AnalystAgent", analysis_type)
 
         try:
             result = await self._submit_analysis_task(context)
+            if isinstance(result, RemoteSubmission):
+                task_id, output_path, results_dir = (
+                    await DeepGenomeDispatchMixin._resolve_remote_analysis(
+                        self,
+                        result,
+                        context,
+                        run_identity,
+                        tracking,
+                        work_item_key,
+                    )
+                )
+            else:
+                task_id, output_path, results_dir = (
+                    await DeepGenomeDispatchMixin._resolve_direct_analysis(
+                        self,
+                        result,
+                        context,
+                        analysis_type,
+                        run_identity,
+                    )
+                )
         except DeepGenomeTrackingError:
             raise
         except _BEST_EFFORT_ERRORS:
             if state is not None:
                 await tracking.record_work_item_failure(work_item_key)
             raise
-        if isinstance(result, RemoteSubmission):
-            await tracking.accept_remote_submission(work_item_key, result)
-            outcome, resolved_results_dir = await self._poll_remote_submission(
-                result,
-                context,
-                run_identity,
-                tracking=tracking,
-                work_item_key=work_item_key,
-            )
-            if outcome.status != "succeeded":
-                raise RuntimeError(
-                    outcome.failure_reason or "analysis task failed"
-                )
-            task_id = result.submitted_task_id
-            output_path = result.output_dir
-            if resolved_results_dir is None:
-                raise RuntimeError("analysis result resolution failed")
-            results_dir = resolved_results_dir
-        else:
-            self._raise_if_agent_failed(result)
-            task_id = result.get("task_id")
-            output_path = result.get("output_dir")
-            if not isinstance(output_path, str):
-                raise RuntimeError("AnalystAgent returned no output directory")
-            logger.info("Preparing %s results", analysis_type)
-            results_dir = await self._download_analysis_result(
-                context, output_path, run_identity
-            )
-        if not isinstance(output_path, str):
-            raise RuntimeError("AnalystAgent returned no output directory")
         logger.info("%s task completed (task_id: %s)", analysis_type, task_id)
         return {
             "task_id": task_id,
@@ -814,8 +840,6 @@ class DeepGenomeDispatchMixin:
             "results_dir": results_dir,
             "status": "completed",
         }
-
-    # pylint: enable=too-many-locals
 
     def _analysis_prompt_parts(
         self: Any,

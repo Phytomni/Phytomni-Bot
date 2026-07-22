@@ -138,4 +138,49 @@ def section_keys(items: Iterable[WorkItemSpec]) -> tuple[str, ...]:
     return tuple(keys)
 
 
-__all__ = ["WorkItemSpec", "build_work_item_plan", "section_keys"]
+def build_logical_analysis_tasks(
+    items: Iterable[WorkItemSpec],
+    species_code: str,
+    gene_id: str,
+) -> list[dict[str, str]]:
+    """Project concrete jobs onto the legacy logical branch contract.
+
+    The graph still launches one branch per logical section. Digital Design
+    owns two concrete jobs but keeps one branch, so its target remains the
+    caller-supplied gene id while every other section uses its representative
+    concrete item.
+    """
+    concrete_items = tuple(items)
+    logical_tasks: list[dict[str, str]] = []
+    for section_key in section_keys(concrete_items):
+        section_items = [
+            item for item in concrete_items if item.section_key == section_key
+        ]
+        representative = section_items[0]
+        analysis_type = (
+            "digital_design"
+            if section_key == "digital_design"
+            else representative.analysis_type
+        )
+        logical_tasks.append(
+            {
+                "target_gene": (
+                    gene_id
+                    if section_key == "digital_design"
+                    else representative.target_gene
+                ),
+                "species_code": species_code,
+                "analysis_type": analysis_type,
+                "compute": representative.compute_resource,
+                "func_name": analysis_type,
+            }
+        )
+    return logical_tasks
+
+
+__all__ = [
+    "WorkItemSpec",
+    "build_logical_analysis_tasks",
+    "build_work_item_plan",
+    "section_keys",
+]
