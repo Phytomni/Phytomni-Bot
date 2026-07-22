@@ -5,13 +5,12 @@
 
 # These tests intentionally drive the protected coordinator seams and use
 # Pydantic-style uppercase config fields on lightweight fakes.
-# pylint: disable=too-many-locals
 
 from __future__ import annotations
 
 import asyncio
 import sqlite3
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -39,6 +38,7 @@ from mcp_server_phytomni.agents.deep_genome.work_items import (
 )
 from mcp_server_phytomni.config.defaults import DeepGenomeConfig
 from mcp_server_phytomni.runtime.deep_genome_store import (
+    DeepGenomeReservation,
     DeepGenomeStore,
     DeepGenomeTrackingError,
 )
@@ -82,12 +82,22 @@ def _dispatch_harness() -> Any:
     return harness
 
 
-async def test_fake_backend_persists_acceptance_before_poll_and_snapshots(
+@dataclass
+class _AcceptanceProbe:
+    """Mutable observations collected by the acceptance-before-poll test."""
+
+    store: DeepGenomeStore
+    reservation: DeepGenomeReservation
+    harness: Any
+    events: list[str]
+    snapshots: list[Any]
+
+
+def _install_acceptance_probe(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Accepted identities and every fake-backend state reach SQLite first."""
-    # pylint: disable=protected-access
+) -> _AcceptanceProbe:
+    """Install a fake backend while retaining persistence observations."""
     store, reservation = _seed_store(tmp_path)
     monkeypatch.setattr(
         dispatch_module,
@@ -95,15 +105,25 @@ async def test_fake_backend_persists_acceptance_before_poll_and_snapshots(
         lambda: str(tmp_path / "tasks.db"),
     )
     harness = _dispatch_harness()
-    submission = RemoteSubmission("caller-smep", "remote-smep", "/obs/smep")
-    submit = AsyncMock(return_value=submission)
-    harness._submit_analysis_task = submit
+    setattr(
+        harness,
+        "_submit_analysis_task",
+        AsyncMock(
+            return_value=RemoteSubmission(
+                "caller-smep", "remote-smep", "/obs/smep"
+            )
+        ),
+    )
     result_dir = tmp_path / "smep"
     result_dir.mkdir()
     (result_dir / "result.summary").write_text(
         "# SMEP\n\nusable summary", encoding="utf-8"
     )
-    harness._download_analysis_result = AsyncMock(return_value=str(result_dir))
+    setattr(
+        harness,
+        "_download_analysis_result",
+        AsyncMock(return_value=str(result_dir)),
+    )
     events: list[str] = []
     original_accept = DeepGenomeStore.accept_remote_submission
 
@@ -132,16 +152,26 @@ async def test_fake_backend_persists_acceptance_before_poll_and_snapshots(
         return {"status": next(statuses)}
 
     monkeypatch.setattr(dispatch_module, "task_status", status)
+    return _AcceptanceProbe(store, reservation, harness, events, snapshots)
+
+
+async def test_fake_backend_persists_acceptance_before_poll_and_snapshots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accepted identities and every fake-backend state reach SQLite first."""
+    probe = _install_acceptance_probe(tmp_path, monkeypatch)
     state: Any = {
-        "task_id": reservation.umbrella_task_id,
+        "task_id": probe.reservation.umbrella_task_id,
         "work_item_key": "smep_analysis",
     }
-    dispatch_and_wait = (
-        dispatch_module.DeepGenomeDispatchMixin._dispatch_and_wait_analysis
+    dispatch_and_wait = getattr(
+        dispatch_module.DeepGenomeDispatchMixin,
+        "_dispatch_and_wait_analysis",
     )
 
     result = await dispatch_and_wait(
-        harness,
+        probe.harness,
         "smep_analysis",
         "osa",
         "Os01g0100100",
@@ -149,22 +179,22 @@ async def test_fake_backend_persists_acceptance_before_poll_and_snapshots(
     )
 
     assert result["status"] == "completed"
-    assert events[0:2] == ["accept", "poll"]
+    assert probe.events[0:2] == ["accept", "poll"]
     with sqlite3.connect(tmp_path / "tasks.db") as connection:
         row = connection.execute(
             "SELECT status, submitted_task_id, poll_task_id "
             "FROM deep_genome_remote_tasks "
             "WHERE umbrella_task_id = ? AND work_item_key = ?",
-            (reservation.umbrella_task_id, "smep_analysis"),
+            (probe.reservation.umbrella_task_id, "smep_analysis"),
         ).fetchone()
     assert row == ("succeeded", "caller-smep", "remote-smep")
-    snapshot = store.get_snapshot(reservation.umbrella_task_id)
+    snapshot = probe.store.get_snapshot(probe.reservation.umbrella_task_id)
     assert snapshot is not None
     assert snapshot.report_revision == 4
     assert "SMEP" in (snapshot.intermediate_report or "")
-    assert [item.report_revision for item in snapshots] == [2, 3, 4]
-    assert all(item.final_report is None for item in snapshots)
-    assert snapshots[0].intermediate_report is not None
+    assert [item.report_revision for item in probe.snapshots] == [2, 3, 4]
+    assert all(item.final_report is None for item in probe.snapshots)
+    assert probe.snapshots[0].intermediate_report is not None
 
 
 async def test_brief_gene_failure_fails_owner_without_remote_children(

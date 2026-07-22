@@ -2075,25 +2075,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0289"
-tool = "pylint"
-rule = "too-many-locals"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "span"
-path = "tests/agents/test_deep_genome_lifecycle.py"
-fingerprint = "sha256:c89456f6ae1c750fc0f451d10d4b0885a15b45a3ff3d5623b86b86decb5721ba"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "The lifecycle test keeps its coordinator setup in one scenario so persistence and failure ordering remain readable."
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0292"
 tool = "pylint"
 rule = "too-many-statements"
@@ -2645,24 +2626,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-19
 review_on = 2027-01-17
 rationale = "test_brief_gene_success_is_durable_before_optional_planning isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution."
-counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
-risk = "A protected-access exception can hide unintended coupling or stale private invariants."
-tests = ["static-analysis-inventory"]
-
-[[exemptions]]
-id = "SAE-TMP-0332"
-tool = "pylint"
-rule = "protected-access"
-classification = "structural"
-mechanism = "inline"
-target_kind = "symbol"
-path = "tests/agents/test_deep_genome_lifecycle.py"
-symbol = "test_fake_backend_persists_acceptance_before_poll_and_snapshots"
-fingerprint = "sha256:ab7b89b5c47ebd49b30c468174c097d01f9b993be78e917a2b42be5b5fb206d0"
-owner = "bot-maintainers"
-introduced_on = 2026-07-19
-review_on = 2027-01-17
-rationale = "test_fake_backend_persists_acceptance_before_poll_and_snapshots isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
