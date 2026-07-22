@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `190`
+- Authorized records: `184`
 
 ## Informational counts
 
@@ -22,7 +22,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:prop-decorator`                             |       1 |
 | `pylint:C0103`                                    |       1 |
 | `pylint:C0116`                                    |       1 |
-| `pylint:R0801`                                    |      76 |
+| `pylint:R0801`                                    |      70 |
 | `pylint:R0903`                                    |       7 |
 | `pylint:R0913`                                    |       1 |
 | `pylint:R0917`                                    |       1 |
@@ -59,12 +59,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0002` | flake8 | W503 | structural | config | config | .flake8 | [flake8].extend-ignore | `sha256:1d93293eb8e91ba241c13a2db0c100dc24b5305c4b0f429faa5ca2f334bfccc1` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0009` | mypy | misc | structural | inline | symbol | tests/unit/interop/test_capabilities.py | test_capability_is_frozen_and_qualified_name_is_canonical | `sha256:50c5686aeb514f0ea385b0f5efcb20543fb02b479f0a05b4b32116c2e38f65fe` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0011` | mypy | prop-decorator | structural | inline | symbol | src/mcp_server_phytomni/api/schemas.py | FileUploadResponse | `sha256:243d7b24f3e529af946567903305f2f5f09ad24b6316e1063a7ed27a93107a6c` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0014` | pylint | R0801 | temporary | diagnostic | pair | scripts/compare_gauss_queries.py | 294:301 | `sha256:ca2b6d468bc318f627b0fe79e4d2116a77ed25e26cc4ec75aff51feb8b8aab15` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0015` | pylint | R0801 | temporary | diagnostic | pair | scripts/compare_gauss_queries.py | 91:99 | `sha256:9f9f3a0f8627709ab7819ee411220c1052aca195cca63666c9e6cb61722409cf` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0019` | pylint | R0801 | temporary | diagnostic | pair | scripts/static_analysis/collectors/pylint.py | 341:349 | `sha256:290742346aa7c7c34844303e39f49a3a4c084e52891b671d3920b8c4dd1b9dc7` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0020` | pylint | R0801 | temporary | diagnostic | pair | scripts/static_analysis/collectors/pylint.py | 342:348 | `sha256:b1101f1725b92758ac965df2e52c683ebb72eff13f3b3441df98302e87b3eb5e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0021` | pylint | R0801 | temporary | diagnostic | pair | scripts/static_analysis/collectors/pylint.py | 101:115 | `sha256:c87f948de5cea76c38e86b5c43164ae82e0768d8fd10d71b9dd6dce1af1ed334` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0022` | pylint | R0801 | temporary | diagnostic | pair | scripts/static_analysis/collectors/source.py | 84:98 | `sha256:67feab30f45f9e474e0c786410eb52f9e3d687f54cc727e088b39882af857abd` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0028` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/__init__.py | 42:47 | `sha256:04b1f52c7567afcb17be02df79c0cadd82b90a00fa8a07e06ab48b5a2dafafb8` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_analyst_graph_nodes.py, tests/agents/test_analyst_routers.py, static-analysis-inventory |
 | `SAE-TMP-0029` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/agent.py | 39:44 | `sha256:db1a39a7296629412f62345cacd4a0f73d49c06d2acf3b459fe10a81dcf460dc` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_analyst_graph_nodes.py, tests/agents/test_analyst_routers.py, static-analysis-inventory |
 | `SAE-TMP-0040` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/planning.py | 101:107 | `sha256:1cc992aafdda044d48f51d390b1f04303cd2674f2a26b2c9b980e3a444116463` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_analyst_planning_helpers.py, tests/agents/test_analyst_submission_helpers.py, static-analysis-inventory |
@@ -371,195 +365,6 @@ Rationale:
 
 ```text
 type: ignore[prop-decorator]
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0014`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==scripts.compare_gauss_queries:[294:301]
-==scripts.gauss_live_probe:[239:246]
-    parser.add_argument(
-        "--environment-class",
-        default=os.getenv("PHYTOMNI_ENVIRONMENT_CLASS", "unspecified"),
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0015`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==scripts.compare_gauss_queries:[91:99]
-==scripts.gauss_live_probe:[209:217]
-            ["git", "rev-parse", "HEAD"],
-            check=True,
-            capture_output=True,
-            cwd=Path(__file__).resolve().parents[1],
-            text=True,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return "unknown"
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0019`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==scripts.static_analysis.collectors.pylint:[341:349]
-==scripts.static_analysis.collectors.reverse:[32:40]
-        return subprocess.run(
-            list(command),
-            cwd=root,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except (FileNotFoundError, OSError) as exc:
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0020`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==scripts.static_analysis.collectors.pylint:[342:348]
-==scripts.static_analysis.collectors.reverse:[26:32]
-                list(command),
-                cwd=root,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0021`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==scripts.static_analysis.collectors.pylint:[101:115]
-==scripts.static_analysis.inventory:[161:174]
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise CollectionError(
-            f"git file inventory failed: {result.stderr.strip()}"
-        )
-    return tuple(root / line for line in result.stdout.splitlines() if line)
-
-
-def tracked_python_files(root: Path) -> tuple[str, ...]:
-    """Return tracked implementation Python paths in Git order."""
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0022`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==scripts.static_analysis.collectors.source:[84:98]
-==scripts.static_analysis.fingerprints:[48:62]
-        name = _definition_name(node)
-        next_parents = parents
-        next_depth = depth
-        if name is not None:
-            next_parents = (*parents, name)
-            next_depth += 1
-            start = getattr(node, "lineno", None)
-            end = getattr(node, "end_lineno", None)
-            if (
-                isinstance(start, int)
-                and isinstance(end, int)
-                and start <= line <= end
-            ):
-                matches.append(
 ```
 
 Counterfactual:

@@ -13,6 +13,8 @@ import tokenize
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+DefinitionContext = tuple[int, int, str, ast.AST]
+
 
 @dataclass(frozen=True, slots=True)
 class Endpoint:
@@ -29,6 +31,34 @@ def _definition_name(node: ast.AST) -> str | None:
     return None
 
 
+def definition_contexts(tree: ast.AST) -> tuple[DefinitionContext, ...]:
+    """Return qualified definition spans from an already parsed tree."""
+    matches: list[DefinitionContext] = []
+
+    def visit(node: ast.AST, parents: tuple[str, ...], depth: int) -> None:
+        name = _definition_name(node)
+        next_parents = parents
+        next_depth = depth
+        if name is not None:
+            next_parents = (*parents, name)
+            next_depth += 1
+            start = getattr(node, "lineno", None)
+            end = getattr(node, "end_lineno", None)
+            if (
+                isinstance(start, int)
+                and isinstance(end, int)
+                and start <= end
+            ):
+                matches.append(
+                    (next_depth, end - start, ".".join(next_parents), node)
+                )
+        for child in ast.iter_child_nodes(node):
+            visit(child, next_parents, next_depth)
+
+    visit(tree, (), 0)
+    return tuple(matches)
+
+
 def containing_symbol(source: str, line: int) -> str | None:
     """Return the innermost qualified definition containing ``line``.
 
@@ -43,29 +73,14 @@ def containing_symbol(source: str, line: int) -> str | None:
     except SyntaxError:
         return None
 
-    matches: list[tuple[int, int, str]] = []
-
-    def visit(node: ast.AST, parents: tuple[str, ...], depth: int) -> None:
-        name = _definition_name(node)
-        next_parents = parents
-        next_depth = depth
-        if name is not None:
-            next_parents = (*parents, name)
-            next_depth += 1
-            start = getattr(node, "lineno", None)
-            end = getattr(node, "end_lineno", None)
-            if (
-                isinstance(start, int)
-                and isinstance(end, int)
-                and start <= line <= end
-            ):
-                matches.append(
-                    (next_depth, end - start, ".".join(next_parents))
-                )
-        for child in ast.iter_child_nodes(node):
-            visit(child, next_parents, next_depth)
-
-    visit(tree, (), 0)
+    matches = tuple(
+        item
+        for item in definition_contexts(tree)
+        if item[0]
+        and getattr(item[3], "lineno", 0)
+        <= line
+        <= getattr(item[3], "end_lineno", 0)
+    )
     if not matches:
         return None
     return max(matches, key=lambda item: (item[0], -item[1]))[2]

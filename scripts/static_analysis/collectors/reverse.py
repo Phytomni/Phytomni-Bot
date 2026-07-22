@@ -8,39 +8,24 @@ from __future__ import annotations
 
 import json
 import subprocess
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from ..model import Finding
 from .errors import CollectionError, ReverseEvidence
-
-Runner = Callable[..., subprocess.CompletedProcess[str]]
+from .process import Runner, run_command
 
 
 def _run(
     command: Sequence[str], root: Path, runner: Runner | None
 ) -> subprocess.CompletedProcess[str]:
-    try:
-        if runner is not None:
-            return runner(
-                list(command),
-                cwd=root,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        return subprocess.run(
-            list(command),
-            cwd=root,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except (FileNotFoundError, OSError) as exc:
-        raise CollectionError(
-            f"reverse probe executable failed: {' '.join(command)}"
-        ) from exc
+    return run_command(
+        command,
+        root,
+        runner=runner,
+        error_message=f"reverse probe executable failed: {' '.join(command)}",
+    )
 
 
 def _version(root: Path, command: Sequence[str], runner: Runner | None) -> str:

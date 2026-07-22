@@ -19,7 +19,6 @@ import hashlib
 import json
 import os
 import re
-import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -28,6 +27,10 @@ from typing import Any
 from mcp.shared.exceptions import McpError
 
 from mcp_server_phytomni.agents.shared.gauss import gauss_query
+from mcp_server_phytomni.common.gauss_probe import (
+    add_environment_output_arguments,
+    resolve_git_commit,
+)
 
 CORPUS_PATH = (
     Path(__file__).resolve().parents[1]
@@ -84,21 +87,14 @@ def _safe_commit(value: str) -> str:
 
 
 def git_commit(
-    run_command: Callable[..., Any] = subprocess.run,
+    run_command: Callable[..., Any] | None = None,
 ) -> str:
     """Return ``HEAD`` through an injectable command seam."""
-    try:
-        result = run_command(
-            ["git", "rev-parse", "HEAD"],
-            check=True,
-            capture_output=True,
-            cwd=Path(__file__).resolve().parents[1],
-            text=True,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return "unknown"
-    stdout = getattr(result, "stdout", "")
-    return _safe_commit(stdout.strip() if isinstance(stdout, str) else "")
+    return resolve_git_commit(
+        "",
+        cwd=Path(__file__).resolve().parents[1],
+        runner=run_command,
+    )
 
 
 def _safe_environment_class(value: str) -> str:
@@ -292,14 +288,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--corpus", type=Path, default=CORPUS_PATH)
-    parser.add_argument(
-        "--environment-class",
-        default=os.getenv("PHYTOMNI_ENVIRONMENT_CLASS", "unspecified"),
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=OUTPUT_DIR / "gauss_query_comparison.json",
+    add_environment_output_arguments(
+        parser,
+        environment_default=os.getenv(
+            "PHYTOMNI_ENVIRONMENT_CLASS", "unspecified"
+        ),
+        output_default=OUTPUT_DIR / "gauss_query_comparison.json",
     )
     return parser.parse_args(argv)
 

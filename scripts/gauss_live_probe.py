@@ -19,7 +19,6 @@ import asyncio
 import json
 import os
 import re
-import subprocess
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any
@@ -27,13 +26,17 @@ from typing import Any
 import asyncpg
 
 from mcp_server_phytomni.agents.shared.gauss import _gauss_reset
+from mcp_server_phytomni.common.gauss_probe import (
+    add_environment_output_arguments,
+    resolve_git_commit,
+    safe_commit,
+)
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
 OUTPUT_DIR = Path("e2e/output")
 LIVE_FLAGS = ("PHYTOMNI_RUN_INTEGRATION", "PHYTOMNI_ALLOW_NETWORK")
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _SQLSTATE = re.compile(r"^[0-9A-Z]{5}$")
-_SAFE_COMMIT = re.compile(r"^[0-9a-f]{7,64}$")
 _SAFE_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$")
 
 ConnectFn = Callable[..., Awaitable[Any]]
@@ -51,11 +54,6 @@ def _validate_table(table: str) -> bool:
 def _validate_column(column: str) -> bool:
     """Return whether a column is a plain SQL identifier."""
     return bool(_IDENTIFIER.fullmatch(column))
-
-
-def _safe_commit(value: str) -> str:
-    """Return a bounded commit label or a fixed unknown marker."""
-    return value if _SAFE_COMMIT.fullmatch(value) else "unknown"
 
 
 def _safe_environment_class(value: str) -> str:
@@ -185,7 +183,7 @@ async def run_probe(
     )
 
     return {
-        "commit": _safe_commit(commit),
+        "commit": safe_commit(commit),
         "environment_class": _safe_environment_class(environment_class),
         "checks": checks,
         "sqlstates": sqlstates,
@@ -202,20 +200,10 @@ def _live_authorized() -> bool:
 
 def _git_commit() -> str:
     """Return a safe commit label without exposing command output."""
-    configured = os.getenv("PHYTOMNI_GIT_COMMIT", "")
-    if _SAFE_COMMIT.fullmatch(configured):
-        return configured
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            check=True,
-            capture_output=True,
-            cwd=Path(__file__).resolve().parents[1],
-            text=True,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return "unknown"
-    return _safe_commit(result.stdout.strip())
+    return resolve_git_commit(
+        os.getenv("PHYTOMNI_GIT_COMMIT", ""),
+        cwd=Path(__file__).resolve().parents[1],
+    )
 
 
 def _output_path(value: Path) -> Path | None:
@@ -237,14 +225,12 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--table", required=True)
     parser.add_argument("--column", required=True)
-    parser.add_argument(
-        "--environment-class",
-        default=os.getenv("PHYTOMNI_ENVIRONMENT_CLASS", "unspecified"),
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=OUTPUT_DIR / "gauss_live_probe.json",
+    add_environment_output_arguments(
+        parser,
+        environment_default=os.getenv(
+            "PHYTOMNI_ENVIRONMENT_CLASS", "unspecified"
+        ),
+        output_default=OUTPUT_DIR / "gauss_live_probe.json",
     )
     return parser.parse_args(argv)
 

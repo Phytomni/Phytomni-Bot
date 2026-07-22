@@ -15,7 +15,12 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..fingerprints import Endpoint, finding_fingerprint, normalize_source
+from ..fingerprints import (
+    Endpoint,
+    definition_contexts,
+    finding_fingerprint,
+    normalize_source,
+)
 from ..model import Finding, Mechanism, TargetKind
 
 _PYLINT_RE = re.compile(
@@ -66,12 +71,6 @@ def _relative_path(root: Path, path: Path) -> str:
     return candidate.resolve().relative_to(root.resolve()).as_posix()
 
 
-def _definition_name(node: ast.AST) -> str | None:
-    if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-        return node.name
-    return None
-
-
 def _symbol_context(source: str, line: int) -> tuple[str | None, str]:
     """Return the innermost symbol and normalized source containing a line."""
     try:
@@ -79,29 +78,13 @@ def _symbol_context(source: str, line: int) -> tuple[str | None, str]:
     except SyntaxError:
         return None, _normalize_unbound_line(source, line)
 
-    matches: list[tuple[int, int, str, ast.AST]] = []
-
-    def visit(node: ast.AST, parents: tuple[str, ...], depth: int) -> None:
-        name = _definition_name(node)
-        next_parents = parents
-        next_depth = depth
-        if name is not None:
-            next_parents = (*parents, name)
-            next_depth += 1
-            start = getattr(node, "lineno", None)
-            end = getattr(node, "end_lineno", None)
-            if (
-                isinstance(start, int)
-                and isinstance(end, int)
-                and start <= line <= end
-            ):
-                matches.append(
-                    (next_depth, end - start, ".".join(next_parents), node)
-                )
-        for child in ast.iter_child_nodes(node):
-            visit(child, next_parents, next_depth)
-
-    visit(tree, (), 0)
+    matches = tuple(
+        item
+        for item in definition_contexts(tree)
+        if getattr(item[3], "lineno", 0)
+        <= line
+        <= getattr(item[3], "end_lineno", 0)
+    )
     if not matches:
         return None, _normalize_unbound_line(source, line)
     _, _, symbol, node = max(matches, key=lambda item: (item[0], -item[1]))

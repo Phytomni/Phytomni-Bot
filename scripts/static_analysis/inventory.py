@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import subprocess
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
@@ -15,6 +14,7 @@ from pathlib import Path
 from .collectors.ci import collect_ci_suppressions
 from .collectors.config import collect_config_suppressions
 from .collectors.errors import CollectionError
+from .collectors.process import tracked_git_files
 from .collectors.pylint import run_cross_file_pylint
 from .collectors.secrets import collect_secret_markers
 from .collectors.source import collect_source_suppressions
@@ -156,21 +156,6 @@ def reconcile(
     )
 
 
-def _tracked_files(root: Path) -> tuple[Path, ...]:
-    result = subprocess.run(
-        ["git", "ls-files"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise CollectionError(
-            f"git file inventory failed: {result.stderr.strip()}"
-        )
-    return tuple(root / line for line in result.stdout.splitlines() if line)
-
-
 def _python_paths(paths: Sequence[Path]) -> tuple[Path, ...]:
     return tuple(path for path in paths if path.suffix in {".py", ".pyi"})
 
@@ -190,7 +175,7 @@ def collect_inventory(
     """Collect the selected repository-wide suppression/diagnostic scope."""
     if scope not in {"full", "cross-file", "source", "policy"}:
         raise CollectionError(f"unknown inventory scope {scope!r}")
-    tracked = _tracked_files(root)
+    tracked = tracked_git_files(root)
     python_paths = _python_paths(tracked)
     if not python_paths:
         raise CollectionError("no tracked Python files for inventory")

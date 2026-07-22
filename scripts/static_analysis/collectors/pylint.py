@@ -25,6 +25,7 @@ from ..fingerprints import (
 from ..model import Finding, Mechanism, TargetKind
 from .errors import CollectionError, ReverseEvidence
 from .helpers import FindingParts, make_finding
+from .process import run_command, tracked_git_files
 
 _RULES = frozenset({"R0801", "R0903"})
 _FULL_STATUS_BITS = 2 | 4 | 8 | 16
@@ -96,33 +97,21 @@ def _relative_path(root: Path, path: Path) -> str:
     return path.resolve().relative_to(root.resolve()).as_posix()
 
 
-def _tracked_paths(root: Path) -> tuple[Path, ...]:
-    result = subprocess.run(
-        ["git", "ls-files", "*.py", "*.pyi"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise CollectionError(
-            f"git file inventory failed: {result.stderr.strip()}"
-        )
-    return tuple(root / line for line in result.stdout.splitlines() if line)
-
-
 def tracked_python_files(root: Path) -> tuple[str, ...]:
     """Return tracked implementation Python paths in Git order."""
     return tuple(
         _relative_path(root, path)
-        for path in _tracked_paths(root)
+        for path in tracked_git_files(root, ("*.py", "*.pyi"))
         if path.suffix == ".py"
     )
 
 
 def tracked_python_files_with_stubs(root: Path) -> tuple[str, ...]:
     """Return tracked ``.py`` and ``.pyi`` paths for exact diagnostics."""
-    return tuple(_relative_path(root, path) for path in _tracked_paths(root))
+    return tuple(
+        _relative_path(root, path)
+        for path in tracked_git_files(root, ("*.py", "*.pyi"))
+    )
 
 
 def _module_name(root: Path, path: Path) -> str:
@@ -315,7 +304,7 @@ def parse_pylint_json(
         raise CollectionError("Pylint JSON is malformed") from exc
     if not isinstance(document, list):
         raise CollectionError("Pylint JSON diagnostics must be an array")
-    tracked = _tracked_paths(root)
+    tracked = tracked_git_files(root, ("*.py", "*.pyi"))
     findings: list[Finding] = []
     for record in document:
         if not isinstance(record, dict):
@@ -338,16 +327,11 @@ def parse_pylint_json(
 def _run(
     root: Path, command: Sequence[str]
 ) -> subprocess.CompletedProcess[str]:
-    try:
-        return subprocess.run(
-            list(command),
-            cwd=root,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except (FileNotFoundError, OSError) as exc:
-        raise CollectionError("Pylint executable failed") from exc
+    return run_command(
+        command,
+        root,
+        error_message="Pylint executable failed",
+    )
 
 
 def run_cross_file_pylint(
