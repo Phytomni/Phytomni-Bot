@@ -1060,94 +1060,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0141"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/server/test_api_chat_completions.py"
-symbol = "270:276"
-peer_path = "tests/unit/scripts/test_capture_reasoning_normalize.py"
-peer_symbol = "175:181"
-fingerprint = "sha256:f9c3289d6c898a889a1dfd3e5f8e2cd0be30da770c82e23e4ed98884788a2cfe"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_chat_completions:[270:276]\n==test_capture_reasoning_normalize:[175:181]\n        \"choices\": [\n            {\n                \"index\": 0,\n                \"message\": {\n                    \"role\": \"assistant\",\n                    \"content\": \"\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0142"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/server/test_api_chat_completions.py"
-symbol = "270:277"
-peer_path = "tests/unit/scripts/test_capture_reasoning_normalize.py"
-peer_symbol = "55:62"
-fingerprint = "sha256:7c7c4f6bd04c654870bcbb3498637d9d1ffc2af0a7f7230c231dcecfb7588ba4"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_chat_completions:[270:277]\n==test_capture_reasoning_normalize:[55:62]\n        \"choices\": [\n            {\n                \"index\": 0,\n                \"message\": {\n                    \"role\": \"assistant\",\n                    \"content\": \"\",\n                    \"reasoning_content\": ("
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0143"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/server/test_api_chat_completions.py"
-symbol = "273:280"
-peer_path = "tests/agents/test_chat_agent.py"
-peer_symbol = "461:468"
-fingerprint = "sha256:2852957544508ff8577b6510cde1ecef104df64ae5747843bbce8dca9f8bd965"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_chat_completions:[273:280]\n==tests.agents.test_chat_agent:[461:468]\n                    \"message\": {\n                        \"role\": \"assistant\",\n                        \"content\": \"\",\n                        \"reasoning_content\": (\n                            \"<think>identify chlorophyll</think>\"\n                            \"Leaves capture light.\"\n                        ),"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0144"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/server/test_api_chat_completions.py"
-symbol = "275:287"
-peer_path = "tests/server/test_result_formatting.py"
-peer_symbol = "305:317"
-fingerprint = "sha256:0fb6f140928817f551fd6985f2a15f52d38bdff2afe1280eb3308002f92ac9ce"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_api_chat_completions:[275:287]\n==test_result_formatting:[305:317]\n                    \"content\": \"\",\n                    \"reasoning_content\": (\n                        \"<think>identify chlorophyll</think>\"\n                        \"Leaves capture light.\"\n                    ),\n                },\n                \"finish_reason\": \"stop\",\n            }\n        ],\n        \"usage\": {\"total_tokens\": 12},\n    }\n"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0150"
 tool = "pylint"
 rule = "R0801"
@@ -2140,26 +2052,6 @@ risk = "A protected-access exception can hide unintended coupling or stale priva
 tests = ["static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0264"
-tool = "pylint"
-rule = "too-many-arguments"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/agents/chat/service.py"
-symbol = "run_phyto_chat_cached"
-fingerprint = "sha256:47542a02a8f1614fd6a63ce15db9b434ba35c3cb9b78c4e19c4be92f207dbc5a"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "The cache primitive keeps semantic sampling inputs flat so func_cache key_params remain explicit and infrastructure fields stay outside the cache identity."
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0265"
 tool = "pylint"
 rule = "too-many-arguments"
@@ -2387,26 +2279,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "pylint: disable=too-many-lines"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0278"
-tool = "pylint"
-rule = "too-many-locals"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/agents/chat/service.py"
-symbol = "run_phyto_chat_cached"
-fingerprint = "sha256:adfe56c32057d965b8e39590c684b9c136d0715cff1ff30a41545e02f289b42a"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "The cached chat seam keeps semantic sampling parameters and infrastructure controls explicit so cache identity and failure propagation remain auditable."
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
@@ -3334,24 +3206,6 @@ rationale = "test_sync_write_routes_declare_gc_dependency isolates module-privat
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
-
-[[exemptions]]
-id = "SAE-TMP-0354"
-tool = "ruff"
-rule = "ASYNC109"
-classification = "structural"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/agents/chat/service.py"
-symbol = "run_phyto_chat_cached"
-fingerprint = "sha256:7c8abf6977bb26a0953727ea231b896bacab040602ba7337e7a037e5d24f7c0d"
-owner = "bot-maintainers"
-introduced_on = 2026-07-19
-review_on = 2027-01-17
-rationale = "noqa: ASYNC109"
-counterfactual = "Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime."
-risk = "The exemption could hide an accidental timeout that is not forwarded to the underlying client."
-tests = ["src/mcp_server_phytomni/agents/chat/service.py", "static-analysis-inventory"]
 
 [[exemptions]]
 id = "SAE-TMP-0355"

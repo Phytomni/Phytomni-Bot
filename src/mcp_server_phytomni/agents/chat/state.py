@@ -21,9 +21,9 @@ class ChatInput(TypedDict, total=False):
     Mirrors the kwargs ``mcp/handlers.py:handle_chat_agent`` forwards
     to ``phyto_chat_with_follow``: a required natural-language query,
     an optional OBS file list converted to upload context, and a
-    type-erased service bag that carries the LLM / OBS / timeout
-    settings flat through to ``run_phyto_chat_cached``. The service
-    bag stays a single dict so a parent graph never has to track
+    type-erased service bag that carries the LLM / OBS / timeout settings
+    through the typed ``run_phyto_chat_cached`` adapter. The service bag
+    stays a single dict so a parent graph never has to track
     individual provider kwargs as the LLM client surface evolves.
 
     Attributes:

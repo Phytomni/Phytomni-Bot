@@ -97,7 +97,7 @@ async def test_chat_relay_mode_overrides_llm_endpoint(monkeypatch):
     must override both so the child Bot hits ``/v1/relay/llm`` with the
     relay key rather than the operator LLM directly.
     """
-    chat_service.run_phyto_chat_cached.cache_clear()
+    chat_service.clear_chat_cache()
     get_sensitive_config.cache_clear()
     monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
     monkeypatch.setenv("PHYTOMNI_RELAY_BASE_URL", "https://relay.test")
@@ -120,7 +120,7 @@ async def test_chat_relay_mode_overrides_llm_endpoint(monkeypatch):
 
 async def test_chat_normal_mode_keeps_operator_endpoint(monkeypatch):
     """Outside relay mode the caller's operator endpoint passes through."""
-    chat_service.run_phyto_chat_cached.cache_clear()
+    chat_service.clear_chat_cache()
     monkeypatch.delenv("PHYTOMNI_RELAY_MODE", raising=False)
     monkeypatch.delenv("RELAY_MODE", raising=False)
     captured: dict[str, Any] = {}

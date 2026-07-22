@@ -13,7 +13,7 @@ import importlib
 import logging
 from collections.abc import AsyncIterator
 from functools import lru_cache
-from typing import Any
+from typing import Any, NamedTuple, TypedDict, Unpack
 
 from httpx import ConnectError, HTTPStatusError, TimeoutException
 from mcp.shared.exceptions import McpError
@@ -49,6 +49,51 @@ CHAT_CONFIG = ChatConfig()
 # silent retry would lose already-emitted chunks and corrupt the SSE
 # timeline from the client's point of view.
 MAX_OPEN_STREAM_RETRIES = 1
+
+
+class _ChatCacheKey(NamedTuple):
+    """Semantic fields that identify one cached chat completion."""
+
+    messages: list[dict[str, str]]
+    response_format: dict[str, Any]
+
+
+class _ChatCacheRequest(NamedTuple):
+    """Provider and transport settings for one cache miss."""
+
+    model: str
+    temperature: float
+    top_p: float
+    frequency_penalty: float
+    presence_penalty: float
+    n: int
+    max_tokens: int | None
+    reasoning_effort: str | None
+    api_key: str
+    base_url: str
+    user: str
+    timeout: float
+    stream: bool
+
+
+class ChatCacheCall(TypedDict):
+    """Keyword-compatible public call shape for the chat cache adapter."""
+
+    messages: list[dict[str, str]]
+    model: str
+    temperature: float
+    top_p: float
+    frequency_penalty: float
+    presence_penalty: float
+    n: int
+    max_tokens: int | None
+    response_format: dict[str, Any]
+    reasoning_effort: str | None
+    api_key: str
+    base_url: str
+    user: str
+    timeout: float
+    stream: bool
 
 
 async def phyto_chat_with_follow(
@@ -402,78 +447,91 @@ def _relay_llm_endpoint(api_key: str, base_url: str) -> tuple[str, str]:
     return relay_key, f"{ChatConfig().RELAY_BASE_URL}/v1/relay/llm"
 
 
-@func_cache(
-    key_params=[
-        "messages",
-        "response_format",
-    ],
-    ttl=LONG_TTL_SECONDS,
-)
-# pylint: disable=too-many-arguments,too-many-locals
-# run_phyto_chat_cached is a @func_cache chokepoint: every named
-# parameter goes into the cache key, so semantic LLM inputs must
-# stay flat (no options-object wrapping) or rotating an API key would
-# silently invalidate the cache. See docs/development/lint-exemptions.md.
-async def run_phyto_chat_cached(
-    *,
-    messages: list[dict[str, str]],
-    model: str,
-    temperature: float,
-    top_p: float,
-    frequency_penalty: float,
-    presence_penalty: float,
-    n: int,
-    max_tokens: int | None,
-    response_format: dict[str, Any],
-    reasoning_effort: str | None,
-    api_key: str,
-    base_url: str,
-    user: str,
-    timeout: float,  # noqa: ASYNC109
-    stream: bool,
+@func_cache(key_params=["cache_key"], ttl=LONG_TTL_SECONDS)
+async def _run_chat_completion_cached(
+    cache_key: _ChatCacheKey,
+    request: _ChatCacheRequest,
 ) -> dict[str, Any]:
     """Issue one LLM completion and cache the normalized dict.
 
-    The cache key is the semantic sampling shape (messages, model, and
-    sampling parameters). Infrastructure params (api_key, base_url,
-    user, timeout, stream) are deliberately excluded so rotating an
-    API key, swapping endpoints, or flipping streaming behavior does
-    not invalidate the cache; identical sampling inputs share one
-    stored answer across all infra variations.
+    ``cache_key`` contains the two historical semantic fields used by the
+    cache (messages and response format). The remaining settings are carried
+    in ``request`` so rotating credentials, endpoints, or transport flags
+    cannot change cache identity.
 
     Any failure (HTTP error, transport error) propagates as an
     exception so the cache never persists a None or partial result —
     the outer retry/dispatcher layer owns the retry-exhaustion path
     and the None contract callers depend on.
     """
-    api_key, base_url = _relay_llm_endpoint(api_key, base_url)
+    api_key, base_url = _relay_llm_endpoint(
+        request.api_key,
+        request.base_url,
+    )
     client = AsyncOpenAI(api_key=api_key, base_url=base_url)
     params: dict[str, Any] = {
-        "messages": messages,
-        "model": model,
-        "frequency_penalty": frequency_penalty,
-        "n": n,
-        "presence_penalty": presence_penalty,
-        "response_format": response_format,
-        "stream": stream,
-        "temperature": temperature,
-        "top_p": top_p,
-        "user": user,
-        "timeout": timeout,
+        "messages": cache_key.messages,
+        "model": request.model,
+        "frequency_penalty": request.frequency_penalty,
+        "n": request.n,
+        "presence_penalty": request.presence_penalty,
+        "response_format": cache_key.response_format,
+        "stream": request.stream,
+        "temperature": request.temperature,
+        "top_p": request.top_p,
+        "user": request.user,
+        "timeout": request.timeout,
     }
-    if max_tokens is not None:
-        params["max_tokens"] = max_tokens
-    if "reasoner" in model and reasoning_effort is not None:
-        params["reasoning_effort"] = reasoning_effort
+    if request.max_tokens is not None:
+        params["max_tokens"] = request.max_tokens
+    if "reasoner" in request.model and request.reasoning_effort is not None:
+        params["reasoning_effort"] = request.reasoning_effort
     chat_completions = await client.chat.completions.create(**params)
-    if stream:
+    if request.stream:
         payload = await _stream_response_to_dict(chat_completions)
     else:
         payload = chat_completions.model_dump()
     return normalize_chat_completion_dict(payload)
 
 
-# pylint: enable=too-many-arguments,too-many-locals
+async def run_phyto_chat_cached(
+    **call: Unpack[ChatCacheCall],
+) -> dict[str, Any]:
+    """Call the typed chat cache seam with its stable keyword surface.
+
+    The adapter keeps existing callers readable while the decorated cache
+    primitive receives explicit semantic and infrastructure records. That
+    separation makes the cache policy visible in types instead of relying on
+    a long positional signature and a linter waiver.
+    """
+    cache_key = _ChatCacheKey(
+        messages=call["messages"],
+        response_format=call["response_format"],
+    )
+    request = _ChatCacheRequest(
+        model=call["model"],
+        temperature=call["temperature"],
+        top_p=call["top_p"],
+        frequency_penalty=call["frequency_penalty"],
+        presence_penalty=call["presence_penalty"],
+        n=call["n"],
+        max_tokens=call["max_tokens"],
+        reasoning_effort=call["reasoning_effort"],
+        api_key=call["api_key"],
+        base_url=call["base_url"],
+        user=call["user"],
+        timeout=call["timeout"],
+        stream=call["stream"],
+    )
+    return await _run_chat_completion_cached(
+        cache_key=cache_key,
+        request=request,
+    )
+
+
+def clear_chat_cache() -> None:
+    """Drop cached chat completions from the local SQLite store."""
+    _run_chat_completion_cached.cache_clear()
 
 
 async def _run_phyto_chat(

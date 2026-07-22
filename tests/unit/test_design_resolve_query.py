@@ -27,7 +27,7 @@ pytestmark = pytest.mark.unit
 @pytest.fixture(autouse=True)
 def _clear_phyto_chat_cache() -> None:
     """Drop the persistent SQLite cache between cases."""
-    chat_service.run_phyto_chat_cached.cache_clear()
+    chat_service.clear_chat_cache()
 
 
 def _make_response(payload: Any) -> dict[str, Any]:

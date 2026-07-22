@@ -148,7 +148,7 @@ namespace).
 ```bash
 phytomni-cache stats
 phytomni-cache purge
-phytomni-cache purge --func-id agents.chat.service:run_phyto_chat_cached
+phytomni-cache purge --func-id agents.chat.service:_run_chat_completion_cached
 phytomni-cache reexpire --ttl 7776000
 phytomni-cache reexpire --permanent --func-id agents.data.nl2sql:_execute_nl2sql_cached
 phytomni-cache purge-expired

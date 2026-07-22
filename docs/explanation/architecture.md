@@ -310,8 +310,10 @@ from keys.
 
 Current cache scope:
 
-- Chat LLM completions at
-  `agents/chat/service.py:run_phyto_chat_cached`.
+- Chat LLM completions through the stable keyword adapter
+  `agents/chat/service.py:run_phyto_chat_cached`; the decorated cache
+  primitive is `_run_chat_completion_cached` and keys only on the semantic
+  message list and response format.
 - Knowledge retrieval across `_multi_retrieve`, `_retrieve_cached`, and
   `_retrieve_scope_docs`.
 - NL2SQL at `agents/data/nl2sql.py:_execute_nl2sql_cached`.

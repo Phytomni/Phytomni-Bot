@@ -12,6 +12,17 @@ import pytest
 from mcp_server_phytomni import server
 
 
+def misplaced_reasoning_message() -> dict[str, str]:
+    """Return the shared provider message used by repair-path tests."""
+    return {
+        "role": "assistant",
+        "content": "",
+        "reasoning_content": (
+            "<think>identify chlorophyll</think>" "Leaves capture light."
+        ),
+    }
+
+
 def install_chat_handler(
     monkeypatch: pytest.MonkeyPatch,
     captured: dict[str, Any],

@@ -12,11 +12,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from mcp_server_phytomni.agents.chat import service as chat_agents
+from tests.support.chat_fakes import misplaced_reasoning_message
 
 pytestmark = pytest.mark.agent
 
@@ -69,7 +70,7 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
     Returns:
         None after request payload assertions pass.
     """
-    chat_agents.run_phyto_chat_cached.cache_clear()
+    chat_agents.clear_chat_cache()
     captured: dict[str, Any] = {}
 
     async def fake_download_list_convert(**kwargs: Any) -> list[str]:
@@ -294,7 +295,7 @@ async def test_run_phyto_chat_cached_dedupes_identical_sampling(
     Returns:
         None after cache hit/miss assertions pass.
     """
-    chat_agents.run_phyto_chat_cached.cache_clear()
+    chat_agents.clear_chat_cache()
     calls = {"create": 0}
 
     async def fake_create(**kwargs: Any) -> FakeChatCompletion:
@@ -314,7 +315,7 @@ async def test_run_phyto_chat_cached_dedupes_identical_sampling(
 
     monkeypatch.setattr(chat_agents, "AsyncOpenAI", fake_async_openai)
 
-    sampling_kwargs: dict[str, Any] = {
+    sampling_kwargs: chat_agents.ChatCacheCall = {
         "messages": [{"role": "user", "content": "leaf growth"}],
         "model": "pytest-model",
         "temperature": 0.3,
@@ -337,14 +338,17 @@ async def test_run_phyto_chat_cached_dedupes_identical_sampling(
     # cache ignores them; the result must come from the first call's
     # cached payload, not a fresh completion.
     second = await chat_agents.run_phyto_chat_cached(
-        **{
-            **sampling_kwargs,
-            "api_key": "ignored-2",
-            "base_url": "https://other.invalid/v1",
-            "user": "v",
-            "timeout": 9.9,
-            "stream": True,
-        }
+        **cast(
+            chat_agents.ChatCacheCall,
+            {
+                **sampling_kwargs,
+                "api_key": "ignored-2",
+                "base_url": "https://other.invalid/v1",
+                "user": "v",
+                "timeout": 9.9,
+                "stream": True,
+            },
+        )
     )
 
     assert first == second
@@ -354,7 +358,10 @@ async def test_run_phyto_chat_cached_dedupes_identical_sampling(
     # the cache key, so flipping temperature hits the first call's cached
     # payload instead of triggering a fresh completion.
     third = await chat_agents.run_phyto_chat_cached(
-        **{**sampling_kwargs, "temperature": 0.9}
+        **cast(
+            chat_agents.ChatCacheCall,
+            {**sampling_kwargs, "temperature": 0.9},
+        )
     )
 
     assert third == first
@@ -363,10 +370,13 @@ async def test_run_phyto_chat_cached_dedupes_identical_sampling(
     # messages and response_format are the only key fields, so changing
     # the prompt misses the cache and triggers a fresh completion.
     fourth = await chat_agents.run_phyto_chat_cached(
-        **{
-            **sampling_kwargs,
-            "messages": [{"role": "user", "content": "root growth"}],
-        }
+        **cast(
+            chat_agents.ChatCacheCall,
+            {
+                **sampling_kwargs,
+                "messages": [{"role": "user", "content": "root growth"}],
+            },
+        )
     )
 
     assert fourth != first
@@ -384,7 +394,7 @@ async def test_run_phyto_chat_cached_does_not_cache_failures(
     Returns:
         None after failure/recovery assertions pass.
     """
-    chat_agents.run_phyto_chat_cached.cache_clear()
+    chat_agents.clear_chat_cache()
     calls = {"create": 0}
 
     async def flakey_create(**kwargs: Any) -> FakeChatCompletion:
@@ -406,7 +416,7 @@ async def test_run_phyto_chat_cached_does_not_cache_failures(
 
     monkeypatch.setattr(chat_agents, "AsyncOpenAI", fake_async_openai)
 
-    sampling_kwargs: dict[str, Any] = {
+    sampling_kwargs: chat_agents.ChatCacheCall = {
         "messages": [{"role": "user", "content": "leaf growth"}],
         "model": "pytest-model",
         "temperature": 0.3,
@@ -440,7 +450,7 @@ async def test_non_streaming_repairs_reasoning_content_answer_tail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Non-stream completions repair answers misplaced in reasoning_content."""
-    chat_agents.run_phyto_chat_cached.cache_clear()
+    chat_agents.clear_chat_cache()
 
     @dataclass(frozen=True)
     class MisplacedReasoningCompletion:
@@ -456,20 +466,7 @@ async def test_non_streaming_repairs_reasoning_content_answer_tail(
         """Return the misplaced provider response."""
         assert kwargs["stream"] is False
         return MisplacedReasoningCompletion(
-            payload={
-                "choices": [
-                    {
-                        "message": {
-                            "role": "assistant",
-                            "content": "",
-                            "reasoning_content": (
-                                "<think>identify chlorophyll</think>"
-                                "Leaves capture light."
-                            ),
-                        }
-                    }
-                ]
-            }
+            payload={"choices": [{"message": misplaced_reasoning_message()}]}
         )
 
     def fake_async_openai(api_key: str, base_url: str) -> SimpleNamespace:
@@ -571,7 +568,7 @@ async def test_streaming_repairs_reasoning_content_after_aggregation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Streamed reasoning tail is repaired after chunk aggregation."""
-    chat_agents.run_phyto_chat_cached.cache_clear()
+    chat_agents.clear_chat_cache()
 
     def _make_chunk(
         reasoning: str = "",

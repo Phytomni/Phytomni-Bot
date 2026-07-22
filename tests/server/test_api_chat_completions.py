@@ -15,7 +15,10 @@ from typing import Any
 
 import httpx
 import pytest
-from tests.support.chat_fakes import install_chat_handler
+from tests.support.chat_fakes import (
+    install_chat_handler,
+    misplaced_reasoning_message,
+)
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
@@ -271,14 +274,7 @@ async def test_chat_completions_repairs_reasoning_content_answer_tail(
             "choices": [
                 {
                     "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": "",
-                        "reasoning_content": (
-                            "<think>identify chlorophyll</think>"
-                            "Leaves capture light."
-                        ),
-                    },
+                    "message": misplaced_reasoning_message(),
                     "finish_reason": "stop",
                 }
             ],
