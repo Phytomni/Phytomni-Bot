@@ -176,11 +176,10 @@ def _python_paths(paths: Sequence[Path]) -> tuple[Path, ...]:
 
 
 def _merge_findings(*groups: Iterable[Finding]) -> tuple[Finding, ...]:
-    merged: dict[tuple[object, ...], Finding] = {}
+    merged: list[Finding] = []
     for group in groups:
-        for item in group:
-            merged.setdefault(_identity(item), item)
-    return tuple(sorted(merged.values(), key=_sort_finding))
+        merged.extend(group)
+    return tuple(sorted(merged, key=_sort_finding))
 
 
 def collect_inventory(

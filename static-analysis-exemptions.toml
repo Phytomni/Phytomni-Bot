@@ -200,24 +200,6 @@ risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0010"
-tool = "mypy"
-rule = "misc"
-classification = "structural"
-mechanism = "inline"
-target_kind = "symbol"
-path = "tests/unit/test_deep_genome_store.py"
-symbol = "test_store_exports_frozen_contract_models"
-fingerprint = "sha256:da11d568e3816c864121904ffa5d00103600ebf471ec6a5bbefc12277ad4761c"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2027-01-17
-rationale = "type: ignore[misc]"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-
-[[exemptions]]
 id = "SAE-TMP-0011"
 tool = "mypy"
 rule = "prop-decorator"
@@ -2667,26 +2649,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0279"
-tool = "pylint"
-rule = "too-many-locals"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/agents/deep_genome/dispatch.py"
-symbol = "DeepGenomeDispatchMixin"
-fingerprint = "sha256:b62e929137df8fed1262575b6b082989b386a2ce9c379c604be6d2ec0c710dad"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Two DeepGenome orchestration methods still exceed the local-variable threshold after remote I/O extraction; their transition and task-plan state remains one compatibility boundary until the next coordinator split."
-counterfactual = "Extracting these locals without a characterization seam could duplicate dispatch state and change optional-failure or task-plan semantics."
-risk = "The exception can hide accidental growth in DeepGenome orchestration; the next coordinator split must preserve transition ordering and task-plan contracts."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0280"
 tool = "pylint"
 rule = "too-many-locals"
@@ -3789,3 +3751,43 @@ rationale = "noqa: ASYNC109"
 counterfactual = "Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime."
 risk = "The exemption could hide an accidental timeout that is not forwarded to the underlying client."
 tests = ["src/mcp_server_phytomni/common/httpx_client.py", "static-analysis-inventory"]
+
+[[exemptions]]
+id = "SAE-TMP-0365"
+tool = "pylint"
+rule = "too-many-locals"
+classification = "temporary"
+mechanism = "inline"
+target_kind = "symbol"
+path = "src/mcp_server_phytomni/agents/deep_genome/dispatch.py"
+symbol = "DeepGenomeDispatchMixin._prepare_analysis_tasks"
+fingerprint = "sha256:b3b20b0c9824d10effeca2aba17cec3267456dc9ef174b4e20e8ff4bba08a57c"
+owner = "bot-maintainers"
+introduced_on = 2026-07-22
+review_on = 2026-08-15
+rationale = "The task-preparation seam keeps gene identity resolution, concrete work-item planning, and legacy logical branch construction together until a characterization-preserving coordinator extraction lands."
+counterfactual = "Splitting the locals without a shared plan oracle could change twelve-row task coverage, species-specific identity resolution, or optional-branch ordering."
+risk = "The explicit plan state can grow and hide a missed analysis row; dispatch routing and lifecycle tests must remain the required review gate."
+tests = ["tests/agents/test_deep_genome_dispatch_routing.py", "tests/unit/test_deep_genome_dispatch.py", "static-analysis-inventory"]
+expires_on = 2026-08-31
+remediation = "SAE-WORK-INITIAL-AUDIT"
+
+[[exemptions]]
+id = "SAE-TMP-0366"
+tool = "pylint"
+rule = "too-many-locals"
+classification = "temporary"
+mechanism = "inline"
+target_kind = "symbol"
+path = "src/mcp_server_phytomni/agents/deep_genome/dispatch.py"
+symbol = "DeepGenomeDispatchMixin._dispatch_and_wait_analysis"
+fingerprint = "sha256:c39727b8da09946785aaee90fd61f0ac9918f9033e8e1dce2d137a60b7896327"
+owner = "bot-maintainers"
+introduced_on = 2026-07-22
+review_on = 2026-08-15
+rationale = "The remote-analysis seam keeps submission, polling, result download, and lifecycle transition context explicit until the coordinator extraction proves ordering and redaction compatibility."
+counterfactual = "Wrapping these values prematurely could hide terminal-state transitions or make optional analysis failures appear successful."
+risk = "The polling context can accumulate backend-specific fields; lifecycle, failure, and redaction tests must cover every retained field."
+tests = ["tests/agents/test_deep_genome_dispatch_routing.py", "tests/unit/test_deep_genome_dispatch.py", "static-analysis-inventory"]
+expires_on = 2026-08-31
+remediation = "SAE-WORK-INITIAL-AUDIT"

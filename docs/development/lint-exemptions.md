@@ -19,7 +19,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `flake8:E203`                                                     |       1 |
 | `flake8:W503`                                                     |       1 |
 | `mypy:ignore_missing_imports`                                     |       2 |
-| `mypy:misc`                                                       |       2 |
+| `mypy:misc`                                                       |       1 |
 | `mypy:prop-decorator`                                             |       1 |
 | `pylint:C0103`                                                    |       1 |
 | `pylint:C0116`                                                    |       1 |
@@ -36,7 +36,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `pylint:too-many-arguments`                                       |      10 |
 | `pylint:too-many-instance-attributes`                             |       3 |
 | `pylint:too-many-lines`                                           |       1 |
-| `pylint:too-many-locals`                                          |       6 |
+| `pylint:too-many-locals`                                          |       7 |
 | `pylint:too-many-positional-arguments`                            |       1 |
 | `pylint:too-many-statements`                                      |       1 |
 | `pylint:wrong-import-position`                                    |       1 |
@@ -62,7 +62,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0006` | mypy | ignore_missing_imports | temporary | config | config | pyproject.toml | tool.mypy.overrides[0].ignore_missing_imports | `sha256:527e6efc74769b1228c507a1b8b80620eb8ac8b9870681cad036239346b48e93` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0007` | mypy | ignore_missing_imports | temporary | config | config | pyproject.toml | tool.mypy.overrides[1].ignore_missing_imports | `sha256:34f322754c32f50efaf7a19013545c63f95683102c5f7eefefb2e6fdabd638c2` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0009` | mypy | misc | structural | inline | symbol | tests/unit/interop/test_capabilities.py | test_capability_is_frozen_and_qualified_name_is_canonical | `sha256:50c5686aeb514f0ea385b0f5efcb20543fb02b479f0a05b4b32116c2e38f65fe` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0010` | mypy | misc | structural | inline | symbol | tests/unit/test_deep_genome_store.py | test_store_exports_frozen_contract_models | `sha256:da11d568e3816c864121904ffa5d00103600ebf471ec6a5bbefc12277ad4761c` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0011` | mypy | prop-decorator | structural | inline | symbol | src/mcp_server_phytomni/api/schemas.py | FileUploadResponse | `sha256:243d7b24f3e529af946567903305f2f5f09ad24b6316e1063a7ed27a93107a6c` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0014` | pylint | R0801 | temporary | diagnostic | pair | scripts/compare_gauss_queries.py | 294:301 | `sha256:ca2b6d468bc318f627b0fe79e4d2116a77ed25e26cc4ec75aff51feb8b8aab15` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0015` | pylint | R0801 | temporary | diagnostic | pair | scripts/compare_gauss_queries.py | 91:99 | `sha256:9f9f3a0f8627709ab7819ee411220c1052aca195cca63666c9e6cb61722409cf` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -182,7 +181,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0274` | pylint | too-many-instance-attributes | temporary | inline | symbol | scripts/static_analysis/model.py | Finding | `sha256:661b324cf7d8671f2ab7caf8bee1839f24b77a0de25723c26767926e3a4ba4d8` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0276` | pylint | too-many-lines | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:a301ef88f14d3dd14fabdf89188852adf8ca15118b49e67eb1345231652dc7f0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0278` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/agents/chat/service.py | run_phyto_chat_cached | `sha256:adfe56c32057d965b8e39590c684b9c136d0715cff1ff30a41545e02f289b42a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0279` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | DeepGenomeDispatchMixin | `sha256:b62e929137df8fed1262575b6b082989b386a2ce9c379c604be6d2ec0c710dad` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0280` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:d98c5d2f2fd683297caf6428dd7821e725b53234dc57162abb2e03b63f0d8b1a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0281` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:fca70926837df2569a4ae2b4c8be446ca58aefd1a8367b32c8d63f7f391d0589` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0288` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/storage/uploads.py | — | `sha256:d713586935bbfb52b818a5e473e7d2169737526f18839e9196e5831051e4c466` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -249,6 +247,8 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0362` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/common/httpx_client.py | get_async_client | `sha256:d902f3079846e17beb3ccdcc68c0bd432c3e473f0171b0c54c975be37ee154c9` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/common/httpx_client.py, static-analysis-inventory |
 | `SAE-TMP-0363` | pylint | too-many-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | \_retrieve_scope_docs | `sha256:b8ee3dee96109d12d3a63217b8ce5e2bd762ef6270c47515a4ab2e133ac033f9` | bot-maintainers | 2026-07-22 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | tests/agents/test_knowledge_retrieval_helpers.py, static-analysis-inventory |
 | `SAE-TMP-0364` | pylint | too-many-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | \_rerank_batch | `sha256:9fb814581e5a6ffb28e995317d954d833cbcafa9d45a017ae73c261968b00051` | bot-maintainers | 2026-07-22 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | tests/agents/test_knowledge_retrieval_helpers.py, static-analysis-inventory |
+| `SAE-TMP-0365` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | DeepGenomeDispatchMixin.\_prepare_analysis_tasks | `sha256:b3b20b0c9824d10effeca2aba17cec3267456dc9ef174b4e20e8ff4bba08a57c` | bot-maintainers | 2026-07-22 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | tests/agents/test_deep_genome_dispatch_routing.py, tests/unit/test_deep_genome_dispatch.py, static-analysis-inventory |
+| `SAE-TMP-0366` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | DeepGenomeDispatchMixin.\_dispatch_and_wait_analysis | `sha256:c39727b8da09946785aaee90fd61f0ac9918f9033e8e1dce2d137a60b7896327` | bot-maintainers | 2026-07-22 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | tests/agents/test_deep_genome_dispatch_routing.py, tests/unit/test_deep_genome_dispatch.py, static-analysis-inventory |
 
 ## Review fields
 
@@ -393,26 +393,6 @@ Suppression can hide a future regression.
 ```
 
 ### `SAE-TMP-0009`
-
-Rationale:
-
-```text
-type: ignore[misc]
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0010`
 
 Rationale:
 
@@ -3309,26 +3289,6 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0279`
-
-Rationale:
-
-```text
-Two DeepGenome orchestration methods still exceed the local-variable threshold after remote I/O extraction; their transition and task-plan state remains one compatibility boundary until the next coordinator split.
-```
-
-Counterfactual:
-
-```text
-Extracting these locals without a characterization seam could duplicate dispatch state and change optional-failure or task-plan semantics.
-```
-
-Risk:
-
-```text
-The exception can hide accidental growth in DeepGenome orchestration; the next coordinator split must preserve transition ordering and task-plan contracts.
-```
-
 ### `SAE-TMP-0280`
 
 Rationale:
@@ -4647,4 +4607,44 @@ Risk:
 
 ```text
 The explicit signature can grow with backend options; focused rerank tests must cover every field.
+```
+
+### `SAE-TMP-0365`
+
+Rationale:
+
+```text
+The task-preparation seam keeps gene identity resolution, concrete work-item planning, and legacy logical branch construction together until a characterization-preserving coordinator extraction lands.
+```
+
+Counterfactual:
+
+```text
+Splitting the locals without a shared plan oracle could change twelve-row task coverage, species-specific identity resolution, or optional-branch ordering.
+```
+
+Risk:
+
+```text
+The explicit plan state can grow and hide a missed analysis row; dispatch routing and lifecycle tests must remain the required review gate.
+```
+
+### `SAE-TMP-0366`
+
+Rationale:
+
+```text
+The remote-analysis seam keeps submission, polling, result download, and lifecycle transition context explicit until the coordinator extraction proves ordering and redaction compatibility.
+```
+
+Counterfactual:
+
+```text
+Wrapping these values prematurely could hide terminal-state transitions or make optional analysis failures appear successful.
+```
+
+Risk:
+
+```text
+The polling context can accumulate backend-specific fields; lifecycle, failure, and redaction tests must cover every retained field.
 ```

@@ -626,7 +626,6 @@ class DeepGenomeDispatchMixin:
             return await relay_bi_query(sql, message="BI query failed")
         return await gauss_query(sql)
 
-    # pylint: disable=too-many-locals
     async def _prepare_analysis_tasks(self: Any, state: DeepGenomeState):
         """Initialize analysis tasks for parallel execution.
 
@@ -643,6 +642,7 @@ class DeepGenomeDispatchMixin:
             Dict with the legacy logical ``analysis_tasks`` list and the
             serialized concrete ``work_items`` list.
         """
+        # pylint: disable=too-many-locals
         gene_id = state["gene_id"]
         species_code = state.get("species_code", "")
         match species_code:
@@ -738,7 +738,6 @@ class DeepGenomeDispatchMixin:
             transition_sink_factory=lambda: self._transition_sink(None),
         )
 
-    # pylint: disable=too-many-locals
     async def _dispatch_and_wait_analysis(
         self: Any,
         analysis_type: str,
@@ -748,6 +747,7 @@ class DeepGenomeDispatchMixin:
         state: DeepGenomeState | None = None,
     ) -> dict:
         """Submit an analysis task, poll it, and download its result."""
+        # pylint: disable=too-many-locals
         run_identity = RunIdentity.create(
             user_id=self.deep_genome_config.USER_ID,
             scope=analysis_type,

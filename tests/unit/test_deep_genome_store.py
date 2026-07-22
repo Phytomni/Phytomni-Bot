@@ -273,9 +273,9 @@ def test_store_exports_frozen_contract_models() -> None:
     )
 
     with pytest.raises(AttributeError):
-        reservation.owner = "bob"  # type: ignore[misc]
+        setattr(reservation, "owner", "bob")
     with pytest.raises(AttributeError):
-        snapshot.status = "failed"  # type: ignore[misc]
+        setattr(snapshot, "status", "failed")
 
 
 def test_snapshot_to_formatted_report_metadata_covers_report_states() -> None:
