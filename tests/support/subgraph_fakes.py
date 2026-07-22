@@ -21,6 +21,7 @@ from mcp_server_phytomni.agents.deep_genome.coordinator import WorkItemOutcome
 __all__ = [
     "ANALYST_CHAT_MOUNT_TOPOLOGY",
     "BRIEF_GENE_CHAT_MOUNT_TOPOLOGY",
+    "BRIEF_GENE_GRAPH_NODE_NAMES",
     "BRIEF_GENE_STATE_PREAMBLE_FIELDS",
     "ChatMountTopology",
     "DATA_CHAT_MOUNT_TOPOLOGY",
@@ -52,6 +53,27 @@ DEEP_GENOME_GENERIC_NODE_NAMES = (
     "smep_node",
     "smoc_node",
     "protein_structure_node",
+)
+
+
+BRIEF_GENE_GRAPH_NODE_NAMES = frozenset(
+    {
+        "query_judge_node",
+        "fetch_annotation_node",
+        "fetch_homology_interactions_node",
+        "retrieve_prep_tasks_node",
+        "retrieve_worker_node",
+        "retrieve_reduce_node",
+        "section_discovery_node",
+        "section_cloning_node",
+        "section_functional_node",
+        "section_application_node",
+        "introduction_node",
+        "render_node",
+        "follow_up_prep_node",
+        "follow_up_post_node",
+        "chat",
+    }
 )
 
 

@@ -24,6 +24,7 @@ from mcp_server_phytomni.mcp.stream_lifecycle import (
     StreamLifecycleState,
     project_stream_failures,
 )
+from tests.support.security_markers import FORBIDDEN_STREAM_CONTENT
 
 from ._network_escape import install_network_escape_guard
 
@@ -424,10 +425,5 @@ async def test_graph_stream_propagates_runtime_failure() -> None:
     assert lifecycle.reached_finish is False
     assert lifecycle.saw_error is True
     evidence = repr(projected)
-    for forbidden in (
-        "bearer-secret",
-        "postgresql://",
-        "db-user:db-password",
-        "SELECT secret_token",
-    ):
+    for forbidden in FORBIDDEN_STREAM_CONTENT:
         assert forbidden not in evidence

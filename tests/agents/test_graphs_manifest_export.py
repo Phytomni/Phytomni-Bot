@@ -34,7 +34,10 @@ from mcp_server_phytomni.graphs.manifest import (
     GraphNodeManifest,
     export_manifest,
 )
-from tests.support.subgraph_fakes import DEEP_GENOME_GENERIC_NODE_NAMES
+from tests.support.subgraph_fakes import (
+    BRIEF_GENE_GRAPH_NODE_NAMES,
+    DEEP_GENOME_GENERIC_NODE_NAMES,
+)
 
 
 class _SimpleState(TypedDict):
@@ -176,24 +179,7 @@ def test_export_real_brief_gene_agent_node_set() -> None:
     """
     manifest = export_manifest(BriefGeneAgent().app)
     names = {node.name for node in manifest.nodes}
-    documented = {
-        "query_judge_node",
-        "fetch_annotation_node",
-        "fetch_homology_interactions_node",
-        "retrieve_prep_tasks_node",
-        "retrieve_worker_node",
-        "retrieve_reduce_node",
-        "section_discovery_node",
-        "section_cloning_node",
-        "section_functional_node",
-        "section_application_node",
-        "introduction_node",
-        "render_node",
-        "follow_up_prep_node",
-        "follow_up_post_node",
-        "chat",
-    }
-    assert documented <= names
+    assert names >= BRIEF_GENE_GRAPH_NODE_NAMES
 
 
 def test_export_real_chat_mount_is_manifest_node_with_xray_children() -> None:

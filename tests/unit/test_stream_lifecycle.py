@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 import pytest
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
+from tests.support.security_markers import FORBIDDEN_STREAM_CONTENT
 
 from mcp_server_phytomni.mcp.result_formatting import (
     AguiEvent,
@@ -226,12 +227,7 @@ async def test_secret_fault_never_reaches_frames_or_logs(
     )
     evidence = repr(projected) + caplog.text
 
-    for forbidden in (
-        "bearer-secret",
-        "postgresql://",
-        "db-user:db-password",
-        "SELECT secret_token",
-    ):
+    for forbidden in FORBIDDEN_STREAM_CONTENT:
         assert forbidden not in evidence
 
 

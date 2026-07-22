@@ -5,47 +5,15 @@
 
 from __future__ import annotations
 
-from typing import Any, NotRequired, TypedDict
-
 import pytest
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from langgraph.graph import END, START, StateGraph
-from langgraph.types import interrupt
 
 from mcp_server_phytomni.runtime.checkpoint_backend import (
     build_default_checkpointer,
 )
 from mcp_server_phytomni.runtime.langgraph_runner import build_runnable_config
 from mcp_server_phytomni.runtime.resume import aresume_graph, detect_interrupt
-
-
-class _RestartState(TypedDict):
-    """State for the restart-persistence graph."""
-
-    value: str
-    decision: NotRequired[dict[str, Any]]
-    final: NotRequired[str]
-
-
-def _build_restart_app(checkpointer: AsyncSqliteSaver) -> Any:
-    """Build a graph that pauses once, then finalizes on approval."""
-
-    async def gate(state: _RestartState) -> dict[str, Any]:
-        decision = interrupt({"draft": state["value"]})
-        return {"decision": decision}
-
-    async def finalize(state: _RestartState) -> dict[str, str]:
-        decision = state.get("decision", {})
-        approved = decision.get("approved")
-        return {"final": "ok" if approved else "redo"}
-
-    graph = StateGraph(_RestartState)
-    graph.add_node("gate", gate)
-    graph.add_node("finalize", finalize)
-    graph.add_edge(START, "gate")
-    graph.add_edge("gate", "finalize")
-    graph.add_edge("finalize", END)
-    return graph.compile(checkpointer=checkpointer)
+from tests.support.resume_graph import build_resume_app
 
 
 async def _close_saver(saver: AsyncSqliteSaver) -> None:
@@ -61,7 +29,7 @@ async def test_pause_point_survives_fresh_sqlite_saver(tmp_path) -> None:
     saver_a = build_default_checkpointer(db_path)
 
     try:
-        app_a = _build_restart_app(saver_a)
+        app_a = build_resume_app(saver_a)
         paused = await app_a.ainvoke(
             {"value": "draft-text"},
             config=build_runnable_config(thread_id),
@@ -74,7 +42,7 @@ async def test_pause_point_survives_fresh_sqlite_saver(tmp_path) -> None:
 
     saver_b = build_default_checkpointer(db_path)
     try:
-        app_b = _build_restart_app(saver_b)
+        app_b = build_resume_app(saver_b)
         final = await aresume_graph(app_b, thread_id, {"approved": True})
         assert final["final"] == "ok"
     finally:

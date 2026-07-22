@@ -15,6 +15,10 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from tests.support.task_registry_schema import (
+    EXPECTED_TASK_COLUMNS,
+    create_legacy_task_db,
+)
 
 from mcp_server_phytomni.config import defaults as defaults_mod
 from mcp_server_phytomni.runtime import task_manager as task_manager_mod
@@ -25,30 +29,6 @@ from mcp_server_phytomni.runtime.task_manager import (
 )
 
 pytestmark = pytest.mark.unit
-
-_EXPECTED_COLUMNS = {
-    "task_id",
-    "status",
-    "analysis_id",
-    "output_dir",
-    "run_id",
-    "user_id",
-    "agent",
-    "origin",
-    "created_at",
-    "updated_at",
-    "input_fingerprint",
-    "task_log",
-    "final_report",
-    "degraded_reason",
-    "source_task_id",
-    "intermediate_report",
-    "report_revision",
-    "report_stage",
-    "report_completeness",
-    "report_updated_at",
-    "progress_json",
-}
 
 
 def _columns(db_path: str) -> set[str]:
@@ -66,7 +46,7 @@ def test_init_db_creates_full_schema_on_fresh_db(tmp_path: Path) -> None:
 
     TaskManager(db)
 
-    assert _columns(db) == _EXPECTED_COLUMNS
+    assert _columns(db) == EXPECTED_TASK_COLUMNS
 
 
 def test_init_db_migrates_legacy_four_column_db_in_place(
@@ -78,25 +58,14 @@ def test_init_db_migrates_legacy_four_column_db_in_place(
     newly added columns (SQLite's documented ADD COLUMN semantics).
     """
     db = str(tmp_path / "tasks.sqlite")
-    conn = sqlite3.connect(db)
-    conn.execute("""
-        CREATE TABLE tasks (
-            task_id TEXT PRIMARY KEY,
-            status TEXT,
-            analysis_id TEXT,
-            output_dir TEXT
-        )
-        """)
-    conn.execute(
-        "INSERT INTO tasks VALUES (?, ?, ?, ?)",
-        ("legacy-1", "submitted", "", "/legacy/out"),
+    create_legacy_task_db(
+        Path(db),
+        seed=("legacy-1", "submitted", "", "/legacy/out"),
     )
-    conn.commit()
-    conn.close()
 
     TaskManager(db)
 
-    assert _columns(db) == _EXPECTED_COLUMNS
+    assert _columns(db) == EXPECTED_TASK_COLUMNS
     conn = sqlite3.connect(db)
     try:
         row = conn.execute(
@@ -125,7 +94,7 @@ def test_init_db_is_idempotent(tmp_path: Path) -> None:
     TaskManager(db)
     TaskManager(db)
 
-    assert _columns(db) == _EXPECTED_COLUMNS
+    assert _columns(db) == EXPECTED_TASK_COLUMNS
 
 
 def test_get_task_return_shape_unchanged(tmp_path: Path) -> None:
@@ -393,7 +362,7 @@ def test_legacy_db_migrates_input_fingerprint_column(
 
     TaskManager(db)
 
-    assert _columns(db) == _EXPECTED_COLUMNS
+    assert _columns(db) == EXPECTED_TASK_COLUMNS
     conn = sqlite3.connect(db)
     try:
         row = conn.execute(

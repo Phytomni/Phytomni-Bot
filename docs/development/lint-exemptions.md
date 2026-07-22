@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `156`
+- Authorized records: `150`
 
 ## Informational counts
 
@@ -22,7 +22,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:prop-decorator`                             |       1 |
 | `pylint:C0103`                                    |       1 |
 | `pylint:C0116`                                    |       1 |
-| `pylint:R0801`                                    |      61 |
+| `pylint:R0801`                                    |      55 |
 | `pylint:R0903`                                    |       7 |
 | `pylint:R0913`                                    |       1 |
 | `pylint:R0917`                                    |       1 |
@@ -93,9 +93,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0092` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_brief_gene_chat_subgraph.py | 71:79 | `sha256:36c489b726b7409ac52d963563d5e3c3db3049c965e714694d291c98f53e459c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0093` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_brief_gene_knowledge_subgraph.py | 81:86 | `sha256:0c5f1d7ed62b15af3b87f94ba171987177371c7e209c1daad28c40fc6c396cad` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0107` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_environment_agent.py | 168:176 | `sha256:4620aee296dabe883d84e3fc303a3a4d7fd87eee6bff62a845d9ed2318b34a74` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0108` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_graphs_manifest_export.py | 179:194 | `sha256:bf3ab1c0c50e8432330c1340c5fa446ca0e2f69697f51353579a6054cdff6615` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0109` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_resume_kernel.py | 25:42 | `sha256:4ad39b4ad4b4823fe799020de33c01bfd5161991446aff20e5be60d87f550eae` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0110` | pylint | R0801 | temporary | diagnostic | pair | tests/agents/test_resume_kernel.py | 43:48 | `sha256:e44e55cdded49e86109ef57098c78ebda86bba0f2946ece45fa0ec9ed1c314db` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0125` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_a2ui_actions_http.py | 810:819 | `sha256:d30623a9d2caa6c8f0ea3c64da0ad0d8b8d7ed8e0e45dfa8300d9198f8efbda1` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0150` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_run_logs.py | 266:280 | `sha256:a50099a104216d972c604e94c37fd02ad914cb71b6efddf52a2497c4b71c2afe` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0151` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_api_runs_list.py | 550:559 | `sha256:8aca2706a3ad7cdf858e8259cadf45b5cb0f7c37b5020d4c6080af798b67e934` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -115,9 +112,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0168` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/interop/test_a2a_client.py | 293:306 | `sha256:eb3e93560d9c6607712d8955e1858b2e712515c029d2c14977024abe120064e5` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0169` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/interop/test_a2a_client.py | 87:96 | `sha256:79e228ba92766d992ece14a5cc1de66540efa4031b0094d106a707ac6dbede6c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0171` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_client_elicitation.py | 59:66 | `sha256:975f355cd6c2a65dca9d57186615c419eeda303eac5e94c7fdd0adfb91f399cf` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0175` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_store.py | 33:44 | `sha256:04ea50c325614cef7978749ada27ba074a61b1439457e41b3c47889e3fe83294` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0176` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_deep_genome_store.py | 46:59 | `sha256:eb638789573cbe2acbeece54860c9517f5ed9bb9e78512eeb2b273710012c118` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0177` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/test_stream_lifecycle.py | 228:241 | `sha256:9841db38ab87a9cc9ea8495614647541015f3013773fa3a52a42c315377a2dd6` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0194` | pylint | R0903 | structural | diagnostic | symbol | tests/agents/test_deep_genome_submit.py | \_FakeApp | `sha256:1f7f51708ece122db06fccc8c565c771ccda09fd3dab04360277d25248e3fef0` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0200` | pylint | R0903 | structural | diagnostic | symbol | tests/conftest.py | \_build_fake_obs_client.\_FakeObsClient | `sha256:2dc747295b1e436a070df77a883fd813565b56d9c86de87801b81cfbb178fae7` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0211` | pylint | R0903 | structural | diagnostic | symbol | tests/unit/e2e/test_polling.py | test_http_poll_records_distinct_monotonic_revisions.Client | `sha256:f4a6bb85b202f6f9be1a4bdf895fd80b219a442eab4fd5f04fb29cd46b4c3d93` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
@@ -1099,109 +1093,6 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0108`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==tests.agents.test_graphs_manifest_export:[179:194]
-==tests.agents.test_visualize_agent_graphs_cli:[103:118]
-        "query_judge_node",
-        "fetch_annotation_node",
-        "fetch_homology_interactions_node",
-        "retrieve_prep_tasks_node",
-        "retrieve_worker_node",
-        "retrieve_reduce_node",
-        "section_discovery_node",
-        "section_cloning_node",
-        "section_functional_node",
-        "section_application_node",
-        "introduction_node",
-        "render_node",
-        "follow_up_prep_node",
-        "follow_up_post_node",
-        "chat",
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0109`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==tests.agents.test_resume_kernel:[25:42]
-==tests.agents.test_resume_restart:[24:41]
-    value: str
-    decision: NotRequired[dict[str, Any]]
-    final: NotRequired[str]
-
-
-def _build_restart_app(checkpointer: AsyncSqliteSaver) -> Any:
-    """Build a graph that pauses once, then finalizes on approval."""
-
-    async def gate(state: _RestartState) -> dict[str, Any]:
-        decision = interrupt({"draft": state["value"]})
-        return {"decision": decision}
-
-    async def finalize(state: _RestartState) -> dict[str, str]:
-        decision = state.get("decision", {})
-        approved = decision.get("approved")
-        return {"final": "ok" if approved else "redo"}
-
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0110`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==tests.agents.test_resume_kernel:[43:48]
-==tests.agents.test_resume_restart:[42:47]
-    graph.add_node("gate", gate)
-    graph.add_node("finalize", finalize)
-    graph.add_edge(START, "gate")
-    graph.add_edge("gate", "finalize")
-    graph.add_edge("finalize", END)
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0125`
 
 Rationale:
@@ -1803,109 +1694,6 @@ Similar lines in 2 files
     fake_result = AsyncMock()
     fake_result.isError = False
     fake_result.content = []
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0175`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_deep_genome_store:[33:44]
-==test_task_registry_migration:[44:55]
-    "intermediate_report",
-    "report_revision",
-    "report_stage",
-    "report_completeness",
-    "report_updated_at",
-    "progress_json",
-}
-
-
-def _legacy_db(tmp_path: Path) -> Path:
-    """Create the original four-column task registry schema."""
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0176`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_deep_genome_store:[46:59]
-==test_task_registry_migration:[81:122]
-        conn.execute("""
-            CREATE TABLE tasks (
-                task_id TEXT PRIMARY KEY,
-                status TEXT,
-                analysis_id TEXT,
-                output_dir TEXT
-            )
-            """)
-    return db_path
-
-
-def _store(tmp_path: Path) -> DeepGenomeStore:
-    """Build a store rooted at a temporary task registry."""
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0177`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_stream_lifecycle:[228:241]
-==tests.agents.test_stream_graph_agent:[426:433]
-    for forbidden in (
-        "bearer-secret",
-        "postgresql://",
-        "db-user:db-password",
-        "SELECT secret_token",
-    ):
-        assert forbidden not in evidence
-
-
-async def test_unexpected_error_logs_location_without_message(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Unexpected logs include identity/location but not raw exception text."""
 ```
 
 Counterfactual:

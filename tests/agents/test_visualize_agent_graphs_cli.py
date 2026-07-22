@@ -22,6 +22,8 @@ from typing import Any
 
 import pytest
 
+from tests.support.subgraph_fakes import BRIEF_GENE_GRAPH_NODE_NAMES
+
 
 def _load_script() -> Any:
     """Import the visualization script as a module without packaging it."""
@@ -100,23 +102,7 @@ def test_manifest_writes_json_with_expected_nodes(
     # introduction and a pure-template render; the retrieve site splits
     # into prep / worker / reduce and the trailing follow_up splits into
     # prep + chat + post.
-    assert {
-        "query_judge_node",
-        "fetch_annotation_node",
-        "fetch_homology_interactions_node",
-        "retrieve_prep_tasks_node",
-        "retrieve_worker_node",
-        "retrieve_reduce_node",
-        "section_discovery_node",
-        "section_cloning_node",
-        "section_functional_node",
-        "section_application_node",
-        "introduction_node",
-        "render_node",
-        "follow_up_prep_node",
-        "follow_up_post_node",
-        "chat",
-    } <= names
+    assert names >= BRIEF_GENE_GRAPH_NODE_NAMES
 
 
 def test_png_writes_file_under_out_dir(

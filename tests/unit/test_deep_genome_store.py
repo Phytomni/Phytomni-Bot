@@ -11,6 +11,10 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.support.task_registry_schema import (
+    REPORT_COLUMNS,
+    create_legacy_task_db,
+)
 
 from mcp_server_phytomni.agents.deep_genome.coordinator import (
     RemoteSubmission as CoordinatorRemoteSubmission,
@@ -30,28 +34,11 @@ from mcp_server_phytomni.runtime.deep_genome_store import (
 
 pytestmark = pytest.mark.unit
 
-_REPORT_COLUMNS = {
-    "intermediate_report",
-    "report_revision",
-    "report_stage",
-    "report_completeness",
-    "report_updated_at",
-    "progress_json",
-}
-
 
 def _legacy_db(tmp_path: Path) -> Path:
     """Create the original four-column task registry schema."""
     db_path = tmp_path / "legacy.db"
-    with sqlite3.connect(db_path) as conn:
-        conn.execute("""
-            CREATE TABLE tasks (
-                task_id TEXT PRIMARY KEY,
-                status TEXT,
-                analysis_id TEXT,
-                output_dir TEXT
-            )
-            """)
+    create_legacy_task_db(db_path)
     return db_path
 
 
@@ -214,7 +201,7 @@ def test_store_upgrades_legacy_database_idempotently(tmp_path: Path) -> None:
             )
         }
 
-    assert task_columns >= _REPORT_COLUMNS
+    assert task_columns >= REPORT_COLUMNS
     assert {
         "deep_genome_sections",
         "deep_genome_remote_tasks",
@@ -242,8 +229,8 @@ def test_store_fresh_schema_has_report_columns_and_checks(
             WHERE type='table' AND name='deep_genome_remote_tasks'
             """).fetchone()[0]
 
-    assert columns.keys() >= _REPORT_COLUMNS
-    assert all(columns[name] == 0 for name in _REPORT_COLUMNS)
+    assert columns.keys() >= REPORT_COLUMNS
+    assert all(columns[name] == 0 for name in REPORT_COLUMNS)
     assert "PRIMARY KEY (umbrella_task_id, section_key)" in section_sql
     assert "PRIMARY KEY (umbrella_task_id, work_item_key)" in remote_sql
     assert "FOREIGN KEY (umbrella_task_id, section_key)" in remote_sql

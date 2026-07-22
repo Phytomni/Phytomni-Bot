@@ -5,12 +5,8 @@
 
 from __future__ import annotations
 
-from typing import Any, NotRequired, TypedDict
-
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import END, START, StateGraph
-from langgraph.types import interrupt
 
 from mcp_server_phytomni.runtime.langgraph_runner import (
     build_runnable_config,
@@ -20,39 +16,13 @@ from mcp_server_phytomni.runtime.resume import (
     aresume_graph,
     detect_interrupt,
 )
-
-
-class _State(TypedDict):
-    value: str
-    decision: NotRequired[dict[str, Any]]
-    final: NotRequired[str]
-
-
-def _build_stub_app() -> Any:
-    """A minimal graph that interrupts once, then finalizes on resume."""
-
-    async def gate(state: _State) -> dict[str, Any]:
-        decision = interrupt({"draft": state["value"]})
-        return {"decision": decision}
-
-    async def finalize(state: _State) -> dict[str, Any]:
-        decision = state.get("decision", {})
-        approved = decision.get("approved")
-        return {"final": "ok" if approved else "redo"}
-
-    graph = StateGraph(_State)
-    graph.add_node("gate", gate)
-    graph.add_node("finalize", finalize)
-    graph.add_edge(START, "gate")
-    graph.add_edge("gate", "finalize")
-    graph.add_edge("finalize", END)
-    return graph.compile(checkpointer=MemorySaver())
+from tests.support.resume_graph import build_resume_app
 
 
 @pytest.mark.asyncio
 async def test_detect_interrupt_reads_paused_draft() -> None:
     """detect_interrupt surfaces the draft payload from a paused run."""
-    app = _build_stub_app()
+    app = build_resume_app(MemorySaver())
     final = await app.ainvoke(
         {"value": "draft-text"},
         config=build_runnable_config("t-1"),
@@ -65,7 +35,7 @@ async def test_detect_interrupt_reads_paused_draft() -> None:
 @pytest.mark.asyncio
 async def test_aresume_graph_finalizes_on_approval() -> None:
     """aresume_graph drives the paused graph to its terminal state."""
-    app = _build_stub_app()
+    app = build_resume_app(MemorySaver())
     await app.ainvoke(
         {"value": "draft-text"},
         config=build_runnable_config("t-2"),
@@ -77,6 +47,6 @@ async def test_aresume_graph_finalizes_on_approval() -> None:
 @pytest.mark.asyncio
 async def test_aresume_graph_unknown_thread_raises() -> None:
     """Resuming a thread with no stored pause point raises cleanly."""
-    app = _build_stub_app()
+    app = build_resume_app(MemorySaver())
     with pytest.raises(NoCheckpointError):
         await aresume_graph(app, "never-started", {"approved": True})
