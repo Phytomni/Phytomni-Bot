@@ -163,6 +163,11 @@ README-style prose may wrap the same copyright text across lines.
 - Classification outcomes are `temporary` and `structural`. Temporary records
   require an owner, review date, expiry, remediation, and linked tests;
   structural records still require review and a remediation plan.
+- A dedicated specialist audit may receive provisional owner approval to keep
+  existing temporary records active. Provisional approval preserves the
+  classification, expiry, remediation, and exact fingerprint; it is not a
+  zero-temporary result. The audit must return a row-by-row decision before a
+  separate registry-only promotion or remediation commit.
 - Run `make scoped` for every commit and `make push` for every push. Count
   baselines, numeric ratchets, and parallel local allowlists are prohibited.
 - Test-only style exceptions, such as pytest function docstrings, must remain

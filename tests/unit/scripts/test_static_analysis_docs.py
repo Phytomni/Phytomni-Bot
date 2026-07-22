@@ -56,6 +56,8 @@ def test_approval_workflow_is_documented_in_durable_guidance() -> None:
             "default deny",
             "temporary",
             "structural",
+            "provisional",
+            "row-by-row",
             "review",
             "expiry",
             "explicit approval",

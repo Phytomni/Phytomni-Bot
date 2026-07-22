@@ -85,6 +85,12 @@ def test_full_gate_checks_registry_and_generated_ledger() -> None:
     assert "reconcile(" not in _FULL_GATE
 
 
+def test_interim_gates_do_not_claim_zero_temporary_closure() -> None:
+    """Regular gates permit audited temporary rows without promoting them."""
+    gate_text = "\n".join((_GATE, _FULL_GATE, _WORKFLOW))
+    assert "--require-zero-temporary" not in gate_text
+
+
 def test_legacy_numeric_baseline_and_local_allowlist_are_absent() -> None:
     """No second authorization path may return after the cutover."""
     assert not (_ROOT / "scripts/check_pylint_baseline.py").exists()
