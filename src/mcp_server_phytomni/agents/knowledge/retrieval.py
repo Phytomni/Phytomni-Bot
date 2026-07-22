@@ -398,7 +398,6 @@ async def _rank_docs(
     )
 
 
-# pylint: disable=too-many-arguments
 # Cache primitive: see docs/development/lint-exemptions.md.
 async def _rerank_batch(
     client: AsyncClient,
@@ -412,6 +411,7 @@ async def _rerank_batch(
     retriable_codes: tuple[int, ...],
 ) -> list[dict[str, Any]]:
     """Send one rerank request batch under the per-loop semaphore."""
+    # pylint: disable=too-many-arguments
     async with _rerank_semaphore():
         body = {
             "query": user_query,

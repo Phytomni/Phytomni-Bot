@@ -109,6 +109,56 @@ def _symbol_context(source: str, line: int) -> tuple[str | None, str]:
     return symbol, normalize_source(segment)
 
 
+def _next_definition_context(source: str, line: int) -> tuple[str | None, str]:
+    """Bind a Pylint directive before a decorator to its next definition.
+
+    Pylint comments commonly sit between a decorator and the ``def`` line.
+    The normal containing-symbol lookup cannot see through that gap and used
+    to collapse repeated directives into one module-level span.  Only a
+    decorated definition with a blank/comment/decorator bridge is accepted,
+    so a true module directive followed by imports or a plain definition
+    remains a span target.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None, ""
+
+    lines = source.splitlines()
+    candidates = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(
+            node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+        )
+        and isinstance(getattr(node, "lineno", None), int)
+        and getattr(node, "lineno") > line
+    ]
+    for node in sorted(candidates, key=lambda item: item.lineno):
+        start = node.lineno
+        decorators = getattr(node, "decorator_list", ())
+        if not decorators:
+            continue
+        has_adjacent_decorator = any(
+            getattr(decorator, "end_lineno", 0) <= line
+            or getattr(decorator, "lineno", 0) > line
+            for decorator in decorators
+        )
+        if not has_adjacent_decorator:
+            continue
+        bridge = lines[line : start - 1]
+        if all(
+            not text.strip()
+            or text.lstrip().startswith("#")
+            or text.lstrip().startswith("@")
+            for text in bridge
+        ):
+            symbol, normalized_source = _symbol_context(source, start)
+            if symbol is not None:
+                return symbol, normalized_source
+    return None, ""
+
+
 def _normalize_unbound_line(source: str, line: int) -> str:
     """Normalize an indented line without leaking tokenizer errors."""
     lines = source.splitlines()
@@ -212,6 +262,12 @@ def _finding(
     symbol, normalized_source = _symbol_context(context.source, target_line)
     if symbol is None and directive.applies_next:
         symbol, normalized_source = _symbol_context(context.source, line)
+    if symbol is None and directive.tool == "pylint":
+        symbol, normalized_source = _next_definition_context(
+            context.source, line
+        )
+    if symbol is None and not normalized_source:
+        normalized_source = _normalize_unbound_line(context.source, line)
     display_path = _relative_path(context.root, context.path)
     target_kind = TargetKind.SYMBOL if symbol else TargetKind.SPAN
     endpoint = Endpoint(display_path, symbol, normalized_source)

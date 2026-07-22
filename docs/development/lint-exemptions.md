@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `193`
+- Authorized records: `195`
 
 ## Informational counts
 
@@ -33,7 +33,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `pylint:path-ignore`                                              |       4 |
 | `pylint:protected-access`                                         |      43 |
 | `pylint:too-few-public-methods`                                   |       3 |
-| `pylint:too-many-arguments`                                       |       8 |
+| `pylint:too-many-arguments`                                       |      10 |
 | `pylint:too-many-instance-attributes`                             |       3 |
 | `pylint:too-many-lines`                                           |       1 |
 | `pylint:too-many-locals`                                          |       6 |
@@ -170,10 +170,10 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0261` | pylint | protected-access | structural | inline | symbol | tests/server/test_run_gc_background.py | test_async_gc_coalesces_concurrent_passes | `sha256:0dcac7edf70b73e87d365ab2a55a6988025320b3309f742972b4e93446d03736` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0262` | pylint | protected-access | structural | inline | symbol | tests/server/test_stdio_progress.py | test_progress_forwarded_when_token_present | `sha256:f119c910e90f018323907d6760b625893d289a739e1ea4ee80765553e81f64ac` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0263` | pylint | too-many-arguments | temporary | inline | span | scripts/gauss_live_probe.py | — | `sha256:e291191c021b141db59904d57b1b1d7ade99c76f2f2f38f90128c4785a30db39` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0264` | pylint | too-many-arguments | temporary | inline | span | src/mcp_server_phytomni/agents/chat/service.py | — | `sha256:ad4d4dd0361f7f453d9ecdb6b0c08c35739ff0751ca885d54f7a30eacc1aa133` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0265` | pylint | too-many-arguments | temporary | inline | span | src/mcp_server_phytomni/agents/data/nl2sql.py | — | `sha256:84dc17c51613d59f92ae20603553449d971f33d170353c0623b7992dcc0c222c` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0264` | pylint | too-many-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/chat/service.py | run_phyto_chat_cached | `sha256:47542a02a8f1614fd6a63ce15db9b434ba35c3cb9b78c4e19c4be92f207dbc5a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0265` | pylint | too-many-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/data/nl2sql.py | \_execute_nl2sql_cached | `sha256:4286eaf35c6d035be32bf5b7de5c527ac713419990ecd3f1156bc14e42b9ec0f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0266` | pylint | too-many-arguments | temporary | inline | span | src/mcp_server_phytomni/agents/deep_genome/coordinator.py | — | `sha256:6d9bf21762df6cec5ca632c7fa0145f019ce0d56231f6e3cab1d6591eaca2e30` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0268` | pylint | too-many-arguments | temporary | inline | span | src/mcp_server_phytomni/agents/knowledge/retrieval.py | — | `sha256:6bdcafe21a10f37d78813447e1288e33fcbda7783626b3fbaa0cffb4999a0e17` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0268` | pylint | too-many-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | \_retrieve_cached | `sha256:44cc48f7ce4ac5139334fb45f0bd9a4695c13e843ca33e195629d43cb4dfbb64` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0269` | pylint | too-many-arguments | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:1a370abea4bb3e91e460ecacc19991cbcbb3c4d8647f618e0ce59ca0a61ca387` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0270` | pylint | too-many-arguments | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:4bcb94ae89470bff34be0204f90a2751b032c2e1d75dceb846762909b5ce38c4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0271` | pylint | too-many-arguments | temporary | inline | span | src/mcp_server_phytomni/storage/uploads.py | — | `sha256:df677e7d6aeed70a2ecd9f25c93808d3e3f5ce8b83aa3ef2514b250d61e02a36` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -181,13 +181,13 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0273` | pylint | too-many-instance-attributes | temporary | inline | symbol | scripts/static_analysis/model.py | Exemption | `sha256:eeb04531fd760d523b2fd486a640c3ea24dabd91f85e0b47a52bcafdc31d251d` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0274` | pylint | too-many-instance-attributes | temporary | inline | symbol | scripts/static_analysis/model.py | Finding | `sha256:661b324cf7d8671f2ab7caf8bee1839f24b77a0de25723c26767926e3a4ba4d8` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0276` | pylint | too-many-lines | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:a301ef88f14d3dd14fabdf89188852adf8ca15118b49e67eb1345231652dc7f0` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0278` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/agents/chat/service.py | — | `sha256:619fb3f18b0672ce5a813d4a2f3c75fc0e1a731df01e119a42c8705bfb1766a9` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0278` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/agents/chat/service.py | run_phyto_chat_cached | `sha256:adfe56c32057d965b8e39590c684b9c136d0715cff1ff30a41545e02f289b42a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0279` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | DeepGenomeDispatchMixin | `sha256:b62e929137df8fed1262575b6b082989b386a2ce9c379c604be6d2ec0c710dad` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0280` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:d98c5d2f2fd683297caf6428dd7821e725b53234dc57162abb2e03b63f0d8b1a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0281` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:fca70926837df2569a4ae2b4c8be446ca58aefd1a8367b32c8d63f7f391d0589` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0288` | pylint | too-many-locals | temporary | inline | span | src/mcp_server_phytomni/storage/uploads.py | — | `sha256:d713586935bbfb52b818a5e473e7d2169737526f18839e9196e5831051e4c466` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0289` | pylint | too-many-locals | temporary | inline | span | tests/agents/test_deep_genome_lifecycle.py | — | `sha256:c89456f6ae1c750fc0f451d10d4b0885a15b45a3ff3d5623b86b86decb5721ba` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0290` | pylint | too-many-positional-arguments | temporary | inline | span | src/mcp_server_phytomni/agents/data/nl2sql.py | — | `sha256:5070abd4d3f8904dfe8375cdec6872bd6d155615cc6bd4b54f914cf5e07c75d2` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
+| `SAE-TMP-0290` | pylint | too-many-positional-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/data/nl2sql.py | \_execute_nl2sql_cached | `sha256:312c2a5652079e764bb44b05bf62269c69eef09ee9cc00ef1d66f56f17b451a4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0292` | pylint | too-many-statements | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:d31ea0d7a171aebd3fbf1bd2c0eca47443f9cf55147649ba476c187710e62378` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0293` | pylint | wrong-import-position | structural | inline | span | scripts/\_visualize_bootstrap.py | — | `sha256:637afabc246f45d9145f3aa93a39fe94d65fb830b2067196e8f33d8b77ed1847` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0294` | pymarkdown | md013 | structural | config | config | pyproject.toml | tool.pymarkdown.plugins.md013.enabled | `sha256:34d8c475a236a211d36db927ee2de462f03fdb4f3f07864359540255c750bf01` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
@@ -247,6 +247,8 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0360` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | \_rerank_batch | `sha256:3a6ee035cc2aaf279614723235b256649b02e02a648ad2bc4b84eceebf2b73b8` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/knowledge/retrieval.py, static-analysis-inventory |
 | `SAE-TMP-0361` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/auth/iam.py | get_token | `sha256:86c7b9c1162e4bb19a32a5e178c0a2f362018486f6aa8c0efd145e60dafaa822` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/auth/iam.py, static-analysis-inventory |
 | `SAE-TMP-0362` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/common/httpx_client.py | get_async_client | `sha256:d902f3079846e17beb3ccdcc68c0bd432c3e473f0171b0c54c975be37ee154c9` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/common/httpx_client.py, static-analysis-inventory |
+| `SAE-TMP-0363` | pylint | too-many-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | \_retrieve_scope_docs | `sha256:b8ee3dee96109d12d3a63217b8ce5e2bd762ef6270c47515a4ab2e133ac033f9` | bot-maintainers | 2026-07-22 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | tests/agents/test_knowledge_retrieval_helpers.py, static-analysis-inventory |
+| `SAE-TMP-0364` | pylint | too-many-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | \_rerank_batch | `sha256:9fb814581e5a6ffb28e995317d954d833cbcafa9d45a017ae73c261968b00051` | bot-maintainers | 2026-07-22 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | tests/agents/test_knowledge_retrieval_helpers.py, static-analysis-inventory |
 
 ## Review fields
 
@@ -3072,7 +3074,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=too-many-arguments,too-many-locals
+The cache primitive keeps semantic sampling inputs flat so func_cache key_params remain explicit and infrastructure fields stay outside the cache identity.
 ```
 
 Counterfactual:
@@ -3092,7 +3094,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=too-many-arguments,too-many-positional-arguments
+The cached NL2SQL seam exposes each semantic key field explicitly while forwarding volatile dialog and credential state through a keyword-only request.
 ```
 
 Counterfactual:
@@ -3132,7 +3134,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=too-many-arguments
+The retrieval cache primitive keeps every semantic retrieval field visible to func_cache key_params and passes transport options separately.
 ```
 
 Counterfactual:
@@ -3292,7 +3294,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=too-many-arguments,too-many-locals
+The cached chat seam keeps semantic sampling parameters and infrastructure controls explicit so cache identity and failure propagation remain auditable.
 ```
 
 Counterfactual:
@@ -3412,7 +3414,7 @@ Suppression can hide a future regression.
 Rationale:
 
 ```text
-pylint: disable=too-many-arguments,too-many-positional-arguments
+The NL2SQL cache seam intentionally exposes positional semantic fields because func_cache derives its identity from the declared key parameters.
 ```
 
 Counterfactual:
@@ -4605,4 +4607,44 @@ Risk:
 
 ```text
 The exemption could hide an accidental timeout that is not forwarded to the underlying client.
+```
+
+### `SAE-TMP-0363`
+
+Rationale:
+
+```text
+The scoped retrieval cache seam preserves explicit repository, paging, and filter inputs in the cache key while keeping the client transport injectable.
+```
+
+Counterfactual:
+
+```text
+Wrapping these fields would obscure cache identity and make relay/direct retrieval behavior harder to audit.
+```
+
+Risk:
+
+```text
+The explicit signature can grow as retrieval semantics evolve; the cache contract must remain covered by focused tests.
+```
+
+### `SAE-TMP-0364`
+
+Rationale:
+
+```text
+The rerank cache/transport seam keeps ranking inputs and retry controls explicit so relay and direct paths share one tested request shape.
+```
+
+Counterfactual:
+
+```text
+Grouping the ranking and retry fields would hide request semantics and make transport failure tests less direct.
+```
+
+Risk:
+
+```text
+The explicit signature can grow with backend options; focused rerank tests must cover every field.
 ```
