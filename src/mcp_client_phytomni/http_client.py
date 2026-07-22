@@ -16,6 +16,7 @@ import httpx
 from mcp_server_phytomni.contracts.deep_genome import (
     DEEP_GENOME_PROGRESS_FIELDS,
     DEEP_GENOME_REPORT_FIELDS,
+    DeepGenomeReportSnapshot,
     sanitize_nonnegative_int,
 )
 
@@ -58,16 +59,15 @@ class _RunIdentity:
 
 
 @dataclass(frozen=True)
-class _RunReport:
-    """Report fields shared by one public run snapshot."""
+class _RunAnswer:
+    """Answer field kept ahead of the shared report projection."""
 
     answer: str | None = None
-    intermediate_report: str | None = None
-    final_report: str | None = None
-    report_stage: str = "waiting_for_brief_gene"
-    report_completeness: str = "none"
-    report_revision: int = 0
-    report_updated_at: str | None = None
+
+
+@dataclass(frozen=True)
+class _RunReport(DeepGenomeReportSnapshot, _RunAnswer):
+    """Report fields shared by one public run snapshot."""
 
 
 @dataclass(frozen=True)

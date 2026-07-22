@@ -1999,25 +1999,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0272"
-tool = "pylint"
-rule = "too-many-instance-attributes"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "span"
-path = "e2e/helpers/polling.py"
-fingerprint = "sha256:ff614cad455dfea7ce48195584275f9faa4773dffacf4088e3341222c8bfc4b1"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=too-many-instance-attributes"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0276"
 tool = "pylint"
 rule = "too-many-lines"

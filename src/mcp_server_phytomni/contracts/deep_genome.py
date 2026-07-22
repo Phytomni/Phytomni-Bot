@@ -9,8 +9,21 @@ storage, network, or formatting code. Consumers keep their own containers and
 value-validation rules while sharing these immutable public field identities.
 """
 
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
+
+
+@dataclass(frozen=True)
+class DeepGenomeReportSnapshot:
+    """Immutable report lifecycle fields shared by client projections."""
+
+    intermediate_report: str | None = None
+    final_report: str | None = None
+    report_stage: str = "waiting_for_brief_gene"
+    report_completeness: str = "none"
+    report_revision: int = 0
+    report_updated_at: str | None = None
 
 
 class _DeepGenomeReportField(StrEnum):
@@ -69,6 +82,7 @@ def sanitize_nonnegative_int(value: object) -> int:
 
 
 __all__ = [
+    "DeepGenomeReportSnapshot",
     "DEEP_GENOME_FINAL_FAILURE_REASONS",
     "DEEP_GENOME_PROGRESS_FIELDS",
     "DEEP_GENOME_REPORT_FIELDS",

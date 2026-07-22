@@ -43,15 +43,13 @@ from mcp_client_phytomni import McpToolResponse, PhytomniMcpClient
 from mcp_server_phytomni.contracts.deep_genome import (
     DEEP_GENOME_PROGRESS_FIELDS,
     DEEP_GENOME_REPORT_FIELDS,
+    DeepGenomeReportSnapshot,
     sanitize_nonnegative_int,
 )
 from mcp_server_phytomni.runtime.task_reconcile import reconcile_task
 
 from .client import call_tool, submit_timeout_seconds
 
-# The live contract intentionally mirrors every public report/progress field.
-# Splitting it into nested models would diverge from the HTTP result shape.
-# pylint: disable=too-many-instance-attributes
 _logger = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = "server_tasks.db"
@@ -65,7 +63,27 @@ HTTP_TERMINAL_STATUSES = frozenset({"input_required", "succeeded", "failed"})
 
 
 @dataclass(frozen=True)
-class TaskState:
+class _TaskIdentity:
+    """Submission identity and terminal status shared by task snapshots."""
+
+    task_id: str
+    status: str
+    analysis_id: str
+    output_dir: str
+
+
+@dataclass(frozen=True)
+class _TaskProgress:
+    """Progress and degradation fields shared by task snapshots."""
+
+    progress: Mapping[str, int | bool | str] = field(default_factory=dict)
+    degraded: bool = False
+    degraded_reason: str | None = None
+    brief_gene_status: str = "unknown"
+
+
+@dataclass(frozen=True)
+class TaskState(_TaskProgress, DeepGenomeReportSnapshot, _TaskIdentity):
     """One sanitized task snapshot used by live acceptance tests.
 
     Attributes:
@@ -94,20 +112,6 @@ class TaskState:
         output_dirs: Output directory paths published by a task result.
     """
 
-    task_id: str
-    status: str
-    analysis_id: str
-    output_dir: str
-    final_report: str | None = None
-    intermediate_report: str | None = None
-    report_stage: str = "waiting_for_brief_gene"
-    report_completeness: str = "none"
-    report_revision: int = 0
-    report_updated_at: str | None = None
-    progress: Mapping[str, int | bool | str] = field(default_factory=dict)
-    degraded: bool = False
-    degraded_reason: str | None = None
-    brief_gene_status: str = "unknown"
     failures: tuple[Mapping[str, str], ...] = ()
     artifacts: tuple[Mapping[str, Any], ...] = ()
     output_dirs: tuple[str, ...] = ()
