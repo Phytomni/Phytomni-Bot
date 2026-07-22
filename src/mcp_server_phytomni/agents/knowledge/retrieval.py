@@ -11,7 +11,7 @@ coordination.
 
 import asyncio
 from contextlib import nullcontext
-from typing import Any
+from typing import Any, NamedTuple
 from weakref import WeakKeyDictionary
 
 from httpx import (
@@ -49,6 +49,54 @@ _RERANK_SEM_STATE: WeakKeyDictionary[
 ] = WeakKeyDictionary()
 
 
+class _RetrieveCacheKey(NamedTuple):
+    """Semantic fields that identify one merged retrieval answer."""
+
+    user_query: str
+    repo_id: str
+    scope: str
+    page_num: int
+    page_size: int
+    filter_string: str | None
+    extra_repo_ids: tuple[str, ...]
+    top_n: int
+    score_threshold: float
+
+
+class _RetrieveScopeKey(NamedTuple):
+    """Semantic fields that identify one scoped retrieval response."""
+
+    user_query: str
+    repo_id: str
+    scope: str
+    page_num: int
+    page_size: int
+    filter_string: str | None
+    extra_repo_ids: tuple[str, ...]
+
+
+class _RetrieveScopeRequest(NamedTuple):
+    """Transport settings for one scoped retrieval request."""
+
+    client: AsyncClient
+    retrieve_url: str
+    timeout: float
+    max_retries: int
+    retriable_codes: tuple[int, ...]
+
+
+class _RerankBatchRequest(NamedTuple):
+    """Transport request fields for one rerank batch."""
+
+    user_query: str
+    docs_batch: list[dict[str, Any]]
+    rerank_url: str
+    top_n: int
+    timeout: float
+    max_retries: int
+    retriable_codes: tuple[int, ...]
+
+
 def _rerank_semaphore() -> Any:
     """Return the current loop's rerank semaphore or a null context."""
     cap = KNOWLEDGE_CONFIG.RERANK_CONCURRENCY
@@ -72,37 +120,15 @@ def rerank_semaphore_state_size() -> int:
     return len(_RERANK_SEM_STATE)
 
 
-@func_cache(
-    key_params=[
-        "user_query",
-        "repo_id",
-        "scope",
-        "page_num",
-        "page_size",
-        "filter_string",
-        "extra_repo_ids",
-        "score_threshold",
-    ],
-    ttl=LONG_TTL_SECONDS,
-)
-# pylint: disable=too-many-arguments
-# Cache primitive: every named parameter is part of the @func_cache key.
+@func_cache(key_params=["cache_key"], ttl=LONG_TTL_SECONDS)
 async def _retrieve_cached(
-    user_query: str,
+    cache_key: _RetrieveCacheKey,
     *,
-    repo_id: str,
-    scope: str,
-    page_num: int,
-    page_size: int,
-    filter_string: str | None,
-    extra_repo_ids: tuple[str, ...],
-    top_n: int,
-    score_threshold: float,
     options: RetrieveOptions,
 ) -> dict[str, Any]:
     """Cache the merged retrieve and rerank answer per user query."""
-    del repo_id, scope, page_num, page_size, filter_string
-    del extra_repo_ids, top_n, score_threshold
+    user_query = cache_key.user_query
+    del cache_key
     doc_list = await _retrieve_raw_docs(user_query, options)
     return {
         "doc_list": await rerank(
@@ -126,17 +152,39 @@ async def _retrieve_cached(
 async def retrieve(user_query: str, **kwargs: Any) -> dict[str, Any]:
     """Retrieve and rerank documents for one user query."""
     options = RetrieveOptions.from_kwargs(kwargs)
-    return await _retrieve_cached(
-        user_query,
-        repo_id=options.payload_options.repo_id,
+    payload = options.payload_options
+    cache_key = _RetrieveCacheKey(
+        user_query=user_query,
+        repo_id=payload.repo_id,
         scope=options.scope,
-        page_num=options.payload_options.page_num,
-        page_size=options.payload_options.page_size,
-        filter_string=options.payload_options.filter_string,
-        extra_repo_ids=tuple(options.payload_options.extra_repo_ids or ()),
+        page_num=payload.page_num,
+        page_size=payload.page_size,
+        filter_string=payload.filter_string,
+        extra_repo_ids=tuple(payload.extra_repo_ids or ()),
         top_n=options.page_size,
         score_threshold=options.score_threshold,
+    )
+    return await _retrieve_cached(
+        cache_key,
         options=options,
+    )
+
+
+def _retrieve_scope_key(
+    user_query: str,
+    options: RetrieveOptions,
+    scope: str,
+) -> _RetrieveScopeKey:
+    """Build the semantic key for one scoped retrieval request."""
+    payload = options.payload_options
+    return _RetrieveScopeKey(
+        user_query=user_query,
+        repo_id=payload.repo_id,
+        scope=scope,
+        page_num=payload.page_num,
+        page_size=payload.page_size,
+        filter_string=payload.filter_string,
+        extra_repo_ids=tuple(payload.extra_repo_ids or ()),
     )
 
 
@@ -148,20 +196,14 @@ async def _retrieve_raw_docs(
     async with get_async_client(timeout=_timeout(options.timeout)) as client:
         if options.scope in ("doc", "keyword"):
             docs = await _retrieve_scope_docs(
-                client,
-                user_query=user_query,
-                retrieve_url=options.retrieve_url,
-                repo_id=options.payload_options.repo_id,
-                scope=options.scope,
-                page_num=options.payload_options.page_num,
-                page_size=options.payload_options.page_size,
-                filter_string=options.payload_options.filter_string,
-                extra_repo_ids=tuple(
-                    options.payload_options.extra_repo_ids or ()
+                _retrieve_scope_key(user_query, options, options.scope),
+                _RetrieveScopeRequest(
+                    client=client,
+                    retrieve_url=options.retrieve_url,
+                    timeout=options.timeout,
+                    max_retries=options.max_retries,
+                    retriable_codes=options.retriable_codes,
                 ),
-                timeout=options.timeout,
-                max_retries=options.max_retries,
-                retriable_codes=options.retriable_codes,
             )
         elif options.scope == "both":
             docs = await _retrieve_both_scopes(client, user_query, options)
@@ -172,44 +214,22 @@ async def _retrieve_raw_docs(
     return _list_or_empty(docs)
 
 
-@func_cache(
-    key_params=[
-        "user_query",
-        "repo_id",
-        "scope",
-        "page_num",
-        "page_size",
-        "filter_string",
-        "extra_repo_ids",
-    ],
-    ttl=LONG_TTL_SECONDS,
-)
-# pylint: disable=too-many-arguments
-# Cache primitive: see docs/development/lint-exemptions.md.
+@func_cache(key_params=["cache_key"], ttl=LONG_TTL_SECONDS)
 async def _retrieve_scope_docs(
-    client: AsyncClient,
-    *,
-    user_query: str,
-    retrieve_url: str,
-    repo_id: str,
-    scope: str,
-    page_num: int,
-    page_size: int,
-    filter_string: str | None,
-    extra_repo_ids: tuple[str, ...],
-    timeout: float,  # noqa: ASYNC109
-    max_retries: int,
-    retriable_codes: tuple[int, ...],
+    cache_key: _RetrieveScopeKey,
+    request: _RetrieveScopeRequest,
 ) -> Any:
     """Retrieve documents for one knowledge-base scope."""
+    client = request.client
+    user_query = cache_key.user_query
     body = {
-        "repo_id": repo_id,
+        "repo_id": cache_key.repo_id,
         "content": user_query,
-        "page_num": page_num,
-        "page_size": page_size,
-        "filter_string": filter_string,
-        "scope": scope,
-        "extra_repo_ids": list(extra_repo_ids),
+        "page_num": cache_key.page_num,
+        "page_size": cache_key.page_size,
+        "filter_string": cache_key.filter_string,
+        "scope": cache_key.scope,
+        "extra_repo_ids": list(cache_key.extra_repo_ids),
     }
     message = "Failed to retrieve knowledge base"
     if relay_mode_enabled():
@@ -217,27 +237,24 @@ async def _retrieve_scope_docs(
             "retrieve/search",
             json_body=body,
             message=message,
-            request_timeout=timeout,
+            request_timeout=request.timeout,
         )
     else:
         result = await post_json_with_retries(
             client,
             JsonPostRequest(
-                url=retrieve_url,
+                url=request.retrieve_url,
                 headers={"Content-Type": "application/json"},
                 json_body=body,
             ),
             JsonPostRetry(
-                timeout=timeout,
-                max_retries=max_retries,
-                retriable_codes=retriable_codes,
+                timeout=request.timeout,
+                max_retries=request.max_retries,
+                retriable_codes=request.retriable_codes,
                 message=message,
             ),
         )
     return result.get("doc_list", []) if isinstance(result, dict) else []
-
-
-# pylint: enable=too-many-arguments
 
 
 async def _retrieve_both_scopes(
@@ -248,18 +265,14 @@ async def _retrieve_both_scopes(
     """Retrieve and merge document and keyword scopes."""
     tasks = [
         _retrieve_scope_docs(
-            client,
-            user_query=user_query,
-            retrieve_url=options.retrieve_url,
-            repo_id=options.payload_options.repo_id,
-            scope=scope,
-            page_num=options.payload_options.page_num,
-            page_size=options.payload_options.page_size,
-            filter_string=options.payload_options.filter_string,
-            extra_repo_ids=tuple(options.payload_options.extra_repo_ids or ()),
-            timeout=options.timeout,
-            max_retries=options.max_retries,
-            retriable_codes=options.retriable_codes,
+            _retrieve_scope_key(user_query, options, scope),
+            _RetrieveScopeRequest(
+                client=client,
+                retrieve_url=options.retrieve_url,
+                timeout=options.timeout,
+                max_retries=options.max_retries,
+                retriable_codes=options.retriable_codes,
+            ),
         )
         for scope in ("doc", "keyword")
     ]
@@ -372,13 +385,15 @@ async def _rank_docs(
         tasks = [
             _rerank_batch(
                 client,
-                user_query=user_query,
-                docs_batch=chunk,
-                rerank_url=options.rerank_url,
-                top_n=options.top_n,
-                timeout=options.timeout,
-                max_retries=options.max_retries,
-                retriable_codes=options.retriable_codes,
+                _RerankBatchRequest(
+                    user_query=user_query,
+                    docs_batch=chunk,
+                    rerank_url=options.rerank_url,
+                    top_n=options.top_n,
+                    timeout=options.timeout,
+                    max_retries=options.max_retries,
+                    retriable_codes=options.retriable_codes,
+                ),
             )
             for chunk in chunks
         ]
@@ -388,65 +403,55 @@ async def _rank_docs(
         )
     return await _rerank_batch(
         client,
-        user_query=user_query,
-        docs_batch=docs,
-        rerank_url=options.rerank_url,
-        top_n=options.top_n,
-        timeout=options.timeout,
-        max_retries=options.max_retries,
-        retriable_codes=options.retriable_codes,
+        _RerankBatchRequest(
+            user_query=user_query,
+            docs_batch=docs,
+            rerank_url=options.rerank_url,
+            top_n=options.top_n,
+            timeout=options.timeout,
+            max_retries=options.max_retries,
+            retriable_codes=options.retriable_codes,
+        ),
     )
 
 
-# Cache primitive: see docs/development/lint-exemptions.md.
 async def _rerank_batch(
     client: AsyncClient,
-    *,
-    user_query: str,
-    docs_batch: list[dict[str, Any]],
-    rerank_url: str,
-    top_n: int,
-    timeout: float,  # noqa: ASYNC109
-    max_retries: int,
-    retriable_codes: tuple[int, ...],
+    request: _RerankBatchRequest,
 ) -> list[dict[str, Any]]:
     """Send one rerank request batch under the per-loop semaphore."""
-    # pylint: disable=too-many-arguments
     async with _rerank_semaphore():
         body = {
-            "query": user_query,
+            "query": request.user_query,
             "ranking_order": ["title", "content"],
-            "docs": docs_batch,
-            "top_n": top_n,
+            "docs": request.docs_batch,
+            "top_n": request.top_n,
         }
         if relay_mode_enabled():
             result = await current_relay_client().post_json(
                 "rerank/rank",
                 json_body=body,
                 message="Failed to rerank",
-                request_timeout=timeout,
+                request_timeout=request.timeout,
             )
         else:
             result = await post_json_with_retries(
                 client,
                 JsonPostRequest(
-                    url=rerank_url,
+                    url=request.rerank_url,
                     headers={"Content-Type": "application/json"},
                     json_body=body,
                 ),
                 JsonPostRetry(
-                    timeout=timeout,
-                    max_retries=max_retries,
-                    retriable_codes=retriable_codes,
+                    timeout=request.timeout,
+                    max_retries=request.max_retries,
+                    retriable_codes=request.retriable_codes,
                     message="Failed to rerank",
                 ),
             )
         return (
             result.get("rank_result", []) if isinstance(result, dict) else []
         )
-
-
-# pylint: enable=too-many-arguments
 
 
 def _collect_rank_results(

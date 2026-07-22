@@ -35,7 +35,10 @@ from mcp_server_phytomni.agents.evolution.agent import find_spa_taxids
 from mcp_server_phytomni.agents.knowledge import retrieval
 from mcp_server_phytomni.agents.knowledge.retrieval import (
     _rerank_batch,
+    _RerankBatchRequest,
     _retrieve_scope_docs,
+    _RetrieveScopeKey,
+    _RetrieveScopeRequest,
 )
 from mcp_server_phytomni.agents.shared import sql as shared_sql
 from mcp_server_phytomni.agents.shared.sql import relay_bi_query
@@ -144,18 +147,22 @@ async def test_retrieve_scope_docs_routes_through_relay(monkeypatch):
     relay = _patch_relay(monkeypatch, retrieval, {"doc_list": [{"id": "d1"}]})
 
     docs = await _retrieve_scope_docs(
-        _UNUSED_CLIENT,
-        user_query="leaf growth",
-        retrieve_url="https://operator.invalid/search",
-        repo_id="repo-1",
-        scope="document",
-        page_num=1,
-        page_size=3,
-        filter_string=None,
-        extra_repo_ids=(),
-        timeout=1.0,
-        max_retries=0,
-        retriable_codes=(503,),
+        _RetrieveScopeKey(
+            user_query="leaf growth",
+            repo_id="repo-1",
+            scope="document",
+            page_num=1,
+            page_size=3,
+            filter_string=None,
+            extra_repo_ids=(),
+        ),
+        _RetrieveScopeRequest(
+            client=_UNUSED_CLIENT,
+            retrieve_url="https://operator.invalid/search",
+            timeout=1.0,
+            max_retries=0,
+            retriable_codes=(503,),
+        ),
     )
 
     assert docs == [{"id": "d1"}]
@@ -174,13 +181,15 @@ async def test_rerank_batch_routes_through_relay(monkeypatch):
 
     ranked = await _rerank_batch(
         _UNUSED_CLIENT,
-        user_query="leaf growth",
-        docs_batch=[{"id": "d1"}],
-        rerank_url="https://operator.invalid/rerank",
-        top_n=3,
-        timeout=1.0,
-        max_retries=0,
-        retriable_codes=(503,),
+        _RerankBatchRequest(
+            user_query="leaf growth",
+            docs_batch=[{"id": "d1"}],
+            rerank_url="https://operator.invalid/rerank",
+            top_n=3,
+            timeout=1.0,
+            max_retries=0,
+            retriable_codes=(503,),
+        ),
     )
 
     assert ranked == [{"id": "r1"}]

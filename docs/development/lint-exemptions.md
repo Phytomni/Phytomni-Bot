@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `174`
+- Authorized records: `169`
 
 ## Informational counts
 
@@ -32,7 +32,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `pylint:path-ignore`                              |       4 |
 | `pylint:protected-access`                         |      43 |
 | `pylint:too-few-public-methods`                   |       3 |
-| `pylint:too-many-arguments`                       |       7 |
+| `pylint:too-many-arguments`                       |       4 |
 | `pylint:too-many-instance-attributes`             |       3 |
 | `pylint:too-many-lines`                           |       1 |
 | `pylint:too-many-locals`                          |       6 |
@@ -40,7 +40,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `pylint:wrong-import-position`                    |       1 |
 | `pymarkdown:md013`                                |       1 |
 | `pytest:error`                                    |       1 |
-| `ruff:ASYNC109`                                   |       8 |
+| `ruff:ASYNC109`                                   |       6 |
 | `ruff:ASYNC110`                                   |       3 |
 | `ruff:E402`                                       |       2 |
 | `ruff:N802`                                       |       1 |
@@ -152,7 +152,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0261` | pylint | protected-access | structural | inline | symbol | tests/server/test_run_gc_background.py | test_async_gc_coalesces_concurrent_passes | `sha256:0dcac7edf70b73e87d365ab2a55a6988025320b3309f742972b4e93446d03736` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0262` | pylint | protected-access | structural | inline | symbol | tests/server/test_stdio_progress.py | test_progress_forwarded_when_token_present | `sha256:f119c910e90f018323907d6760b625893d289a739e1ea4ee80765553e81f64ac` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0266` | pylint | too-many-arguments | temporary | inline | span | src/mcp_server_phytomni/agents/deep_genome/coordinator.py | — | `sha256:6d9bf21762df6cec5ca632c7fa0145f019ce0d56231f6e3cab1d6591eaca2e30` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0268` | pylint | too-many-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | \_retrieve_cached | `sha256:44cc48f7ce4ac5139334fb45f0bd9a4695c13e843ca33e195629d43cb4dfbb64` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0269` | pylint | too-many-arguments | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:1a370abea4bb3e91e460ecacc19991cbcbb3c4d8647f618e0ce59ca0a61ca387` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0270` | pylint | too-many-arguments | temporary | inline | span | src/mcp_server_phytomni/api/app.py | — | `sha256:4bcb94ae89470bff34be0204f90a2751b032c2e1d75dceb846762909b5ce38c4` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0271` | pylint | too-many-arguments | temporary | inline | span | src/mcp_server_phytomni/storage/uploads.py | — | `sha256:df677e7d6aeed70a2ecd9f25c93808d3e3f5ce8b83aa3ef2514b250d61e02a36` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -217,12 +216,8 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0356` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/profile.py | \_cached_gene_symbol_lookup | `sha256:063f0eeece2e09a0127065a7fb7888cd0028cf66cc935056a403369974743e09` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/deep_genome/profile.py, static-analysis-inventory |
 | `SAE-TMP-0357` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/profile.py | \_cached_gene_annotation_lookup | `sha256:e7e9cea52b216d68a49a1cad774cd5d5e3a0b2f9e2b314b54c6436ed31eaf6a7` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/deep_genome/profile.py, static-analysis-inventory |
 | `SAE-TMP-0358` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/evolution/agent.py | find_spa_taxids | `sha256:9b1db3e2c21f23bbdfc39763a9fee97b55fb045dbc6abd84b744aa9df2be511f` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/evolution/agent.py, static-analysis-inventory |
-| `SAE-TMP-0359` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | \_retrieve_scope_docs | `sha256:93d462da16d33f756d1d28faf47de44500251ec98f42bddcb703dd4b2bd52495` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/knowledge/retrieval.py, static-analysis-inventory |
-| `SAE-TMP-0360` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | \_rerank_batch | `sha256:3a6ee035cc2aaf279614723235b256649b02e02a648ad2bc4b84eceebf2b73b8` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/agents/knowledge/retrieval.py, static-analysis-inventory |
 | `SAE-TMP-0361` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/auth/iam.py | get_token | `sha256:86c7b9c1162e4bb19a32a5e178c0a2f362018486f6aa8c0efd145e60dafaa822` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/auth/iam.py, static-analysis-inventory |
 | `SAE-TMP-0362` | ruff | ASYNC109 | structural | inline | symbol | src/mcp_server_phytomni/common/httpx_client.py | get_async_client | `sha256:d902f3079846e17beb3ccdcc68c0bd432c3e473f0171b0c54c975be37ee154c9` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | src/mcp_server_phytomni/common/httpx_client.py, static-analysis-inventory |
-| `SAE-TMP-0363` | pylint | too-many-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | \_retrieve_scope_docs | `sha256:b8ee3dee96109d12d3a63217b8ce5e2bd762ef6270c47515a4ab2e133ac033f9` | bot-maintainers | 2026-07-22 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | tests/agents/test_knowledge_retrieval_helpers.py, static-analysis-inventory |
-| `SAE-TMP-0364` | pylint | too-many-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/knowledge/retrieval.py | \_rerank_batch | `sha256:9fb814581e5a6ffb28e995317d954d833cbcafa9d45a017ae73c261968b00051` | bot-maintainers | 2026-07-22 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | tests/agents/test_knowledge_retrieval_helpers.py, static-analysis-inventory |
 | `SAE-TMP-0365` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | DeepGenomeDispatchMixin.\_prepare_analysis_tasks | `sha256:b3b20b0c9824d10effeca2aba17cec3267456dc9ef174b4e20e8ff4bba08a57c` | bot-maintainers | 2026-07-22 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | tests/agents/test_deep_genome_dispatch_routing.py, tests/unit/test_deep_genome_dispatch.py, static-analysis-inventory |
 | `SAE-TMP-0366` | pylint | too-many-locals | temporary | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/dispatch.py | DeepGenomeDispatchMixin.\_dispatch_and_wait_analysis | `sha256:c39727b8da09946785aaee90fd61f0ac9918f9033e8e1dce2d137a60b7896327` | bot-maintainers | 2026-07-22 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | tests/agents/test_deep_genome_dispatch_routing.py, tests/unit/test_deep_genome_dispatch.py, static-analysis-inventory |
 
@@ -2618,26 +2613,6 @@ Risk:
 Suppression can hide a future regression.
 ```
 
-### `SAE-TMP-0268`
-
-Rationale:
-
-```text
-The retrieval cache primitive keeps every semantic retrieval field visible to func_cache key_params and passes transport options separately.
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0269`
 
 Rationale:
@@ -3918,46 +3893,6 @@ Risk:
 The exemption could hide an accidental timeout that is not forwarded to the underlying client.
 ```
 
-### `SAE-TMP-0359`
-
-Rationale:
-
-```text
-noqa: ASYNC109
-```
-
-Counterfactual:
-
-```text
-Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
-```
-
-Risk:
-
-```text
-The exemption could hide an accidental timeout that is not forwarded to the underlying client.
-```
-
-### `SAE-TMP-0360`
-
-Rationale:
-
-```text
-noqa: ASYNC109
-```
-
-Counterfactual:
-
-```text
-Keep the timeout as a downstream transport budget; introduce a local cancellation scope only if this function starts owning request lifetime.
-```
-
-Risk:
-
-```text
-The exemption could hide an accidental timeout that is not forwarded to the underlying client.
-```
-
 ### `SAE-TMP-0361`
 
 Rationale:
@@ -3996,46 +3931,6 @@ Risk:
 
 ```text
 The exemption could hide an accidental timeout that is not forwarded to the underlying client.
-```
-
-### `SAE-TMP-0363`
-
-Rationale:
-
-```text
-The scoped retrieval cache seam preserves explicit repository, paging, and filter inputs in the cache key while keeping the client transport injectable.
-```
-
-Counterfactual:
-
-```text
-Wrapping these fields would obscure cache identity and make relay/direct retrieval behavior harder to audit.
-```
-
-Risk:
-
-```text
-The explicit signature can grow as retrieval semantics evolve; the cache contract must remain covered by focused tests.
-```
-
-### `SAE-TMP-0364`
-
-Rationale:
-
-```text
-The rerank cache/transport seam keeps ranking inputs and retry controls explicit so relay and direct paths share one tested request shape.
-```
-
-Counterfactual:
-
-```text
-Grouping the ranking and retry fields would hide request semantics and make transport failure tests less direct.
-```
-
-Risk:
-
-```text
-The explicit signature can grow with backend options; focused rerank tests must cover every field.
 ```
 
 ### `SAE-TMP-0365`

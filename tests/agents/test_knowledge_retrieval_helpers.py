@@ -31,6 +31,7 @@ from mcp_server_phytomni.agents.knowledge.retrieval import (
     _rerank_batch,
     _rerank_docs,
     _rerank_semaphore,
+    _RerankBatchRequest,
     _retrieve_cached,
     _retrieve_scope_docs,
     _sorted_merged_docs,
@@ -233,13 +234,15 @@ async def _fire_rerank_fan_out(
     async def one() -> None:
         await _rerank_batch(
             cast(AsyncClient, None),
-            user_query="q",
-            docs_batch=[{"id": "x", "title": "t", "content": "c"}],
-            rerank_url="http://rerank.invalid/rank",
-            top_n=1,
-            timeout=1.0,
-            max_retries=0,
-            retriable_codes=(),
+            _RerankBatchRequest(
+                user_query="q",
+                docs_batch=[{"id": "x", "title": "t", "content": "c"}],
+                rerank_url="http://rerank.invalid/rank",
+                top_n=1,
+                timeout=1.0,
+                max_retries=0,
+                retriable_codes=(),
+            ),
         )
 
     await asyncio.gather(*(one() for _ in range(calls)))
