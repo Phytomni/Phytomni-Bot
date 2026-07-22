@@ -11,7 +11,7 @@ This module exposes `Nl2SqlRequest`, `nl2sql`, and
 import asyncio
 from dataclasses import dataclass, replace
 from random import uniform
-from typing import Any
+from typing import Any, NamedTuple
 
 from httpx import AsyncClient, Timeout
 from mcp.shared.exceptions import McpError
@@ -142,6 +142,17 @@ class Nl2SqlRequest:
         body = dict(self.payload_data)
         body["dialog_id"] = _default_dialog_id()
         return body
+
+
+class _Nl2SqlCacheKey(NamedTuple):
+    """Semantic fields that determine one NL2SQL answer."""
+
+    message_content: str
+    subject_id: str
+    workspace_id: str
+    database_url: str
+    need_insight: bool
+    simplify_response: bool
 
 
 async def nl2sql(
@@ -331,49 +342,24 @@ async def _execute_nl2sql_via_relay(request: Nl2SqlRequest) -> Any:
     )
 
 
-@func_cache(
-    key_params=[
-        "message_content",
-        "subject_id",
-        "workspace_id",
-        "database_url",
-        "need_insight",
-        "simplify_response",
-    ],
-    ttl=LONG_TTL_SECONDS,
-)
-# pylint: disable=too-many-arguments,too-many-positional-arguments
-# Cache primitive: every named parameter contributes to the
-# @func_cache key; the request object carries infra-only fields that
-# must NOT enter the key. See docs/development/lint-exemptions.md.
+@func_cache(key_params=["cache_key"], ttl=LONG_TTL_SECONDS)
 async def _execute_nl2sql_cached(
-    message_content: str,
-    subject_id: str,
-    workspace_id: str,
-    database_url: str,
-    need_insight: bool,
-    simplify_response: bool,
+    cache_key: _Nl2SqlCacheKey,
     *,
     request: Nl2SqlRequest,
 ) -> Any:
     """Cache NL2SQL answers on the deterministic semantic fields only.
 
-    ``dialog_id`` is fresh per call (a server-side conversation slot,
-    rotated again inside ``_execute_nl2sql_uncached`` on retry) and
-    ``token`` is a volatile IAM credential; both are intentionally
-    excluded from ``key_params`` so identical natural-language
-    questions over the same workspace / subject / database / insight
-    flags hit one cached BI answer regardless of which conversation
-    or token attempted it. Failures propagate uncached (the inner
-    raises McpError on retry exhaustion), so a transient gateway
+    ``cache_key`` carries the six deterministic fields that identify one
+    answer. ``dialog_id`` is fresh per call (a server-side conversation
+    slot, rotated again inside ``_execute_nl2sql_uncached`` on retry) and
+    ``token`` is a volatile IAM credential; both stay in ``request`` and
+    are excluded from the cache key. Failures propagate uncached (the
+    inner raises McpError on retry exhaustion), so a transient gateway
     glitch never poisons the 90-day store.
     """
-    del message_content, subject_id, workspace_id
-    del database_url, need_insight, simplify_response
+    del cache_key
     return await _execute_nl2sql_uncached(request)
-
-
-# pylint: enable=too-many-arguments,too-many-positional-arguments
 
 
 async def execute_nl2sql_request(request: Nl2SqlRequest) -> Any:
@@ -393,13 +379,16 @@ async def execute_nl2sql_request(request: Nl2SqlRequest) -> Any:
         Raw JSON response from the cached or freshly-executed call.
     """
     payload = request.payload_data
-    return await _execute_nl2sql_cached(
+    cache_key = _Nl2SqlCacheKey(
         message_content=payload["message_content"],
         subject_id=payload["subject_id"],
         workspace_id=request.workspace_id,
         database_url=request.database_url,
         need_insight=payload["need_insight"],
         simplify_response=payload["simplify_response"],
+    )
+    return await _execute_nl2sql_cached(
+        cache_key=cache_key,
         request=request,
     )
 

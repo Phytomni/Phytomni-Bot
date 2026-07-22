@@ -2052,26 +2052,6 @@ risk = "A protected-access exception can hide unintended coupling or stale priva
 tests = ["static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0265"
-tool = "pylint"
-rule = "too-many-arguments"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/agents/data/nl2sql.py"
-symbol = "_execute_nl2sql_cached"
-fingerprint = "sha256:4286eaf35c6d035be32bf5b7de5c527ac713419990ecd3f1156bc14e42b9ec0f"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "The cached NL2SQL seam exposes each semantic key field explicitly while forwarding volatile dialog and credential state through a keyword-only request."
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0266"
 tool = "pylint"
 rule = "too-many-arguments"
@@ -2355,26 +2335,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "The lifecycle test keeps its coordinator setup in one scenario so persistence and failure ordering remain readable."
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0290"
-tool = "pylint"
-rule = "too-many-positional-arguments"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/agents/data/nl2sql.py"
-symbol = "_execute_nl2sql_cached"
-fingerprint = "sha256:312c2a5652079e764bb44b05bf62269c69eef09ee9cc00ef1d66f56f17b451a4"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "The NL2SQL cache seam intentionally exposes positional semantic fields because func_cache derives its identity from the declared key parameters."
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
