@@ -2140,25 +2140,6 @@ risk = "A protected-access exception can hide unintended coupling or stale priva
 tests = ["static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0263"
-tool = "pylint"
-rule = "too-many-arguments"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "span"
-path = "scripts/gauss_live_probe.py"
-fingerprint = "sha256:e291191c021b141db59904d57b1b1d7ade99c76f2f2f38f90128c4785a30db39"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=too-many-arguments"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0264"
 tool = "pylint"
 rule = "too-many-arguments"

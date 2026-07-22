@@ -21,7 +21,7 @@ import os
 import re
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import asyncpg
 
@@ -41,6 +41,18 @@ _SAFE_LABEL = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$")
 
 ConnectFn = Callable[..., Awaitable[Any]]
 CreatePoolFn = Callable[..., Awaitable[Any]]
+
+
+class ProbeRequest(NamedTuple):
+    """Validated live-probe inputs and injectable offline driver hooks."""
+
+    dsn: str
+    table: str
+    column: str
+    commit: str
+    environment_class: str
+    connect: ConnectFn | None = None
+    create_pool: CreatePoolFn | None = None
 
 
 def _validate_table(table: str) -> bool:
@@ -148,49 +160,40 @@ async def _probe_pool_isolation(
         await pool.close()
 
 
-# The public test seam keeps the DSN, validated identifiers, redaction labels,
-# and injectable driver hooks explicit so the live contract is auditable.
-# pylint: disable=too-many-arguments
 async def run_probe(
-    *,
-    dsn: str,
-    table: str,
-    column: str,
-    commit: str,
-    environment_class: str,
-    connect: ConnectFn | None = None,
-    create_pool: CreatePoolFn | None = None,
+    request: ProbeRequest,
 ) -> dict[str, Any]:
     """Run the probe and return only allowlisted evidence fields.
 
     ``connect`` and ``create_pool`` are injectable solely for offline tests;
     the default functions are the asyncpg driver entry points.
     """
-    if not _validate_table(table) or not _validate_column(column):
+    if not _validate_table(request.table) or not _validate_column(
+        request.column
+    ):
         raise ValueError("invalid probe identifier")
 
-    connect_fn = connect or asyncpg.connect
-    create_pool_fn = create_pool or asyncpg.create_pool
-    statement = _zero_row_write_sql(table, column)
-    connection = await connect_fn(dsn=dsn)
+    connect_fn = request.connect or asyncpg.connect
+    create_pool_fn = request.create_pool or asyncpg.create_pool
+    statement = _zero_row_write_sql(request.table, request.column)
+    connection = await connect_fn(dsn=request.dsn)
     try:
         checks, sqlstates = await _probe_transactions(connection, statement)
     finally:
         await connection.close()
 
     checks["reset_all_isolation"] = await _probe_pool_isolation(
-        create_pool_fn, dsn
+        create_pool_fn, request.dsn
     )
 
     return {
-        "commit": safe_commit(commit),
-        "environment_class": _safe_environment_class(environment_class),
+        "commit": safe_commit(request.commit),
+        "environment_class": _safe_environment_class(
+            request.environment_class
+        ),
         "checks": checks,
         "sqlstates": sqlstates,
     }
-
-
-# pylint: enable=too-many-arguments
 
 
 def _live_authorized() -> bool:
@@ -256,11 +259,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         sensitive = SensitiveConfig.load()
         evidence = asyncio.run(
             run_probe(
-                dsn=sensitive.GAUSS_DSN.get_secret_value(),
-                table=args.table,
-                column=args.column,
-                commit=_git_commit(),
-                environment_class=args.environment_class,
+                ProbeRequest(
+                    dsn=sensitive.GAUSS_DSN.get_secret_value(),
+                    table=args.table,
+                    column=args.column,
+                    commit=_git_commit(),
+                    environment_class=args.environment_class,
+                )
             )
         )
     except (

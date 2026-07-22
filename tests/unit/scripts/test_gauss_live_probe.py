@@ -131,13 +131,15 @@ async def test_probe_records_only_expected_sqlstates(tmp_path: Path) -> None:
         return FakePool(connection, kwargs["reset"])
 
     evidence = await gauss_live_probe.run_probe(
-        dsn="postgresql://secret:password@db.example.invalid/app",
-        table="safe_table",
-        column="id",
-        commit="abc1234",
-        environment_class="test",
-        connect=connect,
-        create_pool=create_pool,
+        gauss_live_probe.ProbeRequest(
+            dsn="postgresql://secret:password@db.example.invalid/app",
+            table="safe_table",
+            column="id",
+            commit="abc1234",
+            environment_class="test",
+            connect=connect,
+            create_pool=create_pool,
+        )
     )
 
     assert evidence["checks"] == {

@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `184`
+- Authorized records: `183`
 
 ## Informational counts
 
@@ -32,7 +32,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `pylint:path-ignore`                              |       4 |
 | `pylint:protected-access`                         |      43 |
 | `pylint:too-few-public-methods`                   |       3 |
-| `pylint:too-many-arguments`                       |      10 |
+| `pylint:too-many-arguments`                       |       9 |
 | `pylint:too-many-instance-attributes`             |       3 |
 | `pylint:too-many-lines`                           |       1 |
 | `pylint:too-many-locals`                          |       7 |
@@ -156,7 +156,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0255` | pylint | protected-access | structural | inline | symbol | tests/agents/test_review_add_query_failures.py | test_feedback_rag_failures_empty_when_no_add_queries | `sha256:ea1bd79bc055e411a3e1bb27595e369d13a9e6be0644e57bb7e949128bb161b6` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0261` | pylint | protected-access | structural | inline | symbol | tests/server/test_run_gc_background.py | test_async_gc_coalesces_concurrent_passes | `sha256:0dcac7edf70b73e87d365ab2a55a6988025320b3309f742972b4e93446d03736` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0262` | pylint | protected-access | structural | inline | symbol | tests/server/test_stdio_progress.py | test_progress_forwarded_when_token_present | `sha256:f119c910e90f018323907d6760b625893d289a739e1ea4ee80765553e81f64ac` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0263` | pylint | too-many-arguments | temporary | inline | span | scripts/gauss_live_probe.py | — | `sha256:e291191c021b141db59904d57b1b1d7ade99c76f2f2f38f90128c4785a30db39` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0264` | pylint | too-many-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/chat/service.py | run_phyto_chat_cached | `sha256:47542a02a8f1614fd6a63ce15db9b434ba35c3cb9b78c4e19c4be92f207dbc5a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0265` | pylint | too-many-arguments | temporary | inline | symbol | src/mcp_server_phytomni/agents/data/nl2sql.py | \_execute_nl2sql_cached | `sha256:4286eaf35c6d035be32bf5b7de5c527ac713419990ecd3f1156bc14e42b9ec0f` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0266` | pylint | too-many-arguments | temporary | inline | span | src/mcp_server_phytomni/agents/deep_genome/coordinator.py | — | `sha256:6d9bf21762df6cec5ca632c7fa0145f019ce0d56231f6e3cab1d6591eaca2e30` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -2727,26 +2726,6 @@ Risk:
 
 ```text
 A protected-access exception can hide unintended coupling or stale private invariants.
-```
-
-### `SAE-TMP-0263`
-
-Rationale:
-
-```text
-pylint: disable=too-many-arguments
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
 ```
 
 ### `SAE-TMP-0264`
