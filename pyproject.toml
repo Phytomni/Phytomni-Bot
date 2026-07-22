@@ -158,19 +158,6 @@ exclude = [
     "\\.venv/",
 ]
 
-# asyncpg ships no type stubs or py.typed marker; pyright resolves it
-# through bundled stubs, but mypy needs an explicit override.
-[[tool.mypy.overrides]]
-module = ["asyncpg", "asyncpg.*"]
-ignore_missing_imports = true
-
-# The demo fixture generator (demo_data/scripts/) is outside the full
-# gate's mypy scope (src tests e2e scripts) but the scoped gate type
-# checks it when it changes; openpyxl + reportlab ship no type stubs.
-[[tool.mypy.overrides]]
-module = ["openpyxl.*", "reportlab.*"]
-ignore_missing_imports = true
-
 [tool.pyright]
 include = ["src"]
 exclude = [
@@ -209,9 +196,6 @@ markers = [
 ]
 filterwarnings = [
     "error",
-    # Third-party obs SDK triggers this at import time
-    # (obs/client.py:376), outside this repo's control.
-    "ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning",
 ]
 
 [tool.coverage.run]

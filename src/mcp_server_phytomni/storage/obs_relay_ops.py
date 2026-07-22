@@ -18,9 +18,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from obs import ObsClient
-
 from ..config.settings import get_sensitive_config
+from .obs_client import ObsClient
 from .obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
     normalize_obs_object_key,

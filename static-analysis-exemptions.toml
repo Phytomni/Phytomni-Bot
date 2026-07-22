@@ -142,46 +142,6 @@ risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0006"
-tool = "mypy"
-rule = "ignore_missing_imports"
-classification = "temporary"
-mechanism = "config"
-target_kind = "config"
-path = "pyproject.toml"
-symbol = "tool.mypy.overrides[0].ignore_missing_imports"
-fingerprint = "sha256:527e6efc74769b1228c507a1b8b80620eb8ac8b9870681cad036239346b48e93"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "tool.mypy.overrides[0].ignore_missing_imports=True"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0007"
-tool = "mypy"
-rule = "ignore_missing_imports"
-classification = "temporary"
-mechanism = "config"
-target_kind = "config"
-path = "pyproject.toml"
-symbol = "tool.mypy.overrides[1].ignore_missing_imports"
-fingerprint = "sha256:34f322754c32f50efaf7a19013545c63f95683102c5f7eefefb2e6fdabd638c2"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "tool.mypy.overrides[1].ignore_missing_imports=True"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0009"
 tool = "mypy"
 rule = "misc"
@@ -2815,26 +2775,6 @@ rationale = "error"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
-
-[[exemptions]]
-id = "SAE-TMP-0298"
-tool = "pytest"
-rule = "ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning"
-classification = "temporary"
-mechanism = "config"
-target_kind = "config"
-path = "pyproject.toml"
-symbol = "tool.pytest.ini_options.filterwarnings[1]"
-fingerprint = "sha256:3b0438047d9767b1eb34f8a245bfa1e11abe24c3fc8011aee6a4f08905aef12a"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
 id = "SAE-TMP-0300"

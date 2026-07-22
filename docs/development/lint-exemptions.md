@@ -10,45 +10,43 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `195`
+- Authorized records: `192`
 
 ## Informational counts
 
-| Tool and rule                                                     | Records |
-| ----------------------------------------------------------------- | ------: |
-| `flake8:E203`                                                     |       1 |
-| `flake8:W503`                                                     |       1 |
-| `mypy:ignore_missing_imports`                                     |       2 |
-| `mypy:misc`                                                       |       1 |
-| `mypy:prop-decorator`                                             |       1 |
-| `pylint:C0103`                                                    |       1 |
-| `pylint:C0116`                                                    |       1 |
-| `pylint:R0801`                                                    |      78 |
-| `pylint:R0903`                                                    |       7 |
-| `pylint:R0913`                                                    |       1 |
-| `pylint:R0917`                                                    |       1 |
-| `pylint:W0613`                                                    |       1 |
-| `pylint:broad-exception-caught`                                   |       3 |
-| `pylint:contextmanager-generator-missing-cleanup`                 |       2 |
-| `pylint:path-ignore`                                              |       4 |
-| `pylint:protected-access`                                         |      43 |
-| `pylint:too-few-public-methods`                                   |       3 |
-| `pylint:too-many-arguments`                                       |      10 |
-| `pylint:too-many-instance-attributes`                             |       3 |
-| `pylint:too-many-lines`                                           |       1 |
-| `pylint:too-many-locals`                                          |       7 |
-| `pylint:too-many-positional-arguments`                            |       1 |
-| `pylint:too-many-statements`                                      |       1 |
-| `pylint:wrong-import-position`                                    |       1 |
-| `pymarkdown:md013`                                                |       1 |
-| `pytest:error`                                                    |       1 |
-| `pytest:ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning` |       1 |
-| `ruff:ASYNC109`                                                   |       9 |
-| `ruff:ASYNC110`                                                   |       3 |
-| `ruff:E402`                                                       |       2 |
-| `ruff:N802`                                                       |       1 |
-| `ruff:N803`                                                       |       1 |
-| `ruff:N815`                                                       |       1 |
+| Tool and rule                                     | Records |
+| ------------------------------------------------- | ------: |
+| `flake8:E203`                                     |       1 |
+| `flake8:W503`                                     |       1 |
+| `mypy:misc`                                       |       1 |
+| `mypy:prop-decorator`                             |       1 |
+| `pylint:C0103`                                    |       1 |
+| `pylint:C0116`                                    |       1 |
+| `pylint:R0801`                                    |      78 |
+| `pylint:R0903`                                    |       7 |
+| `pylint:R0913`                                    |       1 |
+| `pylint:R0917`                                    |       1 |
+| `pylint:W0613`                                    |       1 |
+| `pylint:broad-exception-caught`                   |       3 |
+| `pylint:contextmanager-generator-missing-cleanup` |       2 |
+| `pylint:path-ignore`                              |       4 |
+| `pylint:protected-access`                         |      43 |
+| `pylint:too-few-public-methods`                   |       3 |
+| `pylint:too-many-arguments`                       |      10 |
+| `pylint:too-many-instance-attributes`             |       3 |
+| `pylint:too-many-lines`                           |       1 |
+| `pylint:too-many-locals`                          |       7 |
+| `pylint:too-many-positional-arguments`            |       1 |
+| `pylint:too-many-statements`                      |       1 |
+| `pylint:wrong-import-position`                    |       1 |
+| `pymarkdown:md013`                                |       1 |
+| `pytest:error`                                    |       1 |
+| `ruff:ASYNC109`                                   |       9 |
+| `ruff:ASYNC110`                                   |       3 |
+| `ruff:E402`                                       |       2 |
+| `ruff:N802`                                       |       1 |
+| `ruff:N803`                                       |       1 |
+| `ruff:N815`                                       |       1 |
 
 ## Exact records
 
@@ -59,8 +57,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-STR-0003` | pylint | too-few-public-methods | structural | inline | symbol | src/mcp_server_phytomni/agents/review/report.py | ReviewReportMixin | `sha256:1437a6aeed48bfca0a47bfe423e9f70a2258c20f3ae7e558805dfc7cc19af8a8` | bot-maintainers | 2026-07-18 | 2027-01-18 | — | — | tests/agents/test_review_add_query_failures.py, tests/agents/test_review_report_helpers.py, tests/agents/test_review_revised_fan_out.py |
 | `SAE-TMP-0001` | flake8 | E203 | structural | config | config | .flake8 | [flake8].extend-ignore | `sha256:ee3ff2f285462681d7e4dd5eed33cbf4cd5ef1d73ca986281e086dc5ef2457a8` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0002` | flake8 | W503 | structural | config | config | .flake8 | [flake8].extend-ignore | `sha256:1d93293eb8e91ba241c13a2db0c100dc24b5305c4b0f429faa5ca2f334bfccc1` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0006` | mypy | ignore_missing_imports | temporary | config | config | pyproject.toml | tool.mypy.overrides[0].ignore_missing_imports | `sha256:527e6efc74769b1228c507a1b8b80620eb8ac8b9870681cad036239346b48e93` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0007` | mypy | ignore_missing_imports | temporary | config | config | pyproject.toml | tool.mypy.overrides[1].ignore_missing_imports | `sha256:34f322754c32f50efaf7a19013545c63f95683102c5f7eefefb2e6fdabd638c2` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0009` | mypy | misc | structural | inline | symbol | tests/unit/interop/test_capabilities.py | test_capability_is_frozen_and_qualified_name_is_canonical | `sha256:50c5686aeb514f0ea385b0f5efcb20543fb02b479f0a05b4b32116c2e38f65fe` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0011` | mypy | prop-decorator | structural | inline | symbol | src/mcp_server_phytomni/api/schemas.py | FileUploadResponse | `sha256:243d7b24f3e529af946567903305f2f5f09ad24b6316e1063a7ed27a93107a6c` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0014` | pylint | R0801 | temporary | diagnostic | pair | scripts/compare_gauss_queries.py | 294:301 | `sha256:ca2b6d468bc318f627b0fe79e4d2116a77ed25e26cc4ec75aff51feb8b8aab15` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -190,7 +186,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0293` | pylint | wrong-import-position | structural | inline | span | scripts/\_visualize_bootstrap.py | — | `sha256:637afabc246f45d9145f3aa93a39fe94d65fb830b2067196e8f33d8b77ed1847` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0294` | pymarkdown | md013 | structural | config | config | pyproject.toml | tool.pymarkdown.plugins.md013.enabled | `sha256:34d8c475a236a211d36db927ee2de462f03fdb4f3f07864359540255c750bf01` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0295` | pytest | error | structural | config | config | pyproject.toml | tool.pytest.ini_options.filterwarnings[0] | `sha256:0aa661937816a1fb17f333eb9a372e15f3093ed7bf8b75bc5d904d38422ef20f` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0298` | pytest | ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning | temporary | config | config | pyproject.toml | tool.pytest.ini_options.filterwarnings[1] | `sha256:3b0438047d9767b1eb34f8a245bfa1e11abe24c3fc8011aee6a4f08905aef12a` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0300` | ruff | ASYNC110 | structural | inline | symbol | src/mcp_server_phytomni/agents/deep_genome/report.py | \_write_async | `sha256:a7cb1e8424467f0727f7a3b99bf30356d9bb18b99462d892fbf92402f43dd198` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0301` | ruff | ASYNC110 | structural | inline | symbol | src/mcp_server_phytomni/api/run_lifecycle.py | purge_expired_runs_best_effort_async | `sha256:d9bfcdb38455dce2970fd011c237a1131de5632e63d545189a9d87480a21b017` | bot-maintainers | 2026-07-20 | 2027-01-20 | — | — | tests/server/test_run_gc_background.py |
 | `SAE-TMP-0302` | ruff | ASYNC110 | structural | inline | symbol | src/mcp_server_phytomni/api/relay/obs.py | \_wait_obs_future | `sha256:a8f3e3adef4dab97a6423e96bc1f91159c519a5060e52a58156302de97e99e33` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
@@ -338,46 +333,6 @@ Rationale:
 
 ```text
 [flake8].extend-ignore='E203,W503'
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0006`
-
-Rationale:
-
-```text
-tool.mypy.overrides[0].ignore_missing_imports=True
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0007`
-
-Rationale:
-
-```text
-tool.mypy.overrides[1].ignore_missing_imports=True
 ```
 
 Counterfactual:
@@ -3455,26 +3410,6 @@ Rationale:
 
 ```text
 error
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0298`
-
-Rationale:
-
-```text
-ignore:ssl.PROTOCOL_TLS is deprecated:DeprecationWarning
 ```
 
 Counterfactual:

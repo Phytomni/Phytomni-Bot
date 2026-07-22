@@ -20,13 +20,13 @@ from pathlib import Path
 from typing import Any
 
 from markitdown import MarkItDown
-from obs import ObsClient
 
 from ..common.docs import format_upload_context
 from ..common.relay_client import current_relay_client
 from ..config.defaults import ServerConfig
 from ..config.relay_mode import relay_mode_enabled
 from ..config.settings import SensitiveConfig
+from .obs_client import ObsClient
 from .obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
     normalize_obs_object_key,

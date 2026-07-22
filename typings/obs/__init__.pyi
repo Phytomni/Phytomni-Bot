@@ -17,6 +17,7 @@ diagnostics describe the external stub surface rather than executable
 implementation quality.
 """
 
+import ssl
 from typing import Any
 
 # The names and signatures mirror the external OBS SDK exactly.
@@ -61,6 +62,9 @@ class GetObjectHeader:
 class ObsClient:
     """Subset of the OBS client methods used by Phytomni."""
 
+    ssl_verify: bool | str
+    context: ssl.SSLContext | None
+
     def __init__(
         self,
         access_key_id: str,
@@ -68,6 +72,7 @@ class ObsClient:
         server: str,
         **kwargs: Any,
     ) -> None: ...
+    def _init_ssl_context(self, custom_ciphers: str | None) -> None: ...
     def downloadFile(
         self,
         bucketName: str,

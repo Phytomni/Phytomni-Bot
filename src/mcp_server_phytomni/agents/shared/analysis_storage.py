@@ -15,13 +15,12 @@ from __future__ import annotations
 import logging
 from typing import Any, NamedTuple
 
-from obs import ObsClient
-
 from ...common.prompts import file_cache_fingerprint
 from ...config.data_loaders import load_species_data
 from ...config.defaults import AnalystConfig
 from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
+from ...storage.obs_client import ObsClient
 from ...storage.obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
     obs_path_from_key,
