@@ -768,24 +768,6 @@ risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0215"
-tool = "pylint"
-rule = "R0903"
-classification = "structural"
-mechanism = "diagnostic"
-target_kind = "symbol"
-path = "tests/unit/test_storage_error_sanitization.py"
-symbol = "_ExplodingObsClient"
-fingerprint = "sha256:826980652eb87a9cc733947dd7a6328efa942f2f98b5cb373e5db5d4ae417825"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2027-01-17
-rationale = "The fake must accept the SDK constructor and dynamically synthesize arbitrary camelCase methods that raise a sentinel, proving storage sanitization preserves the cause without leaking its text."
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-
-[[exemptions]]
 id = "SAE-TMP-0222"
 tool = "pylint"
 rule = "broad-exception-caught"

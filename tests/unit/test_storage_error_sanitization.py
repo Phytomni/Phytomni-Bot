@@ -62,12 +62,12 @@ class _ExplodingObsClient:
             A function that raises ``RuntimeError`` with the marker text.
         """
         del _name
+        return self.raise_for_test
 
-        def _explode(*args: Any, **kwargs: Any) -> Any:
-            del args, kwargs
-            raise RuntimeError(f"upstream blew up with token {_SENTINEL}")
-
-        return _explode
+    def raise_for_test(self, *args: Any, **kwargs: Any) -> Any:
+        """Raise the sentinel error for every synthesized SDK method."""
+        del args, kwargs
+        raise RuntimeError(f"upstream blew up with token {_SENTINEL}")
 
 
 def _assert_sanitized(exc: OSError) -> None:
