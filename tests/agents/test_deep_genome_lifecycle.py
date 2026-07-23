@@ -42,6 +42,7 @@ from mcp_server_phytomni.runtime.deep_genome_store import (
     DeepGenomeStore,
     DeepGenomeTrackingError,
 )
+from tests.support.sqlite import closed_sqlite_connection
 
 pytestmark = pytest.mark.agent
 
@@ -180,7 +181,7 @@ async def test_fake_backend_persists_acceptance_before_poll_and_snapshots(
 
     assert result["status"] == "completed"
     assert probe.events[0:2] == ["accept", "poll"]
-    with sqlite3.connect(tmp_path / "tasks.db") as connection:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as connection:
         row = connection.execute(
             "SELECT status, submitted_task_id, poll_task_id "
             "FROM deep_genome_remote_tasks "
@@ -225,7 +226,7 @@ async def test_brief_gene_failure_fails_owner_without_remote_children(
     ]
     await asyncio.gather(*pending, return_exceptions=True)
 
-    with sqlite3.connect(db_path) as connection:
+    with closed_sqlite_connection(db_path) as connection:
         owner = connection.execute(
             "SELECT t.status, r.error, t.intermediate_report, t.final_report "
             "FROM tasks AS t JOIN runs AS r ON r.run_id = t.run_id "
@@ -426,7 +427,6 @@ async def test_unsubmitted_failure_is_persisted_before_branch_degrades(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A submit exception settles its planned concrete row as failed."""
-    # pylint: disable=protected-access
     store, reservation = _seed_store(tmp_path)
     monkeypatch.setattr(
         dispatch_module,
@@ -434,23 +434,26 @@ async def test_unsubmitted_failure_is_persisted_before_branch_degrades(
         lambda: str(tmp_path / "tasks.db"),
     )
     harness = _dispatch_harness()
-    harness._submit_analysis_task = AsyncMock(
-        side_effect=RuntimeError("analysis backend unavailable")
+    setattr(
+        harness,
+        "_submit_analysis_task",
+        AsyncMock(side_effect=RuntimeError("analysis backend unavailable")),
     )
+    dispatch_and_wait = getattr(harness, "_dispatch_and_wait_analysis")
     state: Any = {
         "task_id": reservation.umbrella_task_id,
         "work_item_key": "smoc_analysis",
     }
 
     with pytest.raises(RuntimeError, match="analysis backend unavailable"):
-        await harness._dispatch_and_wait_analysis(
+        await dispatch_and_wait(
             "smoc_analysis",
             "osa",
             "Os01g0100100",
             state=state,
         )
 
-    with sqlite3.connect(tmp_path / "tasks.db") as connection:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as connection:
         row = connection.execute(
             "SELECT status FROM deep_genome_remote_tasks "
             "WHERE umbrella_task_id = ? AND work_item_key = ?",
@@ -509,7 +512,7 @@ async def test_design_mount_failure_settles_both_concrete_items(
     out = await node(state)
 
     assert out["analysis_completed_branches"] == 1
-    with sqlite3.connect(tmp_path / "tasks.db") as connection:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as connection:
         rows = connection.execute(
             "SELECT work_item_key, status FROM deep_genome_remote_tasks "
             "WHERE umbrella_task_id = ? AND work_item_key IN (?, ?) "

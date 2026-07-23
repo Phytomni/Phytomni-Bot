@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
 
 import httpx
@@ -15,6 +14,7 @@ from mcp_server_phytomni.runtime.run_registry import (
     RunRegistry,
     RunSpec,
 )
+from tests.support.sqlite import closed_sqlite_connection
 
 __all__ = [
     "assert_run_not_found",
@@ -67,7 +67,7 @@ def stamp_run_created_at(
     db_path: str, old_run_id: str, new_run_id: str
 ) -> None:
     """Set deterministic timestamps used by created-after filtering tests."""
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         conn.executemany(
             "UPDATE runs SET created_at = ? WHERE run_id = ?",
             [

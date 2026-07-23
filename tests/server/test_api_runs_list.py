@@ -12,7 +12,6 @@ stays bounded under listing-heavy workloads.
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
@@ -27,6 +26,7 @@ from tests.agents.shared.deep_genome_fixtures import (
 )
 from tests.support.chat_fakes import install_chat_handler
 from tests.support.run_registry_fakes import stamp_run_created_at
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.runtime import run_registry as run_registry_module
@@ -360,7 +360,7 @@ async def test_list_runs_lazy_purges_expired(
         agent="chat",
         origin="local",
     )
-    with sqlite3.connect(tasks_db_path) as conn:
+    with closed_sqlite_connection(tasks_db_path) as conn:
         conn.execute(
             "UPDATE runs SET expires_at = ? WHERE run_id = ?",
             ("2000-01-01T00:00:00+00:00", "run-stale"),
@@ -379,7 +379,7 @@ async def test_list_runs_lazy_purges_expired(
 
 async def _expire_run(db: str, run_id: str) -> None:
     """Mark one run as already expired so the next purge sweeps it."""
-    with sqlite3.connect(db) as conn:
+    with closed_sqlite_connection(db) as conn:
         conn.execute(
             "UPDATE runs SET expires_at = ? WHERE run_id = ?",
             ("2000-01-01T00:00:00+00:00", run_id),

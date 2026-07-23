@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -25,6 +24,7 @@ import pytest
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 from tests.agents.shared.deep_genome_fixtures import seed_brief_gene_plan
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.contracts.deep_genome import (
     DEEP_GENOME_PROGRESS_FIELDS,
@@ -475,7 +475,7 @@ def test_reconcile_marks_dead_deep_genome_umbrella_failed(
     assert snapshot is not None
     assert snapshot.status == "failed"
     assert snapshot.intermediate_report == result["intermediate_report"]
-    with sqlite3.connect(mgr_path) as conn:
+    with closed_sqlite_connection(mgr_path) as conn:
         task_row = conn.execute(
             "SELECT status, final_report, intermediate_report, "
             "degraded_reason FROM tasks WHERE task_id = ?",

@@ -5,12 +5,12 @@
 
 from __future__ import annotations
 
-import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 from tests.unit.test_deep_genome_store import (
     _DisappearingUmbrellaStore,
     _reserved_store,
@@ -54,7 +54,7 @@ def test_duplicate_transition_does_not_advance_revision(
 
     assert first.report_revision == 1
     assert second.report_revision == first.report_revision
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         updated_at = conn.execute(
             "SELECT report_updated_at FROM tasks WHERE task_id = ?",
             (reservation.umbrella_task_id,),
@@ -105,7 +105,7 @@ def test_failed_work_item_persists_only_a_fixed_failure_reason(
             "reason": "analysis task failed",
         },
     )
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         stored_reason = conn.execute(
             "SELECT failure_reason FROM deep_genome_remote_tasks "
             "WHERE umbrella_task_id = ? AND work_item_key = ?",
@@ -119,7 +119,7 @@ def test_transition_preserves_an_existing_sanitized_degraded_reason(
 ) -> None:
     """A later snapshot does not erase an established local reason."""
     store, reservation = _seeded_store(tmp_path)
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         conn.execute(
             "UPDATE tasks SET degraded_reason = ? WHERE task_id = ?",
             ("previously sanitized", reservation.umbrella_task_id),
@@ -150,7 +150,7 @@ def test_tracking_failure_rolls_back_when_umbrella_stops_running(
             status="running",
         )
 
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         task_status = conn.execute(
             "SELECT status FROM tasks WHERE task_id = ?",
             (reservation.umbrella_task_id,),
@@ -283,7 +283,7 @@ def test_publish_final_report_sets_task_and_run_terminal_atomically(
     assert snapshot.report_completeness == "partial"
     assert snapshot.degraded is True
     assert snapshot.report_revision == terminal.report_revision + 1
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         run = conn.execute(
             "SELECT status, result_json, error FROM runs WHERE run_id = ?",
             (reservation.run_id,),
@@ -398,7 +398,7 @@ def test_failed_umbrella_keeps_intermediate_and_clears_final(
         status="succeeded",
         summary_markdown="BriefGene summary",
     )
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         conn.execute(
             "UPDATE tasks SET final_report = ? WHERE task_id = ?",
             ("stale final", reservation.umbrella_task_id),
@@ -416,7 +416,7 @@ def test_failed_umbrella_keeps_intermediate_and_clears_final(
     assert snapshot.intermediate_report == before.intermediate_report
     assert snapshot.final_report is None
     assert snapshot.report_revision == before.report_revision
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         task = conn.execute(
             "SELECT status, final_report, degraded_reason FROM tasks "
             "WHERE task_id = ?",

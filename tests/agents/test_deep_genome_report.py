@@ -14,7 +14,6 @@ so the assertions stay inside the class hierarchy.
 from __future__ import annotations
 
 import asyncio
-import sqlite3
 from pathlib import Path
 from typing import Any, cast
 
@@ -38,6 +37,7 @@ from tests.agents.shared.deep_genome_fixtures import (
     seed_brief_gene_plan,
     successful_concrete_barrier_data,
 )
+from tests.support.sqlite import closed_sqlite_connection
 
 pytestmark = pytest.mark.unit
 
@@ -281,7 +281,7 @@ def _finalization_fixture(
         output_dir="/obs/run",
     )
     seed_brief_gene_plan(store, reservation, "Os01g0177400")
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         conn.execute(
             "UPDATE deep_genome_remote_tasks SET status = 'failed', "
             "failure_reason = 'analysis task failed' "
@@ -340,7 +340,7 @@ def test_run_follow_up_node_publishes_assembled_report_atomically(
     assert snapshot.final_report is not None
     assert "## Follow up questions:" in snapshot.final_report
     assert (report_dir / "Os01g0177400_report.md").exists()
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         run_status = conn.execute(
             "SELECT status FROM runs WHERE run_id = 'run-1'"
         ).fetchone()[0]
@@ -382,7 +382,7 @@ def test_follow_up_failure_preserves_intermediate_and_fails_owner(
     assert snapshot.status == "failed"
     assert snapshot.intermediate_report == before.intermediate_report
     assert snapshot.final_report is None
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         run = conn.execute(
             "SELECT status, error FROM runs WHERE run_id = 'run-1'"
         ).fetchone()

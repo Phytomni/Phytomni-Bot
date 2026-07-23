@@ -5,10 +5,10 @@
 """Tests for additive, idempotent memory schema migrations."""
 
 import json
-import sqlite3
 from pathlib import Path
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.runtime.memory.migrations import (
     MEMORY_SCHEMA_VERSION,
@@ -36,7 +36,7 @@ def _legacy_db(path: Path, *, with_size: bool = False) -> None:
     """
     if with_size:
         columns += ", size_bytes INTEGER NOT NULL"
-    with sqlite3.connect(path) as conn:
+    with closed_sqlite_connection(path) as conn:
         conn.execute(f"CREATE TABLE memories ({columns})")
         values: tuple[object, ...] = (
             "mem-1",
@@ -59,7 +59,7 @@ def test_empty_database_gets_version_table_and_indexes(tmp_path: Path) -> None:
     """A fresh database is initialized at the current schema version."""
     store = MemoryStore(str(tmp_path / "memory.sqlite"))
 
-    with sqlite3.connect(store.db_path) as conn:
+    with closed_sqlite_connection(store.db_path) as conn:
         version = conn.execute(
             "SELECT version FROM memory_schema_version WHERE id = 1"
         ).fetchone()
@@ -69,7 +69,7 @@ def test_empty_database_gets_version_table_and_indexes(tmp_path: Path) -> None:
 
     assert version == (MEMORY_SCHEMA_VERSION,)
     assert "idx_memories_user_updated" in memory_indexes
-    with sqlite3.connect(store.db_path) as conn:
+    with closed_sqlite_connection(store.db_path) as conn:
         audit_columns = {
             row[1]
             for row in conn.execute("PRAGMA table_info(memory_mutation_audit)")
@@ -90,7 +90,7 @@ def test_existing_unversioned_schema_is_migrated_and_repeatable(
     record = second.get("alice", "mem-1")
     assert record is not None
     assert record.size_bytes == len(b"Arabidopsis") + len("plant")
-    with sqlite3.connect(path) as conn:
+    with closed_sqlite_connection(path) as conn:
         assert conn.execute(
             "SELECT COUNT(*) FROM memory_schema_version"
         ).fetchone() == (1,)
@@ -104,7 +104,7 @@ def test_migration_backfills_missing_size_column(tmp_path: Path) -> None:
 
     MemoryStore(str(path))
 
-    with sqlite3.connect(path) as conn:
+    with closed_sqlite_connection(path) as conn:
         columns = {
             row[1] for row in conn.execute("PRAGMA table_info(memories)")
         }
@@ -119,7 +119,7 @@ def test_version_one_database_gets_audit_table(tmp_path: Path) -> None:
     """C5.3 databases gain the append-only audit table additively."""
     path = tmp_path / "memory.sqlite"
     _legacy_db(path, with_size=True)
-    with sqlite3.connect(path) as conn:
+    with closed_sqlite_connection(path) as conn:
         conn.execute(
             "CREATE TABLE memory_schema_version ("
             "id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)"
@@ -130,7 +130,7 @@ def test_version_one_database_gets_audit_table(tmp_path: Path) -> None:
 
     MemoryStore(str(path))
 
-    with sqlite3.connect(path) as conn:
+    with closed_sqlite_connection(path) as conn:
         version = conn.execute(
             "SELECT version FROM memory_schema_version WHERE id = 1"
         ).fetchone()
@@ -145,7 +145,7 @@ def test_malformed_audit_table_fails_closed(tmp_path: Path) -> None:
     """A versioned database with an incompatible audit table is rejected."""
     path = tmp_path / "memory.sqlite"
     _legacy_db(path, with_size=True)
-    with sqlite3.connect(path) as conn:
+    with closed_sqlite_connection(path) as conn:
         conn.execute(
             "CREATE TABLE memory_schema_version ("
             "id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)"
@@ -165,7 +165,7 @@ def test_malformed_audit_table_fails_closed(tmp_path: Path) -> None:
 def test_unknown_schema_version_fails_closed(tmp_path: Path) -> None:
     """A newer schema is never silently opened by an older binary."""
     path = tmp_path / "memory.sqlite"
-    with sqlite3.connect(path) as conn:
+    with closed_sqlite_connection(path) as conn:
         conn.execute(
             "CREATE TABLE memory_schema_version ("
             "id INTEGER PRIMARY KEY, version INTEGER NOT NULL)"
@@ -192,7 +192,7 @@ def test_required_columns_are_not_invented_for_incompatible_legacy_db(
 ) -> None:
     """An incompatible table fails closed instead of destructive guessing."""
     path = tmp_path / "memory.sqlite"
-    with sqlite3.connect(path) as conn:
+    with closed_sqlite_connection(path) as conn:
         conn.execute("CREATE TABLE memories (id TEXT PRIMARY KEY)")
 
     with pytest.raises(MemorySchemaError, match="required columns"):
@@ -202,13 +202,13 @@ def test_required_columns_are_not_invented_for_incompatible_legacy_db(
 def test_checkpoint_table_is_not_reused_or_modified(tmp_path: Path) -> None:
     """Memory migrations keep LangGraph checkpoint lifecycle independent."""
     path = tmp_path / "memory.sqlite"
-    with sqlite3.connect(path) as conn:
+    with closed_sqlite_connection(path) as conn:
         conn.execute("CREATE TABLE checkpoints (thread_id TEXT PRIMARY KEY)")
         conn.execute("INSERT INTO checkpoints(thread_id) VALUES ('thread-1')")
 
     MemoryStore(str(path))
 
-    with sqlite3.connect(path) as conn:
+    with closed_sqlite_connection(path) as conn:
         assert conn.execute("SELECT * FROM checkpoints").fetchall() == [
             ("thread-1",)
         ]

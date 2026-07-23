@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from typing import Any
 
 from mcp_server_phytomni.agents.deep_genome.work_items import (
@@ -16,6 +15,7 @@ from mcp_server_phytomni.runtime.deep_genome_store import (
     DeepGenomeReservation,
     DeepGenomeStore,
 )
+from tests.support.sqlite import closed_sqlite_connection
 
 
 def concrete_barrier_work_items() -> list[dict[str, Any]]:
@@ -126,7 +126,7 @@ def seed_partial_deep_genome_run(
 
 def attach_formatted_result(db_path: str, run_id: str) -> None:
     """Add a legacy-compatible formatted block to one seeded run."""
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         row = conn.execute(
             "SELECT result_json FROM runs WHERE run_id = ?", (run_id,)
         ).fetchone()

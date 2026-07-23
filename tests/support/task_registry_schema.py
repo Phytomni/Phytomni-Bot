@@ -5,8 +5,9 @@
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
+
+from tests.support.sqlite import closed_sqlite_connection
 
 __all__ = [
     "EXPECTED_TASK_COLUMNS",
@@ -54,7 +55,7 @@ def create_legacy_task_db(
     seed: tuple[str, str, str, str] | None = None,
 ) -> None:
     """Create the original task table and optionally seed one row."""
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         conn.execute(
             "CREATE TABLE tasks ("
             "task_id TEXT PRIMARY KEY, "

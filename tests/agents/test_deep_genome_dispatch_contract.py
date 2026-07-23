@@ -49,6 +49,7 @@ from mcp_server_phytomni.runtime.deep_genome_store import (
     DeepGenomeStore,
     DeepGenomeTrackingError,
 )
+from tests.support.sqlite import closed_sqlite_connection
 
 pytestmark = pytest.mark.agent
 
@@ -219,7 +220,7 @@ async def test_acceptance_transition_and_restart_contract(
         )
         == succeeded
     )
-    with sqlite3.connect(tmp_path / "tasks.db") as connection:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as connection:
         assert connection.execute(
             "SELECT status, submitted_task_id, poll_task_id "
             "FROM deep_genome_remote_tasks "
@@ -262,7 +263,7 @@ async def test_transition_sink_persists_every_local_status(
     snapshot = store.get_snapshot(reservation.umbrella_task_id)
     assert snapshot is not None
     assert snapshot.report_revision == 2
-    with sqlite3.connect(tmp_path / "tasks.db") as connection:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as connection:
         row = connection.execute(
             "SELECT status, summary_markdown, failure_reason "
             "FROM deep_genome_remote_tasks "

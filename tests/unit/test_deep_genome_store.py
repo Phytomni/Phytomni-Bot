@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 from tests.support.task_registry_schema import (
     REPORT_COLUMNS,
     create_legacy_task_db,
@@ -63,7 +64,7 @@ def _reserved_store(
 
 def _reservation_counts(tmp_path: Path) -> tuple[int, int, int]:
     """Return run, umbrella-task, and BriefGene row counts."""
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         return tuple(
             conn.execute(query).fetchone()[0]
             for query in (
@@ -85,7 +86,7 @@ def _seeded_store(
         owner="alice",
         output_dir="/tmp/task-1",
     )
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         conn.execute(
             "UPDATE deep_genome_sections SET status = 'succeeded', "
             "summary_markdown = 'BriefGene' "
@@ -110,7 +111,7 @@ def _terminalizable_store(
         for item in plan
         if item.work_item_key not in {"smep_analysis", "smoc_analysis"}
     )
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         for work_item_key in failed_keys:
             conn.execute(
                 "UPDATE deep_genome_remote_tasks SET status = 'failed', "
@@ -184,7 +185,7 @@ def test_store_upgrades_legacy_database_idempotently(tmp_path: Path) -> None:
     DeepGenomeStore(str(db_path))
     DeepGenomeStore(str(db_path))
 
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         task_columns = {
             row[1] for row in conn.execute("PRAGMA table_info(tasks)")
         }
@@ -216,7 +217,7 @@ def test_store_fresh_schema_has_report_columns_and_checks(
     db_path = tmp_path / "fresh.db"
     DeepGenomeStore(str(db_path))
 
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         columns = {
             row[1]: row[3] for row in conn.execute("PRAGMA table_info(tasks)")
         }
@@ -376,7 +377,7 @@ def test_reserve_run_commits_all_three_rows(tmp_path: Path) -> None:
     assert reservation.run_id == "run-1"
     assert reservation.umbrella_task_id == "task-1"
     assert _reservation_counts(tmp_path) == (1, 1, 1)
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         run = conn.execute(
             "SELECT user_id, agent, origin, status, result_json "
             "FROM runs WHERE run_id = ?",
@@ -451,7 +452,7 @@ def test_compensate_launch_failure_clears_seeded_profile(
 
     store.compensate_launch_failure(reservation)
 
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         run = conn.execute(
             "SELECT status, error FROM runs WHERE run_id = ?",
             ("run-1",),
@@ -482,7 +483,7 @@ def test_seed_plan_creates_eleven_sections_and_twelve_work_items(
     assert snapshot is not None
     assert snapshot.progress["planning_complete"] is True
     assert snapshot.progress["total"] == 12
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         analysis_sections = conn.execute(
             "SELECT COUNT(*) FROM deep_genome_sections "
             "WHERE umbrella_task_id = ? AND section_kind = 'analysis'",
@@ -544,7 +545,7 @@ def test_seed_plan_rejects_malformed_item_fields(
 def test_seed_plan_rejects_terminal_umbrella(tmp_path: Path) -> None:
     """A terminal owner cannot be replanned after completion or failure."""
     store, reservation = _seeded_store(tmp_path)
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         conn.execute(
             "UPDATE tasks SET status = 'failed' WHERE task_id = ?",
             (reservation.umbrella_task_id,),
@@ -568,7 +569,7 @@ def test_seed_plan_is_idempotent_for_identical_items(tmp_path: Path) -> None:
 
     store.seed_plan(reservation, items)
 
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         counts = (
             conn.execute(
                 "SELECT COUNT(*) FROM deep_genome_sections "
@@ -610,7 +611,7 @@ def test_remote_identity_cannot_be_rebound(tmp_path: Path) -> None:
             submission=RemoteSubmission("caller-2", "source-1", "obs://out"),
         )
 
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         row = conn.execute(
             "SELECT status, submitted_task_id, poll_task_id "
             "FROM deep_genome_remote_tasks WHERE umbrella_task_id = ? "
@@ -632,7 +633,7 @@ def test_remote_identity_rejects_blank_pre_acceptance(tmp_path: Path) -> None:
             submission=RemoteSubmission("", "source-1", "obs://out"),
         )
 
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         row = conn.execute(
             "SELECT status, submitted_task_id, poll_task_id "
             "FROM deep_genome_remote_tasks WHERE umbrella_task_id = ? "
@@ -660,7 +661,7 @@ def test_remote_identity_rejects_terminal_umbrella(
 ) -> None:
     """A terminal umbrella cannot accept a late remote identity."""
     store, reservation = _seeded_store(tmp_path)
-    with sqlite3.connect(tmp_path / "tasks.db") as conn:
+    with closed_sqlite_connection(tmp_path / "tasks.db") as conn:
         conn.execute(
             "UPDATE tasks SET status = 'failed' WHERE task_id = ?",
             (reservation.umbrella_task_id,),

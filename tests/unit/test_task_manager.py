@@ -12,10 +12,10 @@ record_submission upserts a caller-known task_id.
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 from tests.support.task_registry_schema import create_legacy_task_db
 
 from mcp_server_phytomni.runtime.task_manager import (
@@ -335,7 +335,7 @@ def test_init_db_adds_task_log_column_to_legacy_four_column_db(
 
     TaskManager(db_path=db_path)
 
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
     assert "task_log" in columns
     assert "final_report" in columns

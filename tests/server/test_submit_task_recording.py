@@ -18,6 +18,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.mcp.handlers import (
     handle_analyst_agent,
@@ -81,7 +82,7 @@ async def test_decorator_records_task_run_and_passes_result_through(
         "output_dir": "/obs/run",
         "source_task_id": None,
     }
-    with sqlite3.connect(tasks_db_path) as conn:
+    with closed_sqlite_connection(tasks_db_path) as conn:
         row = conn.execute(
             "SELECT run_id, user_id, agent, origin FROM tasks "
             "WHERE task_id = ?",
@@ -169,7 +170,7 @@ def test_record_upsert_preserves_prior_fingerprint(
         "output_dir": "/obs/up",
         "source_task_id": None,
     }
-    with sqlite3.connect(tasks_db_path) as conn:
+    with closed_sqlite_connection(tasks_db_path) as conn:
         run_id = conn.execute(
             "SELECT run_id FROM tasks WHERE task_id = ?", ("T-up",)
         ).fetchone()[0]
@@ -247,7 +248,7 @@ def test_record_handles_research_task_ids_map(tasks_db_path: str) -> None:
     assert len(runs) == 1
     assert runs[0].spec.agent == "research"
     assert set(runs[0].task_ids) == {"T-RA", "T-RB"}
-    with sqlite3.connect(tasks_db_path) as conn:
+    with closed_sqlite_connection(tasks_db_path) as conn:
         rows = conn.execute(
             "SELECT task_id, output_dir, run_id FROM tasks "
             "WHERE run_id = ? ORDER BY task_id",
@@ -303,7 +304,7 @@ def test_record_handles_design_task_result_list(
     assert len(runs) == 1
     assert runs[0].spec.agent == "design"
     assert set(runs[0].task_ids) == {"T-DP", "T-DM"}
-    with sqlite3.connect(tasks_db_path) as conn:
+    with closed_sqlite_connection(tasks_db_path) as conn:
         rows = conn.execute(
             "SELECT task_id, output_dir FROM tasks "
             "WHERE run_id = ? ORDER BY task_id",
@@ -377,7 +378,7 @@ def test_record_short_circuits_on_dedup_hit_passthrough(
         agent="analyst",
     )
 
-    with sqlite3.connect(tasks_db_path) as conn:
+    with closed_sqlite_connection(tasks_db_path) as conn:
         row = conn.execute(
             "SELECT run_id FROM tasks WHERE task_id = ?",
             ("T-dedup",),

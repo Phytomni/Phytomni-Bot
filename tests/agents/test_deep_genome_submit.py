@@ -36,6 +36,7 @@ from mcp_server_phytomni.runtime.task_manager import (
     Submission,
     TaskManager,
 )
+from tests.support.sqlite import closed_sqlite_connection
 
 pytestmark = pytest.mark.agent
 
@@ -222,7 +223,7 @@ async def test_create_task_failure_is_compensated(
             user_id="alice",
         )
 
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         run = conn.execute(
             "SELECT status, error FROM runs",
         ).fetchone()
@@ -290,7 +291,7 @@ async def test_arun_background_writes_succeeded_terminal(
     )
     await _drain_background_tasks()
 
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         row = conn.execute(
             "SELECT status, output_dir FROM tasks WHERE task_id = ?",
             (envelope["task_id"],),
@@ -325,7 +326,7 @@ async def test_arun_background_writes_failed_on_workflow_exception(
     )
     await _drain_background_tasks()
 
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         row = conn.execute(
             "SELECT status FROM tasks WHERE task_id = ?",
             (envelope["task_id"],),
@@ -370,7 +371,7 @@ async def test_succeeded_workflow_keeps_status_when_db_write_raises(
     monkeypatch.setattr(TaskManager, "update_task", boom)
     await _drain_background_tasks()
 
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         row = conn.execute(
             "SELECT status FROM tasks WHERE task_id = ?",
             (envelope["task_id"],),

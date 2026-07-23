@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 import stat
 from pathlib import Path
 
 import pytest
 from tests.agents.shared.deep_genome_fixtures import seed_brief_gene_plan
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.runtime.deep_genome_admin import (
     RollbackRefusedError,
@@ -37,7 +37,7 @@ def _seed_database(tmp_path: Path, *, terminal: bool) -> Path:
     )
     seed_brief_gene_plan(store, reservation, "Os01g0100100")
     if terminal:
-        with sqlite3.connect(db) as conn:
+        with closed_sqlite_connection(db) as conn:
             conn.execute(
                 "UPDATE tasks SET status = 'failed' WHERE task_id = ?",
                 (reservation.umbrella_task_id,),
@@ -52,7 +52,7 @@ def _seed_database(tmp_path: Path, *, terminal: bool) -> Path:
 
 def _child_counts(db: Path) -> tuple[int, int, int, int]:
     """Return remote, section, task, and run row counts."""
-    with sqlite3.connect(db) as conn:
+    with closed_sqlite_connection(db) as conn:
         return tuple(
             conn.execute(query).fetchone()[0]
             for query in (
@@ -84,7 +84,7 @@ def test_acknowledged_rollback_marks_and_removes_children(
 ) -> None:
     """The explicit acknowledgement fails owners before child cleanup."""
     db = _seed_database(tmp_path, terminal=False)
-    with sqlite3.connect(db) as conn:
+    with closed_sqlite_connection(db) as conn:
         conn.execute(
             "UPDATE tasks SET final_report = '# stale' "
             "WHERE task_id = 'umbrella-dg'"
@@ -100,7 +100,7 @@ def test_acknowledged_rollback_marks_and_removes_children(
     assert result.remote_tasks_deleted == 12
     assert result.sections_deleted == 12
     assert _child_counts(db) == (0, 0, 1, 1)
-    with sqlite3.connect(db) as conn:
+    with closed_sqlite_connection(db) as conn:
         task = conn.execute(
             "SELECT status, intermediate_report, degraded_reason "
             ", final_report FROM tasks "
@@ -151,14 +151,17 @@ def test_backup_restores_wal_consistent_database_and_mode(
     backup = Path(result.backup_path)
     assert backup.exists()
     assert stat.S_IMODE(backup.stat().st_mode) == 0o640
-    with sqlite3.connect(backup) as conn:
+    with closed_sqlite_connection(backup) as conn:
         assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
     assert _child_counts(db) == (0, 0, 1, 1)
 
-    with sqlite3.connect(backup) as source, sqlite3.connect(db) as target:
+    with (
+        closed_sqlite_connection(backup) as source,
+        closed_sqlite_connection(db) as target,
+    ):
         source.backup(target)
     assert _child_counts(db) == (12, 12, 1, 1)
-    with sqlite3.connect(db) as conn:
+    with closed_sqlite_connection(db) as conn:
         assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 

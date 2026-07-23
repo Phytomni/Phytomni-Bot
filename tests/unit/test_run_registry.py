@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 from tests.support.run_registry_fakes import stamp_run_created_at
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.runtime.run_registry import (
     RunFilter,
@@ -253,7 +254,7 @@ def test_list_runs_filters_by_created_before(tmp_path: Path) -> None:
     registry, _, db = _make_registry(tmp_path)
     registry.create_run(RunSpec("run-old", "alice", "chat", "local"))
     registry.create_run(RunSpec("run-new", "alice", "chat", "local"))
-    with sqlite3.connect(db) as conn:
+    with closed_sqlite_connection(db) as conn:
         conn.executemany(
             "UPDATE runs SET created_at = ? WHERE run_id = ?",
             [
@@ -288,7 +289,7 @@ def test_list_runs_composes_date_range_with_other_filters(
         RunSpec("run-c-new", "alice", "chat", "local"),
         outcome=RunOutcome(status="failed"),
     )
-    with sqlite3.connect(db) as conn:
+    with closed_sqlite_connection(db) as conn:
         conn.executemany(
             "UPDATE runs SET created_at = ? WHERE run_id = ?",
             [

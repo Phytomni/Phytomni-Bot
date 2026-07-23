@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.relay.audit import RelayAuditStore
@@ -31,10 +32,25 @@ def test_sqlite_connection_applies_common_policy(tmp_path: Path) -> None:
         assert conn.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
         conn.execute("CREATE TABLE marker (value TEXT NOT NULL)")
 
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         assert conn.execute(
             "SELECT name FROM sqlite_master WHERE name = 'marker'"
         ).fetchone() == ("marker",)
+
+
+def test_closed_sqlite_connection_closes_after_body(
+    tmp_path: Path,
+) -> None:
+    """The test helper commits and closes a plain SQLite connection."""
+    connection: sqlite3.Connection | None = None
+
+    with closed_sqlite_connection(str(tmp_path / "closed.sqlite")) as conn:
+        connection = conn
+        conn.execute("CREATE TABLE marker (value TEXT NOT NULL)")
+
+    assert connection is not None
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        connection.execute("SELECT 1")
 
 
 def test_sqlite_connection_closes_after_body_error(tmp_path: Path) -> None:
@@ -101,7 +117,7 @@ def test_sqlite_connection_supports_concurrent_writes(tmp_path: Path) -> None:
     with ThreadPoolExecutor(max_workers=4) as executor:
         list(executor.map(write, range(16)))
 
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         assert conn.execute("SELECT COUNT(*) FROM events").fetchone() == (16,)
 
 
@@ -110,7 +126,7 @@ def test_store_schema_migration_and_boundaries_remain_local(
 ) -> None:
     """Auth migration stays separate from the audit schema."""
     auth_db = tmp_path / "api_keys.sqlite"
-    with sqlite3.connect(auth_db) as conn:
+    with closed_sqlite_connection(auth_db) as conn:
         legacy_columns = (
             "id INTEGER PRIMARY KEY AUTOINCREMENT",
             "user_id TEXT NOT NULL",
@@ -129,11 +145,11 @@ def test_store_schema_migration_and_boundaries_remain_local(
     audit_db = tmp_path / "relay_audit.sqlite"
     RelayAuditStore(str(audit_db))
 
-    with sqlite3.connect(auth_db) as conn:
+    with closed_sqlite_connection(auth_db) as conn:
         auth_columns = {
             row[1] for row in conn.execute("PRAGMA table_info(api_keys)")
         }
-    with sqlite3.connect(audit_db) as conn:
+    with closed_sqlite_connection(audit_db) as conn:
         audit_columns = {
             row[1] for row in conn.execute("PRAGMA table_info(relay_audit)")
         }

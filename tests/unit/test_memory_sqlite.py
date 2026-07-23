@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.runtime.memory.models import (
     MemoryPolicy,
@@ -51,7 +52,7 @@ def test_init_creates_schema_and_wal_database(tmp_path: Path) -> None:
     """A new store creates its table, indexes, and local WAL database."""
     store = _store(tmp_path)
 
-    with sqlite3.connect(store.db_path) as conn:
+    with closed_sqlite_connection(store.db_path) as conn:
         columns = {
             row[1] for row in conn.execute("PRAGMA table_info(memories)")
         }
@@ -118,7 +119,7 @@ def test_mutations_append_digest_only_audit_records(tmp_path: Path) -> None:
         for item in audits
     )
     assert all(item.request_id is not None for item in audits)
-    with sqlite3.connect(store.db_path) as conn:
+    with closed_sqlite_connection(store.db_path) as conn:
         raw = conn.execute(
             "SELECT before_digest, after_digest FROM memory_mutation_audit"
         ).fetchall()
@@ -198,7 +199,7 @@ def test_purge_expired_is_audited_and_preserves_live_records(
         "create",
     ]
     assert expired_audits[0].actor == "retention"
-    with sqlite3.connect(store.db_path) as conn:
+    with closed_sqlite_connection(store.db_path) as conn:
         raw_audit = conn.execute(
             "SELECT * FROM memory_mutation_audit WHERE memory_id = ?",
             ("expired",),
