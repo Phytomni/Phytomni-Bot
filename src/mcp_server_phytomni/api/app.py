@@ -7,23 +7,11 @@
 Public functions: create_app.
 """
 
-# pylint: disable=too-many-lines
-# C0302: FastAPI app factory + every route registration lives in one
-# file. Splitting per-route modules makes dependency wiring opaque
-# without reducing total complexity. See docs/development/lint-exemptions.md.
-
 from __future__ import annotations
 
-import asyncio
 import logging
-import os
-from collections.abc import (
-    AsyncGenerator,
-    Mapping,
-)
-from contextlib import asynccontextmanager
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import Any
 
 from fastapi import (
@@ -33,33 +21,17 @@ from fastapi import (
 from fastapi.responses import JSONResponse, StreamingResponse
 from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS
-from pydantic import ValidationError
-from starlette.datastructures import MutableHeaders
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..agents.brief_gene.resolve_query import resolve_brief_gene_user_query
 from ..agents.deep_genome.resolve_query import resolve_deep_genome_user_query
 from ..agents.design.resolve_query import resolve_design_user_query
 from ..agents.expert import select_agent_tool
 from ..agents.network.resolve_query import resolve_network_user_query
-from ..agents.shared.gauss import aclose_gauss_pool
 from ..common import logging_config as _logging_config
-from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..config.defaults import ApiConfig
-from ..config.settings import SensitiveConfig
+from ..interop import a2a_discovery as _a2a_discovery
+from ..interop import capabilities as _interop_capabilities
 from ..interop import registry as _interop_registry
-from ..interop.a2a_discovery import discover_external_a2a_capabilities
-from ..interop.cache import (
-    DiscoveryCache,
-    get_or_create_discovery_cache,
-)
-from ..interop.capabilities import (
-    DiscoveryError,
-    DiscoveryResult,
-    discover_external_mcp_capabilities,
-)
-from ..interop.models import InteropTarget
-from ..interop.registry import InteropRegistry
 from ..mcp import app as _mcp_app
 from ..mcp.app import (
     invoke_tool_enveloped,
@@ -71,19 +43,14 @@ from ..mcp.result_formatting import (
     strip_chat_completion,
 )
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
-from ..runtime.memory import (
-    MemoryWrite,
-)
+from ..runtime import task_reconcile as _task_reconcile
 from ..runtime.request_context import (
-    bind_pre_recorded_task_id,
-    bind_request_id,
-    bind_request_user,
-    bind_run_id,
     current_recorder_degraded,
-    current_request_id,
     current_request_user,
     current_run_id,
-    reset_request_var,
+)
+from ..runtime.request_context import (
+    current_request_id as _current_request_id,
 )
 from ..runtime.run_registry import (
     RunRecord,
@@ -91,12 +58,11 @@ from ..runtime.run_registry import (
     RunRequestInfo,
 )
 from ..runtime.task_manager import resolve_tasks_db_path
-from ..runtime.task_reconcile import reconcile_task_log
-from ..storage.path_policy import IdFactory
 from ..version import __version__ as _package_version
 from . import a2ui_runtime, run_lifecycle
 from . import admin_auth as _admin_auth
 from . import agent_capabilities as _agent_capabilities
+from . import app_support as _app_support
 from . import compat as _compat
 from . import factory as _factory
 from . import file_upload as _file_upload
@@ -128,20 +94,33 @@ from .resolvers import (
     ResolverDispatch,
     apply_runs_resolver,
 )
-from .schemas import (
-    ApiErrorDetail,
-    ApiErrorResponse,
-    ChatCompletionRequest,
-    ExpertQueryRequest,
-    MemoryAuditRecordResponse,
-    MemoryResponse,
-    ResumeRequest,
-)
+from .schemas import ChatCompletionRequest, ExpertQueryRequest, ResumeRequest
 from .stream_answer import resolve_stream_answer_max_bytes
 
 # These assignments keep long-standing app-level monkeypatch seams available
 # after route wiring moved to ``api.factory``.
 invoke_tool_streamed = _mcp_app.invoke_tool_streamed
+current_request_id = _current_request_id
+reconcile_task_log = _task_reconcile.reconcile_task_log
+discover_external_a2a_capabilities = (
+    _a2a_discovery.discover_external_a2a_capabilities
+)
+discover_external_mcp_capabilities = (
+    _interop_capabilities.discover_external_mcp_capabilities
+)
+_discover_interop_targets = getattr(_app_support, "discover_interop_targets")
+_error_response = getattr(_app_support, "error_response")
+_http_lifespan = getattr(_app_support, "_http_lifespan")
+_interop_result_body = getattr(_app_support, "interop_result_body")
+_memory_audit_response = getattr(_app_support, "memory_audit_response")
+_memory_response = getattr(_app_support, "memory_response")
+_memory_revision = getattr(_app_support, "memory_revision")
+_memory_write = getattr(_app_support, "memory_write")
+_reconcile_run_task_logs = getattr(_app_support, "reconcile_run_task_logs")
+request_context_middleware = getattr(
+    _app_support, "request_context_middleware"
+)
+_store_path_writable = getattr(_app_support, "store_path_writable")
 __version__ = _package_version
 build_agent_card = _a2a_card.build_agent_card
 configure_logging = _logging_config.configure_logging
@@ -189,19 +168,6 @@ def __getattr__(name: str) -> Any:
         return getattr(_compat, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
-
-_ERROR_TYPES = {
-    400: "bad_request",
-    401: "unauthorized",
-    403: "forbidden",
-    404: "not_found",
-    409: "conflict",
-    422: "unprocessable_entity",
-    428: "precondition_required",
-    429: "rate_limited",
-    500: "internal_error",
-    503: "unavailable",
-}
 
 # Public agent slug recorded on the ``runs`` row for sync chat calls.
 # Kept here (not in ``openai_mapping``) so this run-registry concern
@@ -908,285 +874,6 @@ def _stamp_remote_request_info(
         request_info=request_info,
         db_path=resolve_tasks_db_path(),
     )
-
-
-def _error_response(
-    status_code: int,
-    message: str,
-    headers: Mapping[str, str] | None = None,
-) -> JSONResponse:
-    """Build a unified error-envelope JSON response.
-
-    Args:
-        status_code: HTTP status code mirrored into the body.
-        message: Human-readable explanation.
-        headers: Optional response headers to propagate (e.g.
-            Retry-After, WWW-Authenticate) from the raised exception.
-
-    Returns:
-        JSON response carrying the unified error envelope.
-    """
-    payload = ApiErrorResponse(
-        error=ApiErrorDetail(
-            type=_ERROR_TYPES.get(status_code, "error"),
-            code=status_code,
-            message=message,
-            request_id=current_request_id(),
-        )
-    )
-    return JSONResponse(
-        status_code=status_code,
-        content=payload.model_dump(),
-        headers=dict(headers) if headers else None,
-    )
-
-
-def _memory_response(record: Any) -> MemoryResponse:
-    """Convert a domain memory record into the public response shape."""
-    return MemoryResponse.model_validate(record.model_dump())
-
-
-def _memory_audit_response(record: Any) -> MemoryAuditRecordResponse:
-    """Convert one digest-only audit record into its public shape."""
-    return MemoryAuditRecordResponse.model_validate(record.model_dump())
-
-
-def _memory_write(owner: str, payload: Any) -> MemoryWrite:
-    """Build a domain write while keeping the owner outside the body."""
-    try:
-        return MemoryWrite(
-            user_id=owner,
-            kind=payload.kind,
-            content=payload.content,
-            tags=payload.tags,
-            expires_at=payload.expires_at,
-        )
-    except ValidationError as exc:
-        raise HTTPException(
-            status_code=422, detail="memory payload failed domain validation"
-        ) from exc
-
-
-def _memory_revision(value: str | None, *, required: bool) -> int | None:
-    """Parse the integer revision carried by an ``If-Match`` header."""
-    if value is None or not value.strip():
-        if required:
-            raise HTTPException(
-                status_code=428,
-                detail="If-Match is required for memory updates",
-            )
-        return None
-    candidate = value.strip()
-    if len(candidate) >= 2 and candidate[0] == candidate[-1] == '"':
-        candidate = candidate[1:-1].strip()
-    try:
-        revision = int(candidate)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail="If-Match must contain a positive integer revision",
-        ) from exc
-    if revision < 1:
-        raise HTTPException(
-            status_code=400,
-            detail="If-Match must contain a positive integer revision",
-        )
-    return revision
-
-
-def request_context_middleware(app: ASGIApp) -> ASGIApp:
-    """Wrap an ASGI app to bind a per-request correlation id.
-
-    A generated request id is bound to the contextvar for the request's
-    lifetime and echoed as the ``X-Request-Id`` response header so the
-    error envelope and clients can correlate a call. The user contextvar
-    is also bracketed here (bound to None, reset on exit) so the value
-    require_principal sets is always restored without relying on the
-    server copying the contextvars context per request. A closure-based
-    pure ASGI middleware is used (not BaseHTTPMiddleware) so the
-    contextvars are set in the same task that runs the endpoint and
-    exception handlers.
-
-    Args:
-        app: The downstream ASGI application to wrap.
-
-    Returns:
-        An ASGI application that binds request context then delegates.
-    """
-
-    async def asgi(scope: Scope, receive: Receive, send: Send) -> None:
-        """Bind the request id, inject the header, then delegate."""
-        if scope["type"] != "http":
-            await app(scope, receive, send)
-            return
-        request_id = IdFactory().new_id("request")
-        id_token = bind_request_id(request_id)
-        user_token = bind_request_user(None)
-        run_token = bind_run_id(None)
-        pre_recorded_token = bind_pre_recorded_task_id(None)
-
-        async def send_with_header(message: Message) -> None:
-            """Attach X-Request-Id on the response start event."""
-            if message["type"] == "http.response.start":
-                headers = MutableHeaders(scope=message)
-                headers["X-Request-Id"] = request_id
-            await send(message)
-
-        try:
-            await app(scope, receive, send_with_header)
-        finally:
-            reset_request_var(pre_recorded_token)
-            reset_request_var(run_token)
-            reset_request_var(user_token)
-            reset_request_var(id_token)
-
-    return asgi
-
-
-def _nearest_existing(path: Path) -> Path:
-    """Return the closest existing ancestor of a path.
-
-    Args:
-        path: Filesystem path to walk upward from.
-
-    Returns:
-        The path itself or the nearest existing parent directory.
-    """
-    for candidate in (path, *path.parents):
-        if candidate.exists():
-            return candidate
-    return Path(path.anchor or ".")
-
-
-def _store_path_writable(raw_path: str) -> bool:
-    """Verify a SQLite store path's directory is writable.
-
-    The check never creates files or directories so readiness probes
-    stay side-effect free.
-
-    Args:
-        raw_path: Configured SQLite store path.
-
-    Returns:
-        True when the nearest existing ancestor directory is writable.
-    """
-    parent = Path(raw_path).expanduser().resolve().parent
-    return os.access(_nearest_existing(parent), os.W_OK)
-
-
-async def _discover_interop_target(
-    target: InteropTarget,
-    *,
-    registry: InteropRegistry,
-    sensitive_config: SensitiveConfig,
-    cache: DiscoveryCache,
-) -> DiscoveryResult:
-    """Discover one configured target through its metadata-only seam."""
-    if target.kind == "mcp":
-        return await discover_external_mcp_capabilities(
-            target.id,
-            registry=registry,
-            sensitive_config=sensitive_config,
-            cache=cache,
-        )
-    return await discover_external_a2a_capabilities(
-        target.id,
-        registry=registry,
-        sensitive_config=sensitive_config,
-        cache=cache,
-    )
-
-
-async def _discover_interop_targets(
-    registry: InteropRegistry,
-    *,
-    sensitive_config: SensitiveConfig,
-    caches: dict[str, DiscoveryCache],
-) -> DiscoveryResult:
-    """Discover every target while isolating failures per target id."""
-
-    async def _one(target_id: str) -> DiscoveryResult:
-        target = registry.require_target(target_id)
-        cache = get_or_create_discovery_cache(
-            caches,
-            target,
-            max_entries=ApiConfig().INTEROP_CACHE_MAX_ENTRIES,
-        )
-        return await _discover_interop_target(
-            target,
-            registry=registry,
-            sensitive_config=sensitive_config,
-            cache=cache,
-        )
-
-    results = await asyncio.gather(
-        *(_one(target_id) for target_id in registry.target_ids()),
-        return_exceptions=True,
-    )
-    data: list[Any] = []
-    errors: list[DiscoveryError] = []
-    for target_id, result in zip(registry.target_ids(), results):
-        if isinstance(result, asyncio.CancelledError):
-            raise result
-        if isinstance(result, BaseException):
-            target = registry.require_target(target_id)
-            _LOGGER.warning(
-                "interop capability discovery failed: %s",
-                result.__class__.__name__,
-            )
-            errors.append(
-                DiscoveryError(target.id, target.kind, "discovery_failed")
-            )
-            continue
-        data.extend(result.data)
-        errors.extend(result.errors)
-    return DiscoveryResult(data=tuple(data), errors=tuple(errors))
-
-
-def _interop_result_body(result: DiscoveryResult) -> dict[str, Any]:
-    """Serialize only the shared capability DTO and safe error fields."""
-    return {
-        "object": "list",
-        "data": [item.model_dump() for item in result.data],
-        "errors": [
-            {
-                "target_id": item.target_id,
-                "kind": item.kind,
-                "code": item.code,
-            }
-            for item in result.errors
-        ],
-    }
-
-
-async def _reconcile_run_task_logs(run_id: str, debug: bool) -> dict[str, Any]:
-    """Compatibility seam for owner-scoped task-log reconciliation."""
-    return await run_lifecycle.reconcile_run_task_logs(
-        run_id,
-        debug,
-        fetch=_fetch_owner_run,
-        reconcile=reconcile_task_log,
-        strip=strip_agent_result,
-    )
-
-
-@asynccontextmanager
-async def _http_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    """Own the process-wide shared ``AsyncClient`` for the API lifetime.
-
-    The shared client carries a keep-alive connection pool used by
-    every agent call site that opens ``get_async_client(timeout=...)``;
-    initialising it once here avoids a per-request TLS handshake on
-    the high-frequency LLM / retrieval paths. Teardown is wrapped in
-    ``try / finally`` so a startup error never prevents the rest of
-    the FastAPI shutdown chain from running.
-    """
-    init_shared_client()
-    try:
-        yield
-    finally:
-        await aclose_shared_client()
-        await aclose_gauss_pool()
 
 
 def create_app() -> FastAPI:
