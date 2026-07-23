@@ -30,6 +30,7 @@ _SQL_RE: Final = re.compile(
     r"(?is)\b(?:select|insert|update|delete|with|create|alter|drop|"
     r"grant|revoke)\b.*"
 )
+_STREAM_FAILURE_CAUGHT: tuple[type[Exception], ...] = (Exception,)
 
 
 @dataclass
@@ -139,6 +140,22 @@ def _emit_error_if_needed(
     return event
 
 
+def _project_stream_failure(
+    state: StreamLifecycleState,
+    exc: Exception,
+    *,
+    run_id: str,
+    request_id: str,
+) -> AguiEvent | None:
+    """Map one ordinary producer failure to a safe terminal frame."""
+    if isinstance(exc, McpError):
+        message = _mcp_error_message(exc)
+    else:
+        _log_unexpected_failure(exc, run_id=run_id, request_id=request_id)
+        message = GENERIC_STREAM_ERROR_MESSAGE
+    return _emit_error_if_needed(state, message)
+
+
 async def project_stream_failures(
     events: AsyncIterator[AguiEvent],
     *,
@@ -173,13 +190,15 @@ async def project_stream_failures(
         if error_event is not None:
             yield error_event
     # This is the opened-stream safety boundary: every ordinary producer
-    # exception must become one fixed protocol error, while BaseException
-    # cancellation/shutdown paths remain outside the catch.
-    except Exception as exc:  # pylint: disable=broad-exception-caught
-        _log_unexpected_failure(exc, run_id=run_id, request_id=request_id)
-        error_event = _emit_error_if_needed(
+    # exception must become one fixed protocol error. The typed tuple catches
+    # all ``Exception`` instances, while BaseException cancellation/shutdown
+    # paths remain outside the catch and propagate unchanged.
+    except _STREAM_FAILURE_CAUGHT as exc:
+        error_event = _project_stream_failure(
             state,
-            GENERIC_STREAM_ERROR_MESSAGE,
+            exc,
+            run_id=run_id,
+            request_id=request_id,
         )
         if error_event is not None:
             yield error_event

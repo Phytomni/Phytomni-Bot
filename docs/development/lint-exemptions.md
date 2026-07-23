@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `111`
+- Authorized records: `110`
 
 ## Informational counts
 
@@ -27,7 +27,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `pylint:R0913`                                    |       1 |
 | `pylint:R0917`                                    |       1 |
 | `pylint:W0613`                                    |       1 |
-| `pylint:broad-exception-caught`                   |       3 |
+| `pylint:broad-exception-caught`                   |       2 |
 | `pylint:contextmanager-generator-missing-cleanup` |       2 |
 | `pylint:path-ignore`                              |       4 |
 | `pylint:protected-access`                         |      41 |
@@ -86,7 +86,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0215` | pylint | R0903 | structural | diagnostic | symbol | tests/unit/test_storage_error_sanitization.py | \_ExplodingObsClient | `sha256:826980652eb87a9cc733947dd7a6328efa942f2f98b5cb373e5db5d4ae417825` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0222` | pylint | broad-exception-caught | structural | inline | symbol | e2e/helpers/polling.py | \_reconciled_task_state | `sha256:58b3b2f3bb4ee5b58ee8ca5380146a1ab5d43c18bff5e36510cb912eece854a3` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0223` | pylint | broad-exception-caught | structural | inline | symbol | src/mcp_server_phytomni/api/a2ui_projection.py | project_review_interrupt | `sha256:46f288cb75e3a276492d43eda0ce2cf2250d78bb12a52d2dc905abdb453b02c3` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | tests/server/test_a2ui_review_http.py, tests/server/test_a2ui_runtime.py, static-analysis-inventory |
-| `SAE-TMP-0227` | pylint | broad-exception-caught | temporary | inline | symbol | src/mcp_server_phytomni/mcp/stream_lifecycle.py | project_stream_failures | `sha256:0fa2621f7153da1bff3a4df5a0a23d14425aa3d17b782f9545d0c2e657296557` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0228` | pylint | contextmanager-generator-missing-cleanup | structural | inline | span | tests/agents/test_cache_candidates.py | — | `sha256:1a93e1b05a8cfa872aeddc39c7850189f9089c16b59a0d36c97909cc4341ae03` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0229` | pylint | contextmanager-generator-missing-cleanup | structural | inline | span | tests/conftest.py | — | `sha256:8051cd3af754f03cba8b655218a54168e8867d393d6ed998ce98de611d0b7b9a` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0236` | pylint | path-ignore | structural | config | config | pyproject.toml | tool.pylint.main.ignore | `sha256:38fd2748eed7f3803e3176f0ef992ae35b8441cfc99a8e873d01821f62c700eb` | bot-maintainers | 2026-07-17 | 2027-01-17 | — | — | static-analysis-inventory |
@@ -958,26 +957,6 @@ Risk:
 
 ```text
 A broad catch can hide a projection regression; the fallback emits a class-only log and the A2UI HTTP tests cover the enabled and fallback paths.
-```
-
-### `SAE-TMP-0227`
-
-Rationale:
-
-```text
-pylint: disable=broad-exception-caught
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
 ```
 
 ### `SAE-TMP-0228`

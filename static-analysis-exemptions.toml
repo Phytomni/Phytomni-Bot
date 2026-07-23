@@ -822,26 +822,6 @@ risk = "A broad catch can hide a projection regression; the fallback emits a cla
 tests = ["tests/server/test_a2ui_review_http.py", "tests/server/test_a2ui_runtime.py", "static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0227"
-tool = "pylint"
-rule = "broad-exception-caught"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "symbol"
-path = "src/mcp_server_phytomni/mcp/stream_lifecycle.py"
-symbol = "project_stream_failures"
-fingerprint = "sha256:0fa2621f7153da1bff3a4df5a0a23d14425aa3d17b782f9545d0c2e657296557"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=broad-exception-caught"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0228"
 tool = "pylint"
 rule = "contextmanager-generator-missing-cleanup"
