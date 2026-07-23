@@ -163,6 +163,13 @@ README-style prose may wrap the same copyright text across lines.
 - Classification outcomes are `temporary` and `structural`. Temporary records
   require an owner, review date, expiry, remediation, and linked tests;
   structural records still require review and a remediation plan.
+- Temporary records are migration-only and must converge to zero at the
+  closure gate; do not reclassify unresolved debt as structural merely to
+  keep a gate green.
+- Apply the non-degradation, no-waiver test: if removing a directive would
+  not materially worsen behavior, quality, readability, or maintainability,
+  remove or refactor it. Only an evidence-backed structural compatibility
+  boundary may remain after review.
 - A dedicated specialist audit may receive provisional owner approval to keep
   existing temporary records active. Provisional approval preserves the
   classification, expiry, remediation, and exact fingerprint; it is not a

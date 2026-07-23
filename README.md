@@ -326,6 +326,12 @@ format/lint/type checks, shell/YAML/JSON/Markdown/TOML checks,
 [Development](docs/guides/development.md) for the full command matrix, CI scope,
 dependency policy, config normalization, and common troubleshooting.
 
+Static-analysis exemptions use a default-deny registry. Temporary records are
+migration-only and must converge to zero; apply the non-degradation, no-waiver
+test before retaining any directive, and keep only evidence-backed structural
+compatibility boundaries under review. See [STYLE.md](STYLE.md#lint-waivers)
+for the approval and remediation contract.
+
 ## Documentation
 
 - [Architecture](docs/explanation/architecture.md): package layout, MCP dispatch,
