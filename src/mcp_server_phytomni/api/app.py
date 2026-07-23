@@ -26,7 +26,7 @@ from collections.abc import (
     Mapping,
 )
 from contextlib import asynccontextmanager
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -567,10 +567,126 @@ async def _stream_chat_completion(
     )
 
 
-# pylint: disable=too-many-locals
-# Request validation -> DB lookup -> reconciliation -> response
-# assembly inline; helpers would require 5+ context args each.
-# See docs/development/lint-exemptions.md.
+@dataclass(frozen=True, slots=True)
+class _AgentRunPreparation:
+    """Resolved context shared by one native agent-run response."""
+
+    tool_name: str
+    owner: str
+    request_info: RunRequestInfo
+    resolve_meta: dict[str, Any]
+
+
+async def _prepare_agent_run(
+    *,
+    agent: str,
+    arguments: dict[str, Any],
+    dialogue_id: str | None,
+    request_json: str | None,
+) -> _AgentRunPreparation:
+    """Resolve the public slug and request context before dispatch."""
+    tool_name = _AGENT_SLUG_TO_TOOL.get(agent)
+    if tool_name is None:
+        raise HTTPException(
+            status_code=404, detail=f"agent not found: {agent}"
+        )
+    resolve_meta = await apply_runs_resolver(
+        agent,
+        arguments,
+        dispatch=ResolverDispatch(
+            brief_gene_resolver=resolve_brief_gene_user_query,
+            deep_genome_resolver=resolve_deep_genome_user_query,
+            design_resolver=resolve_design_user_query,
+            network_resolver=resolve_network_user_query,
+        ),
+    )
+    request_info = RunRequestInfo(
+        dialogue_id=dialogue_id,
+        query=(
+            arguments.get("user_query")
+            if isinstance(arguments.get("user_query"), str)
+            else None
+        ),
+        tool_name=tool_name,
+        model=None,
+        request_json=request_json,
+    )
+    return _AgentRunPreparation(
+        tool_name=tool_name,
+        owner=current_request_user() or "anonymous",
+        request_info=request_info,
+        resolve_meta=resolve_meta,
+    )
+
+
+def _format_agent_run_result(
+    envelope: Any,
+    *,
+    resolve_meta: dict[str, Any],
+    debug: bool,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build raw and default-projected result blocks from one envelope."""
+    formatted_dict = asdict(envelope.formatted)
+    if resolve_meta:
+        existing_meta = formatted_dict.get("metadata") or {}
+        if not isinstance(existing_meta, dict):
+            existing_meta = {}
+        formatted_dict["metadata"] = {**existing_meta, **resolve_meta}
+    result = {"formatted": formatted_dict, "raw": envelope.raw}
+    response_result = result if debug else strip_agent_result(result)
+    return result, response_result
+
+
+def _remote_agent_run_response(
+    *,
+    agent: str,
+    owner: str,
+    request_info: RunRequestInfo,
+    response_result: dict[str, Any],
+) -> tuple[dict[str, Any], int]:
+    """Shape the 202 submission response and expose tracking degradation."""
+    run_id, task_ids = _resolve_remote_run(owner)
+    _stamp_remote_request_info(
+        run_id=run_id, owner=owner, request_info=request_info
+    )
+    body: dict[str, Any] = {
+        "id": run_id,
+        "object": "agent.run",
+        "agent": agent,
+        "status": "running",
+        "task_ids": task_ids,
+        "result": response_result,
+    }
+    if current_recorder_degraded():
+        body["degraded_tracking"] = True
+    return body, 202
+
+
+def _sync_agent_run_response(
+    *,
+    agent: str,
+    owner: str,
+    request_info: RunRequestInfo,
+    result: dict[str, Any],
+    response_result: dict[str, Any],
+) -> tuple[dict[str, Any], int]:
+    """Persist and shape a terminal synchronous agent response."""
+    run_id = _record_sync_run(
+        agent=agent,
+        owner=owner,
+        result=result,
+        request_info=request_info,
+    )
+    body = run_lifecycle.agent_run_response(
+        run_id=run_id,
+        agent=agent,
+        status="succeeded",
+        result=response_result,
+        include_run_id=False,
+    )
+    return body, 200
+
+
 async def _invoke_agent_run(
     *,
     agent: str,
@@ -582,7 +698,8 @@ async def _invoke_agent_run(
     """Dispatch one ``/v1/agents/{agent}/runs`` call and shape the body.
 
     Owns the slug -> tool lookup, the shared ``invoke_tool_formatted``
-    call, and the origin-aware run id resolution. Returns the
+    call, the ``apply_runs_resolver`` HTTP-only pre-shaping boundary, and
+    the origin-aware run id resolution. Returns the
     ``agent.run`` envelope: sync agents get ``status="succeeded"`` at
     HTTP 200, remote agents get ``status="running"`` plus the child
     ``task_ids`` at HTTP 202 (the submission ack convention) so a
@@ -613,88 +730,38 @@ async def _invoke_agent_run(
     Raises:
         HTTPException: 404 when the slug is unknown.
     """
-    tool_name = _AGENT_SLUG_TO_TOOL.get(agent)
-    if tool_name is None:
-        raise HTTPException(
-            status_code=404, detail=f"agent not found: {agent}"
-        )
-    resolve_meta = await apply_runs_resolver(
-        agent,
-        arguments,
-        dispatch=ResolverDispatch(
-            brief_gene_resolver=resolve_brief_gene_user_query,
-            deep_genome_resolver=resolve_deep_genome_user_query,
-            design_resolver=resolve_design_user_query,
-            network_resolver=resolve_network_user_query,
-        ),
-    )
-    owner = current_request_user() or "anonymous"
-    request_info = RunRequestInfo(
+    prepared = await _prepare_agent_run(
+        agent=agent,
+        arguments=arguments,
         dialogue_id=dialogue_id,
-        query=(
-            arguments.get("user_query")
-            if isinstance(arguments.get("user_query"), str)
-            else None
-        ),
-        tool_name=tool_name,
-        model=None,
         request_json=request_json,
     )
     if agent == "review":
         execution = await _run_review_with_interrupt(
             arguments=arguments,
-            request_info=request_info,
+            request_info=prepared.request_info,
         )
         return _review_run_body(execution, debug=debug), 200
-    envelope = await invoke_tool_enveloped(tool_name, arguments)
-    formatted_dict = asdict(envelope.formatted)
-    if resolve_meta:
-        existing_meta = formatted_dict.get("metadata") or {}
-        if not isinstance(existing_meta, dict):
-            existing_meta = {}
-        formatted_dict["metadata"] = {**existing_meta, **resolve_meta}
-    result = {"formatted": formatted_dict, "raw": envelope.raw}
-    response_result = result if debug else strip_agent_result(result)
+    envelope = await invoke_tool_enveloped(prepared.tool_name, arguments)
+    result, response_result = _format_agent_run_result(
+        envelope,
+        resolve_meta=prepared.resolve_meta,
+        debug=debug,
+    )
     if agent in _REMOTE_AGENT_SLUGS:
-        run_id, task_ids = _resolve_remote_run(owner)
-        _stamp_remote_request_info(
-            run_id=run_id, owner=owner, request_info=request_info
+        return _remote_agent_run_response(
+            agent=agent,
+            owner=prepared.owner,
+            request_info=prepared.request_info,
+            response_result=response_result,
         )
-        body: dict[str, Any] = {
-            "id": run_id,
-            "object": "agent.run",
-            "agent": agent,
-            "status": "running",
-            "task_ids": task_ids,
-            "result": response_result,
-        }
-        # Surface the silent-failure case: the submit chokepoint hit
-        # an ``sqlite3.Error`` / ``OSError`` during the local registry
-        # write, so the remote tasks are live (the network call
-        # already succeeded) but the local ``runs`` / ``tasks`` rows
-        # were not persisted and ``GET /v1/runs/{run_id}`` will 404
-        # until a manual reconcile is run. This degraded-tracking flag
-        # is what makes that shape legible: a recorder failure is now
-        # the ONLY path that emits ``id=None`` / ``task_ids=[]``, since
-        # an analyst dedup hit flows through the normal recorder and
-        # returns the caller's own run id and fresh task id.
-        if current_recorder_degraded():
-            body["degraded_tracking"] = True
-        return body, 202
-    run_id = _record_sync_run(
+    return _sync_agent_run_response(
         agent=agent,
-        owner=owner,
+        owner=prepared.owner,
+        request_info=prepared.request_info,
         result=result,
-        request_info=request_info,
+        response_result=response_result,
     )
-    body = run_lifecycle.agent_run_response(
-        run_id=run_id,
-        agent=agent,
-        status="succeeded",
-        result=response_result,
-        include_run_id=False,
-    )
-    return body, 200
 
 
 def _resolve_remote_run(owner: str) -> tuple[str | None, list[str]]:
@@ -788,9 +855,6 @@ def _strip_run_result(record: dict[str, Any]) -> dict[str, Any]:
             "result": strip_agent_result(result),
         }
     return record
-
-
-# pylint: enable=too-many-locals
 
 
 def _list_owner_runs(
