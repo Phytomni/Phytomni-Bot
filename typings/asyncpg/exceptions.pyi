@@ -4,14 +4,11 @@
 
 """Exception declarations used by Phytomni's asyncpg boundary."""
 
-
 class PostgresError(Exception):
     """Base class for driver-reported database errors."""
 
-
 class InterfaceError(Exception):
     """Driver connection/interface failure."""
-
 
 class FeatureNotSupportedError(PostgresError):
     """Database feature is not supported by the active backend."""

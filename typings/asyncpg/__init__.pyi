@@ -22,7 +22,6 @@ class Record(Mapping[str, object]):
     def __iter__(self): ...
     def __len__(self) -> int: ...
 
-
 class Connection(Protocol):
     """Connection operations used by application and probe code."""
 
@@ -58,9 +57,7 @@ class Connection(Protocol):
     async def close(self) -> None:
         """Close the connection."""
 
-
 _PoolBorrower = AbstractAsyncContextManager[Connection]
-
 
 class Pool(Protocol):
     """Pool operations used by the application and probe."""
@@ -71,14 +68,11 @@ class Pool(Protocol):
     async def close(self) -> None:
         """Close the pool."""
 
-
 async def connect(*_args: object, **_kwargs: object) -> Connection:
     """Open one driver connection."""
 
-
 async def create_pool(*_args: object, **_kwargs: object) -> Pool:
     """Create a driver connection pool."""
-
 
 PostgresError = exceptions.PostgresError
 InterfaceError = exceptions.InterfaceError

@@ -26,7 +26,6 @@ class DocumentProperties:
     @last_modified_by.setter
     def last_modified_by(self, _value: str | None) -> None:
         """Set the last modifier."""
-
     lastModifiedBy = last_modified_by
 
     @property
@@ -45,7 +44,6 @@ class DocumentProperties:
     def modified(self, _value: datetime | None) -> None:
         """Set the modification timestamp."""
 
-
 class Worksheet:
     """Worksheet operations used by the demo generator."""
 
@@ -59,7 +57,6 @@ class Worksheet:
 
     def append(self, row: Iterable[object]) -> None:
         """Append one row to the worksheet."""
-
 
 class Workbook:
     """Workbook operations used by the demo generator."""
