@@ -36,6 +36,7 @@ from mcp_server_phytomni.runtime.request_context import (
 from mcp_server_phytomni.storage import (
     obs_relay_ops as obs_relay_ops_module,
 )
+from tests.support.http_fakes import open_asgi_client
 
 # The repo-root ``conftest.py`` installs the offline test env before
 # pytest reaches this module, so the imports above can stay at the
@@ -54,11 +55,6 @@ from mcp_server_phytomni.storage import (
 # for the full refactor cost / sunset analysis.
 
 TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
-
-# Captured at import time, before block_external_http monkeypatches
-# httpx.AsyncClient.request for offline runs, so the in-process ASGI
-# client below can dispatch without tripping the network guard.
-_REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 
 TEST_ROOT = Path(__file__).resolve().parent
 DEMO_DATA_DIR = (TEST_ROOT.parent / "demo_data").resolve()
@@ -386,10 +382,8 @@ async def api_client(
 ) -> AsyncIterator[httpx.AsyncClient]:
     """Yield an httpx client wired to the FastAPI app over ASGI.
 
-    The autouse ``block_external_http`` fixture replaces
-    ``httpx.AsyncClient.request``; this restores the captured original
-    because ``httpx.ASGITransport`` dispatches in-process and never
-    opens a socket.
+    The shared ASGI helper restores the real request method because
+    ``httpx.ASGITransport`` dispatches in-process and never opens a socket.
 
     Args:
         monkeypatch: Pytest monkeypatch used to restore the real request.
@@ -397,10 +391,8 @@ async def api_client(
     Returns:
         Async iterator yielding the bound httpx client.
     """
-    monkeypatch.setattr(httpx.AsyncClient, "request", _REAL_ASYNC_REQUEST)
-    transport = httpx.ASGITransport(app=create_app())
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://api.test"
+    async with open_asgi_client(
+        monkeypatch, create_app(), base_url="http://api.test"
     ) as client:
         yield client
 

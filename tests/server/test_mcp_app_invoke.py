@@ -19,6 +19,10 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from tests.support.formatting_fakes import (
+    design_task_payload,
+    network_task_payload,
+)
 
 from mcp_server_phytomni.mcp import app as mcp_app
 from mcp_server_phytomni.mcp.result_formatting import FormattedToolResult
@@ -263,16 +267,7 @@ async def test_invoke_gene_network_agent_unwraps_nested_task(
     so default-mode clients can read what the network analysis
     targeted without flipping ``debug=true``.
     """
-    raw = {
-        "network_task": {
-            "task_id": "net-1",
-            "output_dir": "/obs/phytomni/net/out",
-            "compute_resource": "medium",
-        },
-        "phytomni_state": {
-            "goal_description": "Build co-expression network for Os01g0177400",
-        },
-    }
+    raw = network_task_payload("Build co-expression network for Os01g0177400")
     _patch_handler(monkeypatch, PhytomniAgents.GENE_NETWORK_AGENT.value, raw)
 
     result = await mcp_app.invoke_tool_formatted(
@@ -301,23 +296,7 @@ async def test_invoke_digital_design_agent_collects_subtasks(
     The formatter extracts task ids, output dirs, and the B.5 metadata
     fields (``task_ids``, ``goal_description``) from the list items.
     """
-    raw = {
-        "design_task_result": [
-            {
-                "task_id": "prot-1",
-                "output_dir": "/obs/phytomni/prot",
-                "compute_resource": "large",
-            },
-            {
-                "task_id": "prom-1",
-                "output_dir": "/obs/phytomni/prom",
-                "compute_resource": "large",
-            },
-        ],
-        "phytomni_state": {
-            "goal_description": "Design protein and promoter for Os01g0177400",
-        },
-    }
+    raw = design_task_payload("Design protein and promoter for Os01g0177400")
     _patch_handler(monkeypatch, PhytomniAgents.DIGITAL_DESIGN_AGENT.value, raw)
 
     result = await mcp_app.invoke_tool_formatted(

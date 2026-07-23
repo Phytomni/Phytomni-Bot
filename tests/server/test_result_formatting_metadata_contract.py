@@ -16,6 +16,11 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from tests.support.formatting_fakes import (
+    analyst_plan_state,
+    design_task_payload,
+    network_task_payload,
+)
 
 from mcp_server_phytomni.contracts.deep_genome import (
     DEEP_GENOME_PROGRESS_FIELDS,
@@ -31,15 +36,7 @@ _KITCHEN_SINK_STATE: dict[str, Any] = {
     "user_query": "Show me rice genes on chromosome 1.",
     "rewrite_query": "SELECT gene_id FROM rice WHERE chr = 1;",
     "is_rewrite": True,
-    "plan": "1. retrieve data\n2. analyze\n3. report",
-    "plan_feedback": None,
-    "plan_retries": 1,
-    "extracted_tools": ["pyfasta", "pandas"],
-    "tool_usages": "pyfasta -i ...",
-    "method_context": {
-        "upload": {"path": "sop.pdf"},
-        "literature": {"hits": []},
-    },
+    **analyst_plan_state(),
     "goal_description": "Build co-expression network for Os01g0177400",
     "species_code": "osa",
     "retrieve_prompt": "irrelevant intermediate scratch",
@@ -90,32 +87,21 @@ def _in_silico_payload() -> dict[str, Any]:
 
 def _digital_design_payload() -> dict[str, Any]:
     """DigitalDesignAgent kitchen-sink payload."""
-    return {
-        "design_task_result": [
-            {
-                "task_id": "prot-1",
-                "output_dir": "/obs/phytomni/prot",
-                "compute_resource": "large",
-            },
-        ],
-        "task_ids": {"protein_design": "prot-1"},
-        "failures": [],
-        "phytomni_state": _KITCHEN_SINK_STATE,
-    }
+    payload = design_task_payload(_KITCHEN_SINK_STATE["goal_description"])
+    payload["design_task_result"] = payload["design_task_result"][:1]
+    payload["task_ids"] = {"protein_design": "prot-1"}
+    payload["failures"] = []
+    payload["phytomni_state"] = _KITCHEN_SINK_STATE
+    return payload
 
 
 def _gene_network_payload() -> dict[str, Any]:
     """GeneNetworkAgent kitchen-sink payload."""
-    return {
-        "network_task": {
-            "task_id": "net-1",
-            "output_dir": "/obs/phytomni/net/out",
-            "compute_resource": "medium",
-        },
-        "task_ids": {"gene_network_analysis": "net-1"},
-        "failures": [],
-        "phytomni_state": _KITCHEN_SINK_STATE,
-    }
+    payload = network_task_payload(_KITCHEN_SINK_STATE["goal_description"])
+    payload["task_ids"] = {"gene_network_analysis": "net-1"}
+    payload["failures"] = []
+    payload["phytomni_state"] = _KITCHEN_SINK_STATE
+    return payload
 
 
 def _deep_genome_arguments() -> dict[str, Any]:

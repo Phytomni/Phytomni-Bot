@@ -29,8 +29,8 @@ def empty_brief_gene_annotation_fields() -> dict[str, object]:
     """Return optional annotation fields for a degraded profile."""
     return {
         "go_string": "",
+        "retrieved_docs": [],
         "kegg_string": "",
         "interpro_string": "",
         "description_string": "",
-        "retrieved_docs": [],
     }

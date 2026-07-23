@@ -11,13 +11,13 @@ from pathlib import Path
 
 import httpx
 import pytest
+from tests.support.http_fakes import open_asgi_client
 
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.auth import ApiKeyStore
 
 pytestmark = pytest.mark.server
 
-_REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 type MemoryBundle = tuple[httpx.AsyncClient, str, str]
 type DisabledMemoryBundle = tuple[httpx.AsyncClient, str, Path]
 
@@ -37,10 +37,8 @@ async def _memory_bundle(
     key_store = ApiKeyStore(key_db)
     alice = key_store.create(user_id="alice").api_key
     bob = key_store.create(user_id="bob").api_key
-    monkeypatch.setattr(httpx.AsyncClient, "request", _REAL_ASYNC_REQUEST)
-    transport = httpx.ASGITransport(app=create_app())
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://api.test"
+    async with open_asgi_client(
+        monkeypatch, create_app(), base_url="http://api.test"
     ) as client:
         yield client, alice, bob
 
@@ -56,10 +54,8 @@ async def _disabled_memory_client(
     key_db = str(tmp_path / "keys.sqlite")
     monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", key_db)
     key = ApiKeyStore(key_db).create(user_id="alice").api_key
-    monkeypatch.setattr(httpx.AsyncClient, "request", _REAL_ASYNC_REQUEST)
-    transport = httpx.ASGITransport(app=create_app())
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://api.test"
+    async with open_asgi_client(
+        monkeypatch, create_app(), base_url="http://api.test"
     ) as client:
         yield client, key, memory_path
 
@@ -224,12 +220,10 @@ async def test_memory_store_failure_is_fail_closed_and_redacted(
     key_db = str(tmp_path / "keys.sqlite")
     monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", key_db)
     key = ApiKeyStore(key_db).create(user_id="alice").api_key
-    monkeypatch.setattr(httpx.AsyncClient, "request", _REAL_ASYNC_REQUEST)
-    transport = httpx.ASGITransport(app=create_app())
     caplog.set_level("WARNING")
 
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://api.test"
+    async with open_asgi_client(
+        monkeypatch, create_app(), base_url="http://api.test"
     ) as client:
         write = await client.post(
             "/v1/memories",

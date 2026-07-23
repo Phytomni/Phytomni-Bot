@@ -16,6 +16,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+from tests.support.task_registry_schema import create_legacy_task_db
 
 from mcp_server_phytomni.runtime.task_manager import (
     RunContext,
@@ -330,15 +331,7 @@ def test_init_db_adds_task_log_column_to_legacy_four_column_db(
     has a column to read from instead of crashing on a missing column.
     """
     db_path = str(tmp_path / "legacy.db")
-    legacy_ddl = (
-        "CREATE TABLE tasks ("
-        "task_id TEXT PRIMARY KEY, "
-        "status TEXT, "
-        "analysis_id TEXT, "
-        "output_dir TEXT)"
-    )
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(legacy_ddl)
+    create_legacy_task_db(Path(db_path))
 
     TaskManager(db_path=db_path)
 

@@ -10,7 +10,10 @@ from typing import Any
 
 import httpx
 import pytest
-from tests.support.a2ui_contract_fakes import gene_id_form_props
+from tests.support.a2ui_contract_fakes import (
+    cancelled_response,
+    gene_id_form_props,
+)
 
 from mcp_server_phytomni.agents.chat.a2ui_graph import _CANCEL_MESSAGE
 from mcp_server_phytomni.agents.shared.a2ui import A2UI_CATALOG_VERSION
@@ -168,16 +171,7 @@ async def test_a2ui_action_reject_cancels_without_llm(
         _resume_payload: dict[str, Any],
     ) -> dict[str, Any]:
         return {
-            "response": {
-                "choices": [
-                    {
-                        "message": {
-                            "content": _CANCEL_MESSAGE,
-                            "follow_up_questions": [],
-                        }
-                    }
-                ]
-            },
+            **cancelled_response(_CANCEL_MESSAGE),
             "a2ui_surface": _open_surface("sfc-open-reject"),
         }
 
@@ -726,16 +720,7 @@ async def test_a2ui_action_form_cancel_succeeds(
         _resume_payload: dict[str, Any],
     ) -> dict[str, Any]:
         return {
-            "response": {
-                "choices": [
-                    {
-                        "message": {
-                            "content": _CANCEL_MESSAGE,
-                            "follow_up_questions": [],
-                        }
-                    }
-                ]
-            },
+            **cancelled_response(_CANCEL_MESSAGE),
             "a2ui_surface": _open_form_surface("sfc-open-form-cancel"),
         }
 

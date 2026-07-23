@@ -12,6 +12,11 @@ credential-pattern sanitization at the MCP boundary.
 from typing import Any
 
 import pytest
+from tests.support.formatting_fakes import (
+    analyst_plan_state,
+    design_task_payload,
+    network_task_payload,
+)
 
 from mcp_server_phytomni.mcp.result_formatting import (
     build_tool_result_envelope,
@@ -473,17 +478,7 @@ def test_analyst_result_lifts_plan_metadata_from_phytomni_state() -> None:
         "task_id": "task-1",
         "output_dir": "/obs/phytomni/run/out",
         "compute_resource": "medium",
-        "phytomni_state": {
-            "plan": "1. retrieve data\n2. analyze\n3. report",
-            "plan_feedback": None,
-            "plan_retries": 1,
-            "extracted_tools": ["pyfasta", "pandas"],
-            "tool_usages": "pyfasta -i ...",
-            "method_context": {
-                "upload": {"path": "sop.pdf"},
-                "literature": {"hits": []},
-            },
-        },
+        "phytomni_state": analyst_plan_state(),
     }
 
     result = format_tool_result("AnalystAgent", payload)
@@ -639,23 +634,7 @@ def test_digital_design_result_extracts_tasks_from_list() -> None:
     output dirs, and the B.5 metadata fields (``task_ids`` tuple,
     ``goal_description`` from ``phytomni_state``) from the list items.
     """
-    payload = {
-        "design_task_result": [
-            {
-                "task_id": "prot-1",
-                "output_dir": "/obs/phytomni/prot",
-                "compute_resource": "large",
-            },
-            {
-                "task_id": "prom-1",
-                "output_dir": "/obs/phytomni/prom",
-                "compute_resource": "large",
-            },
-        ],
-        "phytomni_state": {
-            "goal_description": "Design protein and promoter for gene X",
-        },
-    }
+    payload = design_task_payload("Design protein and promoter for gene X")
 
     result = format_tool_result("DigitalDesignAgent", payload)
 
@@ -749,17 +728,8 @@ def test_gene_network_result_lifts_goal_description() -> None:
     can read what the network analysis targeted without flipping
     ``debug=true``.
     """
-    payload = {
-        "network_task": {
-            "task_id": "net-1",
-            "output_dir": "/obs/phytomni/net/out",
-            "compute_resource": "medium",
-        },
-        "phytomni_state": {
-            "goal_description": "Build co-expression network for gene X",
-            "species_code": "osa",
-        },
-    }
+    payload = network_task_payload("Build co-expression network for gene X")
+    payload["phytomni_state"]["species_code"] = "osa"
 
     result = format_tool_result("GeneNetworkAgent", payload)
 

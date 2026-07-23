@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `142`
+- Authorized records: `131`
 
 ## Informational counts
 
@@ -22,7 +22,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:prop-decorator`                             |       1 |
 | `pylint:C0103`                                    |       1 |
 | `pylint:C0116`                                    |       1 |
-| `pylint:R0801`                                    |      47 |
+| `pylint:R0801`                                    |      36 |
 | `pylint:R0903`                                    |       7 |
 | `pylint:R0913`                                    |       1 |
 | `pylint:R0917`                                    |       1 |
@@ -61,15 +61,8 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0029` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/agent.py | 39:44 | `sha256:db1a39a7296629412f62345cacd4a0f73d49c06d2acf3b459fe10a81dcf460dc` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_analyst_graph_nodes.py, tests/agents/test_analyst_routers.py, static-analysis-inventory |
 | `SAE-TMP-0040` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/planning.py | 101:107 | `sha256:1cc992aafdda044d48f51d390b1f04303cd2674f2a26b2c9b980e3a444116463` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_analyst_planning_helpers.py, tests/agents/test_analyst_submission_helpers.py, static-analysis-inventory |
 | `SAE-TMP-0041` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/analyst/state.py | 114:119 | `sha256:b9c858b4756d1eeba0e3575fea150ea4750ceadcf06fb842cd871d087c87a349` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_analyst_graph_io.py, tests/agents/test_data_chat_subgraph.py, tests/agents/test_data_knowledge_subgraph.py, static-analysis-inventory |
-| `SAE-TMP-0042` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 119:124 | `sha256:acc5191ff5b112c006b066722a99e000b132a80da09bc5169648a61897a5962c` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
-| `SAE-TMP-0043` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/core.py | 119:130 | `sha256:f033014ca9266166d94e7a23b1371c14297738e430692fed0237a39365206613` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_brief_gene_knowledge_subgraph.py, static-analysis-inventory |
 | `SAE-TMP-0046` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py | 81:87 | `sha256:18442c096ed583a858acc579252c4b83e8736b791721a8fc1410d959d20bc96a` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_brief_gene_knowledge_subgraph.py, tests/agents/test_review_retrieve_fan_out.py, static-analysis-inventory |
 | `SAE-TMP-0047` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/graph_knowledge_subgraph.py | 88:95 | `sha256:585e12c9cfdc39454cc842d0f5d994977f8f4b1883badbc2c8c7540676356192` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_brief_gene_knowledge_subgraph.py, tests/agents/test_review_retrieve_fan_out.py, static-analysis-inventory |
-| `SAE-TMP-0052` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 106:111 | `sha256:bced20b31d1f24e53dbf50abc7462eeaaa5c709ed8fc09081f208f3992fd09bb` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
-| `SAE-TMP-0053` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 130:143 | `sha256:c09286b8f6a95ac45cc85c1daee7a3e0ca52fb6143482344b0841ba433d82290` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
-| `SAE-TMP-0054` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 61:67 | `sha256:f33cd96ed68f9985a80483c8f061112d267e9818e32b3ac5bbb2e47f31f2b2f6` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
-| `SAE-TMP-0055` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/brief_gene/state.py | 67:76 | `sha256:250f8f011043370e361a2a149e6cd8517793e67631733c00cf8209112b9157dc` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_deep_genome_brief_gene_mount.py, static-analysis-inventory |
-| `SAE-TMP-0056` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/chat/a2ui_graph.py | 197:207 | `sha256:c2d9b397b9cf9fdf2daec3d5a3281cc05f7c974d14a938108a47e972dc4c9292` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/server/test_a2ui_actions_http.py, static-analysis-inventory |
 | `SAE-TMP-0062` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 378:385 | `sha256:e0cd24dbe16f751325b6a9d60a10e3a8e4fe6eccfba8cb586e3df4d1aa2eb7bd` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_design_interop.py, tests/agents/test_research_interop.py, static-analysis-inventory |
 | `SAE-TMP-0063` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 506:518 | `sha256:eb821e4f9d43cb8e7d63842145181a1ce0917da9327a47d1b643eebf9e0bd456` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_design_interop.py, tests/agents/test_research_interop.py, static-analysis-inventory |
 | `SAE-TMP-0064` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 558:567 | `sha256:0627fefe4483668befa42c7e51c26cd08660fe4b47df18739b5d4fe90ba74343` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_design_interop.py, tests/agents/test_research_interop.py, static-analysis-inventory |
@@ -89,14 +82,10 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0084` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 59:64 | `sha256:dab91daad1dc692da89b2d3c4bedfcd081201a6cd5e592f6d9f289f0ad825f66` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_models.py, tests/server/test_memory_http.py, static-analysis-inventory |
 | `SAE-TMP-0085` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 73:79 | `sha256:02a0ef0f7f5041c275b28c1c4c24c010eae62e1de902e15478e70af3b9aa9b42` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_accessor.py, tests/server/test_memory_http.py, static-analysis-inventory |
 | `SAE-TMP-0086` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/migrations.py | 23:31 | `sha256:4f06fd5ec9e45a0c63ea3f65946f56998710e5123f0135fc1bc20ca49b9bbe3a` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_migrations.py, static-analysis-inventory |
-| `SAE-TMP-0155` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_mcp_app_invoke.py | 266:272 | `sha256:d9de635699bc578f421c3644b7ff9abc081f843d958ad095ef928d79c44b11cc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0156` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_mcp_app_invoke.py | 304:317 | `sha256:dcae06efbd18ca68f59fe40a6423ffb225829b863f996396b99c7fae74cba608` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0157` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_memory_http.py | 39:44 | `sha256:53523ba52adeb85599e4208c9fb09c7547bf6b963993602ada44250a976677cf` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0158` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_relay_forward_request.py | 64:74 | `sha256:eb7c75d69effca7d17ae04846f5feb2d7ac869090b92381125ac43d1aab36f37` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0159` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_relay_obs_routes.py | 49:54 | `sha256:c50d4d55fd65c090198f5e50a55ff28a38127f0cfa53ba459a00df3bd8da9dbc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0160` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_relay_obs_routes.py | 67:79 | `sha256:41c0b03586d07944630aaf83607bbca72966b829ee988c0a6e94e4d51542656e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0161` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_relay_openai_routes.py | 76:111 | `sha256:90d03cbc6cfa912e6c79ba754c576d80abf09250ca899f3d180038494cc00bfb` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0162` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_result_formatting.py | 476:485 | `sha256:7d77a2f3c560c920fa05a07e9e16426cc514172d78abf7404c4208c682d9348b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0163` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_resume_mcp.py | 104:114 | `sha256:4dbbc1854fd72ac53af9cd850a1e453ef7c0bc583d0cc5ecfa4f2a2df4b5f0f6` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0164` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/e2e/test_assertions.py | 21:29 | `sha256:add2ea92737e0640446ee8ba333547f9d8f321dece5f04a7667ac7f7b18d2f8b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0166` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/interop/test_a2a_client.py | 126:132 | `sha256:ecf2324d0c1b39b2f5ab6c1ebb468afc9262b3a3dee182cd9a7ccd2bf6cca2a7` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -415,46 +404,6 @@ Risk:
 State-key changes can break graph routing or persistence; update each contract with its owning graph tests.
 ```
 
-### `SAE-TMP-0042`
-
-Rationale:
-
-```text
-The DeepGenome mount test independently fixes the empty BriefGene annotation output shape at src/mcp_server_phytomni/agents/brief_gene/core.py:[119:124] versus tests/agents/test_deep_genome_brief_gene_mount.py:[234:239]. Repository owner approved this independent oracle on 2026-07-20.
-```
-
-Counterfactual:
-
-```text
-Replacing the fake with production seed data would let a mount defaulting regression update both implementation and expected value, hiding the failure.
-```
-
-Risk:
-
-```text
-Annotation defaults are consumed by the mounted graph; intentional field changes require mount-contract review.
-```
-
-### `SAE-TMP-0043`
-
-Rationale:
-
-```text
-The knowledge-subgraph test independently fixes the BriefGene fan-out input state shape at src/mcp_server_phytomni/agents/brief_gene/core.py:[119:130] versus tests/agents/test_brief_gene_knowledge_subgraph.py:[81:89], instead of importing the production seed. Repository owner approved this state oracle on 2026-07-20.
-```
-
-Counterfactual:
-
-```text
-Importing the production seed would couple the expected state to implementation changes and stop the test from detecting retrieval-key drift.
-```
-
-Risk:
-
-```text
-State-shape changes can break fan-out routing; update the independent fixture only with graph-contract review.
-```
-
 ### `SAE-TMP-0046`
 
 Rationale:
@@ -493,106 +442,6 @@ Risk:
 
 ```text
 Changing one fan-out contract could silently alter the other agent; keep graph-local tests and review topology changes independently.
-```
-
-### `SAE-TMP-0052`
-
-Rationale:
-
-```text
-The DeepGenome mount test owns an isolated fake state schema for the mounted BriefGene subgraph. Repository owner approved this structural oracle on 2026-07-20.
-```
-
-Counterfactual:
-
-```text
-Reusing BriefGeneState would make the fake mutate with the implementation and allow a removed annotation field to pass the mount contract.
-```
-
-Risk:
-
-```text
-The fake must remain aligned with the mounted public state contract; changes require graph integration review.
-```
-
-### `SAE-TMP-0053`
-
-Rationale:
-
-```text
-The mounted BriefGene fake independently fixes the preamble-section state shape used by the graph contract. Repository owner approved this structural oracle on 2026-07-20.
-```
-
-Counterfactual:
-
-```text
-Importing the production state would let a removed section or introduction field disappear from both fake and implementation without a failure.
-```
-
-Risk:
-
-```text
-Preamble fields are report-facing; intentional changes require mounted graph and contract review.
-```
-
-### `SAE-TMP-0054`
-
-Rationale:
-
-```text
-The mounted BriefGene test independently fixes the nested annotation output fields expected from the subgraph. Repository owner approved this output oracle on 2026-07-20.
-```
-
-Counterfactual:
-
-```text
-Importing the production state fields would let an annotation rename update the expected projection and mask the mount regression.
-```
-
-Risk:
-
-```text
-Nested annotation fields are report-facing and require coordinated graph and fixture updates.
-```
-
-### `SAE-TMP-0055`
-
-Rationale:
-
-```text
-The mounted BriefGene test independently fixes the preamble output fields expected from the subgraph. Repository owner approved this output oracle on 2026-07-20.
-```
-
-Counterfactual:
-
-```text
-Importing the production state would let a removed homology or section field mutate the expected output and hide the contract failure.
-```
-
-Risk:
-
-```text
-Preamble output changes affect report assembly; update the independent oracle only after contract review.
-```
-
-### `SAE-TMP-0056`
-
-Rationale:
-
-```text
-The HTTP A2UI action test independently fixes the cancelled response shape and content. Repository owner approved this protocol oracle on 2026-07-20.
-```
-
-Counterfactual:
-
-```text
-Importing the production cancel payload would make a response-shape regression update both implementation and expected value, defeating the HTTP contract test.
-```
-
-Risk:
-
-```text
-Cancel semantics are consumer-visible; changes require coordinated A2UI contract review and golden updates.
 ```
 
 ### `SAE-TMP-0062`
@@ -975,96 +824,6 @@ Risk:
 A stale schema oracle can reject a planned migration; update it only alongside migration and rollback evidence.
 ```
 
-### `SAE-TMP-0155`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_mcp_app_invoke:[266:272]
-==test_result_formatting:[752:758]
-        "network_task": {
-            "task_id": "net-1",
-            "output_dir": "/obs/phytomni/net/out",
-            "compute_resource": "medium",
-        },
-        "phytomni_state": {
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0156`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_mcp_app_invoke:[304:317]
-==test_result_formatting:[642:655]
-        "design_task_result": [
-            {
-                "task_id": "prot-1",
-                "output_dir": "/obs/phytomni/prot",
-                "compute_resource": "large",
-            },
-            {
-                "task_id": "prom-1",
-                "output_dir": "/obs/phytomni/prom",
-                "compute_resource": "large",
-            },
-        ],
-        "phytomni_state": {
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0157`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_memory_http:[39:44]
-==tests.conftest:[399:404]
-    monkeypatch.setattr(httpx.AsyncClient, "request", _REAL_ASYNC_REQUEST)
-    transport = httpx.ASGITransport(app=create_app())
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://api.test"
-    ) as client:
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
 ### `SAE-TMP-0158`
 
 Rationale:
@@ -1201,37 +960,6 @@ async def test_llm_route_injects_bearer_and_drops_query(
 ) -> None:
     """The llm route strips the caller key, injects the operator Bearer,
     and forwards to the config URL without the client query string."""
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0162`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_result_formatting:[476:485]
-==test_result_formatting_metadata_contract:[33:42]
-    "plan": "1. retrieve data\n2. analyze\n3. report",
-    "plan_feedback": None,
-    "plan_retries": 1,
-    "extracted_tools": ["pyfasta", "pandas"],
-    "tool_usages": "pyfasta -i ...",
-    "method_context": {
-        "upload": {"path": "sop.pdf"},
-        "literature": {"hits": []},
-    },
 ```
 
 Counterfactual:

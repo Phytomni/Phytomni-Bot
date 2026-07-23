@@ -22,7 +22,11 @@ from tests.agents.shared.deep_genome_fixtures import (
     attach_formatted_result,
     seed_partial_deep_genome_run,
 )
-from tests.support.run_registry_fakes import seed_foreign_run
+from tests.support.run_registry_fakes import (
+    assert_run_not_found,
+    foreign_run_spec,
+    seed_foreign_run,
+)
 
 from mcp_server_phytomni.runtime import run_registry as run_registry_module
 from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
@@ -90,12 +94,11 @@ async def test_get_run_unknown_id_is_404(
     """An unknown run id yields the unified 404 envelope."""
     _ = tasks_db_path
 
-    response = await api_client.get(
+    await assert_run_not_found(
+        api_client,
         "/v1/runs/does-not-exist",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
+        issued_api_key,
     )
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == 404
 
 
 async def test_get_run_foreign_owner_is_404(
@@ -106,10 +109,7 @@ async def test_get_run_foreign_owner_is_404(
     """A run owned by another user is invisible (same 404 envelope)."""
     seed_foreign_run(
         tasks_db_path,
-        run_id="run-other-1",
-        user_id="someone-else",
-        agent="chat",
-        origin="local",
+        spec=foreign_run_spec("run-other-1", "someone-else", "chat", "local"),
         result={"answer": "secret"},
     )
 

@@ -7,7 +7,18 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["gene_id_form_props"]
+__all__ = ["cancelled_response", "gene_id_form_props"]
+
+
+def cancelled_response(message: str) -> dict[str, Any]:
+    """Build a minimal assistant response for a cancelled action."""
+    return {
+        "response": {
+            "choices": [
+                {"message": {"content": message, "follow_up_questions": []}}
+            ]
+        }
+    }
 
 
 def gene_id_form_props() -> dict[str, Any]:

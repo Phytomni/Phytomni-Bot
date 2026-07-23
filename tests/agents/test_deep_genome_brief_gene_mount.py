@@ -33,31 +33,24 @@ from ._subgraph_branch_fakes import failing_async_object
 pytestmark = pytest.mark.agent
 
 
-class _FakeBriefGeneState(TypedDict, total=False):
-    """Minimal state shape for the offline brief_gene-subgraph stub."""
+# The fake deliberately keeps an open state mapping: its canned output carries
+# independent BriefGene fields, and mirroring the production TypedDict here
+# would couple the test oracle to the implementation state contract.
+
+
+class _BriefGeneFakeState(TypedDict, total=False):
+    """Minimal channels needed by the mount fake's independent oracle."""
 
     user_query: str
     is_follow_up: bool
     gene_id: str
-    species_code: str
     go_string: str
-    kegg_string: str
-    interpro_string: str
-    description_string: str
-    retrieved_docs: list[dict[str, Any]]
     final_response: dict[str, Any]
+    kegg_string: str
     literature_degraded: list[dict[str, Any]]
-    # M11 — preamble fan-out fields the brief_gene mount projects to
-    # deep_genome state.
-    gene_structure_string: str
-    orthologs_data: dict[str, Any]
-    paralogs_data: dict[str, Any]
-    interaction_data: dict[str, Any]
-    section1_markdown: str
-    section2_markdown: str
-    section3_markdown: str
-    section4_markdown: str
-    introduction_report: str
+    interpro_string: str
+    retrieved_docs: list[dict[str, Any]]
+    description_string: str
 
 
 def _build_fake_brief_gene_app(
@@ -76,7 +69,7 @@ def _build_fake_brief_gene_app(
     }
 
     return mount_app(
-        state_schema=_FakeBriefGeneState,
+        state_schema=_BriefGeneFakeState,
         output=canned,
     ).compiled
 
@@ -229,19 +222,15 @@ async def test_brief_gene_mount_synthesises_user_query_from_gene_id() -> None:
     """
     seen: list[dict[str, Any]] = []
 
-    async def _capture_stub(state: _FakeBriefGeneState) -> dict[str, Any]:
+    async def _capture_stub(state: dict[str, Any]) -> dict[str, Any]:
         seen.append(dict(state))
         return {
             "gene_id": "AT1G01010",
-            "go_string": "",
-            "kegg_string": "",
-            "interpro_string": "",
-            "description_string": "",
-            "retrieved_docs": [],
+            **empty_brief_gene_annotation_fields(),
         }
 
-    workflow: StateGraph = StateGraph(_FakeBriefGeneState)
-    workflow.add_node("capture", _capture_stub)
+    workflow: StateGraph = StateGraph(_BriefGeneFakeState)
+    workflow.add_node("capture", cast(Any, _capture_stub))
     workflow.add_edge(START, "capture")
     workflow.add_edge("capture", END)
     fake_app = workflow.compile()
@@ -292,7 +281,7 @@ async def test_brief_gene_failure_does_not_invoke_downstream_submit() -> None:
         "ainvoke", RuntimeError("brief_gene exploded")
     )
 
-    workflow: StateGraph = StateGraph(_FakeBriefGeneState)
+    workflow: StateGraph = StateGraph(_BriefGeneFakeState)
     workflow.add_node(
         "brief", make_brief_gene_mount_node(cast(Any, broken_app))
     )
@@ -363,11 +352,7 @@ async def test_brief_gene_mount_handles_partial_brief_gene_output() -> None:
     fake_app = _build_fake_brief_gene_app(
         output={
             "gene_id": "AT1G01010",
-            "go_string": "",
-            "kegg_string": "",
-            "interpro_string": "",
-            "description_string": "",
-            "retrieved_docs": [],
+            **empty_brief_gene_annotation_fields(),
         }
     )
     mount = make_brief_gene_mount_node(fake_app)
