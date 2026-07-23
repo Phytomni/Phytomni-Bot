@@ -4,7 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """OBS upload helper for the ``POST /v1/files`` HTTP endpoint.
 
-Classes: UploadRecord, InvalidUploadError, UploadTooLargeError.
+Classes: UploadRequest, UploadStorageOptions, UploadRecord,
+InvalidUploadError, UploadTooLargeError.
 Functions: upload_user_file, safe_upload_filename.
 """
 
@@ -39,6 +40,28 @@ class UploadTooLargeError(ValueError):
     a pre-read ``Content-Length`` check so oversized requests are
     rejected before the body is buffered into memory.
     """
+
+
+@dataclass(frozen=True)
+class UploadStorageOptions:
+    """Immutable storage settings for one upload operation."""
+
+    max_bytes: int
+    prefix: str
+    bucket_name: str | None = None
+    obs_server: str | None = None
+    obsfs_mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT
+
+
+@dataclass(frozen=True)
+class UploadRequest:
+    """Immutable input for one validated upload operation."""
+
+    file_bytes: bytes
+    original_filename: str
+    user_id: str
+    request_id: str
+    storage: UploadStorageOptions
 
 
 @dataclass(frozen=True)
@@ -95,41 +118,11 @@ def safe_upload_filename(original_filename: str) -> str:
     return f"{safe_stem}{suffix}" if suffix else safe_stem
 
 
-# pylint: disable=too-many-arguments,too-many-locals
-# Conceptually-atomic OBS upload (validate -> resolve target ->
-# write). Splitting the args into dataclasses adds caller boilerplate
-# without splitting the responsibility. See
-# docs/development/lint-exemptions.md.
-async def upload_user_file(
-    file_bytes: bytes,
-    original_filename: str,
-    user_id: str,
-    request_id: str,
-    *,
-    max_bytes: int,
-    prefix: str,
-    bucket_name: str | None = None,
-    obs_server: str | None = None,
-    obsfs_mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
-) -> UploadRecord:
+async def upload_user_file(request: UploadRequest) -> UploadRecord:
     """Validate and store one user upload, returning its OBS coordinates.
 
     Args:
-        file_bytes: Raw upload body already read into memory.
-        original_filename: Client-supplied filename, sanitized internally.
-        user_id: Authenticated principal whose ``ptm_`` key owns this
-            upload; embedded into the OBS object key for per-user
-            isolation. Empty/missing falls back to ``anonymous``.
-        request_id: Per-request correlation id (the same value carried
-            on the ``X-Request-Id`` response header) so an upload can be
-            traced back to one HTTP call.
-        max_bytes: Inclusive size ceiling; payloads larger than this
-            raise ``UploadTooLargeError``.
-        prefix: OBS object-key prefix below the bucket root (e.g.
-            ``agent_data/uploads``).
-        bucket_name: OBS bucket override; defaults to ``ServerConfig``.
-        obs_server: OBS endpoint override; defaults to ``ServerConfig``.
-        obsfs_mount_root: Filesystem root for the obsfs mount.
+        request: Raw bytes plus caller identity and storage settings.
 
     Returns:
         An ``UploadRecord`` with the assigned ``file_id``, the sanitized
@@ -142,46 +135,52 @@ async def upload_user_file(
         UploadTooLargeError: If ``len(file_bytes) > max_bytes``.
         OSError: If both the obsfs write and the OBS SDK fallback fail.
     """
-    if not file_bytes:
+    if not request.file_bytes:
         raise InvalidUploadError("upload body is empty")
-    if len(file_bytes) > max_bytes:
+    if len(request.file_bytes) > request.storage.max_bytes:
         raise UploadTooLargeError(
-            f"upload of {len(file_bytes)} bytes exceeds "
-            f"max_bytes={max_bytes}"
+            f"upload of {len(request.file_bytes)} bytes exceeds "
+            f"max_bytes={request.storage.max_bytes}"
         )
-    if "/" in prefix.strip("/") and any(
-        part in {".", ".."} for part in prefix.split("/")
+    if "/" in request.storage.prefix.strip("/") and any(
+        part in {".", ".."} for part in request.storage.prefix.split("/")
     ):
-        raise InvalidUploadError(f"unsafe upload prefix: {prefix!r}")
+        raise InvalidUploadError(
+            f"unsafe upload prefix: {request.storage.prefix!r}"
+        )
 
-    safe_filename = safe_upload_filename(original_filename)
-    safe_user = safe_path_segment(user_id or DEFAULT_USER_ID, DEFAULT_USER_ID)
-    safe_request = safe_path_segment(request_id, "request")
+    safe_filename = safe_upload_filename(request.original_filename)
+    safe_user = safe_path_segment(
+        request.user_id or DEFAULT_USER_ID, DEFAULT_USER_ID
+    )
+    safe_request = safe_path_segment(request.request_id, "request")
     file_id = IdFactory().new_id("upload")
-    target_bucket = bucket_name or _SERVER_DEFAULTS.BUCKET_NAME
-    target_server = obs_server or _SERVER_DEFAULTS.OBS_SERVER
+    target_bucket = request.storage.bucket_name or _SERVER_DEFAULTS.BUCKET_NAME
+    target_server = request.storage.obs_server or _SERVER_DEFAULTS.OBS_SERVER
     object_key = (
-        f"{prefix.strip('/')}/{safe_user}/{safe_request}/"
+        f"{request.storage.prefix.strip('/')}/{safe_user}/{safe_request}/"
         f"{file_id}/{safe_filename}"
     )
 
     obs_path = obs_path_from_key(target_bucket, object_key)
     if relay_mode_enabled():
         await current_relay_client().put_obs_object(
-            obs_path, file_bytes, message="Failed to upload file via relay"
+            obs_path,
+            request.file_bytes,
+            message="Failed to upload file via relay",
         )
     else:
         put_object_bytes(
             target_bucket,
             object_key,
-            file_bytes,
+            request.file_bytes,
             obs_server=target_server,
-            mount_root=obsfs_mount_root,
+            mount_root=request.storage.obsfs_mount_root,
         )
 
     return UploadRecord(
         file_id=file_id,
         filename=safe_filename,
-        bytes=len(file_bytes),
+        bytes=len(request.file_bytes),
         obs_path=obs_path,
     )

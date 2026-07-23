@@ -1184,25 +1184,6 @@ expires_on = 2026-08-31
 remediation = "SAE-WORK-INITIAL-AUDIT"
 
 [[exemptions]]
-id = "SAE-TMP-0271"
-tool = "pylint"
-rule = "too-many-arguments"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "span"
-path = "src/mcp_server_phytomni/storage/uploads.py"
-fingerprint = "sha256:df677e7d6aeed70a2ecd9f25c93808d3e3f5ce8b83aa3ef2514b250d61e02a36"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=too-many-arguments,too-many-locals"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0276"
 tool = "pylint"
 rule = "too-many-lines"
@@ -1253,25 +1234,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-17
 review_on = 2026-08-15
 rationale = "pylint: disable=too-many-arguments,too-many-locals,too-many-statements"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0288"
-tool = "pylint"
-rule = "too-many-locals"
-classification = "temporary"
-mechanism = "inline"
-target_kind = "span"
-path = "src/mcp_server_phytomni/storage/uploads.py"
-fingerprint = "sha256:d713586935bbfb52b818a5e473e7d2169737526f18839e9196e5831051e4c466"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "pylint: disable=too-many-arguments,too-many-locals"
 counterfactual = "Remove or refactor after review."
 risk = "Suppression can hide a future regression."
 tests = ["static-analysis-inventory"]

@@ -20,6 +20,8 @@ from ..runtime.request_context import current_request_id
 from ..storage.path_policy import IdFactory
 from ..storage.uploads import (
     InvalidUploadError,
+    UploadRequest,
+    UploadStorageOptions,
     UploadTooLargeError,
     upload_user_file,
 )
@@ -122,12 +124,16 @@ async def handle_file_upload(
     request_id = current_request_id() or IdFactory().new_id("request")
     try:
         record = await upload_user_file(
-            file_bytes=file_bytes,
-            original_filename=file.filename or "",
-            user_id=user_id,
-            request_id=request_id,
-            max_bytes=max_bytes,
-            prefix=config.API_UPLOAD_PREFIX,
+            request=UploadRequest(
+                file_bytes=file_bytes,
+                original_filename=file.filename or "",
+                user_id=user_id,
+                request_id=request_id,
+                storage=UploadStorageOptions(
+                    max_bytes=max_bytes,
+                    prefix=config.API_UPLOAD_PREFIX,
+                ),
+            )
         )
     except UploadTooLargeError as exc:
         return error_response(413, str(exc))

@@ -23,6 +23,8 @@ from mcp_server_phytomni.storage import uploads as uploads_module
 from mcp_server_phytomni.storage.uploads import (
     InvalidUploadError,
     UploadRecord,
+    UploadRequest,
+    UploadStorageOptions,
     UploadTooLargeError,
     safe_upload_filename,
     upload_user_file,
@@ -41,14 +43,18 @@ async def test_upload_user_file_uses_sdk_fallback_when_obsfs_missing(
     monkeypatch.setattr(obs_relay_ops_module, "ObsClient", fake)
 
     record = await upload_user_file(
-        file_bytes=b"hello-bytes",
-        original_filename="report.pdf",
-        user_id="alice",
-        request_id="req-abc",
-        max_bytes=1024,
-        prefix="agent_data/uploads",
-        bucket_name="phytomni",
-        obsfs_mount_root=str(tmp_path / "no-mount"),
+        UploadRequest(
+            file_bytes=b"hello-bytes",
+            original_filename="report.pdf",
+            user_id="alice",
+            request_id="req-abc",
+            storage=UploadStorageOptions(
+                max_bytes=1024,
+                prefix="agent_data/uploads",
+                bucket_name="phytomni",
+                obsfs_mount_root=str(tmp_path / "no-mount"),
+            ),
+        )
     )
 
     assert isinstance(record, UploadRecord)
@@ -81,14 +87,18 @@ async def test_upload_user_file_writes_to_obsfs_when_mounted(
     monkeypatch.setattr(obs_relay_ops_module, "ObsClient", fake)
 
     record = await upload_user_file(
-        file_bytes=b"data",
-        original_filename="notes.txt",
-        user_id="bob",
-        request_id="req-xyz",
-        max_bytes=1024,
-        prefix="agent_data/uploads",
-        bucket_name="phytomni",
-        obsfs_mount_root=str(mount),
+        UploadRequest(
+            file_bytes=b"data",
+            original_filename="notes.txt",
+            user_id="bob",
+            request_id="req-xyz",
+            storage=UploadStorageOptions(
+                max_bytes=1024,
+                prefix="agent_data/uploads",
+                bucket_name="phytomni",
+                obsfs_mount_root=str(mount),
+            ),
+        )
     )
 
     assert "put_content" not in fake.captured
@@ -120,13 +130,17 @@ async def test_upload_user_file_rejects_empty_body(
     )
     with pytest.raises(InvalidUploadError, match="empty"):
         await upload_user_file(
-            file_bytes=b"",
-            original_filename="file.bin",
-            user_id="u",
-            request_id="r",
-            max_bytes=1024,
-            prefix="agent_data/uploads",
-            obsfs_mount_root=str(tmp_path / "no-mount"),
+            UploadRequest(
+                file_bytes=b"",
+                original_filename="file.bin",
+                user_id="u",
+                request_id="r",
+                storage=UploadStorageOptions(
+                    max_bytes=1024,
+                    prefix="agent_data/uploads",
+                    obsfs_mount_root=str(tmp_path / "no-mount"),
+                ),
+            )
         )
 
 
@@ -141,13 +155,17 @@ async def test_upload_user_file_rejects_oversize(
     )
     with pytest.raises(UploadTooLargeError, match="exceeds"):
         await upload_user_file(
-            file_bytes=b"x" * 11,
-            original_filename="x.bin",
-            user_id="u",
-            request_id="r",
-            max_bytes=10,
-            prefix="agent_data/uploads",
-            obsfs_mount_root=str(tmp_path / "no-mount"),
+            UploadRequest(
+                file_bytes=b"x" * 11,
+                original_filename="x.bin",
+                user_id="u",
+                request_id="r",
+                storage=UploadStorageOptions(
+                    max_bytes=10,
+                    prefix="agent_data/uploads",
+                    obsfs_mount_root=str(tmp_path / "no-mount"),
+                ),
+            )
         )
 
 
@@ -190,14 +208,18 @@ async def test_upload_user_file_anonymizes_missing_user_id(
         obs_relay_ops_module, "ObsClient", fake_obs_client_factory()
     )
     record = await upload_user_file(
-        file_bytes=b"data",
-        original_filename="x.bin",
-        user_id="",
-        request_id="r",
-        max_bytes=1024,
-        prefix="agent_data/uploads",
-        bucket_name="phytomni",
-        obsfs_mount_root=str(tmp_path / "no-mount"),
+        UploadRequest(
+            file_bytes=b"data",
+            original_filename="x.bin",
+            user_id="",
+            request_id="r",
+            storage=UploadStorageOptions(
+                max_bytes=1024,
+                prefix="agent_data/uploads",
+                bucket_name="phytomni",
+                obsfs_mount_root=str(tmp_path / "no-mount"),
+            ),
+        )
     )
     assert "/agent_data/uploads/anonymous/r/" in record.obs_path
 
@@ -214,13 +236,17 @@ async def test_upload_user_file_uses_relay_when_relay_mode(
     monkeypatch.setattr(uploads_module, "put_object_bytes", no_local)
 
     record = await upload_user_file(
-        file_bytes=b"payload",
-        original_filename="x.pdf",
-        user_id="alice",
-        request_id="req-1",
-        max_bytes=1024,
-        prefix="agent_data/uploads",
-        bucket_name="phytomni",
+        UploadRequest(
+            file_bytes=b"payload",
+            original_filename="x.pdf",
+            user_id="alice",
+            request_id="req-1",
+            storage=UploadStorageOptions(
+                max_bytes=1024,
+                prefix="agent_data/uploads",
+                bucket_name="phytomni",
+            ),
+        )
     )
 
     assert relay.put_obs_object.await_count == 1
