@@ -181,7 +181,7 @@ def test_admin_and_run_registration_preserve_public_contract() -> None:
             projection=runs.RunProjectionDependencies(
                 reconcile_task_logs=_empty_run_dict,
                 fetch_owner_run=_empty_run_dict,
-                list_owner_runs=lambda **_kwargs: {"data": []},
+                list_owner_runs=lambda _request: {"data": []},
                 strip_run_result=lambda record: record,
             ),
             pause=runs.RunPauseDependencies(

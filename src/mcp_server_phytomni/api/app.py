@@ -17,11 +17,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import sqlite3
 from collections.abc import (
     AsyncGenerator,
-    Awaitable,
-    Callable,
     Mapping,
 )
 from contextlib import asynccontextmanager
@@ -29,22 +26,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from a2a.server.routes.jsonrpc_routes import create_jsonrpc_routes
 from fastapi import (
-    Depends,
     FastAPI,
-    Header,
     HTTPException,
-    Request,
 )
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, Response, StreamingResponse
-from google.protobuf import json_format
+from fastapi.responses import JSONResponse, StreamingResponse
 from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS
 from pydantic import ValidationError
 from starlette.datastructures import MutableHeaders
-from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from ..agents.brief_gene.resolve_query import resolve_brief_gene_user_query
@@ -53,10 +43,11 @@ from ..agents.design.resolve_query import resolve_design_user_query
 from ..agents.expert import select_agent_tool
 from ..agents.network.resolve_query import resolve_network_user_query
 from ..agents.shared.gauss import aclose_gauss_pool
+from ..common import logging_config as _logging_config
 from ..common.httpx_client import aclose_shared_client, init_shared_client
-from ..common.logging_config import configure_logging
-from ..config.defaults import ApiConfig, BriefGeneConfig
+from ..config.defaults import ApiConfig
 from ..config.settings import SensitiveConfig
+from ..interop import registry as _interop_registry
 from ..interop.a2a_discovery import discover_external_a2a_capabilities
 from ..interop.cache import (
     DiscoveryCache,
@@ -68,14 +59,10 @@ from ..interop.capabilities import (
     discover_external_mcp_capabilities,
 )
 from ..interop.models import InteropTarget
-from ..interop.registry import (
-    InteropRegistry,
-    InteropRegistryError,
-    load_interop_registry,
-)
+from ..interop.registry import InteropRegistry
+from ..mcp import app as _mcp_app
 from ..mcp.app import (
     invoke_tool_enveloped,
-    invoke_tool_streamed,
     prepare_tool_stream,
 )
 from ..mcp.result_formatting import (
@@ -85,10 +72,7 @@ from ..mcp.result_formatting import (
 )
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
 from ..runtime.memory import (
-    MemorySchemaError,
-    MemoryStore,
     MemoryWrite,
-    memory_policy_from_config,
 )
 from ..runtime.request_context import (
     bind_pre_recorded_task_id,
@@ -102,7 +86,6 @@ from ..runtime.request_context import (
     reset_request_var,
 )
 from ..runtime.run_registry import (
-    RunFilter,
     RunRecord,
     RunRegistry,
     RunRequestInfo,
@@ -110,22 +93,20 @@ from ..runtime.run_registry import (
 from ..runtime.task_manager import resolve_tasks_db_path
 from ..runtime.task_reconcile import reconcile_task_log
 from ..storage.path_policy import IdFactory
-from ..version import __version__
+from ..version import __version__ as _package_version
 from . import a2ui_runtime, run_lifecycle
+from . import admin_auth as _admin_auth
+from . import agent_capabilities as _agent_capabilities
 from . import compat as _compat
+from . import factory as _factory
+from . import file_upload as _file_upload
+from . import ratelimit as _ratelimit
+from . import relay as _relay
+from . import resolvers as _resolvers
+from .a2a import card as _a2a_card
 from .a2a import runtime as a2a_runtime
-from .a2a.card import build_agent_card
 from .a2a.executor import (
-    A2AHandlerOptions,
     A2ARegistration,
-    A2ARequestHandler,
-)
-from .admin_auth import is_service_token_valid, require_service_principal
-from .agent_capabilities import serialize_agent_capability
-from .auth import (
-    ApiPrincipal,
-    require_principal,
-    scopes_satisfy,
 )
 from .compat import (
     _a2ui_interrupt_body,
@@ -134,35 +115,20 @@ from .compat import (
     _chat_a2ui_stream_app,
     _format_chat_a2ui_result,
     _purge_expired_runs_best_effort,
-    _relay_audit_record_to_dict,
-    _resume_a2ui_run,
     _resume_paused_run,
-    _schedule_run_gc,
     _stream_chat_completion,
     _stream_review_a2ui_pause,
 )
-from .file_upload import handle_file_upload
 from .openai_mapping import (
-    MODEL_TO_TOOL,
-    flatten_messages,
     to_chat_completion,
     tool_accepts_obs,
     tool_accepts_stream,
-    tool_for_model,
 )
-from .ratelimit import make_rate_limiter
-from .relay import create_relay_router
 from .resolvers import (
     ResolverDispatch,
     apply_runs_resolver,
-    resolve_chat_query,
 )
-from .routes import admin as admin_routes
-from .routes import agents as agent_routes
-from .routes import memory as memory_routes
-from .routes import runs as run_routes
 from .schemas import (
-    A2uiActionRequest,
     ApiErrorDetail,
     ApiErrorResponse,
     ChatCompletionRequest,
@@ -172,6 +138,25 @@ from .schemas import (
     ResumeRequest,
 )
 from .stream_answer import resolve_stream_answer_max_bytes
+
+# These assignments keep long-standing app-level monkeypatch seams available
+# after route wiring moved to ``api.factory``.
+invoke_tool_streamed = _mcp_app.invoke_tool_streamed
+__version__ = _package_version
+build_agent_card = _a2a_card.build_agent_card
+configure_logging = _logging_config.configure_logging
+InteropRegistryError = _interop_registry.InteropRegistryError
+load_interop_registry = _interop_registry.load_interop_registry
+_relay_audit_record_to_dict = getattr(_compat, "_relay_audit_record_to_dict")
+_resume_a2ui_run = getattr(_compat, "_resume_a2ui_run")
+_schedule_run_gc = getattr(_compat, "_schedule_run_gc")
+is_service_token_valid = _admin_auth.is_service_token_valid
+require_service_principal = _admin_auth.require_service_principal
+serialize_agent_capability = _agent_capabilities.serialize_agent_capability
+handle_file_upload = _file_upload.handle_file_upload
+make_rate_limiter = _ratelimit.make_rate_limiter
+create_relay_router = _relay.create_relay_router
+resolve_chat_query = _resolvers.resolve_chat_query
 
 __all__ = ["create_app", "prepare_tool_stream"]
 
@@ -1204,13 +1189,6 @@ async def _http_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         await aclose_gauss_pool()
 
 
-# pylint: disable=too-many-arguments,too-many-locals,too-many-statements
-# create_app is a FastAPI factory that wires every route + dependency
-# in one closure; the nested route handlers each accumulate request
-# validation -> DB lookup -> response assembly inline. Splitting per
-# module triples dependency-injection boilerplate. The disable runs
-# to EOF since create_app is the last function in the file.
-# See docs/development/lint-exemptions.md.
 def create_app() -> FastAPI:
     """Build the FastAPI application.
 
@@ -1218,493 +1196,11 @@ def create_app() -> FastAPI:
         Configured FastAPI app exposing liveness/readiness probes and the
         unified error envelope. Authenticated routes are added by later
         API layers.
+
+    The implementation delegates to the typed factory while retaining the
+    established public seam. The factory continues to wire
+    ``invoke_tool_enveloped``, ``invoke_tool_streamed``, ``_invoke_agent_run``,
+    ``_route_expert_query``, and ``resolve_chat_query`` through this module so
+    existing integrations and tests can patch those names.
     """
-    configure_logging()
-    app = FastAPI(
-        title="Phytomni HTTP API",
-        version=__version__,
-        lifespan=_http_lifespan,
-    )
-    app.add_middleware(request_context_middleware)
-    rate_limit = make_rate_limiter()
-    interop_registry: InteropRegistry | None = None
-    interop_sensitive_config: SensitiveConfig | None = None
-    interop_caches: dict[str, DiscoveryCache] = {}
-    memory_store: MemoryStore | None = None
-
-    def get_memory_store() -> MemoryStore:
-        """Lazily open the local memory store for an enabled deployment."""
-        nonlocal memory_store
-        if memory_store is None:
-            try:
-                config = ApiConfig()
-                memory_store = MemoryStore(
-                    config.MEMORY_DB_PATH,
-                    policy=memory_policy_from_config(config),
-                )
-            except (MemorySchemaError, OSError, sqlite3.Error, ValueError):
-                _LOGGER.warning("memory store unavailable")
-                raise HTTPException(
-                    status_code=503, detail="memory store unavailable"
-                ) from None
-        return memory_store
-
-    async def authorized(
-        principal: ApiPrincipal = Depends(require_principal),
-    ) -> ApiPrincipal:
-        """Authenticate, then enforce the per-key request budget."""
-        limit = ApiConfig().API_RATE_LIMIT_PER_MIN
-        retry_after = rate_limit(principal.key_prefix, limit)
-        if retry_after is not None:
-            raise HTTPException(
-                status_code=429,
-                detail="rate limit exceeded",
-                headers={"Retry-After": str(retry_after)},
-            )
-        return principal
-
-    def require_scope(
-        *needed: str,
-    ) -> Callable[..., Awaitable[ApiPrincipal]]:
-        """Build a dependency requiring the caller to hold scopes.
-
-        Runs after ``authorized`` (authentication + rate limit), then
-        checks the granted scopes, raising 403 (distinct from the
-        auth-layer 401) when a required scope is missing. An all-access
-        key (an empty scope set) satisfies every requirement.
-        """
-
-        async def _scoped(
-            caller: ApiPrincipal = Depends(authorized),
-        ) -> ApiPrincipal:
-            if not scopes_satisfy(caller.scopes, needed):
-                raise HTTPException(
-                    status_code=403, detail="insufficient scope"
-                )
-            return caller
-
-        return _scoped
-
-    # Route modules receive explicit adapters, but the adapters resolve the
-    # compatibility seams at request time. Existing tests and integrations
-    # patch these app-level helpers after ``create_app`` returns.
-    def _route_memory_write(owner: str, payload: Any) -> MemoryWrite:
-        return _memory_write(owner, payload)
-
-    def _route_memory_response(record: Any) -> MemoryResponse:
-        return _memory_response(record)
-
-    def _route_memory_audit_response(
-        record: Any,
-    ) -> MemoryAuditRecordResponse:
-        return _memory_audit_response(record)
-
-    def _route_memory_revision(
-        value: str | None, *, required: bool
-    ) -> int | None:
-        return _memory_revision(value, required=required)
-
-    def _route_audit_record_to_dict(
-        record: Any, config: ApiConfig
-    ) -> dict[str, Any]:
-        return _relay_audit_record_to_dict(record, config)
-
-    async def _route_reconcile_task_logs(
-        run_id: str, debug: bool
-    ) -> dict[str, Any]:
-        return await _reconcile_run_task_logs(run_id, debug)
-
-    async def _route_fetch_owner_run(
-        run_id: str, *, debug: bool = False
-    ) -> dict[str, Any]:
-        return await _fetch_owner_run(run_id, debug=debug)
-
-    def _route_list_owner_runs(**kwargs: Any) -> dict[str, Any]:
-        query = run_lifecycle.RunListQuery(
-            run_filter=RunFilter(
-                status=kwargs["status"],
-                agent=kwargs["agent"],
-                origin=kwargs["origin"],
-                dialogue_id=kwargs["dialogue_id"],
-                created_after=kwargs["created_after"],
-                created_before=kwargs["created_before"],
-            ),
-            limit=kwargs["limit"],
-            offset=kwargs["offset"],
-        )
-        return _list_owner_runs(
-            owner=kwargs["owner"],
-            query=query,
-            debug=kwargs["debug"],
-        )
-
-    def _route_strip_run_result(record: dict[str, Any]) -> dict[str, Any]:
-        return _strip_run_result(record)
-
-    async def _route_resume_a2ui(
-        *, run_id: str, body: A2uiActionRequest, debug: bool = False
-    ) -> tuple[dict[str, Any], int]:
-        return await _resume_a2ui_run(
-            run_id=run_id,
-            body=body,
-            debug=debug,
-        )
-
-    async def _route_resume_review(
-        *, thread_id: str, payload: ResumeRequest, debug: bool = False
-    ) -> tuple[dict[str, Any], int]:
-        return await _resume_review_run(
-            thread_id=thread_id,
-            payload=payload,
-            debug=debug,
-        )
-
-    def _route_a2ui_enabled() -> bool:
-        return ApiConfig().A2UI_ENABLED
-
-    def _route_a2ui_max_response_bytes() -> int:
-        return ApiConfig().A2UI_MAX_RESPONSE_BYTES
-
-    async def _route_invoke_agent_run(
-        *,
-        agent: str,
-        arguments: dict[str, Any],
-        dialogue_id: str | None = None,
-        request_json: str | None = None,
-        debug: bool = False,
-    ) -> tuple[dict[str, Any], int]:
-        """Resolve the native agent-run seam at request time."""
-        return await _invoke_agent_run(
-            agent=agent,
-            arguments=arguments,
-            dialogue_id=dialogue_id,
-            request_json=request_json,
-            debug=debug,
-        )
-
-    async def _route_expert_query_adapter(
-        payload: ExpertQueryRequest,
-        *,
-        debug: bool,
-    ) -> tuple[dict[str, Any], int]:
-        """Resolve the Expert routing seam at request time."""
-        return await _route_expert_query(payload, debug=debug)
-
-    async def _route_stream_chat_completion(
-        *,
-        tool_name: str,
-        arguments: dict[str, object],
-        payload: ChatCompletionRequest,
-        user_query: str,
-    ) -> Response:
-        """Resolve the chat streaming seam at request time."""
-        return await _stream_chat_response(
-            tool_name=tool_name,
-            arguments=arguments,
-            payload=payload,
-            user_query=user_query,
-        )
-
-    async def _route_review_chat_completion(
-        *,
-        payload: ChatCompletionRequest,
-        arguments: Mapping[str, object],
-        user_query: str,
-    ) -> Response:
-        """Resolve the Review chat seam at request time."""
-        return await _review_chat_completion_response(
-            payload=payload,
-            arguments=arguments,
-            user_query=user_query,
-        )
-
-    async def _route_resolve_chat_query(
-        *,
-        raw_query: str,
-        resolve_flag: bool,
-        tool_name: str | None,
-        brief_gene_resolver: Callable[..., Awaitable[Any]] | None = None,
-    ) -> tuple[str, dict[str, Any]]:
-        """Resolve the HTTP chat resolver seam at request time."""
-        return await resolve_chat_query(
-            raw_query=raw_query,
-            resolve_flag=resolve_flag,
-            tool_name=tool_name,
-            brief_gene_resolver=brief_gene_resolver,
-        )
-
-    async def _route_brief_gene_resolver(
-        raw_query: str,
-        *,
-        brief_config: BriefGeneConfig,
-        sensitive_config: SensitiveConfig,
-        timeout_seconds: float | None = None,
-    ) -> Any:
-        """Resolve the BriefGene resolver seam at request time."""
-        if timeout_seconds is None:
-            return await resolve_brief_gene_user_query(
-                raw_query,
-                brief_config=brief_config,
-                sensitive_config=sensitive_config,
-            )
-        return await resolve_brief_gene_user_query(
-            raw_query,
-            brief_config=brief_config,
-            sensitive_config=sensitive_config,
-            timeout_seconds=timeout_seconds,
-        )
-
-    def _route_record_sync_run(
-        *,
-        agent: str,
-        owner: str,
-        result: dict[str, Any],
-        request_info: RunRequestInfo | None = None,
-    ) -> str | None:
-        """Resolve sync run recording at request time for compatibility."""
-        return _record_sync_run(
-            agent=agent,
-            owner=owner,
-            result=result,
-            request_info=request_info,
-        )
-
-    agent_dependencies = agent_routes.AgentRouteDependencies(
-        auth=agent_routes.AgentAuthDependencies(
-            require_agents=require_scope("agents"),
-            schedule_run_gc=_schedule_run_gc,
-        ),
-        catalog=agent_routes.AgentCatalogDependencies(
-            model_to_tool=MODEL_TO_TOOL,
-            model_to_agent_slug=_MODEL_TO_AGENT_SLUG,
-            agent_slug_to_tool=_AGENT_SLUG_TO_TOOL,
-            remote_agent_slugs=_REMOTE_AGENT_SLUGS,
-            legacy_aliases=_LEGACY_ALIASES,
-            serialize_capability=serialize_agent_capability,
-        ),
-        chat=agent_routes.AgentChatDependencies(
-            input=agent_routes.AgentChatInputDependencies(
-                tool_for_model=tool_for_model,
-                tool_accepts_obs=tool_accepts_obs,
-                flatten_messages=flatten_messages,
-                resolve_chat_query=_route_resolve_chat_query,
-                brief_gene_resolver=_route_brief_gene_resolver,
-            ),
-            execution=agent_routes.AgentChatExecutionDependencies(
-                invoke_tool_enveloped=invoke_tool_enveloped,
-                stream_chat_completion=_route_stream_chat_completion,
-                review_chat_completion=_route_review_chat_completion,
-            ),
-            projection=agent_routes.AgentChatProjectionDependencies(
-                record_sync_run=_route_record_sync_run,
-                current_user=current_request_user,
-                to_chat_completion=to_chat_completion,
-                strip_chat_completion=strip_chat_completion,
-                resolve_debug=resolve_debug,
-            ),
-        ),
-        native=agent_routes.AgentNativeDependencies(
-            invoke_agent_run=_route_invoke_agent_run,
-            route_expert_query=_route_expert_query_adapter,
-        ),
-        upload=agent_routes.AgentUploadDependencies(
-            handle_file_upload=handle_file_upload,
-            error_response=_error_response,
-        ),
-    )
-
-    if ApiConfig().INTEROP_ENABLED:
-
-        @app.get("/v1/interop/capabilities")
-        async def list_interop_capabilities(
-            request: Request,
-            principal: ApiPrincipal = Depends(require_scope("agents")),
-        ) -> JSONResponse:
-            """List sanitized metadata for operator-approved targets."""
-            nonlocal interop_registry, interop_sensitive_config
-            del principal
-            if request.query_params:
-                raise HTTPException(
-                    status_code=400,
-                    detail="interop capabilities accepts no query parameters",
-                )
-            if interop_registry is None:
-                try:
-                    interop_sensitive_config = SensitiveConfig.load()
-                    interop_registry = load_interop_registry(
-                        ApiConfig(), interop_sensitive_config
-                    )
-                except (
-                    InteropRegistryError,
-                    OSError,
-                    RuntimeError,
-                    TypeError,
-                    ValidationError,
-                    ValueError,
-                ) as exc:
-                    _LOGGER.warning(
-                        "interop registry unavailable: %s",
-                        exc.__class__.__name__,
-                    )
-                    return _error_response(503, "interop registry unavailable")
-            if not interop_registry.enabled:
-                return _error_response(404, "interop capabilities unavailable")
-            assert interop_sensitive_config is not None
-            result = await _discover_interop_targets(
-                interop_registry,
-                sensitive_config=interop_sensitive_config,
-                caches=interop_caches,
-            )
-            return JSONResponse(_interop_result_body(result))
-
-    @app.get("/healthz")
-    async def healthz() -> dict[str, str]:
-        """Return a dependency-free liveness signal."""
-        return {"status": "ok"}
-
-    @app.get("/readyz")
-    async def readyz() -> JSONResponse:
-        """Return readiness after checking local store paths."""
-        config = ApiConfig()
-        checks = {
-            "api_keys_db": _store_path_writable(config.API_KEYS_DB_PATH),
-            "tasks_db": _store_path_writable(config.API_TASKS_DB_PATH),
-        }
-        if not all(checks.values()):
-            return _error_response(
-                503, "one or more local stores are not writable"
-            )
-        return JSONResponse(
-            status_code=200,
-            content={"status": "ok", "checks": checks},
-        )
-
-    agent_routes.register_model_route(app, agent_dependencies)
-
-    if ApiConfig().MEMORY_ENABLED:
-        memory_agents = require_scope("agents")
-        memory_routes.register_memory_routes(
-            app,
-            memory_routes.MemoryRouteDependencies(
-                get_store=get_memory_store,
-                auth=memory_routes.MemoryAuthDependencies(
-                    require_agents=memory_agents,
-                    require_service=require_service_principal,
-                ),
-                context=memory_routes.MemoryContextDependencies(
-                    current_user=current_request_user,
-                    current_request_id=current_request_id,
-                ),
-                projection=memory_routes.MemoryProjectionDependencies(
-                    memory_write=_route_memory_write,
-                    memory_response=_route_memory_response,
-                    memory_audit_response=_route_memory_audit_response,
-                    memory_revision=_route_memory_revision,
-                ),
-            ),
-        )
-
-    admin_routes.register_admin_routes(
-        app,
-        admin_routes.AdminRouteDependencies(
-            require_service=require_service_principal,
-            audit_record_to_dict=_route_audit_record_to_dict,
-        ),
-    )
-
-    agent_routes.register_agent_routes(app, agent_dependencies)
-
-    run_agents = require_scope("agents")
-    run_routes.register_run_routes(
-        app,
-        run_routes.RunRouteDependencies(
-            auth=run_routes.RunAuthDependencies(require_agents=run_agents),
-            context=run_routes.RunContextDependencies(
-                current_user=current_request_user,
-                service_token_valid=is_service_token_valid,
-            ),
-            projection=run_routes.RunProjectionDependencies(
-                reconcile_task_logs=_route_reconcile_task_logs,
-                fetch_owner_run=_route_fetch_owner_run,
-                list_owner_runs=_route_list_owner_runs,
-                strip_run_result=_route_strip_run_result,
-            ),
-            pause=run_routes.RunPauseDependencies(
-                a2ui_enabled=_route_a2ui_enabled,
-                a2ui_max_response_bytes=_route_a2ui_max_response_bytes,
-                resume_a2ui=_route_resume_a2ui,
-                resume_review=_route_resume_review,
-            ),
-        ),
-    )
-
-    a2a_config = ApiConfig()
-    if a2a_config.A2A_ENABLED:
-        public_base_url = a2a_config.A2A_PUBLIC_BASE_URL
-        assert public_base_url is not None
-        a2a_handler = A2ARequestHandler(
-            invoke_agent_run=_invoke_agent_run,
-            options=A2AHandlerOptions(
-                invoke_agent_stream=invoke_tool_streamed,
-                record_a2a=_record_a2a_registration,
-                get_a2a_task=_get_a2a_task,
-                resume_a2a=_resume_a2a_task,
-            ),
-            tool_to_agent={
-                tool_name: agent
-                for agent, tool_name in _AGENT_SLUG_TO_TOOL.items()
-            },
-            select_agent=select_agent_tool,
-        )
-        a2a_route = create_jsonrpc_routes(a2a_handler, "/a2a")[0]
-
-        @app.get("/.well-known/agent-card.json")
-        async def a2a_agent_card() -> JSONResponse:
-            """Return the public A2A card when the feature is enabled."""
-            card = build_agent_card(public_base_url)
-            return JSONResponse(json_format.MessageToDict(card))
-
-        @app.post("/a2a")
-        async def a2a_jsonrpc(
-            request: Request,
-            a2a_version: str | None = Header(
-                default=None, alias="A2A-Version"
-            ),
-            principal: ApiPrincipal = Depends(require_scope("agents")),
-        ) -> Response:
-            """Authenticate and dispatch one A2A v1 JSON-RPC request."""
-            del principal
-            if a2a_version != "1.0":
-                raise HTTPException(
-                    status_code=400,
-                    detail="A2A-Version must be exactly 1.0",
-                )
-            return await a2a_route.endpoint(request)
-
-    app.include_router(create_relay_router())
-
-    @app.exception_handler(StarletteHTTPException)
-    async def http_exception_handler(
-        _request: Request, exc: StarletteHTTPException
-    ) -> JSONResponse:
-        """Render HTTP exceptions through the unified envelope."""
-        message = exc.detail if isinstance(exc.detail, str) else "error"
-        return _error_response(
-            exc.status_code, message, getattr(exc, "headers", None)
-        )
-
-    @app.exception_handler(RequestValidationError)
-    async def validation_exception_handler(
-        _request: Request, _exc: RequestValidationError
-    ) -> JSONResponse:
-        """Render request validation errors as 422 envelopes."""
-        return _error_response(422, "request validation failed")
-
-    @app.exception_handler(Exception)
-    async def unhandled_exception_handler(
-        _request: Request, _exc: Exception
-    ) -> JSONResponse:
-        """Render unexpected errors as 500 envelopes."""
-        return _error_response(500, "internal server error")
-
-    return app
+    return _factory.build_app()

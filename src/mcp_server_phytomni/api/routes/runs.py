@@ -45,7 +45,7 @@ class RunProjectionDependencies:
 
     reconcile_task_logs: Callable[..., Awaitable[dict[str, Any]]]
     fetch_owner_run: Callable[..., Awaitable[dict[str, Any]]]
-    list_owner_runs: Callable[..., dict[str, Any]]
+    list_owner_runs: Callable[[RunListRequest], dict[str, Any]]
     strip_run_result: Callable[[dict[str, Any]], dict[str, Any]]
 
 
@@ -67,6 +67,37 @@ class RunRouteDependencies:
     context: RunContextDependencies
     projection: RunProjectionDependencies
     pause: RunPauseDependencies
+
+
+@dataclass(frozen=True)
+class RunListFilter:
+    """Typed filter values for owner-scoped run history."""
+
+    status: str | None
+    agent: str | None
+    origin: str | None
+    dialogue_id: str | None
+    user_id: str | None
+
+
+@dataclass(frozen=True)
+class RunListPaging:
+    """Typed paging and projection values for run history."""
+
+    created_after: str | None
+    created_before: str | None
+    limit: int
+    offset: int
+    debug: bool
+
+
+@dataclass(frozen=True)
+class RunListRequest:
+    """Typed owner, filter, paging, and projection input for run listing."""
+
+    owner: str
+    filters: RunListFilter
+    paging: RunListPaging
 
 
 class RunFilterQuery(TypedDict):
@@ -280,16 +311,23 @@ def _register_list_route(
             else (dependencies.context.current_user() or "anonymous")
         )
         body = dependencies.projection.list_owner_runs(
-            owner=owner,
-            status=filters["status"],
-            agent=filters["agent"],
-            origin=filters["origin"],
-            dialogue_id=filters["dialogue_id"],
-            created_after=paging["created_after"],
-            created_before=paging["created_before"],
-            limit=paging["limit"],
-            offset=paging["offset"],
-            debug=resolve_debug(paging["debug"]),
+            RunListRequest(
+                owner=owner,
+                filters=RunListFilter(
+                    status=filters["status"],
+                    agent=filters["agent"],
+                    origin=filters["origin"],
+                    dialogue_id=filters["dialogue_id"],
+                    user_id=filters["user_id"],
+                ),
+                paging=RunListPaging(
+                    created_after=paging["created_after"],
+                    created_before=paging["created_before"],
+                    limit=paging["limit"],
+                    offset=paging["offset"],
+                    debug=resolve_debug(paging["debug"]),
+                ),
+            )
         )
         if not resolve_debug(paging["debug"]):
             data = body.get("data")
@@ -320,6 +358,9 @@ __all__ = [
     "RunPauseDependencies",
     "RunProjectionDependencies",
     "RunRouteDependencies",
+    "RunListFilter",
+    "RunListPaging",
+    "RunListRequest",
     "RunFilterQuery",
     "RunPagingQuery",
     "register_run_routes",
