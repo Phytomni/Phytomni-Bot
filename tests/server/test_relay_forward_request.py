@@ -14,7 +14,6 @@ successful relay.
 
 from __future__ import annotations
 
-import contextlib
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from pathlib import Path
 from typing import cast
@@ -24,6 +23,10 @@ import pytest
 from fastapi import HTTPException
 from fastapi.responses import Response, StreamingResponse
 from starlette.requests import Request
+from tests.support.relay_fakes import (
+    patch_mock_transport,
+    reset_relay_inflight,
+)
 
 from mcp_server_phytomni.api.auth import ApiPrincipal
 from mcp_server_phytomni.api.relay import forward as forward_module
@@ -56,18 +59,8 @@ def _patch_client(
     monkeypatch: pytest.MonkeyPatch,
     handler: Callable[[httpx.Request], httpx.Response],
 ) -> None:
-    """Point the forwarding core at a MockTransport-backed client."""
-
-    @contextlib.asynccontextmanager
-    async def _factory(
-        **_kwargs: object,
-    ) -> AsyncGenerator[httpx.AsyncClient, None]:
-        async with httpx.AsyncClient(
-            transport=httpx.MockTransport(handler)
-        ) as client:
-            yield client
-
-    monkeypatch.setattr(forward_module, "get_async_client", _factory)
+    """Use the shared MockTransport seam for forwarding tests."""
+    patch_mock_transport(monkeypatch, forward_module, handler)
 
 
 async def _openai_inject() -> dict[str, str]:
@@ -117,7 +110,7 @@ def _store_fixture(tmp_path: Path) -> RelayAuditStore:
 @pytest.fixture(autouse=True)
 def _reset_inflight(monkeypatch: pytest.MonkeyPatch) -> None:
     """Isolate the per-key in-flight relay counter across tests."""
-    monkeypatch.setattr(forward_module, "_INFLIGHT", {})
+    reset_relay_inflight(monkeypatch, forward_module)
 
 
 async def test_transparent_2xx_streams_with_upstream_status(
@@ -459,7 +452,7 @@ async def test_client_disconnect_audited_distinctly(
         store, _make_request({}), _upstream(RelayErrorMode.TRANSPARENT)
     )
     assert isinstance(response, StreamingResponse)
-    iterator = cast("AsyncGenerator[bytes, None]", response.body_iterator)
+    iterator = cast(AsyncGenerator[bytes, None], response.body_iterator)
     await anext(iterator)
     await iterator.aclose()
 

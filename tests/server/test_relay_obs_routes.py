@@ -13,25 +13,32 @@ root, audit metadata (never the binary body), and gate on ``relay:obs``.
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import Mock
 
 import httpx
 import pytest
-from fastapi import FastAPI
+from tests.support.relay_fakes import (
+    build_relay_app,
+    make_relay_client_fixture,
+    make_relay_key_fixture,
+    make_relay_reset_fixture,
+)
 
-from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.relay import forward as forward_module
 from mcp_server_phytomni.api.relay.audit import RelayAuditStore
-from mcp_server_phytomni.api.relay.routes import create_relay_router
 from mcp_server_phytomni.storage import obs_relay_ops as ops_module
 from mcp_server_phytomni.storage.obs_storage import ObsPathError
 
 pytestmark = pytest.mark.server
 
-_REAL_REQUEST = httpx.AsyncClient.request
 _AUDIT_DB_ENV = "PHYTOMNI_RELAY_AUDIT_DB_PATH"
+
+
+_relay_key_fixture = make_relay_key_fixture(user_id="customer")
+_client_fixture = make_relay_client_fixture(build_relay_app)
+_reset_inflight = make_relay_reset_fixture(forward_module)
 
 
 @pytest.fixture(autouse=True)
@@ -40,41 +47,6 @@ def _redirect_relay_audit(
 ) -> None:
     """Redirect relay audit writes to a temp DB for every OBS route test."""
     monkeypatch.setenv(_AUDIT_DB_ENV, str(tmp_path / "relay_audit.sqlite"))
-
-
-@pytest.fixture(name="relay_key")
-def _relay_key_fixture(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Callable[[str], str]:
-    """Return a factory minting a key scoped for one relay service."""
-    db = tmp_path / "keys.sqlite"
-    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(db))
-    monkeypatch.setenv("PHYTOMNI_RELAY_ENABLED", "1")
-    store = ApiKeyStore(str(db))
-    return lambda svc: store.create(
-        user_id="customer", scopes=[f"relay:{svc}"]
-    ).api_key
-
-
-@pytest.fixture(name="client")
-async def _client_fixture(
-    monkeypatch: pytest.MonkeyPatch,
-) -> AsyncGenerator[httpx.AsyncClient, None]:
-    """Yield an httpx client bound to the relay app over ASGI."""
-    monkeypatch.setattr(httpx.AsyncClient, "request", _REAL_REQUEST)
-    app = FastAPI()
-    app.include_router(create_relay_router())
-    transport = httpx.ASGITransport(app=app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://relay.test"
-    ) as client:
-        yield client
-
-
-@pytest.fixture(autouse=True)
-def _reset_inflight(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Isolate the per-key in-flight relay counter across tests."""
-    monkeypatch.setattr(forward_module, "_INFLIGHT", {})
 
 
 _OUTPUT_PREFIX = "agent_data/user_data/customer/runs/d/run_x/task/output/"

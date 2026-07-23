@@ -14,20 +14,23 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import AsyncGenerator, Callable
-from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
 import httpx
 import pytest
-from fastapi import FastAPI
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
+from tests.support.relay_fakes import (
+    build_relay_app,
+    make_relay_client_fixture,
+    make_relay_key_fixture,
+    make_relay_reset_fixture,
+    patch_mock_transport,
+)
 
-from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.relay import forward as forward_module
 from mcp_server_phytomni.api.relay import routes as routes_module
-from mcp_server_phytomni.api.relay.routes import create_relay_router
 from mcp_server_phytomni.config.defaults import DeepGenomeConfig
 
 pytestmark = pytest.mark.server
@@ -52,8 +55,6 @@ def test_platform_config_aggregates_every_endpoint() -> None:
         assert getattr(config, attr)
 
 
-_REAL_REQUEST = httpx.AsyncClient.request
-
 _PLATFORM_URLS = SimpleNamespace(
     RETRIEVE_URL="https://retrieve.test/search",
     RERANK_URL="https://rerank.test/rank",
@@ -70,16 +71,7 @@ def _patch_platform(
 ) -> None:
     """Patch the upstream client, the platform config, secrets, and IAM."""
 
-    @contextlib.asynccontextmanager
-    async def _factory(
-        **_kwargs: object,
-    ) -> AsyncGenerator[httpx.AsyncClient, None]:
-        async with httpx.AsyncClient(
-            transport=httpx.MockTransport(handler)
-        ) as client:
-            yield client
-
-    monkeypatch.setattr(forward_module, "get_async_client", _factory)
+    patch_mock_transport(monkeypatch, forward_module, handler)
     monkeypatch.setattr(
         routes_module, "DeepGenomeConfig", lambda: _PLATFORM_URLS
     )
@@ -95,44 +87,9 @@ def _patch_platform(
     monkeypatch.setattr(routes_module, "get_token", _fake_token)
 
 
-@pytest.fixture(name="relay_key")
-def _relay_key_fixture(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> Callable[[str], str]:
-    """Return a factory minting a key scoped for one relay service."""
-    db = tmp_path / "keys.sqlite"
-    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(db))
-    monkeypatch.setenv("PHYTOMNI_RELAY_ENABLED", "1")
-    store = ApiKeyStore(str(db))
-    return lambda svc: store.create(
-        user_id="c", scopes=[f"relay:{svc}"]
-    ).api_key
-
-
-@pytest.fixture(name="client")
-async def _client_fixture(
-    monkeypatch: pytest.MonkeyPatch,
-) -> AsyncGenerator[httpx.AsyncClient, None]:
-    """Yield an httpx client bound to the relay app over ASGI."""
-    monkeypatch.setattr(httpx.AsyncClient, "request", _REAL_REQUEST)
-    transport = httpx.ASGITransport(app=_build_app())
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://relay.test"
-    ) as client:
-        yield client
-
-
-@pytest.fixture(autouse=True)
-def _reset_inflight(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Isolate the per-key in-flight relay counter across tests."""
-    monkeypatch.setattr(forward_module, "_INFLIGHT", {})
-
-
-def _build_app() -> FastAPI:
-    """Mount the relay router on a bare app for route testing."""
-    app = FastAPI()
-    app.include_router(create_relay_router())
-    return app
+_relay_key_fixture = make_relay_key_fixture(user_id="c")
+_client_fixture = make_relay_client_fixture(build_relay_app)
+_reset_inflight = make_relay_reset_fixture(forward_module)
 
 
 def _ok(_req: httpx.Request) -> httpx.Response:

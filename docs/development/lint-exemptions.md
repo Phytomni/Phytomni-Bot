@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `131`
+- Authorized records: `127`
 
 ## Informational counts
 
@@ -22,7 +22,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:prop-decorator`                             |       1 |
 | `pylint:C0103`                                    |       1 |
 | `pylint:C0116`                                    |       1 |
-| `pylint:R0801`                                    |      36 |
+| `pylint:R0801`                                    |      32 |
 | `pylint:R0903`                                    |       7 |
 | `pylint:R0913`                                    |       1 |
 | `pylint:R0917`                                    |       1 |
@@ -82,10 +82,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0084` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 59:64 | `sha256:dab91daad1dc692da89b2d3c4bedfcd081201a6cd5e592f6d9f289f0ad825f66` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_models.py, tests/server/test_memory_http.py, static-analysis-inventory |
 | `SAE-TMP-0085` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 73:79 | `sha256:02a0ef0f7f5041c275b28c1c4c24c010eae62e1de902e15478e70af3b9aa9b42` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_accessor.py, tests/server/test_memory_http.py, static-analysis-inventory |
 | `SAE-TMP-0086` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/migrations.py | 23:31 | `sha256:4f06fd5ec9e45a0c63ea3f65946f56998710e5123f0135fc1bc20ca49b9bbe3a` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_migrations.py, static-analysis-inventory |
-| `SAE-TMP-0158` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_relay_forward_request.py | 64:74 | `sha256:eb7c75d69effca7d17ae04846f5feb2d7ac869090b92381125ac43d1aab36f37` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0159` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_relay_obs_routes.py | 49:54 | `sha256:c50d4d55fd65c090198f5e50a55ff28a38127f0cfa53ba459a00df3bd8da9dbc` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0160` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_relay_obs_routes.py | 67:79 | `sha256:41c0b03586d07944630aaf83607bbca72966b829ee988c0a6e94e4d51542656e` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
-| `SAE-TMP-0161` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_relay_openai_routes.py | 76:111 | `sha256:90d03cbc6cfa912e6c79ba754c576d80abf09250ca899f3d180038494cc00bfb` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0163` | pylint | R0801 | temporary | diagnostic | pair | tests/server/test_resume_mcp.py | 104:114 | `sha256:4dbbc1854fd72ac53af9cd850a1e453ef7c0bc583d0cc5ecfa4f2a2df4b5f0f6` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0164` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/e2e/test_assertions.py | 21:29 | `sha256:add2ea92737e0640446ee8ba333547f9d8f321dece5f04a7667ac7f7b18d2f8b` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
 | `SAE-TMP-0166` | pylint | R0801 | temporary | diagnostic | pair | tests/unit/interop/test_a2a_client.py | 126:132 | `sha256:ecf2324d0c1b39b2f5ab6c1ebb468afc9262b3a3dee182cd9a7ccd2bf6cca2a7` | bot-maintainers | 2026-07-17 | 2026-08-15 | 2026-08-31 | SAE-WORK-INITIAL-AUDIT | static-analysis-inventory |
@@ -822,156 +818,6 @@ Risk:
 
 ```text
 A stale schema oracle can reject a planned migration; update it only alongside migration and rollback evidence.
-```
-
-### `SAE-TMP-0158`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_relay_forward_request:[64:74]
-==test_relay_openai_routes:[50:60]
-        async with httpx.AsyncClient(
-            transport=httpx.MockTransport(handler)
-        ) as client:
-            yield client
-
-    monkeypatch.setattr(forward_module, "get_async_client", _factory)
-
-
-async def _openai_inject() -> dict[str, str]:
-    """Return an OpenAI-style operator credential header."""
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0159`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_relay_obs_routes:[49:54]
-==test_relay_openai_routes:[76:81]
-    db = tmp_path / "keys.sqlite"
-    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(db))
-    monkeypatch.setenv("PHYTOMNI_RELAY_ENABLED", "1")
-    store = ApiKeyStore(str(db))
-    return lambda svc: store.create(
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0160`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_relay_obs_routes:[67:79]
-==test_relay_openai_routes:[92:111]
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://relay.test"
-    ) as client:
-        yield client
-
-
-@pytest.fixture(autouse=True)
-def _reset_inflight(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Isolate the per-key in-flight relay counter across tests."""
-    monkeypatch.setattr(forward_module, "_INFLIGHT", {})
-
-
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
-```
-
-### `SAE-TMP-0161`
-
-Rationale:
-
-```text
-Similar lines in 2 files
-==test_relay_openai_routes:[76:111]
-==test_relay_platform_routes:[102:132]
-    db = tmp_path / "keys.sqlite"
-    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(db))
-    monkeypatch.setenv("PHYTOMNI_RELAY_ENABLED", "1")
-    store = ApiKeyStore(str(db))
-    return lambda svc: store.create(
-        user_id="c", scopes=[f"relay:{svc}"]
-    ).api_key
-
-
-@pytest.fixture(name="client")
-async def _client_fixture(
-    monkeypatch: pytest.MonkeyPatch,
-) -> AsyncGenerator[httpx.AsyncClient, None]:
-    """Yield an httpx client bound to the relay app over ASGI."""
-    monkeypatch.setattr(httpx.AsyncClient, "request", _REAL_REQUEST)
-    transport = httpx.ASGITransport(app=_build_app())
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://relay.test"
-    ) as client:
-        yield client
-
-
-@pytest.fixture(autouse=True)
-def _reset_inflight(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Isolate the per-key in-flight relay counter across tests."""
-    monkeypatch.setattr(forward_module, "_INFLIGHT", {})
-
-
-async def test_llm_route_injects_bearer_and_drops_query(
-    client: httpx.AsyncClient,
-    relay_key: Callable[[str], str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The llm route strips the caller key, injects the operator Bearer,
-    and forwards to the config URL without the client query string."""
-```
-
-Counterfactual:
-
-```text
-Remove or refactor after review.
-```
-
-Risk:
-
-```text
-Suppression can hide a future regression.
 ```
 
 ### `SAE-TMP-0163`
