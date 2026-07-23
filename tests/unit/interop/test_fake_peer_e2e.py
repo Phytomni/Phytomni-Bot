@@ -24,10 +24,6 @@ from typing import Any, cast
 import httpx
 import pytest
 from a2a.types import (
-    AgentCapabilities,
-    AgentCard,
-    AgentInterface,
-    AgentSkill,
     Artifact,
     Message,
     Part,
@@ -41,6 +37,12 @@ from a2a.utils.proto_utils import to_stream_response
 from google.protobuf import json_format
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import StructuredTool
+from tests.support.a2a_fakes import (
+    build_agent_card,
+    input_required_resume_sequence,
+    read_asgi_body,
+    send_json_response,
+)
 
 from mcp_server_phytomni.interop.a2a_client import (
     InteropA2AClientError,
@@ -102,30 +104,6 @@ def _a2a_registry(target: A2ATarget) -> InteropRegistry:
     return InteropRegistry(enabled=True, _targets={target.id: target})
 
 
-def _a2a_card() -> AgentCard:
-    """Return the reduced card the fake peer advertises."""
-    return AgentCard(
-        name="Offline A2A peer",
-        description="Fake peer for the interoperability suite",
-        version="1",
-        supported_interfaces=[
-            AgentInterface(
-                url="https://fake-a2a.example.test/a2a",
-                protocol_binding="JSONRPC",
-                protocol_version="1.0",
-            )
-        ],
-        capabilities=AgentCapabilities(streaming=True),
-        skills=[
-            AgentSkill(
-                id="annotate",
-                name="Annotate",
-                description="Annotate a plant-science query",
-            )
-        ],
-    )
-
-
 async def _resolve_fake_host(_hostname: str, _port: int) -> Sequence[str]:
     """Resolve only to a public fixture address under the normal policy."""
     return ("8.8.8.8",)
@@ -140,7 +118,14 @@ def _a2a_peer_factory(
     asyncio.Event,
 ]:
     """Build an ASGI Agent Card plus JSON-RPC/SSE fake peer."""
-    card_payload = json_format.MessageToDict(_a2a_card())
+    card_payload = json_format.MessageToDict(
+        build_agent_card(
+            base_url="https://fake-a2a.example.test",
+            name="Offline A2A peer",
+            description="Fake peer for the interoperability suite",
+            skill_description="Annotate a plant-science query",
+        )
+    )
     calls: list[dict[str, Any]] = []
     clients: list[httpx.AsyncClient] = []
     client_ready = asyncio.Event()
@@ -149,22 +134,9 @@ def _a2a_peer_factory(
         """Serve the card and one deterministic SSE sequence per POST."""
         if scope["type"] != "http":
             raise AssertionError("fake peer only supports HTTP")
-        body = b""
-        while True:
-            message = await receive()
-            body += message.get("body", b"")
-            if not message.get("more_body", False):
-                break
+        body = await read_asgi_body(receive)
         if scope["method"] == "GET":
-            payload = json.dumps(card_payload).encode()
-            await send(
-                {
-                    "type": "http.response.start",
-                    "status": 200,
-                    "headers": [(b"content-type", b"application/json")],
-                }
-            )
-            await send({"type": "http.response.body", "body": payload})
+            await send_json_response(send, card_payload)
             return
 
         calls.append(json.loads(body))
@@ -242,22 +214,7 @@ def _completed_task() -> Task:
 
 async def test_fake_a2a_peer_discovery_stream_and_resume() -> None:
     """Discover, stream input-required, and resume the same fake task."""
-    sequences: list[list[tuple[_PeerResponse, float]]] = [
-        [
-            (
-                TaskStatusUpdateEvent(
-                    task_id="task-1",
-                    context_id="context-1",
-                    status=TaskStatus(
-                        state=TaskState.TASK_STATE_INPUT_REQUIRED,
-                        message=Message(parts=[Part(text="choose")]),
-                    ),
-                ),
-                0,
-            )
-        ],
-        [(_completed_task(), 0)],
-    ]
+    sequences = input_required_resume_sequence(_completed_task())
     factory, calls, clients, _ready = _a2a_peer_factory(sequences)
     target = _a2a_target()
     registry = _a2a_registry(target)

@@ -14,10 +14,6 @@ from typing import Any, cast
 import httpx
 import pytest
 from a2a.types import (
-    AgentCapabilities,
-    AgentCard,
-    AgentInterface,
-    AgentSkill,
     Artifact,
     Message,
     Part,
@@ -29,6 +25,12 @@ from a2a.types import (
 )
 from a2a.utils.proto_utils import to_stream_response
 from google.protobuf import json_format
+from tests.support.a2a_fakes import (
+    build_agent_card,
+    input_required_resume_sequence,
+    read_asgi_body,
+    send_json_response,
+)
 
 from mcp_server_phytomni.interop import a2a_client as client_module
 from mcp_server_phytomni.interop.a2a_client import (
@@ -76,30 +78,6 @@ def _registry(target: A2ATarget) -> InteropRegistry:
     return InteropRegistry(enabled=True, _targets={target.id: target})
 
 
-def _card() -> AgentCard:
-    """Build the reduced-card-compatible peer card served by the fake app."""
-    return AgentCard(
-        name="Peer agent",
-        description="ASGI fixture",
-        version="1",
-        supported_interfaces=[
-            AgentInterface(
-                url="https://peer.example.test/a2a",
-                protocol_binding="JSONRPC",
-                protocol_version="1.0",
-            )
-        ],
-        capabilities=AgentCapabilities(streaming=True),
-        skills=[
-            AgentSkill(
-                id="annotate",
-                name="Annotate",
-                description="Annotate text",
-            )
-        ],
-    )
-
-
 async def _resolver(_hostname: str, _port: int) -> Sequence[str]:
     """Resolve all fixture names to an allowed public address."""
     return ("8.8.8.8",)
@@ -115,7 +93,14 @@ def _app_factory(
     """Build an ASGI JSON-RPC/SSE peer and record requests/clients."""
     calls: list[dict[str, Any]] = []
     clients: list[httpx.AsyncClient] = []
-    card_payload = json_format.MessageToDict(_card())
+    card_payload = json_format.MessageToDict(
+        build_agent_card(
+            base_url="https://peer.example.test",
+            name="Peer agent",
+            description="ASGI fixture",
+            skill_description="Annotate text",
+        )
+    )
 
     async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
         if scope["type"] != "http":
@@ -124,27 +109,9 @@ def _app_factory(
             scope["method"],
             f"https://peer.example.test{scope['path']}",
         )
-        body = b""
-        while True:
-            message = await receive()
-            body += message.get("body", b"")
-            if not message.get("more_body", False):
-                break
+        body = await read_asgi_body(receive)
         if request.method == "GET":
-            payload = json.dumps(card_payload).encode()
-            await send(
-                {
-                    "type": "http.response.start",
-                    "status": 200,
-                    "headers": [(b"content-type", b"application/json")],
-                }
-            )
-            await send(
-                {
-                    "type": "http.response.body",
-                    "body": payload,
-                }
-            )
+            await send_json_response(send, card_payload)
             return
         parsed = json.loads(body)
         calls.append(parsed)
@@ -290,22 +257,7 @@ async def test_send_streams_and_audits_without_payload() -> None:
 
 async def test_input_required_preserves_ids_for_a_second_resume_call() -> None:
     """An input-required terminal event can seed a later task continuation."""
-    sequences: list[list[tuple[ResponseType, float]]] = [
-        [
-            (
-                TaskStatusUpdateEvent(
-                    task_id="task-1",
-                    context_id="context-1",
-                    status=TaskStatus(
-                        state=TaskState.TASK_STATE_INPUT_REQUIRED,
-                        message=Message(parts=[Part(text="choose")]),
-                    ),
-                ),
-                0,
-            )
-        ],
-        [(_terminal_task(), 0)],
-    ]
+    sequences = input_required_resume_sequence(_terminal_task())
     app, calls, clients = _app_factory(sequences)
     target = _target()
     factory = _factory_for(app, clients)

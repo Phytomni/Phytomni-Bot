@@ -8,9 +8,9 @@ from __future__ import annotations
 import inspect
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
+from tests.support.client_fakes import build_client_call_fakes
 
 from mcp_client_phytomni.client import PhytomniMcpClient
 
@@ -57,11 +57,7 @@ async def test_elicitation_callback_uses_approval_decider() -> None:
 
 async def test_call_tool_scopes_approval_decider() -> None:
     """call_tool() exposes the decider only for one tool call."""
-    client = PhytomniMcpClient()
-    fake_session = AsyncMock()
-    fake_result = AsyncMock()
-    fake_result.isError = False
-    fake_result.content = []
+    client, fake_session, fake_result = build_client_call_fakes()
 
     def _decider(_context: Any, _params: Any) -> dict[str, Any]:
         return {"approved": True, "edits": None}
@@ -71,8 +67,6 @@ async def test_call_tool_scopes_approval_decider() -> None:
         return fake_result
 
     fake_session.call_tool.side_effect = _call_tool
-    client.session = fake_session
-
     await client.call_tool(
         "ChatAgent",
         {"user_query": "q"},
