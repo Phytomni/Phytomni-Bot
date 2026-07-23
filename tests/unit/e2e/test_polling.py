@@ -5,48 +5,36 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, cast
+from dataclasses import dataclass, replace
+from typing import cast
 
 import httpx
 import pytest
 from e2e.helpers import polling
+from tests.unit.e2e.state_fakes import build_task_state
 
 
-def _state(**overrides: object) -> polling.TaskState:
-    """Build one fully populated public polling state."""
-    values: dict[str, object] = {
-        "task_id": "task-1",
-        "status": "running",
-        "analysis_id": "analysis-1",
-        "output_dir": "/obs/output",
-        "intermediate_report": "# intermediate",
-        "final_report": None,
-        "report_stage": "intermediate",
-        "report_completeness": "partial",
-        "report_revision": 3,
-        "report_updated_at": "2026-07-15T00:00:00Z",
-        "progress": {"total": 12, "succeeded": 2},
-        "degraded": True,
-        "degraded_reason": "1 of 12 optional analyses unavailable",
-        "brief_gene_status": "succeeded",
-        "failures": (
+def test_task_state_carries_report_progress_and_artifact_contract() -> None:
+    """The live helper must retain all public terminal-report fields."""
+    state = replace(
+        build_task_state(),
+        status="running",
+        analysis_id="analysis-1",
+        output_dir="/obs/output",
+        intermediate_report="# intermediate",
+        report_revision=3,
+        report_updated_at="2026-07-15T00:00:00Z",
+        progress={"total": 12, "succeeded": 2},
+        failures=(
             {
                 "work_item_key": "design",
                 "status": "failed",
                 "message": "analysis task unavailable",
             },
         ),
-        "artifacts": ({"output_dir": "/obs/output", "paths": ("/obs/a",)},),
-        "output_dirs": ("/obs/output",),
-    }
-    values.update(overrides)
-    return polling.TaskState(**cast(Any, values))
-
-
-def test_task_state_carries_report_progress_and_artifact_contract() -> None:
-    """The live helper must retain all public terminal-report fields."""
-    state = _state()
+        artifacts=({"output_dir": "/obs/output", "paths": ("/obs/a",)},),
+        output_dirs=("/obs/output",),
+    )
 
     assert state.intermediate_report == "# intermediate"
     assert state.report_revision == 3

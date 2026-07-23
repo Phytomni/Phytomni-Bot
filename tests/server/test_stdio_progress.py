@@ -3,15 +3,13 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Tests for the MCP stdio in-band progress-notification path."""
 
-# The first test intentionally drives the internal stdio progress seam;
-# its protected-access directive is scoped to that test symbol.
-
 from __future__ import annotations
 
 from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from tests.support.stdio_progress_fakes import patch_stdio_progress_seams
 
 from mcp_server_phytomni.mcp import app as app_mod
 
@@ -22,7 +20,6 @@ async def test_progress_forwarded_when_token_present(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A progressToken drives send_progress_notification per tick."""
-    # pylint: disable=protected-access
     ticks = [
         {
             "kind": "phyto.progress",
@@ -47,24 +44,18 @@ async def test_progress_forwarded_when_token_present(
     # Short-circuit graph acquisition so the test never touches the
     # real agent cache (a prior test may have cached a mock agent).
     fake_app = AsyncMock()
-    monkeypatch.setattr(
+    patch_stdio_progress_seams(
+        monkeypatch,
         app_mod,
-        "_graph_stream_target",
-        lambda _tool, _args: (fake_app, {"user_query": "q"}),
-    )
-    monkeypatch.setattr(
-        app_mod, "_astream_progress_ticks", _fake_astream_progress
-    )
-    # capture terminal payload path
-    monkeypatch.setattr(
-        app_mod,
-        "_stdio_terminal_payload",
-        AsyncMock(return_value=[]),
+        fake_app=fake_app,
+        progress_stream=_fake_astream_progress,
+        terminal_payload=AsyncMock(return_value=[]),
     )
     session = AsyncMock()
     notify = session.send_progress_notification
 
-    await app_mod._drive_stdio_progress(
+    drive_stdio_progress = getattr(app_mod, "_drive_stdio_progress")
+    await drive_stdio_progress(
         "KnowledgeAgent",
         {"user_query": "q", "obs_file_list": []},
         progress_token="tok-1",

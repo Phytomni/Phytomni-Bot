@@ -10,6 +10,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from tests.support.stdio_progress_fakes import patch_stdio_progress_seams
 
 from mcp_server_phytomni.mcp import app as app_mod
 from mcp_server_phytomni.runtime.resume import elicit_review_decision
@@ -102,13 +103,12 @@ async def test_review_stdio_interrupt_elicits_and_resumes(
         return resumed_state
 
     terminal_payload = AsyncMock(return_value=[])
-    monkeypatch.setattr(
+    patch_stdio_progress_seams(
+        monkeypatch,
         app_mod,
-        "_graph_stream_target",
-        lambda _tool, _args: (fake_app, {"user_query": "q"}),
-    )
-    monkeypatch.setattr(
-        app_mod, "_astream_progress_ticks", _fake_astream_progress
+        fake_app,
+        _fake_astream_progress,
+        terminal_payload,
     )
     monkeypatch.setattr(
         app_mod,
@@ -117,7 +117,6 @@ async def test_review_stdio_interrupt_elicits_and_resumes(
         raising=False,
     )
     monkeypatch.setattr(app_mod, "aresume_graph", _fake_resume, raising=False)
-    monkeypatch.setattr(app_mod, "_stdio_terminal_payload", terminal_payload)
 
     drive_stdio_progress = getattr(app_mod, "_drive_stdio_progress")
     await drive_stdio_progress(
@@ -178,13 +177,12 @@ async def test_review_dispatch_without_progress_token_elicits_and_resumes(
         "_stdio_progress_context",
         lambda: (None, session, "run-review"),
     )
-    monkeypatch.setattr(
+    patch_stdio_progress_seams(
+        monkeypatch,
         app_mod,
-        "_graph_stream_target",
-        lambda _tool, _args: (fake_app, {"user_query": "q"}),
-    )
-    monkeypatch.setattr(
-        app_mod, "_astream_progress_ticks", _fake_astream_progress
+        fake_app,
+        _fake_astream_progress,
+        terminal_payload,
     )
     monkeypatch.setattr(
         app_mod,
@@ -193,7 +191,6 @@ async def test_review_dispatch_without_progress_token_elicits_and_resumes(
         raising=False,
     )
     monkeypatch.setattr(app_mod, "aresume_graph", _fake_resume, raising=False)
-    monkeypatch.setattr(app_mod, "_stdio_terminal_payload", terminal_payload)
     monkeypatch.setattr(app_mod, "invoke_tool_enveloped", _guard_blocking_path)
 
     await app_mod.dispatch_tool(

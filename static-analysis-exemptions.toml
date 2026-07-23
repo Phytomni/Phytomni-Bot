@@ -678,50 +678,6 @@ risk = "A stale schema oracle can reject a planned migration; update it only alo
 tests = ["tests/unit/test_memory_migrations.py", "static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0163"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/server/test_resume_mcp.py"
-symbol = "104:114"
-peer_path = "tests/server/test_stdio_progress.py"
-peer_symbol = "49:60"
-fingerprint = "sha256:4dbbc1854fd72ac53af9cd850a1e453ef7c0bc583d0cc5ecfa4f2a2df4b5f0f6"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_resume_mcp:[104:114]\n==test_stdio_progress:[49:60]\n    monkeypatch.setattr(\n        app_mod,\n        \"_graph_stream_target\",\n        lambda _tool, _args: (fake_app, {\"user_query\": \"q\"}),\n    )\n    monkeypatch.setattr(\n        app_mod, \"_astream_progress_ticks\", _fake_astream_progress\n    )\n    monkeypatch.setattr(\n        app_mod,"
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
-id = "SAE-TMP-0164"
-tool = "pylint"
-rule = "R0801"
-classification = "temporary"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "tests/unit/e2e/test_assertions.py"
-symbol = "21:29"
-peer_path = "tests/unit/e2e/test_polling.py"
-peer_symbol = "64:72"
-fingerprint = "sha256:add2ea92737e0640446ee8ba333547f9d8f321dece5f04a7667ac7f7b18d2f8b"
-owner = "bot-maintainers"
-introduced_on = 2026-07-17
-review_on = 2026-08-15
-rationale = "Similar lines in 2 files\n==test_assertions:[21:29]\n==test_polling:[64:72]\n        \"task_id\": \"task-1\",\n        \"status\": \"failed\",\n        \"analysis_id\": \"\",\n        \"output_dir\": \"\",\n        \"intermediate_report\": \"# profile\",\n        \"final_report\": None,\n        \"report_stage\": \"intermediate\",\n        \"report_completeness\": \"partial\","
-counterfactual = "Remove or refactor after review."
-risk = "Suppression can hide a future regression."
-tests = ["static-analysis-inventory"]
-expires_on = 2026-08-31
-remediation = "SAE-WORK-INITIAL-AUDIT"
-
-[[exemptions]]
 id = "SAE-TMP-0166"
 tool = "pylint"
 rule = "R0801"
@@ -1295,24 +1251,6 @@ owner = "bot-maintainers"
 introduced_on = 2026-07-19
 review_on = 2027-01-17
 rationale = "test_async_gc_coalesces_concurrent_passes isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport."
-counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
-risk = "A protected-access exception can hide unintended coupling or stale private invariants."
-tests = ["static-analysis-inventory"]
-
-[[exemptions]]
-id = "SAE-TMP-0262"
-tool = "pylint"
-rule = "protected-access"
-classification = "structural"
-mechanism = "inline"
-target_kind = "symbol"
-path = "tests/server/test_stdio_progress.py"
-symbol = "test_progress_forwarded_when_token_present"
-fingerprint = "sha256:f119c910e90f018323907d6760b625893d289a739e1ea4ee80765553e81f64ac"
-owner = "bot-maintainers"
-introduced_on = 2026-07-19
-review_on = 2027-01-17
-rationale = "test_progress_forwarded_when_token_present isolates module-private transport wiring so dependency, worker, or notification behavior is asserted without a live HTTP or MCP transport."
 counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
 risk = "A protected-access exception can hide unintended coupling or stale private invariants."
 tests = ["static-analysis-inventory"]
