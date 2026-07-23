@@ -20,7 +20,6 @@ import os
 import sqlite3
 from collections.abc import (
     AsyncGenerator,
-    AsyncIterator,
     Awaitable,
     Callable,
     Mapping,
@@ -32,15 +31,11 @@ from typing import Any
 
 from a2a.server.routes.jsonrpc_routes import create_jsonrpc_routes
 from fastapi import (
-    BackgroundTasks,
     Depends,
     FastAPI,
-    File,
-    Form,
     Header,
     HTTPException,
     Request,
-    UploadFile,
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
@@ -57,13 +52,10 @@ from ..agents.deep_genome.resolve_query import resolve_deep_genome_user_query
 from ..agents.design.resolve_query import resolve_design_user_query
 from ..agents.expert import select_agent_tool
 from ..agents.network.resolve_query import resolve_network_user_query
-from ..agents.shared.a2ui import (
-    select_chat_a2ui_widget,
-)
 from ..agents.shared.gauss import aclose_gauss_pool
 from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
-from ..config.defaults import ApiConfig
+from ..config.defaults import ApiConfig, BriefGeneConfig
 from ..config.settings import SensitiveConfig
 from ..interop.a2a_discovery import discover_external_a2a_capabilities
 from ..interop.cache import (
@@ -87,16 +79,11 @@ from ..mcp.app import (
     prepare_tool_stream,
 )
 from ..mcp.result_formatting import (
-    AguiEvent,
     resolve_debug,
     strip_agent_result,
     strip_chat_completion,
 )
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
-from ..mcp.stream_lifecycle import (
-    PrimedAguiStream,
-    StreamLifecycleState,
-)
 from ..runtime.memory import (
     MemorySchemaError,
     MemoryStore,
@@ -124,7 +111,8 @@ from ..runtime.task_manager import resolve_tasks_db_path
 from ..runtime.task_reconcile import reconcile_task_log
 from ..storage.path_policy import IdFactory
 from ..version import __version__
-from . import a2ui_runtime, run_lifecycle, streaming
+from . import a2ui_runtime, run_lifecycle
+from . import compat as _compat
 from .a2a import runtime as a2a_runtime
 from .a2a.card import build_agent_card
 from .a2a.executor import (
@@ -139,6 +127,20 @@ from .auth import (
     require_principal,
     scopes_satisfy,
 )
+from .compat import (
+    _a2ui_interrupt_body,
+    _a2ui_runtime_dependencies,
+    _chat_a2ui_interrupt_result,
+    _chat_a2ui_stream_app,
+    _format_chat_a2ui_result,
+    _purge_expired_runs_best_effort,
+    _relay_audit_record_to_dict,
+    _resume_a2ui_run,
+    _resume_paused_run,
+    _schedule_run_gc,
+    _stream_chat_completion,
+    _stream_review_a2ui_pause,
+)
 from .file_upload import handle_file_upload
 from .openai_mapping import (
     MODEL_TO_TOOL,
@@ -150,31 +152,58 @@ from .openai_mapping import (
 )
 from .ratelimit import make_rate_limiter
 from .relay import create_relay_router
-from .relay.audit_filter import redact_body_text
 from .resolvers import (
     ResolverDispatch,
     apply_runs_resolver,
     resolve_chat_query,
 )
 from .routes import admin as admin_routes
+from .routes import agents as agent_routes
 from .routes import memory as memory_routes
 from .routes import runs as run_routes
 from .schemas import (
     A2uiActionRequest,
-    AgentRunRequest,
     ApiErrorDetail,
     ApiErrorResponse,
     ChatCompletionRequest,
     ExpertQueryRequest,
-    FileUploadResponse,
     MemoryAuditRecordResponse,
     MemoryResponse,
     ResumeRequest,
-    UploadPurpose,
 )
 from .stream_answer import resolve_stream_answer_max_bytes
 
-__all__ = ["create_app"]
+__all__ = ["create_app", "prepare_tool_stream"]
+
+_COMPATIBILITY_REEXPORTS = frozenset(
+    {
+        "_chat_a2ui_initial_state",
+        "_claim_run_gc",
+        "_extract_answer",
+        "_failed_stream_result",
+        "_new_stream_run_id",
+        "_open_a2ui_surface_for_action",
+        "_project_primed_stream",
+        "_purge_expired_runs_best_effort_async",
+        "_replay_primed_stream",
+        "_run_record_to_dict",
+        "_settle_a2ui_stream_failure",
+        "_stream_a2ui_enabled",
+        "_stream_agent_slug",
+        "_stream_chat_a2ui_confirm",
+        "_stream_setup_error",
+        "_streaming_dependencies",
+        "_submitted_a2ui_value",
+    }
+)
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily expose compatibility seams moved out of this module."""
+    if name in _COMPATIBILITY_REEXPORTS:
+        return getattr(_compat, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 _ERROR_TYPES = {
     400: "bad_request",
@@ -255,316 +284,6 @@ _LEGACY_ALIASES: dict[str, list[str]] = {
 
 
 _LOGGER = logging.getLogger(__name__)
-
-
-def _purge_expired_runs_best_effort() -> None:
-    """Compatibility seam for the shared run-registry TTL purge."""
-    run_lifecycle.purge_expired_runs_best_effort(
-        db_path=resolve_tasks_db_path(),
-        registry_factory=RunRegistry,
-        logger=_LOGGER,
-    )
-
-
-async def _purge_expired_runs_best_effort_async() -> None:
-    """Compatibility seam for the off-loop coalesced TTL purge."""
-    await run_lifecycle.purge_expired_runs_best_effort_async(
-        purge=_purge_expired_runs_best_effort
-    )
-
-
-def _claim_run_gc() -> bool:
-    """Compatibility seam for the process-local GC slot."""
-    return run_lifecycle.claim_run_gc()
-
-
-def _release_run_gc() -> None:
-    """Compatibility seam for releasing the process-local GC slot."""
-    run_lifecycle.release_run_gc()
-
-
-async def _schedule_run_gc(background: BackgroundTasks) -> None:
-    """Compatibility seam for the FastAPI background GC dependency."""
-    await run_lifecycle.schedule_run_gc(
-        background, task=_purge_expired_runs_best_effort_async
-    )
-
-
-def _extract_answer(result: Any) -> str | None:
-    """Compatibility seam for answer extraction from a stored result."""
-    return run_lifecycle.extract_answer(result)
-
-
-def _run_record_to_dict(record: Any) -> dict[str, Any]:
-    """Compatibility seam for flattening a registry record."""
-    return run_lifecycle.run_record_to_dict(record)
-
-
-def _relay_audit_record_to_dict(
-    record: Any, config: ApiConfig
-) -> dict[str, Any]:
-    """Project a relay audit row with defense-in-depth body redaction."""
-    payload = record.model_dump()
-    payload["request_body"] = redact_body_text(
-        payload.get("request_body"), config.RELAY_REQUEST_AUDIT_MAX_BYTES
-    )
-    payload["response_body"] = redact_body_text(
-        payload.get("response_body"), config.RELAY_RESPONSE_AUDIT_MAX_BYTES
-    )
-    return payload
-
-
-def _chat_a2ui_stream_app() -> Any:
-    """Compatibility seam for the cached Chat A2UI graph."""
-    return a2ui_runtime.build_chat_stream_app()
-
-
-def _chat_a2ui_initial_state(arguments: Mapping[str, Any]) -> dict[str, Any]:
-    """Compatibility seam for Chat A2UI initial-state construction."""
-    return a2ui_runtime.build_chat_initial_state(arguments)
-
-
-def _chat_a2ui_interrupt_result(
-    interrupt: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Compatibility seam for paused Chat A2UI result projection."""
-    return a2ui_runtime.chat_interrupt_result(interrupt)
-
-
-def _submitted_a2ui_value(
-    prior_surface: Mapping[str, Any],
-    resume_payload: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Compatibility seam for submitted A2UI result projection."""
-    return a2ui_runtime.submitted_a2ui_value(prior_surface, resume_payload)
-
-
-def _format_chat_a2ui_result(
-    final_state: Mapping[str, Any],
-    *,
-    prior_surface: Mapping[str, Any],
-    resume_payload: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Compatibility seam for terminal Chat A2UI result formatting."""
-    return a2ui_runtime.format_chat_result(
-        final_state,
-        prior_surface=prior_surface,
-        resume_payload=resume_payload,
-    )
-
-
-def _a2ui_interrupt_body(
-    *,
-    run_id: str,
-    interrupt: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Compatibility seam for the paused Chat A2UI HTTP body."""
-    return a2ui_runtime.chat_interrupt_body(
-        run_id=run_id,
-        interrupt=interrupt,
-    )
-
-
-async def _resume_paused_run(
-    app: Any,
-    thread_id: str,
-    resume_payload: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Compatibility seam for the shared paused-graph resume kernel."""
-    return await a2ui_runtime.resume_paused_graph(
-        app,
-        thread_id,
-        resume_payload,
-    )
-
-
-def _open_a2ui_surface_for_action(
-    record: RunRecord,
-    *,
-    surface_id: str,
-    widget: str,
-) -> Mapping[str, Any]:
-    """Compatibility seam for open-surface validation."""
-    return a2ui_runtime.open_surface_for_action(
-        record,
-        surface_id=surface_id,
-        widget=widget,
-    )
-
-
-async def _resume_a2ui_run(
-    *,
-    run_id: str,
-    body: A2uiActionRequest,
-    debug: bool = False,
-) -> tuple[dict[str, Any], int]:
-    """Compatibility seam for the Web A2UI action resume runtime."""
-    return await a2ui_runtime.resume_a2ui_run(
-        run_id=run_id,
-        body=body,
-        debug=debug,
-        dependencies=_a2ui_runtime_dependencies(),
-    )
-
-
-def _stream_setup_error(exc: Exception, *, priming: bool) -> HTTPException:
-    """Map stream setup/prime failures to fixed pre-header HTTP errors."""
-    return streaming.stream_setup_error(exc, priming=priming)
-
-
-def _failed_stream_result() -> dict[str, Any]:
-    """Return the minimal failed result persisted after pre-open failure."""
-    return streaming.failed_stream_result()
-
-
-async def _replay_primed_stream(
-    primed: PrimedAguiStream,
-) -> AsyncIterator[AguiEvent]:
-    """Replay a primed first event before consuming its raw remainder."""
-    async for event in streaming.replay_primed_stream(primed):
-        yield event
-
-
-async def _project_primed_stream(
-    primed: PrimedAguiStream,
-    *,
-    run_id: str,
-    lifecycle_state: StreamLifecycleState | None = None,
-) -> AsyncIterator[AguiEvent]:
-    """Project a primed raw stream through one typed lifecycle state."""
-    async for event in streaming.project_primed_stream(
-        primed,
-        run_id=run_id,
-        request_id=current_request_id() or "unknown",
-        lifecycle_state=lifecycle_state,
-    ):
-        yield event
-
-
-def _a2ui_runtime_dependencies() -> a2ui_runtime.A2UIRuntimeDependencies:
-    """Bind app compatibility seams into the A2UI runtime record."""
-    return a2ui_runtime.A2UIRuntimeDependencies(
-        graphs=a2ui_runtime.A2UIGraphDependencies(
-            chat_graph=_chat_a2ui_stream_app,
-            chat_initial_state=_chat_a2ui_initial_state,
-            review_graph=_review_stream_app,
-            review_initial_state=_review_initial_state,
-            validate_review=_validate_review_arguments,
-            resume_graph=_resume_paused_run,
-        ),
-        persistence=a2ui_runtime.A2UIPersistenceDependencies(
-            registry_factory=RunRegistry,
-            current_user=current_request_user,
-            tasks_db_path=resolve_tasks_db_path,
-            create_stream_run=_create_running_stream_run,
-            settle_stream_run=_settle_stream_run,
-            format_review_result=_format_review_result,
-        ),
-        stream=a2ui_runtime.A2UIStreamDependencies(
-            stream_setup_error=_stream_setup_error,
-            failed_stream_result=_failed_stream_result,
-            project_stream=_project_primed_stream,
-        ),
-    )
-
-
-def _settle_a2ui_stream_failure(
-    run_id: str,
-    owner: str,
-    settled_terminal: list[bool],
-) -> None:
-    """Compatibility seam for failed A2UI stream settlement."""
-    a2ui_runtime.settle_a2ui_stream_failure(
-        run_id,
-        owner,
-        settled_terminal,
-        dependencies=_a2ui_runtime_dependencies(),
-    )
-
-
-def _stream_a2ui_enabled() -> bool:
-    """Read the current A2UI flag for the streaming runtime."""
-    return ApiConfig().A2UI_ENABLED
-
-
-def _new_stream_run_id(prefix: str, kind: str) -> str:
-    """Mint a registry id without exposing the storage factory to streaming."""
-    return IdFactory().new_id(prefix, kind)
-
-
-def _stream_agent_slug(model: str) -> str | None:
-    """Resolve the registry slug for one streamed public model."""
-    return _MODEL_TO_AGENT_SLUG.get(model)
-
-
-def _streaming_dependencies() -> streaming.StreamingDependencies:
-    """Bind app-owned seams into the extracted streaming runtime."""
-    return streaming.StreamingDependencies(
-        request=streaming.StreamingRequestDependencies(
-            prepare_tool_stream=prepare_tool_stream,
-            current_user=current_request_user,
-            current_request_id=current_request_id,
-            new_run_id=_new_stream_run_id,
-            agent_slug=_stream_agent_slug,
-        ),
-        a2ui=streaming.StreamingA2UIDependencies(
-            enabled=_stream_a2ui_enabled,
-            select_widget=select_chat_a2ui_widget,
-            runtime=_a2ui_runtime_dependencies,
-        ),
-        persistence=streaming.StreamingPersistenceDependencies(
-            create_running_stream_run=_create_running_stream_run,
-            settle_stream_run=_settle_stream_run,
-            stream_answer_max_bytes=_stream_answer_max_bytes,
-        ),
-    )
-
-
-async def _stream_chat_a2ui_confirm(
-    *,
-    arguments: dict[str, Any],
-    payload: ChatCompletionRequest,
-    user_query: str,
-) -> StreamingResponse:
-    """Compatibility seam for the Chat A2UI stream runtime."""
-    return await streaming.stream_chat_a2ui_confirm(
-        arguments=arguments,
-        payload=payload,
-        user_query=user_query,
-        dependencies=_streaming_dependencies(),
-    )
-
-
-async def _stream_review_a2ui_pause(
-    *,
-    arguments: dict[str, Any],
-    payload: ChatCompletionRequest,
-    user_query: str,
-) -> StreamingResponse:
-    """Compatibility seam for the Review A2UI stream runtime."""
-    return await streaming.stream_review_a2ui_pause(
-        arguments=arguments,
-        payload=payload,
-        user_query=user_query,
-        dependencies=_streaming_dependencies(),
-    )
-
-
-async def _stream_chat_completion(
-    *,
-    tool_name: str,
-    arguments: dict[str, Any],
-    payload: ChatCompletionRequest,
-    user_query: str,
-) -> StreamingResponse:
-    """Compatibility seam for the extracted HTTP streaming runtime."""
-    return await streaming.stream_chat_completion(
-        tool_name=tool_name,
-        arguments=arguments,
-        payload=payload,
-        user_query=user_query,
-        dependencies=_streaming_dependencies(),
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1646,6 +1365,154 @@ def create_app() -> FastAPI:
     def _route_a2ui_max_response_bytes() -> int:
         return ApiConfig().A2UI_MAX_RESPONSE_BYTES
 
+    async def _route_invoke_agent_run(
+        *,
+        agent: str,
+        arguments: dict[str, Any],
+        dialogue_id: str | None = None,
+        request_json: str | None = None,
+        debug: bool = False,
+    ) -> tuple[dict[str, Any], int]:
+        """Resolve the native agent-run seam at request time."""
+        return await _invoke_agent_run(
+            agent=agent,
+            arguments=arguments,
+            dialogue_id=dialogue_id,
+            request_json=request_json,
+            debug=debug,
+        )
+
+    async def _route_expert_query_adapter(
+        payload: ExpertQueryRequest,
+        *,
+        debug: bool,
+    ) -> tuple[dict[str, Any], int]:
+        """Resolve the Expert routing seam at request time."""
+        return await _route_expert_query(payload, debug=debug)
+
+    async def _route_stream_chat_completion(
+        *,
+        tool_name: str,
+        arguments: dict[str, object],
+        payload: ChatCompletionRequest,
+        user_query: str,
+    ) -> Response:
+        """Resolve the chat streaming seam at request time."""
+        return await _stream_chat_response(
+            tool_name=tool_name,
+            arguments=arguments,
+            payload=payload,
+            user_query=user_query,
+        )
+
+    async def _route_review_chat_completion(
+        *,
+        payload: ChatCompletionRequest,
+        arguments: Mapping[str, object],
+        user_query: str,
+    ) -> Response:
+        """Resolve the Review chat seam at request time."""
+        return await _review_chat_completion_response(
+            payload=payload,
+            arguments=arguments,
+            user_query=user_query,
+        )
+
+    async def _route_resolve_chat_query(
+        *,
+        raw_query: str,
+        resolve_flag: bool,
+        tool_name: str | None,
+        brief_gene_resolver: Callable[..., Awaitable[Any]] | None = None,
+    ) -> tuple[str, dict[str, Any]]:
+        """Resolve the HTTP chat resolver seam at request time."""
+        return await resolve_chat_query(
+            raw_query=raw_query,
+            resolve_flag=resolve_flag,
+            tool_name=tool_name,
+            brief_gene_resolver=brief_gene_resolver,
+        )
+
+    async def _route_brief_gene_resolver(
+        raw_query: str,
+        *,
+        brief_config: BriefGeneConfig,
+        sensitive_config: SensitiveConfig,
+        timeout_seconds: float | None = None,
+    ) -> Any:
+        """Resolve the BriefGene resolver seam at request time."""
+        if timeout_seconds is None:
+            return await resolve_brief_gene_user_query(
+                raw_query,
+                brief_config=brief_config,
+                sensitive_config=sensitive_config,
+            )
+        return await resolve_brief_gene_user_query(
+            raw_query,
+            brief_config=brief_config,
+            sensitive_config=sensitive_config,
+            timeout_seconds=timeout_seconds,
+        )
+
+    def _route_record_sync_run(
+        *,
+        agent: str,
+        owner: str,
+        result: dict[str, Any],
+        request_info: RunRequestInfo | None = None,
+    ) -> str | None:
+        """Resolve sync run recording at request time for compatibility."""
+        return _record_sync_run(
+            agent=agent,
+            owner=owner,
+            result=result,
+            request_info=request_info,
+        )
+
+    agent_dependencies = agent_routes.AgentRouteDependencies(
+        auth=agent_routes.AgentAuthDependencies(
+            require_agents=require_scope("agents"),
+            schedule_run_gc=_schedule_run_gc,
+        ),
+        catalog=agent_routes.AgentCatalogDependencies(
+            model_to_tool=MODEL_TO_TOOL,
+            model_to_agent_slug=_MODEL_TO_AGENT_SLUG,
+            agent_slug_to_tool=_AGENT_SLUG_TO_TOOL,
+            remote_agent_slugs=_REMOTE_AGENT_SLUGS,
+            legacy_aliases=_LEGACY_ALIASES,
+            serialize_capability=serialize_agent_capability,
+        ),
+        chat=agent_routes.AgentChatDependencies(
+            input=agent_routes.AgentChatInputDependencies(
+                tool_for_model=tool_for_model,
+                tool_accepts_obs=tool_accepts_obs,
+                flatten_messages=flatten_messages,
+                resolve_chat_query=_route_resolve_chat_query,
+                brief_gene_resolver=_route_brief_gene_resolver,
+            ),
+            execution=agent_routes.AgentChatExecutionDependencies(
+                invoke_tool_enveloped=invoke_tool_enveloped,
+                stream_chat_completion=_route_stream_chat_completion,
+                review_chat_completion=_route_review_chat_completion,
+            ),
+            projection=agent_routes.AgentChatProjectionDependencies(
+                record_sync_run=_route_record_sync_run,
+                current_user=current_request_user,
+                to_chat_completion=to_chat_completion,
+                strip_chat_completion=strip_chat_completion,
+                resolve_debug=resolve_debug,
+            ),
+        ),
+        native=agent_routes.AgentNativeDependencies(
+            invoke_agent_run=_route_invoke_agent_run,
+            route_expert_query=_route_expert_query_adapter,
+        ),
+        upload=agent_routes.AgentUploadDependencies(
+            handle_file_upload=handle_file_upload,
+            error_response=_error_response,
+        ),
+    )
+
     if ApiConfig().INTEROP_ENABLED:
 
         @app.get("/v1/interop/capabilities")
@@ -1712,25 +1579,7 @@ def create_app() -> FastAPI:
             content={"status": "ok", "checks": checks},
         )
 
-    @app.get("/v1/models")
-    async def list_models(
-        principal: ApiPrincipal = Depends(require_scope("agents")),
-    ) -> JSONResponse:
-        """List the chat-like model ids (OpenAI convention)."""
-        del principal  # Auth side-effect only.
-        return JSONResponse(
-            {
-                "object": "list",
-                "data": [
-                    {
-                        "id": model_id,
-                        "object": "model",
-                        "owned_by": "phytomni",
-                    }
-                    for model_id in MODEL_TO_TOOL
-                ],
-            }
-        )
+    agent_routes.register_model_route(app, agent_dependencies)
 
     if ApiConfig().MEMORY_ENABLED:
         memory_agents = require_scope("agents")
@@ -1763,196 +1612,7 @@ def create_app() -> FastAPI:
         ),
     )
 
-    @app.post(
-        "/v1/chat/completions",
-        dependencies=[Depends(_schedule_run_gc)],
-    )
-    async def chat_completions(
-        payload: ChatCompletionRequest,
-        principal: ApiPrincipal = Depends(require_scope("agents")),
-    ) -> Response:
-        """Run a chat-like agent in an OpenAI-compatible shape.
-
-        With ``stream=true`` and a streaming-capable model, returns a
-        ``text/event-stream`` carrying ``data: {...}\\n\\n`` chunks
-        plus a terminating ``data: [DONE]\\n\\n``; the non-stream
-        path returns a JSON ``chat.completion`` envelope unchanged.
-        """
-        del principal  # Auth side-effect; identity flows via contextvar.
-        tool_name = tool_for_model(payload.model)
-        if tool_name is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"model not found: {payload.model}",
-            )
-        obs_files = payload.obs_file_list or []
-        accepts_obs = tool_accepts_obs(tool_name)
-        if obs_files and not accepts_obs:
-            raise HTTPException(
-                status_code=400,
-                detail=f"model {payload.model} does not accept "
-                "obs_file_list",
-            )
-        try:
-            user_query = flatten_messages(payload.messages)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        user_query, resolve_meta = await resolve_chat_query(
-            raw_query=user_query,
-            resolve_flag=bool(payload.resolve_gene_id),
-            tool_name=tool_name,
-            brief_gene_resolver=resolve_brief_gene_user_query,
-        )
-        arguments: dict[str, object] = {"user_query": user_query}
-        if accepts_obs:
-            arguments["obs_file_list"] = obs_files
-        if payload.stream:
-            return await _stream_chat_response(
-                tool_name=tool_name,
-                arguments=arguments,
-                payload=payload,
-                user_query=user_query,
-            )
-        if tool_name == "ReviewAgent":
-            return await _review_chat_completion_response(
-                payload=payload,
-                arguments=arguments,
-                user_query=user_query,
-            )
-        envelope = await invoke_tool_enveloped(tool_name, arguments)
-        formatted_dict = asdict(envelope.formatted)
-        if resolve_meta:
-            existing_meta = formatted_dict.get("metadata") or {}
-            if not isinstance(existing_meta, dict):
-                existing_meta = {}
-            formatted_dict["metadata"] = {**existing_meta, **resolve_meta}
-        envelope_dict = {
-            "formatted": formatted_dict,
-            "raw": envelope.raw,
-        }
-        agent_slug = _MODEL_TO_AGENT_SLUG.get(payload.model)
-        chat_run_id: str | None = None
-        if agent_slug is not None:
-            chat_run_id = _record_sync_run(
-                agent=agent_slug,
-                owner=current_request_user() or "anonymous",
-                result=envelope_dict,
-                request_info=RunRequestInfo(
-                    dialogue_id=payload.dialogue_id,
-                    query=user_query,
-                    tool_name=tool_name,
-                    model=payload.model,
-                    request_json=payload.model_dump_json(),
-                ),
-            )
-        completion = to_chat_completion(
-            formatted_dict,
-            envelope.raw,
-            payload.model,
-        )
-        # Expose the Bot-side run id so Web can join chat completions
-        # against ``GET /v1/runs?dialogue_id=...`` without relying on
-        # the OpenAI ``chatcmpl-*`` provider id. ``None`` means the
-        # registry write failed; surface that explicitly rather than
-        # silently degrading (mirrors the remote-agent
-        # ``degraded_tracking`` signal).
-        completion["run_id"] = chat_run_id
-        if chat_run_id is None and agent_slug is not None:
-            completion["degraded_tracking"] = True
-        if not resolve_debug(payload.debug):
-            completion = strip_chat_completion(completion)
-        return JSONResponse(completion)
-
-    @app.get("/v1/agents")
-    async def list_agents(
-        principal: ApiPrincipal = Depends(require_scope("agents")),
-    ) -> JSONResponse:
-        """List the agents reachable via ``/v1/agents/{slug}/runs``."""
-        del principal
-        return JSONResponse(
-            {
-                "object": "list",
-                "data": [
-                    {
-                        "slug": slug,
-                        "tool": tool,
-                        "origin": (
-                            "remote"
-                            if slug in _REMOTE_AGENT_SLUGS
-                            else "local"
-                        ),
-                        "legacy_aliases": _LEGACY_ALIASES.get(tool, []),
-                        "capabilities": serialize_agent_capability(slug),
-                    }
-                    for slug, tool in _AGENT_SLUG_TO_TOOL.items()
-                ],
-            }
-        )
-
-    @app.post(
-        "/v1/agents/{agent}/runs",
-        dependencies=[Depends(_schedule_run_gc)],
-    )
-    async def create_agent_run(
-        agent: str,
-        payload: AgentRunRequest,
-        principal: ApiPrincipal = Depends(require_scope("agents")),
-    ) -> JSONResponse:
-        """Invoke one agent by slug and return its agent.run envelope."""
-        del principal
-        body, status_code = await _invoke_agent_run(
-            agent=agent,
-            arguments=payload.arguments,
-            dialogue_id=payload.dialogue_id,
-            debug=resolve_debug(payload.debug),
-            request_json=payload.model_dump_json(),
-        )
-        return JSONResponse(body, status_code=status_code)
-
-    @app.post(
-        "/v1/query/route",
-        dependencies=[Depends(_schedule_run_gc)],
-    )
-    async def route_query(
-        payload: ExpertQueryRequest,
-        principal: ApiPrincipal = Depends(require_scope("agents")),
-    ) -> JSONResponse:
-        """Autonomously route a query to an agent and return its run."""
-        del principal
-        body, status_code = await _route_expert_query(
-            payload, debug=resolve_debug(None)
-        )
-        return JSONResponse(body, status_code=status_code)
-
-    @app.post(
-        "/v1/files",
-        status_code=201,
-        response_model=FileUploadResponse,
-    )
-    async def upload_file(
-        request: Request,
-        file: UploadFile = File(...),
-        purpose: UploadPurpose = Form("agent_context"),
-        principal: ApiPrincipal = Depends(require_scope("agents")),
-    ) -> FileUploadResponse | JSONResponse:
-        """Accept one multipart file upload and store it in OBS.
-
-        Pre-checks ``Content-Length`` so oversize requests are rejected
-        before the body is buffered; falls back to a post-read size
-        guard inside ``upload_user_file`` so missing or falsified
-        Content-Length (e.g. chunked transfer) is still caught. The
-        sanitized filename, byte length, and public OBS path are
-        returned in a ``FileUploadResponse`` shape with ``path`` aliased
-        to ``obs_path`` so existing chat-ai code that already reads
-        ``path`` from the legacy upload bridge can plug in unchanged.
-        """
-        return await handle_file_upload(
-            request=request,
-            file=file,
-            purpose=purpose,
-            user_id=principal.user_id,
-            error_response=_error_response,
-        )
+    agent_routes.register_agent_routes(app, agent_dependencies)
 
     run_agents = require_scope("agents")
     run_routes.register_run_routes(
