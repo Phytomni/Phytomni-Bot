@@ -146,6 +146,57 @@ def test_cli_render_docs_check_reports_drift(tmp_path) -> None:
     )
 
 
+def test_require_zero_temporary_rejects_a_valid_temporary_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The closure flag fails even when a temporary row reconciles exactly."""
+    registry = tmp_path / "registry.toml"
+    fingerprint = "sha256:" + "a" * 64
+    registry.write_text(
+        f"""schema_version = 1
+
+[policy]
+default = "deny"
+
+[[exemptions]]
+id = "SAE-TMP-0001"
+tool = "ruff"
+rule = "E501"
+classification = "temporary"
+mechanism = "inline"
+target_kind = "symbol"
+path = "src/example.py"
+symbol = "example"
+fingerprint = "{fingerprint}"
+owner = "bot-maintainers"
+introduced_on = 2026-07-17
+review_on = 2026-07-31
+expires_on = 2026-08-31
+remediation = "SAE-WORK-0001"
+rationale = "A bounded migration record for the closure contract."
+counterfactual = "Removing the directive changes the checked boundary."
+risk = "The migration could hide a future lint regression."
+tests = ["tests/unit/test_example.py"]
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "collect_inventory", lambda *_args, **_kwargs: ())
+
+    assert (
+        cli.main(
+            [
+                "check",
+                "--scope",
+                "full",
+                "--registry",
+                str(registry),
+                "--require-zero-temporary",
+            ]
+        )
+        == 1
+    )
+
+
 def test_cross_file_scope_excludes_command_baseline_records() -> None:
     """Partial cross-file checks do not stale command-level suppressions."""
     registry = cli.load_registry(
