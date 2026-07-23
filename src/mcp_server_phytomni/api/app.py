@@ -793,38 +793,16 @@ def _strip_run_result(record: dict[str, Any]) -> dict[str, Any]:
 # pylint: enable=too-many-locals
 
 
-# pylint: disable=too-many-arguments
-# RunFilter is built from each query arg; folding into a Pydantic
-# query model triples the route boilerplate. See
-# docs/development/lint-exemptions.md.
 def _list_owner_runs(
     *,
     owner: str,
-    status: str | None,
-    agent: str | None,
-    origin: str | None,
-    dialogue_id: str | None,
-    created_after: str | None,
-    created_before: str | None,
-    limit: int,
-    offset: int,
+    query: run_lifecycle.RunListQuery,
     debug: bool = False,
 ) -> dict[str, Any]:
     """Compatibility seam for owner-scoped run listing."""
     return run_lifecycle.list_owner_runs(
         owner,
-        run_lifecycle.RunListQuery(
-            run_filter=RunFilter(
-                status=status,
-                agent=agent,
-                origin=origin,
-                dialogue_id=dialogue_id,
-                created_after=created_after,
-                created_before=created_before,
-            ),
-            limit=limit,
-            offset=offset,
-        ),
+        query,
         debug=debug,
         context=run_lifecycle.RunLifecycleContext(
             db_path=resolve_tasks_db_path(),
@@ -832,9 +810,6 @@ def _list_owner_runs(
             project=_project_public_run_record,
         ),
     )
-
-
-# pylint: enable=too-many-arguments
 
 
 _ReviewExecution = a2ui_runtime.ReviewExecution
@@ -1562,7 +1537,23 @@ def create_app() -> FastAPI:
         return await _fetch_owner_run(run_id, debug=debug)
 
     def _route_list_owner_runs(**kwargs: Any) -> dict[str, Any]:
-        return _list_owner_runs(**kwargs)
+        query = run_lifecycle.RunListQuery(
+            run_filter=RunFilter(
+                status=kwargs["status"],
+                agent=kwargs["agent"],
+                origin=kwargs["origin"],
+                dialogue_id=kwargs["dialogue_id"],
+                created_after=kwargs["created_after"],
+                created_before=kwargs["created_before"],
+            ),
+            limit=kwargs["limit"],
+            offset=kwargs["offset"],
+        )
+        return _list_owner_runs(
+            owner=kwargs["owner"],
+            query=query,
+            debug=kwargs["debug"],
+        )
 
     def _route_strip_run_result(record: dict[str, Any]) -> dict[str, Any]:
         return _strip_run_result(record)
