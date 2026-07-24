@@ -82,12 +82,21 @@ async def test_stream_does_not_emit_run_finished_after_settle_failure(
     stream_test_tools: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A terminal persistence miss becomes one safe error, never success."""
-    monkeypatch.setattr(
-        api_app,
-        "_settle_stream_run",
-        lambda *_args, **_kwargs: False,
-    )
+    """A terminal miss and failed cleanup expose one safe error."""
+    settlement_statuses: list[str] = []
+
+    def fail_settlement(
+        _run_id: str,
+        _owner: str,
+        status: str,
+        _result: dict[str, Any],
+    ) -> bool:
+        settlement_statuses.append(status)
+        if status == "succeeded":
+            return False
+        raise RuntimeError("private cleanup settlement detail")
+
+    monkeypatch.setattr(api_app, "_settle_stream_run", fail_settlement)
     stream_test_tools.patch_chat_stream(
         [{"choices": [{"delta": {"content": "Hi"}, "finish_reason": "stop"}]}]
     )
@@ -101,15 +110,13 @@ async def test_stream_does_not_emit_run_finished_after_settle_failure(
 
     assert response.status_code == 200
     body = response.text
+    assert settlement_statuses == ["succeeded", "failed"]
     assert body.count("event: RunError\n") == 1
     assert "event: RunFinished\n" not in body
     assert body.count('"code": "run_persistence_failed"') == 1
-    assert (
-        body.count('"message": "The completed run could not be persisted."')
-        == 1
-    )
     assert body.count("data: [DONE]") == 1
     assert body.rstrip().endswith("data: [DONE]")
+    assert "private cleanup settlement detail" not in body
 
 
 async def test_stream_with_resolve_gene_id_returns_400(

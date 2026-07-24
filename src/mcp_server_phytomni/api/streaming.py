@@ -28,6 +28,7 @@ from ..mcp.stream_lifecycle import (
     EmptyStreamError,
     PrimedAguiStream,
     StreamLifecycleState,
+    durable_settlement_succeeded,
     prime_agui_stream,
     project_stream_failures,
     project_terminal_settlement,
@@ -318,6 +319,24 @@ async def stream_chat_completion(
             is True
         )
 
+    def _settle_terminal_failure() -> bool:
+        snapshot = prepared.accumulator.snapshot
+        return (
+            dependencies.persistence.settle_stream_run(
+                prepared.run_id,
+                prepared.owner,
+                "failed",
+                {
+                    "formatted": {"answer": snapshot.answer},
+                    "raw": None,
+                    "stream": True,
+                    "truncated": snapshot.truncated,
+                    "partial": True,
+                },
+            )
+            is True
+        )
+
     terminal_events = project_terminal_settlement(
         prepared.accumulator,
         state=prepared.lifecycle_state,
@@ -339,19 +358,7 @@ async def stream_chat_completion(
                 prepared.agent_slug is not None
                 and not prepared.lifecycle_state.durably_settled
             ):
-                snapshot = prepared.accumulator.snapshot
-                dependencies.persistence.settle_stream_run(
-                    prepared.run_id,
-                    prepared.owner,
-                    "failed",
-                    {
-                        "formatted": {"answer": snapshot.answer},
-                        "raw": None,
-                        "stream": True,
-                        "truncated": snapshot.truncated,
-                        "partial": True,
-                    },
-                )
+                durable_settlement_succeeded(_settle_terminal_failure)
 
     return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
