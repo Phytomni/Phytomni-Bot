@@ -606,28 +606,13 @@ async def test_run_reads_publish_canonical_id_aliases(
 ) -> None:
     """Fetched and listed persisted rows expose byte-identical identities."""
     run_id = "run-canonical-read-id"
+    result = empty_agent_result()
+    result["formatted"]["answer"] = "complete"
     RunRegistry(tasks_db_path).create_run(
         RunSpec(run_id, "u1", "chat", "local"),
         outcome=RunOutcome(
             status="succeeded",
-            result={
-                "formatted": {
-                    "answer": "complete",
-                    "follow_up_questions": [],
-                    "references": [],
-                    "tabular": {},
-                    "metadata": {},
-                },
-                "execution": {
-                    "tracking": {"degraded": False},
-                    "warnings": [],
-                    "tasks": [],
-                    "artifacts": [],
-                    "output_dirs": [],
-                    "report": None,
-                    "diagnostics": [],
-                },
-            },
+            result=result,
         ),
     )
 
