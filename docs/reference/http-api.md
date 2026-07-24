@@ -1439,11 +1439,13 @@ Request body:
 
 Invalid allowlists (missing, empty, over ten entries, duplicate, or unknown
 canonical names) and a non-member `forced_tool` are rejected with `422`.
-Routing is strict: no model choice, no tool call, multiple or malformed tool
-calls, a tool outside the allowlist, or failure to honor `forced_tool` fails
-with `502` and dispatches no agent; there is no ChatAgent fallback.
-LLM-extracted arguments that fail the selected agent schema return `400`;
-missing or insufficient scope returns `401` / `403`.
+Routing is strict: no model choice, no tool call, multiple calls, a malformed
+call structure (for example, no function), a tool outside the allowlist, or
+failure to honor `forced_tool` fails with `502` and dispatches no agent; there
+is no ChatAgent fallback. Separately, malformed or non-object function
+arguments are treated as extracted arguments and then validated against the
+selected agent schema; that validation failure returns `400`.
+Missing or insufficient scope returns `401` / `403`.
 
 Known limitations (v1): the four structured-input agents (`analyst`,
 `deep_genome`, `design`, `network`) receive best-effort arguments
@@ -1456,7 +1458,14 @@ reach only `chat` / `knowledge` / `review`. Invalid extraction surfaces a
 curl -s -X POST http://127.0.0.1:8080/v1/query/route \
   -H "Authorization: Bearer ptm_..." \
   -H 'Content-Type: application/json' \
-  -d '{"user_query":"Find recent papers on rice drought tolerance genes."}'
+  -d '{
+    "user_query": "Compare drought tolerance candidates",
+    "history": [],
+    "obs_file_list": [],
+    "dialogue_id": "dialogue-id",
+    "allowed_tools": ["ChatAgent", "DataAgent", "AnalystAgent"],
+    "forced_tool": "DataAgent"
+  }'
 ```
 
 ## Response Projection

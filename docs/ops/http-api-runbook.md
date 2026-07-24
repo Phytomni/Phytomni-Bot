@@ -560,11 +560,12 @@ expected forced member. Also verify these strict failures before rollout:
 
 - Missing, empty, duplicate, unknown, or over-ten `allowed_tools`, and a
   non-member `forced_tool`, return `422`.
-- A model response with no choice, no tool call, multiple or malformed calls,
-  a call outside `allowed_tools`, or a call that disobeys `forced_tool`,
-  returns `502` and invokes no agent.
-- Selected-agent argument validation returns `400`; absent or insufficient
-  `agents` scope returns `401` / `403`.
+- A model response with no choice, no tool call, multiple calls, a malformed
+  call structure (for example, no function), a call outside `allowed_tools`,
+  or a call that disobeys `forced_tool` returns `502` and invokes no agent.
+- Malformed or non-object function arguments are extracted arguments, not a
+  malformed call structure; selected-agent schema validation of those arguments
+  returns `400`. Absent or insufficient `agents` scope returns `401` / `403`.
 
 Do not mask these failures with a ChatAgent fallback, retry by broadening the
 allowlist, or treat a browser-supplied list as a permission grant. Inspect the
