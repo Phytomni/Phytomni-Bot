@@ -47,7 +47,6 @@ from ..mcp.result_formatting import (
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
 from ..mcp.stream_lifecycle import (
     StreamLifecycleState,
-    durable_settlement_succeeded,
     prime_agui_stream,
     run_persistence_error,
 )
@@ -66,6 +65,7 @@ from ..runtime.run_registry import (
 from ..storage.path_policy import IdFactory
 from . import run_lifecycle
 from .a2ui_projection import (
+    ReviewSurfaceProjectionError,
     chat_interrupt_body,
     chat_interrupt_result,
     format_chat_result,
@@ -74,6 +74,30 @@ from .a2ui_projection import (
     review_interrupt_body,
     review_interrupt_result,
     submitted_a2ui_value,
+)
+from .a2ui_review_persistence import (
+    create_review_pause as _create_review_pause,
+)
+from .a2ui_review_persistence import (
+    review_projection_error as _review_projection_error,
+)
+from .a2ui_review_persistence import (
+    settle_review_pause as _settle_review_pause,
+)
+from .a2ui_review_persistence import (
+    settle_review_projection_failure as _settle_review_projection_failure,
+)
+from .a2ui_review_stream import (
+    ReviewStreamHooks,
+    _settle_a2ui_stream_terminal,
+    settle_a2ui_stream_failure,
+)
+from .a2ui_review_stream import (
+    stream_review_a2ui_pause as _stream_review_a2ui_pause,
+)
+from .lifecycle_contract import (
+    build_agent_run_response,
+    canonicalize_agent_run_body,
 )
 from .openai_mapping import to_chat_completion_chunks
 from .schemas import A2uiActionRequest, ChatCompletionRequest, ResumeRequest
@@ -344,13 +368,23 @@ def _settled_action_interrupt(
             chat_interrupt_body(run_id=run_id, interrupt=interrupt_dict),
             200,
         )
-    interrupt_dict = project_review_interrupt(interrupt)
-    context.registry.settle_run(
-        run_id,
-        owner=context.owner,
-        status="input_required",
-        result=review_interrupt_result(interrupt_dict),
-    )
+    try:
+        interrupt_dict = project_review_interrupt(interrupt)
+        pause_result = review_interrupt_result(interrupt_dict)
+        _settle_review_pause(
+            context.registry,
+            run_id=run_id,
+            owner=context.owner,
+            result=pause_result,
+        )
+    except ReviewSurfaceProjectionError as exc:
+        _settle_review_projection_failure(
+            context.registry,
+            run_id=run_id,
+            owner=context.owner,
+            existing=True,
+        )
+        raise _review_projection_error() from exc
     return (
         review_interrupt_body(thread_id=run_id, interrupt=interrupt_dict),
         200,
@@ -492,19 +526,23 @@ async def run_review_with_interrupt(
         dependencies.persistence.tasks_db_path()
     )
     if interrupt is not None:
-        interrupt_dict = project_review_interrupt(interrupt)
-        registry.create_run(
-            RunSpec(
+        try:
+            interrupt_dict = project_review_interrupt(interrupt)
+        except ReviewSurfaceProjectionError as exc:
+            _settle_review_projection_failure(
+                registry,
                 run_id=run_id,
-                user_id=owner,
-                agent="review",
-                origin="local",
-            ),
-            outcome=RunOutcome(
-                status="input_required",
-                result=review_interrupt_result(interrupt_dict),
-            ),
+                owner=owner,
+                request_info=request_info,
+                existing=False,
+            )
+            raise _review_projection_error() from exc
+        _create_review_pause(
+            registry,
+            run_id=run_id,
+            owner=owner,
             request_info=request_info,
+            result=review_interrupt_result(interrupt_dict),
         )
         return ReviewExecution(
             run_id=run_id,
@@ -540,15 +578,28 @@ def review_run_body(
         )
     result = execution.result or {"formatted": {"answer": ""}, "raw": None}
     response_result = result if debug else strip_agent_result(result)
-    return {
-        "id": execution.run_id,
-        "run_id": execution.run_id,
-        "object": "agent.run",
-        "agent": "review",
-        "status": execution.status,
-        "task_ids": [],
-        "result": response_result,
-    }
+    canonical = canonicalize_agent_run_body(
+        {
+            "id": execution.run_id,
+            "run_id": execution.run_id,
+            "object": "agent.run",
+            "agent": "review",
+            "status": execution.status,
+            "task_ids": [],
+            "result": response_result,
+        }
+    )
+    canonical_result = dict(canonical["result"])
+    if debug and "raw" in result:
+        canonical_result["raw"] = result["raw"]
+    return build_agent_run_response(
+        run_id=execution.run_id,
+        agent="review",
+        status=execution.status,
+        task_ids=(),
+        result=canonical_result,
+        persisted=True,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -724,13 +775,23 @@ async def resume_review_run(
             ) from exc
         interrupt = detect_interrupt(final_state, thread_id)
         if interrupt is not None:
-            interrupt_dict = project_review_interrupt(interrupt)
-            context.registry.settle_run(
-                thread_id,
-                owner=context.owner,
-                status="input_required",
-                result=review_interrupt_result(interrupt_dict),
-            )
+            try:
+                interrupt_dict = project_review_interrupt(interrupt)
+                pause_result = review_interrupt_result(interrupt_dict)
+                _settle_review_pause(
+                    context.registry,
+                    run_id=thread_id,
+                    owner=context.owner,
+                    result=pause_result,
+                )
+            except ReviewSurfaceProjectionError as exc:
+                _settle_review_projection_failure(
+                    context.registry,
+                    run_id=thread_id,
+                    owner=context.owner,
+                    existing=True,
+                )
+                raise _review_projection_error() from exc
             return (
                 review_interrupt_body(
                     thread_id=thread_id,
@@ -759,38 +820,6 @@ async def resume_review_run(
             result=result,
         )
         return review_run_body(execution, debug=debug), 200
-
-
-def settle_a2ui_stream_failure(
-    run_id: str,
-    owner: str,
-    settled_terminal: list[bool],
-    *,
-    dependencies: A2UIRuntimeDependencies,
-) -> None:
-    """Settle an A2UI stream failed when no domain terminal was committed."""
-    if settled_terminal[0]:
-        return
-    _settle_a2ui_stream_terminal(
-        lambda: dependencies.persistence.settle_stream_run(
-            run_id,
-            owner,
-            "failed",
-            dependencies.stream.failed_stream_result(),
-        ),
-        settled_terminal,
-    )
-
-
-def _settle_a2ui_stream_terminal(
-    settle: Callable[[], bool],
-    settled_terminal: list[bool],
-) -> bool:
-    """Record one A2UI terminal state and require exact durable success."""
-    if not durable_settlement_succeeded(settle):
-        return False
-    settled_terminal[0] = True
-    return True
 
 
 async def stream_chat_a2ui_confirm(
@@ -881,91 +910,17 @@ async def stream_review_a2ui_pause(
     user_query: str,
     dependencies: A2UIRuntimeDependencies,
 ) -> StreamingResponse:
-    """Stream Review until interrupt and emit one ``phyto.a2ui`` frame."""
-    context = _prepare_review_stream(
+    """Stream Review through the dedicated Review stream runtime."""
+    return await _stream_review_a2ui_pause(
         arguments=arguments,
         payload=payload,
         user_query=user_query,
         dependencies=dependencies,
+        hooks=ReviewStreamHooks(
+            prepare_review_stream=_prepare_review_stream,
+            project_interrupt=project_review_interrupt,
+        ),
     )
-
-    async def _agui_events(settled: list[bool]) -> AsyncIterator[AguiEvent]:
-        yield run_started(context.run_id, payload.dialogue_id)
-        final_state = await context.graph.ainvoke(
-            context.initial_state,
-            config=build_runnable_config(context.run_id),
-        )
-        interrupt = detect_interrupt(final_state, context.run_id)
-        if interrupt is not None:
-            interrupt_dict = project_review_interrupt(dict(interrupt))
-            if not _settle_a2ui_stream_terminal(
-                lambda: dependencies.persistence.settle_stream_run(
-                    context.run_id,
-                    context.owner,
-                    "input_required",
-                    review_interrupt_result(interrupt_dict),
-                ),
-                settled,
-            ):
-                yield run_persistence_error()
-                return
-            draft = interrupt_dict.get("draft")
-            if isinstance(draft, Mapping):
-                a2ui_value = draft.get("a2ui")
-                if isinstance(a2ui_value, Mapping):
-                    yield custom(A2UI_CUSTOM_NAME, dict(a2ui_value))
-        else:
-            result = dependencies.persistence.format_review_result(
-                final_state, arguments=arguments
-            )
-            if not _settle_a2ui_stream_terminal(
-                lambda: dependencies.persistence.settle_stream_run(
-                    context.run_id,
-                    context.owner,
-                    "succeeded",
-                    result,
-                ),
-                settled,
-            ):
-                yield run_persistence_error()
-                return
-        yield run_finished(context.run_id)
-
-    lifecycle_state = StreamLifecycleState()
-    settled_terminal = [False]
-    try:
-        primed = await prime_agui_stream(_agui_events(settled_terminal))
-    except Exception as exc:
-        settle_a2ui_stream_failure(
-            context.run_id,
-            context.owner,
-            settled_terminal,
-            dependencies=dependencies,
-        )
-        raise dependencies.stream.stream_setup_error(
-            exc, priming=True
-        ) from exc
-
-    async def _wrapped() -> AsyncIterator[str]:
-        try:
-            async for line in to_chat_completion_chunks(
-                dependencies.stream.project_stream(
-                    primed,
-                    run_id=context.run_id,
-                    lifecycle_state=lifecycle_state,
-                ),
-                payload.model,
-            ):
-                yield line
-        finally:
-            settle_a2ui_stream_failure(
-                context.run_id,
-                context.owner,
-                settled_terminal,
-                dependencies=dependencies,
-            )
-
-    return StreamingResponse(_wrapped(), media_type="text/event-stream")
 
 
 __all__ = [
@@ -974,6 +929,7 @@ __all__ = [
     "A2UIRuntimeDependencies",
     "A2UIStreamDependencies",
     "ReviewExecution",
+    "ReviewSurfaceProjectionError",
     "build_chat_initial_state",
     "build_chat_stream_app",
     "build_review_initial_state",

@@ -28,6 +28,25 @@ def _seed_run(
     status: str,
 ) -> str:
     """Seed an owner-scoped review run for resume tests."""
+    result = None
+    if status == "input_required":
+        result = {
+            "interrupt": {
+                "thread_id": run_id,
+                "draft": {
+                    "a2ui": {
+                        "catalog_version": "v1.0",
+                        "surface_id": f"{run_id}-surface",
+                        "widget": "confirm",
+                        "props": {
+                            "title": "Review approval",
+                            "body": "Review approval required.",
+                        },
+                    }
+                },
+            },
+            "status": "input_required",
+        }
     RunRegistry(tasks_db_path).create_run(
         RunSpec(
             run_id=run_id,
@@ -35,7 +54,7 @@ def _seed_run(
             agent="review",
             origin="local",
         ),
-        outcome=RunOutcome(status=status),
+        outcome=RunOutcome(status=status, result=result),
     )
     return run_id
 
@@ -55,7 +74,7 @@ async def test_resume_unknown_thread_returns_404(
     )
 
     assert response.status_code == 404
-    assert response.json()["error"]["code"] == 404
+    assert response.json()["error"]["code"] == "not_found"
 
 
 async def test_resume_terminal_run_returns_409(
@@ -77,7 +96,7 @@ async def test_resume_terminal_run_returns_409(
     )
 
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == 409
+    assert response.json()["error"]["code"] == "run_state_conflict"
 
 
 async def test_resume_bad_body_returns_422(
@@ -99,7 +118,7 @@ async def test_resume_bad_body_returns_422(
     )
 
     assert response.status_code == 422
-    assert response.json()["error"]["code"] == 422
+    assert response.json()["error"]["code"] == "invalid_request"
 
 
 async def test_get_run_preserves_input_required_status(
@@ -161,7 +180,7 @@ async def test_review_run_interrupt_then_resume_finishes(
     assert interrupted["id"] == thread_id
     assert interrupted["run_id"] == thread_id
     assert interrupted["status"] == "input_required"
-    assert interrupted["interrupt"]["draft"] == {"summary": "draft review"}
+    assert interrupted["interrupt"]["draft"]["summary"] == "draft review"
 
     resumed = await api_client.post(
         f"/v1/runs/{thread_id}/resume",
@@ -233,5 +252,5 @@ async def test_review_chat_completion_stream_returns_400(
     )
 
     assert response.status_code == 400
-    assert response.json()["error"]["code"] == 400
-    assert "human-in-the-loop review" in response.json()["error"]["message"]
+    assert response.json()["error"]["code"] == "invalid_argument"
+    assert response.json()["error"]["message"] == "invalid request"

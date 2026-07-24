@@ -12,17 +12,23 @@ of the pause/resume orchestration.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Mapping
 from dataclasses import asdict
 from typing import Any
 
-from ..agents.shared.a2ui import attach_review_a2ui, build_submitted_value
+from ..agents.shared.a2ui import (
+    A2uiSurfaceValidationError,
+    build_review_a2ui_interrupt,
+    build_submitted_value,
+    validate_a2ui_surface,
+)
 from ..agents.shared.intermediate_state import merge_intermediate_state
-from ..config.defaults import ApiConfig
 from ..mcp.result_formatting import build_tool_result_envelope
+from .lifecycle_contract import build_agent_run_response
 
-_LOGGER = logging.getLogger(__name__)
+
+class ReviewSurfaceProjectionError(RuntimeError):
+    """Raised when Review cannot produce a valid public pause surface."""
 
 
 def chat_interrupt_result(interrupt: Mapping[str, Any]) -> dict[str, Any]:
@@ -122,31 +128,44 @@ def review_interrupt_body(
     *, thread_id: str, interrupt: Mapping[str, Any]
 ) -> dict[str, Any]:
     """Return the HTTP body for a paused ReviewAgent run."""
-    return {
-        "id": thread_id,
-        "run_id": thread_id,
-        "object": "agent.run",
-        "agent": "review",
-        "status": "input_required",
-        "task_ids": [],
-        "interrupt": dict(interrupt),
-    }
+    body = build_agent_run_response(
+        run_id=thread_id,
+        agent="review",
+        status="input_required",
+        task_ids=(),
+        result=review_interrupt_result(interrupt),
+        persisted=True,
+    )
+    # Keep the legacy top-level alias for direct callers. The factory's
+    # canonicalizer also accepts this shape and preserves the old HTTP body.
+    body["interrupt"] = dict(interrupt)
+    return body
 
 
 def project_review_interrupt(
     interrupt: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Attach a2ui to a Review interrupt when the feature is enabled."""
-    if not ApiConfig().A2UI_ENABLED:
-        return dict(interrupt)
+    """Build and validate a Review surface regardless of feature flags."""
     try:
-        return attach_review_a2ui(interrupt)
+        projected = build_review_a2ui_interrupt(interrupt)
+        draft = projected.get("draft")
+        surface = draft.get("a2ui") if isinstance(draft, Mapping) else None
+        if not isinstance(surface, Mapping):
+            raise ReviewSurfaceProjectionError(
+                "review surface projection failed"
+            )
+        validate_a2ui_surface(surface)
+        return projected
+    except ReviewSurfaceProjectionError:
+        raise
+    except A2uiSurfaceValidationError as exc:
+        raise ReviewSurfaceProjectionError(
+            "review surface validation failed"
+        ) from exc
     except Exception as exc:  # pylint: disable=broad-exception-caught
-        _LOGGER.error(
-            "review a2ui projection failed (%s); continuing without",
-            exc.__class__.__name__,
-        )
-        return dict(interrupt)
+        raise ReviewSurfaceProjectionError(
+            "review surface projection failed"
+        ) from exc
 
 
 __all__ = [
@@ -155,6 +174,7 @@ __all__ = [
     "format_chat_result",
     "format_review_result",
     "project_review_interrupt",
+    "ReviewSurfaceProjectionError",
     "review_interrupt_body",
     "review_interrupt_result",
     "submitted_a2ui_value",

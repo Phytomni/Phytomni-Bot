@@ -22,6 +22,7 @@ __all__ = [
     "REVIEW_BODY_MAX_CHARS",
     "REVIEW_CONFIRM_TITLE",
     "attach_review_a2ui",
+    "build_review_a2ui_interrupt",
     "project_review_confirm",
     "review_action_to_resume",
     "summary_text_from_interrupt_draft",
@@ -47,8 +48,10 @@ def project_review_confirm(summary: str) -> dict[str, Any]:
     return author_a2ui_surface_offline({"text": summary, "agent": "review"})
 
 
-def attach_review_a2ui(interrupt: Mapping[str, Any]) -> dict[str, Any]:
-    """Return a copy of interrupt with draft.a2ui projected when possible."""
+def build_review_a2ui_interrupt(
+    interrupt: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return a Review interrupt with a deterministically authored surface."""
     out = dict(interrupt)
     draft = out.get("draft")
     summary = summary_text_from_interrupt_draft(draft)
@@ -60,6 +63,11 @@ def attach_review_a2ui(interrupt: Mapping[str, Any]) -> dict[str, Any]:
     else:
         out["draft"] = {"draft": summary, "a2ui": surface}
     return out
+
+
+def attach_review_a2ui(interrupt: Mapping[str, Any]) -> dict[str, Any]:
+    """Compatibility alias for the Review interrupt builder."""
+    return build_review_a2ui_interrupt(interrupt)
 
 
 def review_action_to_resume(

@@ -1,0 +1,222 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+"""Review A2UI streaming and terminal-settlement helpers."""
+
+from __future__ import annotations
+
+from collections.abc import AsyncIterator, Callable, Mapping
+from dataclasses import dataclass
+from typing import Any
+
+from fastapi.responses import StreamingResponse
+
+from ..agents.shared.a2ui import A2UI_CUSTOM_NAME
+from ..mcp.result_formatting import (
+    AguiEvent,
+    custom,
+    run_error,
+    run_finished,
+    run_started,
+)
+from ..mcp.stream_lifecycle import (
+    StreamLifecycleState,
+    durable_settlement_succeeded,
+    prime_agui_stream,
+    run_persistence_error,
+)
+from ..runtime.langgraph_runner import build_runnable_config
+from ..runtime.resume import detect_interrupt
+from .a2ui_projection import (
+    ReviewSurfaceProjectionError,
+    review_interrupt_result,
+)
+from .lifecycle_contract import (
+    LifecycleInvariantError,
+    SafeErrorCode,
+    build_agent_run_response,
+    empty_agent_result,
+)
+from .openai_mapping import to_chat_completion_chunks
+from .schemas import ChatCompletionRequest
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewStreamHooks:
+    """Compatibility seams supplied by the extracted runtime."""
+
+    prepare_review_stream: Callable[..., Any]
+    project_interrupt: Callable[[Mapping[str, Any]], dict[str, Any]]
+
+
+def _settle_a2ui_stream_terminal(
+    settle: Callable[[], bool],
+    settled_terminal: list[bool],
+) -> bool:
+    """Record one A2UI terminal state and require exact durable success."""
+    if not durable_settlement_succeeded(settle):
+        return False
+    settled_terminal[0] = True
+    return True
+
+
+def settle_a2ui_stream_failure(
+    run_id: str,
+    owner: str,
+    settled_terminal: list[bool],
+    *,
+    dependencies: Any,
+) -> None:
+    """Settle an A2UI stream failed when no domain terminal was committed."""
+    if settled_terminal[0]:
+        return
+    _settle_a2ui_stream_terminal(
+        lambda: dependencies.persistence.settle_stream_run(
+            run_id,
+            owner,
+            "failed",
+            dependencies.stream.failed_stream_result(),
+        ),
+        settled_terminal,
+    )
+
+
+async def stream_review_a2ui_pause(
+    *,
+    arguments: dict[str, Any],
+    payload: ChatCompletionRequest,
+    user_query: str,
+    dependencies: Any,
+    hooks: ReviewStreamHooks,
+) -> StreamingResponse:
+    """Stream Review until interrupt and emit one ``phyto.a2ui`` frame."""
+    context = hooks.prepare_review_stream(
+        arguments=arguments,
+        payload=payload,
+        user_query=user_query,
+        dependencies=dependencies,
+    )
+
+    async def _agui_events(settled: list[bool]) -> AsyncIterator[AguiEvent]:
+        yield run_started(context.run_id, payload.dialogue_id)
+        final_state = await context.graph.ainvoke(
+            context.initial_state,
+            config=build_runnable_config(context.run_id),
+        )
+        interrupt = detect_interrupt(final_state, context.run_id)
+        if interrupt is not None:
+            try:
+                interrupt_dict = hooks.project_interrupt(dict(interrupt))
+            except ReviewSurfaceProjectionError:
+                if not _settle_a2ui_stream_terminal(
+                    lambda: dependencies.persistence.settle_stream_run(
+                        context.run_id,
+                        context.owner,
+                        "failed",
+                        empty_agent_result(),
+                    ),
+                    settled,
+                ):
+                    yield run_persistence_error()
+                    return
+                yield run_error(
+                    SafeErrorCode.PROJECTION_FAILED.value,
+                    "review surface projection failed",
+                )
+                return
+            pause_result = review_interrupt_result(interrupt_dict)
+            try:
+                pause_body = build_agent_run_response(
+                    run_id=context.run_id,
+                    agent="review",
+                    status="input_required",
+                    task_ids=(),
+                    result=pause_result,
+                    persisted=True,
+                )
+            except (LifecycleInvariantError, TypeError, ValueError):
+                if not _settle_a2ui_stream_terminal(
+                    lambda: dependencies.persistence.settle_stream_run(
+                        context.run_id,
+                        context.owner,
+                        "failed",
+                        empty_agent_result(),
+                    ),
+                    settled,
+                ):
+                    yield run_persistence_error()
+                    return
+                yield run_error(
+                    SafeErrorCode.PROJECTION_FAILED.value,
+                    "review surface projection failed",
+                )
+                return
+            if not _settle_a2ui_stream_terminal(
+                lambda: dependencies.persistence.settle_stream_run(
+                    context.run_id,
+                    context.owner,
+                    "input_required",
+                    pause_body["result"],
+                ),
+                settled,
+            ):
+                yield run_persistence_error()
+                return
+            draft = interrupt_dict.get("draft")
+            if isinstance(draft, Mapping):
+                a2ui_value = draft.get("a2ui")
+                if isinstance(a2ui_value, Mapping):
+                    yield custom(A2UI_CUSTOM_NAME, dict(a2ui_value))
+        else:
+            result = dependencies.persistence.format_review_result(
+                final_state, arguments=arguments
+            )
+            if not _settle_a2ui_stream_terminal(
+                lambda: dependencies.persistence.settle_stream_run(
+                    context.run_id,
+                    context.owner,
+                    "succeeded",
+                    result,
+                ),
+                settled,
+            ):
+                yield run_persistence_error()
+                return
+        yield run_finished(context.run_id)
+
+    lifecycle_state = StreamLifecycleState()
+    settled_terminal = [False]
+    try:
+        primed = await prime_agui_stream(_agui_events(settled_terminal))
+    except Exception as exc:
+        settle_a2ui_stream_failure(
+            context.run_id,
+            context.owner,
+            settled_terminal,
+            dependencies=dependencies,
+        )
+        raise dependencies.stream.stream_setup_error(
+            exc, priming=True
+        ) from exc
+
+    async def _wrapped() -> AsyncIterator[str]:
+        try:
+            async for line in to_chat_completion_chunks(
+                dependencies.stream.project_stream(
+                    primed,
+                    run_id=context.run_id,
+                    lifecycle_state=lifecycle_state,
+                ),
+                payload.model,
+            ):
+                yield line
+        finally:
+            settle_a2ui_stream_failure(
+                context.run_id,
+                context.owner,
+                settled_terminal,
+                dependencies=dependencies,
+            )
+
+    return StreamingResponse(_wrapped(), media_type="text/event-stream")

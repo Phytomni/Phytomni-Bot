@@ -99,6 +99,24 @@ def _accepted_final_state() -> dict[str, Any]:
     }
 
 
+def _large_succeeded_response(run_id: str) -> dict[str, Any]:
+    """Build a valid terminal response large enough for the size guard."""
+    return {
+        "id": run_id,
+        "run_id": run_id,
+        "object": "agent.run",
+        "agent": "chat",
+        "status": "succeeded",
+        "task_ids": [],
+        "result": {
+            "formatted": {
+                "answer": "x" * (1_048_576 + 1),
+            },
+            "execution": {},
+        },
+    }
+
+
 async def test_a2ui_action_accept_succeeds(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -219,7 +237,7 @@ async def test_a2ui_action_flag_off_returns_403(
     )
 
     assert response.status_code == 403
-    assert response.json()["error"]["message"] == "a2ui disabled"
+    assert response.json()["error"]["code"] == "forbidden"
 
 
 async def test_a2ui_action_oversized_body_returns_413(
@@ -246,7 +264,7 @@ async def test_a2ui_action_oversized_body_returns_413(
     )
 
     assert response.status_code == 413
-    assert response.json()["error"]["code"] == 413
+    assert response.json()["error"]["code"] == "payload_too_large"
 
 
 async def test_a2ui_action_oversized_response_returns_413(
@@ -263,8 +281,8 @@ async def test_a2ui_action_oversized_response_returns_413(
         surface_id="sfc-large-response",
     )
 
-    async def _large_resume(**_kwargs: Any) -> tuple[dict[str, Any], int]:
-        return {"answer": "x" * (1_048_576 + 1)}, 200
+    async def _large_resume(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        return _large_succeeded_response(str(kwargs["run_id"])), 200
 
     monkeypatch.setattr(api_app_module, "_resume_a2ui_run", _large_resume)
     response = await api_client.post(
@@ -278,7 +296,7 @@ async def test_a2ui_action_oversized_response_returns_413(
     )
 
     assert response.status_code == 413
-    assert response.json()["error"]["code"] == 413
+    assert response.json()["error"]["code"] == "payload_too_large"
 
 
 async def test_a2ui_action_wrong_widget_returns_400(
@@ -308,7 +326,8 @@ async def test_a2ui_action_wrong_widget_returns_400(
     )
 
     assert response.status_code == 400
-    assert response.json()["error"]["message"] == "widget mismatch"
+    assert response.json()["error"]["code"] == "invalid_argument"
+    assert response.json()["error"]["message"] == "invalid request"
 
 
 async def test_a2ui_action_wrong_surface_returns_409(
@@ -336,7 +355,7 @@ async def test_a2ui_action_wrong_surface_returns_409(
     )
 
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == 409
+    assert response.json()["error"]["code"] == "run_state_conflict"
 
 
 async def test_a2ui_action_not_input_required_returns_409(
@@ -484,7 +503,7 @@ async def test_a2ui_action_duplicate_after_success_returns_409(
     )
 
     assert second.status_code == 409
-    assert second.json()["error"]["code"] == 409
+    assert second.json()["error"]["code"] == "run_state_conflict"
 
 
 async def test_a2ui_action_path_body_run_id_mismatch_returns_400(
@@ -512,7 +531,8 @@ async def test_a2ui_action_path_body_run_id_mismatch_returns_400(
     )
 
     assert response.status_code == 400
-    assert response.json()["error"]["message"] == "run_id mismatch"
+    assert response.json()["error"]["code"] == "invalid_argument"
+    assert response.json()["error"]["message"] == "invalid request"
 
 
 async def test_a2ui_action_invalid_confirm_payload_returns_400(
@@ -542,9 +562,8 @@ async def test_a2ui_action_invalid_confirm_payload_returns_400(
     )
 
     assert response.status_code == 400
-    assert (
-        "Invalid confirm action payload" in response.json()["error"]["message"]
-    )
+    assert response.json()["error"]["code"] == "invalid_argument"
+    assert response.json()["error"]["message"] == "invalid request"
 
 
 async def test_a2ui_action_no_checkpoint_returns_409(
@@ -585,7 +604,7 @@ async def test_a2ui_action_no_checkpoint_returns_409(
     )
 
     assert response.status_code == 409
-    assert response.json()["error"]["message"] == "no pause point for run"
+    assert response.json()["error"]["code"] == "run_state_conflict"
 
 
 def _open_form_surface(surface_id: str) -> dict[str, Any]:
@@ -784,7 +803,7 @@ async def test_a2ui_action_missing_draft_surface_returns_409(
     )
 
     assert response.status_code == 409
-    assert response.json()["error"]["message"] == "no open a2ui surface"
+    assert response.json()["error"]["code"] == "run_state_conflict"
 
 
 def _open_review_form_surface(surface_id: str) -> dict[str, Any]:

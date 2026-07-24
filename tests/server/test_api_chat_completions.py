@@ -70,7 +70,7 @@ async def test_chat_completions_requires_auth(
     )
 
     assert response.status_code == 401
-    assert response.json()["error"]["code"] == 401
+    assert response.json()["error"]["code"] == "unauthenticated"
 
 
 async def test_chat_completions_unknown_model(

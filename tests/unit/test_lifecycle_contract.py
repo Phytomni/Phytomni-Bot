@@ -117,6 +117,39 @@ def test_persisted_review_interrupt_uses_safe_summary_fallback() -> None:
     assert "/srv/private/provider" not in str(interrupt)
 
 
+def test_terminal_projection_preserves_submitted_a2ui_value() -> None:
+    """Terminal A2UI submission state survives canonicalization."""
+    projected = canonicalize_run_record(
+        {
+            "run_id": "run-review-submitted",
+            "agent": "review",
+            "status": "succeeded",
+            "task_ids": [],
+            "result": {
+                "formatted": {"answer": "Approved final review."},
+                "a2ui": {
+                    "catalog_version": "v1.0",
+                    "surface_id": "review-surface",
+                    "widget": "confirm",
+                    "props": {
+                        "title": "Review approval",
+                        "body": "draft review",
+                        "status": "submitted",
+                        "accepted": True,
+                    },
+                },
+            },
+        }
+    )
+
+    assert projected["result"]["a2ui"]["props"] == {
+        "title": "Review approval",
+        "body": "draft review",
+        "status": "submitted",
+        "accepted": True,
+    }
+
+
 def test_persisted_record_drops_unknown_top_level_fields() -> None:
     """Only known run history fields and canonical result data are public."""
     projected = canonicalize_run_record(

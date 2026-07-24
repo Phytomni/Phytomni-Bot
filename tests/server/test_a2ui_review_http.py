@@ -13,6 +13,7 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
+from mcp_server_phytomni.api import a2ui_runtime
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
 
@@ -65,20 +66,19 @@ def _assert_review_persistence_failure(body: str) -> None:
     )
     assert all(body.count(marker) == 1 for marker in unique_markers)
     assert all(
-        marker not in body
-        for marker in ("event: RunFinished\n", "phyto.a2ui")
+        marker not in body for marker in ("event: RunFinished\n", "phyto.a2ui")
     )
     assert body.rstrip().endswith("data: [DONE]")
 
 
-async def test_review_pause_flag_off_has_no_a2ui(
+async def test_review_pause_flag_off_still_projects_a2ui(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
     review_app_factory: Any,
 ) -> None:
-    """With A2UI disabled, Review pauses keep a plain draft interrupt."""
+    """Review pauses keep a valid surface even when A2UI actions are off."""
     _ = tasks_db_path
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "false")
     _patch_review_app(monkeypatch, review_app_factory())
@@ -94,8 +94,8 @@ async def test_review_pause_flag_off_has_no_a2ui(
     )
     assert response.status_code == 200
     draft = response.json()["interrupt"]["draft"]
-    assert draft == {"draft": "draft review"}
-    assert "a2ui" not in draft
+    assert draft["summary"] == "draft review"
+    assert draft["a2ui"]["widget"] == "confirm"
 
 
 async def test_review_pause_flag_on_projects_a2ui(
@@ -122,7 +122,7 @@ async def test_review_pause_flag_on_projects_a2ui(
     assert response.status_code == 200
     body = response.json()
     draft = body["interrupt"]["draft"]
-    assert draft["draft"] == "draft review"
+    assert draft["summary"] == "draft review"
     assert draft["a2ui"]["widget"] == "confirm"
     assert draft["a2ui"]["props"]["body"] == "draft review"
     # Registry must match response (GET /v1/runs/{id})
@@ -252,6 +252,84 @@ async def test_review_chat_completion_pause_projects_a2ui(
     )
     assert response.status_code == 200
     assert "a2ui" in response.json()["interrupt"]["draft"]
+
+
+async def test_review_projection_failure_persists_failed_run(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+    review_app_factory: Any,
+) -> None:
+    """A failed surface projection is persisted before the 500 response."""
+    _ = tasks_db_path
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "false")
+    _patch_review_app(monkeypatch, review_app_factory())
+
+    def fail_projection(_interrupt: Any) -> NoReturn:
+        """Force the public projection seam to fail."""
+        raise a2ui_runtime.ReviewSurfaceProjectionError("synthetic failure")
+
+    monkeypatch.setattr(
+        a2ui_runtime,
+        "project_review_interrupt",
+        fail_projection,
+    )
+
+    response = await api_client.post(
+        "/v1/agents/review/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "arguments": {
+                "user_query": "Review photosynthesis.",
+                "obs_file_list": [],
+            }
+        },
+    )
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "projection_failed"
+    listing = await api_client.get(
+        "/v1/runs?status=failed&agent=review",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert listing.status_code == 200
+    rows = listing.json()["data"]
+    assert rows
+    assert rows[-1]["status"] == "failed"
+    assert rows[-1]["result"]["formatted"]["answer"] == ""
+
+
+async def test_review_stream_projection_failure_is_safe_and_terminal(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    review_app_factory: Any,
+) -> None:
+    """A stream projection failure emits no surface or contradictory finish."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    _patch_review_app(monkeypatch, review_app_factory())
+
+    def fail_projection(_interrupt: Any) -> NoReturn:
+        """Force the stream projection seam to fail."""
+        raise a2ui_runtime.ReviewSurfaceProjectionError("synthetic failure")
+
+    monkeypatch.setattr(
+        a2ui_runtime,
+        "project_review_interrupt",
+        fail_projection,
+    )
+    response = await _post_review_chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="Review this.",
+    )
+
+    assert response.status_code == 200
+    assert '"code": "projection_failed"' in response.text
+    assert "phyto.a2ui" not in response.text
+    assert "event: RunFinished\n" not in response.text
 
 
 async def test_review_stream_validation_fails_before_sse(
@@ -424,7 +502,7 @@ async def test_review_a2ui_then_resume_second_returns_409(
         json={"approved": True},
     )
     assert second.status_code == 409
-    assert second.json()["error"]["code"] == 409
+    assert second.json()["error"]["code"] == "run_state_conflict"
 
 
 async def test_review_reject_a2ui_mints_new_surface_on_reinterrupt(
@@ -468,7 +546,7 @@ async def test_review_reject_a2ui_mints_new_surface_on_reinterrupt(
     assert out["status"] == "input_required"
     new_surface_id = out["interrupt"]["draft"]["a2ui"]["surface_id"]
     assert new_surface_id != old_surface_id
-    assert out["interrupt"]["draft"]["draft"] == "revised draft"
+    assert out["interrupt"]["draft"]["summary"] == "revised draft"
 
 
 async def test_review_stream_flag_off_still_400(
@@ -487,8 +565,8 @@ async def test_review_stream_flag_off_still_400(
         content="Review this topic.",
     )
     assert response.status_code == 400
-    assert response.json()["error"]["code"] == 400
-    assert "human-in-the-loop review" in response.json()["error"]["message"]
+    assert response.json()["error"]["code"] == "invalid_argument"
+    assert response.json()["error"]["message"] == "invalid request"
 
 
 async def test_review_stream_flag_on_emits_phyto_a2ui(

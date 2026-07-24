@@ -541,10 +541,56 @@ def _canonicalize_result_projection(
         merged_execution["tasks"] = [
             {"id": task_id, "accepted": True} for task_id in task_ids
         ]
-    return {
+    projected: dict[str, Any] = {
         "formatted": merged_formatted,
         "execution": merged_execution,
     }
+    submitted_surface = _project_a2ui_result(result.get("a2ui"))
+    if submitted_surface is not None:
+        projected["a2ui"] = submitted_surface
+    return projected
+
+
+def _project_a2ui_result(value: Any) -> dict[str, Any] | None:
+    """Validate a downlink or the bounded submitted-value variant."""
+    if not isinstance(value, Mapping):
+        return None
+    props = value.get("props")
+    if not isinstance(props, Mapping):
+        return None
+    submitted_keys = {"status", "accepted", "cancelled", "fields", "selected"}
+    base = {
+        **dict(value),
+        "props": {
+            key: item
+            for key, item in props.items()
+            if key not in submitted_keys
+        },
+    }
+    try:
+        validated = validate_a2ui_surface(base)
+    except A2uiSurfaceValidationError:
+        return None
+    projected = validated.model_dump()
+    if props.get("status") != "submitted":
+        return projected
+    projected_props = dict(projected["props"])
+    projected_props["status"] = "submitted"
+    for key in ("accepted", "cancelled"):
+        item = props.get(key)
+        if isinstance(item, bool):
+            projected_props[key] = item
+    fields = props.get("fields")
+    if isinstance(fields, Mapping):
+        projected_props["fields"] = dict(fields)
+    selected = props.get("selected")
+    if isinstance(selected, str) or (
+        isinstance(selected, list)
+        and all(isinstance(item, str) for item in selected)
+    ):
+        projected_props["selected"] = selected
+    projected["props"] = projected_props
+    return projected
 
 
 _METADATA_SCALAR_KEYS = frozenset(
