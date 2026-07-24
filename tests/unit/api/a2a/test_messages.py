@@ -107,6 +107,22 @@ async def test_expert_router_without_selection_falls_back_to_chat() -> None:
     )
 
 
+async def test_a2a_no_allowlist_selector_keeps_chat_fallback() -> None:
+    """A2A's legacy selector call omits strict constraints and falls back."""
+    captured: dict[str, Any] = {}
+
+    async def no_selection(text: str, **kwargs: Any) -> None:
+        captured.update({"text": text, **kwargs})
+        return None
+
+    mapped = await map_a2a_message(
+        _message(Part(text="general question")), select_agent=no_selection
+    )
+
+    assert captured == {"text": "general question"}
+    assert mapped.tool_name == "ChatAgent"
+
+
 async def test_unknown_skill_is_an_invalid_params_error() -> None:
     """Unknown catalog ids fail as JSON-RPC invalid parameters."""
     with pytest.raises(InvalidParamsError, match="unknown A2A skill"):

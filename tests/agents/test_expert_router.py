@@ -146,6 +146,33 @@ async def test_strict_router_forces_requested_tool(
 
 
 @pytest.mark.parametrize(
+    "tool_name",
+    [spec["function"]["name"] for spec in agent_openai_tool_specs()],
+)
+async def test_strict_router_forces_every_canonical_tool(
+    monkeypatch: pytest.MonkeyPatch, tool_name: str
+) -> None:
+    """Every dispatchable canonical tool can be the strict forced choice."""
+    captured: dict[str, Any] = {}
+    _patch_openai(
+        monkeypatch,
+        _completion(tool_calls=[_tool_call(tool_name, "{}")]),
+        captured,
+    )
+
+    result = await select_agent_tool(
+        "route this", allowed_tools=[tool_name], forced_tool=tool_name
+    )
+
+    assert result is not None
+    assert result.tool_name == tool_name
+    assert captured["tool_choice"] == {
+        "type": "function",
+        "function": {"name": tool_name},
+    }
+
+
+@pytest.mark.parametrize(
     "completion",
     [
         SimpleNamespace(choices=[]),

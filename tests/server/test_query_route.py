@@ -29,6 +29,7 @@ from mcp_server_phytomni.agents.expert import (
 )
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.schemas import ExpertQueryRequest
+from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
@@ -342,6 +343,166 @@ async def test_route_passes_constraints_to_selector_and_forces_agent(
     assert response.json()["agent"] == "data"
 
 
+_FORCED_ROUTE_CASES = (
+    ("ChatAgent", "chat", {"user_query": "q", "obs_file_list": []}),
+    ("KnowledgeAgent", "knowledge", {"user_query": "q", "obs_file_list": []}),
+    ("DataAgent", "data", {"user_query": "q"}),
+    (
+        "AnalystAgent",
+        "analyst",
+        {"goal_description": "q", "data_list": {}, "obs_file_list": []},
+    ),
+    ("ReviewAgent", "review", {"user_query": "q", "obs_file_list": []}),
+    ("BriefGeneAgent", "brief_gene", {"user_query": "AT1G01010"}),
+    (
+        "DeepGenomeAgent",
+        "deep_genome",
+        {"species_code": "ath", "gene_id": "AT1G01010"},
+    ),
+    (
+        "InSilicoResearchAgent",
+        "research",
+        {"user_query": "q", "data_list": {}, "obs_file_list": []},
+    ),
+    (
+        "DigitalDesignAgent",
+        "design",
+        {"species_code": "ath", "gene_id": "AT1G01010", "obs_file_list": []},
+    ),
+    (
+        "GeneNetworkAgent",
+        "network",
+        {"species_code": "ath", "to_id": "TO:0000001", "obs_file_list": []},
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "slug", "arguments"), _FORCED_ROUTE_CASES
+)
+async def test_route_forces_every_canonical_tool_to_its_native_slug(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tool_name: str,
+    slug: str,
+    arguments: dict[str, Any],
+) -> None:
+    """Each shared canonical tool definition reaches its native slug."""
+    assert tuple(
+        name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
+    ) == tuple(case[0] for case in _FORCED_ROUTE_CASES)
+    invoked: list[dict[str, Any]] = []
+
+    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        invoked.append(kwargs)
+        return ({"agent": kwargs["agent"], "status": "succeeded"}, 200)
+
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
+    _patch_select(monkeypatch, ToolSelection(tool_name, arguments))
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "q",
+            "allowed_tools": [tool_name],
+            "forced_tool": tool_name,
+        },
+    )
+
+    assert response.status_code == 200
+    assert invoked[0]["agent"] == slug
+
+
+@pytest.mark.parametrize(
+    "selection, allowed_tools, forced_tool, expected_status",
+    [
+        (None, ["ChatAgent"], None, 502),
+        (
+            ToolSelectionError("routing model returned no choice"),
+            ["ChatAgent"],
+            None,
+            502,
+        ),
+        (
+            ToolSelectionError("routing model returned no tool call"),
+            ["ChatAgent"],
+            None,
+            502,
+        ),
+        (
+            ToolSelectionError(
+                "routing model must return exactly one tool call"
+            ),
+            ["ChatAgent"],
+            None,
+            502,
+        ),
+        (
+            ToolSelectionError("routing model selected an unknown tool"),
+            ["ChatAgent"],
+            None,
+            502,
+        ),
+        (
+            ToolSelectionError(
+                "routing model selected a tool outside the allowlist"
+            ),
+            ["ChatAgent"],
+            None,
+            502,
+        ),
+        (
+            ToolSelectionError("routing model did not honor the forced tool"),
+            ["ChatAgent"],
+            None,
+            502,
+        ),
+        (ToolSelection("GetTaskStatus", {}), ["ChatAgent"], None, 502),
+    ],
+)
+async def test_route_strict_failures_never_invoke_agent(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    selection: ToolSelection | ToolSelectionError | None,
+    allowed_tools: list[str],
+    forced_tool: str | None,
+    expected_status: int,
+) -> None:
+    """Strict selection and routing-contract failures stop before dispatch."""
+    invoked = 0
+
+    async def forbidden_invoke(
+        **_kwargs: object,
+    ) -> tuple[dict[str, Any], int]:
+        nonlocal invoked
+        invoked += 1
+        raise AssertionError("agent invocation must not run")
+
+    monkeypatch.setattr(api_app, "_invoke_agent_run", forbidden_invoke)
+    if isinstance(selection, ToolSelectionError):
+
+        async def failing_select(*_args: Any, **_kwargs: Any) -> ToolSelection:
+            raise selection
+
+        monkeypatch.setattr(api_app, "select_agent_tool", failing_select)
+    else:
+        _patch_select(monkeypatch, selection)
+    payload: dict[str, Any] = {
+        "user_query": "q",
+        "allowed_tools": allowed_tools,
+    }
+    if forced_tool is not None:
+        payload["forced_tool"] = forced_tool
+    response = await api_client.post(
+        "/v1/query/route", headers=_auth(issued_api_key), json=payload
+    )
+    assert response.status_code == expected_status
+    assert invoked == 0
+
+
 async def test_route_injects_obs_only_for_obs_capable_tool(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -510,6 +671,18 @@ async def test_route_invalid_arguments_returns_400(
     ``INVALID_PARAMS``, which the route maps to 400 rather than letting it
     fall through to the generic 500 handler.
     """
+    invoked = 0
+
+    async def forbidden_handler(_args: Any) -> dict[str, Any]:
+        nonlocal invoked
+        invoked += 1
+        raise AssertionError("agent invocation must not run")
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.KNOWLEDGE_AGENT.value,
+        forbidden_handler,
+    )
     _patch_select(monkeypatch, ToolSelection("KnowledgeAgent", {}))
     response = await api_client.post(
         "/v1/query/route",
@@ -517,3 +690,4 @@ async def test_route_invalid_arguments_returns_400(
         json={"user_query": "rice", "allowed_tools": ["KnowledgeAgent"]},
     )
     assert response.status_code == 400
+    assert invoked == 0
