@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from mcp_server_phytomni.api.lifecycle_contract import (
@@ -89,4 +91,34 @@ def test_persisted_running_record_requires_recoverable_identity() -> None:
                 "result": None,
                 "task_ids": [],
             }
+        )
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        ({"persisted": True}, "missing required keyword-only argument"),
+        ({"result": empty_agent_result()}, "missing required keyword-only"),
+        (
+            {
+                "result": empty_agent_result(),
+                "persisted": True,
+                "unsupported": True,
+            },
+            "unexpected keyword argument",
+        ),
+    ],
+)
+def test_builder_rejects_missing_or_unknown_options(
+    options: dict[str, Any],
+    message: str,
+) -> None:
+    """The builder reports invalid keyword options as normal call errors."""
+    with pytest.raises(TypeError, match=message):
+        build_agent_run_response(
+            run_id="run-options",
+            agent="chat",
+            status="succeeded",
+            task_ids=(),
+            **options,
         )

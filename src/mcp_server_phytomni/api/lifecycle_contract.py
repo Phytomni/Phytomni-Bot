@@ -97,6 +97,13 @@ class _AgentRunResponseKeywordOptions(TypedDict):
     include_run_id: NotRequired[bool]
 
 
+_REQUIRED_RESPONSE_OPTIONS = frozenset({"result", "persisted"})
+_OPTIONAL_RESPONSE_OPTIONS = frozenset({"degraded_tracking", "include_run_id"})
+_SUPPORTED_RESPONSE_OPTIONS = (
+    _REQUIRED_RESPONSE_OPTIONS | _OPTIONAL_RESPONSE_OPTIONS
+)
+
+
 def empty_agent_result(*, degraded: bool = False) -> dict[str, Any]:
     """Return the smallest canonical scientific/execution projection."""
     warnings: list[dict[str, Any]] = []
@@ -189,6 +196,7 @@ def build_agent_run_response(
     **options: Unpack[_AgentRunResponseKeywordOptions],
 ) -> dict[str, Any]:
     """Validate and serialize one canonical public agent.run."""
+    _validate_response_options(options)
     request = _AgentRunResponseInput(
         run_id=run_id,
         agent=agent,
@@ -241,6 +249,26 @@ def build_agent_run_response(
     if request.options.degraded_tracking:
         body["degraded_tracking"] = True
     return body
+
+
+def _validate_response_options(
+    options: Mapping[str, Any],
+) -> None:
+    """Reject incomplete or unsupported builder options before projection."""
+    missing = sorted(_REQUIRED_RESPONSE_OPTIONS - options.keys())
+    if missing:
+        names = ", ".join(repr(name) for name in missing)
+        raise TypeError(
+            "build_agent_run_response() missing required keyword-only "
+            f"argument(s): {names}"
+        )
+    unknown = sorted(options.keys() - _SUPPORTED_RESPONSE_OPTIONS)
+    if unknown:
+        names = ", ".join(repr(name) for name in unknown)
+        raise TypeError(
+            "build_agent_run_response() got unexpected keyword "
+            f"argument(s): {names}"
+        )
 
 
 def _task_ids_from_result(result: Mapping[str, Any]) -> tuple[str, ...]:
@@ -397,6 +425,8 @@ def canonicalize_agent_run_body(body: Mapping[str, Any]) -> dict[str, Any]:
             ),
         )
     result = body.get("result")
+    if result is None and status in {"succeeded", "failed"}:
+        result = {}
     if not isinstance(result, Mapping):
         raise LifecycleInvariantError(SafeErrorCode.PROJECTION_FAILED)
     if not task_ids:
@@ -459,12 +489,12 @@ def _canonicalize_result_projection(
     degraded_tracking: bool,
     task_ids: tuple[str, ...],
 ) -> dict[str, Any]:
-    """Lift legacy formatted-only results into the canonical projection."""
+    """Lift partial terminal results into the canonical projection."""
     formatted = result.get("formatted")
-    if not isinstance(formatted, Mapping):
-        raise LifecycleInvariantError(SafeErrorCode.PROJECTION_FAILED)
     canonical = empty_agent_result(degraded=degraded_tracking)
-    merged_formatted = dict(formatted)
+    merged_formatted = (
+        dict(formatted) if isinstance(formatted, Mapping) else {}
+    )
     for key, value in canonical["formatted"].items():
         merged_formatted.setdefault(key, value)
     merged_execution = dict(canonical["execution"])

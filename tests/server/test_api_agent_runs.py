@@ -652,15 +652,20 @@ async def test_invalid_persisted_succeeded_state_maps_to_safe_error(
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
-    """Invalid persisted lifecycle rows cannot be returned as valid data."""
+    """A malformed persisted result cannot be returned as valid data."""
     run_id = "run-invalid-persisted-succeeded"
     RunRegistry(tasks_db_path).create_run(
         RunSpec(run_id, "u1", "chat", "local"),
         outcome=RunOutcome(
             status="succeeded",
-            result={"answer": "invalid"},
+            result={},
         ),
     )
+    with sqlite3.connect(tasks_db_path) as connection:
+        connection.execute(
+            "UPDATE runs SET result_json = ? WHERE run_id = ?",
+            ('"invalid"', run_id),
+        )
 
     fetched = await api_client.get(
         f"/v1/runs/{run_id}",
@@ -676,6 +681,53 @@ async def test_invalid_persisted_succeeded_state_maps_to_safe_error(
         error = response.json()["error"]
         assert isinstance(error["code"], str)
         assert error["stage"] in {"lifecycle", "projection"}
+
+
+@pytest.mark.parametrize("status", ("succeeded", "failed"))
+async def test_terminal_run_reads_project_missing_formatted_result(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    status: str,
+) -> None:
+    """Terminal records without an answer retain their execution payload."""
+    run_id = f"run-terminal-without-formatted-{status}"
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec(run_id, "u1", "chat", "local"),
+        outcome=RunOutcome(
+            status=status,
+            result={
+                "execution": {
+                    "artifacts": [{"name": "result.tsv"}],
+                    "diagnostics": [{"code": "upstream_partial"}],
+                },
+                "provider_trace": "preserved",
+            },
+        ),
+    )
+
+    fetched = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    listed = await api_client.get(
+        "/v1/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert fetched.status_code == 200
+    assert listed.status_code == 200
+    listed_row = next(
+        row for row in listed.json()["data"] if row["id"] == run_id
+    )
+    for body in (fetched.json(), listed_row):
+        assert body["id"] == body["run_id"] == run_id
+        assert body["status"] == status
+        assert body["result"]["formatted"]["answer"] == ""
+        assert body["result"]["execution"]["artifacts"] == [
+            {"name": "result.tsv"}
+        ]
+        assert body["result"]["provider_trace"] == "preserved"
 
 
 async def test_persisted_running_projects_empty_result(
