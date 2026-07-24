@@ -54,6 +54,7 @@ __all__ = [
     "record_sync_run",
     "release_run_gc",
     "ResolvedRemoteRun",
+    "RunPersistenceError",
     "resolve_remote_run",
     "schedule_run_gc",
     "settle_stream_run",
@@ -102,6 +103,10 @@ class ResolvedRemoteRun:
     task_ids: tuple[str, ...]
     persisted: bool
     degraded_tracking: bool
+
+
+class RunPersistenceError(RuntimeError):
+    """Raised when a public run cannot be durably persisted."""
 
 
 def _database_path(db_path: str | None) -> str:
@@ -378,8 +383,8 @@ def record_sync_run(
     result: dict[str, Any],
     request_info: RunRequestInfo | None = None,
     db_path: str | None = None,
-) -> str | None:
-    """Persist a terminal local run, swallowing bookkeeping failures."""
+) -> str:
+    """Persist a terminal local run or fail before public success."""
     run_id = IdFactory().new_id("run", agent)
     try:
         RunRegistry(_database_path(db_path)).create_run(
@@ -393,12 +398,12 @@ def record_sync_run(
             request_info=request_info,
         )
     except (sqlite3.Error, OSError) as exc:
-        _LOGGER.warning(
-            "sync run bookkeeping write failed for agent %s: %s",
+        _LOGGER.error(
+            "sync run persistence failed for agent %s (%s)",
             agent,
             exc.__class__.__name__,
         )
-        return None
+        raise RunPersistenceError("completed run persistence failed") from exc
     return run_id
 
 
@@ -437,24 +442,26 @@ def settle_stream_run(
     result: dict[str, Any],
     *,
     context: RunLifecycleContext | None = None,
-) -> None:
-    """Settle a stream row and run the best-effort inline TTL purge."""
+) -> bool:
+    """Settle an owner-scoped stream row and report durable success."""
     configured = context or RunLifecycleContext()
     purge = configured.purge or purge_expired_runs_best_effort
     try:
-        RunRegistry(_database_path(configured.db_path)).settle_run(
+        updated = RunRegistry(_database_path(configured.db_path)).settle_run(
             run_id,
             owner=owner,
             status=status,
             result=result,
         )
     except (sqlite3.Error, OSError) as exc:
-        _LOGGER.warning(
-            "stream run settle failed for %s: %s",
+        _LOGGER.error(
+            "stream run settlement failed for %s (%s)",
             run_id,
             exc.__class__.__name__,
         )
+        updated = False
     purge()
+    return updated
 
 
 def stamp_remote_request_info(

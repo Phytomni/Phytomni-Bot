@@ -87,7 +87,10 @@ from .compat import (
     _stream_review_a2ui_pause,
 )
 from .lifecycle_contract import (
+    SafeApiError,
+    SafeErrorCode,
     build_agent_run_response,
+    canonicalize_agent_run_body,
     empty_agent_result,
 )
 from .openai_mapping import (
@@ -350,18 +353,38 @@ def _sync_agent_run_response(
     response_result: dict[str, Any],
 ) -> tuple[dict[str, Any], int]:
     """Persist and shape a terminal synchronous agent response."""
-    run_id = _record_sync_run(
-        agent=agent,
-        owner=owner,
-        result=result,
-        request_info=request_info,
+    try:
+        run_id = _record_sync_run(
+            agent=agent,
+            owner=owner,
+            result=result,
+            request_info=request_info,
+        )
+    except run_lifecycle.RunPersistenceError as exc:
+        raise SafeApiError(
+            status_code=500,
+            code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
+            message="The completed run could not be persisted.",
+            stage="run_persist",
+            retryable=False,
+        ) from exc
+    canonical = canonicalize_agent_run_body(
+        {
+            "id": run_id,
+            "object": "agent.run",
+            "agent": agent,
+            "status": "succeeded",
+            "task_ids": [],
+            "result": response_result,
+        }
     )
-    body = run_lifecycle.agent_run_response(
+    body = build_agent_run_response(
         run_id=run_id,
         agent=agent,
         status="succeeded",
-        result=response_result,
-        include_run_id=False,
+        task_ids=(),
+        result=canonical["result"],
+        persisted=True,
     )
     return body, 200
 
@@ -753,7 +776,7 @@ def _record_sync_run(
     owner: str,
     result: dict[str, Any],
     request_info: RunRequestInfo | None = None,
-) -> str | None:
+) -> str:
     """Compatibility seam for terminal synchronous run creation."""
     return run_lifecycle.record_sync_run(
         agent=agent,
@@ -858,9 +881,9 @@ def _settle_stream_run(
     owner: str,
     status: str,
     result: dict[str, Any],
-) -> None:
+) -> bool:
     """Compatibility seam for streaming run settlement."""
-    run_lifecycle.settle_stream_run(
+    return run_lifecycle.settle_stream_run(
         run_id,
         owner,
         status,

@@ -30,6 +30,7 @@ from ..mcp.stream_lifecycle import (
     StreamLifecycleState,
     prime_agui_stream,
     project_stream_failures,
+    project_terminal_settlement,
 )
 from ..runtime.run_registry import RunRequestInfo
 from . import a2ui_runtime
@@ -63,7 +64,7 @@ class StreamingPersistenceDependencies:
     """Run-registry and answer-storage seams."""
 
     create_running_stream_run: Callable[[str, str, str, RunRequestInfo], None]
-    settle_stream_run: Callable[[str, str, str, dict[str, Any]], None]
+    settle_stream_run: Callable[[str, str, str, dict[str, Any]], bool | None]
     stream_answer_max_bytes: Callable[[], int]
 
 
@@ -85,7 +86,6 @@ class _PreparedStream:
     agent_slug: str | None
     accumulator: StreamAnswerAccumulator
     lifecycle_state: StreamLifecycleState
-    sse_lines: AsyncIterator[str]
 
 
 def stream_setup_error(exc: Exception, *, priming: bool) -> HTTPException:
@@ -268,7 +268,6 @@ async def _prepare_stream(
         agent_slug=agent_slug,
         accumulator=accumulator,
         lifecycle_state=lifecycle_state,
-        sse_lines=to_chat_completion_chunks(accumulator, payload.model),
     )
 
 
@@ -301,30 +300,53 @@ async def stream_chat_completion(
         dependencies=dependencies,
     )
 
+    def _settle_terminal_success() -> bool | None:
+        snapshot = prepared.accumulator.snapshot
+        return dependencies.persistence.settle_stream_run(
+            prepared.run_id,
+            prepared.owner,
+            "succeeded",
+            {
+                "formatted": {"answer": snapshot.answer},
+                "raw": None,
+                "stream": True,
+                "truncated": snapshot.truncated,
+                "partial": False,
+            },
+        )
+
+    terminal_events = project_terminal_settlement(
+        prepared.accumulator,
+        state=prepared.lifecycle_state,
+        settle=(
+            _settle_terminal_success
+            if prepared.agent_slug is not None
+            else None
+        ),
+    )
+    sse_lines = to_chat_completion_chunks(terminal_events, payload.model)
+
     async def _wrapped() -> AsyncIterator[str]:
         """Forward SSE lines and settle the run from typed lifecycle flags."""
         try:
-            async for line in prepared.sse_lines:
+            async for line in sse_lines:
                 yield line
         finally:
-            if prepared.agent_slug is not None:
-                status = (
-                    "succeeded"
-                    if prepared.lifecycle_state.reached_finish
-                    and not prepared.lifecycle_state.saw_error
-                    else "failed"
-                )
+            if (
+                prepared.agent_slug is not None
+                and not prepared.lifecycle_state.durably_settled
+            ):
                 snapshot = prepared.accumulator.snapshot
                 dependencies.persistence.settle_stream_run(
                     prepared.run_id,
                     prepared.owner,
-                    status,
+                    "failed",
                     {
                         "formatted": {"answer": snapshot.answer},
                         "raw": None,
                         "stream": True,
                         "truncated": snapshot.truncated,
-                        "partial": status == "failed",
+                        "partial": True,
                     },
                 )
 

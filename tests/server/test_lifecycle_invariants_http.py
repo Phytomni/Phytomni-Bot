@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 import pytest
+from tests.support.resolver_fakes import post_native_run
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.api import run_lifecycle
@@ -22,12 +23,51 @@ from mcp_server_phytomni.runtime.request_context import (
     current_run_id,
     request_context,
 )
+from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import (
     record_submitted_task,
     records_submission,
 )
 
 pytestmark = pytest.mark.server
+
+
+async def test_sync_persistence_failure_is_not_success(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A completed native run fails closed when its row cannot be written."""
+
+    async def fake(_args: Any) -> dict[str, Any]:
+        return {"answer": "ok", "doc_list": []}
+
+    def fail_create_run(*_args: Any, **_kwargs: Any) -> None:
+        raise sqlite3.OperationalError("private database failure")
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        fake,
+    )
+    monkeypatch.setattr(RunRegistry, "create_run", fail_create_run)
+
+    response = await post_native_run(
+        api_client,
+        issued_api_key,
+        "chat",
+        {"user_query": "hello", "obs_file_list": []},
+    )
+
+    assert response.status_code == 500
+    assert response.json()["error"] == {
+        "code": "run_persistence_failed",
+        "message": "The completed run could not be persisted.",
+        "request_id": response.headers["x-request-id"],
+        "stage": "run_persist",
+        "retryable": False,
+    }
+    assert "private database failure" not in response.text
 
 
 def test_resolve_remote_run_without_run_id_preserves_accepted_ids() -> None:

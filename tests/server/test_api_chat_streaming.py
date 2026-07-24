@@ -8,8 +8,7 @@ Pins AG-UI SSE framing (``RunStarted`` / ``TextMessageContent`` /
 ``RunFinished`` plus the trailing ``[DONE]``), per-model gating,
 ``resolve_gene_id`` rejection, and the two-stage run write: a
 ``running`` row is written before the first frame and settled to
-``succeeded``/``failed`` from the stream wrapper's ``finally`` block
-once the response drains.
+``succeeded`` before ``RunFinished`` or to ``failed`` during cleanup.
 """
 
 from __future__ import annotations
@@ -76,6 +75,43 @@ async def test_stream_phyto_chat_emits_agui_frames(
     assert body.rstrip().endswith("data: [DONE]")
 
 
+async def test_stream_does_not_emit_run_finished_after_settle_failure(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    stream_test_tools: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A terminal persistence miss becomes one safe error, never success."""
+    monkeypatch.setattr(
+        api_app,
+        "_settle_stream_run",
+        lambda *_args, **_kwargs: False,
+    )
+    stream_test_tools.patch_chat_stream(
+        [{"choices": [{"delta": {"content": "Hi"}, "finish_reason": "stop"}]}]
+    )
+
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="hello",
+    )
+
+    assert response.status_code == 200
+    body = response.text
+    assert body.count("event: RunError\n") == 1
+    assert "event: RunFinished\n" not in body
+    assert body.count('"code": "run_persistence_failed"') == 1
+    assert (
+        body.count('"message": "The completed run could not be persisted."')
+        == 1
+    )
+    assert body.count("data: [DONE]") == 1
+    assert body.rstrip().endswith("data: [DONE]")
+
+
 async def test_stream_with_resolve_gene_id_returns_400(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -124,7 +160,7 @@ async def test_data_model_is_not_advertised_or_streamable(
     )
     assert response.status_code == 404
     assert "NotImplementedError" not in response.text
-    assert "model not found: phyto-data" in response.text
+    assert response.json()["error"]["message"] == "resource not found"
 
 
 async def test_stream_setup_failure_returns_json_before_headers(
@@ -176,7 +212,7 @@ async def test_stream_connect_failure_returns_502(
 
     assert response.status_code == 502
     assert response.headers["content-type"].startswith("application/json")
-    assert response.json()["error"]["message"] == "stream upstream unavailable"
+    assert response.json()["error"]["message"] == "upstream service failed"
     assert "credential=hidden" not in response.text
     assert not RunRegistry(tasks_db_path).list_runs(owner="u1")
 
@@ -204,7 +240,7 @@ async def test_stream_timeout_failure_returns_504(
 
     assert response.status_code == 504
     assert response.headers["content-type"].startswith("application/json")
-    assert response.json()["error"]["message"] == "stream upstream timed out"
+    assert response.json()["error"]["message"] == "upstream service timed out"
     assert "credential=hidden" not in response.text
     assert not RunRegistry(tasks_db_path).list_runs(owner="u1")
 
@@ -237,7 +273,7 @@ async def test_stream_priming_failure_settles_created_run(
     records = RunRegistry(tasks_db_path).list_runs(owner="u1")
     assert records
     assert records[-1].status == "failed"
-    assert response.json()["error"]["message"] == "stream setup failed"
+    assert response.json()["error"]["message"] == "internal server error"
 
 
 async def test_stream_priming_empty_returns_json_and_fails_run(
@@ -264,7 +300,7 @@ async def test_stream_priming_empty_returns_json_and_fails_run(
 
     assert response.status_code == 500
     assert response.headers["content-type"].startswith("application/json")
-    assert response.json()["error"]["message"] == "stream produced no data"
+    assert response.json()["error"]["message"] == "internal server error"
     records = RunRegistry(tasks_db_path).list_runs(owner="u1")
     assert records
     assert records[-1].status == "failed"
@@ -338,8 +374,8 @@ async def test_stream_run_settles_succeeded_after_finish(
 
     Pins the two-stage run write: stage 1 pre-mints ``run_id`` and
     writes a ``running`` row before the first frame; stage 2 settles
-    the same row to ``succeeded`` from the ``finally`` block once the
-    wrapper observes the ``RunFinished`` marker. Client history
+    the same row to ``succeeded`` before exposing the ``RunFinished``
+    marker. Client history
     queries through ``GET /v1/runs`` must surface exactly one row for
     the call, carrying the request-scoped ``dialogue_id`` and the
     ``origin="local"`` stamp sync agents use.
@@ -470,9 +506,8 @@ async def test_stream_chat_run_get_exposes_answer(
 
     Web history reads through the HTTP envelope, not ``RunRegistry``
     directly. Pins that ``GET /v1/runs/{run_id}`` carries
-    ``result.formatted.answer``, the flattened ``answer`` shortcut from
-    ``_run_record_to_dict``, and happy-path ``truncated``/``partial``
-    flags without the ``[streamed]`` placeholder.
+    the sealed ``result.formatted.answer`` projection and flattened
+    ``answer`` shortcut without the ``[streamed]`` placeholder.
     """
     patch_chat_stream(
         [
@@ -500,9 +535,7 @@ async def test_stream_chat_run_get_exposes_answer(
     assert body["dialogue_id"] == "dlg-http"
     result = body["result"]
     assert result is not None
-    assert result["stream"] is True
-    assert result["truncated"] is False
-    assert result["partial"] is False
+    assert set(result) == {"formatted", "execution"}
     formatted_answer = result["formatted"]["answer"]
     assert formatted_answer == "Hi"
     assert "[streamed]" not in formatted_answer

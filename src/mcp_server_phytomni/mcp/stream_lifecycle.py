@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Final
 
@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 MAX_STREAM_ERROR_MESSAGE_LENGTH: Final[int] = 512
 GENERIC_STREAM_ERROR_MESSAGE: Final[str] = "Agent execution failed"
+RUN_PERSISTENCE_ERROR_CODE: Final[str] = "run_persistence_failed"
+RUN_PERSISTENCE_ERROR_MESSAGE: Final[str] = (
+    "The completed run could not be persisted."
+)
 _SQL_RE: Final = re.compile(
     r"(?is)\b(?:select|insert|update|delete|with|create|alter|drop|"
     r"grant|revoke)\b.*"
@@ -39,6 +43,7 @@ class StreamLifecycleState:
 
     reached_finish: bool = False
     saw_error: bool = False
+    durably_settled: bool = False
 
     def observe(self, event: AguiEvent) -> None:
         """Record lifecycle terminal frames without inspecting SSE text."""
@@ -204,13 +209,47 @@ async def project_stream_failures(
             yield error_event
 
 
+async def project_terminal_settlement(
+    events: AsyncIterator[AguiEvent],
+    *,
+    state: StreamLifecycleState,
+    settle: Callable[[], bool | None] | None,
+) -> AsyncIterator[AguiEvent]:
+    """Require durable settlement before exposing ``RunFinished``."""
+    async for event in events:
+        if event.type != "RunFinished" or settle is None:
+            yield event
+            continue
+        try:
+            settled = settle()
+        except _STREAM_FAILURE_CAUGHT as exc:
+            logger.error(
+                "stream terminal settlement callback failed exception=%s",
+                type(exc).__name__,
+            )
+            settled = False
+        if settled is not False:
+            state.durably_settled = True
+            yield event
+            continue
+        error_event = run_error(
+            RUN_PERSISTENCE_ERROR_CODE,
+            RUN_PERSISTENCE_ERROR_MESSAGE,
+        )
+        state.observe(error_event)
+        yield error_event
+
+
 __all__ = [
     "EmptyStreamError",
     "GENERIC_STREAM_ERROR_MESSAGE",
     "MAX_STREAM_ERROR_MESSAGE_LENGTH",
     "PrimedAguiStream",
+    "RUN_PERSISTENCE_ERROR_CODE",
+    "RUN_PERSISTENCE_ERROR_MESSAGE",
     "StreamLifecycleState",
     "StreamPrimeError",
     "prime_agui_stream",
     "project_stream_failures",
+    "project_terminal_settlement",
 ]

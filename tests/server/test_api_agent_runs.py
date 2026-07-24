@@ -285,13 +285,21 @@ async def test_agent_run_sync_persistence_failure_returns_safe_500(
         _ = args
         return {"answer": "ok", "doc_list": []}
 
+    def fail_record_sync(**_kwargs: Any) -> str:
+        """Raise the app-level persistence failure without private leakage."""
+        raise api_app_module.run_lifecycle.RunPersistenceError(
+            "private persistence detail"
+        )
+
     monkeypatch.setitem(
         server.TOOL_HANDLERS,
         server.PhytomniAgents.CHAT_AGENT.value,
         fake,
     )
     monkeypatch.setattr(
-        api_app_module, "_record_sync_run", lambda **_kwargs: None
+        api_app_module,
+        "_record_sync_run",
+        fail_record_sync,
     )
 
     response = await post_native_run(
@@ -304,11 +312,12 @@ async def test_agent_run_sync_persistence_failure_returns_safe_500(
     assert response.status_code == 500
     detail = response.json()["error"]
     assert detail["code"] == "run_persistence_failed"
-    assert detail["message"] == "run persistence failed"
-    assert detail["stage"] == "persistence"
+    assert detail["message"] == "The completed run could not be persisted."
+    assert detail["stage"] == "run_persist"
     assert detail["retryable"] is False
     assert isinstance(detail["request_id"], str)
     assert detail["request_id"]
+    assert "private persistence detail" not in response.text
 
 
 @pytest.mark.parametrize(
