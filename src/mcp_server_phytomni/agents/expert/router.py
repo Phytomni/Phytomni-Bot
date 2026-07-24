@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Autonomous in-process tool router for the HTTP Expert mode.
 
-Public: ToolSelection, select_agent_tool.
+Public: ToolSelection, ToolSelectionError, select_agent_tool.
 
 Re-implements the client ``PhytomniToolRouter.route_query`` selection
 step in-process: one OpenAI tool-calling completion over the MCP agent
@@ -25,7 +25,7 @@ from openai import AsyncOpenAI
 from ...config.settings import get_sensitive_config
 from ...mcp.schemas import agent_openai_tool_specs
 
-__all__ = ["ToolSelection", "select_agent_tool"]
+__all__ = ["ToolSelection", "ToolSelectionError", "select_agent_tool"]
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -47,9 +47,16 @@ class ToolSelection:
     arguments: dict[str, Any]
 
 
+class ToolSelectionError(RuntimeError):
+    """The routing model violated the constrained one-tool contract."""
+
+
 async def select_agent_tool(
     user_query: str,
     history: Sequence[Mapping[str, Any]] = (),
+    *,
+    allowed_tools: Sequence[str] | None = None,
+    forced_tool: str | None = None,
 ) -> ToolSelection | None:
     """Pick one MCP agent tool for a query with the main conversation model.
 
@@ -66,10 +73,12 @@ async def select_agent_tool(
             only; never forwarded to the dispatched agent.
 
     Returns:
-        A ``ToolSelection`` when the model picked a tool, or ``None`` when
-        it answered without one (the caller falls back to the chat agent).
+        A ``ToolSelection`` when the model picked a tool. Legacy callers
+        without ``allowed_tools`` receive ``None`` when it answered without
+        one (the caller falls back to the chat agent).
 
     Raises:
+        ToolSelectionError: The strict routing contract is violated.
         Exception: OpenAI client / transport errors propagate so the HTTP
             layer can surface a 502; the router does not swallow them.
     """
@@ -87,23 +96,70 @@ async def select_agent_tool(
         *(dict(turn) for turn in history),
         {"role": "user", "content": user_query},
     ]
+    all_specs = agent_openai_tool_specs()
+    strict = allowed_tools is not None
+    if strict:
+        assert allowed_tools is not None
+        allowed_order = list(allowed_tools)
+        specs_by_name = {
+            str(spec["function"]["name"]): spec for spec in all_specs
+        }
+        if not allowed_order:
+            raise ToolSelectionError("strict routing requires an allowed tool")
+        try:
+            tools = [specs_by_name[name] for name in allowed_order]
+        except KeyError as exc:
+            raise ToolSelectionError(
+                "strict routing received an unknown allowed tool"
+            ) from exc
+        tool_choice: Any = (
+            {
+                "type": "function",
+                "function": {"name": forced_tool},
+            }
+            if forced_tool is not None
+            else "required"
+        )
+    else:
+        allowed_order = []
+        tools = all_specs
+        tool_choice = "auto"
     completion = await client.chat.completions.create(
         model=sensitive.MODEL_ID,
         messages=cast(Any, messages),
-        tools=cast(Any, agent_openai_tool_specs()),
-        tool_choice="auto",
+        tools=cast(Any, tools),
+        tool_choice=tool_choice,
     )
     if not completion.choices:
+        if strict:
+            raise ToolSelectionError("routing model returned no choice")
         return None
     message = completion.choices[0].message
     tool_calls = message.tool_calls or []
     if not tool_calls:
+        if strict:
+            raise ToolSelectionError("routing model returned no tool call")
         return None
+    if strict and len(tool_calls) != 1:
+        raise ToolSelectionError(
+            "routing model must return exactly one tool call"
+        )
     function = getattr(tool_calls[0], "function", None)
     if function is None:
+        if strict:
+            raise ToolSelectionError(
+                "routing model returned a malformed tool call"
+            )
         return None
+    selected_name = str(function.name)
+    if strict and selected_name not in allowed_order:
+        raise ToolSelectionError(
+            "routing model selected a tool outside the allowlist"
+        )
+    if forced_tool is not None and selected_name != forced_tool:
+        raise ToolSelectionError("routing model did not honor the forced tool")
     return ToolSelection(
-        tool_name=str(function.name),
+        tool_name=selected_name,
         arguments=_parse_tool_arguments(str(function.arguments)),
     )
 

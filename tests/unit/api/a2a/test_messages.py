@@ -91,7 +91,7 @@ async def test_missing_skill_uses_expert_selector_and_merges_data() -> None:
 
 
 async def test_expert_router_without_selection_falls_back_to_chat() -> None:
-    """A router no-op keeps the existing Expert fallback behavior."""
+    """A legacy selector no-op keeps the existing Expert fallback behavior."""
 
     async def no_selection(_text: str) -> None:
         return None

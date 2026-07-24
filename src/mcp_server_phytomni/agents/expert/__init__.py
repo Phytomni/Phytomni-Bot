@@ -9,6 +9,6 @@ Re-exports the in-process tool selector used by the HTTP
 natural-language query.
 """
 
-from .router import ToolSelection, select_agent_tool
+from .router import ToolSelection, ToolSelectionError, select_agent_tool
 
-__all__ = ["ToolSelection", "select_agent_tool"]
+__all__ = ["ToolSelection", "ToolSelectionError", "select_agent_tool"]

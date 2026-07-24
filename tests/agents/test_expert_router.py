@@ -17,7 +17,11 @@ from typing import Any
 
 import pytest
 
-from mcp_server_phytomni.agents.expert import ToolSelection, select_agent_tool
+from mcp_server_phytomni.agents.expert import (
+    ToolSelection,
+    ToolSelectionError,
+    select_agent_tool,
+)
 from mcp_server_phytomni.agents.expert import router as expert_router
 from mcp_server_phytomni.mcp.schemas import agent_openai_tool_specs
 
@@ -41,12 +45,12 @@ def _tool_call(name: str, arguments: str) -> SimpleNamespace:
 
 def _patch_openai(
     monkeypatch: pytest.MonkeyPatch,
-    completion: SimpleNamespace,
+    completion: object,
     captured: dict[str, Any] | None = None,
 ) -> None:
     """Patch the router's ``AsyncOpenAI`` and sensitive-config loader."""
 
-    async def create(**kwargs: Any) -> SimpleNamespace:
+    async def create(**kwargs: Any) -> object:
         if captured is not None:
             captured.update(kwargs)
         return completion
@@ -93,6 +97,81 @@ async def test_select_agent_tool_returns_selection(
     }
     assert captured["tool_choice"] == "auto"
     assert captured["model"] == "route-model"
+
+
+async def test_strict_router_offers_allowed_tools_in_request_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Strict routing exposes only the caller's ordered allowlist."""
+    captured: dict[str, Any] = {}
+    _patch_openai(
+        monkeypatch,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        captured,
+    )
+
+    await select_agent_tool(
+        "route this",
+        allowed_tools=["KnowledgeAgent", "ChatAgent"],
+    )
+
+    assert [tool["function"]["name"] for tool in captured["tools"]] == [
+        "KnowledgeAgent",
+        "ChatAgent",
+    ]
+    assert captured["tool_choice"] == "required"
+
+
+async def test_strict_router_forces_requested_tool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A forced strict route sends the matching OpenAI tool choice."""
+    captured: dict[str, Any] = {}
+    _patch_openai(
+        monkeypatch,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        captured,
+    )
+
+    await select_agent_tool(
+        "route this",
+        allowed_tools=["KnowledgeAgent", "ChatAgent"],
+        forced_tool="ChatAgent",
+    )
+
+    assert captured["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "ChatAgent"},
+    }
+
+
+@pytest.mark.parametrize(
+    "completion",
+    [
+        SimpleNamespace(choices=[]),
+        _completion(tool_calls=[]),
+        _completion(
+            tool_calls=[
+                _tool_call("ChatAgent", "{}"),
+                _tool_call("DataAgent", "{}"),
+            ]
+        ),
+        _completion(tool_calls=[_tool_call("MissingAgent", "{}")]),
+        _completion(tool_calls=[_tool_call("DataAgent", "{}")]),
+    ],
+)
+async def test_strict_router_rejects_invalid_model_selection(
+    monkeypatch: pytest.MonkeyPatch,
+    completion: object,
+) -> None:
+    """Strict routing rejects missing, ambiguous, and disallowed choices."""
+    _patch_openai(monkeypatch, completion)
+
+    with pytest.raises(ToolSelectionError):
+        await select_agent_tool(
+            "route this",
+            allowed_tools=["ChatAgent"],
+        )
 
 
 async def test_select_agent_tool_none_without_tool_call(
