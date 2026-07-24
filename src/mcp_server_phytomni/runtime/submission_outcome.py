@@ -14,6 +14,7 @@ __all__ = [
     "RejectedSubmission",
     "SubmissionOutcome",
     "classify_submissions",
+    "project_submission_warnings",
 ]
 
 
@@ -78,3 +79,25 @@ def classify_submissions(
     else:
         kind = "rejected"
     return SubmissionOutcome(kind, tuple(accepted), tuple(rejected))
+
+
+def project_submission_warnings(raw: object) -> list[dict[str, object]]:
+    """Keep only safe warning fields for durable lifecycle payloads."""
+    if not isinstance(raw, list):
+        return []
+    projected: list[dict[str, object]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        code = item.get("code")
+        if not isinstance(code, str) or not code.strip():
+            continue
+        warning: dict[str, object] = {"code": code}
+        retryable = item.get("retryable")
+        if isinstance(retryable, bool):
+            warning["retryable"] = retryable
+        rejected_count = item.get("rejected_count")
+        if isinstance(rejected_count, int) and rejected_count >= 0:
+            warning["rejected_count"] = rejected_count
+        projected.append(warning)
+    return projected

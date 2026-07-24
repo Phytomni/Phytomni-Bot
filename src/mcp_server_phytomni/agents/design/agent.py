@@ -73,7 +73,7 @@ from ..shared.parallel_dispatch import (
     build_parallel_dispatch_graph,
 )
 from ..shared.remote_analysis import (
-    REMOTE_SUBMISSION_ERRORS,
+    REMOTE_FANOUT_ERRORS,
     RemoteAnalysisRequest,
     RemoteAnalysisSubmissionError,
     accepted_submission,
@@ -232,7 +232,33 @@ def _design_submission_outcome(
             code = item.get("code")
             if isinstance(goal, str) and isinstance(code, str):
                 rejected.append(RejectedSubmission(goal=goal, code=code))
+    raw_pending = (
+        state.get("a2a_pending") if isinstance(state, Mapping) else None
+    )
+    if isinstance(raw_pending, list):
+        for item in raw_pending:
+            if not isinstance(item, Mapping):
+                continue
+            goal = next(
+                (
+                    value
+                    for key in ("goal_description", "analysis_type", "task_id")
+                    if isinstance(value := item.get(key), str)
+                    and value.strip()
+                ),
+                "external_a2a",
+            )
+            rejected.append(
+                RejectedSubmission(goal=goal, code="a2a_input_required")
+            )
     return classify_submissions(accepted=accepted, rejected=rejected)
+
+
+def _has_pending_a2a(result: Mapping[str, Any]) -> bool:
+    """Return whether the graph retained an unresolved A2A pause."""
+    state = result.get("phytomni_state")
+    pending = state.get("a2a_pending") if isinstance(state, Mapping) else None
+    return isinstance(pending, list) and bool(pending)
 
 
 class DigitalDesignAgents:
@@ -614,7 +640,7 @@ class DigitalDesignAgents:
                         external_evidence=evidence,
                     ),
                 )
-            except REMOTE_SUBMISSION_ERRORS as exc:
+            except REMOTE_FANOUT_ERRORS as exc:
                 return {
                     "_submission_rejected": asdict(
                         rejected_submission(gene, exc)
@@ -731,7 +757,7 @@ class DigitalDesignAgents:
                         external_evidence=evidence,
                     ),
                 )
-            except REMOTE_SUBMISSION_ERRORS as exc:
+            except REMOTE_FANOUT_ERRORS as exc:
                 return {
                     "_submission_rejected": asdict(
                         rejected_submission(gene_id, exc)
@@ -800,7 +826,7 @@ class DigitalDesignAgents:
             ),
         )
         outcome = _design_submission_outcome(result)
-        if outcome.kind == "rejected":
+        if outcome.kind == "rejected" or _has_pending_a2a(result):
             raise RemoteAnalysisSubmissionError("no remote task was accepted")
         bind_accepted_task_ids(outcome.task_ids)
         return {

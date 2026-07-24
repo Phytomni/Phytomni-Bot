@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+import mcp_server_phytomni.agents.research.agent as research_agent_module
 from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
 from mcp_server_phytomni.agents.research.agent import (
     InSilicoResearchAgents,
@@ -165,3 +166,48 @@ async def test_arun_rejects_unpersistable_research_a2a_pause(
         match="no remote task was accepted",
     ):
         await agent.arun("paper", {})
+
+
+def test_research_mixed_a2a_pending_is_not_full_submission() -> None:
+    """A local acceptance plus an unresolved A2A pause is partial."""
+    outcome = research_agent_module._research_submission_outcome(
+        {
+            "task_ids": {"local": "local-task"},
+            "phytomni_state": {
+                "a2a_pending": [{"task_id": "peer-task"}],
+            },
+        }
+    )
+
+    assert outcome.kind == "partial"
+    assert outcome.task_ids == ("local-task",)
+    assert outcome.warnings[0]["rejected_count"] == 1
+
+
+async def test_research_dispatch_propagates_missing_task_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A local task-id invariant must not become an upstream warning."""
+    agent = _build_agent()
+    monkeypatch.setattr(
+        agent,
+        "_submit_research_task",
+        AsyncMock(
+            side_effect=RemoteAnalysisSubmissionError("missing task id")
+        ),
+    )
+    state = cast(
+        Any,
+        {
+            "task_index": 0,
+            "task_name": "research_goal_0",
+            "goal_description": "Characterize PHYB",
+            "context": "rice stress response",
+            "data_list": {},
+            "output_dir": "/tmp/research-out",
+            "thread_id": "thread-c2",
+        },
+    )
+
+    with pytest.raises(RemoteAnalysisSubmissionError, match="missing task"):
+        await agent.run_research_node(state)

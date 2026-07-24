@@ -29,6 +29,7 @@ from .request_context import (
     current_run_id,
 )
 from .run_registry import RunOutcome, RunRegistry, RunSpec
+from .submission_outcome import project_submission_warnings
 from .task_manager import (
     RunContext,
     Submission,
@@ -222,6 +223,9 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
         "live_status": initial_task_rows,
         "artifacts": [],
     }
+    warnings = project_submission_warnings(result.get("submission_warnings"))
+    if warnings:
+        initial_result["execution"] = {"warnings": warnings}
     try:
         RunRegistry(db_path).create_run(
             RunSpec(

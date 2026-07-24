@@ -15,12 +15,13 @@ from __future__ import annotations
 import contextlib
 import json
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from .sqlite import sqlite_transaction
+from .submission_outcome import project_submission_warnings
 from .task_manager import (
     TaskManager,
     _expires_at_for,
@@ -747,7 +748,11 @@ class RunRegistry:
         if report_result is not None and report_result.answer:
             answer = report_result.answer
         result_payload, error = _terminal_payload(
-            new_status, live, artifacts, answer
+            new_status,
+            live,
+            artifacts,
+            answer,
+            warnings=_stored_submission_warnings(current.result),
         )
         return self._settle_terminal(
             current, new_status, result_payload, error
@@ -874,6 +879,8 @@ def _terminal_payload(
     live: list[dict[str, Any]],
     artifacts: list[dict[str, Any]],
     answer: str,
+    *,
+    warnings: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """Return the (result_payload, error) pair for a terminal run.
 
@@ -902,6 +909,8 @@ def _terminal_payload(
     }
     if answer:
         payload["formatted"] = {"answer": answer}
+    if warnings:
+        payload["execution"] = {"warnings": warnings}
     if status == "succeeded":
         return payload, None
     failed = [
@@ -910,6 +919,21 @@ def _terminal_payload(
         if (row.get("status") or "").lower() in _FAILURE_STATUSES
     ]
     return payload, f"one or more tasks failed: {', '.join(failed)}"
+
+
+def _stored_submission_warnings(
+    result: Mapping[str, Any] | None,
+) -> list[dict[str, object]]:
+    """Carry safe submit-time warnings into the terminal result."""
+    if not isinstance(result, Mapping):
+        return []
+    execution = result.get("execution")
+    raw = (
+        execution.get("warnings")
+        if isinstance(execution, Mapping)
+        else result.get("submission_warnings")
+    )
+    return project_submission_warnings(raw)
 
 
 def _first_final_report(live: list[dict[str, Any]]) -> str | None:

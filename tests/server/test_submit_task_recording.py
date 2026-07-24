@@ -279,6 +279,39 @@ def test_record_handles_canonical_research_task_ids_list(
     assert runs[0].task_ids == ("T-R1", "T-R2")
 
 
+def test_record_persists_safe_submission_warnings(
+    tasks_db_path: str,
+) -> None:
+    """Partial-submit warnings survive the initial registry write."""
+    record_submitted_task(
+        {
+            "task_ids": ["T-W1"],
+            "output_dir": "/obs/research",
+            "submission_warnings": [
+                {
+                    "code": "partial_submission",
+                    "retryable": False,
+                    "rejected_count": 1,
+                    "secret": "must not persist",
+                }
+            ],
+        },
+        agent="research",
+    )
+
+    run = RunRegistry(tasks_db_path).list_runs(owner="anonymous")[0]
+    assert run.result is not None
+    assert run.result["execution"] == {
+        "warnings": [
+            {
+                "code": "partial_submission",
+                "retryable": False,
+                "rejected_count": 1,
+            }
+        ]
+    }
+
+
 def test_record_handles_network_nested_task(tasks_db_path: str) -> None:
     """``network`` returns one task nested under ``network_task``."""
     record_submitted_task(

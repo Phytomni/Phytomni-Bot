@@ -21,6 +21,7 @@ from ...runtime.submission_outcome import (
 __all__ = [
     "RemoteAnalysisRequest",
     "RemoteAnalysisSubmissionError",
+    "REMOTE_FANOUT_ERRORS",
     "REMOTE_SUBMISSION_ERRORS",
     "accepted_submission",
     "rejected_submission",
@@ -50,6 +51,10 @@ REMOTE_SUBMISSION_ERRORS: tuple[type[Exception], ...] = (
     RemoteAnalysisSubmissionError,
     TimeoutError,
 )
+
+# Fan-out callers may convert documented upstream transport failures into a
+# safe per-child rejection, but a missing task id is a local contract failure.
+REMOTE_FANOUT_ERRORS: tuple[type[Exception], ...] = (McpError, TimeoutError)
 
 
 def accepted_submission(result: Mapping[str, Any]) -> AcceptedSubmission:

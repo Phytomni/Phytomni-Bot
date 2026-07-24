@@ -244,7 +244,7 @@ async def test_arun_rejects_unpersistable_design_a2a_pause(
         "run_analysis_graph",
         AsyncMock(
             return_value={
-                "design_task_result": [],
+                "design_task_result": [{"task_id": "local-task"}],
                 "error": None,
                 "failures": [],
                 "phytomni_state": {"a2a_pending": [{"task_id": "peer-task"}]},
@@ -257,6 +257,51 @@ async def test_arun_rejects_unpersistable_design_a2a_pause(
         match="no remote task was accepted",
     ):
         await agent.arun("ath", "AT1G01010")
+
+
+def test_design_mixed_a2a_pending_is_not_full_submission() -> None:
+    """A local acceptance plus an unresolved A2A pause is partial."""
+    outcome = design_agent_module._design_submission_outcome(
+        {
+            "design_task_result": [{"task_id": "local-task"}],
+            "phytomni_state": {
+                "a2a_pending": [{"task_id": "peer-task"}],
+            },
+        }
+    )
+
+    assert outcome.kind == "partial"
+    assert outcome.task_ids == ("local-task",)
+    assert outcome.warnings[0]["rejected_count"] == 1
+
+
+async def test_design_dispatch_propagates_missing_task_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A local task-id invariant must not become an upstream warning."""
+    agent = _build_agent()
+    monkeypatch.setattr(
+        agent,
+        "_dispatch_and_wait_analysis",
+        AsyncMock(
+            side_effect=RemoteAnalysisSubmissionError("missing task id")
+        ),
+    )
+    state = cast(
+        Any,
+        {
+            "task_index": 0,
+            "species_code": "ath",
+            "gene_id": "AT1G01010",
+            "analysis_type": "protein_design_analysis",
+            "output_dir": "/obs/out",
+            "interop_mode": "off",
+            "interop_targets": [],
+        },
+    )
+
+    with pytest.raises(RemoteAnalysisSubmissionError, match="missing task"):
+        await agent.run_design_node(state)
 
 
 async def test_design_dispatch_propagates_invariant_failure(

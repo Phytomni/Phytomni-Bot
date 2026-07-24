@@ -22,6 +22,7 @@ from mcp_server_phytomni.runtime.run_registry import (
     RunRequestInfo,
     RunSpec,
 )
+from mcp_server_phytomni.runtime.task_manager import RunContext, Submission
 
 pytestmark = pytest.mark.unit
 
@@ -243,6 +244,69 @@ async def test_reconcile_propagates_failure_status(
     ]
     assert record.result["live_status"] == record.result["task_results"]
     assert not record.result["artifacts"]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_carries_submit_warnings_to_terminal_payload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Submit-time partial warnings remain visible after reconciliation."""
+    registry, manager, _ = _make_registry(tmp_path)
+    spec = RunSpec("run-warn", "alice", "research", "remote")
+    registry.create_run(
+        spec,
+        outcome=RunOutcome(
+            result={
+                "execution": {
+                    "warnings": [
+                        {
+                            "code": "partial_submission",
+                            "retryable": False,
+                            "rejected_count": 1,
+                        }
+                    ]
+                }
+            }
+        ),
+    )
+    manager.record(
+        Submission(
+            task_id="t-warn",
+            status="submitted",
+            output_dir="/obs/research",
+            run_context=RunContext(
+                run_id=spec.run_id,
+                user_id=spec.user_id,
+                agent=spec.agent,
+                origin=spec.origin,
+                created_at="2026-05-20T00:00:00+00:00",
+                updated_at="2026-05-20T00:00:00+00:00",
+            ),
+        )
+    )
+
+    async def fake(task_id: str) -> dict[str, Any]:
+        """Return one successful child for terminal settlement."""
+        return {"task_id": task_id, "status": "succeeded"}
+
+    monkeypatch.setattr(run_registry, "reconcile_task", fake)
+    monkeypatch.setattr(
+        run_registry,
+        "synthesize_terminal_report",
+        _no_report_synthesizer,
+    )
+
+    record = await registry.reconcile("run-warn", owner="alice")
+
+    assert record is not None
+    assert record.result is not None
+    assert record.result["execution"]["warnings"] == [
+        {
+            "code": "partial_submission",
+            "retryable": False,
+            "rejected_count": 1,
+        }
+    ]
 
 
 @pytest.mark.asyncio
