@@ -75,14 +75,21 @@ class _AgentRunResponseInput:
     agent: str
     status: str
     task_ids: Sequence[str]
+    options: _AgentRunResponseOptions
+
+
+@dataclass(frozen=True, slots=True)
+class _AgentRunResponseOptions:
+    """Response options grouped to keep lifecycle input compact."""
+
     result: Mapping[str, Any]
     persisted: bool
     degraded_tracking: bool = False
     include_run_id: bool = True
 
 
-class _AgentRunResponseOptions(TypedDict):
-    """Keyword-only values grouped to preserve the public call contract."""
+class _AgentRunResponseKeywordOptions(TypedDict):
+    """Public keyword values accepted by the lifecycle builder."""
 
     result: Mapping[str, Any]
     persisted: bool
@@ -179,7 +186,7 @@ def build_agent_run_response(
     agent: str,
     status: str,
     task_ids: Sequence[str],
-    **options: Unpack[_AgentRunResponseOptions],
+    **options: Unpack[_AgentRunResponseKeywordOptions],
 ) -> dict[str, Any]:
     """Validate and serialize one canonical public agent.run."""
     request = _AgentRunResponseInput(
@@ -187,49 +194,51 @@ def build_agent_run_response(
         agent=agent,
         status=status,
         task_ids=task_ids,
-        result=options["result"],
-        persisted=options["persisted"],
-        degraded_tracking=options.get("degraded_tracking", False),
-        include_run_id=options.get("include_run_id", True),
+        options=_AgentRunResponseOptions(
+            result=options["result"],
+            persisted=options["persisted"],
+            degraded_tracking=options.get("degraded_tracking", False),
+            include_run_id=options.get("include_run_id", True),
+        ),
     )
     normalized_id = (
         request.run_id if request.run_id and request.run_id.strip() else None
     )
     normalized_tasks = _validated_task_ids(request.task_ids)
     if request.status == "running":
-        recoverable = normalized_id is not None and request.persisted
+        recoverable = normalized_id is not None and request.options.persisted
         degraded = (
             normalized_id is None
             and bool(normalized_tasks)
-            and request.degraded_tracking
+            and request.options.degraded_tracking
         )
         if not (recoverable or degraded):
             raise LifecycleInvariantError(SafeErrorCode.RUNNING_WITHOUT_WORK)
     if request.status == "succeeded" and (
-        normalized_id is None or not request.persisted
+        normalized_id is None or not request.options.persisted
     ):
         raise LifecycleInvariantError(
             SafeErrorCode.SUCCEEDED_WITHOUT_PERSISTENCE
         )
     if request.status == "succeeded":
-        _validate_result_projection(request.result)
+        _validate_result_projection(request.options.result)
     if request.status == "input_required":
-        if normalized_id is None or not request.persisted:
+        if normalized_id is None or not request.options.persisted:
             raise LifecycleInvariantError(
                 SafeErrorCode.INPUT_REQUIRED_WITHOUT_SURFACE
             )
-        _validate_input_required(request.result)
+        _validate_input_required(request.options.result)
     body: dict[str, Any] = {
         "id": normalized_id,
         "object": "agent.run",
         "agent": request.agent,
         "status": request.status,
         "task_ids": normalized_tasks,
-        "result": deepcopy(dict(request.result)),
+        "result": deepcopy(dict(request.options.result)),
     }
-    if normalized_id is not None and request.include_run_id:
+    if normalized_id is not None and request.options.include_run_id:
         body["run_id"] = normalized_id
-    if request.degraded_tracking:
+    if request.options.degraded_tracking:
         body["degraded_tracking"] = True
     return body
 
@@ -379,10 +388,12 @@ def canonicalize_agent_run_body(body: Mapping[str, Any]) -> dict[str, Any]:
                 agent=agent,
                 status=status,
                 task_ids=task_ids,
-                result={},
-                persisted=run_id is not None,
-                degraded_tracking=degraded_tracking,
-                include_run_id=include_run_id,
+                options=_AgentRunResponseOptions(
+                    result={},
+                    persisted=run_id is not None,
+                    degraded_tracking=degraded_tracking,
+                    include_run_id=include_run_id,
+                ),
             ),
         )
     result = body.get("result")
@@ -433,9 +444,9 @@ def _canonicalize_input_required(
         status="input_required",
         task_ids=request.task_ids,
         result={"interrupt": projected_interrupt},
-        persisted=request.persisted,
-        degraded_tracking=request.degraded_tracking,
-        include_run_id=request.include_run_id,
+        persisted=request.options.persisted,
+        degraded_tracking=request.options.degraded_tracking,
+        include_run_id=request.options.include_run_id,
     )
     validated["interrupt"] = projected_interrupt
     validated.pop("result", None)
