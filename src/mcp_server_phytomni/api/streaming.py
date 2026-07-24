@@ -300,19 +300,22 @@ async def stream_chat_completion(
         dependencies=dependencies,
     )
 
-    def _settle_terminal_success() -> bool | None:
+    def _settle_terminal_success() -> bool:
         snapshot = prepared.accumulator.snapshot
-        return dependencies.persistence.settle_stream_run(
-            prepared.run_id,
-            prepared.owner,
-            "succeeded",
-            {
-                "formatted": {"answer": snapshot.answer},
-                "raw": None,
-                "stream": True,
-                "truncated": snapshot.truncated,
-                "partial": False,
-            },
+        return (
+            dependencies.persistence.settle_stream_run(
+                prepared.run_id,
+                prepared.owner,
+                "succeeded",
+                {
+                    "formatted": {"answer": snapshot.answer},
+                    "raw": None,
+                    "stream": True,
+                    "truncated": snapshot.truncated,
+                    "partial": False,
+                },
+            )
+            is True
         )
 
     terminal_events = project_terminal_settlement(

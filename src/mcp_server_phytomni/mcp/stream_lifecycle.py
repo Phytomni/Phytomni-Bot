@@ -161,6 +161,26 @@ def _project_stream_failure(
     return _emit_error_if_needed(state, message)
 
 
+def durable_settlement_succeeded(settle: Callable[[], bool]) -> bool:
+    """Return true only when terminal persistence returns exactly true."""
+    try:
+        return settle() is True
+    except _STREAM_FAILURE_CAUGHT as exc:
+        logger.error(
+            "stream terminal settlement callback failed exception=%s",
+            type(exc).__name__,
+        )
+        return False
+
+
+def run_persistence_error() -> AguiEvent:
+    """Build the safe terminal frame for an unpersisted run outcome."""
+    return run_error(
+        RUN_PERSISTENCE_ERROR_CODE,
+        RUN_PERSISTENCE_ERROR_MESSAGE,
+    )
+
+
 async def project_stream_failures(
     events: AsyncIterator[AguiEvent],
     *,
@@ -213,29 +233,18 @@ async def project_terminal_settlement(
     events: AsyncIterator[AguiEvent],
     *,
     state: StreamLifecycleState,
-    settle: Callable[[], bool | None] | None,
+    settle: Callable[[], bool] | None,
 ) -> AsyncIterator[AguiEvent]:
     """Require durable settlement before exposing ``RunFinished``."""
     async for event in events:
         if event.type != "RunFinished" or settle is None:
             yield event
             continue
-        try:
-            settled = settle()
-        except _STREAM_FAILURE_CAUGHT as exc:
-            logger.error(
-                "stream terminal settlement callback failed exception=%s",
-                type(exc).__name__,
-            )
-            settled = False
-        if settled is not False:
+        if durable_settlement_succeeded(settle):
             state.durably_settled = True
             yield event
             continue
-        error_event = run_error(
-            RUN_PERSISTENCE_ERROR_CODE,
-            RUN_PERSISTENCE_ERROR_MESSAGE,
-        )
+        error_event = run_persistence_error()
         state.observe(error_event)
         yield error_event
 
@@ -249,7 +258,9 @@ __all__ = [
     "RUN_PERSISTENCE_ERROR_MESSAGE",
     "StreamLifecycleState",
     "StreamPrimeError",
+    "durable_settlement_succeeded",
     "prime_agui_stream",
     "project_stream_failures",
     "project_terminal_settlement",
+    "run_persistence_error",
 ]

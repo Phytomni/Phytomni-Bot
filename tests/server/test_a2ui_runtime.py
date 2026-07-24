@@ -20,6 +20,11 @@ from mcp_server_phytomni.agents.shared.a2ui import (
 )
 from mcp_server_phytomni.api import a2ui_projection, a2ui_runtime
 from mcp_server_phytomni.api.schemas import A2uiActionRequest
+from mcp_server_phytomni.mcp.result_formatting import run_finished
+from mcp_server_phytomni.mcp.stream_lifecycle import (
+    StreamLifecycleState,
+    project_terminal_settlement,
+)
 from mcp_server_phytomni.runtime.resume import NoCheckpointError
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
@@ -76,8 +81,12 @@ def _empty_state(_arguments: Any) -> dict[str, Any]:
     return {}
 
 
-def _noop_stream_run(*_args: Any) -> None:
+def _noop_create_stream_run(*_args: Any) -> None:
     return None
+
+
+def _successful_stream_settlement(*_args: Any) -> bool:
+    return True
 
 
 def _stream_setup_error(_exc: Exception, *, priming: bool) -> HTTPException:
@@ -98,6 +107,26 @@ def test_projection_helpers_remain_runtime_facade_exports() -> None:
     """Keep the historical runtime import path as a compatibility facade."""
     for name in a2ui_projection.__all__:
         assert getattr(a2ui_runtime, name) is getattr(a2ui_projection, name)
+
+
+async def test_none_terminal_settlement_fails_closed() -> None:
+    """A legacy ``None`` callback result is not durable success."""
+
+    async def events() -> AsyncIterator[Any]:
+        yield run_finished("run-none")
+
+    state = StreamLifecycleState()
+    projected = [
+        event
+        async for event in project_terminal_settlement(
+            events(),
+            state=state,
+            settle=cast(Any, lambda: None),
+        )
+    ]
+    assert [event.type for event in projected] == ["RunError"]
+    assert projected[0].data["code"] == "run_persistence_failed"
+    assert state.durably_settled is False
 
 
 def _dependencies(
@@ -122,8 +151,8 @@ def _dependencies(
             registry_factory=RunRegistry,
             current_user=lambda: "alice",
             tasks_db_path=lambda: db_path,
-            create_stream_run=_noop_stream_run,
-            settle_stream_run=_noop_stream_run,
+            create_stream_run=_noop_create_stream_run,
+            settle_stream_run=_successful_stream_settlement,
             format_review_result=format_review,
         ),
         stream=a2ui_runtime.A2UIStreamDependencies(

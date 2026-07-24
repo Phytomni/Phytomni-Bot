@@ -112,6 +112,77 @@ async def test_stream_a2ui_confirm_settles_input_required(
     assert "[streamed]" not in json.dumps(result)
 
 
+async def test_stream_a2ui_settle_failure_suppresses_surface_and_finish(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unpersisted Chat pause exposes one safe terminal error only."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    monkeypatch.setattr(
+        "mcp_server_phytomni.api.app._settle_stream_run",
+        lambda *_args, **_kwargs: False,
+    )
+
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="请确认是否继续分析",
+    )
+
+    assert response.status_code == 200
+    body = response.text
+    assert body.count("event: RunError\n") == 1
+    assert "event: RunFinished\n" not in body
+    assert f'"name": "{A2UI_CUSTOM_NAME}"' not in body
+    assert body.count('"code": "run_persistence_failed"') == 1
+    assert (
+        body.count('"message": "The completed run could not be persisted."')
+        == 1
+    )
+    assert body.count("data: [DONE]") == 1
+    assert body.rstrip().endswith("data: [DONE]")
+
+
+async def test_stream_a2ui_missing_interrupt_fails_closed(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A Chat A2UI graph without its expected interrupt cannot finish."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+
+    async def _finish_without_interrupt(
+        _state: dict[str, Any],
+        *,
+        config: dict[str, Any],
+    ) -> dict[str, Any]:
+        del config
+        return {}
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.api.app._chat_a2ui_stream_app",
+        lambda: SimpleNamespace(ainvoke=_finish_without_interrupt),
+    )
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="请确认是否继续分析",
+    )
+
+    assert response.status_code == 200
+    body = response.text
+    assert body.count("event: RunError\n") == 1
+    assert "event: RunFinished\n" not in body
+    assert f'"name": "{A2UI_CUSTOM_NAME}"' not in body
+    assert body.count('"code": "run_persistence_failed"') == 1
+    assert body.rstrip().endswith("data: [DONE]")
+
+
 async def test_stream_a2ui_runtime_failure_emits_error_and_fails_run(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

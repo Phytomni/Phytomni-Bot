@@ -4,11 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """A2UI pause, resume, and projection runtime for the HTTP API.
 
-The FastAPI application owns route decorators and request parsing.  This
-module owns the Chat/Review A2UI graph lifecycle after a typed request has
-been parsed.  All application seams are supplied through a frozen dependency
-record so tests and compatibility callers can replace graph, registry, and
-projection operations without importing ``api.app`` here.
+Application seams are supplied through frozen dependencies so tests and
+compatibility callers need not import ``api.app`` here.
 """
 
 from __future__ import annotations
@@ -50,7 +47,9 @@ from ..mcp.result_formatting import (
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
 from ..mcp.stream_lifecycle import (
     StreamLifecycleState,
+    durable_settlement_succeeded,
     prime_agui_stream,
+    run_persistence_error,
 )
 from ..runtime.langgraph_runner import (
     build_runnable_config,
@@ -90,7 +89,7 @@ type RegistryFactory = Callable[[str], RunRegistry]
 type CurrentUser = Callable[[], str | None]
 type DbPath = Callable[[], str]
 type CreateStreamRun = Callable[[str, str, str, RunRequestInfo], None]
-type SettleStreamRun = Callable[[str, str, str, dict[str, Any]], None]
+type SettleStreamRun = Callable[[str, str, str, dict[str, Any]], bool]
 type ReviewFormatter = Callable[..., dict[str, Any]]
 type ReviewValidator = Callable[[dict[str, Any]], ReviewAgentArgs]
 type StreamSetupError = Callable[..., HTTPException]
@@ -772,13 +771,26 @@ def settle_a2ui_stream_failure(
     """Settle an A2UI stream failed when no domain terminal was committed."""
     if settled_terminal[0]:
         return
-    dependencies.persistence.settle_stream_run(
-        run_id,
-        owner,
-        "failed",
-        dependencies.stream.failed_stream_result(),
+    _settle_a2ui_stream_terminal(
+        lambda: dependencies.persistence.settle_stream_run(
+            run_id,
+            owner,
+            "failed",
+            dependencies.stream.failed_stream_result(),
+        ),
+        settled_terminal,
     )
+
+
+def _settle_a2ui_stream_terminal(
+    settle: Callable[[], bool],
+    settled_terminal: list[bool],
+) -> bool:
+    """Record one A2UI terminal state and require exact durable success."""
+    if not durable_settlement_succeeded(settle):
+        return False
     settled_terminal[0] = True
+    return True
 
 
 async def stream_chat_a2ui_confirm(
@@ -806,16 +818,22 @@ async def stream_chat_a2ui_confirm(
             config=build_runnable_config(context.run_id),
         )
         interrupt = detect_interrupt(final_state, context.run_id)
-        if interrupt is not None:
-            a2ui_value = interrupt["draft"]["a2ui"]
-            dependencies.persistence.settle_stream_run(
+        if interrupt is None:
+            yield run_persistence_error()
+            return
+        a2ui_value = interrupt["draft"]["a2ui"]
+        if not _settle_a2ui_stream_terminal(
+            lambda: dependencies.persistence.settle_stream_run(
                 context.run_id,
                 context.owner,
                 "input_required",
                 chat_interrupt_result(interrupt),
-            )
-            settled[0] = True
-            yield custom(A2UI_CUSTOM_NAME, a2ui_value)
+            ),
+            settled,
+        ):
+            yield run_persistence_error()
+            return
+        yield custom(A2UI_CUSTOM_NAME, a2ui_value)
         yield run_finished(context.run_id)
 
     lifecycle_state = StreamLifecycleState()
@@ -823,11 +841,11 @@ async def stream_chat_a2ui_confirm(
     try:
         primed = await prime_agui_stream(_agui_events(settled_terminal))
     except Exception as exc:
-        dependencies.persistence.settle_stream_run(
+        settle_a2ui_stream_failure(
             context.run_id,
             context.owner,
-            "failed",
-            dependencies.stream.failed_stream_result(),
+            settled_terminal,
+            dependencies=dependencies,
         )
         raise dependencies.stream.stream_setup_error(
             exc, priming=True
@@ -880,13 +898,17 @@ async def stream_review_a2ui_pause(
         interrupt = detect_interrupt(final_state, context.run_id)
         if interrupt is not None:
             interrupt_dict = project_review_interrupt(dict(interrupt))
-            dependencies.persistence.settle_stream_run(
-                context.run_id,
-                context.owner,
-                "input_required",
-                review_interrupt_result(interrupt_dict),
-            )
-            settled[0] = True
+            if not _settle_a2ui_stream_terminal(
+                lambda: dependencies.persistence.settle_stream_run(
+                    context.run_id,
+                    context.owner,
+                    "input_required",
+                    review_interrupt_result(interrupt_dict),
+                ),
+                settled,
+            ):
+                yield run_persistence_error()
+                return
             draft = interrupt_dict.get("draft")
             if isinstance(draft, Mapping):
                 a2ui_value = draft.get("a2ui")
@@ -896,10 +918,17 @@ async def stream_review_a2ui_pause(
             result = dependencies.persistence.format_review_result(
                 final_state, arguments=arguments
             )
-            dependencies.persistence.settle_stream_run(
-                context.run_id, context.owner, "succeeded", result
-            )
-            settled[0] = True
+            if not _settle_a2ui_stream_terminal(
+                lambda: dependencies.persistence.settle_stream_run(
+                    context.run_id,
+                    context.owner,
+                    "succeeded",
+                    result,
+                ),
+                settled,
+            ):
+                yield run_persistence_error()
+                return
         yield run_finished(context.run_id)
 
     lifecycle_state = StreamLifecycleState()
@@ -907,11 +936,11 @@ async def stream_review_a2ui_pause(
     try:
         primed = await prime_agui_stream(_agui_events(settled_terminal))
     except Exception as exc:
-        dependencies.persistence.settle_stream_run(
+        settle_a2ui_stream_failure(
             context.run_id,
             context.owner,
-            "failed",
-            dependencies.stream.failed_stream_result(),
+            settled_terminal,
+            dependencies=dependencies,
         )
         raise dependencies.stream.stream_setup_error(
             exc, priming=True

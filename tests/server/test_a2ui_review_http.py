@@ -55,6 +55,22 @@ async def _post_review_chat_completion(
     )
 
 
+def _assert_review_persistence_failure(body: str) -> None:
+    """Assert the safe terminal shape for an unpersisted Review stream."""
+    unique_markers = (
+        "event: RunError\n",
+        '"code": "run_persistence_failed"',
+        '"message": "The completed run could not be persisted."',
+        "data: [DONE]",
+    )
+    assert all(body.count(marker) == 1 for marker in unique_markers)
+    assert all(
+        marker not in body
+        for marker in ("event: RunFinished\n", "phyto.a2ui")
+    )
+    assert body.rstrip().endswith("data: [DONE]")
+
+
 async def test_review_pause_flag_off_has_no_a2ui(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -148,6 +164,73 @@ async def test_review_stream_runtime_failure_emits_error_and_fails_run(
     assert response.status_code == 200
     body = response.text
     await assert_failed_stream(body)
+
+
+async def test_review_stream_pause_settle_failure_suppresses_a2ui_and_finish(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    review_app_factory: Any,
+) -> None:
+    """An unpersisted Review pause exposes one safe terminal error only."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    monkeypatch.setattr(
+        api_app_module,
+        "_settle_stream_run",
+        lambda *_args, **_kwargs: False,
+    )
+    _patch_review_app(monkeypatch, review_app_factory())
+
+    response = await _post_review_chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="Review this.",
+    )
+
+    assert response.status_code == 200
+    body = response.text
+    _assert_review_persistence_failure(body)
+
+
+async def test_review_stream_success_settle_failure_suppresses_finish(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    review_app_factory: Any,
+) -> None:
+    """An unpersisted terminal Review result cannot expose success."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    monkeypatch.setattr(
+        api_app_module,
+        "_settle_stream_run",
+        lambda *_args, **_kwargs: False,
+    )
+    review_app = review_app_factory()
+
+    async def _succeed(
+        _state: dict[str, Any],
+        *,
+        config: dict[str, Any],
+    ) -> dict[str, Any]:
+        del config
+        return review_app.success_response
+
+    _patch_review_app(
+        monkeypatch,
+        SimpleNamespace(ainvoke=_succeed),
+    )
+
+    response = await _post_review_chat_completion(
+        api_client,
+        issued_api_key,
+        stream=True,
+        content="Review this.",
+    )
+
+    assert response.status_code == 200
+    body = response.text
+    _assert_review_persistence_failure(body)
 
 
 async def test_review_chat_completion_pause_projects_a2ui(
