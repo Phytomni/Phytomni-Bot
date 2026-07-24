@@ -207,7 +207,8 @@ async def test_in_silico_agent_arun_invokes_graph_with_initial_state():
         thread_id="in-silico-thread",
     )
 
-    assert result["task_ids"] == {"goal-1": "task-1"}
+    # The graph's goal-to-task mapping is normalized at the public boundary.
+    assert result["task_ids"] == ["task-1"]
     assert result["goals"] == ["goal-1"]
     assert result["error"] is None
     assert "phytomni_state" in result

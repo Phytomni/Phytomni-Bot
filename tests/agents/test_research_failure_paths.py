@@ -168,6 +168,123 @@ async def test_arun_rejects_unpersistable_research_a2a_pause(
         await agent.arun("paper", {})
 
 
+async def test_arun_rejects_empty_research_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty result cannot escape as a successful Research submission."""
+    agent = _build_agent()
+    monkeypatch.setattr(
+        research_agent_module,
+        "run_analysis_graph",
+        AsyncMock(
+            return_value={
+                "task_ids": {},
+                "error": None,
+                "failures": [],
+                "phytomni_state": {"submission_rejections": []},
+            }
+        ),
+    )
+
+    with pytest.raises(
+        RemoteAnalysisSubmissionError,
+        match="no remote task was accepted",
+    ):
+        await agent.arun("paper", {})
+
+
+async def test_arun_rejects_rejected_research_submission(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A recorded remote rejection cannot be projected as an accepted id."""
+    agent = _build_agent()
+    monkeypatch.setattr(
+        research_agent_module,
+        "run_analysis_graph",
+        AsyncMock(
+            return_value={
+                "task_ids": {},
+                "error": None,
+                "failures": [],
+                "phytomni_state": {
+                    "submission_rejections": [
+                        {
+                            "goal": "root architecture",
+                            "code": "upstream_rejected",
+                        }
+                    ]
+                },
+            }
+        ),
+    )
+
+    with pytest.raises(
+        RemoteAnalysisSubmissionError,
+        match="no remote task was accepted",
+    ):
+        await agent.arun("paper", {})
+
+
+def test_research_submission_outcome_accepts_goal_task_mapping() -> None:
+    """The private graph mapping classifies every nonblank remote id."""
+    outcome = research_agent_module._research_submission_outcome(
+        {
+            "task_ids": {"goal-1": "task-1", "goal-2": "task-2"},
+            "output_dir": "/tmp/research-out",
+            "phytomni_state": {"submission_rejections": []},
+        }
+    )
+
+    assert outcome.kind == "full"
+    assert outcome.task_ids == ("task-1", "task-2")
+    assert outcome.rejected == ()
+
+
+async def test_arun_normalizes_task_ids_and_preserves_rejection_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Public IDs and private state retain matching acceptance counts."""
+    agent = _build_agent()
+    state_task_ids = {"goal-1": "task-1", "goal-2": "task-2"}
+    state_rejections = [
+        {"goal": "root architecture", "code": "upstream_rejected"},
+        {"goal": "drought response", "code": "upstream_timeout"},
+    ]
+    monkeypatch.setattr(
+        research_agent_module,
+        "run_analysis_graph",
+        AsyncMock(
+            return_value={
+                "task_ids": state_task_ids,
+                "error": None,
+                "failures": [],
+                "phytomni_state": {
+                    "completed_count": 4,
+                    "submission_rejections": state_rejections,
+                },
+            }
+        ),
+    )
+
+    result = await agent.arun("paper", {})
+
+    assert result["task_ids"] == ["task-1", "task-2"]
+    accepted_count = len(result["task_ids"])
+    rejected_count = len(result["phytomni_state"]["submission_rejections"])
+    assert (
+        accepted_count + rejected_count
+        == result["phytomni_state"]["completed_count"]
+    )
+    assert result["submission_warnings"] == [
+        {
+            "code": "partial_submission",
+            "retryable": False,
+            "rejected_count": len(state_rejections),
+        }
+    ]
+    assert result["submission_warnings"][0]["rejected_count"] == rejected_count
+
+
 def test_research_mixed_a2a_pending_is_not_full_submission() -> None:
     """A local acceptance plus an unresolved A2A pause is partial."""
     outcome = research_agent_module._research_submission_outcome(

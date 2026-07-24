@@ -170,10 +170,10 @@ async def test_design_state_reduction_handles_dual_failure(
 ):
     """Verify two concurrently failing design tasks merge without error.
 
-    Both protein and promoter dispatch raise, so each Send branch writes
-    ``error``; the keep_last_error reducer must merge them instead of
-    raising LangGraph's InvalidUpdateError. This is the regression that
-    the happy-path test above never exercised.
+    Both protein and promoter planning calls raise a documented recoverable
+    error, so each Send branch writes ``error``; the keep_last_error reducer
+    must merge them instead of raising LangGraph's InvalidUpdateError. This
+    is the regression that the happy-path test above never exercised.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to force both
@@ -188,29 +188,22 @@ async def test_design_state_reduction_handles_dual_failure(
         analyst_agent=cast(AnalystAgent, _StubAnalyst()),
     )
 
-    async def fake_dispatch(
-        analysis_type: str,
-        species_code: str,
-        gene_id: str,
-        options: _DispatchOptions = _DispatchOptions(),
-    ) -> dict[str, Any]:
-        """Fail every dispatched design task deterministically.
+    async def fake_collect_external(task: dict[str, Any]) -> None:
+        """Fail every design planning task through its recoverable boundary.
 
         Args:
-            analysis_type: Design analysis label for the failing task.
-            species_code: Species code forwarded by the dispatcher.
-            gene_id: Target gene identifier forwarded by the dispatcher.
-            options: Output directory + polling flag (unused).
+            task: Design task forwarded to the external-planning seam.
 
         Raises:
             RuntimeError: Always, tagged with the analysis type.
         """
-        assert species_code == "osa"
-        assert gene_id == "Os01g0177400"
-        _ = options
-        raise RuntimeError(f"boom {analysis_type}")
+        assert task["species_code"] == "osa"
+        assert task["gene_id"] == "Os01g0177400"
+        raise RuntimeError(f"boom {task['analysis_type']}")
 
-    monkeypatch.setattr(agent, "_dispatch_and_wait_analysis", fake_dispatch)
+    monkeypatch.setattr(
+        agent, "_collect_design_external", fake_collect_external
+    )
 
     seed_state: dict[str, Any] = {
         "species_code": "osa",

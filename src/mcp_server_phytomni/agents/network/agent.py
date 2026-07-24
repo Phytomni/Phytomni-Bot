@@ -101,7 +101,7 @@ class GeneNetworkState(ParallelDispatchState):
     user_id: str  # User identifier
     batch: bool  # Whether this is batch processing
     output_dir: str | None
-    network_task: dict[str, Any]  # submit results
+    network_task: Annotated[dict[str, Any], operator.or_]  # submit results
     network_tasks: list[dict[str, Any]]  # List of network analysis tasks
     submission_rejections: Annotated[list[dict[str, str]], operator.add]
 

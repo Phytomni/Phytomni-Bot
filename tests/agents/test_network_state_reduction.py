@@ -22,6 +22,9 @@ from mcp_server_phytomni.agents.network.agent import (
     GeneNetworkAgents,
     GeneNetworkConfig,
 )
+from mcp_server_phytomni.agents.shared.remote_analysis import (
+    RemoteAnalysisSubmissionError,
+)
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
 pytestmark = pytest.mark.agent
@@ -140,13 +143,14 @@ async def test_network_state_reduction_dispatches_single_task(
 async def test_network_state_reduction_handles_dual_failure(
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Verify two concurrently failing network tasks merge without error.
+    """Verify two concurrently rejected network tasks merge without error.
 
     The default prepare_tasks emits one task, so the latent reducer gap
     never surfaced in production; here prepare_tasks is overridden to
-    fan out two tasks that both fail, so each Send branch concurrently
-    writes task_ids, completed_count, and error. Without the Annotated
-    reducers LangGraph raises InvalidUpdateError on the merge.
+    fan out two tasks that both receive a documented submission rejection.
+    Each Send branch concurrently writes task_ids, completed_count, and
+    submission_rejections. Without the Annotated reducers LangGraph raises
+    InvalidUpdateError on the merge.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture used to force a two-task
@@ -204,12 +208,13 @@ async def test_network_state_reduction_handles_dual_failure(
             output_dir: Optional output directory (unused).
 
         Raises:
-            RuntimeError: Always, tagged with the analysis type.
+            RemoteAnalysisSubmissionError: Always, tagged with the analysis
+                type.
         """
         assert species_code == "osa"
         assert to_id == "TO:0000207"
         _ = output_dir
-        raise RuntimeError(f"boom {analysis_type}")
+        raise RemoteAnalysisSubmissionError(f"missing {analysis_type} task id")
 
     monkeypatch.setattr(agent, "_dispatch_and_wait_analysis", fake_dispatch)
 
@@ -231,20 +236,12 @@ async def test_network_state_reduction_handles_dual_failure(
         config={"configurable": {"thread_id": "network-dual-failure-test"}},
     )
 
-    # Both branches failed and merged cleanly: completed_count summed via
-    # operator.add, error retained by keep_last_error, task_ids or_-merged.
+    # Both documented rejections merged cleanly: completed_count summed via
+    # operator.add, task_ids or_-merged, and rejection records accumulated.
     assert final_state["completed_count"] == 2
-    assert isinstance(final_state.get("error"), str)
-    assert final_state["error"].startswith("boom ")
     assert final_state["task_ids"] == {}
-    # failures accumulates both records via operator.add reducer.
-    assert "failures" in final_state
-    assert len(final_state["failures"]) == 2
-    assert all(
-        f["message"].startswith("boom") for f in final_state["failures"]
-    )
-    assert all(f["kind"] == "execute" for f in final_state["failures"])
-    assert all(
-        "task_label" in f and "traceback_digest" in f
-        for f in final_state["failures"]
-    )
+    assert final_state.get("error") is None
+    assert final_state["submission_rejections"] == [
+        {"goal": "TO:0000207", "code": "upstream_rejected"},
+        {"goal": "TO:0000207", "code": "upstream_rejected"},
+    ]
