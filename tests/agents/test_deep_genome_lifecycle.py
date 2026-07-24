@@ -529,12 +529,11 @@ async def test_design_mount_failure_settles_both_concrete_items(
     ]
 
 
-def test_all_optional_failures_preserve_profile_and_fail_owner(
+async def test_all_optional_failures_preserve_profile_and_fail_owner(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """No usable optional result settles failed with the profile retained."""
-    # pylint: disable=protected-access
     store, reservation = _seed_store(tmp_path)
     monkeypatch.setattr(
         report_module,
@@ -567,7 +566,8 @@ def test_all_optional_failures_preserve_profile_and_fail_owner(
     with pytest.raises(
         DeepGenomeWorkflowError, match="no usable analysis result"
     ):
-        asyncio.run(report_harness._run_report_synthesizer(cast(Any, state)))
+        synthesizer = getattr(report_harness, "_run_report_synthesizer")
+        await synthesizer(cast(Any, state))
 
     snapshot = store.get_snapshot(reservation.umbrella_task_id)
     assert snapshot is not None

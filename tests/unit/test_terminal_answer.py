@@ -5,8 +5,6 @@
 
 from __future__ import annotations
 
-import asyncio
-
 import pytest
 
 from mcp_server_phytomni.runtime import terminal_answer
@@ -16,11 +14,6 @@ from mcp_server_phytomni.runtime.terminal_answer import (
 )
 
 pytestmark = pytest.mark.unit
-
-
-def _run(coro):
-    """Drive a coroutine to completion in a fresh event loop."""
-    return asyncio.run(coro)
 
 
 def _live(*statuses):
@@ -50,22 +43,21 @@ def _ctx(agent, status, live, artifacts, query):
     )
 
 
-def test_succeeded_answer_lists_counts_dirs_and_figures():
+@pytest.mark.asyncio
+async def test_succeeded_answer_lists_counts_dirs_and_figures():
     """A succeeded run names counts, output dirs, and figure files."""
-    answer = _run(
-        terminal_answer.synthesize_terminal_answer(
-            _ctx(
-                "research",
-                "succeeded",
-                _live("succeeded", "succeeded"),
-                _artifacts(
-                    [
-                        ["/obs/p/r0/fig1.png"],
-                        ["/obs/p/r1/fig2.svg", "/obs/p/r1/t.csv"],
-                    ]
-                ),
-                "study FT in rice",
-            )
+    answer = await terminal_answer.synthesize_terminal_answer(
+        _ctx(
+            "research",
+            "succeeded",
+            _live("succeeded", "succeeded"),
+            _artifacts(
+                [
+                    ["/obs/p/r0/fig1.png"],
+                    ["/obs/p/r1/fig2.svg", "/obs/p/r1/t.csv"],
+                ]
+            ),
+            "study FT in rice",
         )
     )
     assert "complete" in answer.lower()
@@ -76,17 +68,16 @@ def test_succeeded_answer_lists_counts_dirs_and_figures():
     assert "t.csv" not in answer  # non-figure excluded from the figures line
 
 
-def test_failed_answer_names_failure_and_keeps_succeeded_outputs():
+@pytest.mark.asyncio
+async def test_failed_answer_names_failure_and_keeps_succeeded_outputs():
     """A failed run reports the failure count and still lists products."""
-    answer = _run(
-        terminal_answer.synthesize_terminal_answer(
-            _ctx(
-                "network",
-                "failed",
-                _live("succeeded", "failed"),
-                _artifacts([["/obs/p/r0/fig.png"]]),
-                None,
-            )
+    answer = await terminal_answer.synthesize_terminal_answer(
+        _ctx(
+            "network",
+            "failed",
+            _live("succeeded", "failed"),
+            _artifacts([["/obs/p/r0/fig.png"]]),
+            None,
         )
     )
     assert "failed" in answer.lower()
@@ -94,23 +85,23 @@ def test_failed_answer_names_failure_and_keeps_succeeded_outputs():
     assert "/obs/p/r0" in answer  # succeeded output still listed
 
 
-def test_none_query_omits_query_line():
+@pytest.mark.asyncio
+async def test_none_query_omits_query_line():
     """No captured query means no Query line."""
-    answer = _run(
-        terminal_answer.synthesize_terminal_answer(
-            _ctx(
-                "design",
-                "succeeded",
-                _live("succeeded"),
-                _artifacts([[]]),
-                None,
-            )
+    answer = await terminal_answer.synthesize_terminal_answer(
+        _ctx(
+            "design",
+            "succeeded",
+            _live("succeeded"),
+            _artifacts([[]]),
+            None,
         )
     )
     assert "Query:" not in answer
 
 
-def test_custom_synthesizer_is_used():
+@pytest.mark.asyncio
+async def test_custom_synthesizer_is_used():
     """An injected synthesizer overrides the thin default."""
 
     async def fake(context: TerminalAnswerContext) -> str:
@@ -119,16 +110,14 @@ def test_custom_synthesizer_is_used():
 
     synthesizer: AnswerSynthesizer = fake
 
-    answer = _run(
-        terminal_answer.synthesize_terminal_answer(
-            _ctx(
-                "analyst",
-                "succeeded",
-                _live("succeeded"),
-                _artifacts([[]]),
-                None,
-            ),
-            synthesizer=synthesizer,
-        )
+    answer = await terminal_answer.synthesize_terminal_answer(
+        _ctx(
+            "analyst",
+            "succeeded",
+            _live("succeeded"),
+            _artifacts([[]]),
+            None,
+        ),
+        synthesizer=synthesizer,
     )
     assert answer == "RICH REPORT"

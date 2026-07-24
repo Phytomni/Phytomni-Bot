@@ -203,6 +203,10 @@ async def test_driver_error_does_not_leak_sql_or_dsn(
         lambda: "req-gauss",
         raising=False,
     )
+    # The package logger intentionally disables propagation in production;
+    # re-enable it here so pytest's root-attached caplog sees the record.
+    package_logger = logging.getLogger("mcp_server_phytomni")
+    monkeypatch.setattr(package_logger, "propagate", True)
 
     with (
         caplog.at_level(logging.ERROR, logger=gauss_mod.__name__),
@@ -273,8 +277,16 @@ def test_pool_is_per_event_loop(
     """Each event loop gets its own pool (asyncpg pools are loop-bound)."""
     made, _ = _patch_pool(monkeypatch, [{"x": 1}])
 
-    asyncio.run(gauss_query("SELECT 1"))
-    asyncio.run(gauss_query("SELECT 1"))
+    def run_in_fresh_loop() -> None:
+        """Run one pool probe on an explicitly closed event loop."""
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(gauss_query("SELECT 1"))
+        finally:
+            loop.close()
+
+    run_in_fresh_loop()
+    run_in_fresh_loop()
 
     assert len(made) == 2
     assert made[0] is not made[1]

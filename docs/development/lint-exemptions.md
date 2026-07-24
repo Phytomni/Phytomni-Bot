@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `108`
+- Authorized records: `107`
 
 ## Informational counts
 
@@ -30,7 +30,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `pylint:broad-exception-caught`                   |       2 |
 | `pylint:contextmanager-generator-missing-cleanup` |       2 |
 | `pylint:path-ignore`                              |       4 |
-| `pylint:protected-access`                         |      40 |
+| `pylint:protected-access`                         |      39 |
 | `pylint:too-few-public-methods`                   |       3 |
 | `pylint:wrong-import-position`                    |       1 |
 | `pymarkdown:md013`                                |       1 |
@@ -95,7 +95,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0245` | pylint | protected-access | structural | inline | symbol | tests/agents/test_deep_genome_chat_subgraph.py | test_dispatch_chat_uses_subgraph | `sha256:dc8cf6a9d64081107dcb8c0509cf9b38ffc98a1931b77e52d26b7fee2d4383eb` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0246` | pylint | protected-access | structural | inline | symbol | tests/agents/test_deep_genome_dispatch_routing.py | test_deep_genome_generic_dispatch_is_submit_only | `sha256:d7231430fe9c4901f96ab215506cd45a2986336a0c009b0bf3ebb77dc60d81da` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0247` | pylint | protected-access | structural | inline | symbol | tests/agents/test_deep_genome_knowledge_subgraph.py | test_dispatch_knowledge_uses_subgraph | `sha256:e738b7820e753539f447e164a30d465df7abba5f27a3730d42851135fa2b38aa` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
-| `SAE-TMP-0248` | pylint | protected-access | structural | inline | symbol | tests/agents/test_deep_genome_lifecycle.py | test_all_optional_failures_preserve_profile_and_fail_owner | `sha256:7c4cc25324af4c7a96948142dcd0ffdebb1f0547852b87a5ea4d389d83ccd804` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0250` | pylint | protected-access | structural | inline | symbol | tests/agents/test_design_helpers.py | test_analysis_prompt_parts_rejects_unknown_type | `sha256:5920289e37592f4bf00a38fa591f263313e4ad7774c9a368f018f6090560b37c` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0251` | pylint | protected-access | structural | inline | symbol | tests/agents/test_network_analyst_subgraph.py | test_dispatch_request_carries_to_id_as_target | `sha256:7b00f3c4d7abe53a1e197b9f01f9b447860703561be848f801fd9566b1be0395` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
 | `SAE-TMP-0252` | pylint | protected-access | structural | inline | symbol | tests/agents/test_research_analyst_subgraph.py | test_submit_task_propagates_failed_status | `sha256:703861b6c2122568233a161f3323b921ed51aa617a31c181e20085e857a2f98e` | bot-maintainers | 2026-07-19 | 2027-01-17 | — | — | static-analysis-inventory |
@@ -1123,26 +1122,6 @@ Rationale:
 
 ```text
 test_dispatch_knowledge_uses_subgraph isolates a DeepGenome report adapter seam so the mounted subgraph contract is asserted without unrelated stages.
-```
-
-Counterfactual:
-
-```text
-Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects.
-```
-
-Risk:
-
-```text
-A protected-access exception can hide unintended coupling or stale private invariants.
-```
-
-### `SAE-TMP-0248`
-
-Rationale:
-
-```text
-test_all_optional_failures_preserve_profile_and_fail_owner isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution.
 ```
 
 Counterfactual:

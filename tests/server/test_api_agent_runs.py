@@ -260,7 +260,7 @@ async def test_agent_run_sync_writes_local_run(
 
 
 @pytest.mark.parametrize(
-    ("slug", "tool_name", "arguments"),
+    "case",
     [
         (
             "chat",
@@ -278,11 +278,10 @@ async def test_native_sync_agents_keep_succeeded_envelope(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
-    slug: str,
-    tool_name: str,
-    arguments: dict[str, Any],
+    case: tuple[str, str, dict[str, Any]],
 ) -> None:
     """Representative synchronous native runs retain the common envelope."""
+    slug, tool_name, arguments = case
 
     async def fake(_args: Any) -> dict[str, Any]:
         return {"answer": "ok", "doc_list": []}

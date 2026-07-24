@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import replace
 from typing import Any
 
@@ -228,20 +227,31 @@ def test_console_main_propagates_async_exit_code(
     async def fake_main(_argv: list[str] | None = None) -> int:
         return 2
 
+    run_calls: list[object] = []
+
+    def fake_run(coro: Any) -> int:
+        """Close the handed-off coroutine without replacing its contract."""
+        run_calls.append(coro)
+        coro.close()
+        return 2
+
     monkeypatch.setattr(cli_main, "_main", fake_main)
+    monkeypatch.setattr(cli_main.asyncio, "run", fake_run)
     with pytest.raises(SystemExit) as excinfo:
         cli_main.main()
+    assert len(run_calls) == 1
     assert excinfo.value.code == 2
 
 
-def test_installed_status_without_key_exits_two(
+@pytest.mark.asyncio
+async def test_installed_status_without_key_exits_two(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A missing environment key fails before any network request."""
     monkeypatch.delenv("PHYTOMNI_API_KEY", raising=False)
     monkeypatch.setenv("PHYTOMNI_API_URL", "https://bot.invalid")
 
-    assert asyncio.run(_main(["status", "run-1"])) == 2
+    assert await _main(["status", "run-1"]) == 2
 
 
 async def test_follow_reports_only_status_or_revision_changes(

@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from tests.support.asyncio_helpers import run_coroutine_on_owned_loop
 
 
 def _load_runner() -> Any:
@@ -31,6 +32,16 @@ def _load_runner() -> Any:
 
 
 compare_gauss_queries = _load_runner()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_cli_event_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep sync CLI tests from leaking asyncio.run state into pytest."""
+    monkeypatch.setattr(
+        compare_gauss_queries,
+        "asyncio",
+        SimpleNamespace(run=run_coroutine_on_owned_loop),
+    )
 
 
 def _baseline_for(

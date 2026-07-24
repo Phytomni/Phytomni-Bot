@@ -24,7 +24,10 @@ async def test_build_default_checkpointer_returns_sqlite_saver(
     """build_default_checkpointer yields an AsyncSqliteSaver at the path."""
     db_path = str(tmp_path / "checkpoints.db")
     saver = build_default_checkpointer(db_path)
-    assert isinstance(saver, AsyncSqliteSaver)
+    try:
+        assert isinstance(saver, AsyncSqliteSaver)
+    finally:
+        await saver.conn.close()
 
 
 def test_resolve_checkpoints_db_path_is_local_sibling() -> None:

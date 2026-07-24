@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
+from tests.support.logging_helpers import capture_non_propagating_logger
 from tests.support.security_markers import FORBIDDEN_STREAM_CONTENT
 
 from mcp_server_phytomni.mcp.result_formatting import (
@@ -32,6 +33,18 @@ from mcp_server_phytomni.mcp.stream_lifecycle import (
 pytestmark = pytest.mark.unit
 
 _EMPTY_EVENTS: tuple[AguiEvent, ...] = ()
+
+
+@pytest.fixture(autouse=True)
+def _attach_lifecycle_log_handler(
+    caplog: pytest.LogCaptureFixture,
+) -> Iterator[None]:
+    """Attach pytest capture to the package logger's non-propagating sink."""
+    with capture_non_propagating_logger(
+        "mcp_server_phytomni.mcp.stream_lifecycle",
+        caplog.handler,
+    ):
+        yield
 
 
 async def _collect(events: AsyncIterator[AguiEvent]) -> list[AguiEvent]:

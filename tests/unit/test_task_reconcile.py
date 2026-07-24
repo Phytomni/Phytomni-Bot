@@ -13,8 +13,8 @@ run-aggregate can surface the assembled report.
 
 from __future__ import annotations
 
-import asyncio
 import logging
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
@@ -24,6 +24,7 @@ import pytest
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 from tests.agents.shared.deep_genome_fixtures import seed_brief_gene_plan
+from tests.support.logging_helpers import capture_non_propagating_logger
 from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.contracts.deep_genome import (
@@ -50,6 +51,18 @@ from mcp_server_phytomni.runtime.task_reconcile import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _attach_reconcile_log_handler(
+    caplog: pytest.LogCaptureFixture,
+) -> Iterator[None]:
+    """Attach pytest capture to the reconciliation logger."""
+    with capture_non_propagating_logger(
+        "mcp_server_phytomni.runtime.task_reconcile",
+        caplog.handler,
+    ):
+        yield
 
 
 @pytest.fixture(name="mgr_path")
@@ -154,7 +167,8 @@ def test_snapshot_public_serializer_whitelists_report_fields() -> None:
     ]
 
 
-def test_reconcile_task_log_returns_cached_payload_without_remote(
+@pytest.mark.asyncio
+async def test_reconcile_task_log_returns_cached_payload_without_remote(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A cache hit short-circuits before touching the analyst platform.
@@ -188,11 +202,12 @@ def test_reconcile_task_log_returns_cached_payload_without_remote(
         _fake_task_log,
     )
 
-    assert asyncio.run(reconcile_task_log(task_id)) == cached_payload
+    assert await reconcile_task_log(task_id) == cached_payload
     assert not remote_calls
 
 
-def test_reconcile_task_log_fetches_and_caches_on_miss(
+@pytest.mark.asyncio
+async def test_reconcile_task_log_fetches_and_caches_on_miss(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Cache miss + remote success writes the payload and returns it.
@@ -218,12 +233,13 @@ def test_reconcile_task_log_fetches_and_caches_on_miss(
         _fake_task_log,
     )
 
-    result = asyncio.run(reconcile_task_log(task_id))
+    result = await reconcile_task_log(task_id)
     assert result == fetched
     assert mgr.get_task_log(task_id) == fetched
 
 
-def test_reconcile_task_surfaces_persisted_final_report(
+@pytest.mark.asyncio
+async def test_reconcile_task_surfaces_persisted_final_report(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """reconcile_task carries the row's final_report through the dict.
@@ -250,12 +266,13 @@ def test_reconcile_task_surfaces_persisted_final_report(
         _fake_status,
     )
 
-    result = asyncio.run(reconcile_task("dg-1"))
+    result = await reconcile_task("dg-1")
     assert result["final_report"] == "# Report\n\nbody\n"
     assert result["status"] == "succeeded"
 
 
-def test_reconcile_task_final_report_none_without_persisted_report(
+@pytest.mark.asyncio
+async def test_reconcile_task_final_report_none_without_persisted_report(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A row with no persisted report carries final_report=None.
@@ -279,7 +296,7 @@ def test_reconcile_task_final_report_none_without_persisted_report(
         _fake_status,
     )
 
-    result = asyncio.run(reconcile_task("an-1"))
+    result = await reconcile_task("an-1")
     assert result["final_report"] is None
 
 
@@ -290,7 +307,8 @@ def test_reconcile_task_final_report_none_without_persisted_report(
         ("running", None, "running"),
     ],
 )
-def test_reconcile_task_self_heal_on_lost_terminal_write(
+@pytest.mark.asyncio
+async def test_reconcile_task_self_heal_on_lost_terminal_write(
     mgr_path: str,
     monkeypatch: pytest.MonkeyPatch,
     recorded_status: str,
@@ -308,12 +326,13 @@ def test_reconcile_task_self_heal_on_lost_terminal_write(
     if report is not None:
         mgr.set_task_final_report("dg-heal", report)
 
-    result = asyncio.run(reconcile_task("dg-heal"))
+    result = await reconcile_task("dg-heal")
 
     assert result["status"] == expected
 
 
-def test_reconcile_task_unknown_id_includes_final_report_key(
+@pytest.mark.asyncio
+async def test_reconcile_task_unknown_id_includes_final_report_key(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An unknown id keeps the final_report key present (value None).
@@ -327,12 +346,13 @@ def test_reconcile_task_unknown_id_includes_final_report_key(
     )
     TaskManager(mgr_path)
 
-    result = asyncio.run(reconcile_task("does-not-exist"))
+    result = await reconcile_task("does-not-exist")
     assert result["status"] == "unknown"
     assert result["final_report"] is None
 
 
-def test_reconcile_task_log_returns_none_on_remote_failure(
+@pytest.mark.asyncio
+async def test_reconcile_task_log_returns_none_on_remote_failure(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A remote 5xx must not surface to the caller as an exception.
@@ -357,12 +377,13 @@ def test_reconcile_task_log_returns_none_on_remote_failure(
         _fake_task_log,
     )
 
-    assert asyncio.run(reconcile_task_log(task_id)) is None
+    assert await reconcile_task_log(task_id) is None
     # Nothing was cached — the row still has task_log = NULL.
     assert mgr.get_task_log(task_id) is None
 
 
-def test_reconcile_task_probes_source_task_id_when_present(
+@pytest.mark.asyncio
+async def test_reconcile_task_probes_source_task_id_when_present(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """reconcile_task probes the remote id for a caller-owned dedup row.
@@ -399,13 +420,14 @@ def test_reconcile_task_probes_source_task_id_when_present(
         _capturing_status,
     )
 
-    asyncio.run(reconcile_task("T-local"))
+    await reconcile_task("T-local")
     assert probed_ids == [
         "R-remote"
     ], f"Expected probe of 'R-remote', got {probed_ids}"
 
 
-def test_reconcile_task_probes_own_id_when_source_task_id_is_none(
+@pytest.mark.asyncio
+async def test_reconcile_task_probes_own_id_when_source_task_id_is_none(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """reconcile_task probes its own task_id when source_task_id is None.
@@ -432,13 +454,14 @@ def test_reconcile_task_probes_own_id_when_source_task_id_is_none(
         _capturing_status,
     )
 
-    asyncio.run(reconcile_task("T-own"))
+    await reconcile_task("T-own")
     assert probed_ids == [
         "T-own"
     ], f"Expected probe of 'T-own', got {probed_ids}"
 
 
-def test_reconcile_marks_dead_deep_genome_umbrella_failed(
+@pytest.mark.asyncio
+async def test_reconcile_marks_dead_deep_genome_umbrella_failed(
     mgr_path: str,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -461,7 +484,7 @@ def test_reconcile_marks_dead_deep_genome_umbrella_failed(
     )
 
     with caplog.at_level(logging.WARNING):
-        result = asyncio.run(reconcile_task(task_id))
+        result = await reconcile_task(task_id)
 
     assert result["status"] == "failed"
     assert result["intermediate_report"].startswith("#")
@@ -500,7 +523,8 @@ def test_reconcile_marks_dead_deep_genome_umbrella_failed(
     assert "settled failed" in caplog.text
 
 
-def test_reconcile_skips_remote_probe_for_deep_genome_umbrella(
+@pytest.mark.asyncio
+async def test_reconcile_skips_remote_probe_for_deep_genome_umbrella(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Umbrella ids are local; jobs/{umbrella} probes only yield 404 noise."""
@@ -526,10 +550,10 @@ def test_reconcile_skips_remote_probe_for_deep_genome_umbrella(
     )
     register_live_task(
         task_id,
-        cast("asyncio.Task[object]", SimpleNamespace(done=lambda: False)),
+        cast(Any, SimpleNamespace(done=lambda: False)),
     )
     try:
-        result = asyncio.run(reconcile_task(task_id))
+        result = await reconcile_task(task_id)
     finally:
         deregister_live_task(task_id)
 
@@ -538,7 +562,8 @@ def test_reconcile_skips_remote_probe_for_deep_genome_umbrella(
     assert result["live_status"] is None
 
 
-def test_reconcile_never_probes_deep_genome_with_source_task_id(
+@pytest.mark.asyncio
+async def test_reconcile_never_probes_deep_genome_with_source_task_id(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """DeepGenome rows never use remote probes during local reconciliation."""
@@ -568,11 +593,12 @@ def test_reconcile_never_probes_deep_genome_with_source_task_id(
         _capturing_status,
     )
 
-    asyncio.run(reconcile_task("dg-dedup-local"))
+    await reconcile_task("dg-dedup-local")
     assert not probed_ids
 
 
-def test_reconcile_leaves_live_deep_genome_umbrella_running(
+@pytest.mark.asyncio
+async def test_reconcile_leaves_live_deep_genome_umbrella_running(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A still-live umbrella stays running (no false-positive failure)."""
@@ -584,16 +610,17 @@ def test_reconcile_leaves_live_deep_genome_umbrella_running(
     )
     register_live_task(
         task_id,
-        cast("asyncio.Task[object]", SimpleNamespace(done=lambda: False)),
+        cast(Any, SimpleNamespace(done=lambda: False)),
     )
     try:
-        result = asyncio.run(reconcile_task(task_id))
+        result = await reconcile_task(task_id)
         assert result["status"] == "running"
     finally:
         deregister_live_task(task_id)
 
 
-def test_reconcile_report_beats_liveness_for_deep_genome(
+@pytest.mark.asyncio
+async def test_reconcile_report_beats_liveness_for_deep_genome(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A persisted final_report wins over the liveness rule -> succeeded."""
@@ -606,7 +633,7 @@ def test_reconcile_report_beats_liveness_for_deep_genome(
     mgr = TaskManager(mgr_path)
     mgr.set_task_final_report(task_id, "# Report\n\nbody\n")
 
-    result = asyncio.run(reconcile_task(task_id))
+    result = await reconcile_task(task_id)
 
     assert result["status"] == "succeeded"
 
@@ -616,7 +643,8 @@ def test_reconcile_report_beats_liveness_for_deep_genome(
     [None, "analyst", "design", "network", "research"],
     ids=["null-child", "analyst", "design", "network", "research"],
 )
-def test_reconcile_never_fails_remote_row_absent_from_registry(
+@pytest.mark.asyncio
+async def test_reconcile_never_fails_remote_row_absent_from_registry(
     mgr_path: str,
     monkeypatch: pytest.MonkeyPatch,
     agent_tag: str | None,
@@ -645,6 +673,6 @@ def test_reconcile_never_fails_remote_row_absent_from_registry(
         )
     )
 
-    result = asyncio.run(reconcile_task("remote-row"))
+    result = await reconcile_task("remote-row")
 
     assert result["status"] == "submitted"

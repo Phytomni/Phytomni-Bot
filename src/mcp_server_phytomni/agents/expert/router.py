@@ -51,6 +51,16 @@ class ToolSelectionError(RuntimeError):
     """The routing model violated the constrained one-tool contract."""
 
 
+@dataclass(frozen=True, slots=True)
+class _RoutingRequest:
+    """Prepared tool surface and selection contract for one routing call."""
+
+    allowed_order: tuple[str, ...]
+    tools: list[dict[str, Any]]
+    tool_choice: Any
+    strict: bool
+
+
 async def select_agent_tool(
     user_query: str,
     history: Sequence[Mapping[str, Any]] = (),
@@ -96,63 +106,75 @@ async def select_agent_tool(
         *(dict(turn) for turn in history),
         {"role": "user", "content": user_query},
     ]
-    all_specs = agent_openai_tool_specs()
-    strict = allowed_tools is not None
-    if strict:
-        assert allowed_tools is not None
-        allowed_order = list(allowed_tools)
-        specs_by_name = {
-            str(spec["function"]["name"]): spec for spec in all_specs
-        }
-        if not allowed_order:
-            raise ToolSelectionError("strict routing requires an allowed tool")
-        try:
-            tools = [specs_by_name[name] for name in allowed_order]
-        except KeyError as exc:
-            raise ToolSelectionError(
-                "strict routing received an unknown allowed tool"
-            ) from exc
-        tool_choice: Any = (
-            {
-                "type": "function",
-                "function": {"name": forced_tool},
-            }
-            if forced_tool is not None
-            else "required"
-        )
-    else:
-        allowed_order = []
-        tools = all_specs
-        tool_choice = "auto"
+    request = _build_routing_request(
+        agent_openai_tool_specs(), allowed_tools, forced_tool
+    )
     completion = await client.chat.completions.create(
         model=sensitive.MODEL_ID,
         messages=cast(Any, messages),
-        tools=cast(Any, tools),
-        tool_choice=tool_choice,
+        tools=cast(Any, request.tools),
+        tool_choice=request.tool_choice,
     )
+    return _selection_from_completion(completion, request, forced_tool)
+
+
+def _build_routing_request(
+    all_specs: list[dict[str, Any]],
+    allowed_tools: Sequence[str] | None,
+    forced_tool: str | None,
+) -> _RoutingRequest:
+    """Prepare the model tool surface and strict-selection contract."""
+    if allowed_tools is None:
+        return _RoutingRequest((), all_specs, "auto", False)
+    allowed_order = tuple(allowed_tools)
+    specs_by_name = {str(spec["function"]["name"]): spec for spec in all_specs}
+    if not allowed_order:
+        raise ToolSelectionError("strict routing requires an allowed tool")
+    try:
+        tools = [specs_by_name[name] for name in allowed_order]
+    except KeyError as exc:
+        raise ToolSelectionError(
+            "strict routing received an unknown allowed tool"
+        ) from exc
+    tool_choice: Any = (
+        {
+            "type": "function",
+            "function": {"name": forced_tool},
+        }
+        if forced_tool is not None
+        else "required"
+    )
+    return _RoutingRequest(allowed_order, tools, tool_choice, True)
+
+
+def _selection_from_completion(
+    completion: Any,
+    request: _RoutingRequest,
+    forced_tool: str | None,
+) -> ToolSelection | None:
+    """Validate one model completion against the prepared routing contract."""
     if not completion.choices:
-        if strict:
+        if request.strict:
             raise ToolSelectionError("routing model returned no choice")
         return None
-    message = completion.choices[0].message
-    tool_calls = message.tool_calls or []
+    tool_calls = completion.choices[0].message.tool_calls or []
     if not tool_calls:
-        if strict:
+        if request.strict:
             raise ToolSelectionError("routing model returned no tool call")
         return None
-    if strict and len(tool_calls) != 1:
+    if request.strict and len(tool_calls) != 1:
         raise ToolSelectionError(
             "routing model must return exactly one tool call"
         )
     function = getattr(tool_calls[0], "function", None)
     if function is None:
-        if strict:
+        if request.strict:
             raise ToolSelectionError(
                 "routing model returned a malformed tool call"
             )
         return None
     selected_name = str(function.name)
-    if strict and selected_name not in allowed_order:
+    if request.strict and selected_name not in request.allowed_order:
         raise ToolSelectionError(
             "routing model selected a tool outside the allowlist"
         )

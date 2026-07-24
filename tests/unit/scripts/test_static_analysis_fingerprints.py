@@ -70,6 +70,16 @@ def test_normalization_keeps_literals_and_structure() -> None:
     )
 
 
+def test_normalization_canonicalizes_fstring_tokenization() -> None:
+    """F-strings keep one stable token shape across Python 3.12-3.14."""
+    normalized = normalize_source('value = f"prefix {name!r:>{width}}"\n')
+
+    assert normalized == (
+        '1:value 55:= 61:f" 62:prefix  55:{ 1:name 55:! 1:r 55:: '
+        '62:> 55:{ 1:width 55:} 62: 55:} 63:" 4:\n'
+    )
+
+
 def test_finding_fingerprint_includes_tool_rule_mechanism_and_message() -> (
     None
 ):

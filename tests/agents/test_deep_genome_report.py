@@ -13,7 +13,6 @@ so the assertions stay inside the class hierarchy.
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any, cast
 
@@ -317,7 +316,7 @@ def _report_state(task_id: str, report_dir: Path) -> DeepGenomeState:
     )
 
 
-def test_run_follow_up_node_publishes_assembled_report_atomically(
+async def test_run_follow_up_node_publishes_assembled_report_atomically(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The final node publishes Markdown and settles the owner run."""
@@ -330,8 +329,8 @@ def test_run_follow_up_node_publishes_assembled_report_atomically(
     report_dir = tmp_path / "report"
     report_dir.mkdir()
 
-    out = asyncio.run(
-        _ReportProbe().run_follow_up_node(_report_state(task_id, report_dir))
+    out = await _ReportProbe().run_follow_up_node(
+        _report_state(task_id, report_dir)
     )
 
     snapshot = store.get_snapshot(task_id)
@@ -348,7 +347,7 @@ def test_run_follow_up_node_publishes_assembled_report_atomically(
     assert out["follow_up_questions"] == ["Q1?", "Q2?"]
 
 
-def test_follow_up_failure_preserves_intermediate_and_fails_owner(
+async def test_follow_up_failure_preserves_intermediate_and_fails_owner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A synthesis exception cannot be projected as a successful run."""
@@ -373,9 +372,7 @@ def test_follow_up_failure_preserves_intermediate_and_fails_owner(
     with pytest.raises(
         DeepGenomeWorkflowError, match="^final synthesis failed$"
     ):
-        asyncio.run(
-            probe.run_follow_up_node(_report_state(task_id, report_dir))
-        )
+        await probe.run_follow_up_node(_report_state(task_id, report_dir))
 
     snapshot = store.get_snapshot(task_id)
     assert snapshot is not None
@@ -415,7 +412,7 @@ async def test_follow_up_rejects_empty_final_report(
     assert snapshot.final_report is None
 
 
-def test_follow_up_requires_durable_tracking(
+async def test_follow_up_requires_durable_tracking(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A final node without its umbrella id fails closed."""
@@ -430,8 +427,6 @@ def test_follow_up_requires_durable_tracking(
     with pytest.raises(
         DeepGenomeWorkflowError, match="^final report tracking unavailable$"
     ):
-        asyncio.run(
-            _ReportProbe().run_follow_up_node(
-                _state(task_id=None, report_dir=str(report_dir))
-            )
+        await _ReportProbe().run_follow_up_node(
+            _state(task_id=None, report_dir=str(report_dir))
         )

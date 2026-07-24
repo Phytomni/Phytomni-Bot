@@ -13,7 +13,6 @@ query callers in dispatch and profile now emit the escaped form.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import pytest
@@ -47,7 +46,7 @@ def test_sql_literal_doubles_embedded_quotes(
     assert sql_literal(value) == expected
 
 
-def test_cached_gene_symbol_lookup_uses_sql_literal(
+async def test_cached_gene_symbol_lookup_uses_sql_literal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify the symbol lookup posts an escaped quote pair to BI.
@@ -75,11 +74,9 @@ def test_cached_gene_symbol_lookup_uses_sql_literal(
     monkeypatch.setattr(deep_profile, "_post_bi_sql", _capture)
     symbol_lookup = getattr(deep_profile, "_cached_gene_symbol_lookup")
 
-    result = asyncio.run(
-        symbol_lookup(
-            species_code="ATH",
-            gene_id="o'malley",
-        )
+    result = await symbol_lookup(
+        species_code="ATH",
+        gene_id="o'malley",
     )
 
     assert result == ["SYM1"]
@@ -89,7 +86,7 @@ def test_cached_gene_symbol_lookup_uses_sql_literal(
     assert "'ATH'" in sql
 
 
-def test_cached_gene_annotation_lookup_uses_sql_literal(
+async def test_cached_gene_annotation_lookup_uses_sql_literal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify the annotation lookup escapes both gene_id and species_code.
@@ -112,11 +109,9 @@ def test_cached_gene_annotation_lookup_uses_sql_literal(
     monkeypatch.setattr(deep_profile, "_post_bi_sql", _capture)
     annotation_lookup = getattr(deep_profile, "_cached_gene_annotation_lookup")
 
-    asyncio.run(
-        annotation_lookup(
-            species_code="bad'species",
-            gene_id="bad'gene",
-        )
+    await annotation_lookup(
+        species_code="bad'species",
+        gene_id="bad'gene",
     )
 
     assert len(captured) == 4

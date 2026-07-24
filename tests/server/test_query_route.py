@@ -21,6 +21,7 @@ from typing import Any
 import httpx
 import pytest
 from pydantic import ValidationError
+from tests.support.expert_router_fakes import patch_expert_router
 
 import mcp_server_phytomni.api.app as api_app
 from mcp_server_phytomni import server
@@ -74,39 +75,9 @@ def _router_completion(
         for name, arguments in tool_calls
     ]
     return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=calls or None))]
-    )
-
-
-def _patch_router_completion(
-    monkeypatch: pytest.MonkeyPatch,
-    completion: SimpleNamespace,
-    captured: dict[str, Any] | None = None,
-) -> None:
-    """Run the route through the real selector with a canned completion."""
-
-    async def create(**kwargs: Any) -> SimpleNamespace:
-        if captured is not None:
-            captured.update(kwargs)
-        return completion
-
-    def fake_async_openai(
-        api_key: str, base_url: str | None
-    ) -> SimpleNamespace:
-        _ = (api_key, base_url)
-        return SimpleNamespace(
-            chat=SimpleNamespace(completions=SimpleNamespace(create=create))
-        )
-
-    monkeypatch.setattr(expert_router, "AsyncOpenAI", fake_async_openai)
-    monkeypatch.setattr(
-        expert_router,
-        "get_sensitive_config",
-        lambda: SimpleNamespace(
-            API_KEY=SimpleNamespace(get_secret_value=lambda: "k"),
-            BASE_URL="https://example.invalid/v1",
-            MODEL_ID="route-model",
-        ),
+        choices=[
+            SimpleNamespace(message=SimpleNamespace(tool_calls=calls or None))
+        ]
     )
 
 
@@ -428,18 +399,15 @@ _FORCED_ROUTE_CASES = (
 )
 
 
-@pytest.mark.parametrize(
-    ("tool_name", "slug", "arguments"), _FORCED_ROUTE_CASES
-)
+@pytest.mark.parametrize("case", _FORCED_ROUTE_CASES)
 async def test_route_forces_every_canonical_tool_to_its_native_slug(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
-    tool_name: str,
-    slug: str,
-    arguments: dict[str, Any],
+    case: tuple[str, str, dict[str, Any]],
 ) -> None:
     """Each shared canonical tool definition reaches its native slug."""
+    tool_name, slug, arguments = case
     assert tuple(
         name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
     ) == tuple(case[0] for case in _FORCED_ROUTE_CASES)
@@ -467,7 +435,7 @@ async def test_route_forces_every_canonical_tool_to_its_native_slug(
 
 
 @pytest.mark.parametrize(
-    ("completion", "allowed_tools", "forced_tool"),
+    "case",
     [
         (_router_completion(empty_choices=True), ["ChatAgent"], None),
         (_router_completion(), ["ChatAgent"], None),
@@ -497,11 +465,10 @@ async def test_route_strict_failures_never_invoke_agent(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
-    completion: SimpleNamespace,
-    allowed_tools: list[str],
-    forced_tool: str | None,
+    case: tuple[SimpleNamespace, list[str], str | None],
 ) -> None:
     """Real strict selector contract failures stop before dispatch."""
+    completion, allowed_tools, forced_tool = case
     invoked = 0
 
     async def forbidden_invoke(
@@ -513,7 +480,7 @@ async def test_route_strict_failures_never_invoke_agent(
 
     monkeypatch.setattr(api_app, "_invoke_agent_run", forbidden_invoke)
     captured: dict[str, Any] = {}
-    _patch_router_completion(monkeypatch, completion, captured)
+    patch_expert_router(monkeypatch, expert_router, completion, captured)
     payload: dict[str, Any] = {
         "user_query": "q",
         "allowed_tools": allowed_tools,

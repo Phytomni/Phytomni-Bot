@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -114,7 +113,8 @@ def _memory_dependencies(
     )
 
 
-def test_memory_registration_isolated_and_reuses_store() -> None:
+@pytest.mark.asyncio
+async def test_memory_registration_isolated_and_reuses_store() -> None:
     """Memory routes register once and use one injected store accessor."""
     app = FastAPI()
     agent_guard = _noop
@@ -151,8 +151,8 @@ def test_memory_registration_isolated_and_reuses_store() -> None:
         for route in _routes(app)
         if route.path == "/v1/memories" and route.methods == {"GET"}
     )
-    asyncio.run(list_route.endpoint())
-    asyncio.run(list_route.endpoint())
+    await list_route.endpoint()
+    await list_route.endpoint()
     assert accesses == [store, store]
     assert store.list_calls == 2
 

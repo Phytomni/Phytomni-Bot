@@ -293,18 +293,26 @@ def test_rerank_semaphore_is_per_event_loop(
     )
     reset_rerank_semaphore_state()
 
-    seen: list[int] = []
+    seen: list[asyncio.Semaphore] = []
 
     async def grab() -> None:
         sem = _rerank_semaphore()
         async with sem:
-            seen.append(id(sem))
+            seen.append(sem)
 
-    asyncio.run(grab())
-    asyncio.run(grab())
+    def run_in_fresh_loop() -> None:
+        """Run one probe on an explicitly closed event loop."""
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(grab())
+        finally:
+            loop.close()
+
+    run_in_fresh_loop()
+    run_in_fresh_loop()
 
     assert len(seen) == 2
-    assert seen[0] != seen[1], "two loops shared one semaphore instance"
+    assert seen[0] is not seen[1], "two loops shared one semaphore instance"
 
 
 async def test_rerank_semaphore_bypasses_when_disabled(

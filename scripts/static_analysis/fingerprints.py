@@ -15,6 +15,16 @@ from dataclasses import dataclass
 
 DefinitionContext = tuple[int, int, str, ast.AST]
 
+# Python 3.12, 3.13, and 3.14 assign different numeric token ids to the
+# f-string token family.  Keep the 3.12 ids as the repository's canonical
+# wire format so an unchanged source span has one fingerprint in every
+# supported interpreter.
+_FSTRING_TOKEN_TYPES = {
+    getattr(tokenize, "FSTRING_START", -1): 61,
+    getattr(tokenize, "FSTRING_MIDDLE", -1): 62,
+    getattr(tokenize, "FSTRING_END", -1): 63,
+}
+
 
 @dataclass(frozen=True, slots=True)
 class Endpoint:
@@ -91,13 +101,14 @@ def normalize_source(text: str) -> str:
     tokens: list[str] = []
     ignored = {tokenize.COMMENT, tokenize.NL, tokenize.ENDMARKER}
     try:
-        stream = tokenize.generate_tokens(io.StringIO(text).readline)
-        for token in stream:
+        for token in tokenize.generate_tokens(io.StringIO(text).readline):
             if token.type in ignored:
                 continue
             if token.type == tokenize.ENCODING:
                 continue
-            tokens.append(f"{token.type}:{token.string}")
+            token_type = _FSTRING_TOKEN_TYPES.get(token.type, token.type)
+            token_string = token.string
+            tokens.append(f"{token_type}:{token_string}")
     except (IndentationError, SyntaxError, tokenize.TokenError) as exc:
         raise ValueError(f"cannot tokenize source: {exc}") from exc
     return " ".join(tokens)

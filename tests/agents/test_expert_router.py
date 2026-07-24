@@ -24,6 +24,7 @@ from mcp_server_phytomni.agents.expert import (
 )
 from mcp_server_phytomni.agents.expert import router as expert_router
 from mcp_server_phytomni.mcp.schemas import agent_openai_tool_specs
+from tests.support.expert_router_fakes import patch_expert_router
 
 pytestmark = pytest.mark.agent
 
@@ -43,38 +44,6 @@ def _tool_call(name: str, arguments: str) -> SimpleNamespace:
     )
 
 
-def _patch_openai(
-    monkeypatch: pytest.MonkeyPatch,
-    completion: object,
-    captured: dict[str, Any] | None = None,
-) -> None:
-    """Patch the router's ``AsyncOpenAI`` and sensitive-config loader."""
-
-    async def create(**kwargs: Any) -> object:
-        if captured is not None:
-            captured.update(kwargs)
-        return completion
-
-    def fake_async_openai(
-        api_key: str, base_url: str | None
-    ) -> SimpleNamespace:
-        _ = (api_key, base_url)
-        return SimpleNamespace(
-            chat=SimpleNamespace(completions=SimpleNamespace(create=create))
-        )
-
-    monkeypatch.setattr(expert_router, "AsyncOpenAI", fake_async_openai)
-    monkeypatch.setattr(
-        expert_router,
-        "get_sensitive_config",
-        lambda: SimpleNamespace(
-            API_KEY=SimpleNamespace(get_secret_value=lambda: "k"),
-            BASE_URL="https://example.invalid/v1",
-            MODEL_ID="route-model",
-        ),
-    )
-
-
 async def test_select_agent_tool_returns_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -83,7 +52,7 @@ async def test_select_agent_tool_returns_selection(
     completion = _completion(
         tool_calls=[_tool_call("KnowledgeAgent", '{"user_query": "rice"}')]
     )
-    _patch_openai(monkeypatch, completion, captured)
+    patch_expert_router(monkeypatch, expert_router, completion, captured)
 
     result = await select_agent_tool("tell me about rice", history=[])
 
@@ -104,8 +73,9 @@ async def test_strict_router_offers_allowed_tools_in_request_order(
 ) -> None:
     """Strict routing exposes only the caller's ordered allowlist."""
     captured: dict[str, Any] = {}
-    _patch_openai(
+    patch_expert_router(
         monkeypatch,
+        expert_router,
         _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
         captured,
     )
@@ -127,8 +97,9 @@ async def test_strict_router_forces_requested_tool(
 ) -> None:
     """A forced strict route sends the matching OpenAI tool choice."""
     captured: dict[str, Any] = {}
-    _patch_openai(
+    patch_expert_router(
         monkeypatch,
+        expert_router,
         _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
         captured,
     )
@@ -180,8 +151,9 @@ async def test_strict_router_forces_every_canonical_tool(
 ) -> None:
     """Every dispatchable canonical tool can be the strict forced choice."""
     captured: dict[str, Any] = {}
-    _patch_openai(
+    patch_expert_router(
         monkeypatch,
+        expert_router,
         _completion(tool_calls=[_tool_call(tool_name, arguments)]),
         captured,
     )
@@ -219,7 +191,7 @@ async def test_strict_router_rejects_invalid_model_selection(
     completion: object,
 ) -> None:
     """Strict routing rejects missing, ambiguous, and disallowed choices."""
-    _patch_openai(monkeypatch, completion)
+    patch_expert_router(monkeypatch, expert_router, completion)
 
     with pytest.raises(ToolSelectionError):
         await select_agent_tool(
@@ -232,7 +204,9 @@ async def test_select_agent_tool_none_without_tool_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A content-only completion yields no selection (chat fallback)."""
-    _patch_openai(monkeypatch, _completion(content="just chatting"))
+    patch_expert_router(
+        monkeypatch, expert_router, _completion(content="just chatting")
+    )
     result = await select_agent_tool("hello", history=[])
     assert result is None
 
@@ -246,7 +220,9 @@ async def test_select_agent_tool_none_on_empty_choices(
     must not IndexError into a generic 500; it is treated as "no tool
     selected" so the route falls back to the chat agent.
     """
-    _patch_openai(monkeypatch, SimpleNamespace(choices=[]))
+    patch_expert_router(
+        monkeypatch, expert_router, SimpleNamespace(choices=[])
+    )
     result = await select_agent_tool("hello", history=[])
     assert result is None
 
@@ -256,8 +232,9 @@ async def test_select_agent_tool_history_precedes_user_turn(
 ) -> None:
     """History is sent before the current user turn for routing context."""
     captured: dict[str, Any] = {}
-    _patch_openai(
+    patch_expert_router(
         monkeypatch,
+        expert_router,
         _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
         captured,
     )
@@ -274,8 +251,9 @@ async def test_select_agent_tool_tolerates_non_json_arguments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Non-JSON tool arguments degrade to ``{}`` rather than crashing."""
-    _patch_openai(
+    patch_expert_router(
         monkeypatch,
+        expert_router,
         _completion(tool_calls=[_tool_call("DataAgent", "not-json")]),
     )
     result = await select_agent_tool("count genes", history=[])

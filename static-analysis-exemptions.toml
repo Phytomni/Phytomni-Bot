@@ -982,24 +982,6 @@ risk = "A protected-access exception can hide unintended coupling or stale priva
 tests = ["static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0248"
-tool = "pylint"
-rule = "protected-access"
-classification = "structural"
-mechanism = "inline"
-target_kind = "symbol"
-path = "tests/agents/test_deep_genome_lifecycle.py"
-symbol = "test_all_optional_failures_preserve_profile_and_fail_owner"
-fingerprint = "sha256:7c4cc25324af4c7a96948142dcd0ffdebb1f0547852b87a5ea4d389d83ccd804"
-owner = "bot-maintainers"
-introduced_on = 2026-07-19
-review_on = 2027-01-17
-rationale = "test_all_optional_failures_preserve_profile_and_fail_owner isolates a DeepGenome coordinator/report lifecycle transition so persistence order and failure settlement stay observable without remote analysis execution."
-counterfactual = "Use a public graph or transport seam only when it preserves this branch-level assertion without remote side effects."
-risk = "A protected-access exception can hide unintended coupling or stale private invariants."
-tests = ["static-analysis-inventory"]
-
-[[exemptions]]
 id = "SAE-TMP-0250"
 tool = "pylint"
 rule = "protected-access"

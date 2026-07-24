@@ -183,9 +183,13 @@ def test_store_failure_degrades_to_empty_without_raw_data_in_logs(
             _ = (user_id, kind, limit, now, include_expired)
             raise OSError("backend unavailable")
 
-    accessor = MemoryAccessor(BrokenStore())
-    with request_context("alice", "req-2"):
-        assert not accessor.retrieve()
-    assert accessor.degraded_reads == 1
-    assert "alice" not in caplog.text
-    assert "backend unavailable" not in caplog.text
+    store = BrokenStore()
+    try:
+        accessor = MemoryAccessor(store)
+        with request_context("alice", "req-2"):
+            assert not accessor.retrieve()
+        assert accessor.degraded_reads == 1
+        assert "alice" not in caplog.text
+        assert "backend unavailable" not in caplog.text
+    finally:
+        store.close()

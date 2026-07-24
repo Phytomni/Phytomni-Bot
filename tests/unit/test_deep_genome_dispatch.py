@@ -10,13 +10,14 @@ and the small harness used to exercise private download helpers.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Iterator
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
+from tests.support.logging_helpers import capture_non_propagating_logger
 
 from mcp_server_phytomni.agents.deep_genome import (
     dispatch as deep_genome_dispatch,
@@ -39,6 +40,18 @@ from mcp_server_phytomni.agents.deep_genome.remote_io import (
 from mcp_server_phytomni.storage.path_policy import IdFactory, RunIdentity
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _attach_remote_io_log_handler(
+    caplog: pytest.LogCaptureFixture,
+) -> Iterator[None]:
+    """Attach pytest capture to the remote-I/O logger."""
+    with capture_non_propagating_logger(
+        "mcp_server_phytomni.agents.deep_genome.remote_io",
+        caplog.handler,
+    ):
+        yield
 
 
 def _fixed_run_identity() -> RunIdentity:

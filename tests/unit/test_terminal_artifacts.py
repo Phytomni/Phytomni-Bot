@@ -12,7 +12,6 @@ empty only when that pass has not run (e.g. ``GetTaskStatus``).
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Iterator
 
@@ -25,11 +24,6 @@ from mcp_server_phytomni.runtime.terminal_artifacts import (
 )
 
 pytestmark = pytest.mark.unit
-
-
-def _run(coro):
-    """Drive a coroutine to completion in a fresh event loop."""
-    return asyncio.run(coro)
 
 
 @pytest.fixture(name="artifacts_caplog")
@@ -123,7 +117,8 @@ def test_empty_input_returns_empty_list() -> None:
     assert not collect_terminal_artifacts([])
 
 
-def test_enumerate_fills_paths_for_succeeded_rows() -> None:
+@pytest.mark.asyncio
+async def test_enumerate_fills_paths_for_succeeded_rows() -> None:
     """Only succeeded rows with an output_dir gain ``artifact_paths``."""
     live = [
         {"task_id": "t1", "status": "succeeded", "output_dir": "/obs/p/r1"},
@@ -136,8 +131,8 @@ def test_enumerate_fills_paths_for_succeeded_rows() -> None:
 
     typed_lister: ArtifactLister = lister
 
-    out = _run(
-        terminal_artifacts.enumerate_artifact_paths(live, lister=typed_lister)
+    out = await terminal_artifacts.enumerate_artifact_paths(
+        live, lister=typed_lister
     )
 
     assert out[0]["artifact_paths"] == ["/obs/p/r1/fig.png"]
@@ -145,7 +140,8 @@ def test_enumerate_fills_paths_for_succeeded_rows() -> None:
     assert out[2].get("artifact_paths", []) == []  # no output_dir -> skipped
 
 
-def test_enumerate_swallows_lister_errors(
+@pytest.mark.asyncio
+async def test_enumerate_swallows_lister_errors(
     artifacts_caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A listing failure degrades to empty paths and logs, never raises."""
@@ -158,15 +154,16 @@ def test_enumerate_swallows_lister_errors(
 
     typed_lister: ArtifactLister = boom
 
-    out = _run(
-        terminal_artifacts.enumerate_artifact_paths(live, lister=typed_lister)
+    out = await terminal_artifacts.enumerate_artifact_paths(
+        live, lister=typed_lister
     )
 
     assert out[0]["artifact_paths"] == []
     assert any("t1" in rec.message for rec in artifacts_caplog.records)
 
 
-def test_enumerate_caps_and_logs_truncation(
+@pytest.mark.asyncio
+async def test_enumerate_caps_and_logs_truncation(
     artifacts_caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Over-cap results are truncated with a non-silent warning."""
@@ -179,10 +176,8 @@ def test_enumerate_caps_and_logs_truncation(
 
     typed_lister: ArtifactLister = many
 
-    out = _run(
-        terminal_artifacts.enumerate_artifact_paths(
-            live, lister=typed_lister, cap=2
-        )
+    out = await terminal_artifacts.enumerate_artifact_paths(
+        live, lister=typed_lister, cap=2
     )
 
     assert len(out[0]["artifact_paths"]) == 2

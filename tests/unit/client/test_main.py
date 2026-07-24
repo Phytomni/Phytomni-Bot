@@ -13,12 +13,12 @@ implementations. No subprocess is spawned.
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from tests.support.asyncio_helpers import run_coroutine_on_owned_loop
 
 from mcp_client_phytomni import main as cli_main
 from mcp_client_phytomni.main import _build_parser, _json_object, _main, main
@@ -105,7 +105,8 @@ def test_json_object_rejects_malformed_json() -> None:
         _json_object("not-json")
 
 
-def test_main_list_tools_prints_tool_metadata(
+@pytest.mark.asyncio
+async def test_main_list_tools_prints_tool_metadata(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -122,7 +123,7 @@ def test_main_list_tools_prints_tool_metadata(
     )
     monkeypatch.setattr("sys.argv", ["phytomni-mcp-client", "list-tools"])
 
-    asyncio.run(_main())
+    await _main()
 
     payload = json.loads(capsys.readouterr().out)
     assert payload == [
@@ -134,7 +135,8 @@ def test_main_list_tools_prints_tool_metadata(
     ]
 
 
-def test_main_call_prints_formatted_answer(
+@pytest.mark.asyncio
+async def test_main_call_prints_formatted_answer(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -157,13 +159,14 @@ def test_main_call_prints_formatted_answer(
         ],
     )
 
-    asyncio.run(_main())
+    await _main()
 
     assert capsys.readouterr().out.strip() == "Hello, world."
     assert stub.calls == [("ChatAgent", {"user_query": "hello"})]
 
 
-def test_main_call_prints_tabular_block(
+@pytest.mark.asyncio
+async def test_main_call_prints_tabular_block(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -192,7 +195,7 @@ def test_main_call_prints_tabular_block(
         ],
     )
 
-    asyncio.run(_main())
+    await _main()
 
     output = capsys.readouterr().out
     assert "alias" in output
@@ -209,10 +212,19 @@ def test_main_entry_runs_async_main(
         captured["ran"] = True
         return 0
 
+    run_calls: list[object] = []
+
+    def fake_run(coro: Any) -> int:
+        """Run and close the handed-off coroutine on an owned event loop."""
+        run_calls.append(coro)
+        return run_coroutine_on_owned_loop(coro)
+
     monkeypatch.setattr(cli_main, "_main", fake_main)
+    monkeypatch.setattr(cli_main.asyncio, "run", fake_run)
 
     with pytest.raises(SystemExit) as excinfo:
         main()
 
     assert captured == {"ran": True}
+    assert len(run_calls) == 1
     assert excinfo.value.code == 0
