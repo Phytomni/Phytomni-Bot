@@ -13,6 +13,7 @@ from mcp_server_phytomni.runtime.langgraph_runner import (
 )
 from mcp_server_phytomni.runtime.resume import (
     NoCheckpointError,
+    ahas_checkpoint,
     aresume_graph,
     detect_interrupt,
 )
@@ -42,6 +43,19 @@ async def test_aresume_graph_finalizes_on_approval() -> None:
     )
     result = await aresume_graph(app, "t-2", {"approved": True})
     assert result["final"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_ahas_checkpoint_distinguishes_durable_pause() -> None:
+    """The shared probe fails closed and sees a persisted pause."""
+    app = build_resume_app(MemorySaver())
+    assert not await ahas_checkpoint(app, "t-probe")
+    await app.ainvoke(
+        {"value": "draft-text"},
+        config=build_runnable_config("t-probe"),
+    )
+    assert await ahas_checkpoint(app, "t-probe")
+    assert not await ahas_checkpoint(object(), "t-probe")
 
 
 @pytest.mark.asyncio

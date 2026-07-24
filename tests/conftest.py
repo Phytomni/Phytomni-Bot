@@ -16,7 +16,7 @@ import os
 import socket
 import sys
 from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any, Self
@@ -395,6 +395,25 @@ async def api_client(
         monkeypatch, create_app(), base_url="http://api.test"
     ) as client:
         yield client
+
+
+@pytest.fixture
+async def a2ui_client_pair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> AsyncIterator[tuple[httpx.AsyncClient, httpx.AsyncClient]]:
+    """Yield two independent ASGI clients for one shared app state."""
+    async with AsyncExitStack() as stack:
+        first = await stack.enter_async_context(
+            open_asgi_client(
+                monkeypatch, create_app(), base_url="http://api.first"
+            )
+        )
+        second = await stack.enter_async_context(
+            open_asgi_client(
+                monkeypatch, create_app(), base_url="http://api.second"
+            )
+        )
+        yield first, second
 
 
 @pytest.fixture

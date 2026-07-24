@@ -236,11 +236,13 @@ def _a2ui_runtime_dependencies() -> a2ui_runtime.A2UIRuntimeDependencies:
             review_graph=_app_attr("_review_stream_app"),
             review_initial_state=_app_attr("_review_initial_state"),
             validate_review=_app_attr("_validate_review_arguments"),
+            has_checkpoint=_app_attr("_has_graph_checkpoint"),
             resume_graph=_app_attr("_resume_paused_run"),
         ),
         persistence=a2ui_runtime.A2UIPersistenceDependencies(
             registry_factory=app.RunRegistry,
             current_user=app.current_request_user,
+            current_request_id=app.current_request_id,
             tasks_db_path=app.resolve_tasks_db_path,
             create_stream_run=_app_attr("_create_running_stream_run"),
             settle_stream_run=_app_attr("_settle_stream_run"),

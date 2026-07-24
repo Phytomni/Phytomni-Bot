@@ -18,7 +18,6 @@ from tests.support.a2ui_contract_fakes import (
 from mcp_server_phytomni.agents.chat.a2ui_graph import _CANCEL_MESSAGE
 from mcp_server_phytomni.agents.shared.a2ui import A2UI_CATALOG_VERSION
 from mcp_server_phytomni.api import app as api_app_module
-from mcp_server_phytomni.runtime.resume import NoCheckpointError
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
@@ -26,6 +25,18 @@ from mcp_server_phytomni.runtime.run_registry import (
 )
 
 pytestmark = pytest.mark.server
+
+
+@pytest.fixture(autouse=True)
+def _checkpoint_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make seeded HTTP pauses expose the graph checkpoint seam."""
+
+    async def _has_checkpoint(_app: Any, _thread_id: str) -> bool:
+        return True
+
+    monkeypatch.setattr(
+        api_app_module, "_has_graph_checkpoint", _has_checkpoint
+    )
 
 
 def _open_surface(surface_id: str) -> dict[str, Any]:
@@ -503,7 +514,7 @@ async def test_a2ui_action_duplicate_after_success_returns_409(
     )
 
     assert second.status_code == 409
-    assert second.json()["error"]["code"] == "run_state_conflict"
+    assert second.json()["error"]["code"] == "a2ui_action_conflict"
 
 
 async def test_a2ui_action_path_body_run_id_mismatch_returns_400(
@@ -580,17 +591,13 @@ async def test_a2ui_action_no_checkpoint_returns_409(
         surface_id="sfc-no-checkpoint",
     )
 
-    async def _raise_no_checkpoint(
-        _app: Any,
-        _thread_id: str,
-        _resume_payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        raise NoCheckpointError("No checkpoint found for thread")
+    async def _no_checkpoint(_app: Any, _thread_id: str) -> bool:
+        return False
 
     monkeypatch.setattr(
         api_app_module,
-        "_resume_paused_run",
-        _raise_no_checkpoint,
+        "_has_graph_checkpoint",
+        _no_checkpoint,
     )
 
     response = await api_client.post(
@@ -604,7 +611,11 @@ async def test_a2ui_action_no_checkpoint_returns_409(
     )
 
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == "run_state_conflict"
+    assert response.json()["error"]["code"] == "checkpoint_not_available"
+    assert (
+        RunRegistry(tasks_db_path).list_a2ui_actions(owner="u1", run_id=run_id)
+        == []
+    )
 
 
 def _open_form_surface(surface_id: str) -> dict[str, Any]:

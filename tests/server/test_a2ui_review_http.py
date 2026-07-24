@@ -428,7 +428,7 @@ async def test_review_resume_includes_result_a2ui_when_projected(
 ) -> None:
     """Classic /resume also returns submitted a2ui when surface was open."""
     _ = tasks_db_path
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "false")
     _patch_review_app(monkeypatch, review_app_factory())
     paused = await api_client.post(
         "/v1/agents/review/runs",
@@ -455,6 +455,53 @@ async def test_review_resume_includes_result_a2ui_when_projected(
     assert out["result"]["a2ui"]["props"]["status"] == "submitted"
     assert out["result"]["a2ui"]["props"]["accepted"] is True
     assert out["result"]["a2ui"]["surface_id"] == surface_id
+
+
+async def test_review_classic_first_blocks_late_a2ui_action(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+    review_app_factory: Any,
+) -> None:
+    """Classic Review resume claims the surface before a Web uplink."""
+    _ = tasks_db_path
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    _patch_review_app(monkeypatch, review_app_factory())
+    paused = await api_client.post(
+        "/v1/agents/review/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "arguments": {
+                "user_query": "Review photosynthesis.",
+                "obs_file_list": [],
+            }
+        },
+    )
+    body = paused.json()
+    run_id = body["id"]
+    surface_id = body["interrupt"]["draft"]["a2ui"]["surface_id"]
+
+    classic = await api_client.post(
+        f"/v1/runs/{run_id}/resume",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={"approved": True},
+    )
+    assert classic.status_code == 200
+
+    late_a2ui = await api_client.post(
+        f"/v1/runs/{run_id}/a2ui-actions",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "run_id": run_id,
+            "surface_id": surface_id,
+            "widget": "confirm",
+            "action_id": "late-a2ui",
+            "payload": {"accepted": True},
+        },
+    )
+    assert late_a2ui.status_code == 409
+    assert late_a2ui.json()["error"]["code"] == "a2ui_action_conflict"
 
 
 async def test_review_a2ui_then_resume_second_returns_409(
@@ -502,7 +549,7 @@ async def test_review_a2ui_then_resume_second_returns_409(
         json={"approved": True},
     )
     assert second.status_code == 409
-    assert second.json()["error"]["code"] == "run_state_conflict"
+    assert second.json()["error"]["code"] == "a2ui_action_conflict"
 
 
 async def test_review_reject_a2ui_mints_new_surface_on_reinterrupt(

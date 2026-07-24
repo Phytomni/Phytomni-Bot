@@ -19,6 +19,7 @@ from mcp_server_phytomni.agents.shared.a2ui import (
     should_reenter_a2ui,
 )
 from mcp_server_phytomni.api import a2ui_projection, a2ui_runtime
+from mcp_server_phytomni.api.lifecycle_contract import SafeApiError
 from mcp_server_phytomni.api.schemas import A2uiActionRequest
 from mcp_server_phytomni.mcp.result_formatting import run_finished
 from mcp_server_phytomni.mcp.stream_lifecycle import (
@@ -135,6 +136,10 @@ def _dependencies(
 ) -> a2ui_runtime.A2UIRuntimeDependencies:
     """Build explicit fake graph, registry, and stream seams."""
 
+    async def has_checkpoint(_app: Any, _thread_id: str) -> bool:
+        """Keep direct runtime tests focused on post-claim behavior."""
+        return True
+
     def format_review(_state: Any, **_kwargs: Any) -> dict[str, Any]:
         return {"formatted": {"answer": "review"}, "raw": None}
 
@@ -145,11 +150,13 @@ def _dependencies(
             review_graph=_empty_graph,
             review_initial_state=_empty_state,
             validate_review=a2ui_runtime.validate_review_arguments,
+            has_checkpoint=has_checkpoint,
             resume_graph=cast(Any, resume_graph),
         ),
         persistence=a2ui_runtime.A2UIPersistenceDependencies(
             registry_factory=RunRegistry,
             current_user=lambda: "alice",
+            current_request_id=lambda: "runtime-test-request",
             tasks_db_path=lambda: db_path,
             create_stream_run=_noop_create_stream_run,
             settle_stream_run=_successful_stream_settlement,
@@ -231,7 +238,7 @@ async def test_checkpoint_and_failure_settlement(
         raise RuntimeError("Bearer secret-token database-password")
 
     dependencies = _dependencies(db_path, resume_graph)
-    with pytest.raises(HTTPException) as checkpoint:
+    with pytest.raises(SafeApiError) as checkpoint:
         await a2ui_runtime.resume_a2ui_run(
             run_id="run-checkpoint",
             body=_action("run-checkpoint"),
@@ -239,11 +246,17 @@ async def test_checkpoint_and_failure_settlement(
             dependencies=dependencies,
         )
     assert checkpoint.value.status_code == 409
+    assert checkpoint.value.code == "checkpoint_not_available"
     checkpoint_record = RunRegistry(db_path).get_run(
         "run-checkpoint", owner="alice"
     )
     assert checkpoint_record is not None
-    assert checkpoint_record.status == "input_required"
+    assert checkpoint_record.status == "failed"
+    checkpoint_audit = RunRegistry(db_path).list_a2ui_actions(
+        owner="alice", run_id="run-checkpoint"
+    )
+    assert len(checkpoint_audit) == 1
+    assert checkpoint_audit[0].outcome == "failed"
 
     with pytest.raises(HTTPException) as failure:
         await a2ui_runtime.resume_a2ui_run(
@@ -297,7 +310,7 @@ async def test_first_uplink_wins(
         )
     )
     await started.wait()
-    with pytest.raises(HTTPException) as second:
+    with pytest.raises(SafeApiError) as second:
         await a2ui_runtime.resume_a2ui_run(
             run_id="run-race",
             body=_action("run-race"),
@@ -305,6 +318,7 @@ async def test_first_uplink_wins(
             dependencies=dependencies,
         )
     assert second.value.status_code == 409
+    assert second.value.code == "a2ui_action_conflict"
     release.set()
     body, status_code = await first
     assert status_code == 200

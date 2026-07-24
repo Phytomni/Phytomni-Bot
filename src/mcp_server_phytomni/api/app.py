@@ -53,6 +53,7 @@ from ..runtime.request_context import (
 from ..runtime.request_context import (
     current_request_id as _current_request_id,
 )
+from ..runtime.resume import ahas_checkpoint as _runtime_has_checkpoint
 from ..runtime.run_registry import (
     RunRecord,
     RunRegistry,
@@ -144,6 +145,7 @@ handle_file_upload = _file_upload.handle_file_upload
 make_rate_limiter = _ratelimit.make_rate_limiter
 create_relay_router = _relay.create_relay_router
 resolve_chat_query = _resolvers.resolve_chat_query
+_has_graph_checkpoint = _runtime_has_checkpoint
 
 __all__ = ["create_app", "prepare_tool_stream"]
 

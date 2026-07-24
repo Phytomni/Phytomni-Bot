@@ -11,14 +11,12 @@ compatibility callers need not import ``api.app`` here.
 from __future__ import annotations
 
 import logging
-import threading
 from collections.abc import (
     AsyncIterator,
     Awaitable,
     Callable,
     Mapping,
 )
-from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -29,20 +27,14 @@ from pydantic import ValidationError
 
 from ..agents.chat.a2ui_builder import build_chat_a2ui_graph
 from ..agents.review.agent import review_stream_target
-from ..agents.shared.a2ui import (
-    A2UI_CUSTOM_NAME,
-    A2uiActionEnvelope,
-    action_to_resume_payload,
-    review_action_to_resume,
-)
-from ..config.defaults import ApiConfig, ChatConfig
+from ..agents.shared.a2ui import A2UI_CUSTOM_NAME
+from ..config.defaults import ChatConfig
 from ..mcp.handler_support import chat_kwargs, load_handler_runtime
 from ..mcp.result_formatting import (
     AguiEvent,
     custom,
     run_finished,
     run_started,
-    strip_agent_result,
 )
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
 from ..mcp.stream_lifecycle import (
@@ -54,16 +46,14 @@ from ..runtime.langgraph_runner import (
     build_runnable_config,
     ensure_checkpointer,
 )
-from ..runtime.resume import NoCheckpointError, aresume_graph, detect_interrupt
+from ..runtime.resume import aresume_graph, detect_interrupt
 from ..runtime.run_registry import (
     RunOutcome,
-    RunRecord,
     RunRegistry,
     RunRequestInfo,
     RunSpec,
 )
 from ..storage.path_policy import IdFactory
-from . import run_lifecycle
 from .a2ui_projection import (
     ReviewSurfaceProjectionError,
     chat_interrupt_body,
@@ -75,14 +65,18 @@ from .a2ui_projection import (
     review_interrupt_result,
     submitted_a2ui_value,
 )
+from .a2ui_resume import (
+    ReviewExecution,
+    open_surface_for_action,
+    resume_a2ui_run,
+    resume_review_run,
+    review_run_body,
+)
 from .a2ui_review_persistence import (
     create_review_pause as _create_review_pause,
 )
 from .a2ui_review_persistence import (
     review_projection_error as _review_projection_error,
-)
-from .a2ui_review_persistence import (
-    settle_review_pause as _settle_review_pause,
 )
 from .a2ui_review_persistence import (
     settle_review_projection_failure as _settle_review_projection_failure,
@@ -95,12 +89,8 @@ from .a2ui_review_stream import (
 from .a2ui_review_stream import (
     stream_review_a2ui_pause as _stream_review_a2ui_pause,
 )
-from .lifecycle_contract import (
-    build_agent_run_response,
-    canonicalize_agent_run_body,
-)
 from .openai_mapping import to_chat_completion_chunks
-from .schemas import A2uiActionRequest, ChatCompletionRequest, ResumeRequest
+from .schemas import ChatCompletionRequest
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -111,7 +101,9 @@ type ResumeGraph = Callable[
 ]
 type RegistryFactory = Callable[[str], RunRegistry]
 type CurrentUser = Callable[[], str | None]
+type CurrentRequestId = Callable[[], str | None]
 type DbPath = Callable[[], str]
+type HasCheckpoint = Callable[[Any, str], Awaitable[bool]]
 type CreateStreamRun = Callable[[str, str, str, RunRequestInfo], None]
 type SettleStreamRun = Callable[[str, str, str, dict[str, Any]], bool]
 type ReviewFormatter = Callable[..., dict[str, Any]]
@@ -130,6 +122,7 @@ class A2UIGraphDependencies:
     review_graph: GraphFactory
     review_initial_state: InitialStateFactory
     validate_review: ReviewValidator
+    has_checkpoint: HasCheckpoint
     resume_graph: ResumeGraph
 
 
@@ -139,6 +132,7 @@ class A2UIPersistenceDependencies:
 
     registry_factory: RegistryFactory
     current_user: CurrentUser
+    current_request_id: CurrentRequestId
     tasks_db_path: DbPath
     create_stream_run: CreateStreamRun
     settle_stream_run: SettleStreamRun
@@ -228,283 +222,6 @@ async def resume_paused_graph(
     return await aresume_graph(app, thread_id, dict(resume_payload))
 
 
-def open_surface_for_action(
-    record: RunRecord,
-    *,
-    surface_id: str,
-    widget: str,
-) -> Mapping[str, Any]:
-    """Return the open A2UI draft surface or raise an HTTP conflict."""
-    if record.status != "input_required":
-        raise HTTPException(
-            status_code=409,
-            detail="run is not awaiting input",
-        )
-    stored = record.result or {}
-    interrupt = stored.get("interrupt") or {}
-    draft = interrupt.get("draft") or {}
-    open_surface = draft.get("a2ui")
-    if not isinstance(open_surface, Mapping):
-        raise HTTPException(status_code=409, detail="no open a2ui surface")
-    if open_surface.get("surface_id") != surface_id:
-        raise HTTPException(status_code=409, detail="surface_id mismatch")
-    if open_surface.get("widget") != widget:
-        raise HTTPException(status_code=400, detail="widget mismatch")
-    return open_surface
-
-
-_RESUME_LOCKS: dict[tuple[str, str], threading.Lock] = {}
-_RESUME_LOCKS_GUARD = threading.Lock()
-
-
-@contextmanager
-def _claim_resume(run_id: str, owner: str) -> Any:
-    """Claim one run so concurrent Web uplinks have a single winner."""
-    key = (owner, run_id)
-    with _RESUME_LOCKS_GUARD:
-        lock = _RESUME_LOCKS.setdefault(key, threading.Lock())
-        claimed = lock.acquire(blocking=False)
-    if not claimed:
-        raise HTTPException(
-            status_code=409,
-            detail="run is not awaiting input",
-        )
-    try:
-        yield
-    finally:
-        lock.release()
-        with _RESUME_LOCKS_GUARD:
-            if not lock.locked():
-                _RESUME_LOCKS.pop(key, None)
-
-
-def _failed_resume_result() -> dict[str, Any]:
-    """Return a safe failure payload without retaining backend exceptions."""
-    return {
-        "formatted": {"answer": ""},
-        "raw": None,
-        "error": "a2ui resume failed",
-    }
-
-
-@dataclass(frozen=True, slots=True)
-class _ActionContext:
-    """Validated owner, surface, graph, and registry for one uplink."""
-
-    owner: str
-    agent: str
-    surface: Mapping[str, Any]
-    resume_payload: dict[str, Any]
-    graph: Any
-    registry: RunRegistry
-    format_review_result: ReviewFormatter
-
-
-def _prepare_action_context(
-    *,
-    run_id: str,
-    body: A2uiActionRequest,
-    dependencies: A2UIRuntimeDependencies,
-) -> _ActionContext:
-    """Validate ownership and translate one Web action envelope."""
-    owner = dependencies.persistence.current_user() or "anonymous"
-    registry = dependencies.persistence.registry_factory(
-        dependencies.persistence.tasks_db_path()
-    )
-    record = registry.get_run(run_id, owner=owner)
-    if record is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"run not found: {run_id}",
-        )
-    agent = record.spec.agent
-    if agent not in ("chat", "review"):
-        raise HTTPException(
-            status_code=400,
-            detail="unsupported agent for a2ui",
-        )
-    surface = open_surface_for_action(
-        record,
-        surface_id=body.surface_id,
-        widget=body.widget,
-    )
-    try:
-        envelope = A2uiActionEnvelope.model_validate(body.model_dump())
-        if agent == "chat":
-            resume_payload = action_to_resume_payload(envelope)
-            graph = dependencies.graphs.chat_graph()
-        else:
-            resume_payload = review_action_to_resume(envelope)
-            graph = dependencies.graphs.review_graph()
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _ActionContext(
-        owner=owner,
-        agent=agent,
-        surface=surface,
-        resume_payload=resume_payload,
-        graph=graph,
-        registry=registry,
-        format_review_result=dependencies.persistence.format_review_result,
-    )
-
-
-def _settled_action_interrupt(
-    *,
-    run_id: str,
-    context: _ActionContext,
-    interrupt: Mapping[str, Any],
-) -> tuple[dict[str, Any], int]:
-    """Persist and shape a re-interrupt from one resumed A2UI graph."""
-    if context.agent == "chat":
-        interrupt_dict = dict(interrupt)
-        context.registry.settle_run(
-            run_id,
-            owner=context.owner,
-            status="input_required",
-            result=chat_interrupt_result(interrupt_dict),
-        )
-        return (
-            chat_interrupt_body(run_id=run_id, interrupt=interrupt_dict),
-            200,
-        )
-    try:
-        interrupt_dict = project_review_interrupt(interrupt)
-        pause_result = review_interrupt_result(interrupt_dict)
-        _settle_review_pause(
-            context.registry,
-            run_id=run_id,
-            owner=context.owner,
-            result=pause_result,
-        )
-    except ReviewSurfaceProjectionError as exc:
-        _settle_review_projection_failure(
-            context.registry,
-            run_id=run_id,
-            owner=context.owner,
-            existing=True,
-        )
-        raise _review_projection_error() from exc
-    return (
-        review_interrupt_body(thread_id=run_id, interrupt=interrupt_dict),
-        200,
-    )
-
-
-def _terminal_action_result(
-    *,
-    context: _ActionContext,
-    final_state: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Format a terminal Chat or Review A2UI resume result."""
-    if context.agent == "chat":
-        return format_chat_result(
-            final_state,
-            prior_surface=context.surface,
-            resume_payload=context.resume_payload,
-        )
-    return {
-        **context.format_review_result(final_state),
-        "a2ui": submitted_a2ui_value(
-            context.surface,
-            context.resume_payload,
-        ),
-    }
-
-
-async def resume_a2ui_run(
-    *,
-    run_id: str,
-    body: A2uiActionRequest,
-    debug: bool,
-    dependencies: A2UIRuntimeDependencies,
-) -> tuple[dict[str, Any], int]:
-    """Resume a Chat or Review A2UI action and settle its owner-scoped row."""
-    if not ApiConfig().A2UI_ENABLED:
-        raise HTTPException(status_code=403, detail="a2ui disabled")
-    if run_id != body.run_id:
-        raise HTTPException(status_code=400, detail="run_id mismatch")
-
-    owner = dependencies.persistence.current_user() or "anonymous"
-    with _claim_resume(run_id, owner):
-        context = _prepare_action_context(
-            run_id=run_id,
-            body=body,
-            dependencies=dependencies,
-        )
-        try:
-            final_state = await dependencies.graphs.resume_graph(
-                context.graph,
-                run_id,
-                context.resume_payload,
-            )
-        except NoCheckpointError as exc:
-            _LOGGER.warning(
-                "a2ui resume checkpoint missing for run %s (%s)",
-                run_id,
-                exc.__class__.__name__,
-            )
-            raise HTTPException(
-                status_code=409,
-                detail="no pause point for run",
-            ) from exc
-        except Exception as exc:
-            _LOGGER.error(
-                "a2ui resume failed for run %s (%s)",
-                run_id,
-                exc.__class__.__name__,
-            )
-            context.registry.settle_run(
-                run_id,
-                owner=context.owner,
-                status="failed",
-                result=_failed_resume_result(),
-            )
-            raise HTTPException(
-                status_code=500,
-                detail="a2ui resume failed",
-            ) from exc
-
-        interrupt_after = detect_interrupt(final_state, run_id)
-        if interrupt_after is not None:
-            return _settled_action_interrupt(
-                run_id=run_id,
-                context=context,
-                interrupt=interrupt_after,
-            )
-
-        result = _terminal_action_result(
-            context=context,
-            final_state=final_state,
-        )
-        context.registry.settle_run(
-            run_id,
-            owner=context.owner,
-            status="succeeded",
-            result=result,
-        )
-        response_result = result if debug else strip_agent_result(result)
-        return (
-            run_lifecycle.agent_run_response(
-                run_id=run_id,
-                agent=context.agent,
-                status="succeeded",
-                result=response_result,
-            ),
-            200,
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class ReviewExecution:
-    """Internal result of one interrupt-aware ReviewAgent graph run."""
-
-    run_id: str
-    status: str
-    result: dict[str, Any] | None = None
-    interrupt: dict[str, Any] | None = None
-
-
 async def run_review_with_interrupt(
     *,
     arguments: dict[str, Any],
@@ -563,52 +280,6 @@ async def run_review_with_interrupt(
         request_info=request_info,
     )
     return ReviewExecution(run_id=run_id, status="succeeded", result=result)
-
-
-def review_run_body(
-    execution: ReviewExecution,
-    *,
-    debug: bool,
-) -> dict[str, Any]:
-    """Shape a ReviewAgent execution as an ``agent.run`` response."""
-    if execution.interrupt is not None:
-        return review_interrupt_body(
-            thread_id=execution.run_id,
-            interrupt=execution.interrupt,
-        )
-    result = execution.result or {"formatted": {"answer": ""}, "raw": None}
-    response_result = result if debug else strip_agent_result(result)
-    canonical = canonicalize_agent_run_body(
-        {
-            "id": execution.run_id,
-            "run_id": execution.run_id,
-            "object": "agent.run",
-            "agent": "review",
-            "status": execution.status,
-            "task_ids": [],
-            "result": response_result,
-        }
-    )
-    canonical_result = dict(canonical["result"])
-    if debug and "raw" in result:
-        canonical_result["raw"] = result["raw"]
-    return build_agent_run_response(
-        run_id=execution.run_id,
-        agent="review",
-        status=execution.status,
-        task_ids=(),
-        result=canonical_result,
-        persisted=True,
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class _ReviewResumeContext:
-    """Validated Review run ownership and prior A2UI surface."""
-
-    owner: str
-    registry: RunRegistry
-    prior_surface: Mapping[str, Any] | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -692,134 +363,6 @@ def _prepare_review_stream(
         graph=graph,
         initial_state=initial_state,
     )
-
-
-def _prepare_review_resume_context(
-    *,
-    thread_id: str,
-    dependencies: A2UIRuntimeDependencies,
-) -> _ReviewResumeContext:
-    """Load a paused Review run and capture its submitted-surface context."""
-    owner = dependencies.persistence.current_user() or "anonymous"
-    registry = dependencies.persistence.registry_factory(
-        dependencies.persistence.tasks_db_path()
-    )
-    record = registry.get_run(thread_id, owner=owner)
-    if record is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"run not found: {thread_id}",
-        )
-    if record.status != "input_required":
-        raise HTTPException(
-            status_code=409,
-            detail="run is not awaiting input",
-        )
-    stored = record.result or {}
-    interrupt_stored = stored.get("interrupt") or {}
-    draft = interrupt_stored.get("draft") or {}
-    candidate = draft.get("a2ui")
-    prior_surface = candidate if isinstance(candidate, Mapping) else None
-    return _ReviewResumeContext(
-        owner=owner,
-        registry=registry,
-        prior_surface=prior_surface,
-    )
-
-
-async def resume_review_run(
-    *,
-    thread_id: str,
-    payload: ResumeRequest,
-    debug: bool,
-    dependencies: A2UIRuntimeDependencies,
-) -> tuple[dict[str, Any], int]:
-    """Resume a ReviewAgent run and preserve the dual transport contract."""
-    owner = dependencies.persistence.current_user() or "anonymous"
-    with _claim_resume(thread_id, owner):
-        context = _prepare_review_resume_context(
-            thread_id=thread_id,
-            dependencies=dependencies,
-        )
-        try:
-            final_state = await dependencies.graphs.resume_graph(
-                dependencies.graphs.review_graph(),
-                thread_id,
-                {"approved": payload.approved, "edits": payload.edits},
-            )
-        except NoCheckpointError as exc:
-            _LOGGER.warning(
-                "resume checkpoint missing for run %s (%s)",
-                thread_id,
-                exc.__class__.__name__,
-            )
-            raise HTTPException(
-                status_code=409,
-                detail="no pause point for run",
-            ) from exc
-        except Exception as exc:
-            _LOGGER.error(
-                "review resume failed for run %s (%s)",
-                thread_id,
-                exc.__class__.__name__,
-            )
-            context.registry.settle_run(
-                thread_id,
-                owner=context.owner,
-                status="failed",
-                result=_failed_resume_result(),
-            )
-            raise HTTPException(
-                status_code=500,
-                detail="review resume failed",
-            ) from exc
-        interrupt = detect_interrupt(final_state, thread_id)
-        if interrupt is not None:
-            try:
-                interrupt_dict = project_review_interrupt(interrupt)
-                pause_result = review_interrupt_result(interrupt_dict)
-                _settle_review_pause(
-                    context.registry,
-                    run_id=thread_id,
-                    owner=context.owner,
-                    result=pause_result,
-                )
-            except ReviewSurfaceProjectionError as exc:
-                _settle_review_projection_failure(
-                    context.registry,
-                    run_id=thread_id,
-                    owner=context.owner,
-                    existing=True,
-                )
-                raise _review_projection_error() from exc
-            return (
-                review_interrupt_body(
-                    thread_id=thread_id,
-                    interrupt=interrupt_dict,
-                ),
-                200,
-            )
-        result = dependencies.persistence.format_review_result(final_state)
-        if context.prior_surface is not None:
-            result = {
-                **result,
-                "a2ui": submitted_a2ui_value(
-                    context.prior_surface,
-                    {"approved": payload.approved},
-                ),
-            }
-        context.registry.settle_run(
-            thread_id,
-            owner=context.owner,
-            status="succeeded",
-            result=result,
-        )
-        execution = ReviewExecution(
-            run_id=thread_id,
-            status="succeeded",
-            result=result,
-        )
-        return review_run_body(execution, debug=debug), 200
 
 
 async def stream_chat_a2ui_confirm(

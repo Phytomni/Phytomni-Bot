@@ -47,6 +47,15 @@ class NoCheckpointError(RuntimeError):
     """Raised when resuming a thread that has no stored pause point."""
 
 
+async def ahas_checkpoint(app: Any, thread_id: str) -> bool:
+    """Return whether a compiled graph has a durable thread checkpoint."""
+    checkpointer = getattr(app, "checkpointer", None)
+    if checkpointer is None:
+        return False
+    checkpoint = await checkpointer.aget(build_runnable_config(thread_id))
+    return checkpoint is not None
+
+
 def detect_interrupt(
     final_state: Mapping[str, Any],
     thread_id: str = "",
@@ -127,12 +136,10 @@ async def aresume_graph(
     """
     config = build_runnable_config(thread_id)
     checkpointer = getattr(app, "checkpointer", None)
-    if checkpointer is not None:
-        checkpoint = await checkpointer.aget(config)
-        if checkpoint is None:
-            raise NoCheckpointError(
-                f"No checkpoint found for thread " f"{thread_id!r}"
-            )
+    if checkpointer is not None and not await ahas_checkpoint(app, thread_id):
+        raise NoCheckpointError(
+            f"No checkpoint found for thread " f"{thread_id!r}"
+        )
     return await app.ainvoke(
         Command(resume=resume_payload),
         config=config,

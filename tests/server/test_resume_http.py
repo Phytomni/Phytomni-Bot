@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -21,11 +23,57 @@ from mcp_server_phytomni.runtime.run_registry import (
 pytestmark = pytest.mark.server
 
 
+def _chat_terminal_state() -> dict[str, Any]:
+    """Return the smallest terminal Chat graph state."""
+    return {
+        "response": {
+            "choices": [
+                {
+                    "message": {
+                        "content": "done",
+                        "follow_up_questions": [],
+                    }
+                }
+            ]
+        }
+    }
+
+
+def _install_a2ui_race_seams(
+    monkeypatch: pytest.MonkeyPatch,
+) -> SimpleNamespace:
+    """Install a blocked terminal resume and return its controls."""
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls: list[str] = []
+
+    async def _has_checkpoint(_app: Any, _thread_id: str) -> bool:
+        return True
+
+    async def _resume(
+        _app: Any,
+        thread_id: str,
+        _payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        calls.append(thread_id)
+        started.set()
+        await release.wait()
+        return _chat_terminal_state()
+
+    monkeypatch.setattr(
+        api_app_module, "_has_graph_checkpoint", _has_checkpoint
+    )
+    monkeypatch.setattr(api_app_module, "_chat_a2ui_stream_app", object)
+    monkeypatch.setattr(api_app_module, "_resume_paused_run", _resume)
+    return SimpleNamespace(started=started, release=release, calls=calls)
+
+
 def _seed_run(
     tasks_db_path: str,
     *,
     run_id: str,
     status: str,
+    agent: str = "review",
 ) -> str:
     """Seed an owner-scoped review run for resume tests."""
     result = None
@@ -51,7 +99,7 @@ def _seed_run(
         RunSpec(
             run_id=run_id,
             user_id="u1",
-            agent="review",
+            agent=agent,
             origin="local",
         ),
         outcome=RunOutcome(status=status, result=result),
@@ -75,6 +123,96 @@ async def test_resume_unknown_thread_returns_404(
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+async def test_two_http_clients_only_one_resumes_a2ui_graph(
+    a2ui_client_pair: tuple[httpx.AsyncClient, httpx.AsyncClient],
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """File-backed claim arbitration permits exactly one graph resume."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    run_id = _seed_run(
+        tasks_db_path,
+        run_id="run-http-a2ui-race",
+        status="input_required",
+        agent="chat",
+    )
+    control = _install_a2ui_race_seams(monkeypatch)
+    headers = {"Authorization": f"Bearer {issued_api_key}"}
+    path = f"/v1/runs/{run_id}/a2ui-actions"
+    surface_id = f"{run_id}-surface"
+    body = {
+        "run_id": run_id,
+        "surface_id": surface_id,
+        "widget": "confirm",
+        "action_id": "action-http-race-1",
+        "payload": {"accepted": True},
+    }
+    first, second = a2ui_client_pair
+    tasks = [
+        asyncio.create_task(first.post(path, headers=headers, json=body)),
+        asyncio.create_task(
+            second.post(
+                path,
+                headers=headers,
+                json={**body, "action_id": "action-http-race-2"},
+            )
+        ),
+    ]
+    await control.started.wait()
+    control.release.set()
+    responses = await asyncio.gather(*tasks)
+
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    assert len(control.calls) == 1
+
+
+async def test_classic_resume_missing_checkpoint_does_not_claim(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Classic resume probes the checkpoint before writing an audit row."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "false")
+    run_id = _seed_run(
+        tasks_db_path,
+        run_id="run-classic-no-checkpoint",
+        status="input_required",
+    )
+
+    async def _no_checkpoint(_app: Any, _thread_id: str) -> bool:
+        return False
+
+    async def _unexpected_resume(
+        _app: Any,
+        _thread_id: str,
+        _payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        raise AssertionError("classic resume reached the graph")
+
+    monkeypatch.setattr(
+        api_app_module, "_has_graph_checkpoint", _no_checkpoint
+    )
+    monkeypatch.setattr(api_app_module, "_review_stream_app", object)
+    monkeypatch.setattr(
+        api_app_module, "_resume_paused_run", _unexpected_resume
+    )
+
+    response = await api_client.post(
+        f"/v1/runs/{run_id}/resume",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={"approved": True},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "checkpoint_not_available"
+    assert (
+        RunRegistry(tasks_db_path).list_a2ui_actions(owner="u1", run_id=run_id)
+        == []
+    )
 
 
 async def test_resume_terminal_run_returns_409(
