@@ -1416,10 +1416,18 @@ Request body:
   "history": [{"role": "user|assistant", "content": "string"}],
   "obs_file_list": ["/obs/phytomni/..."],
   "dialogue_id": "string | null",
-  "forced_tool": null
+  "allowed_tools": ["ChatAgent", "DataAgent", "AnalystAgent"],
+  "forced_tool": "DataAgent"
 }
 ```
 
+- `allowed_tools` is required, ordered, non-empty, and contains at most ten
+  unique canonical agent tool names. The router receives and offers tools in
+  that exact order. This allowlist is trusted only when it originates at the
+  authenticated Web-service boundary; do not accept it directly from a
+  browser as an authorization decision.
+- `forced_tool` is nullable. When present, it must be a member of
+  `allowed_tools`; it pins the routing model to that canonical tool.
 - `history` is routing context only; it is never forwarded to the
   dispatched agent.
 - `obs_file_list` is injected into the selected tool's arguments only when
@@ -1427,13 +1435,15 @@ Request body:
   fills every other argument from the tool's schema.
 - A sync agent returns `200` with `status="succeeded"`; a remote agent
   returns `202` with `status="running"` plus `task_ids`, exactly like the
-  native runs path (poll `GET /v1/runs/{id}`). When the model selects no
-  tool the query falls back to the chat agent.
+  native runs path (poll `GET /v1/runs/{id}`).
 
-Errors: `forced_tool` is accepted but unsupported in v1 (`400`);
-LLM-extracted arguments that fail the agent schema return `400`; a tool
-outside the agent set returns `502`; missing or insufficient scope returns
-`401` / `403`.
+Invalid allowlists (missing, empty, over ten entries, duplicate, or unknown
+canonical names) and a non-member `forced_tool` are rejected with `422`.
+Routing is strict: no model choice, no tool call, multiple or malformed tool
+calls, a tool outside the allowlist, or failure to honor `forced_tool` fails
+with `502` and dispatches no agent; there is no ChatAgent fallback.
+LLM-extracted arguments that fail the selected agent schema return `400`;
+missing or insufficient scope returns `401` / `403`.
 
 Known limitations (v1): the four structured-input agents (`analyst`,
 `deep_genome`, `design`, `network`) receive best-effort arguments

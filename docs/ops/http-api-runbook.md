@@ -528,6 +528,49 @@ characters rewrite to `-` (`my report (final).pdf` →
 `my-report-final.pdf`, response `201`). Only empty bodies and
 empty / `.` / `..` filenames return `400`.
 
+## Expert Routing Operations
+
+`POST /v1/query/route` is a constrained Expert-routing endpoint. It accepts
+an ordered, non-empty `allowed_tools` list (one to ten unique canonical agent
+tool names) and a nullable `forced_tool`. The Web service is the trusted
+boundary that derives this allowlist from the authenticated user's
+permissions; a browser must not send a self-authorized allowlist directly to
+Bot. Preserve list order when forwarding the Web request because the router
+offers the tools in that order.
+
+Use this shape when smoke-testing with an `agents`-scoped key:
+
+```bash
+curl -fsS -X POST "$HOST/v1/query/route" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_query": "Compare drought tolerance candidates",
+    "history": [],
+    "obs_file_list": [],
+    "dialogue_id": "dialogue-id",
+    "allowed_tools": ["ChatAgent", "DataAgent", "AnalystAgent"],
+    "forced_tool": "DataAgent"
+  }'
+```
+
+Before enabling or changing the Web integration, verify that an allowed member
+returns the normal `agent.run` envelope and that the resolved agent is the
+expected forced member. Also verify these strict failures before rollout:
+
+- Missing, empty, duplicate, unknown, or over-ten `allowed_tools`, and a
+  non-member `forced_tool`, return `422`.
+- A model response with no choice, no tool call, multiple or malformed calls,
+  a call outside `allowed_tools`, or a call that disobeys `forced_tool`,
+  returns `502` and invokes no agent.
+- Selected-agent argument validation returns `400`; absent or insufficient
+  `agents` scope returns `401` / `403`.
+
+Do not mask these failures with a ChatAgent fallback, retry by broadening the
+allowlist, or treat a browser-supplied list as a permission grant. Inspect the
+Web-authenticated allowlist and the Bot's sanitized router warning, correct the
+upstream permission or model contract, then repeat the smoke test.
+
 ## Outbound Interop Operations
 
 The outbound MCP/A2A boundary is disabled by default. It is mounted when
