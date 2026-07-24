@@ -19,13 +19,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from obs import GetObjectHeader, PutObjectHeader
-
 from ...common.relay_client import current_relay_client
 from ...config.defaults import AnalystConfig
 from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
 from ...storage.obs_client import ObsClient
+from ...storage.obs_sdk import GetObjectHeader, PutObjectHeader
 from ...storage.obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
     bucket_colon_path,

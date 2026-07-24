@@ -17,7 +17,7 @@ import os
 import ssl
 from pathlib import Path
 
-from obs import ObsClient as _SdkObsClient
+from .obs_sdk import ObsClient as _SdkObsClient
 
 __all__ = ["ObsClient"]
 
