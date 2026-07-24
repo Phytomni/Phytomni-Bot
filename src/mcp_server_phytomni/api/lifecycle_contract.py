@@ -282,11 +282,22 @@ def _ensure_review_interrupt_surface(
     if isinstance(draft, Mapping):
         existing = draft.get("a2ui")
         if isinstance(existing, Mapping):
-            return dict(interrupt)
+            try:
+                validate_a2ui_surface(existing)
+            except A2uiSurfaceValidationError:
+                pass
+            else:
+                return dict(interrupt)
     summary = summary_text_from_interrupt_draft(draft)
     surface = project_review_confirm(summary)
     if run_id is not None:
         surface = {**surface, "surface_id": f"{run_id}-review-confirm"}
+    try:
+        validate_a2ui_surface(surface)
+    except A2uiSurfaceValidationError as exc:
+        raise LifecycleInvariantError(
+            SafeErrorCode.INPUT_REQUIRED_WITHOUT_SURFACE
+        ) from exc
     if isinstance(draft, Mapping):
         merged_draft = dict(draft)
         merged_draft["a2ui"] = surface
@@ -296,29 +307,29 @@ def _ensure_review_interrupt_surface(
 
 
 def canonicalize_run_record(record: Mapping[str, Any]) -> dict[str, Any]:
-    """Project fetched records through the public Review pause contract."""
-    if (
-        record.get("agent") != "review"
-        or record.get("status") != "input_required"
-    ):
-        return dict(record)
-    result = record.get("result")
-    if not isinstance(result, Mapping):
-        return dict(record)
-    interrupt = result.get("interrupt")
-    if not isinstance(interrupt, Mapping):
-        return dict(record)
-    run_id = record.get("run_id")
-    return {
-        **dict(record),
-        "result": {
-            **dict(result),
-            "interrupt": _ensure_review_interrupt_surface(
-                interrupt,
-                run_id=run_id if isinstance(run_id, str) else None,
-            ),
-        },
-    }
+    """Validate one persisted record while preserving its history fields."""
+    run_id, _ = _normalize_run_identity(record)
+    if run_id is None:
+        raise LifecycleInvariantError(SafeErrorCode.ROUTING_CONTRACT_VIOLATION)
+    source = {**dict(record), "id": run_id, "run_id": run_id}
+    if record.get("status") == "running" and record.get("result") is None:
+        source["result"] = empty_agent_result(
+            degraded=record.get("degraded_tracking") is True
+        )
+    canonical = canonicalize_agent_run_body(source)
+    projected = {**dict(record), "id": run_id, "run_id": run_id}
+    if canonical["status"] == "input_required":
+        result = record.get("result")
+        projected["result"] = {
+            **(dict(result) if isinstance(result, Mapping) else {}),
+            "interrupt": canonical["interrupt"],
+        }
+    else:
+        projected["result"] = canonical["result"]
+    projected["task_ids"] = canonical["task_ids"]
+    if canonical.get("degraded_tracking"):
+        projected["degraded_tracking"] = True
+    return projected
 
 
 def _normalize_run_identity(

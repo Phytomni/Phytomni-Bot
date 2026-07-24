@@ -22,7 +22,9 @@ import pytest
 from tests.support.resolver_fakes import post_native_run
 
 from mcp_server_phytomni import server
+from mcp_server_phytomni.agents.shared.a2ui import validate_a2ui_surface
 from mcp_server_phytomni.api import app as api_app_module
+from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.mcp.schemas import (
     AGENT_TOOL_DEFINITIONS,
     PhytomniAgents,
@@ -30,7 +32,11 @@ from mcp_server_phytomni.mcp.schemas import (
 from mcp_server_phytomni.runtime import (
     submit_recorder as submit_recorder_module,
 )
-from mcp_server_phytomni.runtime.run_registry import RunRegistry
+from mcp_server_phytomni.runtime.run_registry import (
+    RunOutcome,
+    RunRegistry,
+    RunSpec,
+)
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
 pytestmark = pytest.mark.server
@@ -550,3 +556,152 @@ async def test_agent_run_remote_surfaces_degraded_tracking_when_recorder_fails(
     # point — proves the flag was driven by the live failure, not by
     # stale state left over from a previous test.
     assert not RunRegistry(tasks_db_path).list_runs(owner="u1")
+
+
+async def test_run_read_replaces_invalid_persisted_review_surface(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """Read projection replaces malformed persisted Review A2UI safely."""
+    run_id = "run-review-persisted-invalid"
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec(run_id, "u1", "review", "local"),
+        outcome=RunOutcome(
+            status="input_required",
+            result={
+                "interrupt": {
+                    "draft": {
+                        "draft": "review this result",
+                        "a2ui": {"widget": "invalid"},
+                    }
+                }
+            },
+        ),
+    )
+
+    response = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    listing = await api_client.get(
+        "/v1/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    assert listing.status_code == 200
+    for body in (response.json(), listing.json()["data"][0]):
+        assert body["id"] == run_id
+        assert body["run_id"] == run_id
+        surface = body["result"]["interrupt"]["draft"]["a2ui"]
+        validate_a2ui_surface(surface)
+        assert surface["surface_id"] == f"{run_id}-review-confirm"
+
+
+async def test_run_reads_publish_canonical_id_aliases(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """Fetched and listed persisted rows expose byte-identical identities."""
+    run_id = "run-canonical-read-id"
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec(run_id, "u1", "chat", "local"),
+        outcome=RunOutcome(
+            status="succeeded",
+            result={
+                "formatted": {
+                    "answer": "complete",
+                    "follow_up_questions": [],
+                    "references": [],
+                    "tabular": {},
+                    "metadata": {},
+                },
+                "execution": {
+                    "tracking": {"degraded": False},
+                    "warnings": [],
+                    "tasks": [],
+                    "artifacts": [],
+                    "output_dirs": [],
+                    "report": None,
+                    "diagnostics": [],
+                },
+            },
+        ),
+    )
+
+    fetched = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    listed = await api_client.get(
+        "/v1/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert fetched.status_code == 200
+    assert fetched.json()["id"] == fetched.json()["run_id"] == run_id
+    assert listed.status_code == 200
+    row = listed.json()["data"][0]
+    assert row["id"] == row["run_id"] == run_id
+
+
+async def test_invalid_persisted_succeeded_state_maps_to_safe_error(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """Invalid persisted lifecycle rows cannot be returned as valid data."""
+    run_id = "run-invalid-persisted-succeeded"
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec(run_id, "u1", "chat", "local"),
+        outcome=RunOutcome(
+            status="succeeded",
+            result={"answer": "invalid"},
+        ),
+    )
+
+    fetched = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    listed = await api_client.get(
+        "/v1/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    for response in (fetched, listed):
+        assert response.status_code == 500
+        error = response.json()["error"]
+        assert isinstance(error["code"], str)
+        assert error["stage"] in {"lifecycle", "projection"}
+
+
+async def test_persisted_running_projects_empty_result(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """A persisted running row needs no terminal result to remain readable."""
+    run_id = "run-persisted-running-no-result"
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec(run_id, "u1", "chat", "local"),
+        outcome=RunOutcome(status="running", result=None),
+    )
+
+    fetched = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    listed = await api_client.get(
+        "/v1/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert fetched.status_code == 200
+    assert listed.status_code == 200
+    for body in (fetched.json(), listed.json()["data"][0]):
+        assert body["id"] == body["run_id"] == run_id
+        assert body["status"] == "running"
+        assert body["result"] == empty_agent_result()

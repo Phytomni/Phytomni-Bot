@@ -11,6 +11,7 @@ import pytest
 from mcp_server_phytomni.api.lifecycle_contract import (
     LifecycleInvariantError,
     build_agent_run_response,
+    canonicalize_run_record,
     empty_agent_result,
 )
 
@@ -73,4 +74,19 @@ def test_input_required_requires_valid_surface() -> None:
             task_ids=(),
             result={"interrupt": {"draft": {}}},
             persisted=True,
+        )
+
+
+def test_persisted_running_record_requires_recoverable_identity() -> None:
+    """A read projection cannot invent recovery for an anonymous run."""
+    with pytest.raises(
+        LifecycleInvariantError, match="routing_contract_violation"
+    ):
+        canonicalize_run_record(
+            {
+                "agent": "chat",
+                "status": "running",
+                "result": None,
+                "task_ids": [],
+            }
         )
