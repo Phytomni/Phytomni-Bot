@@ -95,6 +95,45 @@ def test_persisted_running_record_requires_recoverable_identity() -> None:
 
 
 @pytest.mark.parametrize(
+    ("status", "expected_error"),
+    [("failed", "run failed"), ("succeeded", None)],
+)
+def test_persisted_record_redacts_error_and_result_details(
+    status: str, expected_error: str | None
+) -> None:
+    """Persisted terminal reads keep only the safe canonical projection."""
+    projected = canonicalize_run_record(
+        {
+            "run_id": f"run-{status}",
+            "agent": "chat",
+            "status": status,
+            "task_ids": [],
+            "error": "provider exception: /srv/private",
+            "result": {
+                "provider_trace": "private",
+                "raw": {"path": "/srv/private"},
+                "execution": {
+                    "artifacts": [{"name": "result.tsv"}],
+                    "provider_payload": {"trace": "private"},
+                },
+            },
+        }
+    )
+
+    assert projected["result"] == {
+        "formatted": empty_agent_result()["formatted"],
+        "execution": {
+            **empty_agent_result()["execution"],
+            "artifacts": [{"name": "result.tsv"}],
+        },
+    }
+    if expected_error is None:
+        assert "error" not in projected
+    else:
+        assert projected["error"] == expected_error
+
+
+@pytest.mark.parametrize(
     ("options", "message"),
     [
         ({"persisted": True}, "missing required keyword-only argument"),

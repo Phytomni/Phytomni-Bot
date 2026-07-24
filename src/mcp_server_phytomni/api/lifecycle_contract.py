@@ -364,6 +364,10 @@ def canonicalize_run_record(record: Mapping[str, Any]) -> dict[str, Any]:
     else:
         projected["result"] = canonical["result"]
     projected["task_ids"] = canonical["task_ids"]
+    if canonical["status"] == "failed":
+        projected["error"] = "run failed"
+    else:
+        projected.pop("error", None)
     if canonical.get("degraded_tracking"):
         projected["degraded_tracking"] = True
     return projected
@@ -489,18 +493,20 @@ def _canonicalize_result_projection(
     degraded_tracking: bool,
     task_ids: tuple[str, ...],
 ) -> dict[str, Any]:
-    """Lift partial terminal results into the canonical projection."""
+    """Lift partial terminal results into the safe canonical projection."""
     formatted = result.get("formatted")
     canonical = empty_agent_result(degraded=degraded_tracking)
-    merged_formatted = (
-        dict(formatted) if isinstance(formatted, Mapping) else {}
-    )
-    for key, value in canonical["formatted"].items():
-        merged_formatted.setdefault(key, value)
+    merged_formatted = dict(canonical["formatted"])
+    if isinstance(formatted, Mapping):
+        for key in merged_formatted:
+            if key in formatted:
+                merged_formatted[key] = formatted[key]
     merged_execution = dict(canonical["execution"])
     execution = result.get("execution")
     if isinstance(execution, Mapping):
-        merged_execution.update(dict(execution))
+        for key in merged_execution:
+            if key in execution:
+                merged_execution[key] = execution[key]
         tracking = execution.get("tracking")
         if isinstance(tracking, Mapping):
             merged_execution["tracking"] = {
@@ -515,7 +521,7 @@ def _canonicalize_result_projection(
         merged_formatted.get("output_dirs"), list
     ):
         merged_execution["output_dirs"] = list(merged_formatted["output_dirs"])
-    canonical_result = dict(result)
-    canonical_result["formatted"] = merged_formatted
-    canonical_result["execution"] = merged_execution
-    return canonical_result
+    return {
+        "formatted": merged_formatted,
+        "execution": merged_execution,
+    }

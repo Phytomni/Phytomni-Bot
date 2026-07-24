@@ -685,9 +685,12 @@ async def test_terminal_run_reads_project_missing_formatted_result(
                 "execution": {
                     "artifacts": [{"name": "result.tsv"}],
                     "diagnostics": [{"code": "upstream_partial"}],
+                    "provider_payload": {"trace": "private"},
                 },
                 "provider_trace": "preserved",
+                "raw": {"private_path": "/srv/private"},
             },
+            error="provider exception: private details",
         ),
     )
 
@@ -712,7 +715,17 @@ async def test_terminal_run_reads_project_missing_formatted_result(
         assert body["result"]["execution"]["artifacts"] == [
             {"name": "result.tsv"}
         ]
-        assert body["result"]["provider_trace"] == "preserved"
+        assert body["result"]["execution"]["diagnostics"] == [
+            {"code": "upstream_partial"}
+        ]
+        assert set(body["result"]) == {"formatted", "execution"}
+        assert "provider_trace" not in body["result"]
+        assert "raw" not in body["result"]
+        assert "provider_payload" not in body["result"]["execution"]
+        if status == "failed":
+            assert body["error"] == "run failed"
+        else:
+            assert "error" not in body
 
 
 async def test_persisted_running_projects_empty_result(
