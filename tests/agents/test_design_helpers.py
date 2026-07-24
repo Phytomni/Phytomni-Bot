@@ -30,8 +30,13 @@ from mcp_server_phytomni.agents.design.agent import (
 )
 from mcp_server_phytomni.agents.shared.remote_analysis import (
     RemoteAnalysisRequest,
+    RemoteAnalysisSubmissionError,
 )
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from mcp_server_phytomni.runtime.request_context import (
+    current_accepted_task_ids,
+    request_context,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -161,3 +166,69 @@ async def test_dispatch_builds_typed_remote_analysis_request(
     assert request.compute_resource == compute_resource
     assert captured["is_polling"] is False
     assert result["task_id"] == f"{analysis_type}-task"
+
+
+async def test_arun_surfaces_partial_submission_warning_and_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Partial Design fan-out returns only accepted IDs plus a warning."""
+    agent = _build_agent()
+    monkeypatch.setattr(
+        design_agent_module,
+        "run_analysis_graph",
+        AsyncMock(
+            return_value={
+                "design_task_result": [
+                    {"task_id": "design-1", "output_dir": "out"}
+                ],
+                "error": None,
+                "failures": [],
+                "phytomni_state": {
+                    "submission_rejections": [
+                        {"goal": "AT1G01010", "code": "upstream_rejected"}
+                    ]
+                },
+            }
+        ),
+    )
+
+    with request_context("user-1", "request-1"):
+        result = await agent.arun("ath", "AT1G01010")
+        assert current_accepted_task_ids() == ("design-1",)
+
+    assert result["submission_warnings"] == [
+        {
+            "code": "partial_submission",
+            "retryable": False,
+            "rejected_count": 1,
+        }
+    ]
+
+
+async def test_arun_rejects_when_all_design_submissions_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Design must not return a running-shaped result with zero IDs."""
+    agent = _build_agent()
+    monkeypatch.setattr(
+        design_agent_module,
+        "run_analysis_graph",
+        AsyncMock(
+            return_value={
+                "design_task_result": [],
+                "error": None,
+                "failures": [],
+                "phytomni_state": {
+                    "submission_rejections": [
+                        {"goal": "AT1G01010", "code": "upstream_timeout"}
+                    ]
+                },
+            }
+        ),
+    )
+
+    with pytest.raises(
+        RemoteAnalysisSubmissionError,
+        match="no remote task was accepted",
+    ):
+        await agent.arun("ath", "AT1G01010")

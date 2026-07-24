@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -98,3 +99,42 @@ async def test_run_research_node_requires_output_dir() -> None:
 
     with pytest.raises(ValueError, match="output_dir is required"):
         await agent.run_research_node(state)
+
+
+async def test_invalid_goal_extraction_makes_no_submit_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed goal extraction stops the graph before remote submission."""
+    agent = _build_agent()
+
+    async def invalid_extract(
+        user_query: str,
+        obs_file_list: list[str],
+    ) -> list[dict[str, str]]:
+        """Model the contract validator rejecting decoded goal JSON."""
+        del user_query, obs_file_list
+        raise ValueError("value must be nonblank")
+
+    submit = AsyncMock()
+    monkeypatch.setattr(agent, "_extract_goals", invalid_extract)
+    monkeypatch.setattr(agent, "_submit_research_task", submit)
+
+    result = await agent.app.ainvoke(
+        {
+            "paper_text": "A paper with an invalid empty objective.",
+            "data_list": {},
+            "user_id": "test-user",
+            "obs_file_list": [],
+            "output_dir": "/tmp/research-out",
+            "goals": [],
+            "research_tasks": [],
+            "task_ids": {},
+            "completed_count": 0,
+            "error": None,
+        },
+        config={"configurable": {"thread_id": "invalid-goal-test"}},
+    )
+
+    assert result["goals"] == []
+    assert result["error"] == "value must be nonblank"
+    submit.assert_not_awaited()

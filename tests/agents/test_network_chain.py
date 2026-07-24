@@ -14,11 +14,23 @@ untranslated Latin name.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
 
+from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
+from mcp_server_phytomni.agents.network import agent as network_agent
 from mcp_server_phytomni.agents.network import chain
+from mcp_server_phytomni.agents.network.agent import (
+    GeneNetworkAgents,
+    GeneNetworkConfig,
+)
+from mcp_server_phytomni.agents.shared.remote_analysis import (
+    RemoteAnalysisSubmissionError,
+)
+from mcp_server_phytomni.config.settings import SensitiveConfig
 
 pytestmark = pytest.mark.agent
 
@@ -60,3 +72,35 @@ async def test_chain_forwards_species_code_to_network_analysis(
     gene_call = gene_mock.await_args
     assert gene_call is not None
     assert gene_call.kwargs["species_code"] == "osa"
+
+
+async def test_network_rejects_blank_remote_task_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Network treats a successful response without an ID as rejected."""
+    analyst_stub = SimpleNamespace(identifier=lambda: "stub-analyst")
+    agent = GeneNetworkAgents(
+        gene_network_config=GeneNetworkConfig(),
+        sensitive_config=SensitiveConfig.load(),
+        analyst_agent=cast(AnalystAgent, analyst_stub),
+    )
+    monkeypatch.setattr(
+        agent,
+        "_analysis_prompt_parts",
+        lambda *_args: ("goal", "meta", {}),
+    )
+    monkeypatch.setattr(
+        network_agent,
+        "submit_analyst_via_subgraph",
+        AsyncMock(return_value={"output_dir": "out"}),
+    )
+
+    with pytest.raises(
+        RemoteAnalysisSubmissionError,
+        match="omitted task_id",
+    ):
+        await agent._dispatch_and_wait_analysis(
+            "gene_network_analysis",
+            "osa",
+            "TO:0000207",
+        )

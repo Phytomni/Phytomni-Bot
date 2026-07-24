@@ -13,6 +13,7 @@ them through AnalystAgent, and returns submitted task metadata.
 import logging
 import operator
 from collections.abc import Mapping
+from dataclasses import asdict
 from time import perf_counter
 from typing import (
     Annotated,
@@ -30,6 +31,13 @@ from ...config.defaults import DigitalDesignConfig
 from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...interop.planner import InteropMode
 from ...runtime.langgraph_runner import ensure_checkpointer
+from ...runtime.request_context import bind_accepted_task_ids
+from ...runtime.submission_outcome import (
+    AcceptedSubmission,
+    RejectedSubmission,
+    SubmissionOutcome,
+    classify_submissions,
+)
 from ..analyst.agent import (
     ANALYST_CONFIG_FIELD_MAP,
     AnalystAgent,
@@ -65,7 +73,11 @@ from ..shared.parallel_dispatch import (
     build_parallel_dispatch_graph,
 )
 from ..shared.remote_analysis import (
+    REMOTE_SUBMISSION_ERRORS,
     RemoteAnalysisRequest,
+    RemoteAnalysisSubmissionError,
+    accepted_submission,
+    rejected_submission,
     submit_remote_analysis,
 )
 from .interop import (
@@ -161,6 +173,75 @@ class DigitalDesignState(ParallelDispatchState):
     interop_targets: list[str]
     a2a_pending: Annotated[list[DesignA2APending], operator.add]
     a2a_task_ids: Annotated[dict[str, str], operator.or_]
+    submission_rejections: Annotated[list[dict[str, str]], operator.add]
+
+
+def _project_design_submission_updates(
+    updates: dict[str, Any],
+) -> dict[str, Any]:
+    """Remove rejection sentinels and retain safe rejection records."""
+    rejections: list[dict[str, str]] = []
+    accepted_results: list[dict[str, Any]] = []
+    for item in updates.get("design_task_result", []):
+        if not isinstance(item, Mapping):
+            continue
+        rejected = item.get("_submission_rejected")
+        if isinstance(rejected, Mapping):
+            goal = rejected.get("goal")
+            code = rejected.get("code")
+            if isinstance(goal, str) and isinstance(code, str):
+                rejections.append({"goal": goal, "code": code})
+            continue
+        accepted_results.append(dict(item))
+    updates["design_task_result"] = accepted_results
+    if rejections:
+        updates["submission_rejections"] = rejections
+    return updates
+
+
+def _design_submission_outcome(
+    result: Mapping[str, Any],
+) -> SubmissionOutcome:
+    """Classify accepted Design children and safe rejection records."""
+    accepted: list[AcceptedSubmission] = []
+    task_results = result.get("design_task_result")
+    if isinstance(task_results, list):
+        for item in task_results:
+            if not isinstance(item, Mapping):
+                continue
+            task_id = item.get("task_id")
+            if isinstance(task_id, str) and task_id.strip():
+                accepted.append(
+                    AcceptedSubmission(
+                        task_id=task_id,
+                        output_dir=str(item.get("output_dir") or ""),
+                    )
+                )
+    rejected: list[RejectedSubmission] = []
+    state = result.get("phytomni_state")
+    raw_rejections = (
+        state.get("submission_rejections")
+        if isinstance(state, Mapping)
+        else None
+    )
+    if isinstance(raw_rejections, list):
+        for item in raw_rejections:
+            if not isinstance(item, Mapping):
+                continue
+            goal = item.get("goal")
+            code = item.get("code")
+            if isinstance(goal, str) and isinstance(code, str):
+                rejected.append(RejectedSubmission(goal=goal, code=code))
+    return classify_submissions(accepted=accepted, rejected=rejected)
+
+
+def _has_pending_design_a2a(result: Mapping[str, Any]) -> bool:
+    """Return whether Design is paused for external A2A input."""
+    state = result.get("phytomni_state")
+    if not isinstance(state, Mapping):
+        return False
+    pending = state.get("a2a_pending")
+    return isinstance(pending, list) and bool(pending)
 
 
 class DigitalDesignAgents:
@@ -285,13 +366,15 @@ class DigitalDesignAgents:
             data_list=data_list,
             compute_resource=self._get_compute_resource(analysis_type),
         )
-        return await submit_remote_analysis(
+        result = await submit_remote_analysis(
             self.analyst_agent,
             self.digital_design_config,
             self.sensitive_config,
             request,
             is_polling=options.is_polling,
         )
+        accepted_submission(result)
+        return result
 
     def _analysis_prompt_parts(
         self,
@@ -528,16 +611,23 @@ class DigitalDesignAgents:
             gene: str,
             out_dir: str | None,
         ) -> dict:
-            return await self._dispatch_and_wait_analysis(
-                a_type,
-                species,
-                gene,
-                _DispatchOptions(
-                    output_dir=out_dir,
-                    is_polling=bool(interop_task["is_polling"]),
-                    external_evidence=evidence,
-                ),
-            )
+            try:
+                return await self._dispatch_and_wait_analysis(
+                    a_type,
+                    species,
+                    gene,
+                    _DispatchOptions(
+                        output_dir=out_dir,
+                        is_polling=bool(interop_task["is_polling"]),
+                        external_evidence=evidence,
+                    ),
+                )
+            except REMOTE_SUBMISSION_ERRORS as exc:
+                return {
+                    "_submission_rejected": asdict(
+                        rejected_submission(gene, exc)
+                    )
+                }
 
         updates = await capture_dispatched_analysis(
             state,
@@ -546,6 +636,7 @@ class DigitalDesignAgents:
             _dispatch,
             ("design_task_result", "design_task_result"),
         )
+        updates = _project_design_submission_updates(updates)
         if mode != "off":
             if evidence is None:
                 updates.update(
@@ -636,16 +727,23 @@ class DigitalDesignAgents:
             gene_id: str,
             output_dir: str | None,
         ) -> dict[str, Any]:
-            return await self._dispatch_and_wait_analysis(
-                analysis_type,
-                species_code,
-                gene_id,
-                _DispatchOptions(
-                    output_dir=output_dir,
-                    is_polling=pending["is_polling"],
-                    external_evidence=evidence,
-                ),
-            )
+            try:
+                return await self._dispatch_and_wait_analysis(
+                    analysis_type,
+                    species_code,
+                    gene_id,
+                    _DispatchOptions(
+                        output_dir=output_dir,
+                        is_polling=pending["is_polling"],
+                        external_evidence=evidence,
+                    ),
+                )
+            except REMOTE_SUBMISSION_ERRORS as exc:
+                return {
+                    "_submission_rejected": asdict(
+                        rejected_submission(gene_id, exc)
+                    )
+                }
 
         resume_state = {
             **state,
@@ -662,6 +760,7 @@ class DigitalDesignAgents:
             _dispatch,
             ("design_task_result", "design_task_result"),
         )
+        updates = _project_design_submission_updates(updates)
         updates.update(
             interop_evidence_update(
                 evidence,
@@ -689,7 +788,7 @@ class DigitalDesignAgents:
         Returns:
             Dict with task_ids on success, or error on failure.
         """
-        return await run_analysis_graph(
+        result = await run_analysis_graph(
             self.app,
             {
                 "species_code": species_code,
@@ -700,9 +799,24 @@ class DigitalDesignAgents:
             ("design_task_result", "error", "failures"),
             AnalysisStateSpec(
                 tasks_key="design_tasks",
-                result_inits={"design_task_result": []},
+                result_inits={
+                    "design_task_result": [],
+                    "submission_rejections": [],
+                },
             ),
         )
+        outcome = _design_submission_outcome(result)
+        if (
+            outcome.kind == "rejected"
+            and outcome.rejected
+            and not _has_pending_design_a2a(result)
+        ):
+            raise RemoteAnalysisSubmissionError("no remote task was accepted")
+        bind_accepted_task_ids(outcome.task_ids)
+        return {
+            **result,
+            "submission_warnings": list(outcome.warnings),
+        }
 
 
 async def design_module(

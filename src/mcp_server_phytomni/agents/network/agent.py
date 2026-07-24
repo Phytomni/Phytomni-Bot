@@ -11,7 +11,10 @@ them through AnalystAgent, and returns submitted task metadata.
 """
 
 import logging
+import operator
+from collections.abc import Mapping
 from typing import (
+    Annotated,
     Any,
     Literal,
 )
@@ -23,6 +26,13 @@ from ...config.defaults import GeneNetworkConfig
 from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
 from ...runtime.langgraph_runner import ensure_checkpointer
+from ...runtime.request_context import bind_accepted_task_ids
+from ...runtime.submission_outcome import (
+    AcceptedSubmission,
+    RejectedSubmission,
+    SubmissionOutcome,
+    classify_submissions,
+)
 from ..analyst.agent import (
     ANALYST_CONFIG_FIELD_MAP,
     AnalystAgent,
@@ -40,6 +50,12 @@ from ..shared.parallel_dispatch import (
     ParallelDispatchSpec,
     ParallelDispatchState,
     build_parallel_dispatch_graph,
+)
+from ..shared.remote_analysis import (
+    REMOTE_SUBMISSION_ERRORS,
+    RemoteAnalysisSubmissionError,
+    accepted_submission,
+    rejected_submission,
 )
 
 logger = logging.getLogger(__name__)
@@ -87,6 +103,54 @@ class GeneNetworkState(ParallelDispatchState):
     output_dir: str | None
     network_task: dict[str, Any]  # submit results
     network_tasks: list[dict[str, Any]]  # List of network analysis tasks
+    submission_rejections: Annotated[list[dict[str, str]], operator.add]
+
+
+def _project_network_submission_update(
+    updates: dict[str, Any],
+) -> dict[str, Any]:
+    """Remove a rejection sentinel and retain its safe rejection record."""
+    result = updates.get("network_task")
+    if not isinstance(result, Mapping):
+        return updates
+    rejected = result.get("_submission_rejected")
+    if not isinstance(rejected, Mapping):
+        return updates
+    goal = rejected.get("goal")
+    code = rejected.get("code")
+    updates["network_task"] = {}
+    if isinstance(goal, str) and isinstance(code, str):
+        updates["submission_rejections"] = [{"goal": goal, "code": code}]
+    return updates
+
+
+def _network_submission_outcome(
+    result: Mapping[str, Any],
+) -> SubmissionOutcome:
+    """Classify the one Network submission represented by a result."""
+    accepted: list[AcceptedSubmission] = []
+    task = result.get("network_task")
+    if isinstance(task, Mapping):
+        task_id = task.get("task_id")
+        if isinstance(task_id, str) and task_id.strip():
+            accepted.append(accepted_submission(task))
+
+    rejected: list[RejectedSubmission] = []
+    state = result.get("phytomni_state")
+    raw_rejections = (
+        state.get("submission_rejections")
+        if isinstance(state, Mapping)
+        else None
+    )
+    if isinstance(raw_rejections, list):
+        for item in raw_rejections:
+            if not isinstance(item, Mapping):
+                continue
+            goal = item.get("goal")
+            code = item.get("code")
+            if isinstance(goal, str) and isinstance(code, str):
+                rejected.append(RejectedSubmission(goal=goal, code=code))
+    return classify_submissions(accepted=accepted, rejected=rejected)
 
 
 class GeneNetworkAgents:
@@ -196,13 +260,15 @@ class GeneNetworkAgents:
             "prompt_parts": (goal_description, meta, data_list),
             "compute_resource": self._get_compute_resource(analysis_type),
         }
-        return await submit_analyst_via_subgraph(
+        result = await submit_analyst_via_subgraph(
             self.analyst_agent,
             self.gene_network_config,
             self.sensitive_config,
             request,
             is_polling=False,
         )
+        accepted_submission(result)
+        return result
 
     def _analysis_prompt_parts(
         self,
@@ -271,13 +337,35 @@ class GeneNetworkAgents:
         )
         logger.debug("Species code: %s", species_code)
 
-        return await capture_dispatched_analysis(
+        async def _dispatch(
+            a_type: str,
+            species: str,
+            target: str,
+            out_dir: str | None,
+        ) -> dict[str, Any]:
+            try:
+                return await self._dispatch_and_wait_analysis(
+                    a_type,
+                    species,
+                    target,
+                    out_dir,
+                )
+            except REMOTE_SUBMISSION_ERRORS as exc:
+                return {
+                    "_submission_rejected": {
+                        "goal": target,
+                        "code": rejected_submission(target, exc).code,
+                    }
+                }
+
+        updates = await capture_dispatched_analysis(
             state,
             analysis_type,
             "to_id",
-            self._dispatch_and_wait_analysis,
+            _dispatch,
             ("network_task", None),
         )
+        return _project_network_submission_update(updates)
 
     async def arun(
         self,
@@ -298,16 +386,27 @@ class GeneNetworkAgents:
         Returns:
             Dict with task_ids on success, or error on failure.
         """
-        return await run_analysis_graph(
+        result = await run_analysis_graph(
             self.app,
             {"species_code": species_code, "to_id": to_id},
             kwargs,
             ("network_task", "error", "failures"),
             AnalysisStateSpec(
                 tasks_key="network_tasks",
-                result_inits={"network_task": {}},
+                result_inits={
+                    "network_task": {},
+                    "submission_rejections": [],
+                },
             ),
         )
+        outcome = _network_submission_outcome(result)
+        if outcome.kind == "rejected" and outcome.rejected:
+            raise RemoteAnalysisSubmissionError("no remote task was accepted")
+        bind_accepted_task_ids(outcome.task_ids)
+        return {
+            **result,
+            "submission_warnings": list(outcome.warnings),
+        }
 
 
 async def network_analysis(
