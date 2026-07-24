@@ -9,7 +9,19 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+    model_validator,
+)
+
+from ..mcp.schemas import AGENT_TOOL_DEFINITIONS
+
+_CANONICAL_AGENT_TOOL_NAMES = frozenset(
+    name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
+)
 
 # Allowed values for the ``purpose`` field on ``POST /v1/files`` and
 # the response echo. Combines the OpenAI files API enum (assistants,
@@ -200,15 +212,39 @@ class ExpertQueryRequest(BaseModel):
             the selected tool's arguments only when its schema accepts
             them (``tool_accepts_obs``).
         dialogue_id: Optional chat-ai conversation id recorded on the run.
-        forced_tool: Reserved for pinning an agent inside Expert mode;
-            v1 implements only the ``None`` (pure autonomous) path.
+        allowed_tools: Ordered canonical agent tools available to the router.
+        forced_tool: Optional canonical agent tool pinned by the caller.
     """
 
     user_query: str
     history: list[dict[str, Any]] = Field(default_factory=list)
     obs_file_list: list[str] = Field(default_factory=list)
     dialogue_id: str | None = None
+    allowed_tools: list[str] = Field(min_length=1, max_length=10)
     forced_tool: str | None = None
+
+    @model_validator(mode="after")
+    def validate_tool_constraints(self) -> ExpertQueryRequest:
+        """Ensure Expert routing stays within the caller's tool boundary."""
+        if len(set(self.allowed_tools)) != len(self.allowed_tools):
+            raise ValueError(
+                "allowed_tools must contain unique canonical tool names"
+            )
+        unknown = [
+            tool
+            for tool in self.allowed_tools
+            if tool not in _CANONICAL_AGENT_TOOL_NAMES
+        ]
+        if unknown:
+            raise ValueError(
+                "allowed_tools contains an unknown canonical tool"
+            )
+        if (
+            self.forced_tool is not None
+            and self.forced_tool not in self.allowed_tools
+        ):
+            raise ValueError("forced_tool must be a member of allowed_tools")
+        return self
 
 
 class ApiKeyCreateRequest(BaseModel):

@@ -50,7 +50,7 @@ pytestmark = pytest.mark.server
 
 _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 _OPENAPI_HASH = (
-    "881e33fda651ceacc95126e91f58e9f9cf7bc15ad4290b21586c5d8d4d78c762"
+    "962a74826077f588dcdce04c0d7b8682a3480377d614aa7f81d9446e1a0d78a8"
 )
 
 

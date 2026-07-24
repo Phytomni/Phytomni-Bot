@@ -18,11 +18,13 @@ from typing import Any
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 import mcp_server_phytomni.api.app as api_app
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.expert import ToolSelection
 from mcp_server_phytomni.api.auth import ApiKeyStore
+from mcp_server_phytomni.api.schemas import ExpertQueryRequest
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
@@ -46,6 +48,104 @@ def _patch_select(
 def _auth(key: str) -> dict[str, str]:
     """Return the bearer auth header for a key."""
     return {"Authorization": f"Bearer {key}"}
+
+
+@pytest.mark.parametrize(
+    ("patch", "expected_fragment"),
+    [
+        ({}, "allowed_tools"),
+        ({"allowed_tools": []}, "allowed_tools"),
+        (
+            {"allowed_tools": ["ChatAgent", "ChatAgent"]},
+            "allowed_tools must contain unique canonical tool names",
+        ),
+        (
+            {"allowed_tools": [" ChatAgent"]},
+            "allowed_tools contains an unknown canonical tool",
+        ),
+        (
+            {"allowed_tools": ["MissingAgent"]},
+            "allowed_tools contains an unknown canonical tool",
+        ),
+        (
+            {
+                "allowed_tools": ["ChatAgent"],
+                "forced_tool": "DataAgent",
+            },
+            "forced_tool must be a member of allowed_tools",
+        ),
+    ],
+)
+async def test_route_rejects_invalid_tool_constraints(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    patch: dict[str, object],
+    expected_fragment: str,
+) -> None:
+    """Expert requests reject invalid tool allowlist constraints."""
+    payload: dict[str, object] = {
+        "user_query": "Compare drought candidates",
+        "history": [],
+        "obs_file_list": [],
+        "dialogue_id": "dialogue-1",
+    }
+    payload.update(patch)
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json=payload,
+    )
+
+    assert response.status_code == 422
+    with pytest.raises(ValidationError, match=expected_fragment):
+        ExpertQueryRequest.model_validate(payload)
+
+
+async def test_route_rejects_more_than_ten_allowed_tools(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+) -> None:
+    """Expert requests bound the allowlist independently of uniqueness."""
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "Compare drought candidates",
+            "allowed_tools": [f"Tool{index}" for index in range(11)],
+        },
+    )
+
+    assert response.status_code == 422
+    with pytest.raises(ValidationError, match="allowed_tools"):
+        ExpertQueryRequest.model_validate(
+            {
+                "user_query": "Compare drought candidates",
+                "allowed_tools": [f"Tool{index}" for index in range(11)],
+            }
+        )
+
+
+def test_expert_query_request_accepts_ordered_autonomous_constraints() -> None:
+    """An autonomous Expert request retains its ordered canonical tools."""
+    request = ExpertQueryRequest(
+        user_query="Compare drought candidates",
+        allowed_tools=["KnowledgeAgent", "ChatAgent"],
+    )
+
+    assert request.allowed_tools == ["KnowledgeAgent", "ChatAgent"]
+    assert request.forced_tool is None
+
+
+def test_expert_query_request_accepts_member_forced_tool() -> None:
+    """A forced tool is valid when it belongs to the caller allowlist."""
+    request = ExpertQueryRequest(
+        user_query="Compare drought candidates",
+        allowed_tools=["KnowledgeAgent", "ChatAgent"],
+        forced_tool="ChatAgent",
+    )
+
+    assert request.forced_tool == "ChatAgent"
 
 
 def _stub_tool_handler(
@@ -104,7 +204,11 @@ async def test_route_sync_agent_returns_resolved_slug(
     response = await api_client.post(
         "/v1/query/route",
         headers=_auth(issued_api_key),
-        json={"user_query": "rice drought", "obs_file_list": ["/obs/x.pdf"]},
+        json={
+            "user_query": "rice drought",
+            "obs_file_list": ["/obs/x.pdf"],
+            "allowed_tools": ["KnowledgeAgent"],
+        },
     )
     assert response.status_code == 200
     body = response.json()
@@ -156,7 +260,10 @@ async def test_route_remote_agent_returns_running_task_ids(
     response = await api_client.post(
         "/v1/query/route",
         headers=_auth(issued_api_key),
-        json={"user_query": "assemble a genome"},
+        json={
+            "user_query": "assemble a genome",
+            "allowed_tools": ["AnalystAgent"],
+        },
     )
     assert response.status_code == 202
     body = response.json()
@@ -187,7 +294,7 @@ async def test_route_no_tool_falls_back_to_chat(
     response = await api_client.post(
         "/v1/query/route",
         headers=_auth(issued_api_key),
-        json={"user_query": "hello there"},
+        json={"user_query": "hello there", "allowed_tools": ["ChatAgent"]},
     )
     assert response.status_code == 200
     body = response.json()
@@ -236,7 +343,11 @@ async def test_route_injects_obs_only_for_obs_capable_tool(
     await api_client.post(
         "/v1/query/route",
         headers=_auth(issued_api_key),
-        json={"user_query": "q", "obs_file_list": ["/obs/x.pdf"]},
+        json={
+            "user_query": "q",
+            "obs_file_list": ["/obs/x.pdf"],
+            "allowed_tools": ["KnowledgeAgent"],
+        },
     )
     assert captured["knowledge"]["obs_file_list"] == ["/obs/x.pdf"]
 
@@ -244,7 +355,11 @@ async def test_route_injects_obs_only_for_obs_capable_tool(
     await api_client.post(
         "/v1/query/route",
         headers=_auth(issued_api_key),
-        json={"user_query": "q", "obs_file_list": ["/obs/x.pdf"]},
+        json={
+            "user_query": "q",
+            "obs_file_list": ["/obs/x.pdf"],
+            "allowed_tools": ["DataAgent"],
+        },
     )
     assert "obs_file_list" not in captured["data"]
 
@@ -254,7 +369,8 @@ async def test_route_requires_auth(
 ) -> None:
     """An unauthenticated caller sees the unified 401."""
     response = await api_client.post(
-        "/v1/query/route", json={"user_query": "hi"}
+        "/v1/query/route",
+        json={"user_query": "hi", "allowed_tools": ["ChatAgent"]},
     )
     assert response.status_code == 401
 
@@ -267,7 +383,7 @@ async def test_route_insufficient_scope_returns_403(
     response = await api_client.post(
         "/v1/query/route",
         headers=_auth(scoped_key_without_agents),
-        json={"user_query": "hi"},
+        json={"user_query": "hi", "allowed_tools": ["ChatAgent"]},
     )
     assert response.status_code == 403
 
@@ -280,7 +396,11 @@ async def test_route_forced_tool_returns_400(
     response = await api_client.post(
         "/v1/query/route",
         headers=_auth(issued_api_key),
-        json={"user_query": "hi", "forced_tool": "ChatAgent"},
+        json={
+            "user_query": "hi",
+            "allowed_tools": ["ChatAgent"],
+            "forced_tool": "ChatAgent",
+        },
     )
     assert response.status_code == 400
 
@@ -297,7 +417,7 @@ async def test_route_unknown_tool_returns_502(
     response = await api_client.post(
         "/v1/query/route",
         headers=_auth(issued_api_key),
-        json={"user_query": "status?"},
+        json={"user_query": "status?", "allowed_tools": ["ChatAgent"]},
     )
     assert response.status_code == 502
 
@@ -318,6 +438,6 @@ async def test_route_invalid_arguments_returns_400(
     response = await api_client.post(
         "/v1/query/route",
         headers=_auth(issued_api_key),
-        json={"user_query": "rice"},
+        json={"user_query": "rice", "allowed_tools": ["KnowledgeAgent"]},
     )
     assert response.status_code == 400
