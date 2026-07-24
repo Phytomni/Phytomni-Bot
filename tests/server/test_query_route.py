@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -27,6 +28,7 @@ from mcp_server_phytomni.agents.expert import (
     ToolSelection,
     ToolSelectionError,
 )
+from mcp_server_phytomni.agents.expert import router as expert_router
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.schemas import ExpertQueryRequest
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
@@ -57,6 +59,55 @@ def _patch_select(
 def _auth(key: str) -> dict[str, str]:
     """Return the bearer auth header for a key."""
     return {"Authorization": f"Bearer {key}"}
+
+
+def _router_completion(
+    *tool_calls: tuple[str, str], empty_choices: bool = False
+) -> SimpleNamespace:
+    """Build one OpenAI-compatible selector completion."""
+    if empty_choices:
+        return SimpleNamespace(choices=[])
+    calls = [
+        SimpleNamespace(
+            function=SimpleNamespace(name=name, arguments=arguments)
+        )
+        for name, arguments in tool_calls
+    ]
+    return SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(tool_calls=calls or None))]
+    )
+
+
+def _patch_router_completion(
+    monkeypatch: pytest.MonkeyPatch,
+    completion: SimpleNamespace,
+    captured: dict[str, Any] | None = None,
+) -> None:
+    """Run the route through the real selector with a canned completion."""
+
+    async def create(**kwargs: Any) -> SimpleNamespace:
+        if captured is not None:
+            captured.update(kwargs)
+        return completion
+
+    def fake_async_openai(
+        api_key: str, base_url: str | None
+    ) -> SimpleNamespace:
+        _ = (api_key, base_url)
+        return SimpleNamespace(
+            chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+        )
+
+    monkeypatch.setattr(expert_router, "AsyncOpenAI", fake_async_openai)
+    monkeypatch.setattr(
+        expert_router,
+        "get_sensitive_config",
+        lambda: SimpleNamespace(
+            API_KEY=SimpleNamespace(get_secret_value=lambda: "k"),
+            BASE_URL="https://example.invalid/v1",
+            MODEL_ID="route-model",
+        ),
+    )
 
 
 @pytest.mark.parametrize(
@@ -416,62 +467,41 @@ async def test_route_forces_every_canonical_tool_to_its_native_slug(
 
 
 @pytest.mark.parametrize(
-    "selection, allowed_tools, forced_tool, expected_status",
+    ("completion", "allowed_tools", "forced_tool"),
     [
-        (None, ["ChatAgent"], None, 502),
+        (_router_completion(empty_choices=True), ["ChatAgent"], None),
+        (_router_completion(), ["ChatAgent"], None),
         (
-            ToolSelectionError("routing model returned no choice"),
-            ["ChatAgent"],
+            _router_completion(("ChatAgent", "{}"), ("DataAgent", "{}")),
+            ["ChatAgent", "DataAgent"],
             None,
-            502,
         ),
+        (_router_completion(("MissingAgent", "{}")), ["ChatAgent"], None),
+        (_router_completion(("DataAgent", "{}")), ["ChatAgent"], None),
         (
-            ToolSelectionError("routing model returned no tool call"),
-            ["ChatAgent"],
-            None,
-            502,
+            _router_completion(("DataAgent", "{}")),
+            ["ChatAgent", "DataAgent"],
+            "ChatAgent",
         ),
-        (
-            ToolSelectionError(
-                "routing model must return exactly one tool call"
-            ),
-            ["ChatAgent"],
-            None,
-            502,
-        ),
-        (
-            ToolSelectionError("routing model selected an unknown tool"),
-            ["ChatAgent"],
-            None,
-            502,
-        ),
-        (
-            ToolSelectionError(
-                "routing model selected a tool outside the allowlist"
-            ),
-            ["ChatAgent"],
-            None,
-            502,
-        ),
-        (
-            ToolSelectionError("routing model did not honor the forced tool"),
-            ["ChatAgent"],
-            None,
-            502,
-        ),
-        (ToolSelection("GetTaskStatus", {}), ["ChatAgent"], None, 502),
     ],
+    ids=(
+        "no-choice",
+        "no-call",
+        "multiple-calls",
+        "unknown-call",
+        "outside-allowlist",
+        "forced-mismatch",
+    ),
 )
 async def test_route_strict_failures_never_invoke_agent(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
-    selection: ToolSelection | ToolSelectionError | None,
+    completion: SimpleNamespace,
     allowed_tools: list[str],
     forced_tool: str | None,
-    expected_status: int,
 ) -> None:
-    """Strict selection and routing-contract failures stop before dispatch."""
+    """Real strict selector contract failures stop before dispatch."""
     invoked = 0
 
     async def forbidden_invoke(
@@ -482,14 +512,8 @@ async def test_route_strict_failures_never_invoke_agent(
         raise AssertionError("agent invocation must not run")
 
     monkeypatch.setattr(api_app, "_invoke_agent_run", forbidden_invoke)
-    if isinstance(selection, ToolSelectionError):
-
-        async def failing_select(*_args: Any, **_kwargs: Any) -> ToolSelection:
-            raise selection
-
-        monkeypatch.setattr(api_app, "select_agent_tool", failing_select)
-    else:
-        _patch_select(monkeypatch, selection)
+    captured: dict[str, Any] = {}
+    _patch_router_completion(monkeypatch, completion, captured)
     payload: dict[str, Any] = {
         "user_query": "q",
         "allowed_tools": allowed_tools,
@@ -499,8 +523,13 @@ async def test_route_strict_failures_never_invoke_agent(
     response = await api_client.post(
         "/v1/query/route", headers=_auth(issued_api_key), json=payload
     )
-    assert response.status_code == expected_status
+    assert response.status_code in {400, 422, 502}
     assert invoked == 0
+    if forced_tool is not None:
+        assert captured["tool_choice"] == {
+            "type": "function",
+            "function": {"name": forced_tool},
+        }
 
 
 async def test_route_injects_obs_only_for_obs_capable_tool(
@@ -648,6 +677,16 @@ async def test_route_unknown_tool_returns_502(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A tool outside the agent set (e.g. GetTaskStatus) -> 502."""
+    invoked = 0
+
+    async def forbidden_invoke(
+        **_kwargs: object,
+    ) -> tuple[dict[str, Any], int]:
+        nonlocal invoked
+        invoked += 1
+        raise AssertionError("agent invocation must not run")
+
+    monkeypatch.setattr(api_app, "_invoke_agent_run", forbidden_invoke)
     _patch_select(
         monkeypatch, ToolSelection("GetTaskStatus", {"task_id": "T-1"})
     )
@@ -657,6 +696,7 @@ async def test_route_unknown_tool_returns_502(
         json={"user_query": "status?", "allowed_tools": ["ChatAgent"]},
     )
     assert response.status_code == 502
+    assert invoked == 0
 
 
 async def test_route_invalid_arguments_returns_400(

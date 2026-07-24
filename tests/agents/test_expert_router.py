@@ -145,18 +145,44 @@ async def test_strict_router_forces_requested_tool(
     }
 
 
-@pytest.mark.parametrize(
-    "tool_name",
-    [spec["function"]["name"] for spec in agent_openai_tool_specs()],
+_FORCED_TOOL_ARGUMENTS = (
+    ("ChatAgent", '{"user_query": "q", "obs_file_list": []}'),
+    ("KnowledgeAgent", '{"user_query": "q", "obs_file_list": []}'),
+    ("DataAgent", '{"user_query": "q"}'),
+    (
+        "AnalystAgent",
+        '{"goal_description": "q", "data_list": {}, "obs_file_list": []}',
+    ),
+    ("ReviewAgent", '{"user_query": "q", "obs_file_list": []}'),
+    ("BriefGeneAgent", '{"user_query": "AT1G01010"}'),
+    (
+        "DeepGenomeAgent",
+        '{"species_code": "ath", "gene_id": "AT1G01010"}',
+    ),
+    (
+        "InSilicoResearchAgent",
+        '{"user_query": "q", "data_list": {}, "obs_file_list": []}',
+    ),
+    (
+        "DigitalDesignAgent",
+        '{"species_code": "ath", "gene_id": "AT1G01010", "obs_file_list": []}',
+    ),
+    (
+        "GeneNetworkAgent",
+        '{"species_code": "ath", "to_id": "TO:0000001", "obs_file_list": []}',
+    ),
 )
+
+
+@pytest.mark.parametrize(("tool_name", "arguments"), _FORCED_TOOL_ARGUMENTS)
 async def test_strict_router_forces_every_canonical_tool(
-    monkeypatch: pytest.MonkeyPatch, tool_name: str
+    monkeypatch: pytest.MonkeyPatch, tool_name: str, arguments: str
 ) -> None:
     """Every dispatchable canonical tool can be the strict forced choice."""
     captured: dict[str, Any] = {}
     _patch_openai(
         monkeypatch,
-        _completion(tool_calls=[_tool_call(tool_name, "{}")]),
+        _completion(tool_calls=[_tool_call(tool_name, arguments)]),
         captured,
     )
 
@@ -166,6 +192,7 @@ async def test_strict_router_forces_every_canonical_tool(
 
     assert result is not None
     assert result.tool_name == tool_name
+    assert result.arguments
     assert captured["tool_choice"] == {
         "type": "function",
         "function": {"name": tool_name},
