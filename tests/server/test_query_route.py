@@ -6,8 +6,8 @@
 
 The routing LLM is always mocked (``select_agent_tool`` patched), so the
 suite stays offline. Covers the resolved-slug + formatted envelope (HR-1 /
-HR-2), the remote running/task_ids shape (HR-3), the chat fallback, the
-obs-injection gate, auth, and the forced_tool / unknown-tool / invalid-arg
+HR-2), the remote running/task_ids shape (HR-3), strict no-selection handling,
+the obs-injection gate, auth, and the forced_tool / unknown-tool / invalid-arg
 error paths.
 """
 
@@ -453,6 +453,32 @@ async def test_route_selection_failure_returns_sanitized_502(
     )
     assert "DataAgent" not in response.text
     assert "secret selection" not in response.text
+
+
+async def test_route_no_selection_returns_sanitized_502(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Strict routing does not fall back when the selector returns nothing."""
+    _patch_select(monkeypatch, None)
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "hi",
+            "allowed_tools": ["ChatAgent", "DataAgent"],
+        },
+    )
+
+    assert response.status_code == 502
+    assert (
+        response.json()["error"]["message"]
+        == "router did not resolve one permitted agent"
+    )
+    assert "ChatAgent" not in response.text
+    assert "DataAgent" not in response.text
 
 
 async def test_route_unknown_tool_returns_502(
