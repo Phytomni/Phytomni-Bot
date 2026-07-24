@@ -570,12 +570,17 @@ async def test_run_read_replaces_invalid_persisted_review_surface(
         outcome=RunOutcome(
             status="input_required",
             result={
+                "private_result": {"provider_payload": "private"},
                 "interrupt": {
+                    "thread_id": "thread-review-safe",
+                    "provider_trace": "private",
                     "draft": {
                         "draft": "review this result",
                         "a2ui": {"widget": "invalid"},
-                    }
-                }
+                        "provider_payload": {"secret": "private"},
+                        "private_path": "/srv/private",
+                    },
+                },
             },
         ),
     )
@@ -597,6 +602,13 @@ async def test_run_read_replaces_invalid_persisted_review_surface(
         surface = body["result"]["interrupt"]["draft"]["a2ui"]
         validate_a2ui_surface(surface)
         assert surface["surface_id"] == f"{run_id}-review-confirm"
+        assert body["result"]["interrupt"]["thread_id"] == "thread-review-safe"
+        assert set(body["result"]) == {"interrupt"}
+        assert set(body["result"]["interrupt"]) == {"thread_id", "draft"}
+        assert set(body["result"]["interrupt"]["draft"]) == {
+            "summary",
+            "a2ui",
+        }
 
 
 async def test_run_reads_publish_canonical_id_aliases(
@@ -682,9 +694,78 @@ async def test_terminal_run_reads_project_missing_formatted_result(
         outcome=RunOutcome(
             status=status,
             result={
+                "formatted": {
+                    "answer": "public terminal answer",
+                    "follow_up_questions": ["next?"],
+                    "references": [
+                        {
+                            "file_id": "doc-1",
+                            "title": "Public title",
+                            "pm": "12345",
+                            "provider_payload": {"trace": "private"},
+                        }
+                    ],
+                    "tabular": {
+                        "headers": ["gene"],
+                        "rows": [["AT1G01010"]],
+                        "provider_trace": "private",
+                    },
+                    "metadata": {
+                        "original_query": "public query",
+                        "provider_payload": {"trace": "private"},
+                    },
+                },
                 "execution": {
-                    "artifacts": [{"name": "result.tsv"}],
-                    "diagnostics": [{"code": "upstream_partial"}],
+                    "tracking": {
+                        "degraded": False,
+                        "provider_payload": {"trace": "private"},
+                    },
+                    "warnings": [
+                        {
+                            "code": "partial",
+                            "stage": "projection",
+                            "retryable": False,
+                            "count": 1,
+                            "private_error": "provider exception",
+                        }
+                    ],
+                    "tasks": [
+                        {
+                            "id": "task-safe",
+                            "accepted": True,
+                            "status": "succeeded",
+                            "provider_trace": "private",
+                        }
+                    ],
+                    "artifacts": [
+                        {
+                            "role": "scientific_table",
+                            "name": "result.tsv",
+                            "mime_type": "text/tab-separated-values",
+                            "size_bytes": 42,
+                            "provider_payload": {"trace": "private"},
+                        }
+                    ],
+                    "output_dirs": [
+                        "/obs/public/result",
+                        {"private": "value"},
+                    ],
+                    "report": {
+                        "role": "scientific_report",
+                        "state": "complete",
+                        "artifact_id": "report-safe",
+                        "mime_type": "application/json",
+                        "size_bytes": 12,
+                        "provider_trace": "private",
+                    },
+                    "diagnostics": [
+                        {
+                            "code": "upstream_partial",
+                            "stage": "analysis",
+                            "retryable": False,
+                            "provider_trace": "private",
+                        }
+                    ],
                     "provider_payload": {"trace": "private"},
                 },
                 "provider_trace": "preserved",
@@ -711,17 +792,72 @@ async def test_terminal_run_reads_project_missing_formatted_result(
     for body in (fetched.json(), listed_row):
         assert body["id"] == body["run_id"] == run_id
         assert body["status"] == status
-        assert body["result"]["formatted"]["answer"] == ""
-        assert body["result"]["execution"]["artifacts"] == [
-            {"name": "result.tsv"}
+        assert body["result"]["formatted"] == {
+            "answer": "public terminal answer",
+            "follow_up_questions": ["next?"],
+            "references": [
+                {
+                    "file_id": "doc-1",
+                    "title": "Public title",
+                    "pm": "12345",
+                }
+            ],
+            "tabular": {
+                "headers": ["gene"],
+                "rows": [["AT1G01010"]],
+            },
+            "metadata": {
+                "original_query": "public query",
+            },
+        }
+        assert body["result"]["execution"]["tracking"] == {"degraded": False}
+        assert body["result"]["execution"]["warnings"] == [
+            {
+                "code": "partial",
+                "stage": "projection",
+                "retryable": False,
+                "count": 1,
+            }
         ]
+        assert body["result"]["execution"]["tasks"] == [
+            {
+                "id": "task-safe",
+                "accepted": True,
+                "status": "succeeded",
+            }
+        ]
+        assert body["result"]["execution"]["artifacts"] == [
+            {
+                "role": "scientific_table",
+                "name": "result.tsv",
+                "mime_type": "text/tab-separated-values",
+                "size_bytes": 42,
+            }
+        ]
+        assert body["result"]["execution"]["output_dirs"] == [
+            "/obs/public/result"
+        ]
+        assert body["result"]["execution"]["report"] == {
+            "role": "scientific_report",
+            "state": "complete",
+            "artifact_id": "report-safe",
+            "mime_type": "application/json",
+            "size_bytes": 12,
+        }
         assert body["result"]["execution"]["diagnostics"] == [
-            {"code": "upstream_partial"}
+            {
+                "code": "upstream_partial",
+                "stage": "analysis",
+                "retryable": False,
+            }
         ]
         assert set(body["result"]) == {"formatted", "execution"}
         assert "provider_trace" not in body["result"]
         assert "raw" not in body["result"]
         assert "provider_payload" not in body["result"]["execution"]
+        assert "provider_payload" not in str(body)
+        assert "provider_trace" not in str(body)
+        assert "private_error" not in str(body)
         if status == "failed":
             assert body["error"] == "run failed"
         else:

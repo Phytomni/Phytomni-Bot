@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from enum import StrEnum
@@ -314,8 +314,9 @@ def _ensure_review_interrupt_surface(
     *,
     run_id: str | None,
 ) -> dict[str, Any]:
-    """Attach a deterministic Review surface when the draft lacks one."""
+    """Return the safe Review interrupt with a valid deterministic surface."""
     draft = interrupt.get("draft")
+    surface: Mapping[str, Any] | None = None
     if isinstance(draft, Mapping):
         existing = draft.get("a2ui")
         if isinstance(existing, Mapping):
@@ -324,23 +325,25 @@ def _ensure_review_interrupt_surface(
             except A2uiSurfaceValidationError:
                 pass
             else:
-                return dict(interrupt)
+                surface = existing
     summary = summary_text_from_interrupt_draft(draft)
-    surface = project_review_confirm(summary)
-    if run_id is not None:
-        surface = {**surface, "surface_id": f"{run_id}-review-confirm"}
+    if surface is None:
+        surface = project_review_confirm(summary)
+        if run_id is not None:
+            surface = {**surface, "surface_id": f"{run_id}-review-confirm"}
     try:
         validate_a2ui_surface(surface)
     except A2uiSurfaceValidationError as exc:
         raise LifecycleInvariantError(
             SafeErrorCode.INPUT_REQUIRED_WITHOUT_SURFACE
         ) from exc
-    if isinstance(draft, Mapping):
-        merged_draft = dict(draft)
-        merged_draft["a2ui"] = surface
-    else:
-        merged_draft = {"draft": summary, "a2ui": surface}
-    return {**dict(interrupt), "draft": merged_draft}
+    projected: dict[str, Any] = {
+        "draft": {"summary": summary, "a2ui": dict(surface)}
+    }
+    thread_id = interrupt.get("thread_id")
+    if isinstance(thread_id, str) and thread_id.strip():
+        projected["thread_id"] = thread_id
+    return projected
 
 
 def canonicalize_run_record(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -356,11 +359,7 @@ def canonicalize_run_record(record: Mapping[str, Any]) -> dict[str, Any]:
     canonical = canonicalize_agent_run_body(source)
     projected = {**dict(record), "id": run_id, "run_id": run_id}
     if canonical["status"] == "input_required":
-        result = record.get("result")
-        projected["result"] = {
-            **(dict(result) if isinstance(result, Mapping) else {}),
-            "interrupt": canonical["interrupt"],
-        }
+        projected["result"] = {"interrupt": canonical["interrupt"]}
     else:
         projected["result"] = canonical["result"]
     projected["task_ids"] = canonical["task_ids"]
@@ -470,7 +469,7 @@ def _canonicalize_input_required(
     projected_interrupt = (
         _ensure_review_interrupt_surface(interrupt, run_id=request.run_id)
         if request.agent == "review"
-        else dict(interrupt)
+        else _project_interrupt_surface(interrupt)
     )
     validated = build_agent_run_response(
         run_id=request.run_id,
@@ -494,34 +493,212 @@ def _canonicalize_result_projection(
     task_ids: tuple[str, ...],
 ) -> dict[str, Any]:
     """Lift partial terminal results into the safe canonical projection."""
-    formatted = result.get("formatted")
     canonical = empty_agent_result(degraded=degraded_tracking)
-    merged_formatted = dict(canonical["formatted"])
-    if isinstance(formatted, Mapping):
-        for key in merged_formatted:
-            if key in formatted:
-                merged_formatted[key] = formatted[key]
-    merged_execution = dict(canonical["execution"])
+    formatted = result.get("formatted")
+    merged_formatted = _project_formatted(
+        formatted if isinstance(formatted, Mapping) else {},
+        canonical["formatted"],
+    )
     execution = result.get("execution")
-    if isinstance(execution, Mapping):
-        for key in merged_execution:
-            if key in execution:
-                merged_execution[key] = execution[key]
-        tracking = execution.get("tracking")
-        if isinstance(tracking, Mapping):
-            merged_execution["tracking"] = {
-                **canonical["execution"]["tracking"],
-                **dict(tracking),
-            }
+    merged_execution = _project_execution(
+        execution if isinstance(execution, Mapping) else {},
+        canonical["execution"],
+    )
     if task_ids and not merged_execution.get("tasks"):
         merged_execution["tasks"] = [
             {"id": task_id, "accepted": True} for task_id in task_ids
         ]
-    if not merged_execution.get("output_dirs") and isinstance(
-        merged_formatted.get("output_dirs"), list
-    ):
-        merged_execution["output_dirs"] = list(merged_formatted["output_dirs"])
     return {
         "formatted": merged_formatted,
         "execution": merged_execution,
     }
+
+
+_METADATA_SCALAR_KEYS = frozenset(
+    {
+        "query",
+        "original_query",
+        "species",
+        "species_code",
+        "gene",
+        "gene_id",
+        "resolved_gene_id",
+        "resolved_species_code",
+        "resolve_gene_id",
+        "resolve_to_id",
+        "degraded",
+        "degraded_tracking",
+        "status",
+    }
+)
+_REFERENCE_KEYS = (
+    "file_id",
+    "title",
+    "au",
+    "ti",
+    "so",
+    "vl",
+    "bp",
+    "ep",
+    "py",
+    "di",
+    "dl",
+    "pm",
+)
+
+
+def _is_safe_scalar(value: Any) -> bool:
+    """Return whether a value can cross the public lifecycle boundary."""
+    return isinstance(value, (str, int, float, bool)) or value is None
+
+
+def _project_scalar_fields(
+    source: Mapping[str, Any], keys: Iterable[str]
+) -> dict[str, Any]:
+    """Copy only explicit scalar fields from an untrusted mapping."""
+    return {
+        key: source[key]
+        for key in keys
+        if key in source and _is_safe_scalar(source[key])
+    }
+
+
+def _project_record_list(
+    value: Any, keys: Sequence[str]
+) -> list[dict[str, Any]]:
+    """Project a list of records with no arbitrary nested values."""
+    if not isinstance(value, list):
+        return []
+    return [
+        _project_scalar_fields(item, keys)
+        for item in value
+        if isinstance(item, Mapping)
+    ]
+
+
+def _project_string_list(value: Any) -> list[str]:
+    """Keep only public string values from an untrusted list."""
+    return (
+        [item for item in value if isinstance(item, str)]
+        if isinstance(value, list)
+        else []
+    )
+
+
+def _project_tabular(value: Any) -> dict[str, Any]:
+    """Preserve table headers and scalar rows without nested records."""
+    if not isinstance(value, Mapping):
+        return {}
+    projected: dict[str, Any] = {}
+    headers = value.get("headers")
+    if isinstance(headers, list) and all(
+        _is_safe_scalar(item) for item in headers
+    ):
+        projected["headers"] = list(headers)
+    rows = value.get("rows")
+    if isinstance(rows, list) and all(
+        isinstance(row, list) and all(_is_safe_scalar(cell) for cell in row)
+        for row in rows
+    ):
+        projected["rows"] = [list(row) for row in rows]
+    return projected
+
+
+def _project_formatted(
+    formatted: Mapping[str, Any], defaults: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Project the display envelope through its explicit public allowlist."""
+    answer = formatted.get("answer")
+    follow_up = formatted.get("follow_up_questions")
+    metadata = formatted.get("metadata")
+    return {
+        "answer": answer if isinstance(answer, str) else defaults["answer"],
+        "follow_up_questions": _project_string_list(follow_up),
+        "references": _project_record_list(
+            formatted.get("references"), _REFERENCE_KEYS
+        ),
+        "tabular": _project_tabular(formatted.get("tabular")),
+        "metadata": (
+            _project_scalar_fields(metadata, _METADATA_SCALAR_KEYS)
+            if isinstance(metadata, Mapping)
+            else {}
+        ),
+    }
+
+
+def _project_execution(
+    execution: Mapping[str, Any], defaults: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Project lifecycle execution metadata through nested allowlists."""
+    tracking = execution.get("tracking")
+    degraded = (
+        tracking.get("degraded")
+        if isinstance(tracking, Mapping)
+        and isinstance(tracking.get("degraded"), bool)
+        else defaults["tracking"]["degraded"]
+    )
+    report = execution.get("report")
+    return {
+        "tracking": {"degraded": degraded},
+        "warnings": _project_record_list(
+            execution.get("warnings"),
+            ("code", "stage", "retryable", "count", "rejected_count"),
+        ),
+        "tasks": _project_record_list(
+            execution.get("tasks"),
+            ("id", "accepted", "status", "output_dir"),
+        ),
+        "artifacts": _project_record_list(
+            execution.get("artifacts"),
+            (
+                "id",
+                "role",
+                "name",
+                "mime_type",
+                "size_bytes",
+                "output_dir",
+                "uri",
+            ),
+        ),
+        "output_dirs": _project_string_list(execution.get("output_dirs")),
+        "report": (
+            _project_scalar_fields(
+                report,
+                (
+                    "role",
+                    "state",
+                    "artifact_id",
+                    "mime_type",
+                    "size_bytes",
+                    "output_dir",
+                    "uri",
+                ),
+            )
+            if isinstance(report, Mapping)
+            else None
+        ),
+        "diagnostics": _project_record_list(
+            execution.get("diagnostics"), ("code", "stage", "retryable")
+        ),
+    }
+
+
+def _project_interrupt_surface(interrupt: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep only a nonblank thread id and a validated generic A2UI draft."""
+    draft = interrupt.get("draft")
+    surface = draft.get("a2ui") if isinstance(draft, Mapping) else None
+    if not isinstance(surface, Mapping):
+        raise LifecycleInvariantError(
+            SafeErrorCode.INPUT_REQUIRED_WITHOUT_SURFACE
+        )
+    try:
+        validate_a2ui_surface(surface)
+    except A2uiSurfaceValidationError as exc:
+        raise LifecycleInvariantError(
+            SafeErrorCode.INPUT_REQUIRED_WITHOUT_SURFACE
+        ) from exc
+    projected: dict[str, Any] = {"draft": {"a2ui": dict(surface)}}
+    thread_id = interrupt.get("thread_id")
+    if isinstance(thread_id, str) and thread_id.strip():
+        projected["thread_id"] = thread_id
+    return projected

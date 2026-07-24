@@ -101,7 +101,7 @@ def test_persisted_running_record_requires_recoverable_identity() -> None:
 def test_persisted_record_redacts_error_and_result_details(
     status: str, expected_error: str | None
 ) -> None:
-    """Persisted terminal reads keep only the safe canonical projection."""
+    """Persisted terminal reads deeply project nested public fields."""
     projected = canonicalize_run_record(
         {
             "run_id": f"run-{status}",
@@ -112,8 +112,78 @@ def test_persisted_record_redacts_error_and_result_details(
             "result": {
                 "provider_trace": "private",
                 "raw": {"path": "/srv/private"},
+                "formatted": {
+                    "answer": "public answer",
+                    "follow_up_questions": ["next?"],
+                    "references": [
+                        {
+                            "file_id": "doc-1",
+                            "title": "Public title",
+                            "di": "10.1/example",
+                            "provider_payload": {"secret": "private"},
+                        }
+                    ],
+                    "tabular": {
+                        "headers": ["gene", "score"],
+                        "rows": [["AT1G01010", 0.9]],
+                        "provider_trace": "private",
+                    },
+                    "metadata": {
+                        "original_query": "public query",
+                        "provider_payload": {"secret": "private"},
+                    },
+                },
                 "execution": {
-                    "artifacts": [{"name": "result.tsv"}],
+                    "tracking": {
+                        "degraded": False,
+                        "provider_payload": {"secret": "private"},
+                    },
+                    "warnings": [
+                        {
+                            "code": "partial",
+                            "stage": "projection",
+                            "retryable": False,
+                            "count": 1,
+                            "exception": "private",
+                        }
+                    ],
+                    "tasks": [
+                        {
+                            "id": "task-1",
+                            "accepted": True,
+                            "status": "succeeded",
+                            "provider_trace": "private",
+                        }
+                    ],
+                    "artifacts": [
+                        {
+                            "role": "scientific_table",
+                            "name": "result.tsv",
+                            "mime_type": "text/tab-separated-values",
+                            "size_bytes": 42,
+                            "provider_payload": {"trace": "private"},
+                        }
+                    ],
+                    "output_dirs": [
+                        "/obs/public/result",
+                        {"private": "value"},
+                    ],
+                    "report": {
+                        "role": "scientific_report",
+                        "state": "complete",
+                        "artifact_id": "report-safe",
+                        "mime_type": "application/json",
+                        "size_bytes": 12,
+                        "provider_trace": "private",
+                    },
+                    "diagnostics": [
+                        {
+                            "code": "upstream_partial",
+                            "stage": "analysis",
+                            "retryable": False,
+                            "provider_trace": "private",
+                        }
+                    ],
                     "provider_payload": {"trace": "private"},
                 },
             },
@@ -121,10 +191,64 @@ def test_persisted_record_redacts_error_and_result_details(
     )
 
     assert projected["result"] == {
-        "formatted": empty_agent_result()["formatted"],
+        "formatted": {
+            "answer": "public answer",
+            "follow_up_questions": ["next?"],
+            "references": [
+                {
+                    "file_id": "doc-1",
+                    "title": "Public title",
+                    "di": "10.1/example",
+                }
+            ],
+            "tabular": {
+                "headers": ["gene", "score"],
+                "rows": [["AT1G01010", 0.9]],
+            },
+            "metadata": {
+                "original_query": "public query",
+            },
+        },
         "execution": {
-            **empty_agent_result()["execution"],
-            "artifacts": [{"name": "result.tsv"}],
+            "tracking": {"degraded": False},
+            "warnings": [
+                {
+                    "code": "partial",
+                    "stage": "projection",
+                    "retryable": False,
+                    "count": 1,
+                }
+            ],
+            "tasks": [
+                {
+                    "id": "task-1",
+                    "accepted": True,
+                    "status": "succeeded",
+                }
+            ],
+            "artifacts": [
+                {
+                    "role": "scientific_table",
+                    "name": "result.tsv",
+                    "mime_type": "text/tab-separated-values",
+                    "size_bytes": 42,
+                }
+            ],
+            "output_dirs": ["/obs/public/result"],
+            "report": {
+                "role": "scientific_report",
+                "state": "complete",
+                "artifact_id": "report-safe",
+                "mime_type": "application/json",
+                "size_bytes": 12,
+            },
+            "diagnostics": [
+                {
+                    "code": "upstream_partial",
+                    "stage": "analysis",
+                    "retryable": False,
+                }
+            ],
         },
     }
     if expected_error is None:
