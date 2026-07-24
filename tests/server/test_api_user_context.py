@@ -22,8 +22,12 @@ from tests.support.config_fakes import fake_scratch_config
 from mcp_server_phytomni.api.app import request_context_middleware
 from mcp_server_phytomni.mcp import handlers as mcp_handlers
 from mcp_server_phytomni.runtime.request_context import (
+    bind_accepted_task_ids,
     bind_pre_recorded_task_id,
+    bind_recorder_degraded,
+    current_accepted_task_ids,
     current_pre_recorded_task_id,
+    current_recorder_degraded,
     current_request_id,
     current_request_user,
     request_context,
@@ -105,13 +109,22 @@ async def test_error_envelope_carries_request_id(
 
 
 async def test_http_middleware_resets_pre_recorded_task_marker() -> None:
-    """A task marker bound by one HTTP request cannot leak to its caller."""
-    observed: list[str | None] = []
+    """Remote tracking state from one HTTP request cannot leak to another."""
+    observed: list[tuple[str | None, tuple[str, ...], bool]] = []
 
     async def downstream(scope: Scope, receive: Receive, send: Send) -> None:
-        del scope, receive
-        observed.append(current_pre_recorded_task_id())
-        bind_pre_recorded_task_id("task-request")
+        del receive
+        observed.append(
+            (
+                current_pre_recorded_task_id(),
+                current_accepted_task_ids(),
+                current_recorder_degraded(),
+            )
+        )
+        if scope["path"] == "/owners/alice":
+            bind_pre_recorded_task_id("task-alice")
+            bind_accepted_task_ids(("task-alice", "task-alice"))
+            bind_recorder_degraded(True)
         await send(
             {"type": "http.response.start", "status": 200, "headers": []}
         )
@@ -124,9 +137,21 @@ async def test_http_middleware_resets_pre_recorded_task_marker() -> None:
     async def send(message: Message) -> None:
         sent.append(message)
 
-    scope = cast(Scope, {"type": "http", "method": "GET", "path": "/"})
-    await request_context_middleware(downstream)(scope, receive, send)
+    middleware = request_context_middleware(downstream)
+    alice_scope = cast(
+        Scope, {"type": "http", "method": "GET", "path": "/owners/alice"}
+    )
+    bob_scope = cast(
+        Scope, {"type": "http", "method": "GET", "path": "/owners/bob"}
+    )
+    await middleware(alice_scope, receive, send)
+    await middleware(bob_scope, receive, send)
 
-    assert observed == [None]
-    assert sent[0]["type"] == "http.response.start"
+    assert observed == [(None, (), False), (None, (), False)]
+    assert [message["type"] for message in sent] == [
+        "http.response.start",
+        "http.response.start",
+    ]
     assert current_pre_recorded_task_id() is None
+    assert current_accepted_task_ids() == ()
+    assert current_recorder_degraded() is False

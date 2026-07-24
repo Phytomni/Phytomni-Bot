@@ -40,7 +40,9 @@ from ..interop.registry import InteropRegistry
 from ..mcp.result_formatting import strip_agent_result
 from ..runtime.memory import MemoryWrite
 from ..runtime.request_context import (
+    bind_accepted_task_ids,
     bind_pre_recorded_task_id,
+    bind_recorder_degraded,
     bind_request_id,
     bind_request_user,
     bind_run_id,
@@ -180,6 +182,8 @@ def request_context_middleware(app: ASGIApp) -> ASGIApp:
         user_token = bind_request_user(None)
         run_token = bind_run_id(None)
         pre_recorded_token = bind_pre_recorded_task_id(None)
+        accepted_task_ids_token = bind_accepted_task_ids(())
+        degraded_token = bind_recorder_degraded(False)
 
         async def send_with_header(message: Message) -> None:
             """Attach X-Request-Id on the response start event."""
@@ -191,6 +195,8 @@ def request_context_middleware(app: ASGIApp) -> ASGIApp:
         try:
             await app(scope, receive, send_with_header)
         finally:
+            reset_request_var(degraded_token)
+            reset_request_var(accepted_task_ids_token)
             reset_request_var(pre_recorded_token)
             reset_request_var(run_token)
             reset_request_var(user_token)

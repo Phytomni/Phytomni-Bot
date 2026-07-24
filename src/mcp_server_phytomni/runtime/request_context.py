@@ -112,10 +112,12 @@ def bind_pre_recorded_task_id(task_id: str | None) -> Token[str | None]:
     return _pre_recorded_task_id.set(task_id)
 
 
-def bind_accepted_task_ids(task_ids: tuple[str, ...]) -> None:
-    """Bind de-duplicated accepted upstream task ids to this request."""
+def bind_accepted_task_ids(
+    task_ids: tuple[str, ...],
+) -> Token[tuple[str, ...]]:
+    """Bind de-duplicated accepted task ids and return a reset token."""
     clean = tuple(dict.fromkeys(value for value in task_ids if value.strip()))
-    _accepted_task_ids.set(clean)
+    return _accepted_task_ids.set(clean)
 
 
 def current_recorder_degraded() -> bool:
@@ -182,7 +184,7 @@ def request_context(
     run_token = bind_run_id(run_id)
     pre_recorded_token = bind_pre_recorded_task_id(None)
     degraded_token = bind_recorder_degraded(False)
-    accepted_task_ids_token = _accepted_task_ids.set(())
+    accepted_task_ids_token = bind_accepted_task_ids(())
     try:
         yield
     finally:
