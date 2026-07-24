@@ -16,7 +16,7 @@ import asyncio
 import logging
 import sqlite3
 import threading
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -53,6 +53,7 @@ __all__ = [
     "reconcile_run_task_logs",
     "record_sync_run",
     "release_run_gc",
+    "ResolvedRemoteRun",
     "resolve_remote_run",
     "schedule_run_gc",
     "settle_stream_run",
@@ -91,6 +92,16 @@ class RunListQuery:
     run_filter: RunFilter = RunFilter()
     limit: int = 50
     offset: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedRemoteRun:
+    """Owner-scoped durable and request-local remote run identity."""
+
+    run_id: str | None
+    task_ids: tuple[str, ...]
+    persisted: bool
+    degraded_tracking: bool
 
 
 def _database_path(db_path: str | None) -> str:
@@ -332,15 +343,32 @@ def resolve_remote_run(
     owner: str,
     *,
     run_id: str | None,
+    accepted_task_ids: Sequence[str],
+    recorder_degraded: bool,
     db_path: str | None = None,
-) -> tuple[str | None, list[str]]:
-    """Return a chokepoint-bound run id and its owner-scoped task ids."""
+) -> ResolvedRemoteRun:
+    """Resolve durable identity without losing accepted upstream work."""
     if run_id is None:
-        return None, []
+        return ResolvedRemoteRun(
+            run_id=None,
+            task_ids=tuple(accepted_task_ids),
+            persisted=False,
+            degraded_tracking=recorder_degraded,
+        )
     record = RunRegistry(_database_path(db_path)).get_run(run_id, owner=owner)
     if record is None:
-        return run_id, []
-    return run_id, list(record.task_ids)
+        return ResolvedRemoteRun(
+            run_id=None,
+            task_ids=tuple(accepted_task_ids),
+            persisted=False,
+            degraded_tracking=True,
+        )
+    return ResolvedRemoteRun(
+        run_id=run_id,
+        task_ids=tuple(record.task_ids),
+        persisted=True,
+        degraded_tracking=False,
+    )
 
 
 def record_sync_run(

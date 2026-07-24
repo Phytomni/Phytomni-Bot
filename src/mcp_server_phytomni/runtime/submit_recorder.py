@@ -21,6 +21,7 @@ from typing import Any
 
 from ..storage.path_policy import IdFactory
 from .request_context import (
+    bind_accepted_task_ids,
     bind_recorder_degraded,
     bind_run_id,
     current_pre_recorded_task_id,
@@ -150,17 +151,16 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
     ``logger.exception`` so operators can diagnose the persistence
     issue from logs, and (2) sets the ``recorder_degraded`` request
     contextvar so the HTTP layer can surface the degraded-tracking
-    state to the client rather than letting it look like a legitimate
-    degraded-tracking ``id=None`` / ``task_ids=[]`` fallback.
+    state to the client. Accepted upstream task ids are bound before
+    local persistence so the HTTP layer can still return real work
+    identities when that write fails.
 
     The chokepoint binds the freshly-minted ``run_id`` to the request
     contextvar **only after** every child task row has been written,
     so a half-failed record never surfaces a run id without its task
-    ids — the HTTP layer then sees ``current_run_id() is None`` and
-    returns ``(None, [])``. The companion ``current_recorder_degraded``
-    flag marks this as a persistence failure so the HTTP body includes
-    ``degraded_tracking: True``; that is the ONLY path that produces
-    ``id=null`` in the response.
+    ids. The companion ``current_recorder_degraded`` flag marks this as
+    a persistence failure while ``current_accepted_task_ids`` preserves
+    the accepted upstream identities.
 
     The ``if result.get("dedup_hit") is True: return`` guard below is
     a defensive early-exit: no production wrapper currently sets this
@@ -186,6 +186,8 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
     submissions = extract_task_submissions(result, agent)
     if not submissions:
         return
+    accepted_task_ids = tuple(task_id for task_id, *_rest in submissions)
+    bind_accepted_task_ids(accepted_task_ids)
     if (
         agent == "deep_genome"
         and current_run_id() is not None

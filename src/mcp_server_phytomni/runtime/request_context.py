@@ -2,14 +2,14 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Per-request user, request-id, run-id, and recorder-state context.
+"""Per-request identity and recorder-state context.
 
 Functions enumerated in ``__all__``. MCP stdio binds none of these
 (getters return their defaults); the run-id slot carries the submit
 chokepoint's freshly-minted run_id forward to the HTTP response
-builder, and the recorder-degraded slot flags a silent local-registry
-persistence failure — now the only path that emits ``id=None`` /
-``task_ids=[]``, since a dedup hit returns the caller's own run id.
+builder. Accepted task ids preserve upstream submission identity even
+when local persistence fails, while the recorder-degraded slot marks
+that failure for the HTTP response.
 """
 
 from __future__ import annotations
@@ -20,11 +20,13 @@ from contextvars import ContextVar, Token
 from typing import Any
 
 __all__ = [
+    "bind_accepted_task_ids",
     "bind_recorder_degraded",
     "bind_request_id",
     "bind_request_user",
     "bind_pre_recorded_task_id",
     "bind_run_id",
+    "current_accepted_task_ids",
     "current_recorder_degraded",
     "current_request_id",
     "current_request_user",
@@ -48,6 +50,9 @@ _pre_recorded_task_id: ContextVar[str | None] = ContextVar(
 )
 _recorder_degraded: ContextVar[bool] = ContextVar(
     "phytomni_recorder_degraded", default=False
+)
+_accepted_task_ids: ContextVar[tuple[str, ...]] = ContextVar(
+    "phytomni_accepted_task_ids", default=()
 )
 
 
@@ -77,6 +82,11 @@ def current_pre_recorded_task_id() -> str | None:
     return _pre_recorded_task_id.get()
 
 
+def current_accepted_task_ids() -> tuple[str, ...]:
+    """Return accepted upstream task ids for the current request."""
+    return _accepted_task_ids.get()
+
+
 def bind_request_user(user_id: str | None) -> Token[str | None]:
     """Bind the request user id and return a reset token."""
     return _request_user.set(user_id)
@@ -102,6 +112,12 @@ def bind_pre_recorded_task_id(task_id: str | None) -> Token[str | None]:
     return _pre_recorded_task_id.set(task_id)
 
 
+def bind_accepted_task_ids(task_ids: tuple[str, ...]) -> None:
+    """Bind de-duplicated accepted upstream task ids to this request."""
+    clean = tuple(dict.fromkeys(value for value in task_ids if value.strip()))
+    _accepted_task_ids.set(clean)
+
+
 def current_recorder_degraded() -> bool:
     """Return whether the submit chokepoint hit a persistence failure.
 
@@ -112,10 +128,8 @@ def current_recorder_degraded() -> bool:
     (``current_run_id() is None``, ``RunRegistry.get_run`` returns
     ``None``) so a client polling ``GET /v1/runs/{id}`` would see a
     permanent ``404``. Setting this flag lets the HTTP layer mark the
-    202 body ``degraded_tracking: true`` and emit ``id=None`` /
-    ``task_ids=[]`` deliberately — the only path that now yields that
-    shape, since an analyst dedup hit flows through the normal recorder
-    and returns the caller's own run id and fresh task id.
+    202 body ``degraded_tracking: true`` while preserving the accepted
+    upstream task ids, even though no durable local run id is available.
     """
     return _recorder_degraded.get()
 
@@ -157,7 +171,8 @@ def request_context(
             by the chokepoint inside the block.
 
     Yields:
-        None while all five contextvars are bound. The
+        None while all request contextvars are bound. Accepted task ids
+        are seeded to an empty tuple and the
         recorder-degraded flag is always seeded to ``False`` at entry
         so a chokepoint failure can only flag the current request,
         never inherit a stale ``True`` from an earlier one.
@@ -167,9 +182,11 @@ def request_context(
     run_token = bind_run_id(run_id)
     pre_recorded_token = bind_pre_recorded_task_id(None)
     degraded_token = bind_recorder_degraded(False)
+    accepted_task_ids_token = _accepted_task_ids.set(())
     try:
         yield
     finally:
+        reset_request_var(accepted_task_ids_token)
         reset_request_var(degraded_token)
         reset_request_var(pre_recorded_token)
         reset_request_var(run_token)

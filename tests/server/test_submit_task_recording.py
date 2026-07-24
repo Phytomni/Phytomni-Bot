@@ -16,6 +16,7 @@ from __future__ import annotations
 import sqlite3
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from tests.support.sqlite import closed_sqlite_connection
@@ -31,8 +32,10 @@ from mcp_server_phytomni.runtime import (
     submit_recorder as submit_recorder_module,
 )
 from mcp_server_phytomni.runtime.request_context import (
+    current_accepted_task_ids,
     current_recorder_degraded,
     current_run_id,
+    request_context,
 )
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import (
@@ -462,6 +465,31 @@ def test_record_logs_and_flags_degraded_on_persistence_failure(
     assert "Failed to persist remote submission" in rendered_msg
     assert "analyst" in rendered_args
     assert 1 in rendered_args  # task_count payload arg
+
+
+def test_recorder_keeps_accepted_ids_when_registry_fails(
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Accepted upstream ids survive a local registry persistence failure."""
+    _ = tasks_db_path
+    monkeypatch.setattr(
+        submit_recorder_module.RunRegistry,
+        "create_run",
+        Mock(side_effect=sqlite3.OperationalError("closed")),
+    )
+
+    with request_context(user_id="user-1", request_id="request-1"):
+        record_submitted_task(
+            {"task_id": "accepted-1", "output_dir": "tenant/out"},
+            agent="analyst",
+        )
+
+        assert current_run_id() is None
+        assert current_accepted_task_ids() == ("accepted-1",)
+        assert current_recorder_degraded() is True
+
+    assert current_accepted_task_ids() == ()
 
 
 def test_record_dedup_hit_without_prior_does_not_bind_or_write(

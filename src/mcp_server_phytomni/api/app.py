@@ -45,6 +45,7 @@ from ..mcp.result_formatting import (
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
 from ..runtime import task_reconcile as _task_reconcile
 from ..runtime.request_context import (
+    current_accepted_task_ids,
     current_recorder_degraded,
     current_request_user,
     current_run_id,
@@ -84,6 +85,10 @@ from .compat import (
     _resume_paused_run,
     _stream_chat_completion,
     _stream_review_a2ui_pause,
+)
+from .lifecycle_contract import (
+    build_agent_run_response,
+    empty_agent_result,
 )
 from .openai_mapping import (
     to_chat_completion,
@@ -315,20 +320,24 @@ def _remote_agent_run_response(
     response_result: dict[str, Any],
 ) -> tuple[dict[str, Any], int]:
     """Shape the 202 submission response and expose tracking degradation."""
-    run_id, task_ids = _resolve_remote_run(owner)
+    resolved = _resolve_remote_run(owner)
     _stamp_remote_request_info(
-        run_id=run_id, owner=owner, request_info=request_info
+        run_id=resolved.run_id, owner=owner, request_info=request_info
     )
-    body: dict[str, Any] = {
-        "id": run_id,
-        "object": "agent.run",
-        "agent": agent,
-        "status": "running",
-        "task_ids": task_ids,
-        "result": response_result,
-    }
-    if current_recorder_degraded():
-        body["degraded_tracking"] = True
+    result = (
+        empty_agent_result(degraded=True)
+        if resolved.degraded_tracking
+        else response_result
+    )
+    body = build_agent_run_response(
+        run_id=resolved.run_id,
+        agent=agent,
+        status="running",
+        task_ids=resolved.task_ids,
+        result=result,
+        persisted=resolved.persisted,
+        degraded_tracking=resolved.degraded_tracking,
+    )
     return body, 202
 
 
@@ -434,11 +443,13 @@ async def _invoke_agent_run(
     )
 
 
-def _resolve_remote_run(owner: str) -> tuple[str | None, list[str]]:
+def _resolve_remote_run(owner: str) -> run_lifecycle.ResolvedRemoteRun:
     """Compatibility seam for remote-run context recovery."""
     return run_lifecycle.resolve_remote_run(
         owner,
         run_id=current_run_id(),
+        accepted_task_ids=current_accepted_task_ids(),
+        recorder_degraded=current_recorder_degraded(),
         db_path=resolve_tasks_db_path(),
     )
 
