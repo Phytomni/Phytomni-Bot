@@ -20,6 +20,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from ..agents.shared.a2ui.validation import (
+    A2uiSurfaceValidationError,
+    validate_a2ui_surface,
+)
 from .sqlite import sqlite_transaction
 from .submission_outcome import project_submission_warnings
 from .task_manager import (
@@ -43,6 +47,11 @@ from .terminal_report import (
 
 __all__ = [
     "A2ACorrelation",
+    "A2UIActionAudit",
+    "A2UIActionClaim",
+    "A2UIActionConflict",
+    "A2UIActionIdentity",
+    "A2UIActionInvariantError",
     "RunFilter",
     "RunRecord",
     "RunRegistry",
@@ -140,11 +149,65 @@ _CREATE_A2A_TASK_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_runs_a2a_task_user "
     "ON runs(a2a_task_id, user_id)"
 )
+_CREATE_A2UI_ACTIONS_DDL = """
+CREATE TABLE IF NOT EXISTS run_a2ui_actions (
+    run_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    surface_id TEXT NOT NULL,
+    widget TEXT NOT NULL,
+    action_id TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    claimed_at TEXT NOT NULL,
+    completed_at TEXT,
+    PRIMARY KEY (run_id, surface_id),
+    FOREIGN KEY (run_id) REFERENCES runs(run_id)
+)
+"""
+_CREATE_A2UI_OWNER_ACTION_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_run_a2ui_actions_owner_action "
+    "ON run_a2ui_actions(user_id, action_id)"
+)
 
 
 def _now_iso() -> str:
     """Return the current UTC time as an ISO-8601 string."""
     return datetime.now(UTC).isoformat()
+
+
+def _surface_identity_from_result(
+    result_json: str | None,
+) -> tuple[str, str]:
+    """Extract and validate the open A2UI surface from a run result.
+
+    The persisted result is an invariant boundary: malformed JSON or an
+    invalid surface means the run cannot safely accept a new action. Such a
+    row must fail loudly instead of being treated as an ordinary conflict.
+    """
+    try:
+        result = json.loads(result_json or "")
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise A2UIActionInvariantError(
+            "persisted input request is not valid JSON"
+        ) from exc
+    if not isinstance(result, Mapping):
+        raise A2UIActionInvariantError(
+            "persisted input request result is not an object"
+        )
+    interrupt = result.get("interrupt")
+    draft = interrupt.get("draft") if isinstance(interrupt, Mapping) else None
+    surface = draft.get("a2ui") if isinstance(draft, Mapping) else None
+    if not isinstance(surface, Mapping):
+        raise A2UIActionInvariantError(
+            "persisted input request has no A2UI surface"
+        )
+    try:
+        validated = validate_a2ui_surface(surface)
+    except (A2uiSurfaceValidationError, TypeError, ValueError) as exc:
+        raise A2UIActionInvariantError(
+            "persisted input request has an invalid A2UI surface"
+        ) from exc
+    return validated.surface_id, validated.widget
 
 
 def _aggregate_status(task_statuses: list[str]) -> str:
@@ -187,6 +250,70 @@ class A2ACorrelation:
     task_id: str | None = None
     context_id: str | None = None
     message_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class A2UIActionClaim:
+    """Identity of the first uplink accepted for one paused surface."""
+
+    run_id: str
+    surface_id: str
+    widget: str
+    action_id: str
+    channel: str
+
+
+@dataclass(frozen=True, slots=True)
+class A2UIActionIdentity:
+    """Stable identity fields shared by a claim and its audit row."""
+
+    run_id: str
+    surface_id: str
+    widget: str
+    action_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class A2UIActionAudit:
+    """Safe audit projection for one claimed A2UI action.
+
+    The projection intentionally omits the submitted action payload. The
+    owner is supplied to the reader as a namespace constraint.
+    """
+
+    identity: A2UIActionIdentity
+    channel: str
+    outcome: str
+    claimed_at: str
+    completed_at: str | None
+
+    @property
+    def run_id(self) -> str:
+        """Return the audited run id."""
+        return self.identity.run_id
+
+    @property
+    def surface_id(self) -> str:
+        """Return the audited surface id."""
+        return self.identity.surface_id
+
+    @property
+    def widget(self) -> str:
+        """Return the audited widget kind."""
+        return self.identity.widget
+
+    @property
+    def action_id(self) -> str:
+        """Return the audited action id."""
+        return self.identity.action_id
+
+
+class A2UIActionConflict(RuntimeError):  # noqa: N818
+    """Raised when the current pause is absent, mismatched, or claimed."""
+
+
+class A2UIActionInvariantError(RuntimeError):
+    """Raised when persisted input-required data violates its invariant."""
 
 
 @dataclass(frozen=True)
@@ -360,6 +487,8 @@ class RunRegistry:
             conn.execute(_CREATE_RUNS_USER_INDEX)
             conn.execute(_CREATE_TASKS_RUN_INDEX)
             conn.execute(_CREATE_A2A_TASK_INDEX)
+            conn.execute(_CREATE_A2UI_ACTIONS_DDL)
+            conn.execute(_CREATE_A2UI_OWNER_ACTION_INDEX)
             conn.commit()
         finally:
             conn.close()
@@ -530,6 +659,164 @@ class RunRegistry:
                 ),
             )
             return cursor.rowcount > 0
+
+    def claim_a2ui_action(
+        self,
+        *,
+        run_id: str,
+        owner: str,
+        **action: str,
+    ) -> A2UIActionClaim:
+        """Atomically claim the current A2UI surface for one uplink.
+
+        The write lock is acquired before reading the run row. This makes
+        the primary key on ``(run_id, surface_id)`` a cross-process
+        compare-and-set gate rather than a process-local best effort.
+
+        ``surface_id``, ``widget``, ``action_id``, and ``channel`` remain
+        required keyword arguments at the public call boundary. They are
+        collected here so the storage method stays below the repository's
+        argument-count limit while preserving the established call shape.
+        """
+        try:
+            surface_id = action.pop("surface_id")
+            widget = action.pop("widget")
+            action_id = action.pop("action_id")
+            channel = action.pop("channel")
+        except KeyError as exc:
+            raise TypeError(
+                f"missing required A2UI action field: {exc.args[0]}"
+            ) from exc
+        if action:
+            unexpected = next(iter(action))
+            raise TypeError(f"unexpected A2UI action field: {unexpected}")
+        conn = sqlite3.connect(self.db_path, isolation_level=None)
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT status, result_json
+                FROM runs
+                WHERE run_id = ? AND user_id = ?
+                """,
+                (run_id, owner),
+            ).fetchone()
+            if row is None or row[0] != "input_required":
+                conn.rollback()
+                raise A2UIActionConflict("run is not awaiting input")
+            open_surface = _surface_identity_from_result(row[1])
+            if open_surface != (surface_id, widget):
+                conn.rollback()
+                raise A2UIActionConflict("surface does not match open pause")
+            try:
+                conn.execute(
+                    """
+                    INSERT INTO run_a2ui_actions (
+                        run_id, user_id, surface_id, widget, action_id,
+                        channel, outcome, claimed_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'claimed', ?)
+                    """,
+                    (
+                        run_id,
+                        owner,
+                        surface_id,
+                        widget,
+                        action_id,
+                        channel,
+                        _now_iso(),
+                    ),
+                )
+            except sqlite3.IntegrityError as exc:
+                conn.rollback()
+                raise A2UIActionConflict(
+                    "surface has already been claimed"
+                ) from exc
+            conn.commit()
+        except BaseException:
+            if conn.in_transaction:
+                conn.rollback()
+            raise
+        finally:
+            conn.close()
+        return A2UIActionClaim(
+            run_id=run_id,
+            surface_id=surface_id,
+            widget=widget,
+            action_id=action_id,
+            channel=channel,
+        )
+
+    def complete_a2ui_action(
+        self,
+        claim: A2UIActionClaim,
+        *,
+        owner: str,
+        outcome: str,
+    ) -> bool:
+        """Complete an owned claim exactly once.
+
+        A completed audit row is immutable from the caller's perspective:
+        retries return ``False`` and cannot replace the first completion.
+        """
+        if outcome not in {"succeeded", "input_required", "failed"}:
+            raise ValueError("invalid a2ui action outcome")
+        with sqlite_transaction(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE run_a2ui_actions
+                SET outcome = ?, completed_at = ?
+                WHERE run_id = ? AND user_id = ? AND surface_id = ?
+                  AND action_id = ? AND outcome = 'claimed'
+                """,
+                (
+                    outcome,
+                    _now_iso(),
+                    claim.run_id,
+                    owner,
+                    claim.surface_id,
+                    claim.action_id,
+                ),
+            )
+            return cursor.rowcount == 1
+
+    def list_a2ui_actions(
+        self,
+        *,
+        owner: str,
+        run_id: str | None = None,
+    ) -> list[A2UIActionAudit]:
+        """Return safe, owner-scoped A2UI action audit projections."""
+        clauses = ["user_id = ?"]
+        parameters: list[str] = [owner]
+        if run_id is not None:
+            clauses.append("run_id = ?")
+            parameters.append(run_id)
+        where = " AND ".join(clauses)
+        with sqlite_transaction(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """
+                SELECT run_id, surface_id, widget, action_id, channel,
+                       outcome, claimed_at, completed_at
+                FROM run_a2ui_actions
+                WHERE """ + where + " ORDER BY claimed_at ASC",
+                parameters,
+            ).fetchall()
+        return [
+            A2UIActionAudit(
+                identity=A2UIActionIdentity(
+                    run_id=row["run_id"],
+                    surface_id=row["surface_id"],
+                    widget=row["widget"],
+                    action_id=row["action_id"],
+                ),
+                channel=row["channel"],
+                outcome=row["outcome"],
+                claimed_at=row["claimed_at"],
+                completed_at=row["completed_at"],
+            )
+            for row in rows
+        ]
 
     def get_run(self, run_id: str, *, owner: str) -> RunRecord | None:
         """Return the run owned by ``owner`` or ``None``.

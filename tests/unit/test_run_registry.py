@@ -19,6 +19,8 @@ from tests.support.run_registry_fakes import stamp_run_created_at
 from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.runtime.run_registry import (
+    A2UIActionConflict,
+    A2UIActionInvariantError,
     RunFilter,
     RunOutcome,
     RunRecord,
@@ -72,6 +74,37 @@ def _seed_async_run(
     registry.create_run(spec)
 
 
+def _create_paused_review(
+    registry: RunRegistry,
+    *,
+    surface_id: str,
+) -> None:
+    """Insert a valid Review pause for A2UI claim tests."""
+    registry.create_run(
+        RunSpec("run-review-1", "user-1", "review", "local"),
+        outcome=RunOutcome(
+            status="input_required",
+            result={
+                "interrupt": {
+                    "thread_id": "run-review-1",
+                    "draft": {
+                        "a2ui": {
+                            "catalog_version": "v1.0",
+                            "surface_id": surface_id,
+                            "widget": "confirm",
+                            "props": {
+                                "title": "Review approval",
+                                "body": "Proceed?",
+                            },
+                        }
+                    },
+                },
+                "status": "input_required",
+            },
+        ),
+    )
+
+
 def test_init_db_creates_runs_table_and_indices(tmp_path: Path) -> None:
     """The registry creates the runs table and shared indices."""
     db = str(tmp_path / "tasks.db")
@@ -97,6 +130,152 @@ def test_init_db_creates_runs_table_and_indices(tmp_path: Path) -> None:
     assert "runs" in tables
     assert "idx_runs_user" in indices
     assert "idx_tasks_run" in indices
+    assert "run_a2ui_actions" in tables
+    assert "idx_run_a2ui_actions_owner_action" in indices
+
+
+def test_only_one_registry_instance_claims_surface(tmp_path: Path) -> None:
+    """The database CAS rejects a second process's claim."""
+    db_path = str(tmp_path / "tasks.db")
+    first = RunRegistry(db_path)
+    second = RunRegistry(db_path)
+    _create_paused_review(first, surface_id="surface-1")
+
+    claim = first.claim_a2ui_action(
+        run_id="run-review-1",
+        owner="user-1",
+        surface_id="surface-1",
+        widget="confirm",
+        action_id="action-1",
+        channel="a2ui",
+    )
+
+    assert claim.action_id == "action-1"
+    with pytest.raises(A2UIActionConflict, match="already been claimed"):
+        second.claim_a2ui_action(
+            run_id="run-review-1",
+            owner="user-1",
+            surface_id="surface-1",
+            widget="confirm",
+            action_id="action-2",
+            channel="a2ui",
+        )
+
+
+def test_action_id_does_not_replay_success(tmp_path: Path) -> None:
+    """A completed action remains claimed even when the id is replayed."""
+    registry, _, _ = _make_registry(tmp_path)
+    _create_paused_review(registry, surface_id="surface-1")
+    claim = registry.claim_a2ui_action(
+        run_id="run-review-1",
+        owner="user-1",
+        surface_id="surface-1",
+        widget="confirm",
+        action_id="same-id",
+        channel="a2ui",
+    )
+
+    assert (
+        registry.complete_a2ui_action(
+            claim,
+            owner="user-1",
+            outcome="succeeded",
+        )
+        is True
+    )
+    with pytest.raises(A2UIActionConflict):
+        registry.claim_a2ui_action(
+            run_id="run-review-1",
+            owner="user-1",
+            surface_id="surface-1",
+            widget="confirm",
+            action_id="same-id",
+            channel="a2ui",
+        )
+
+
+def test_a2ui_action_completion_and_audit_are_owner_scoped(
+    tmp_path: Path,
+) -> None:
+    """Completion is one-shot and the reader omits action payloads."""
+    registry, _, db_path = _make_registry(tmp_path)
+    _create_paused_review(registry, surface_id="surface-audit")
+    claim = registry.claim_a2ui_action(
+        run_id="run-review-1",
+        owner="user-1",
+        surface_id="surface-audit",
+        widget="confirm",
+        action_id="action-audit",
+        channel="classic",
+    )
+
+    assert registry.list_a2ui_actions(owner="other") == []
+    assert (
+        registry.complete_a2ui_action(
+            claim,
+            owner="other",
+            outcome="failed",
+        )
+        is False
+    )
+    assert (
+        registry.complete_a2ui_action(
+            claim,
+            owner="user-1",
+            outcome="failed",
+        )
+        is True
+    )
+    assert (
+        registry.complete_a2ui_action(
+            claim,
+            owner="user-1",
+            outcome="succeeded",
+        )
+        is False
+    )
+
+    audit = registry.list_a2ui_actions(owner="user-1", run_id="run-review-1")
+    assert len(audit) == 1
+    assert audit[0].action_id == "action-audit"
+    assert audit[0].channel == "classic"
+    assert audit[0].outcome == "failed"
+    assert audit[0].claimed_at
+    assert audit[0].completed_at
+
+    with sqlite3.connect(db_path) as conn:
+        columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(run_a2ui_actions)")
+        }
+    assert "payload" not in columns
+
+
+def test_invalid_persisted_a2ui_surface_is_an_invariant_failure(
+    tmp_path: Path,
+) -> None:
+    """Malformed pause data must not be converted into a claim conflict."""
+    registry, _, _ = _make_registry(tmp_path)
+    registry.create_run(
+        RunSpec("run-invalid-a2ui", "user-1", "review", "local"),
+        outcome=RunOutcome(
+            status="input_required",
+            result={"interrupt": {"draft": {"a2ui": {}}}},
+        ),
+    )
+
+    with pytest.raises(
+        A2UIActionInvariantError,
+        match="invalid A2UI surface",
+    ):
+        registry.claim_a2ui_action(
+            run_id="run-invalid-a2ui",
+            owner="user-1",
+            surface_id="surface-1",
+            widget="confirm",
+            action_id="action-1",
+            channel="a2ui",
+        )
 
 
 def test_create_run_terminal_caches_result_and_sets_ttl(
