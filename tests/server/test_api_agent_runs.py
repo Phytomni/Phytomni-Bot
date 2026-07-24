@@ -681,13 +681,13 @@ async def test_invalid_persisted_succeeded_state_maps_to_safe_error(
 
 
 @pytest.mark.parametrize("status", ("succeeded", "failed"))
-async def test_terminal_run_reads_project_missing_formatted_result(
+async def test_terminal_run_reads_project_nested_sensitive_result(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
     status: str,
 ) -> None:
-    """Terminal records without an answer retain their execution payload."""
+    """Terminal reads keep only the nested result projection allowlist."""
     run_id = f"run-terminal-without-formatted-{status}"
     RunRegistry(tasks_db_path).create_run(
         RunSpec(run_id, "u1", "chat", "local"),
@@ -858,6 +858,80 @@ async def test_terminal_run_reads_project_missing_formatted_result(
         assert "provider_payload" not in str(body)
         assert "provider_trace" not in str(body)
         assert "private_error" not in str(body)
+        if status == "failed":
+            assert body["error"] == "run failed"
+        else:
+            assert "error" not in body
+
+
+@pytest.mark.parametrize("status", ("succeeded", "failed"))
+async def test_terminal_run_reads_default_missing_formatted_result(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    status: str,
+) -> None:
+    """Terminal reads default absent display data while retaining execution."""
+    run_id = f"run-terminal-missing-formatted-{status}"
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec(run_id, "u1", "chat", "local"),
+        outcome=RunOutcome(
+            status=status,
+            result={
+                "execution": {
+                    "tracking": {"degraded": False},
+                    "tasks": [
+                        {
+                            "id": "task-retained",
+                            "accepted": True,
+                            "status": status,
+                        }
+                    ],
+                    "artifacts": [
+                        {
+                            "role": "scientific_table",
+                            "name": "retained.tsv",
+                            "mime_type": "text/tab-separated-values",
+                            "size_bytes": 8,
+                        }
+                    ],
+                }
+            },
+            error="provider exception: private details",
+        ),
+    )
+
+    fetched = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    listed = await api_client.get(
+        "/v1/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert fetched.status_code == 200
+    assert listed.status_code == 200
+    listed_row = next(
+        row for row in listed.json()["data"] if row["id"] == run_id
+    )
+    for body in (fetched.json(), listed_row):
+        assert body["result"]["formatted"] == empty_agent_result()["formatted"]
+        assert body["result"]["execution"]["tasks"] == [
+            {
+                "id": "task-retained",
+                "accepted": True,
+                "status": status,
+            }
+        ]
+        assert body["result"]["execution"]["artifacts"] == [
+            {
+                "role": "scientific_table",
+                "name": "retained.tsv",
+                "mime_type": "text/tab-separated-values",
+                "size_bytes": 8,
+            }
+        ]
         if status == "failed":
             assert body["error"] == "run failed"
         else:

@@ -15,7 +15,6 @@ from typing import Any, NotRequired, TypedDict, Unpack
 from ..agents.shared.a2ui import (
     A2uiSurfaceValidationError,
     project_review_confirm,
-    summary_text_from_interrupt_draft,
     validate_a2ui_surface,
 )
 
@@ -101,6 +100,23 @@ _REQUIRED_RESPONSE_OPTIONS = frozenset({"result", "persisted"})
 _OPTIONAL_RESPONSE_OPTIONS = frozenset({"degraded_tracking", "include_run_id"})
 _SUPPORTED_RESPONSE_OPTIONS = (
     _REQUIRED_RESPONSE_OPTIONS | _OPTIONAL_RESPONSE_OPTIONS
+)
+_REVIEW_SUMMARY_FIELDS = ("summary", "draft", "text", "content")
+_PUBLIC_RUN_HISTORY_FIELDS = (
+    "agent",
+    "origin",
+    "user_id",
+    "status",
+    "created_at",
+    "updated_at",
+    "expires_at",
+    "dialogue_id",
+    "query",
+    "tool_name",
+    "model",
+    "a2a_task_id",
+    "a2a_context_id",
+    "a2a_message_id",
 )
 
 
@@ -326,7 +342,7 @@ def _ensure_review_interrupt_surface(
                 pass
             else:
                 surface = existing
-    summary = summary_text_from_interrupt_draft(draft)
+    summary = _safe_review_summary(draft)
     if surface is None:
         surface = project_review_confirm(summary)
         if run_id is not None:
@@ -346,6 +362,16 @@ def _ensure_review_interrupt_surface(
     return projected
 
 
+def _safe_review_summary(draft: Any) -> str:
+    """Extract a review summary without rendering arbitrary stored data."""
+    if isinstance(draft, Mapping):
+        for field in _REVIEW_SUMMARY_FIELDS:
+            value = draft.get(field)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return "Review approval required."
+
+
 def canonicalize_run_record(record: Mapping[str, Any]) -> dict[str, Any]:
     """Validate one persisted record while preserving its history fields."""
     run_id, _ = _normalize_run_identity(record)
@@ -357,11 +383,18 @@ def canonicalize_run_record(record: Mapping[str, Any]) -> dict[str, Any]:
             degraded=record.get("degraded_tracking") is True
         )
     canonical = canonicalize_agent_run_body(source)
-    projected = {**dict(record), "id": run_id, "run_id": run_id}
+    projected = _project_scalar_fields(record, _PUBLIC_RUN_HISTORY_FIELDS)
+    projected["id"] = run_id
+    projected["run_id"] = run_id
     if canonical["status"] == "input_required":
         projected["result"] = {"interrupt": canonical["interrupt"]}
     else:
         projected["result"] = canonical["result"]
+        formatted = canonical["result"].get("formatted")
+        if isinstance(formatted, Mapping):
+            answer = formatted.get("answer")
+            if isinstance(answer, str):
+                projected["answer"] = answer
     projected["task_ids"] = canonical["task_ids"]
     if canonical["status"] == "failed":
         projected["error"] = "run failed"

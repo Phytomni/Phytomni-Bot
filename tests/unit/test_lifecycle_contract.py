@@ -94,6 +94,67 @@ def test_persisted_running_record_requires_recoverable_identity() -> None:
         )
 
 
+def test_persisted_review_interrupt_uses_safe_summary_fallback() -> None:
+    """Unknown review draft fields cannot be rendered into public surfaces."""
+    projected = canonicalize_run_record(
+        {
+            "run_id": "run-review-safe-summary",
+            "agent": "review",
+            "status": "input_required",
+            "task_ids": [],
+            "result": {
+                "interrupt": {
+                    "draft": {
+                        "provider_payload": "/srv/private/provider",
+                    }
+                }
+            },
+        }
+    )
+
+    interrupt = projected["result"]["interrupt"]
+    assert interrupt["draft"]["summary"] == "Review approval required."
+    assert "/srv/private/provider" not in str(interrupt)
+
+
+def test_persisted_record_drops_unknown_top_level_fields() -> None:
+    """Only known run history fields and canonical result data are public."""
+    projected = canonicalize_run_record(
+        {
+            "run_id": "run-top-level-projection",
+            "agent": "chat",
+            "origin": "local",
+            "user_id": "u1",
+            "status": "failed",
+            "created_at": "2026-07-25T00:00:00+00:00",
+            "updated_at": "2026-07-25T00:01:00+00:00",
+            "expires_at": "2026-07-26T00:00:00+00:00",
+            "dialogue_id": "dialogue-1",
+            "query": "public query",
+            "tool_name": "PhytoChat",
+            "model": "phyto-chat",
+            "a2a_task_id": "task-1",
+            "a2a_context_id": "context-1",
+            "a2a_message_id": "message-1",
+            "task_ids": [],
+            "answer": "/srv/private/legacy-answer",
+            "error": "provider exception: /srv/private",
+            "provider_payload": {"path": "/srv/private"},
+            "raw": {"trace": "private"},
+            "result": {
+                "formatted": {"answer": "canonical answer"},
+                "execution": {},
+            },
+        }
+    )
+
+    assert projected["answer"] == "canonical answer"
+    assert projected["error"] == "run failed"
+    assert "provider_payload" not in projected
+    assert "raw" not in projected
+    assert "/srv/private" not in str(projected)
+
+
 @pytest.mark.parametrize(
     ("status", "expected_error"),
     [("failed", "run failed"), ("succeeded", None)],
