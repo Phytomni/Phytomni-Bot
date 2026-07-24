@@ -337,6 +337,8 @@ async def capture_analysis_result(
     submit_call: Callable[[], Awaitable[dict[str, Any]]],
     result_key: str | None = None,
     result_list_key: str | None = None,
+    *,
+    captured_exceptions: tuple[type[Exception], ...] | None = None,
 ) -> dict[str, Any]:
     """Capture one dispatched analysis result as LangGraph state updates.
 
@@ -351,6 +353,10 @@ async def capture_analysis_result(
             Pass ``None`` to skip per-task result storage (useful for
             workflows that only track ``task_ids`` like in-silico research).
         result_list_key: Optional state key for accumulating result payloads.
+        captured_exceptions: Exception types that are safe to convert into a
+            failure state. ``None`` retains the legacy broad workflow
+            boundary; an empty tuple makes the dispatch fail loudly so
+            programming and invariant errors cannot become partial results.
 
     Returns:
         State updates containing task ids, completion count, result payloads,
@@ -412,7 +418,14 @@ async def capture_analysis_result(
             ],
         }
 
-    return await capture_workflow_boundary(run_task, failure_state)
+    if captured_exceptions is None:
+        return await capture_workflow_boundary(run_task, failure_state)
+    if not captured_exceptions:
+        return await run_task()
+    try:
+        return await run_task()
+    except captured_exceptions as exc:
+        return failure_state(exc)
 
 
 async def capture_dispatched_analysis(
@@ -423,6 +436,8 @@ async def capture_dispatched_analysis(
         [str, str, str, str | None], Awaitable[dict[str, Any]]
     ],
     result_keys: tuple[str, str | None],
+    *,
+    captured_exceptions: tuple[type[Exception], ...] | None = None,
 ) -> dict[str, Any]:
     """Capture an analysis dispatched by target-key based state.
 
@@ -434,6 +449,8 @@ async def capture_dispatched_analysis(
         dispatch_call: Callback that dispatches one target-specific analysis.
         result_keys: Tuple containing the single-result key and optional
             result-list key.
+        captured_exceptions: Exception types safe to convert into a failure
+            state. Pass an empty tuple for strict fan-out propagation.
 
     Returns:
         State updates produced by ``capture_analysis_result``.
@@ -449,6 +466,7 @@ async def capture_dispatched_analysis(
         ),
         result_keys[0],
         result_list_key=result_keys[1],
+        captured_exceptions=captured_exceptions,
     )
 
 

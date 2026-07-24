@@ -16,7 +16,7 @@ unknown analysis type before any prompt lookup.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
@@ -232,3 +232,36 @@ async def test_arun_rejects_when_all_design_submissions_fail(
         match="no remote task was accepted",
     ):
         await agent.arun("ath", "AT1G01010")
+
+
+async def test_design_dispatch_propagates_invariant_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unexpected fan-out failures must not become submission warnings."""
+    agent = _build_agent()
+    monkeypatch.setattr(
+        agent,
+        "_analysis_prompt_parts",
+        lambda *_args: ("goal", "meta", {}),
+    )
+    monkeypatch.setattr(
+        agent,
+        "_dispatch_and_wait_analysis",
+        AsyncMock(side_effect=AssertionError("dispatch invariant")),
+    )
+
+    with pytest.raises(AssertionError, match="dispatch invariant"):
+        await agent.run_design_node(
+            cast(
+                Any,
+                {
+                    "task_index": 0,
+                    "species_code": "ath",
+                    "gene_id": "AT1G01010",
+                    "analysis_type": "protein_design_analysis",
+                    "output_dir": "/obs/out",
+                    "interop_mode": "off",
+                    "interop_targets": [],
+                },
+            )
+        )

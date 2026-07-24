@@ -142,3 +142,19 @@ async def test_capture_analysis_result_redacts_secret_in_failure() -> None:
     assert all("Bearer abc.def123" not in text for text in surfaced)
     assert all("host:9000" not in text for text in surfaced)
     assert all("<redacted" in text for text in surfaced)
+
+
+@pytest.mark.asyncio
+async def test_strict_submission_capture_propagates_invariant_errors() -> None:
+    """Strict remote fan-out does not downgrade programming failures."""
+
+    async def invariant_failure() -> dict[str, Any]:
+        raise AssertionError("broken dispatch invariant")
+
+    with pytest.raises(AssertionError, match="broken dispatch invariant"):
+        await capture_analysis_result(
+            {"task_ids": {}, "task_index": 0},
+            "design_task_result",
+            invariant_failure,
+            captured_exceptions=(),
+        )

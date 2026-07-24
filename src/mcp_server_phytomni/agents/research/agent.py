@@ -681,6 +681,7 @@ class InSilicoResearchAgents:
                 submit_call=failed_submit,
                 result_key=None,
                 result_list_key="evidence",
+                captured_exceptions=RESEARCH_INTEROP_FAILURES,
             )
             if task.interop.mode != "off":
                 updates.update(
@@ -743,6 +744,7 @@ class InSilicoResearchAgents:
             submit_call=submit_call,
             result_key=None,
             result_list_key="evidence",
+            captured_exceptions=(),
         )
         submission_rejections: list[dict[str, str]] = []
         evidence_items: list[ResearchEvidence] = []
@@ -866,6 +868,7 @@ class InSilicoResearchAgents:
             submit_call=submit_call,
             result_key=None,
             result_list_key="evidence",
+            captured_exceptions=(),
         )
         submission_rejections: list[dict[str, str]] = []
         evidence_items: list[ResearchEvidence] = []
@@ -939,15 +942,12 @@ class InSilicoResearchAgents:
             ),
         )
         outcome = _research_submission_outcome(result)
-        if (
-            outcome.kind == "rejected"
-            and outcome.rejected
-            and not _has_pending_a2a(result)
-        ):
+        if outcome.kind == "rejected" and not _has_pending_a2a(result):
             raise RemoteAnalysisSubmissionError("no remote task was accepted")
         bind_accepted_task_ids(outcome.task_ids)
         return {
             **result,
+            "task_ids": list(outcome.task_ids),
             "submission_warnings": list(outcome.warnings),
         }
 

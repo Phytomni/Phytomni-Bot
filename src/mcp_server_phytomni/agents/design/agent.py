@@ -561,6 +561,7 @@ class DigitalDesignAgents:
                 submit_call=failed_submit,
                 result_key=None,
                 result_list_key="design_task_result",
+                captured_exceptions=DESIGN_INTEROP_FAILURES,
             )
             if mode != "off":
                 updates.update(
@@ -635,6 +636,7 @@ class DigitalDesignAgents:
             "gene_id",
             _dispatch,
             ("design_task_result", "design_task_result"),
+            captured_exceptions=(),
         )
         updates = _project_design_submission_updates(updates)
         if mode != "off":
@@ -759,6 +761,7 @@ class DigitalDesignAgents:
             "gene_id",
             _dispatch,
             ("design_task_result", "design_task_result"),
+            captured_exceptions=(),
         )
         updates = _project_design_submission_updates(updates)
         updates.update(
@@ -806,15 +809,12 @@ class DigitalDesignAgents:
             ),
         )
         outcome = _design_submission_outcome(result)
-        if (
-            outcome.kind == "rejected"
-            and outcome.rejected
-            and not _has_pending_design_a2a(result)
-        ):
+        if outcome.kind == "rejected" and not _has_pending_design_a2a(result):
             raise RemoteAnalysisSubmissionError("no remote task was accepted")
         bind_accepted_task_ids(outcome.task_ids)
         return {
             **result,
+            "task_ids": list(outcome.task_ids),
             "submission_warnings": list(outcome.warnings),
         }
 

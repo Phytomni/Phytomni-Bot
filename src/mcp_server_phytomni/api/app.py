@@ -255,6 +255,31 @@ class _AgentRunPreparation:
     resolve_meta: dict[str, Any]
 
 
+def _project_submission_warnings(raw: Any) -> list[dict[str, Any]]:
+    """Project safe remote-submission warnings into HTTP execution state."""
+    if not isinstance(raw, Mapping):
+        return []
+    raw_warnings = raw.get("submission_warnings")
+    if not isinstance(raw_warnings, list):
+        return []
+    projected: list[dict[str, Any]] = []
+    for item in raw_warnings:
+        if not isinstance(item, Mapping):
+            continue
+        code = item.get("code")
+        if not isinstance(code, str) or not code.strip():
+            continue
+        warning: dict[str, Any] = {"code": code}
+        retryable = item.get("retryable")
+        if isinstance(retryable, bool):
+            warning["retryable"] = retryable
+        rejected_count = item.get("rejected_count")
+        if isinstance(rejected_count, int) and rejected_count >= 0:
+            warning["rejected_count"] = rejected_count
+        projected.append(warning)
+    return projected
+
+
 async def _prepare_agent_run(
     *,
     agent: str,
@@ -310,7 +335,13 @@ def _format_agent_run_result(
         if not isinstance(existing_meta, dict):
             existing_meta = {}
         formatted_dict["metadata"] = {**existing_meta, **resolve_meta}
-    result = {"formatted": formatted_dict, "raw": envelope.raw}
+    result = {
+        "formatted": formatted_dict,
+        "execution": {
+            "warnings": _project_submission_warnings(envelope.raw),
+        },
+        "raw": envelope.raw,
+    }
     response_result = result if debug else strip_agent_result(result)
     return result, response_result
 

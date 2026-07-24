@@ -157,9 +157,20 @@ def format_network_task_result(
         else None
     )
     universal = project_universal_failure_metadata(content)
+    raw_task_ids = content.get("task_ids")
+    task_ids = (
+        tuple(
+            task_id
+            for value in raw_task_ids
+            if (task_id := string_or_none(value)) is not None
+        )
+        if isinstance(raw_task_ids, (list, tuple))
+        else ()
+    )
     enriched_metadata = {
         **base.metadata,
         "goal_description": truncated_goal,
+        "task_ids": task_ids,
         "status": universal["status"],
         "succeeded_count": universal["succeeded_count"],
         "failed_count": universal["failed_count"],
@@ -167,6 +178,8 @@ def format_network_task_result(
     }
     if not enriched_metadata.get("task_id"):
         enriched_metadata.update(status="FAILED", log_status="sync_failed")
+    elif task_ids:
+        enriched_metadata["task_id"] = task_ids[0]
     return FormattedToolResult(
         answer=base.answer,
         follow_up_questions=base.follow_up_questions,
@@ -214,16 +227,17 @@ def format_in_silico_result(
     """Format an InSilicoResearchAgent submit response."""
     del arguments
     task_ids_mapping = content.get("task_ids")
-    task_ids = (
-        tuple(
-            tid
-            for tid in (
-                string_or_none(value) for value in task_ids_mapping.values()
-            )
-            if tid is not None
-        )
-        if isinstance(task_ids_mapping, Mapping)
-        else ()
+    task_id_values: Sequence[Any]
+    if isinstance(task_ids_mapping, Mapping):
+        task_id_values = tuple(task_ids_mapping.values())
+    elif isinstance(task_ids_mapping, (list, tuple)):
+        task_id_values = task_ids_mapping
+    else:
+        task_id_values = ()
+    task_ids = tuple(
+        tid
+        for tid in (string_or_none(value) for value in task_id_values)
+        if tid is not None
     )
     goals = tuple(
         str(item.get("goal", ""))
@@ -278,7 +292,16 @@ def format_design_result(
     if not tasks:
         return empty_design_result(content)
     primary_task = tasks[0]
-    task_ids, output_dirs = design_outputs(tasks)
+    raw_task_ids = content.get("task_ids")
+    if isinstance(raw_task_ids, (list, tuple)):
+        task_ids = tuple(
+            task_id
+            for value in raw_task_ids
+            if (task_id := string_or_none(value)) is not None
+        )
+        _, output_dirs = design_outputs(tasks)
+    else:
+        task_ids, output_dirs = design_outputs(tasks)
     universal = project_universal_failure_metadata(content)
     metadata: dict[str, Any] = {
         "task_id": string_or_none(primary_task.get("task_id")),

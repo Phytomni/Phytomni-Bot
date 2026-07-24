@@ -25,6 +25,7 @@ from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.shared.a2ui import validate_a2ui_surface
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
+from mcp_server_phytomni.mcp.result_formatting import FormattedToolResult
 from mcp_server_phytomni.mcp.schemas import (
     AGENT_TOOL_DEFINITIONS,
     PhytomniAgents,
@@ -40,6 +41,40 @@ from mcp_server_phytomni.runtime.run_registry import (
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
 pytestmark = pytest.mark.server
+
+
+def test_native_run_projects_submission_warnings_into_execution() -> None:
+    """Default HTTP results expose safe partial-submission warnings."""
+    envelope = SimpleNamespace(
+        formatted=FormattedToolResult(answer="accepted", metadata={}),
+        raw={
+            "submission_warnings": [
+                {
+                    "code": "partial_submission",
+                    "retryable": False,
+                    "rejected_count": 1,
+                    "private_error": "drop me",
+                }
+            ]
+        },
+    )
+
+    _result, response_result = api_app_module._format_agent_run_result(
+        envelope,
+        resolve_meta={},
+        debug=False,
+    )
+
+    assert response_result["execution"] == {
+        "warnings": [
+            {
+                "code": "partial_submission",
+                "retryable": False,
+                "rejected_count": 1,
+            }
+        ]
+    }
+    assert "raw" not in response_result
 
 
 @dataclass(frozen=True)

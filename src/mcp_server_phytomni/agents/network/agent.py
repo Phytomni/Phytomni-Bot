@@ -150,6 +150,22 @@ def _network_submission_outcome(
             code = item.get("code")
             if isinstance(goal, str) and isinstance(code, str):
                 rejected.append(RejectedSubmission(goal=goal, code=code))
+    if not accepted and not rejected:
+        target = (
+            state.get("to_id")
+            if isinstance(state, Mapping)
+            else result.get("to_id")
+        )
+        rejected.append(
+            RejectedSubmission(
+                goal=(
+                    target.strip()
+                    if isinstance(target, str) and target.strip()
+                    else "gene_network_analysis"
+                ),
+                code="missing_task_id",
+            )
+        )
     return classify_submissions(accepted=accepted, rejected=rejected)
 
 
@@ -364,6 +380,7 @@ class GeneNetworkAgents:
             "to_id",
             _dispatch,
             ("network_task", None),
+            captured_exceptions=(),
         )
         return _project_network_submission_update(updates)
 
@@ -400,11 +417,12 @@ class GeneNetworkAgents:
             ),
         )
         outcome = _network_submission_outcome(result)
-        if outcome.kind == "rejected" and outcome.rejected:
+        if outcome.kind == "rejected":
             raise RemoteAnalysisSubmissionError("no remote task was accepted")
         bind_accepted_task_ids(outcome.task_ids)
         return {
             **result,
+            "task_ids": list(outcome.task_ids),
             "submission_warnings": list(outcome.warnings),
         }
 

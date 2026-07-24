@@ -104,3 +104,31 @@ async def test_network_rejects_blank_remote_task_id(
             "osa",
             "TO:0000207",
         )
+
+
+async def test_network_arun_rejects_blank_id_in_final_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A blank graph result cannot bypass the all-rejected guard."""
+    analyst_stub = SimpleNamespace(identifier=lambda: "stub-analyst")
+    agent = GeneNetworkAgents(
+        gene_network_config=GeneNetworkConfig(),
+        sensitive_config=SensitiveConfig.load(),
+        analyst_agent=cast(AnalystAgent, analyst_stub),
+    )
+    monkeypatch.setattr(
+        network_agent,
+        "run_analysis_graph",
+        AsyncMock(
+            return_value={
+                "network_task": {"task_id": "   "},
+                "phytomni_state": {},
+            }
+        ),
+    )
+
+    with pytest.raises(
+        RemoteAnalysisSubmissionError,
+        match="no remote task was accepted",
+    ):
+        await agent.arun("osa", "TO:0000207")
