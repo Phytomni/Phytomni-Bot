@@ -43,7 +43,15 @@ from ..runtime.run_registry import RunFilter, RunRequestInfo
 from . import run_lifecycle
 from .a2a.executor import A2AHandlerOptions, A2ARequestHandler
 from .admin_auth import require_service_principal
+from .app_support import _ErrorResponseOptions
 from .auth import ApiPrincipal, require_principal, scopes_satisfy
+from .lifecycle_contract import (
+    LifecycleInvariantError,
+    SafeApiError,
+    SafeErrorCode,
+    canonicalize_agent_run_body,
+    canonicalize_run_record,
+)
 from .openai_mapping import (
     MODEL_TO_TOOL,
     flatten_messages,
@@ -65,6 +73,54 @@ from .schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+_SAFE_HTTP_MESSAGES = {
+    400: "invalid request",
+    401: "authentication required",
+    403: "request is not permitted",
+    404: "resource not found",
+    409: "request conflicts with current state",
+    413: "request payload is too large",
+    422: "request validation failed",
+    429: "request rate limit exceeded",
+    500: "internal server error",
+    502: "upstream service failed",
+    503: "service unavailable",
+    504: "upstream service timed out",
+}
+
+
+def _safe_api_error_for_lifecycle(
+    exc: LifecycleInvariantError,
+) -> SafeApiError:
+    """Map one internal lifecycle invariant failure to a safe HTTP error."""
+    if exc.code is SafeErrorCode.SUCCEEDED_WITHOUT_PERSISTENCE:
+        return SafeApiError(
+            status_code=500,
+            code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
+            message="run persistence failed",
+            stage="persistence",
+        )
+    if exc.code is SafeErrorCode.INPUT_REQUIRED_WITHOUT_SURFACE:
+        return SafeApiError(
+            status_code=500,
+            code=exc.code.value,
+            message="input required response is invalid",
+            stage="projection",
+        )
+    if exc.code is SafeErrorCode.PROJECTION_FAILED:
+        return SafeApiError(
+            status_code=500,
+            code=exc.code.value,
+            message="result projection failed",
+            stage="projection",
+        )
+    return SafeApiError(
+        status_code=500,
+        code=exc.code.value,
+        message="agent run response violated lifecycle contract",
+        stage="lifecycle",
+    )
 
 
 def _app_module() -> Any:
@@ -201,7 +257,10 @@ class _RouteAdapters:
         debug: bool = False,
     ) -> dict[str, Any]:
         """Fetch one owner-scoped run through the app-level seam."""
-        return await _app_attr("_fetch_owner_run")(run_id, debug=debug)
+        record = await _app_attr("_fetch_owner_run")(run_id, debug=debug)
+        if isinstance(record, Mapping):
+            return canonicalize_run_record(record)
+        return record
 
     def list_owner_runs(
         self,
@@ -220,11 +279,25 @@ class _RouteAdapters:
             limit=request.paging.limit,
             offset=request.paging.offset,
         )
-        return _app_attr("_list_owner_runs")(
+        response = _app_attr("_list_owner_runs")(
             owner=request.owner,
             query=query,
             debug=request.paging.debug,
         )
+        data = response.get("data")
+        if not isinstance(data, list):
+            return response
+        return {
+            **response,
+            "data": [
+                (
+                    canonicalize_run_record(item)
+                    if isinstance(item, Mapping)
+                    else item
+                )
+                for item in data
+            ],
+        }
 
     def strip_run_result(self, record: dict[str, Any]) -> dict[str, Any]:
         """Strip private result fields through the app-level helper."""
@@ -238,11 +311,12 @@ class _RouteAdapters:
         debug: bool = False,
     ) -> tuple[dict[str, Any], int]:
         """Resume a paused A2UI run through the app-level seam."""
-        return await _app_attr("_resume_a2ui_run")(
+        response_body, status_code = await _app_attr("_resume_a2ui_run")(
             run_id=run_id,
             body=body,
             debug=debug,
         )
+        return canonicalize_agent_run_body(response_body), status_code
 
     async def resume_review(
         self,
@@ -252,11 +326,12 @@ class _RouteAdapters:
         debug: bool = False,
     ) -> tuple[dict[str, Any], int]:
         """Resume a paused Review run through the app-level seam."""
-        return await _app_attr("_resume_review_run")(
+        response_body, status_code = await _app_attr("_resume_review_run")(
             thread_id=thread_id,
             payload=payload,
             debug=debug,
         )
+        return canonicalize_agent_run_body(response_body), status_code
 
     def a2ui_enabled(self) -> bool:
         """Read the current A2UI feature flag."""
@@ -276,13 +351,14 @@ class _RouteAdapters:
         debug: bool = False,
     ) -> tuple[dict[str, Any], int]:
         """Invoke a native agent run through the app-level seam."""
-        return await _app_attr("_invoke_agent_run")(
+        response_body, status_code = await _app_attr("_invoke_agent_run")(
             agent=agent,
             arguments=arguments,
             dialogue_id=dialogue_id,
             request_json=request_json,
             debug=debug,
         )
+        return canonicalize_agent_run_body(response_body), status_code
 
     async def expert_query(
         self,
@@ -291,7 +367,10 @@ class _RouteAdapters:
         debug: bool,
     ) -> tuple[dict[str, Any], int]:
         """Route an Expert query through the app-level seam."""
-        return await _app_attr("_route_expert_query")(payload, debug=debug)
+        response_body, status_code = await _app_attr("_route_expert_query")(
+            payload, debug=debug
+        )
+        return canonicalize_agent_run_body(response_body), status_code
 
     async def stream_chat_completion(
         self,
@@ -659,11 +738,28 @@ def _register_error_handlers(app: FastAPI) -> None:
         exc: StarletteHTTPException,
     ) -> JSONResponse:
         """Render HTTP exceptions through the unified envelope."""
-        message = exc.detail if isinstance(exc.detail, str) else "error"
         return _app_attr("_error_response")(
             exc.status_code,
-            message,
-            getattr(exc, "headers", None),
+            _SAFE_HTTP_MESSAGES.get(exc.status_code, "request failed"),
+            options=_ErrorResponseOptions(
+                headers=getattr(exc, "headers", None)
+            ),
+        )
+
+    @app.exception_handler(SafeApiError)
+    async def safe_api_error_handler(
+        _request: Request,
+        exc: SafeApiError,
+    ) -> JSONResponse:
+        """Render typed public-safe API errors through the unified envelope."""
+        return _app_attr("_error_response")(
+            exc.status_code,
+            exc.message,
+            options=_ErrorResponseOptions(
+                code=exc.code,
+                stage=exc.stage,
+                retryable=exc.retryable,
+            ),
         )
 
     @app.exception_handler(RequestValidationError)
@@ -673,6 +769,23 @@ def _register_error_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         """Render request validation errors as 422 envelopes."""
         return _app_attr("_error_response")(422, "request validation failed")
+
+    @app.exception_handler(LifecycleInvariantError)
+    async def lifecycle_exception_handler(
+        _request: Request,
+        exc: LifecycleInvariantError,
+    ) -> JSONResponse:
+        """Render lifecycle violations as safe internal error envelopes."""
+        safe_error = _safe_api_error_for_lifecycle(exc)
+        return _app_attr("_error_response")(
+            safe_error.status_code,
+            safe_error.message,
+            options=_ErrorResponseOptions(
+                code=safe_error.code,
+                stage=safe_error.stage,
+                retryable=safe_error.retryable,
+            ),
+        )
 
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(

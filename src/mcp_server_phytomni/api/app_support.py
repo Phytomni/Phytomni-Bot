@@ -18,6 +18,7 @@ import asyncio
 import os
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 from typing import Any
@@ -56,18 +57,30 @@ from .schemas import (
 )
 from .stream_answer import resolve_stream_answer_max_bytes
 
-_ERROR_TYPES = {
-    400: "bad_request",
-    401: "unauthorized",
+_DEFAULT_ERROR_CODES = {
+    400: "invalid_argument",
+    401: "unauthenticated",
     403: "forbidden",
     404: "not_found",
-    409: "conflict",
-    422: "unprocessable_entity",
-    428: "precondition_required",
+    409: "run_state_conflict",
+    413: "payload_too_large",
+    422: "invalid_request",
     429: "rate_limited",
-    500: "internal_error",
+    500: "internal_invariant_failed",
+    502: "upstream_failed",
     503: "unavailable",
+    504: "upstream_timeout",
 }
+
+
+@dataclass(frozen=True, slots=True)
+class _ErrorResponseOptions:
+    """Optional fields for the common public error envelope."""
+
+    code: str | None = None
+    stage: str | None = None
+    retryable: bool = False
+    headers: Mapping[str, str] | None = None
 
 
 def _app_attr(name: str) -> Any:
@@ -79,21 +92,25 @@ def _app_attr(name: str) -> Any:
 def error_response(
     status_code: int,
     message: str,
-    headers: Mapping[str, str] | None = None,
+    *,
+    options: _ErrorResponseOptions | None = None,
 ) -> JSONResponse:
     """Build a unified error-envelope JSON response."""
+    options = options or _ErrorResponseOptions()
     payload = ApiErrorResponse(
         error=ApiErrorDetail(
-            type=_ERROR_TYPES.get(status_code, "error"),
-            code=status_code,
+            code=options.code
+            or _DEFAULT_ERROR_CODES.get(status_code, "error"),
             message=message,
-            request_id=current_request_id(),
+            request_id=current_request_id() or "unknown",
+            stage=options.stage,
+            retryable=options.retryable,
         )
     )
     return JSONResponse(
         status_code=status_code,
-        content=payload.model_dump(),
-        headers=dict(headers) if headers else None,
+        content=payload.model_dump(exclude_none=True),
+        headers=dict(options.headers or {}),
     )
 
 

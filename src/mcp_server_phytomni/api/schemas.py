@@ -65,19 +65,15 @@ __all__ = [
 
 
 class ApiErrorDetail(BaseModel):
-    """One error description inside the unified API error envelope.
+    """Stable public error body."""
 
-    Attributes:
-        type: Stable machine-readable error category slug.
-        code: HTTP status code mirrored into the body.
-        message: Human-readable explanation.
-        request_id: Correlation id; populated once request context lands.
-    """
+    model_config = ConfigDict(extra="forbid")
 
-    type: str
-    code: int
+    code: str
     message: str
-    request_id: str | None = None
+    request_id: str
+    stage: str | None = None
+    retryable: bool = False
 
 
 class ApiErrorResponse(BaseModel):

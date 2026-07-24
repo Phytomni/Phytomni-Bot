@@ -54,6 +54,7 @@ from .schemas import (
 )
 from .templates import build_choice_template_props, build_form_template_props
 from .translate import action_to_resume_payload
+from .validation import A2uiSurfaceValidationError, validate_a2ui_surface
 
 __all__ = [
     "A2UI_CATALOG_VERSION",
@@ -61,6 +62,7 @@ __all__ = [
     "A2UI_MAX_ROUNDS",
     "A2uiActionEnvelope",
     "A2uiDownlinkValue",
+    "A2uiSurfaceValidationError",
     "A2uiWidget",
     "AuthorContext",
     "ChoiceOption",
@@ -95,4 +97,5 @@ __all__ = [
     "should_emit_form",
     "should_reenter_a2ui",
     "summary_text_from_interrupt_draft",
+    "validate_a2ui_surface",
 ]

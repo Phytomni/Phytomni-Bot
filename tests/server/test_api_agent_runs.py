@@ -22,6 +22,7 @@ import pytest
 from tests.support.resolver_fakes import post_native_run
 
 from mcp_server_phytomni import server
+from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.mcp.schemas import (
     AGENT_TOOL_DEFINITIONS,
     PhytomniAgents,
@@ -215,6 +216,13 @@ async def test_agent_run_unknown_slug_returns_404(
         json={"arguments": {}},
     )
     assert response.status_code == 404
+    detail = response.json()["error"]
+    assert detail["code"] == "not_found"
+    assert isinstance(detail["code"], str)
+    assert "type" not in detail
+    assert detail["message"] == "resource not found"
+    assert detail["request_id"]
+    assert detail["retryable"] is False
 
 
 async def test_agent_run_sync_writes_local_run(
@@ -257,6 +265,44 @@ async def test_agent_run_sync_writes_local_run(
     assert record.spec.agent == "chat"
     assert record.spec.origin == "local"
     assert record.status == "succeeded"
+
+
+async def test_agent_run_sync_persistence_failure_returns_safe_500(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A sync run cannot surface succeeded when persistence failed."""
+
+    async def fake(args: Any) -> dict[str, Any]:
+        """Return a stub chat completion-shaped result."""
+        _ = args
+        return {"answer": "ok", "doc_list": []}
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        fake,
+    )
+    monkeypatch.setattr(
+        api_app_module, "_record_sync_run", lambda **_kwargs: None
+    )
+
+    response = await post_native_run(
+        api_client,
+        issued_api_key,
+        "chat",
+        {"user_query": "hi", "obs_file_list": []},
+    )
+
+    assert response.status_code == 500
+    detail = response.json()["error"]
+    assert detail["code"] == "run_persistence_failed"
+    assert detail["message"] == "run persistence failed"
+    assert detail["stage"] == "persistence"
+    assert detail["retryable"] is False
+    assert isinstance(detail["request_id"], str)
+    assert detail["request_id"]
 
 
 @pytest.mark.parametrize(
@@ -497,8 +543,9 @@ async def test_agent_run_remote_surfaces_degraded_tracking_when_recorder_fails(
     assert response.status_code == 202
     body = response.json()
     assert body["id"] is None
-    assert body["task_ids"] == []
+    assert body["task_ids"] == ["T-degraded"]
     assert body["degraded_tracking"] is True
+    assert "run_id" not in body
     # And the registry stayed empty since create_run was the failure
     # point — proves the flag was driven by the live failure, not by
     # stale state left over from a previous test.
