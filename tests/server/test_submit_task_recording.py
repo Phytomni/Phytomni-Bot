@@ -261,6 +261,24 @@ def test_record_handles_research_task_ids_map(tasks_db_path: str) -> None:
     assert {row[1] for row in rows} == {"/obs/research"}
 
 
+def test_record_handles_canonical_research_task_ids_list(
+    tasks_db_path: str,
+) -> None:
+    """The canonical Research list remains recordable at the HTTP seam."""
+    record_submitted_task(
+        {
+            "task_ids": ["T-R1", "T-R2"],
+            "output_dir": "/obs/research",
+        },
+        agent="research",
+    )
+
+    runs = RunRegistry(tasks_db_path).list_runs(owner="anonymous")
+    assert len(runs) == 1
+    assert runs[0].spec.agent == "research"
+    assert runs[0].task_ids == ("T-R1", "T-R2")
+
+
 def test_record_handles_network_nested_task(tasks_db_path: str) -> None:
     """``network`` returns one task nested under ``network_task``."""
     record_submitted_task(

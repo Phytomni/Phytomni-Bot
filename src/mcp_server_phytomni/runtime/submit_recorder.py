@@ -59,8 +59,9 @@ def extract_task_submissions(
       and, on a content-addressed dedup reuse, a ``source_task_id``
       pointing at the prior tenant's remote task id; other agents leave
       both slots ``None``.
-    - ``research``: a ``task_ids`` dict mapping research-goal names to
-      task ids; the top-level ``output_dir`` is shared across children.
+    - ``research``: a canonical ``task_ids`` list, with a legacy dict
+      mapping research-goal names to task ids also accepted; the top-level
+      ``output_dir`` is shared across children.
     - ``network``: nested under ``network_task`` (``task_id`` +
       ``output_dir`` inside).
     - ``design``: a ``design_task_result`` list of AnalystAgent
@@ -97,14 +98,17 @@ def extract_task_submissions(
                 )
             )
     elif agent == "research":
-        mapping = result.get("task_ids")
-        if isinstance(mapping, Mapping):
-            shared_output = str(result.get("output_dir") or "")
-            pairs.extend(
-                (str(value), shared_output, None, None)
-                for value in mapping.values()
-                if isinstance(value, str) and value
-            )
+        task_values = result.get("task_ids")
+        if isinstance(task_values, Mapping):
+            task_values = task_values.values()
+        elif not isinstance(task_values, list):
+            task_values = ()
+        shared_output = str(result.get("output_dir") or "")
+        pairs.extend(
+            (value, shared_output, None, None)
+            for value in task_values
+            if isinstance(value, str) and value
+        )
     elif agent == "network":
         nested = result.get("network_task")
         if isinstance(nested, Mapping):

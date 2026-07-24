@@ -235,15 +235,6 @@ def _design_submission_outcome(
     return classify_submissions(accepted=accepted, rejected=rejected)
 
 
-def _has_pending_design_a2a(result: Mapping[str, Any]) -> bool:
-    """Return whether Design is paused for external A2A input."""
-    state = result.get("phytomni_state")
-    if not isinstance(state, Mapping):
-        return False
-    pending = state.get("a2a_pending")
-    return isinstance(pending, list) and bool(pending)
-
-
 class DigitalDesignAgents:
     """LangGraph-based agent for protein and promoter digital design.
 
@@ -809,7 +800,7 @@ class DigitalDesignAgents:
             ),
         )
         outcome = _design_submission_outcome(result)
-        if outcome.kind == "rejected" and not _has_pending_design_a2a(result):
+        if outcome.kind == "rejected":
             raise RemoteAnalysisSubmissionError("no remote task was accepted")
         bind_accepted_task_ids(outcome.task_ids)
         return {

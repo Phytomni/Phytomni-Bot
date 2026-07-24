@@ -24,6 +24,9 @@ from mcp_server_phytomni.agents.research.agent import (
     InSilicoResearchAgents,
     InSilicoResearchConfig,
 )
+from mcp_server_phytomni.agents.shared.remote_analysis import (
+    RemoteAnalysisSubmissionError,
+)
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
 pytestmark = pytest.mark.agent
@@ -138,3 +141,27 @@ async def test_invalid_goal_extraction_makes_no_submit_calls(
     assert result["goals"] == []
     assert result["error"] == "value must be nonblank"
     submit.assert_not_awaited()
+
+
+async def test_arun_rejects_unpersistable_research_a2a_pause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A2A pending work cannot escape as zero-task native running work."""
+    agent = _build_agent()
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.research.agent.run_analysis_graph",
+        AsyncMock(
+            return_value={
+                "task_ids": [],
+                "error": None,
+                "failures": [],
+                "phytomni_state": {"a2a_pending": [{"task_id": "peer-task"}]},
+            }
+        ),
+    )
+
+    with pytest.raises(
+        RemoteAnalysisSubmissionError,
+        match="no remote task was accepted",
+    ):
+        await agent.arun("paper", {})

@@ -234,6 +234,31 @@ async def test_arun_rejects_when_all_design_submissions_fail(
         await agent.arun("ath", "AT1G01010")
 
 
+async def test_arun_rejects_unpersistable_design_a2a_pause(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A2A pending work cannot escape as zero-task native running work."""
+    agent = _build_agent()
+    monkeypatch.setattr(
+        design_agent_module,
+        "run_analysis_graph",
+        AsyncMock(
+            return_value={
+                "design_task_result": [],
+                "error": None,
+                "failures": [],
+                "phytomni_state": {"a2a_pending": [{"task_id": "peer-task"}]},
+            }
+        ),
+    )
+
+    with pytest.raises(
+        RemoteAnalysisSubmissionError,
+        match="no remote task was accepted",
+    ):
+        await agent.arun("ath", "AT1G01010")
+
+
 async def test_design_dispatch_propagates_invariant_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

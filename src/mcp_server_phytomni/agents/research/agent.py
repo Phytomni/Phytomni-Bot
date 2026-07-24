@@ -242,15 +242,6 @@ def _research_submission_outcome(
     return classify_submissions(accepted=accepted, rejected=rejected)
 
 
-def _has_pending_a2a(result: Mapping[str, Any]) -> bool:
-    """Return whether the result is waiting on an external A2A exchange."""
-    state = result.get("phytomni_state")
-    if not isinstance(state, Mapping):
-        return False
-    pending = state.get("a2a_pending")
-    return isinstance(pending, list) and bool(pending)
-
-
 class InSilicoResearchAgents:
     """LangGraph-based agent for in silico research from scientific literature.
 
@@ -942,7 +933,7 @@ class InSilicoResearchAgents:
             ),
         )
         outcome = _research_submission_outcome(result)
-        if outcome.kind == "rejected" and not _has_pending_a2a(result):
+        if outcome.kind == "rejected":
             raise RemoteAnalysisSubmissionError("no remote task was accepted")
         bind_accepted_task_ids(outcome.task_ids)
         return {
