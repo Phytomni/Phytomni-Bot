@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from .sqlite import sqlite_transaction
 from .task_manager import (
     TaskManager,
     _expires_at_for,
@@ -397,7 +398,7 @@ class RunRegistry:
         expires_at = _expires_at_for(status, now)
         info = request_info or RunRequestInfo()
         a2a_info = a2a or A2ACorrelation()
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_transaction(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO runs (
@@ -453,7 +454,7 @@ class RunRegistry:
             True when a row was updated; False when no owned row
             matched (caller logs but does not raise).
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_transaction(self.db_path) as conn:
             cursor = conn.execute(
                 """
                 UPDATE runs SET
@@ -506,7 +507,7 @@ class RunRegistry:
         """
         now = _now_iso()
         expires_at = _expires_at_for(status, now)
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_transaction(self.db_path) as conn:
             cursor = conn.execute(
                 """
                 UPDATE runs SET
@@ -544,7 +545,7 @@ class RunRegistry:
             ``RunRecord`` when present and owned by ``owner``,
             otherwise ``None``.
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_transaction(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -578,7 +579,7 @@ class RunRegistry:
         status/result and is safe to repeat when a client retries the same
         A2A request.
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_transaction(self.db_path) as conn:
             cursor = conn.execute(
                 """
                 UPDATE runs SET
@@ -608,7 +609,7 @@ class RunRegistry:
         """Return the owned run projected by an A2A task id."""
         if not task_id:
             return None
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_transaction(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 """
@@ -658,7 +659,7 @@ class RunRegistry:
         where, params = _build_list_where(owner, run_filter)
         params.extend([limit, offset])
         records: list[RunRecord] = []
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_transaction(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 f"""
@@ -764,7 +765,7 @@ class RunRegistry:
             Number of run rows deleted.
         """
         now = _now_iso()
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_transaction(self.db_path) as conn:
             expired = [
                 row[0]
                 for row in conn.execute(
@@ -781,7 +782,7 @@ class RunRegistry:
     def _touch_running(self, current: RunRecord, status: str) -> RunRecord:
         """Persist a non-terminal status refresh (updates updated_at)."""
         now = _now_iso()
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_transaction(self.db_path) as conn:
             conn.execute(
                 "UPDATE runs SET status = ?, updated_at = ? "
                 "WHERE run_id = ?",
@@ -810,7 +811,7 @@ class RunRegistry:
         """Cache a freshly-terminal run with TTL and result/error."""
         now = _now_iso()
         expires_at = _expires_at_for(status, now)
-        with sqlite3.connect(self.db_path) as conn:
+        with sqlite_transaction(self.db_path) as conn:
             conn.execute(
                 """
                 UPDATE runs SET status = ?, result_json = ?, error = ?,

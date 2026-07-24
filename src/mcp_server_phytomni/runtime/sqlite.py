@@ -16,7 +16,7 @@ import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
 
-__all__ = ["sqlite_connection"]
+__all__ = ["sqlite_connection", "sqlite_transaction"]
 
 _CONNECT_TIMEOUT_SECONDS = 10
 _BUSY_TIMEOUT_MILLISECONDS = 5000
@@ -47,5 +47,37 @@ def sqlite_connection(
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MILLISECONDS}")
         yield conn
+    finally:
+        conn.close()
+
+
+@contextmanager
+def sqlite_transaction(
+    db_path: str,
+    *,
+    timeout: float | None = None,
+) -> Generator[sqlite3.Connection, None, None]:
+    """Yield a transactional connection that is closed on exit.
+
+    Unlike ``sqlite3.Connection``'s context manager alone, this helper also
+    closes the connection after commit or rollback. The optional timeout is
+    forwarded to ``sqlite3.connect`` for callers that need a longer lock
+    wait while preserving the default connection behavior otherwise.
+
+    Args:
+        db_path: SQLite database path.
+        timeout: Optional SQLite busy timeout in seconds.
+
+    Yields:
+        A SQLite connection whose transaction is committed on success and
+        rolled back on failure, then closed deterministically.
+    """
+    if timeout is None:
+        conn = sqlite3.connect(db_path)
+    else:
+        conn = sqlite3.connect(db_path, timeout=timeout)
+    try:
+        with conn:
+            yield conn
     finally:
         conn.close()

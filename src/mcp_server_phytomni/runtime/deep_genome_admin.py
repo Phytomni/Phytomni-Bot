@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .deep_genome_store import DeepGenomeStore
 from .run_registry import RunRegistry
+from .sqlite import sqlite_transaction
 from .task_manager import _expires_at_for
 
 __all__ = [
@@ -91,7 +92,7 @@ def _create_backup(source_path: Path, backup_path: Path, mode: int) -> None:
 
 def _assert_integrity(path: Path) -> None:
     """Require SQLite's complete integrity check to return ``ok``."""
-    with sqlite3.connect(path) as connection:
+    with sqlite_transaction(str(path)) as connection:
         result = connection.execute("PRAGMA integrity_check").fetchone()
     if result is None or result[0] != "ok":
         raise sqlite3.DatabaseError("SQLite integrity check failed")
@@ -200,7 +201,7 @@ def prepare_rollback(
     _assert_integrity(backup_path)
 
     marked = 0
-    with sqlite3.connect(database, timeout=10.0) as connection:
+    with sqlite_transaction(str(database), timeout=10.0) as connection:
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute("PRAGMA busy_timeout = 10000")
         connection.execute("BEGIN IMMEDIATE")
