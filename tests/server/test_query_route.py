@@ -13,6 +13,7 @@ error paths.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +23,10 @@ from pydantic import ValidationError
 
 import mcp_server_phytomni.api.app as api_app
 from mcp_server_phytomni import server
-from mcp_server_phytomni.agents.expert import ToolSelection
+from mcp_server_phytomni.agents.expert import (
+    ToolSelection,
+    ToolSelectionError,
+)
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.schemas import ExpertQueryRequest
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
@@ -37,9 +41,13 @@ def _patch_select(
     """Patch the in-process router to return a fixed selection."""
 
     async def fake_select(
-        user_query: str, history: Any = ()
+        user_query: str,
+        history: Any = (),
+        *,
+        allowed_tools: Any = None,
+        forced_tool: Any = None,
     ) -> ToolSelection | None:
-        _ = (user_query, history)
+        _ = (user_query, history, allowed_tools, forced_tool)
         return selection
 
     monkeypatch.setattr(api_app, "select_agent_tool", fake_select)
@@ -277,32 +285,61 @@ async def test_route_remote_agent_returns_running_task_ids(
     assert record.spec.origin == "remote"
 
 
-async def test_route_no_tool_falls_back_to_chat(
+async def test_route_passes_constraints_to_selector_and_forces_agent(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
 ) -> None:
-    """When the router selects no tool the query falls back to chat."""
+    """A forced request forwards its validated constraints to the selector."""
+    captured: dict[str, object] = {}
+
+    async def fake_select(
+        user_query: str,
+        history: Sequence[Mapping[str, Any]] = (),
+        *,
+        allowed_tools: Sequence[str] | None = None,
+        forced_tool: str | None = None,
+    ) -> ToolSelection:
+        captured.update(
+            {
+                "user_query": user_query,
+                "history": list(history),
+                "allowed_tools": list(allowed_tools or []),
+                "forced_tool": forced_tool,
+            }
+        )
+        return ToolSelection(
+            "DataAgent",
+            {"user_query": "Compare drought candidates"},
+        )
+
     _stub_tool_handler(
         monkeypatch,
-        server.PhytomniAgents.CHAT_AGENT.value,
+        server.PhytomniAgents.DATA_AGENT.value,
         {"answer": "ok", "doc_list": []},
     )
-    _patch_select(monkeypatch, None)
+    monkeypatch.setattr(api_app, "select_agent_tool", fake_select)
 
     response = await api_client.post(
         "/v1/query/route",
         headers=_auth(issued_api_key),
-        json={"user_query": "hello there", "allowed_tools": ["ChatAgent"]},
+        json={
+            "user_query": "Compare drought candidates",
+            "history": [{"role": "user", "content": "rice"}],
+            "obs_file_list": [],
+            "dialogue_id": "dialogue-1",
+            "allowed_tools": ["ChatAgent", "DataAgent"],
+            "forced_tool": "DataAgent",
+        },
     )
     assert response.status_code == 200
-    body = response.json()
-    assert body["agent"] == "chat"
-    assert body["status"] == "succeeded"
-
-    record = RunRegistry(tasks_db_path).list_runs(owner="u1")[0]
-    assert record.spec.agent == "chat"
+    assert captured == {
+        "user_query": "Compare drought candidates",
+        "history": [{"role": "user", "content": "rice"}],
+        "allowed_tools": ["ChatAgent", "DataAgent"],
+        "forced_tool": "DataAgent",
+    }
+    assert response.json()["agent"] == "data"
 
 
 async def test_route_injects_obs_only_for_obs_capable_tool(
@@ -388,21 +425,34 @@ async def test_route_insufficient_scope_returns_403(
     assert response.status_code == 403
 
 
-async def test_route_forced_tool_returns_400(
+async def test_route_selection_failure_returns_sanitized_502(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``forced_tool`` is accepted but unsupported in v1 -> 400."""
+    """Selector contract failures never disclose routing inputs or output."""
+
+    async def fake_select(*_args: Any, **_kwargs: Any) -> ToolSelection:
+        raise ToolSelectionError(
+            "DataAgent prohibited after model output: secret selection"
+        )
+
+    monkeypatch.setattr(api_app, "select_agent_tool", fake_select)
     response = await api_client.post(
         "/v1/query/route",
         headers=_auth(issued_api_key),
         json={
             "user_query": "hi",
-            "allowed_tools": ["ChatAgent"],
-            "forced_tool": "ChatAgent",
+            "allowed_tools": ["ChatAgent", "DataAgent"],
         },
     )
-    assert response.status_code == 400
+    assert response.status_code == 502
+    assert (
+        response.json()["error"]["message"]
+        == "router did not resolve one permitted agent"
+    )
+    assert "DataAgent" not in response.text
+    assert "secret selection" not in response.text
 
 
 async def test_route_unknown_tool_returns_502(
