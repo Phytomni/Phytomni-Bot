@@ -47,6 +47,7 @@ def test_pytest_default_run_is_offline_and_strict():
 
     assert pytest_options["testpaths"] == ["tests"]
     assert pytest_options["pythonpath"] == ["src"]
+    assert pytest_options["asyncio_default_fixture_loop_scope"] == "function"
     assert "--strict-config" in pytest_options["addopts"]
     assert "--strict-markers" in pytest_options["addopts"]
     assert "not integration and not network" in pytest_options["addopts"]

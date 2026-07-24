@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import subprocess
 import tomllib
+from collections.abc import Sequence
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -103,7 +104,19 @@ def _api_endpoint_pairs() -> set[tuple[str, str]]:
     """Return public HTTP API route pairs from the FastAPI app."""
     public_paths = {"/healthz", "/readyz"}
     pairs = set()
-    for route in create_app().routes:
+
+    def iter_routes(routes: Sequence[object]) -> list[object]:
+        """Expand newer FastAPI/Starlette included-router wrappers."""
+        expanded: list[object] = []
+        for route in routes:
+            original_router = getattr(route, "original_router", None)
+            if original_router is not None:
+                expanded.extend(iter_routes(original_router.routes))
+            else:
+                expanded.append(route)
+        return expanded
+
+    for route in iter_routes(create_app().routes):
         path = getattr(route, "path", "")
         methods: set[str] = set(getattr(route, "methods", ()) or ())
         if not (path in public_paths or path.startswith("/v1/")):

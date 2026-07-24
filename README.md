@@ -26,7 +26,8 @@ uv pip install -e ".[dev,demo]"
 
 Conda or mamba is a secondary path: create the env from
 `environment.yml`, then still run `pip install -e ".[dev,demo]"` so the
-editable packages and pip-only extras (including `markitdown[all]`) are
+editable packages and pip-only extras (including the explicit MarkItDown
+document-converter extras and Python 3.14-compatible YouTube client) are
 installed. See [CONTRIBUTING.md](CONTRIBUTING.md) for the conda
 commands. Keep the `environment.yml` Python range
 (`python>=3.12,<3.15`); CI exercises 3.12–3.14.

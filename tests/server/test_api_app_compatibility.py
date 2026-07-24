@@ -118,6 +118,18 @@ def _dependency_scopes(route: APIRoute) -> tuple[str, ...]:
 
 def _route_manifest(app: FastAPI) -> tuple[_RouteContract, ...]:
     """Return the ordered public route manifest for ``app``."""
+
+    def iter_routes(routes: list[Any]) -> list[APIRoute]:
+        """Expand newer FastAPI/Starlette included-router wrappers."""
+        expanded: list[APIRoute] = []
+        for route in routes:
+            original_router = getattr(route, "original_router", None)
+            if original_router is not None:
+                expanded.extend(iter_routes(original_router.routes))
+            elif isinstance(route, APIRoute):
+                expanded.append(route)
+        return expanded
+
     return tuple(
         _RouteContract(
             path=route.path,
@@ -127,8 +139,7 @@ def _route_manifest(app: FastAPI) -> tuple[_RouteContract, ...]:
             scopes=_dependency_scopes(route),
             name=route.name,
         )
-        for route in app.routes
-        if isinstance(route, APIRoute)
+        for route in iter_routes(app.routes)
     )
 
 

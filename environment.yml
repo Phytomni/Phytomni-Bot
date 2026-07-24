@@ -13,7 +13,8 @@ dependencies:
   # `pip install -e ".[dev,demo]"` from the repo root to install the
   # editable mcp_server_phytomni / mcp_client_phytomni packages plus
   # the pip-only entries below and any transitive dependencies
-  # (numpy / lxml / magika / etc. arrive through markitdown[all]).
+  # (numpy / lxml / magika / etc. arrive through the explicit
+  # markitdown document-converter extras below).
   - python>=3.12,<3.15
   - cryptography>=42.0.0
   - fastapi>=0.115.0
@@ -32,10 +33,11 @@ dependencies:
   # Pip-only packages: not reliably available on conda-forge with the
   # versions / features this project requires. `esdk-obs-python` is
   # the Huawei OBS SDK and ships only on PyPI; the langchain / langgraph
-  # release cadence on conda-forge lags PyPI; `markitdown[all]` activates
-  # extras that conda-forge does not expose as a single feed.
+  # release cadence on conda-forge lags PyPI; the explicit markitdown
+  # converter extras are not exposed as a single conda-forge feed.
   - pip:
       - esdk-obs-python>=3.26.2
       - langchain-core>=1.3.3
       - langgraph>=1.1.10
-      - markitdown[all]>=0.1.5
+      - markitdown[az-doc-intel,audio-transcription,docx,outlook,pdf,pptx,xls,xlsx]>=0.1.5
+      - youtube-transcript-api>=1.2.4

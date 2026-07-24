@@ -296,9 +296,12 @@ When changing dependencies:
 ## Troubleshooting Binary Builds
 
 `numpy` and `pandas` are not direct dependencies; they are pulled in
-transitively by `markitdown[all]` for document-upload agents. On a host with
-an old compiler, pip or conda can resolve the newest releases and try to
-compile them from source.
+transitively by the explicit MarkItDown document-converter extras for
+document-upload agents. The YouTube converter is declared separately with a
+Python 3.14-compatible `youtube-transcript-api` lower bound because
+MarkItDown's aggregate `all` extra still requires the incompatible 1.0 line.
+On a host with an old compiler, pip or conda can resolve the newest releases
+and try to compile them from source.
 
 This is a host-toolchain limitation. Use one supported path:
 
