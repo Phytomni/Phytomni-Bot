@@ -16,6 +16,8 @@ from typing import Any
 import httpx
 import pytest
 from tests.support.chat_fakes import (
+    ChatCompletionOptions,
+    chat_completion_payload,
     install_chat_handler,
     misplaced_reasoning_message,
 )
@@ -206,28 +208,22 @@ async def test_chat_completions_preserves_provider_reasoning_and_usage(
 
     async def fake(args: Any) -> dict[str, Any]:
         del args
-        return {
-            "id": "chatcmpl-reasoner",
-            "object": "chat.completion",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": "Light energy is captured by chlorophyll.",
-                        "reasoning_content": "Step 1: identify photons...",
-                        "tool_calls": [],
-                    },
-                    "finish_reason": "stop",
-                }
-            ],
-            "usage": {
-                "prompt_tokens": 42,
-                "completion_tokens": 11,
-                "total_tokens": 53,
-            },
-            "system_fingerprint": "fp_test",
-        }
+        return chat_completion_payload(
+            "chatcmpl-reasoner",
+            "Light energy is captured by chlorophyll.",
+            ChatCompletionOptions(
+                message_fields={
+                    "reasoning_content": "Step 1: identify photons...",
+                    "tool_calls": [],
+                },
+                usage={
+                    "prompt_tokens": 42,
+                    "completion_tokens": 11,
+                    "total_tokens": 53,
+                },
+                system_fingerprint="fp_test",
+            ),
+        )
 
     monkeypatch.setitem(
         server.TOOL_HANDLERS,

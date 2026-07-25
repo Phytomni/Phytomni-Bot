@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.support.run_registry_fakes import fixed_run_context
 from tests.unit.test_run_registry import (
     _make_registry,
     _seed_async_run,
@@ -22,7 +23,7 @@ from mcp_server_phytomni.runtime.run_registry import (
     RunRequestInfo,
     RunSpec,
 )
-from mcp_server_phytomni.runtime.task_manager import RunContext, Submission
+from mcp_server_phytomni.runtime.task_manager import Submission
 
 pytestmark = pytest.mark.unit
 
@@ -274,14 +275,7 @@ async def test_reconcile_carries_submit_warnings_to_terminal_payload(
             task_id="t-warn",
             status="submitted",
             output_dir="/obs/research",
-            run_context=RunContext(
-                run_id=spec.run_id,
-                user_id=spec.user_id,
-                agent=spec.agent,
-                origin=spec.origin,
-                created_at="2026-05-20T00:00:00+00:00",
-                updated_at="2026-05-20T00:00:00+00:00",
-            ),
+            run_context=fixed_run_context(spec),
         )
     )
 

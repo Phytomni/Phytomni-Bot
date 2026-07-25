@@ -19,6 +19,7 @@ from .lifecycle_contract import (
     SafeApiError,
     SafeErrorCode,
     empty_agent_result,
+    run_persistence_error,
 )
 
 
@@ -34,11 +35,34 @@ def review_projection_error() -> SafeApiError:
 
 def review_persistence_error() -> SafeApiError:
     """Return the stable public error for Review pause persistence failures."""
-    return SafeApiError(
-        status_code=500,
-        code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
-        message="run persistence failed",
-        stage="persistence",
+    return run_persistence_error()
+
+
+def settle_failed_run(
+    registry: RunRegistry,
+    *,
+    run_id: str,
+    owner: str,
+    result: dict[str, Any],
+    error: str | None = None,
+) -> bool:
+    """Apply one owner-scoped failed A2UI run transition."""
+    return registry.settle_run(
+        run_id,
+        owner=owner,
+        status="failed",
+        result=result,
+        error=error,
+    )
+
+
+def review_run_spec(run_id: str, owner: str) -> RunSpec:
+    """Build the shared local Review run identity specification."""
+    return RunSpec(
+        run_id=run_id,
+        user_id=owner,
+        agent="review",
+        origin="local",
     )
 
 
@@ -53,12 +77,7 @@ def create_review_pause(
     """Create a durable Review pause before exposing it to the caller."""
     try:
         registry.create_run(
-            RunSpec(
-                run_id=run_id,
-                user_id=owner,
-                agent="review",
-                origin="local",
-            ),
+            review_run_spec(run_id, owner),
             outcome=RunOutcome(status="input_required", result=result),
             request_info=request_info,
         )
@@ -98,10 +117,10 @@ def settle_review_projection_failure(
     """Persist a failed row after Review surface projection fails."""
     if existing:
         try:
-            persisted = registry.settle_run(
-                run_id,
+            persisted = settle_failed_run(
+                registry,
+                run_id=run_id,
                 owner=owner,
-                status="failed",
                 result=empty_agent_result(),
                 error=SafeErrorCode.PROJECTION_FAILED.value,
             )
@@ -115,12 +134,7 @@ def settle_review_projection_failure(
         raise review_persistence_error()
     try:
         registry.create_run(
-            RunSpec(
-                run_id=run_id,
-                user_id=owner,
-                agent="review",
-                origin="local",
-            ),
+            review_run_spec(run_id, owner),
             outcome=RunOutcome(
                 status="failed",
                 result=empty_agent_result(),

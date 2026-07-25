@@ -44,7 +44,7 @@ from ..runtime.run_registry import RunFilter, RunRequestInfo
 from . import run_lifecycle
 from .a2a.executor import A2AHandlerOptions, A2ARequestHandler
 from .admin_auth import require_service_principal
-from .app_support import _ErrorResponseOptions
+from .app_support import _SAFE_DEFAULT_MESSAGES, _ErrorResponseOptions
 from .auth import ApiPrincipal, require_principal, scopes_satisfy
 from .lifecycle_contract import (
     LifecycleInvariantError,
@@ -52,6 +52,7 @@ from .lifecycle_contract import (
     SafeErrorCode,
     canonicalize_agent_run_body,
     canonicalize_run_record,
+    run_persistence_error,
 )
 from .openai_mapping import (
     MODEL_TO_TOOL,
@@ -75,33 +76,13 @@ from .schemas import (
 
 logger = logging.getLogger(__name__)
 
-_SAFE_HTTP_MESSAGES = {
-    400: "invalid request",
-    401: "authentication required",
-    403: "request is not permitted",
-    404: "resource not found",
-    409: "request conflicts with current state",
-    413: "request payload is too large",
-    422: "request validation failed",
-    429: "request rate limit exceeded",
-    500: "internal server error",
-    502: "upstream service failed",
-    503: "service unavailable",
-    504: "upstream service timed out",
-}
-
 
 def _safe_api_error_for_lifecycle(
     exc: LifecycleInvariantError,
 ) -> SafeApiError:
     """Map one internal lifecycle invariant failure to a safe HTTP error."""
     if exc.code is SafeErrorCode.SUCCEEDED_WITHOUT_PERSISTENCE:
-        return SafeApiError(
-            status_code=500,
-            code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
-            message="run persistence failed",
-            stage="persistence",
-        )
+        return run_persistence_error()
     if exc.code is SafeErrorCode.INPUT_REQUIRED_WITHOUT_SURFACE:
         return SafeApiError(
             status_code=500,
@@ -741,7 +722,7 @@ def _register_error_handlers(app: FastAPI) -> None:
         """Render HTTP exceptions through the unified envelope."""
         return _app_attr("_error_response")(
             exc.status_code,
-            _SAFE_HTTP_MESSAGES.get(exc.status_code, "request failed"),
+            _SAFE_DEFAULT_MESSAGES.get(exc.status_code, "request failed"),
             options=_ErrorResponseOptions(
                 headers=getattr(exc, "headers", None)
             ),

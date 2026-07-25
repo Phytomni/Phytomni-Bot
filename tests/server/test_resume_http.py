@@ -12,31 +12,19 @@ from typing import Any
 
 import httpx
 import pytest
+from tests.support.a2ui_contract_fakes import (
+    chat_terminal_state,
+    confirm_surface,
+)
 
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
-    RunSpec,
+    local_run_spec,
 )
 
 pytestmark = pytest.mark.server
-
-
-def _chat_terminal_state() -> dict[str, Any]:
-    """Return the smallest terminal Chat graph state."""
-    return {
-        "response": {
-            "choices": [
-                {
-                    "message": {
-                        "content": "done",
-                        "follow_up_questions": [],
-                    }
-                }
-            ]
-        }
-    }
 
 
 def _install_a2ui_race_seams(
@@ -58,7 +46,7 @@ def _install_a2ui_race_seams(
         calls.append(thread_id)
         started.set()
         await release.wait()
-        return _chat_terminal_state()
+        return chat_terminal_state()
 
     monkeypatch.setattr(
         api_app_module, "_has_graph_checkpoint", _has_checkpoint
@@ -83,26 +71,17 @@ def _seed_run(
             "interrupt": {
                 "thread_id": run_id,
                 "draft": {
-                    "a2ui": {
-                        "catalog_version": "v1.0",
-                        "surface_id": f"{run_id}-surface",
-                        "widget": "confirm",
-                        "props": {
-                            "title": "Review approval",
-                            "body": "Review approval required.",
-                        },
-                    }
+                    "a2ui": confirm_surface(
+                        f"{run_id}-surface",
+                        title="Review approval",
+                        body="Review approval required.",
+                    ),
                 },
             },
             "status": "input_required",
         }
     RunRegistry(tasks_db_path).create_run(
-        RunSpec(
-            run_id=run_id,
-            user_id=owner,
-            agent=agent,
-            origin="local",
-        ),
+        local_run_spec(run_id, owner, agent),
         outcome=RunOutcome(status=status, result=result),
     )
     return run_id

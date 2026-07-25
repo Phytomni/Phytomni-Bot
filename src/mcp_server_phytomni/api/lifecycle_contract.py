@@ -18,6 +18,7 @@ from ..agents.shared.a2ui import (
     project_review_confirm,
     validate_a2ui_surface,
 )
+from ..agents.shared.citation_enrichment import CITATION_BIBLIO_FIELDS
 from ..contracts.deep_genome import (
     DEEP_GENOME_FINAL_FAILURE_REASONS,
     DEEP_GENOME_PROGRESS_FIELDS,
@@ -32,6 +33,7 @@ __all__ = [
     "canonicalize_agent_run_body",
     "canonicalize_run_record",
     "empty_agent_result",
+    "run_persistence_error",
 ]
 
 
@@ -70,6 +72,16 @@ class SafeApiError(RuntimeError):
 
     def __post_init__(self) -> None:
         RuntimeError.__init__(self, self.code)
+
+
+def run_persistence_error() -> SafeApiError:
+    """Return the stable public error for durable run persistence failures."""
+    return SafeApiError(
+        status_code=500,
+        code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
+        message="run persistence failed",
+        stage="persistence",
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -409,7 +421,10 @@ def canonicalize_run_record(
     projected["id"] = run_id
     projected["run_id"] = run_id
     if canonical["status"] == "input_required":
-        projected["result"] = {"interrupt": canonical["interrupt"]}
+        projected["result"] = {
+            "interrupt": canonical["interrupt"],
+            "status": "input_required",
+        }
     else:
         projected["result"] = canonical["result"]
         formatted = canonical["result"].get("formatted")
@@ -797,16 +812,7 @@ _METADATA_SCALAR_KEYS = frozenset(
 _REFERENCE_KEYS = (
     "file_id",
     "title",
-    "au",
-    "ti",
-    "so",
-    "vl",
-    "bp",
-    "ep",
-    "py",
-    "di",
-    "dl",
-    "pm",
+    *CITATION_BIBLIO_FIELDS,
 )
 
 

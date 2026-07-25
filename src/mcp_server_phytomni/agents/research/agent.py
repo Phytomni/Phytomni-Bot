@@ -13,7 +13,6 @@ import logging
 import operator
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
-from json import loads
 from time import perf_counter
 from typing import Annotated, Any, cast
 
@@ -27,11 +26,6 @@ from ...config.overrides import (
     copy_sensitive_config_with_overrides,
 )
 from ...config.settings import SensitiveConfig, get_sensitive_config
-from ...graphs.chat_adapters import (
-    build_chat_input,
-    build_chat_kwargs_for,
-    extract_chat_response,
-)
 from ...interop.planner import InteropMode
 from ...runtime.agent_registry import (
     agent_fingerprint_values,
@@ -42,14 +36,13 @@ from ...runtime.langgraph_runner import (
     ensure_checkpointer,
 )
 from ...runtime.locale import SupportedLocale
-from ...runtime.request_context import bind_accepted_task_ids
 from ...runtime.submission_outcome import (
     AcceptedSubmission,
-    RejectedSubmission,
     SubmissionOutcome,
     classify_submissions,
+    has_pending_a2a,
+    rejected_submissions_from_state,
 )
-from ...storage.downloads import download_upload_context
 from ...storage.path_policy import RunIdentity
 from ..analyst.agent import (
     ANALYST_CONFIG_FIELD_MAP,
@@ -59,8 +52,10 @@ from ..analyst.agent import (
 )
 from ..chat.service import _cached_chat_app
 from ..shared.analysis import (
+    AnalysisCaptureSpec,
     AnalysisStateSpec,
     capture_analysis_result,
+    finalize_analysis_submission,
     run_analysis_graph,
 )
 from ..shared.analysis_storage import create_output_dir
@@ -89,12 +84,14 @@ from ..shared.parallel_dispatch import (
 from ..shared.remote_analysis import (
     REMOTE_FANOUT_ERRORS,
     RemoteAnalysisRequest,
-    RemoteAnalysisSubmissionError,
     accepted_submission,
     rejected_submission,
     submit_remote_analysis,
 )
-from .contracts import ResearchGoalBatch
+from .goal_extraction import (
+    ResearchGoalExtractionDependencies,
+    extract_research_goals,
+)
 from .interop import (
     RESEARCH_A2A_CAPABILITY,
     RESEARCH_INTEROP_FAILURES,
@@ -110,31 +107,6 @@ from .interop import (
 logger = logging.getLogger(__name__)
 
 IN_SILICO_CONFIG = InSilicoResearchConfig()
-
-_RESEARCH_GOALS_RESPONSE_FORMAT: dict[str, Any] = {
-    "type": "json_schema",
-    "json_schema": {
-        "type": "array",
-        "minItems": 1,
-        "maxItems": 20,
-        "description": (
-            "A list of research objectives derived from the paper."
-        ),
-        "items": {
-            "type": "object",
-            "additionalProperties": False,
-            "properties": {
-                "goal": {"type": "string", "minLength": 1, "maxLength": 1000},
-                "context": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 4000,
-                },
-            },
-            "required": ["goal"],
-        },
-    },
-}
 
 
 @dataclass(frozen=True)
@@ -227,48 +199,36 @@ def _research_submission_outcome(
                     )
                 )
 
-    rejected: list[RejectedSubmission] = []
-    state = result.get("phytomni_state")
-    raw_rejections = (
-        state.get("submission_rejections")
-        if isinstance(state, Mapping)
-        else None
+    rejected = rejected_submissions_from_state(
+        result,
+        pending_keys=("goal_description", "task_name", "task_id"),
     )
-    if isinstance(raw_rejections, list):
-        for item in raw_rejections:
-            if not isinstance(item, Mapping):
-                continue
-            goal = item.get("goal")
-            code = item.get("code")
-            if isinstance(goal, str) and isinstance(code, str):
-                rejected.append(RejectedSubmission(goal=goal, code=code))
-    raw_pending = (
-        state.get("a2a_pending") if isinstance(state, Mapping) else None
-    )
-    if isinstance(raw_pending, list):
-        for item in raw_pending:
-            if not isinstance(item, Mapping):
-                continue
-            goal = next(
-                (
-                    value
-                    for key in ("goal_description", "task_name", "task_id")
-                    if isinstance(value := item.get(key), str)
-                    and value.strip()
-                ),
-                "external_a2a",
-            )
-            rejected.append(
-                RejectedSubmission(goal=goal, code="a2a_input_required")
-            )
     return classify_submissions(accepted=accepted, rejected=rejected)
 
 
-def _has_pending_a2a(result: Mapping[str, Any]) -> bool:
-    """Return whether the graph retained an unresolved A2A pause."""
-    state = result.get("phytomni_state")
-    pending = state.get("a2a_pending") if isinstance(state, Mapping) else None
-    return isinstance(pending, list) and bool(pending)
+def _project_research_submission_updates(
+    updates: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep evidence payloads while surfacing structured rejections."""
+    submission_rejections: list[dict[str, str]] = []
+    evidence_items: list[ResearchEvidence] = []
+    for item in updates.get("evidence", []):
+        if not isinstance(item, dict):
+            continue
+        rejected = item.get("_submission_rejected")
+        if isinstance(rejected, dict):
+            goal = rejected.get("goal")
+            code = rejected.get("code")
+            if isinstance(goal, str) and isinstance(code, str):
+                submission_rejections.append({"goal": goal, "code": code})
+            continue
+        evidence_item = item.get("evidence")
+        if isinstance(evidence_item, dict):
+            evidence_items.append(cast(ResearchEvidence, evidence_item))
+    updates["evidence"] = evidence_items
+    if submission_rejections:
+        updates["submission_rejections"] = submission_rejections
+    return updates
 
 
 class InSilicoResearchAgents:
@@ -365,56 +325,18 @@ class InSilicoResearchAgents:
         obs_file_list: list[str],
         locale: SupportedLocale | None = None,
     ) -> list[dict[str, str]]:
-        """Extract research goals from scientific paper text.
-
-        Args:
-            user_query: The paper text or research query.
-            obs_file_list: List of OBS file paths to include as context.
-
-        Returns:
-            List of research goal dictionaries with 'goal' and 'context' keys.
-        """
-        if obs_file_list:
-            upload_context, _ = await download_upload_context(
-                obs_file_list,
-                self.in_silico_config,
-                self.sensitive_config,
-            )
-            user_query = get_prompt(
-                self.in_silico_config.PROMPT_FILE,
-                "user/in_silico_research_goals_file",
-                {"upload_context": upload_context, "paper_text": user_query},
-            )
-        else:
-            user_query = get_prompt(
-                self.in_silico_config.PROMPT_FILE,
-                "user/in_silico_research_goals",
-                {"paper_text": user_query},
-            )
-
-        chat_kwargs_bag = build_chat_kwargs_for(
-            self.in_silico_config,
-            self.sensitive_config,
-            response_format=_RESEARCH_GOALS_RESPONSE_FORMAT,
+        """Extract research goals through the shared chat seam."""
+        return await extract_research_goals(
+            user_query,
+            obs_file_list,
             locale=locale,
+            dependencies=ResearchGoalExtractionDependencies(
+                in_silico_config=self.in_silico_config,
+                sensitive_config=self.sensitive_config,
+                prompt_builder=get_prompt,
+                chat_app_factory=_cached_chat_app,
+            ),
         )
-        chat_output = await _cached_chat_app().ainvoke(
-            build_chat_input(
-                user_query=user_query, chat_kwargs=chat_kwargs_bag
-            )
-        )
-        phyto_response = extract_chat_response(chat_output)
-        if not phyto_response:
-            raise ValueError("research goal extraction returned no goals")
-        decoded = loads(phyto_response["choices"][0]["message"]["content"])
-        batch = ResearchGoalBatch.model_validate(decoded)
-        return [
-            {
-                "goal": item.goal,
-                "context": item.context or "",
-            }
-            for item in batch.root
-        ]
 
     async def _submit_research_task(
         self,
@@ -568,6 +490,34 @@ class InSilicoResearchAgents:
             )
         return evidence
 
+    def _research_interop_update(
+        self,
+        task: ResearchTaskContext,
+        external: ResearchEvidence | None,
+        started: float,
+    ) -> dict[str, Any]:
+        """Build the per-task interop outcome update."""
+        if task.interop.mode == "off":
+            return {}
+        if external is None:
+            return interop_attempt_update(
+                InteropAttempt(
+                    self._interop_dependencies,
+                    task.interop.targets,
+                    task.interop.mode,
+                    RESEARCH_MCP_CAPABILITY,
+                    RESEARCH_A2A_CAPABILITY,
+                    "degraded",
+                    perf_counter() - started,
+                    True,
+                )
+            )
+        return interop_evidence_update(
+            external,
+            status="completed",
+            latency_seconds=perf_counter() - started,
+        )
+
     async def extract_goals_node(self, state: InSilicoResearchState) -> dict:
         """Extract research goals from scientific paper text.
 
@@ -708,9 +658,10 @@ class InSilicoResearchAgents:
                 state,
                 analysis_type=task_name,
                 submit_call=failed_submit,
-                result_key=None,
-                result_list_key="evidence",
-                captured_exceptions=RESEARCH_INTEROP_FAILURES,
+                spec=AnalysisCaptureSpec(
+                    result_list_key="evidence",
+                    captured_exceptions=RESEARCH_INTEROP_FAILURES,
+                ),
             )
             if task.interop.mode != "off":
                 updates.update(
@@ -771,52 +722,13 @@ class InSilicoResearchAgents:
             state,
             analysis_type=task_name,
             submit_call=submit_call,
-            result_key=None,
-            result_list_key="evidence",
-            captured_exceptions=(),
+            spec=AnalysisCaptureSpec(
+                result_list_key="evidence",
+                captured_exceptions=(),
+            ),
         )
-        submission_rejections: list[dict[str, str]] = []
-        evidence_items: list[ResearchEvidence] = []
-        for item in updates.get("evidence", []):
-            if not isinstance(item, dict):
-                continue
-            rejected = item.get("_submission_rejected")
-            if isinstance(rejected, dict):
-                goal = rejected.get("goal")
-                code = rejected.get("code")
-                if isinstance(goal, str) and isinstance(code, str):
-                    submission_rejections.append({"goal": goal, "code": code})
-                continue
-            evidence_item = item.get("evidence")
-            if isinstance(evidence_item, dict):
-                evidence_items.append(cast(ResearchEvidence, evidence_item))
-        updates["evidence"] = evidence_items
-        if submission_rejections:
-            updates["submission_rejections"] = submission_rejections
-        if task.interop.mode != "off":
-            if external is None:
-                updates.update(
-                    interop_attempt_update(
-                        InteropAttempt(
-                            self._interop_dependencies,
-                            task.interop.targets,
-                            task.interop.mode,
-                            RESEARCH_MCP_CAPABILITY,
-                            RESEARCH_A2A_CAPABILITY,
-                            "degraded",
-                            perf_counter() - started,
-                            True,
-                        )
-                    )
-                )
-            else:
-                updates.update(
-                    interop_evidence_update(
-                        external,
-                        status="completed",
-                        latency_seconds=perf_counter() - started,
-                    )
-                )
+        updates = _project_research_submission_updates(updates)
+        updates.update(self._research_interop_update(task, external, started))
         return updates
 
     async def resume_research_a2a(
@@ -895,28 +807,12 @@ class InSilicoResearchAgents:
             {**state, "task_ids": {}, "evidence": []},
             analysis_type=task.task_name,
             submit_call=submit_call,
-            result_key=None,
-            result_list_key="evidence",
-            captured_exceptions=(),
+            spec=AnalysisCaptureSpec(
+                result_list_key="evidence",
+                captured_exceptions=(),
+            ),
         )
-        submission_rejections: list[dict[str, str]] = []
-        evidence_items: list[ResearchEvidence] = []
-        for item in updates.get("evidence", []):
-            if not isinstance(item, dict):
-                continue
-            rejected = item.get("_submission_rejected")
-            if isinstance(rejected, dict):
-                goal = rejected.get("goal")
-                code = rejected.get("code")
-                if isinstance(goal, str) and isinstance(code, str):
-                    submission_rejections.append({"goal": goal, "code": code})
-                continue
-            evidence_item = item.get("evidence")
-            if isinstance(evidence_item, dict):
-                evidence_items.append(cast(ResearchEvidence, evidence_item))
-        updates["evidence"] = evidence_items
-        if submission_rejections:
-            updates["submission_rejections"] = submission_rejections
+        updates = _project_research_submission_updates(updates)
         updates.update(
             interop_evidence_update(
                 evidence,
@@ -971,15 +867,11 @@ class InSilicoResearchAgents:
                 },
             ),
         )
-        outcome = _research_submission_outcome(result)
-        if outcome.kind == "rejected" or _has_pending_a2a(result):
-            raise RemoteAnalysisSubmissionError("no remote task was accepted")
-        bind_accepted_task_ids(outcome.task_ids)
-        return {
-            **result,
-            "task_ids": list(outcome.task_ids),
-            "submission_warnings": list(outcome.warnings),
-        }
+        return finalize_analysis_submission(
+            result,
+            _research_submission_outcome(result),
+            pending=has_pending_a2a(result),
+        )
 
 
 async def in_silico_research(

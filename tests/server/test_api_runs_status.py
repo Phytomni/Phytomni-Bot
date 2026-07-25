@@ -22,7 +22,11 @@ from tests.agents.shared.deep_genome_fixtures import (
     attach_formatted_result,
     seed_partial_deep_genome_run,
 )
-from tests.support.run_registry_fakes import foreign_run_spec, seed_foreign_run
+from tests.support.run_registry_fakes import (
+    assert_not_found_response,
+    foreign_run_spec,
+    seed_foreign_run,
+)
 
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.runtime import run_registry as run_registry_module
@@ -98,8 +102,7 @@ async def test_get_run_unknown_id_is_404(
         "/v1/runs/does-not-exist",
         headers={"Authorization": f"Bearer {issued_api_key}"},
     )
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == "not_found"
+    assert_not_found_response(response)
 
 
 async def test_get_run_foreign_owner_is_404(

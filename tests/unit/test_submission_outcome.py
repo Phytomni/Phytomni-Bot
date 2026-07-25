@@ -52,12 +52,8 @@ def test_full_and_rejected_outcomes_have_no_warnings() -> None:
     assert classify_submissions(accepted=[], rejected=[rejected]).kind == (
         "rejected"
     )
-    assert (
-        classify_submissions(accepted=[accepted], rejected=[]).warnings == ()
-    )
-    assert (
-        classify_submissions(accepted=[], rejected=[rejected]).warnings == ()
-    )
+    assert not classify_submissions(accepted=[accepted], rejected=[]).warnings
+    assert not classify_submissions(accepted=[], rejected=[rejected]).warnings
 
 
 def test_accepted_submission_rejects_blank_task_id_and_is_frozen() -> None:
@@ -67,4 +63,4 @@ def test_accepted_submission_rejects_blank_task_id_and_is_frozen() -> None:
 
     accepted = AcceptedSubmission(task_id="task-1", output_dir="tenant/out")
     with pytest.raises(FrozenInstanceError):
-        accepted.task_id = "task-2"  # type: ignore[misc]
+        setattr(accepted, "task_id", "task-2")

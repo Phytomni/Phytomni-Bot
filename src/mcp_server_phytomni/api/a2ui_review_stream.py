@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
+from functools import partial
 from typing import Any
 
 from fastapi.responses import StreamingResponse
@@ -50,6 +51,51 @@ class ReviewStreamHooks:
     project_interrupt: Callable[[Mapping[str, Any]], dict[str, Any]]
 
 
+@dataclass(frozen=True, slots=True)
+class A2UIStreamInputs:
+    """Domain inputs shared by Chat and Review A2UI stream requests."""
+
+    arguments: dict[str, Any]
+    payload: ChatCompletionRequest
+    user_query: str
+    dependencies: Any
+
+
+@dataclass(frozen=True, slots=True)
+class A2UIStreamRequest:
+    """Prepared context factory and event projection for one A2UI stream."""
+
+    prepare_context: Callable[..., Any]
+    inputs: A2UIStreamInputs
+    events: Callable[[Any, list[bool]], AsyncIterator[AguiEvent]]
+
+
+async def invoke_a2ui_graph(context: Any) -> Mapping[str, Any]:
+    """Invoke one prepared A2UI graph with its run-scoped thread config."""
+    return await context.graph.ainvoke(
+        context.initial_state,
+        config=build_runnable_config(context.run_id),
+    )
+
+
+def settle_a2ui_input_required(
+    context: Any,
+    dependencies: Any,
+    result: dict[str, Any],
+    settled: list[bool],
+) -> bool:
+    """Persist one input-required result through the shared terminal guard."""
+    return _settle_a2ui_stream_terminal(
+        lambda: dependencies.persistence.settle_stream_run(
+            context.run_id,
+            context.owner,
+            "input_required",
+            result,
+        ),
+        settled,
+    )
+
+
 def _settle_a2ui_stream_terminal(
     settle: Callable[[], bool],
     settled_terminal: list[bool],
@@ -82,6 +128,72 @@ def settle_a2ui_stream_failure(
     )
 
 
+async def stream_a2ui_events(
+    *,
+    prepare_context: Callable[[], Any],
+    payload: ChatCompletionRequest,
+    dependencies: Any,
+    events: Callable[[Any, list[bool]], AsyncIterator[AguiEvent]],
+) -> StreamingResponse:
+    """Project one A2UI event generator through the shared SSE lifecycle."""
+    context = prepare_context()
+    lifecycle_state = StreamLifecycleState()
+    settled_terminal = [False]
+    try:
+        primed = await prime_agui_stream(events(context, settled_terminal))
+    except Exception as exc:
+        settle_a2ui_stream_failure(
+            context.run_id,
+            context.owner,
+            settled_terminal,
+            dependencies=dependencies,
+        )
+        raise dependencies.stream.stream_setup_error(
+            exc, priming=True
+        ) from exc
+
+    async def _wrapped() -> AsyncIterator[str]:
+        """Forward SSE and settle failure only before a terminal result."""
+        try:
+            async for line in to_chat_completion_chunks(
+                dependencies.stream.project_stream(
+                    primed,
+                    run_id=context.run_id,
+                    lifecycle_state=lifecycle_state,
+                ),
+                payload.model,
+            ):
+                yield line
+        finally:
+            settle_a2ui_stream_failure(
+                context.run_id,
+                context.owner,
+                settled_terminal,
+                dependencies=dependencies,
+            )
+
+    return StreamingResponse(_wrapped(), media_type="text/event-stream")
+
+
+async def run_a2ui_stream(
+    request: A2UIStreamRequest,
+) -> StreamingResponse:
+    """Bind one domain context factory to the shared A2UI stream lifecycle."""
+    inputs = request.inputs
+    return await stream_a2ui_events(
+        prepare_context=partial(
+            request.prepare_context,
+            arguments=inputs.arguments,
+            payload=inputs.payload,
+            user_query=inputs.user_query,
+            dependencies=inputs.dependencies,
+        ),
+        payload=inputs.payload,
+        dependencies=inputs.dependencies,
+        events=request.events,
+    )
+
+
 async def stream_review_a2ui_pause(
     *,
     arguments: dict[str, Any],
@@ -91,19 +203,12 @@ async def stream_review_a2ui_pause(
     hooks: ReviewStreamHooks,
 ) -> StreamingResponse:
     """Stream Review until interrupt and emit one ``phyto.a2ui`` frame."""
-    context = hooks.prepare_review_stream(
-        arguments=arguments,
-        payload=payload,
-        user_query=user_query,
-        dependencies=dependencies,
-    )
 
-    async def _agui_events(settled: list[bool]) -> AsyncIterator[AguiEvent]:
+    async def _agui_events(
+        context: Any, settled: list[bool]
+    ) -> AsyncIterator[AguiEvent]:
         yield run_started(context.run_id, payload.dialogue_id)
-        final_state = await context.graph.ainvoke(
-            context.initial_state,
-            config=build_runnable_config(context.run_id),
-        )
+        final_state = await invoke_a2ui_graph(context)
         interrupt = detect_interrupt(final_state, context.run_id)
         if interrupt is not None:
             try:
@@ -152,14 +257,8 @@ async def stream_review_a2ui_pause(
                     "review surface projection failed",
                 )
                 return
-            if not _settle_a2ui_stream_terminal(
-                lambda: dependencies.persistence.settle_stream_run(
-                    context.run_id,
-                    context.owner,
-                    "input_required",
-                    pause_body["result"],
-                ),
-                settled,
+            if not settle_a2ui_input_required(
+                context, dependencies, pause_body["result"], settled
             ):
                 yield run_persistence_error()
                 return
@@ -185,38 +284,10 @@ async def stream_review_a2ui_pause(
                 return
         yield run_finished(context.run_id)
 
-    lifecycle_state = StreamLifecycleState()
-    settled_terminal = [False]
-    try:
-        primed = await prime_agui_stream(_agui_events(settled_terminal))
-    except Exception as exc:
-        settle_a2ui_stream_failure(
-            context.run_id,
-            context.owner,
-            settled_terminal,
-            dependencies=dependencies,
-        )
-        raise dependencies.stream.stream_setup_error(
-            exc, priming=True
-        ) from exc
-
-    async def _wrapped() -> AsyncIterator[str]:
-        try:
-            async for line in to_chat_completion_chunks(
-                dependencies.stream.project_stream(
-                    primed,
-                    run_id=context.run_id,
-                    lifecycle_state=lifecycle_state,
-                ),
-                payload.model,
-            ):
-                yield line
-        finally:
-            settle_a2ui_stream_failure(
-                context.run_id,
-                context.owner,
-                settled_terminal,
-                dependencies=dependencies,
-            )
-
-    return StreamingResponse(_wrapped(), media_type="text/event-stream")
+    inputs = A2UIStreamInputs(arguments, payload, user_query, dependencies)
+    request = A2UIStreamRequest(
+        prepare_context=hooks.prepare_review_stream,
+        inputs=inputs,
+        events=_agui_events,
+    )
+    return await run_a2ui_stream(request)

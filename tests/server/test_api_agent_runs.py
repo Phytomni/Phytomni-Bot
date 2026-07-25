@@ -19,7 +19,25 @@ from typing import Any
 
 import httpx
 import pytest
-from tests.support.resolver_fakes import post_native_run
+from tests.support.http_fakes import (
+    assert_degraded_tracking_response,
+    assert_duplicate_attachment_response,
+    install_rejection_handler,
+    install_tool_handler,
+    minimal_tool_handler,
+)
+from tests.support.resolver_fakes import (
+    post_duplicate_attachment_run,
+    post_native_run,
+    post_recorded_analyst_run,
+)
+from tests.support.terminal_results import (
+    SensitiveTerminalResultSpec,
+    public_partial_warning,
+    public_report_projection,
+    public_scientific_table_artifact,
+    sensitive_terminal_result,
+)
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.shared.a2ui import validate_a2ui_surface
@@ -59,7 +77,9 @@ def test_native_run_projects_submission_warnings_into_execution() -> None:
         },
     )
 
-    _result, response_result = api_app_module._format_agent_run_result(
+    _result, response_result = getattr(
+        api_app_module, "_format_agent_run_result"
+    )(
         envelope,
         resolve_meta={},
         debug=False,
@@ -274,15 +294,10 @@ async def test_agent_run_sync_writes_local_run(
 ) -> None:
     """A sync-agent invocation returns the agent.run envelope at 200."""
 
-    async def fake(args: Any) -> dict[str, Any]:
-        """Return a stub chat completion-shaped result."""
-        _ = args
-        return {"answer": "ok", "doc_list": []}
+    fake = minimal_tool_handler("ok")
 
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.CHAT_AGENT.value,
-        fake,
+    install_tool_handler(
+        monkeypatch, server.PhytomniAgents.CHAT_AGENT.value, fake
     )
 
     response = await api_client.post(
@@ -316,29 +331,16 @@ async def test_native_run_rejects_duplicate_attachments_before_handler(
 ) -> None:
     """Duplicate attachment references fail before tool dispatch."""
     del tasks_db_path
-    invoked = False
-
-    async def fake(_args: Any) -> dict[str, Any]:
-        nonlocal invoked
-        invoked = True
-        return {"answer": "must not run", "doc_list": []}
-
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.CHAT_AGENT.value,
-        fake,
+    marker = install_rejection_handler(
+        monkeypatch, server.PhytomniAgents.CHAT_AGENT.value
     )
     path = "/obs/phytomni/agent_data/uploads/u1/fixture/duplicate.pdf"
-    response = await post_native_run(
-        api_client,
-        issued_api_key,
-        "chat",
-        {"user_query": "hi", "obs_file_list": [path, path]},
+    response = await post_duplicate_attachment_run(
+        api_client, issued_api_key, path
     )
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "attachment_duplicate"
-    assert not invoked
+    assert_duplicate_attachment_response(response)
+    assert not marker["called"]
 
 
 async def test_agent_run_sync_persistence_failure_returns_safe_500(
@@ -348,10 +350,7 @@ async def test_agent_run_sync_persistence_failure_returns_safe_500(
 ) -> None:
     """A sync run cannot surface succeeded when persistence failed."""
 
-    async def fake(args: Any) -> dict[str, Any]:
-        """Return a stub chat completion-shaped result."""
-        _ = args
-        return {"answer": "ok", "doc_list": []}
+    fake = minimal_tool_handler("ok")
 
     def fail_record_sync(**_kwargs: Any) -> str:
         """Raise the app-level persistence failure without private leakage."""
@@ -359,10 +358,8 @@ async def test_agent_run_sync_persistence_failure_returns_safe_500(
             "private persistence detail"
         )
 
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.CHAT_AGENT.value,
-        fake,
+    install_tool_handler(
+        monkeypatch, server.PhytomniAgents.CHAT_AGENT.value, fake
     )
     monkeypatch.setattr(
         api_app_module,
@@ -412,10 +409,9 @@ async def test_native_sync_agents_keep_succeeded_envelope(
     """Representative synchronous native runs retain the common envelope."""
     slug, tool_name, arguments = case
 
-    async def fake(_args: Any) -> dict[str, Any]:
-        return {"answer": "ok", "doc_list": []}
+    fake = minimal_tool_handler("ok")
 
-    monkeypatch.setitem(server.TOOL_HANDLERS, tool_name, fake)
+    install_tool_handler(monkeypatch, tool_name, fake)
     response = await post_native_run(
         api_client, issued_api_key, slug, arguments
     )
@@ -435,17 +431,10 @@ async def test_agent_run_sync_persists_request_info(
 ) -> None:
     """A sync agent run captures dialogue / query / tool_name on the row."""
 
-    async def fake(args: Any) -> dict[str, Any]:
-        """Return a stub chat completion-shaped result."""
-        _ = args
-        return {"answer": "ok", "doc_list": []}
-
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.CHAT_AGENT.value,
-        fake,
+    fake = minimal_tool_handler("ok")
+    install_tool_handler(
+        monkeypatch, server.PhytomniAgents.CHAT_AGENT.value, fake
     )
-
     response = await post_native_run(
         api_client,
         issued_api_key,
@@ -537,8 +526,8 @@ async def test_agent_run_remote_returns_chokepoint_run_id(
         _ = args
         return case.stub_return
 
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
+    install_tool_handler(
+        monkeypatch,
         case.tool_name,
         records_submission(case.slug)(fake),
     )
@@ -605,30 +594,20 @@ async def test_agent_run_remote_surfaces_degraded_tracking_when_recorder_fails(
         _ = args
         return {"task_id": "T-degraded", "output_dir": "/obs/run"}
 
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.ANALYST_AGENT.value,
-        records_submission("analyst")(fake),
+    arguments = {
+        "goal_description": "test",
+        "data_list": {},
+        "obs_file_list": [],
+    }
+    response = await post_recorded_analyst_run(
+        monkeypatch=monkeypatch,
+        api_client=api_client,
+        issued_api_key=issued_api_key,
+        fake=fake,
+        arguments=arguments,
     )
 
-    response = await api_client.post(
-        "/v1/agents/analyst/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        json={
-            "arguments": {
-                "goal_description": "test",
-                "data_list": {},
-                "obs_file_list": [],
-            }
-        },
-    )
-
-    assert response.status_code == 202
-    body = response.json()
-    assert body["id"] is None
-    assert body["task_ids"] == ["T-degraded"]
-    assert body["degraded_tracking"] is True
-    assert "run_id" not in body
+    assert_degraded_tracking_response(response, "T-degraded")
     # And the registry stayed empty since create_run was the failure
     # point — proves the flag was driven by the live failure, not by
     # stale state left over from a previous test.
@@ -680,7 +659,7 @@ async def test_run_read_replaces_invalid_persisted_review_surface(
         validate_a2ui_surface(surface)
         assert surface["surface_id"] == f"{run_id}-review-confirm"
         assert body["result"]["interrupt"]["thread_id"] == "thread-review-safe"
-        assert set(body["result"]) == {"interrupt"}
+        assert set(body["result"]) == {"interrupt", "status"}
         assert set(body["result"]["interrupt"]) == {"thread_id", "draft"}
         assert set(body["result"]["interrupt"]["draft"]) == {
             "summary",
@@ -770,84 +749,15 @@ async def test_terminal_run_reads_project_nested_sensitive_result(
         RunSpec(run_id, "u1", "chat", "local"),
         outcome=RunOutcome(
             status=status,
-            result={
-                "formatted": {
-                    "answer": "public terminal answer",
-                    "follow_up_questions": ["next?"],
-                    "references": [
-                        {
-                            "file_id": "doc-1",
-                            "title": "Public title",
-                            "pm": "12345",
-                            "provider_payload": {"trace": "private"},
-                        }
-                    ],
-                    "tabular": {
-                        "headers": ["gene"],
-                        "rows": [["AT1G01010"]],
-                        "provider_trace": "private",
-                    },
-                    "metadata": {
-                        "original_query": "public query",
-                        "provider_payload": {"trace": "private"},
-                    },
-                },
-                "execution": {
-                    "tracking": {
-                        "degraded": False,
-                        "provider_payload": {"trace": "private"},
-                    },
-                    "warnings": [
-                        {
-                            "code": "partial",
-                            "stage": "projection",
-                            "retryable": False,
-                            "count": 1,
-                            "private_error": "provider exception",
-                        }
-                    ],
-                    "tasks": [
-                        {
-                            "id": "task-safe",
-                            "accepted": True,
-                            "status": "succeeded",
-                            "provider_trace": "private",
-                        }
-                    ],
-                    "artifacts": [
-                        {
-                            "role": "scientific_table",
-                            "name": "result.tsv",
-                            "mime_type": "text/tab-separated-values",
-                            "size_bytes": 42,
-                            "provider_payload": {"trace": "private"},
-                        }
-                    ],
-                    "output_dirs": [
-                        "/obs/public/result",
-                        {"private": "value"},
-                    ],
-                    "report": {
-                        "role": "scientific_report",
-                        "state": "complete",
-                        "artifact_id": "report-safe",
-                        "mime_type": "application/json",
-                        "size_bytes": 12,
-                        "provider_trace": "private",
-                    },
-                    "diagnostics": [
-                        {
-                            "code": "upstream_partial",
-                            "stage": "analysis",
-                            "retryable": False,
-                            "provider_trace": "private",
-                        }
-                    ],
-                    "provider_payload": {"trace": "private"},
-                },
-                "provider_trace": "preserved",
-                "raw": {"private_path": "/srv/private"},
-            },
+            result=sensitive_terminal_result(
+                SensitiveTerminalResultSpec(
+                    answer="public terminal answer",
+                    task_id="task-safe",
+                    citation=("pm", "12345"),
+                    table=(["gene"], [["AT1G01010"]]),
+                    warning=("private_error", "provider exception"),
+                )
+            ),
             error="provider exception: private details",
         ),
     )
@@ -889,12 +799,7 @@ async def test_terminal_run_reads_project_nested_sensitive_result(
         }
         assert body["result"]["execution"]["tracking"] == {"degraded": False}
         assert body["result"]["execution"]["warnings"] == [
-            {
-                "code": "partial",
-                "stage": "projection",
-                "retryable": False,
-                "count": 1,
-            }
+            public_partial_warning()
         ]
         assert body["result"]["execution"]["tasks"] == [
             {
@@ -904,23 +809,14 @@ async def test_terminal_run_reads_project_nested_sensitive_result(
             }
         ]
         assert body["result"]["execution"]["artifacts"] == [
-            {
-                "role": "scientific_table",
-                "name": "result.tsv",
-                "mime_type": "text/tab-separated-values",
-                "size_bytes": 42,
-            }
+            public_scientific_table_artifact()
         ]
         assert body["result"]["execution"]["output_dirs"] == [
             "/obs/public/result"
         ]
-        assert body["result"]["execution"]["report"] == {
-            "role": "scientific_report",
-            "state": "complete",
-            "artifact_id": "report-safe",
-            "mime_type": "application/json",
-            "size_bytes": 12,
-        }
+        assert body["result"]["execution"]["report"] == (
+            public_report_projection()
+        )
         assert body["result"]["execution"]["diagnostics"] == [
             {
                 "code": "upstream_partial",

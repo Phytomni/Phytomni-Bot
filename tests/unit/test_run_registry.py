@@ -15,7 +15,10 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from tests.support.run_registry_fakes import stamp_run_created_at
+from tests.support.run_registry_fakes import (
+    fixed_run_context,
+    stamp_run_created_at,
+)
 from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.runtime.run_registry import (
@@ -53,14 +56,7 @@ def _seed_async_run(
     task_status: str = "submitted",
 ) -> None:
     """Insert a running run plus its child task rows."""
-    ctx = RunContext(
-        run_id=spec.run_id,
-        user_id=spec.user_id,
-        agent=spec.agent,
-        origin=spec.origin,
-        created_at="2026-05-20T00:00:00+00:00",
-        updated_at="2026-05-20T00:00:00+00:00",
-    )
+    ctx = fixed_run_context(spec)
     for task_id in task_ids:
         manager.record(
             Submission(

@@ -685,8 +685,13 @@ async def test_research_graph_interrupts_and_resumes_a2a_once(
         ),
     )
 
-    async def extract(_query: str, _files: list[str]) -> list[dict[str, str]]:
+    async def extract(
+        _query: str,
+        _files: list[str],
+        _locale: str | None,
+    ) -> list[dict[str, str]]:
         """Return one deterministic goal for the graph pause test."""
+        del _locale
         return [{"goal": "Characterize PHYB", "context": "drought"}]
 
     submit = AsyncMock(

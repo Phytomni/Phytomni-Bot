@@ -29,6 +29,12 @@ from mcp_server_phytomni.agents.shared.remote_analysis import (
     RemoteAnalysisSubmissionError,
 )
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.analysis_states import (
+    analysis_node_state,
+    install_async_failure,
+    mixed_submission_state,
+    research_graph_state,
+)
 
 pytestmark = pytest.mark.agent
 
@@ -63,9 +69,13 @@ async def test_extract_goals_node_captures_failure_into_state(
     agent = _build_agent()
     boom = RuntimeError("synthetic LLM outage")
 
-    async def fake_extract(user_query: str, obs_file_list: list[str]) -> Any:
+    async def fake_extract(
+        user_query: str,
+        obs_file_list: list[str],
+        locale: str | None,
+    ) -> Any:
         """Raise the synthetic outage so failure_state captures it."""
-        del user_query, obs_file_list
+        del user_query, obs_file_list, locale
         raise boom
 
     monkeypatch.setattr(agent, "_extract_goals", fake_extract)
@@ -114,9 +124,10 @@ async def test_invalid_goal_extraction_makes_no_submit_calls(
     async def invalid_extract(
         user_query: str,
         obs_file_list: list[str],
+        locale: str | None,
     ) -> list[dict[str, str]]:
         """Model the contract validator rejecting decoded goal JSON."""
-        del user_query, obs_file_list
+        del user_query, obs_file_list, locale
         raise ValueError("value must be nonblank")
 
     submit = AsyncMock()
@@ -124,18 +135,10 @@ async def test_invalid_goal_extraction_makes_no_submit_calls(
     monkeypatch.setattr(agent, "_submit_research_task", submit)
 
     result = await agent.app.ainvoke(
-        {
-            "paper_text": "A paper with an invalid empty objective.",
-            "data_list": {},
-            "user_id": "test-user",
-            "obs_file_list": [],
-            "output_dir": "/tmp/research-out",
-            "goals": [],
-            "research_tasks": [],
-            "task_ids": {},
-            "completed_count": 0,
-            "error": None,
-        },
+        research_graph_state(
+            paper_text="A paper with an invalid empty objective.",
+            output_dir="/tmp/research-out",
+        ),
         config={"configurable": {"thread_id": "invalid-goal-test"}},
     )
 
@@ -227,7 +230,7 @@ async def test_arun_rejects_rejected_research_submission(
 
 def test_research_submission_outcome_accepts_goal_task_mapping() -> None:
     """The private graph mapping classifies every nonblank remote id."""
-    outcome = research_agent_module._research_submission_outcome(
+    outcome = getattr(research_agent_module, "_research_submission_outcome")(
         {
             "task_ids": {"goal-1": "task-1", "goal-2": "task-2"},
             "output_dir": "/tmp/research-out",
@@ -237,7 +240,7 @@ def test_research_submission_outcome_accepts_goal_task_mapping() -> None:
 
     assert outcome.kind == "full"
     assert outcome.task_ids == ("task-1", "task-2")
-    assert outcome.rejected == ()
+    assert not outcome.rejected
 
 
 async def test_arun_normalizes_task_ids_and_preserves_rejection_counts(
@@ -285,46 +288,39 @@ async def test_arun_normalizes_task_ids_and_preserves_rejection_counts(
     assert result["submission_warnings"][0]["rejected_count"] == rejected_count
 
 
-def test_research_mixed_a2a_pending_is_not_full_submission() -> None:
-    """A local acceptance plus an unresolved A2A pause is partial."""
-    outcome = research_agent_module._research_submission_outcome(
-        {
-            "task_ids": {"local": "local-task"},
-            "phytomni_state": {
-                "a2a_pending": [{"task_id": "peer-task"}],
-            },
-        }
-    )
-
-    assert outcome.kind == "partial"
-    assert outcome.task_ids == ("local-task",)
-    assert outcome.warnings[0]["rejected_count"] == 1
-
-
 async def test_research_dispatch_propagates_missing_task_id(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A local task-id invariant must not become an upstream warning."""
     agent = _build_agent()
-    monkeypatch.setattr(
+    install_async_failure(
+        monkeypatch,
         agent,
         "_submit_research_task",
-        AsyncMock(
-            side_effect=RemoteAnalysisSubmissionError("missing task id")
-        ),
+        RemoteAnalysisSubmissionError("missing task id"),
     )
     state = cast(
         Any,
-        {
-            "task_index": 0,
-            "task_name": "research_goal_0",
-            "goal_description": "Characterize PHYB",
-            "context": "rice stress response",
-            "data_list": {},
-            "output_dir": "/tmp/research-out",
-            "thread_id": "thread-c2",
-        },
+        analysis_node_state(
+            task_name="research_goal_0",
+            goal_description="Characterize PHYB",
+            context="rice stress response",
+            data_list={},
+            output_dir="/tmp/research-out",
+            thread_id="thread-c2",
+        ),
     )
 
     with pytest.raises(RemoteAnalysisSubmissionError, match="missing task"):
         await agent.run_research_node(state)
+
+
+def test_research_mixed_a2a_pending_is_not_full_submission() -> None:
+    """A local acceptance plus an unresolved A2A pause is partial."""
+    outcome = getattr(research_agent_module, "_research_submission_outcome")(
+        mixed_submission_state({"task_ids": {"local": "local-task"}})
+    )
+
+    assert outcome.kind == "partial"
+    assert outcome.task_ids == ("local-task",)
+    assert outcome.warnings[0]["rejected_count"] == 1

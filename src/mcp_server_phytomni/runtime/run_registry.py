@@ -16,15 +16,37 @@ import contextlib
 import json
 import sqlite3
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 
-from ..agents.shared.a2ui.validation import (
-    A2uiSurfaceValidationError,
-    validate_a2ui_surface,
+from .run_registry_models import (
+    _A2A_COLUMNS,
+    _CREATE_A2A_TASK_INDEX,
+    _CREATE_A2UI_ACTIONS_DDL,
+    _CREATE_A2UI_OWNER_ACTION_INDEX,
+    _CREATE_RUNS_DDL,
+    _CREATE_RUNS_USER_INDEX,
+    _CREATE_TASKS_RUN_INDEX,
+    _FAILURE_STATUSES,
+    _NON_POLLABLE_RUN_STATUSES,
+    _REQUEST_INFO_COLUMNS,
+    _TERMINAL_RUN_STATUSES,
+    A2ACorrelation,
+    A2UIActionAudit,
+    A2UIActionClaim,
+    A2UIActionConflict,
+    A2UIActionIdentity,
+    A2UIActionInvariantError,
+    RunFilter,
+    RunOutcome,
+    RunRecord,
+    RunRequestInfo,
+    RunSpec,
+    Timestamps,
+    _aggregate_status,
+    _now_iso,
+    _surface_identity_from_result,
+    local_run_spec,
 )
-from .locale import SUPPORTED_LOCALES, SupportedLocale
 from .sqlite import sqlite_transaction
 from .submission_outcome import project_submission_warnings
 from .task_manager import (
@@ -59,15 +81,9 @@ __all__ = [
     "RunRequestInfo",
     "RunSpec",
     "Timestamps",
+    "local_run_spec",
     "purge_run_children",
 ]
-
-# Status vocabulary shared with the task layer. Mirrors the e2e poller
-# so the same agent payloads aggregate consistently across MCP and API.
-_SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
-_FAILURE_STATUSES = frozenset({"failed", "error"})
-_TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed"})
-_NON_POLLABLE_RUN_STATUSES = _TERMINAL_RUN_STATUSES | {"input_required"}
 
 
 def purge_run_children(
@@ -97,362 +113,6 @@ def purge_run_children(
     connection.execute(
         f"DELETE FROM runs WHERE run_id IN ({placeholders})", ids
     )
-
-
-_CREATE_RUNS_DDL = """
-CREATE TABLE IF NOT EXISTS runs (
-    run_id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    agent TEXT NOT NULL,
-    origin TEXT NOT NULL,
-    status TEXT NOT NULL,
-    result_json TEXT,
-    error TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    expires_at TEXT,
-    dialogue_id TEXT,
-    query TEXT,
-    tool_name TEXT,
-    model TEXT,
-    request_json TEXT,
-    locale TEXT,
-    a2a_task_id TEXT,
-    a2a_context_id TEXT,
-    a2a_message_id TEXT
-)
-"""
-
-# Request-context columns added after the initial schema shipped.
-# ``_init_db`` walks the list and runs an idempotent ``ALTER TABLE``
-# per name so an upgraded database catches up to the same shape a
-# fresh ``CREATE TABLE`` would produce.
-_REQUEST_INFO_COLUMNS = (
-    ("dialogue_id", "TEXT"),
-    ("query", "TEXT"),
-    ("tool_name", "TEXT"),
-    ("model", "TEXT"),
-    ("request_json", "TEXT"),
-    ("locale", "TEXT"),
-)
-
-_A2A_COLUMNS = (
-    ("a2a_task_id", "TEXT"),
-    ("a2a_context_id", "TEXT"),
-    ("a2a_message_id", "TEXT"),
-)
-
-_CREATE_RUNS_USER_INDEX = (
-    "CREATE INDEX IF NOT EXISTS idx_runs_user ON runs(user_id)"
-)
-_CREATE_TASKS_RUN_INDEX = (
-    "CREATE INDEX IF NOT EXISTS idx_tasks_run ON tasks(run_id)"
-)
-_CREATE_A2A_TASK_INDEX = (
-    "CREATE INDEX IF NOT EXISTS idx_runs_a2a_task_user "
-    "ON runs(a2a_task_id, user_id)"
-)
-_CREATE_A2UI_ACTIONS_DDL = """
-CREATE TABLE IF NOT EXISTS run_a2ui_actions (
-    run_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    surface_id TEXT NOT NULL,
-    widget TEXT NOT NULL,
-    action_id TEXT NOT NULL,
-    channel TEXT NOT NULL,
-    outcome TEXT NOT NULL,
-    claimed_at TEXT NOT NULL,
-    completed_at TEXT,
-    PRIMARY KEY (run_id, surface_id),
-    FOREIGN KEY (run_id) REFERENCES runs(run_id)
-)
-"""
-_CREATE_A2UI_OWNER_ACTION_INDEX = (
-    "CREATE INDEX IF NOT EXISTS idx_run_a2ui_actions_owner_action "
-    "ON run_a2ui_actions(user_id, action_id)"
-)
-
-
-def _now_iso() -> str:
-    """Return the current UTC time as an ISO-8601 string."""
-    return datetime.now(UTC).isoformat()
-
-
-def _surface_identity_from_result(
-    result_json: str | None,
-) -> tuple[str, str]:
-    """Extract and validate the open A2UI surface from a run result.
-
-    The persisted result is an invariant boundary: malformed JSON or an
-    invalid surface means the run cannot safely accept a new action. Such a
-    row must fail loudly instead of being treated as an ordinary conflict.
-    """
-    try:
-        result = json.loads(result_json or "")
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise A2UIActionInvariantError(
-            "persisted input request is not valid JSON"
-        ) from exc
-    if not isinstance(result, Mapping):
-        raise A2UIActionInvariantError(
-            "persisted input request result is not an object"
-        )
-    interrupt = result.get("interrupt")
-    draft = interrupt.get("draft") if isinstance(interrupt, Mapping) else None
-    surface = draft.get("a2ui") if isinstance(draft, Mapping) else None
-    if not isinstance(surface, Mapping):
-        raise A2UIActionInvariantError(
-            "persisted input request has no A2UI surface"
-        )
-    try:
-        validated = validate_a2ui_surface(surface)
-    except (A2uiSurfaceValidationError, TypeError, ValueError) as exc:
-        raise A2UIActionInvariantError(
-            "persisted input request has an invalid A2UI surface"
-        ) from exc
-    return validated.surface_id, validated.widget
-
-
-def _aggregate_status(task_statuses: list[str]) -> str:
-    """Aggregate child task statuses into one run status.
-
-    All success-like → ``succeeded``; any failure-like → ``failed``;
-    otherwise ``running`` (the safe default while any child is still
-    in-flight or in an unknown state).
-    """
-    lowered = [s.lower() for s in task_statuses if s]
-    if any(s in _FAILURE_STATUSES for s in lowered):
-        return "failed"
-    if lowered and all(s in _SUCCESS_STATUSES for s in lowered):
-        return "succeeded"
-    return "running"
-
-
-@dataclass(frozen=True)
-class RunSpec:
-    """Identity of one run: row primary key + owner/agent/origin.
-
-    Attributes:
-        run_id: Owning run id (caller-minted via ``IdFactory``).
-        user_id: Authenticated user (``"anonymous"`` on the MCP path).
-        agent: Public agent alias (e.g. ``"analyst"``).
-        origin: ``"remote"`` for analysis-platform submissions,
-            ``"local"`` for in-process synchronous runs.
-    """
-
-    run_id: str
-    user_id: str
-    agent: str
-    origin: str
-
-
-@dataclass(frozen=True)
-class A2ACorrelation:
-    """Protocol ids linking one A2A task to an existing run row."""
-
-    task_id: str | None = None
-    context_id: str | None = None
-    message_id: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class A2UIActionClaim:
-    """Identity of the first uplink accepted for one paused surface."""
-
-    run_id: str
-    surface_id: str
-    widget: str
-    action_id: str
-    channel: str
-
-
-@dataclass(frozen=True, slots=True)
-class A2UIActionIdentity:
-    """Stable identity fields shared by a claim and its audit row."""
-
-    run_id: str
-    surface_id: str
-    widget: str
-    action_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class A2UIActionAudit:
-    """Safe audit projection for one claimed A2UI action.
-
-    The projection intentionally omits the submitted action payload. The
-    owner is supplied to the reader as a namespace constraint.
-    """
-
-    identity: A2UIActionIdentity
-    channel: str
-    outcome: str
-    claimed_at: str
-    completed_at: str | None
-
-    @property
-    def run_id(self) -> str:
-        """Return the audited run id."""
-        return self.identity.run_id
-
-    @property
-    def surface_id(self) -> str:
-        """Return the audited surface id."""
-        return self.identity.surface_id
-
-    @property
-    def widget(self) -> str:
-        """Return the audited widget kind."""
-        return self.identity.widget
-
-    @property
-    def action_id(self) -> str:
-        """Return the audited action id."""
-        return self.identity.action_id
-
-
-class A2UIActionConflict(RuntimeError):  # noqa: N818
-    """Raised when the current pause is absent, mismatched, or claimed."""
-
-
-class A2UIActionInvariantError(RuntimeError):
-    """Raised when persisted input-required data violates its invariant."""
-
-
-@dataclass(frozen=True)
-class RunOutcome:
-    """Initial outcome state of a newly-created run row.
-
-    Attributes:
-        status: Run status string; ``"running"`` for in-flight,
-            ``"succeeded"``/``"failed"`` for terminal-on-creation
-            sync runs.
-        result: Terminal result payload (sync runs only); JSON-encoded
-            into the ``result_json`` column.
-        error: Terminal error message (failed sync runs only).
-    """
-
-    status: str = "running"
-    result: dict[str, Any] | None = None
-    error: str | None = None
-
-
-@dataclass(frozen=True)
-class RunRequestInfo:
-    """Per-request metadata persisted alongside the run row.
-
-    These fields are captured at the request boundary so chat-ai's
-    history page can render past conversations without re-deriving the
-    surface from the agent payload. ``None`` is acceptable on every
-    field so legacy MCP-only runs that predate the columns still hydrate
-    without backfill.
-
-    Attributes:
-        dialogue_id: Chat-ai conversation id; groups runs into one
-            visible thread.
-        query: Verbatim user query text the agent saw.
-        tool_name: MCP tool name dispatched (e.g. ``"KnowledgeAgent"``).
-        model: OpenAI-compat model id when the request came through
-            ``/v1/chat/completions``; ``None`` for native agent runs.
-        request_json: Full JSON snapshot of the request body so an
-            auditor can replay or diff the call.
-        locale: Effective natural-language locale bound to the request.
-        a2a: Protocol ids when the request came through the A2A facade.
-    """
-
-    dialogue_id: str | None = None
-    query: str | None = None
-    tool_name: str | None = None
-    model: str | None = None
-    request_json: str | None = None
-    locale: SupportedLocale | None = None
-    a2a: A2ACorrelation = A2ACorrelation()
-
-    def __post_init__(self) -> None:
-        """Reject unsupported values when hydrating persisted metadata."""
-        if self.locale is not None and self.locale not in SUPPORTED_LOCALES:
-            raise ValueError(f"unsupported persisted locale: {self.locale}")
-
-
-@dataclass(frozen=True)
-class RunFilter:
-    """Optional list-time filters for ``list_runs``.
-
-    Attributes:
-        status: Exact-match run status filter.
-        agent: Exact-match agent alias filter.
-        origin: Exact-match origin filter (``"local"``/``"remote"``).
-        dialogue_id: Exact-match dialogue id filter. Chat-ai groups
-            its history page by ``dialogue_id``; the server-side
-            predicate runs before ``limit`` / ``offset`` so an owner
-            with more than ``limit`` rows still finds their target
-            dialogue regardless of ordering.
-        created_after: ISO-8601 lower bound (inclusive); rows with
-            ``created_at >= created_after`` are kept. Both bounds are
-            compared as TEXT directly: ISO-8601 timestamps are
-            lexicographically ordered when normalised to UTC + the same
-            offset form, which matches every ``_now_iso()`` write here.
-        created_before: ISO-8601 upper bound (inclusive); rows with
-            ``created_at <= created_before`` are kept.
-    """
-
-    status: str | None = None
-    agent: str | None = None
-    origin: str | None = None
-    dialogue_id: str | None = None
-    created_after: str | None = None
-    created_before: str | None = None
-
-
-@dataclass(frozen=True)
-class Timestamps:
-    """Row timestamps and TTL expiry for one run.
-
-    Attributes:
-        created_at: ISO-8601 creation timestamp.
-        updated_at: ISO-8601 last-update timestamp.
-        expires_at: ISO-8601 lazy-purge deadline (only set on terminal).
-    """
-
-    created_at: str
-    updated_at: str
-    expires_at: str | None
-
-
-@dataclass(frozen=True)
-class RunRecord:
-    """Read view of one run row plus its child task ids.
-
-    Logical groups are bundled into ``RunSpec`` (identity) and
-    ``Timestamps`` (lifecycle) so the dataclass stays under the
-    project's pylint ``max-attributes`` limit while still carrying every
-    row field.
-
-    Attributes:
-        spec: Identity bundle (run_id, user_id, agent, origin).
-        status: Aggregated run status (running/succeeded/failed).
-        result: Parsed terminal result payload, when cached.
-        error: Terminal error message, when cached.
-        timestamps: Created / updated / expires-at bundle.
-        task_ids: Child task ids (empty for sync runs).
-        request_info: Per-request metadata captured at the HTTP boundary
-            (dialogue_id / query / tool_name / model / request_json).
-            Always populated; field values default to ``None`` for
-            legacy rows that predate the columns.
-    """
-
-    spec: RunSpec
-    status: str
-    result: dict[str, Any] | None
-    error: str | None
-    timestamps: Timestamps
-    task_ids: tuple[str, ...]
-    request_info: RunRequestInfo = RunRequestInfo()
-
-    @property
-    def a2a(self) -> A2ACorrelation:
-        """Return the protocol correlation nested in request metadata."""
-        return self.request_info.a2a
 
 
 class RunRegistry:

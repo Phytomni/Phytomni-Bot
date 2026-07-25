@@ -32,6 +32,7 @@ from ...runtime.deep_genome_store import (
     DeepGenomeStore,
     DeepGenomeTransitionError,
 )
+from ...runtime.error_types import LOCAL_DURABLE_ERRORS
 from ...runtime.locale import SupportedLocale
 from ...runtime.task_manager import resolve_tasks_db_path
 from ...storage.path_policy import RunIdentity
@@ -777,13 +778,7 @@ class DeepGenomeReportMixin:
             raise DeepGenomeWorkflowError(
                 "final report publication failed"
             ) from exc
-        except (
-            OSError,
-            RuntimeError,
-            TypeError,
-            ValueError,
-            sqlite3.Error,
-        ) as exc:
+        except LOCAL_DURABLE_ERRORS as exc:
             self._fail_finalization(store, task_id, "final synthesis failed")
             raise DeepGenomeWorkflowError("final synthesis failed") from exc
         return {

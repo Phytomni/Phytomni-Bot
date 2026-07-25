@@ -60,6 +60,9 @@ from ..runtime.run_registry import (
     RunRegistry,
     RunRequestInfo,
 )
+from ..runtime.submission_outcome import (
+    project_submission_warnings as _project_warnings,
+)
 from ..runtime.task_manager import resolve_tasks_db_path
 from ..version import __version__ as _package_version
 from . import a2ui_runtime, run_lifecycle
@@ -264,25 +267,7 @@ def _project_submission_warnings(raw: Any) -> list[dict[str, Any]]:
     """Project safe remote-submission warnings into HTTP execution state."""
     if not isinstance(raw, Mapping):
         return []
-    raw_warnings = raw.get("submission_warnings")
-    if not isinstance(raw_warnings, list):
-        return []
-    projected: list[dict[str, Any]] = []
-    for item in raw_warnings:
-        if not isinstance(item, Mapping):
-            continue
-        code = item.get("code")
-        if not isinstance(code, str) or not code.strip():
-            continue
-        warning: dict[str, Any] = {"code": code}
-        retryable = item.get("retryable")
-        if isinstance(retryable, bool):
-            warning["retryable"] = retryable
-        rejected_count = item.get("rejected_count")
-        if isinstance(rejected_count, int) and rejected_count >= 0:
-            warning["rejected_count"] = rejected_count
-        projected.append(warning)
-    return projected
+    return _project_warnings(raw.get("submission_warnings"))
 
 
 async def _prepare_agent_run(

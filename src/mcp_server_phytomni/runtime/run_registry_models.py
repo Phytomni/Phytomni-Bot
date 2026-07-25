@@ -1,0 +1,293 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+"""Schema constants and storage-neutral models for the run registry."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
+
+from ..agents.shared.a2ui.validation import (
+    A2uiSurfaceValidationError,
+    validate_a2ui_surface,
+)
+from .locale import SUPPORTED_LOCALES, SupportedLocale
+
+_SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
+_FAILURE_STATUSES = frozenset({"failed", "error"})
+_TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed"})
+_NON_POLLABLE_RUN_STATUSES = _TERMINAL_RUN_STATUSES | {"input_required"}
+
+_CREATE_RUNS_DDL = """
+CREATE TABLE IF NOT EXISTS runs (
+    run_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    agent TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    status TEXT NOT NULL,
+    result_json TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT,
+    dialogue_id TEXT,
+    query TEXT,
+    tool_name TEXT,
+    model TEXT,
+    request_json TEXT,
+    locale TEXT,
+    a2a_task_id TEXT,
+    a2a_context_id TEXT,
+    a2a_message_id TEXT
+)
+"""
+
+_REQUEST_INFO_COLUMNS = (
+    ("dialogue_id", "TEXT"),
+    ("query", "TEXT"),
+    ("tool_name", "TEXT"),
+    ("model", "TEXT"),
+    ("request_json", "TEXT"),
+    ("locale", "TEXT"),
+)
+_A2A_COLUMNS = (
+    ("a2a_task_id", "TEXT"),
+    ("a2a_context_id", "TEXT"),
+    ("a2a_message_id", "TEXT"),
+)
+_CREATE_RUNS_USER_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_runs_user ON runs(user_id)"
+)
+_CREATE_TASKS_RUN_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_tasks_run ON tasks(run_id)"
+)
+_CREATE_A2A_TASK_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_runs_a2a_task_user "
+    "ON runs(a2a_task_id, user_id)"
+)
+_CREATE_A2UI_ACTIONS_DDL = """
+CREATE TABLE IF NOT EXISTS run_a2ui_actions (
+    run_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    surface_id TEXT NOT NULL,
+    widget TEXT NOT NULL,
+    action_id TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    outcome TEXT NOT NULL,
+    claimed_at TEXT NOT NULL,
+    completed_at TEXT,
+    PRIMARY KEY (run_id, surface_id),
+    FOREIGN KEY (run_id) REFERENCES runs(run_id)
+)
+"""
+_CREATE_A2UI_OWNER_ACTION_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_run_a2ui_actions_owner_action "
+    "ON run_a2ui_actions(user_id, action_id)"
+)
+
+
+def _now_iso() -> str:
+    """Return the current UTC time as an ISO-8601 string."""
+    return datetime.now(UTC).isoformat()
+
+
+def _surface_identity_from_result(
+    result_json: str | None,
+) -> tuple[str, str]:
+    """Extract and validate the open A2UI surface from persisted JSON."""
+    try:
+        result = json.loads(result_json or "")
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise A2UIActionInvariantError(
+            "persisted input request is not valid JSON"
+        ) from exc
+    if not isinstance(result, Mapping):
+        raise A2UIActionInvariantError(
+            "persisted input request result is not an object"
+        )
+    interrupt = result.get("interrupt")
+    draft = interrupt.get("draft") if isinstance(interrupt, Mapping) else None
+    surface = draft.get("a2ui") if isinstance(draft, Mapping) else None
+    if not isinstance(surface, Mapping):
+        raise A2UIActionInvariantError(
+            "persisted input request has no A2UI surface"
+        )
+    try:
+        validated = validate_a2ui_surface(surface)
+    except (A2uiSurfaceValidationError, TypeError, ValueError) as exc:
+        raise A2UIActionInvariantError(
+            "persisted input request has an invalid A2UI surface"
+        ) from exc
+    return validated.surface_id, validated.widget
+
+
+def _aggregate_status(task_statuses: list[str]) -> str:
+    """Aggregate child task statuses into one run status."""
+    lowered = [status.lower() for status in task_statuses if status]
+    if any(status in _FAILURE_STATUSES for status in lowered):
+        return "failed"
+    if lowered and all(status in _SUCCESS_STATUSES for status in lowered):
+        return "succeeded"
+    return "running"
+
+
+@dataclass(frozen=True)
+class RunSpec:
+    """Identity of one run row."""
+
+    run_id: str
+    user_id: str
+    agent: str
+    origin: str
+
+
+def local_run_spec(run_id: str, user_id: str, agent: str) -> RunSpec:
+    """Build the standard local-origin run identity."""
+    return RunSpec(
+        run_id=run_id,
+        user_id=user_id,
+        agent=agent,
+        origin="local",
+    )
+
+
+@dataclass(frozen=True)
+class A2ACorrelation:
+    """Protocol ids linking one A2A task to an existing run row."""
+
+    task_id: str | None = None
+    context_id: str | None = None
+    message_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class A2UIActionClaim:
+    """Identity of the first uplink accepted for one paused surface."""
+
+    run_id: str
+    surface_id: str
+    widget: str
+    action_id: str
+    channel: str
+
+
+@dataclass(frozen=True, slots=True)
+class A2UIActionIdentity:
+    """Stable identity fields shared by a claim and its audit row."""
+
+    run_id: str
+    surface_id: str
+    widget: str
+    action_id: str
+
+
+@dataclass(frozen=True, slots=True)
+class A2UIActionAudit:
+    """Safe audit projection for one claimed A2UI action."""
+
+    identity: A2UIActionIdentity
+    channel: str
+    outcome: str
+    claimed_at: str
+    completed_at: str | None
+
+    @property
+    def run_id(self) -> str:
+        """Return the audited run id."""
+        return self.identity.run_id
+
+    @property
+    def surface_id(self) -> str:
+        """Return the audited surface id."""
+        return self.identity.surface_id
+
+    @property
+    def widget(self) -> str:
+        """Return the audited widget kind."""
+        return self.identity.widget
+
+    @property
+    def action_id(self) -> str:
+        """Return the audited action id."""
+        return self.identity.action_id
+
+
+class A2UIActionConflictError(RuntimeError):
+    """Raised when the current pause is absent, mismatched, or claimed."""
+
+
+A2UIActionConflict = A2UIActionConflictError
+
+
+class A2UIActionInvariantError(RuntimeError):
+    """Raised when persisted input-required data violates its invariant."""
+
+
+@dataclass(frozen=True)
+class RunOutcome:
+    """Initial outcome state of a newly-created run row."""
+
+    status: str = "running"
+    result: dict[str, Any] | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class RunRequestInfo:
+    """Per-request metadata persisted alongside the run row."""
+
+    dialogue_id: str | None = None
+    query: str | None = None
+    tool_name: str | None = None
+    model: str | None = None
+    request_json: str | None = None
+    locale: SupportedLocale | None = None
+    a2a: A2ACorrelation = A2ACorrelation()
+
+    def __post_init__(self) -> None:
+        """Reject unsupported values when hydrating persisted metadata."""
+        if self.locale is not None and self.locale not in SUPPORTED_LOCALES:
+            raise ValueError(f"unsupported persisted locale: {self.locale}")
+
+
+@dataclass(frozen=True)
+class RunFilter:
+    """Optional list-time filters for ``list_runs``."""
+
+    status: str | None = None
+    agent: str | None = None
+    origin: str | None = None
+    dialogue_id: str | None = None
+    created_after: str | None = None
+    created_before: str | None = None
+
+
+@dataclass(frozen=True)
+class Timestamps:
+    """Row timestamps and TTL expiry for one run."""
+
+    created_at: str
+    updated_at: str
+    expires_at: str | None
+
+
+@dataclass(frozen=True)
+class RunRecord:
+    """Read view of one run row plus its child task ids."""
+
+    spec: RunSpec
+    status: str
+    result: dict[str, Any] | None
+    error: str | None
+    timestamps: Timestamps
+    task_ids: tuple[str, ...]
+    request_info: RunRequestInfo = RunRequestInfo()
+
+    @property
+    def a2a(self) -> A2ACorrelation:
+        """Return the protocol correlation nested in request metadata."""
+        return self.request_info.a2a

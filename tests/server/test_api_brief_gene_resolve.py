@@ -16,7 +16,10 @@ from typing import Any
 
 import httpx
 import pytest
-from tests.support.resolver_fakes import post_native_run
+from tests.support.resolver_fakes import (
+    assert_invalid_argument_response,
+    post_native_run,
+)
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.brief_gene.resolve_query import (
@@ -239,10 +242,7 @@ async def test_chat_rejects_resolve_flag_on_non_brief_gene_model(
         resolve_gene_id=True,
     )
 
-    assert response.status_code == 400
-    body = response.json()
-    assert body["error"]["code"] == "invalid_argument"
-    assert body["error"]["message"] == "invalid request"
+    assert_invalid_argument_response(response)
     assert not resolver_calls
     assert "user_query" not in chat_captured
 
@@ -274,10 +274,7 @@ async def test_chat_resolver_failure_returns_400(
         resolve_gene_id=True,
     )
 
-    assert response.status_code == 400
-    body = response.json()
-    assert body["error"]["code"] == "invalid_argument"
-    assert body["error"]["message"] == "invalid request"
+    assert_invalid_argument_response(response)
     assert "user_query" not in captured
 
 
@@ -401,10 +398,7 @@ async def test_native_runs_rejects_resolve_flag_on_non_brief_gene_agent(
         },
     )
 
-    assert response.status_code == 400
-    body = response.json()
-    assert body["error"]["code"] == "invalid_argument"
-    assert body["error"]["message"] == "invalid request"
+    assert_invalid_argument_response(response)
     assert not resolver_calls
     assert "user_query" not in chat_captured
 
@@ -437,10 +431,7 @@ async def test_native_runs_rejects_missing_user_query(
         {"resolve_gene_id": True},
     )
 
-    assert response.status_code == 400
-    body = response.json()
-    assert body["error"]["code"] == "invalid_argument"
-    assert body["error"]["message"] == "invalid request"
+    assert_invalid_argument_response(response)
     assert not resolver_calls
 
 
@@ -470,8 +461,5 @@ async def test_native_runs_resolver_failure_returns_400(
         {"user_query": "ambiguous", "resolve_gene_id": True},
     )
 
-    assert response.status_code == 400
-    body = response.json()
-    assert body["error"]["code"] == "invalid_argument"
-    assert body["error"]["message"] == "invalid request"
+    assert_invalid_argument_response(response)
     assert "user_query" not in captured

@@ -13,6 +13,7 @@ from typing import Any
 from mcp.shared.exceptions import McpError
 
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
+from ...runtime.error_types import RemoteAnalysisSubmissionError
 from ...runtime.submission_outcome import (
     AcceptedSubmission,
     RejectedSubmission,
@@ -40,10 +41,6 @@ class RemoteAnalysisRequest:
     meta: str
     data_list: dict[str, Any]
     compute_resource: str
-
-
-class RemoteAnalysisSubmissionError(ValueError):
-    """Raised when the remote submission does not return a task id."""
 
 
 REMOTE_SUBMISSION_ERRORS: tuple[type[Exception], ...] = (

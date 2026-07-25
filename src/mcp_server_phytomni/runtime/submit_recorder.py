@@ -45,6 +45,88 @@ __all__ = [
     "records_submission",
 ]
 
+SubmissionTuple = tuple[str, str, str | None, str | None]
+SubmissionExtractor = Callable[
+    [Mapping[str, Any]], tuple[SubmissionTuple, ...]
+]
+
+
+def _extract_single_submission(
+    result: Mapping[str, Any],
+) -> tuple[SubmissionTuple, ...]:
+    """Extract one top-level analyst-style task identity."""
+    task_id = result.get("task_id")
+    if not isinstance(task_id, str) or not task_id:
+        return ()
+    fingerprint = result.get("input_fingerprint")
+    source_task_id = result.get("source_task_id")
+    return (
+        (
+            task_id,
+            str(result.get("output_dir") or ""),
+            fingerprint if isinstance(fingerprint, str) else None,
+            source_task_id if isinstance(source_task_id, str) else None,
+        ),
+    )
+
+
+def _extract_research_submissions(
+    result: Mapping[str, Any],
+) -> tuple[SubmissionTuple, ...]:
+    """Extract the canonical or legacy research task-id collection."""
+    task_values = result.get("task_ids")
+    if isinstance(task_values, Mapping):
+        task_values = task_values.values()
+    elif not isinstance(task_values, list):
+        task_values = ()
+    output_dir = str(result.get("output_dir") or "")
+    return tuple(
+        (value, output_dir, None, None)
+        for value in task_values
+        if isinstance(value, str) and value
+    )
+
+
+def _extract_network_submission(
+    result: Mapping[str, Any],
+) -> tuple[SubmissionTuple, ...]:
+    """Extract the nested network task identity."""
+    nested = result.get("network_task")
+    if not isinstance(nested, Mapping):
+        return ()
+    task_id = nested.get("task_id")
+    if not isinstance(task_id, str) or not task_id:
+        return ()
+    return ((task_id, str(nested.get("output_dir") or ""), None, None),)
+
+
+def _extract_design_submissions(
+    result: Mapping[str, Any],
+) -> tuple[SubmissionTuple, ...]:
+    """Extract one task identity per design result entry."""
+    design_results = result.get("design_task_result")
+    if not isinstance(design_results, list):
+        return ()
+    pairs: list[SubmissionTuple] = []
+    for nested in design_results:
+        if not isinstance(nested, Mapping):
+            continue
+        task_id = nested.get("task_id")
+        if isinstance(task_id, str) and task_id:
+            pairs.append(
+                (task_id, str(nested.get("output_dir") or ""), None, None)
+            )
+    return tuple(pairs)
+
+
+_SUBMISSION_EXTRACTORS: dict[str, SubmissionExtractor] = {
+    "analyst": _extract_single_submission,
+    "deep_genome": _extract_single_submission,
+    "research": _extract_research_submissions,
+    "network": _extract_network_submission,
+    "design": _extract_design_submissions,
+}
+
 
 def extract_task_submissions(
     result: Mapping[str, Any], agent: str
@@ -80,66 +162,32 @@ def extract_task_submissions(
         ``source_task_id`` are ``None`` for agents / submissions that do
         not participate in the dedup contract.
     """
-    pairs: list[tuple[str, str, str | None, str | None]] = []
-    if agent in ("analyst", "deep_genome"):
-        task_id = result.get("task_id")
-        if isinstance(task_id, str) and task_id:
-            fingerprint = result.get("input_fingerprint")
-            source_task_id = result.get("source_task_id")
-            pairs.append(
-                (
-                    task_id,
-                    str(result.get("output_dir") or ""),
-                    fingerprint if isinstance(fingerprint, str) else None,
-                    (
-                        source_task_id
-                        if isinstance(source_task_id, str)
-                        else None
-                    ),
-                )
-            )
-    elif agent == "research":
-        task_values = result.get("task_ids")
-        if isinstance(task_values, Mapping):
-            task_values = task_values.values()
-        elif not isinstance(task_values, list):
-            task_values = ()
-        shared_output = str(result.get("output_dir") or "")
-        pairs.extend(
-            (value, shared_output, None, None)
-            for value in task_values
-            if isinstance(value, str) and value
-        )
-    elif agent == "network":
-        nested = result.get("network_task")
-        if isinstance(nested, Mapping):
-            task_id = nested.get("task_id")
-            if isinstance(task_id, str) and task_id:
-                pairs.append(
-                    (
-                        task_id,
-                        str(nested.get("output_dir") or ""),
-                        None,
-                        None,
-                    )
-                )
-    elif agent == "design":
-        design_results = result.get("design_task_result")
-        if isinstance(design_results, list):
-            for nested in design_results:
-                if not isinstance(nested, Mapping):
-                    continue
-                task_id = nested.get("task_id")
-                if isinstance(task_id, str) and task_id:
-                    pairs.append(
-                        (
-                            task_id,
-                            str(nested.get("output_dir") or ""),
-                            None,
-                            None,
-                        )
-                    )
-    return tuple(pairs)
+    extractor = _SUBMISSION_EXTRACTORS.get(agent)
+    return extractor(result) if extractor is not None else ()
+
+
+def _initial_submission_result(
+    result: Mapping[str, Any],
+    submissions: tuple[SubmissionTuple, ...],
+) -> dict[str, Any]:
+    """Build the in-flight result envelope seeded before child writes."""
+    task_rows = [
+        {
+            "task_id": task_id,
+            "status": "submitted",
+            "output_dir": output_dir,
+        }
+        for task_id, output_dir, _fingerprint, _source in submissions
+    ]
+    initial_result: dict[str, Any] = {
+        "task_results": task_rows,
+        "live_status": task_rows,
+        "artifacts": [],
+    }
+    warnings = project_submission_warnings(result.get("submission_warnings"))
+    if warnings:
+        initial_result["execution"] = {"warnings": warnings}
+    return initial_result
 
 
 def record_submitted_task(result: Any, *, agent: str) -> None:
@@ -210,22 +258,7 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
     # run is still in flight sees ``task_results`` / ``live_status`` /
     # ``artifacts`` keyed exactly as on the terminal branch, just with
     # placeholder ``submitted`` rows and an empty artifacts list.
-    initial_task_rows = [
-        {
-            "task_id": task_id,
-            "status": "submitted",
-            "output_dir": output_dir,
-        }
-        for task_id, output_dir, _fingerprint, _source in submissions
-    ]
-    initial_result: dict[str, Any] = {
-        "task_results": initial_task_rows,
-        "live_status": initial_task_rows,
-        "artifacts": [],
-    }
-    warnings = project_submission_warnings(result.get("submission_warnings"))
-    if warnings:
-        initial_result["execution"] = {"warnings": warnings}
+    initial_result = _initial_submission_result(result, submissions)
     try:
         RunRegistry(db_path).create_run(
             RunSpec(

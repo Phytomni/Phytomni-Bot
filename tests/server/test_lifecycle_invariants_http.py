@@ -14,8 +14,15 @@ import httpx
 import pytest
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
-from tests.support.http_fakes import open_asgi_client
-from tests.support.resolver_fakes import post_native_run
+from tests.support.http_fakes import (
+    assert_degraded_tracking_response,
+    install_tool_handler,
+    open_asgi_client,
+)
+from tests.support.resolver_fakes import (
+    post_native_run,
+    post_recorded_analyst_run,
+)
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.api import app as api_app_module
@@ -319,10 +326,8 @@ async def test_sync_persistence_failure_is_not_success(
     def fail_create_run(*_args: Any, **_kwargs: Any) -> None:
         raise sqlite3.OperationalError("private database failure")
 
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.CHAT_AGENT.value,
-        fake,
+    install_tool_handler(
+        monkeypatch, server.PhytomniAgents.CHAT_AGENT.value, fake
     )
     monkeypatch.setattr(RunRegistry, "create_run", fail_create_run)
 
@@ -440,8 +445,8 @@ async def test_remote_http_response_keeps_run_identity_byte_identical(
     async def fake(_args: Any) -> dict[str, Any]:
         return {"task_id": "accepted-healthy", "output_dir": "tenant/out"}
 
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
+    install_tool_handler(
+        monkeypatch,
         server.PhytomniAgents.ANALYST_AGENT.value,
         records_submission("analyst")(fake),
     )
@@ -485,30 +490,19 @@ async def test_remote_registry_failure_returns_real_tasks(
     async def fake(_args: Any) -> dict[str, Any]:
         return {"task_id": "accepted-1", "output_dir": "tenant/out"}
 
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.ANALYST_AGENT.value,
-        records_submission("analyst")(fake),
-    )
-
-    response = await api_client.post(
-        "/v1/agents/analyst/runs",
-        headers=_auth_headers(issued_api_key),
-        json={
-            "arguments": {
-                "goal_description": "analyze this dataset",
-                "data_list": {},
-                "obs_file_list": [],
-            }
+    response = await post_recorded_analyst_run(
+        monkeypatch,
+        api_client,
+        issued_api_key,
+        fake,
+        {
+            "goal_description": "analyze this dataset",
+            "data_list": {},
+            "obs_file_list": [],
         },
     )
 
-    assert response.status_code == 202
-    body = response.json()
-    assert body["id"] is None
-    assert "run_id" not in body
-    assert body["task_ids"] == ["accepted-1"]
-    assert body["degraded_tracking"] is True
+    body = assert_degraded_tracking_response(response, "accepted-1")
     execution = body["result"]["execution"]
     assert execution["tracking"] == {"degraded": True}
     assert execution["warnings"] == [
@@ -530,10 +524,8 @@ async def test_remote_response_without_durable_or_accepted_work_is_safe_error(
     async def fake(_args: Any) -> dict[str, Any]:
         return {"output_dir": "tenant/out"}
 
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.ANALYST_AGENT.value,
-        fake,
+    install_tool_handler(
+        monkeypatch, server.PhytomniAgents.ANALYST_AGENT.value, fake
     )
 
     response = await api_client.post(

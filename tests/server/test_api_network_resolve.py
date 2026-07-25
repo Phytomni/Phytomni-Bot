@@ -15,6 +15,7 @@ from typing import Any
 
 import httpx
 import pytest
+from tests.support.resolver_fakes import assert_invalid_argument_response
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.network.resolve_query import (
@@ -207,10 +208,7 @@ async def test_native_runs_rejects_resolve_to_id_on_non_network_agent(
         },
     )
 
-    assert response.status_code == 400
-    body = response.json()
-    assert body["error"]["code"] == "invalid_argument"
-    assert body["error"]["message"] == "invalid request"
+    assert_invalid_argument_response(response)
     assert not resolver_calls
     assert "user_query" not in captured
 
@@ -247,10 +245,7 @@ async def test_native_runs_rejects_missing_user_query(
         },
     )
 
-    assert response.status_code == 400
-    body = response.json()
-    assert body["error"]["code"] == "invalid_argument"
-    assert body["error"]["message"] == "invalid request"
+    assert_invalid_argument_response(response)
     assert not resolver_calls
     assert "to_id" not in captured
 
@@ -287,10 +282,7 @@ async def test_native_runs_resolver_failure_returns_400(
         },
     )
 
-    assert response.status_code == 400
-    body = response.json()
-    assert body["error"]["code"] == "invalid_argument"
-    assert body["error"]["message"] == "invalid request"
+    assert_invalid_argument_response(response)
     assert "to_id" not in captured
 
 
@@ -333,9 +325,6 @@ async def test_native_runs_blank_species_code_returns_400(
         },
     )
 
-    assert response.status_code == 400
-    body = response.json()
-    assert body["error"]["code"] == "invalid_argument"
-    assert body["error"]["message"] == "invalid request"
+    assert_invalid_argument_response(response)
     assert "to_id" not in captured
     assert "species_code" not in captured

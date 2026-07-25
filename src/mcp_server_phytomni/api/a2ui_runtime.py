@@ -38,8 +38,6 @@ from ..mcp.result_formatting import (
 )
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
 from ..mcp.stream_lifecycle import (
-    StreamLifecycleState,
-    prime_agui_stream,
     run_persistence_error,
 )
 from ..runtime.langgraph_runner import (
@@ -52,7 +50,6 @@ from ..runtime.run_registry import (
     RunOutcome,
     RunRegistry,
     RunRequestInfo,
-    RunSpec,
 )
 from ..storage.path_policy import IdFactory
 from .a2ui_projection import (
@@ -79,18 +76,22 @@ from .a2ui_review_persistence import (
 from .a2ui_review_persistence import (
     review_projection_error as _review_projection_error,
 )
+from .a2ui_review_persistence import review_run_spec
 from .a2ui_review_persistence import (
     settle_review_projection_failure as _settle_review_projection_failure,
 )
 from .a2ui_review_stream import (
+    A2UIStreamInputs,
+    A2UIStreamRequest,
     ReviewStreamHooks,
-    _settle_a2ui_stream_terminal,
+    invoke_a2ui_graph,
+    run_a2ui_stream,
+    settle_a2ui_input_required,
     settle_a2ui_stream_failure,
 )
 from .a2ui_review_stream import (
     stream_review_a2ui_pause as _stream_review_a2ui_pause,
 )
-from .openai_mapping import to_chat_completion_chunks
 from .schemas import ChatCompletionRequest
 
 _LOGGER = logging.getLogger(__name__)
@@ -275,12 +276,7 @@ async def run_review_with_interrupt(
         final_state, arguments=arguments
     )
     registry.create_run(
-        RunSpec(
-            run_id=run_id,
-            user_id=owner,
-            agent="review",
-            origin="local",
-        ),
+        review_run_spec(run_id, owner),
         outcome=RunOutcome(status="succeeded", result=result),
         request_info=request_info,
     )
@@ -379,34 +375,22 @@ async def stream_chat_a2ui_confirm(
     dependencies: A2UIRuntimeDependencies,
 ) -> StreamingResponse:
     """Short-circuit Chat streaming into an A2UI pause."""
-    context = _prepare_chat_stream(
-        arguments=arguments,
-        payload=payload,
-        user_query=user_query,
-        dependencies=dependencies,
-    )
 
     async def _agui_events(
-        settled: list[bool],
+        context: Any, settled: list[bool]
     ) -> AsyncIterator[AguiEvent]:
         """Yield AG-UI frames for one Chat A2UI pause."""
         yield run_started(context.run_id, payload.dialogue_id)
-        final_state = await context.graph.ainvoke(
-            context.initial_state,
-            config=build_runnable_config(context.run_id),
-        )
+        final_state = await invoke_a2ui_graph(context)
         interrupt = detect_interrupt(final_state, context.run_id)
         if interrupt is None:
             yield run_persistence_error()
             return
         a2ui_value = interrupt["draft"]["a2ui"]
-        if not _settle_a2ui_stream_terminal(
-            lambda: dependencies.persistence.settle_stream_run(
-                context.run_id,
-                context.owner,
-                "input_required",
-                chat_interrupt_result(interrupt),
-            ),
+        if not settle_a2ui_input_required(
+            context,
+            dependencies,
+            chat_interrupt_result(interrupt),
             settled,
         ):
             yield run_persistence_error()
@@ -414,42 +398,13 @@ async def stream_chat_a2ui_confirm(
         yield custom(A2UI_CUSTOM_NAME, a2ui_value)
         yield run_finished(context.run_id)
 
-    lifecycle_state = StreamLifecycleState()
-    settled_terminal = [False]
-    try:
-        primed = await prime_agui_stream(_agui_events(settled_terminal))
-    except Exception as exc:
-        settle_a2ui_stream_failure(
-            context.run_id,
-            context.owner,
-            settled_terminal,
-            dependencies=dependencies,
-        )
-        raise dependencies.stream.stream_setup_error(
-            exc, priming=True
-        ) from exc
-
-    async def _wrapped() -> AsyncIterator[str]:
-        """Forward SSE; settle failed only when pause was not recorded."""
-        try:
-            async for line in to_chat_completion_chunks(
-                dependencies.stream.project_stream(
-                    primed,
-                    run_id=context.run_id,
-                    lifecycle_state=lifecycle_state,
-                ),
-                payload.model,
-            ):
-                yield line
-        finally:
-            settle_a2ui_stream_failure(
-                context.run_id,
-                context.owner,
-                settled_terminal,
-                dependencies=dependencies,
-            )
-
-    return StreamingResponse(_wrapped(), media_type="text/event-stream")
+    inputs = A2UIStreamInputs(arguments, payload, user_query, dependencies)
+    request = A2UIStreamRequest(
+        prepare_context=_prepare_chat_stream,
+        inputs=inputs,
+        events=_agui_events,
+    )
+    return await run_a2ui_stream(request)
 
 
 async def stream_review_a2ui_pause(

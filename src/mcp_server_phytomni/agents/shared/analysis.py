@@ -25,10 +25,13 @@ from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
 )
+from ...runtime.error_types import RemoteAnalysisSubmissionError
 from ...runtime.langgraph_runner import (
     ainvoke_graph,
     capture_workflow_boundary,
 )
+from ...runtime.request_context import bind_accepted_task_ids
+from ...runtime.submission_outcome import SubmissionOutcome
 from ...storage.path_policy import RunIdentity
 from ..analyst.agent import (
     ANALYST_SECRET_FIELD_MAP,
@@ -63,6 +66,7 @@ def _compute_traceback_digest(exc: BaseException) -> str | None:
 
 __all__ = [
     "AnalysisAgentCacheSpec",
+    "AnalysisCaptureSpec",
     "AnalysisStateSpec",
     "base_analysis_state",
     "capture_analysis_result",
@@ -78,7 +82,34 @@ __all__ = [
     "AnalystDispatchContext",
     "prepare_analyst_dispatch_context",
     "submit_analyst_analysis",
+    "finalize_analysis_submission",
 ]
+
+
+@dataclass(frozen=True)
+class AnalysisCaptureSpec:
+    """State-output and exception policy for one captured dispatch."""
+
+    result_key: str | None = None
+    result_list_key: str | None = None
+    captured_exceptions: tuple[type[Exception], ...] | None = None
+
+
+def finalize_analysis_submission(
+    result: Mapping[str, Any],
+    outcome: SubmissionOutcome,
+    *,
+    pending: bool = False,
+) -> dict[str, Any]:
+    """Project a typed Analyst outcome onto the public agent result."""
+    if outcome.kind == "rejected" or pending:
+        raise RemoteAnalysisSubmissionError("no remote task was accepted")
+    bind_accepted_task_ids(outcome.task_ids)
+    return {
+        **result,
+        "task_ids": list(outcome.task_ids),
+        "submission_warnings": list(outcome.warnings),
+    }
 
 
 class AnalystDispatchContext(NamedTuple):
@@ -336,10 +367,7 @@ async def capture_analysis_result(
     state: Mapping[str, Any],
     analysis_type: str,
     submit_call: Callable[[], Awaitable[dict[str, Any]]],
-    result_key: str | None = None,
-    result_list_key: str | None = None,
-    *,
-    captured_exceptions: tuple[type[Exception], ...] | None = None,
+    spec: AnalysisCaptureSpec | None = None,
 ) -> dict[str, Any]:
     """Capture one dispatched analysis result as LangGraph state updates.
 
@@ -350,19 +378,18 @@ async def capture_analysis_result(
             into ``task_ids``, so callers can pass either a strict
             analysis type or an opaque task name.
         submit_call: Awaitable callback that submits or dispatches the task.
-        result_key: Optional state key for the single result payload.
-            Pass ``None`` to skip per-task result storage (useful for
-            workflows that only track ``task_ids`` like in-silico research).
-        result_list_key: Optional state key for accumulating result payloads.
-        captured_exceptions: Exception types that are safe to convert into a
-            failure state. ``None`` retains the legacy broad workflow
-            boundary; an empty tuple makes the dispatch fail loudly so
-            programming and invariant errors cannot become partial results.
+        spec: Optional output and exception policy. ``result_key`` stores
+            one result, ``result_list_key`` accumulates results, and
+            ``captured_exceptions`` controls the failure boundary. ``None``
+            retains the legacy broad workflow boundary; an empty tuple makes
+            the dispatch fail loudly.
 
     Returns:
         State updates containing task ids, completion count, result payloads,
         or an error message when dispatch fails.
     """
+
+    spec = spec or AnalysisCaptureSpec()
 
     async def run_task() -> dict[str, Any]:
         """Run the task and merge task id/result updates.
@@ -381,12 +408,12 @@ async def capture_analysis_result(
             "task_ids": existing_task_ids,
             "completed_count": 1,
         }
-        if result_list_key is not None:
-            task_results = list(state.get(result_list_key, []))
+        if spec.result_list_key is not None:
+            task_results = list(state.get(spec.result_list_key, []))
             task_results.append(task_result)
-            updates[result_list_key] = task_results
-        elif result_key is not None:
-            updates[result_key] = task_result
+            updates[spec.result_list_key] = task_results
+        elif spec.result_key is not None:
+            updates[spec.result_key] = task_result
         return updates
 
     def failure_state(exc: Exception) -> dict[str, Any]:
@@ -419,13 +446,13 @@ async def capture_analysis_result(
             ],
         }
 
-    if captured_exceptions is None:
+    if spec.captured_exceptions is None:
         return await capture_workflow_boundary(run_task, failure_state)
-    if not captured_exceptions:
+    if not spec.captured_exceptions:
         return await run_task()
     try:
         return await run_task()
-    except captured_exceptions as exc:
+    except spec.captured_exceptions as exc:
         return failure_state(exc)
 
 
@@ -436,9 +463,7 @@ async def capture_dispatched_analysis(
     dispatch_call: Callable[
         [str, str, str, str | None], Awaitable[dict[str, Any]]
     ],
-    result_keys: tuple[str, str | None],
-    *,
-    captured_exceptions: tuple[type[Exception], ...] | None = None,
+    spec: AnalysisCaptureSpec | None = None,
 ) -> dict[str, Any]:
     """Capture an analysis dispatched by target-key based state.
 
@@ -448,10 +473,8 @@ async def capture_dispatched_analysis(
         analysis_type: Analysis type label passed to the dispatch callback.
         target_key: State key holding the analysis target identifier.
         dispatch_call: Callback that dispatches one target-specific analysis.
-        result_keys: Tuple containing the single-result key and optional
-            result-list key.
-        captured_exceptions: Exception types safe to convert into a failure
-            state. Pass an empty tuple for strict fan-out propagation.
+        spec: Optional output and exception policy passed to
+            ``capture_analysis_result``.
 
     Returns:
         State updates produced by ``capture_analysis_result``.
@@ -465,9 +488,7 @@ async def capture_dispatched_analysis(
             state[target_key],
             state.get("output_dir"),
         ),
-        result_keys[0],
-        result_list_key=result_keys[1],
-        captured_exceptions=captured_exceptions,
+        spec,
     )
 
 

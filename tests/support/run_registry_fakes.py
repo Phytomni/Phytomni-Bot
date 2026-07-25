@@ -14,14 +14,23 @@ from mcp_server_phytomni.runtime.run_registry import (
     RunRegistry,
     RunSpec,
 )
+from mcp_server_phytomni.runtime.task_manager import RunContext
 from tests.support.sqlite import closed_sqlite_connection
 
 __all__ = [
+    "assert_not_found_response",
     "assert_run_not_found",
     "foreign_run_spec",
+    "fixed_run_context",
     "seed_foreign_run",
     "stamp_run_created_at",
 ]
+
+
+def assert_not_found_response(response: httpx.Response) -> None:
+    """Assert the unified owner-scoped 404 response envelope."""
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
 
 
 async def assert_run_not_found(
@@ -34,8 +43,7 @@ async def assert_run_not_found(
         path,
         headers={"Authorization": f"Bearer {api_key}"},
     )
-    assert response.status_code == 404
-    assert response.json()["error"]["code"] == 404
+    assert_not_found_response(response)
 
 
 def foreign_run_spec(
@@ -47,6 +55,18 @@ def foreign_run_spec(
         user_id=user_id,
         agent=agent,
         origin=origin,
+    )
+
+
+def fixed_run_context(spec: RunSpec) -> RunContext:
+    """Build the deterministic child-task context shared by registry tests."""
+    return RunContext(
+        run_id=spec.run_id,
+        user_id=spec.user_id,
+        agent=spec.agent,
+        origin=spec.origin,
+        created_at="2026-05-20T00:00:00+00:00",
+        updated_at="2026-05-20T00:00:00+00:00",
     )
 
 

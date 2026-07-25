@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import logging
-import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
@@ -22,6 +21,7 @@ from ..agents.shared.a2ui import (
 )
 from ..config.defaults import ApiConfig
 from ..mcp.result_formatting import strip_agent_result
+from ..runtime.error_types import LOCAL_DURABLE_ERRORS
 from ..runtime.locale import (
     bind_effective_locale,
     resolve_effective_locale,
@@ -66,13 +66,7 @@ if TYPE_CHECKING:
     from .a2ui_runtime import A2UIRuntimeDependencies
 
 _LOGGER = logging.getLogger(__name__)
-_PERSISTENCE_ERRORS = (
-    OSError,
-    RuntimeError,
-    TypeError,
-    ValueError,
-    sqlite3.Error,
-)
+_PERSISTENCE_ERRORS = LOCAL_DURABLE_ERRORS
 
 
 def _failed_resume_result() -> dict[str, Any]:

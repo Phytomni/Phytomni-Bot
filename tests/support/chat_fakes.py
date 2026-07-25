@@ -5,11 +5,56 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
 
 from mcp_server_phytomni import server
+
+
+@dataclass(frozen=True, slots=True)
+class ChatCompletionOptions:
+    """Optional provider fields for one canonical completion fixture."""
+
+    follow_up_questions: list[str] | None = None
+    message_fields: Mapping[str, Any] | None = None
+    usage: Mapping[str, Any] | None = None
+    system_fingerprint: str | None = None
+
+
+def chat_completion_payload(
+    completion_id: str,
+    content: str,
+    options: ChatCompletionOptions | None = None,
+) -> dict[str, Any]:
+    """Build a canonical provider completion for HTTP route fixtures."""
+    options = options or ChatCompletionOptions()
+    message: dict[str, Any] = {
+        "role": "assistant",
+        "content": content,
+    }
+    if options.follow_up_questions is not None:
+        message["follow_up_questions"] = options.follow_up_questions
+    if options.message_fields:
+        message.update(options.message_fields)
+    result: dict[str, Any] = {
+        "id": completion_id,
+        "object": "chat.completion",
+        "choices": [
+            {
+                "index": 0,
+                "message": message,
+                "finish_reason": "stop",
+            }
+        ],
+    }
+    if options.usage is not None:
+        result["usage"] = dict(options.usage)
+    if options.system_fingerprint is not None:
+        result["system_fingerprint"] = options.system_fingerprint
+    return result
 
 
 def misplaced_reasoning_message() -> dict[str, str]:
@@ -35,23 +80,11 @@ def install_chat_handler(
     async def fake(args: Any) -> dict[str, Any]:
         """Capture the query and return a canonical completion."""
         captured["user_query"] = args.user_query
-        message: dict[str, Any] = {
-            "role": "assistant",
-            "content": content,
-        }
-        if follow_up_questions is not None:
-            message["follow_up_questions"] = follow_up_questions
-        return {
-            "id": "chatcmpl-canned",
-            "object": "chat.completion",
-            "choices": [
-                {
-                    "index": 0,
-                    "message": message,
-                    "finish_reason": "stop",
-                }
-            ],
-        }
+        return chat_completion_payload(
+            "chatcmpl-canned",
+            content,
+            ChatCompletionOptions(follow_up_questions=follow_up_questions),
+        )
 
     monkeypatch.setitem(
         server.TOOL_HANDLERS,

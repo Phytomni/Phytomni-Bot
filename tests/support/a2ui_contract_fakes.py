@@ -7,7 +7,43 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["cancelled_response", "gene_id_form_props"]
+__all__ = [
+    "cancelled_response",
+    "chat_terminal_state",
+    "confirm_surface",
+    "gene_id_form_props",
+]
+
+
+def confirm_surface(
+    surface_id: str,
+    *,
+    title: str = "Confirm",
+    body: str = "Proceed?",
+) -> dict[str, Any]:
+    """Build the shared v1.0 confirm surface used by HTTP fixtures."""
+    return {
+        "catalog_version": "v1.0",
+        "surface_id": surface_id,
+        "widget": "confirm",
+        "props": {"title": title, "body": body},
+    }
+
+
+def chat_terminal_state() -> dict[str, Any]:
+    """Build the smallest terminal Chat graph state for resume tests."""
+    return {
+        "response": {
+            "choices": [
+                {
+                    "message": {
+                        "content": "done",
+                        "follow_up_questions": [],
+                    }
+                }
+            ]
+        }
+    }
 
 
 def cancelled_response(message: str) -> dict[str, Any]:

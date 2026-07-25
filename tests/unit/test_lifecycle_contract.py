@@ -9,6 +9,13 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from tests.support.terminal_results import (
+    SensitiveTerminalResultSpec,
+    public_partial_warning,
+    public_report_projection,
+    public_scientific_table_artifact,
+    sensitive_terminal_result,
+)
 
 from mcp_server_phytomni.api.lifecycle_contract import (
     LifecycleInvariantError,
@@ -203,84 +210,15 @@ def test_persisted_record_redacts_error_and_result_details(
             "status": status,
             "task_ids": [],
             "error": "provider exception: /srv/private",
-            "result": {
-                "provider_trace": "private",
-                "raw": {"path": "/srv/private"},
-                "formatted": {
-                    "answer": "public answer",
-                    "follow_up_questions": ["next?"],
-                    "references": [
-                        {
-                            "file_id": "doc-1",
-                            "title": "Public title",
-                            "di": "10.1/example",
-                            "provider_payload": {"secret": "private"},
-                        }
-                    ],
-                    "tabular": {
-                        "headers": ["gene", "score"],
-                        "rows": [["AT1G01010", 0.9]],
-                        "provider_trace": "private",
-                    },
-                    "metadata": {
-                        "original_query": "public query",
-                        "provider_payload": {"secret": "private"},
-                    },
-                },
-                "execution": {
-                    "tracking": {
-                        "degraded": False,
-                        "provider_payload": {"secret": "private"},
-                    },
-                    "warnings": [
-                        {
-                            "code": "partial",
-                            "stage": "projection",
-                            "retryable": False,
-                            "count": 1,
-                            "exception": "private",
-                        }
-                    ],
-                    "tasks": [
-                        {
-                            "id": "task-1",
-                            "accepted": True,
-                            "status": "succeeded",
-                            "provider_trace": "private",
-                        }
-                    ],
-                    "artifacts": [
-                        {
-                            "role": "scientific_table",
-                            "name": "result.tsv",
-                            "mime_type": "text/tab-separated-values",
-                            "size_bytes": 42,
-                            "provider_payload": {"trace": "private"},
-                        }
-                    ],
-                    "output_dirs": [
-                        "/obs/public/result",
-                        {"private": "value"},
-                    ],
-                    "report": {
-                        "role": "scientific_report",
-                        "state": "complete",
-                        "artifact_id": "report-safe",
-                        "mime_type": "application/json",
-                        "size_bytes": 12,
-                        "provider_trace": "private",
-                    },
-                    "diagnostics": [
-                        {
-                            "code": "upstream_partial",
-                            "stage": "analysis",
-                            "retryable": False,
-                            "provider_trace": "private",
-                        }
-                    ],
-                    "provider_payload": {"trace": "private"},
-                },
-            },
+            "result": sensitive_terminal_result(
+                SensitiveTerminalResultSpec(
+                    answer="public answer",
+                    task_id="task-1",
+                    citation=("di", "10.1/example"),
+                    table=(["gene", "score"], [["AT1G01010", 0.9]]),
+                    warning=("exception", "private"),
+                )
+            ),
         }
     )
 
@@ -305,14 +243,7 @@ def test_persisted_record_redacts_error_and_result_details(
         },
         "execution": {
             "tracking": {"degraded": False},
-            "warnings": [
-                {
-                    "code": "partial",
-                    "stage": "projection",
-                    "retryable": False,
-                    "count": 1,
-                }
-            ],
+            "warnings": [public_partial_warning()],
             "tasks": [
                 {
                     "id": "task-1",
@@ -320,22 +251,9 @@ def test_persisted_record_redacts_error_and_result_details(
                     "status": "succeeded",
                 }
             ],
-            "artifacts": [
-                {
-                    "role": "scientific_table",
-                    "name": "result.tsv",
-                    "mime_type": "text/tab-separated-values",
-                    "size_bytes": 42,
-                }
-            ],
+            "artifacts": [public_scientific_table_artifact()],
             "output_dirs": ["/obs/public/result"],
-            "report": {
-                "role": "scientific_report",
-                "state": "complete",
-                "artifact_id": "report-safe",
-                "mime_type": "application/json",
-                "size_bytes": 12,
-            },
+            "report": public_report_projection(),
             "diagnostics": [
                 {
                     "code": "upstream_partial",

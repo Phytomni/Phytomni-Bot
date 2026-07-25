@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
@@ -14,6 +15,8 @@ __all__ = [
     "RejectedSubmission",
     "SubmissionOutcome",
     "classify_submissions",
+    "has_pending_a2a",
+    "rejected_submissions_from_state",
     "project_submission_warnings",
 ]
 
@@ -79,6 +82,52 @@ def classify_submissions(
     else:
         kind = "rejected"
     return SubmissionOutcome(kind, tuple(accepted), tuple(rejected))
+
+
+def rejected_submissions_from_state(
+    result: Mapping[str, object],
+    *,
+    pending_keys: tuple[str, ...],
+) -> list[RejectedSubmission]:
+    """Project safe rejection records from a graph result state."""
+    state = result.get("phytomni_state")
+    if not isinstance(state, Mapping):
+        return []
+    rejected: list[RejectedSubmission] = []
+    raw_rejections = state.get("submission_rejections")
+    if isinstance(raw_rejections, list):
+        for item in raw_rejections:
+            if not isinstance(item, Mapping):
+                continue
+            goal = item.get("goal")
+            code = item.get("code")
+            if isinstance(goal, str) and isinstance(code, str):
+                rejected.append(RejectedSubmission(goal=goal, code=code))
+    raw_pending = state.get("a2a_pending")
+    if isinstance(raw_pending, list):
+        for item in raw_pending:
+            if not isinstance(item, Mapping):
+                continue
+            goal = next(
+                (
+                    value
+                    for key in pending_keys
+                    if isinstance(value := item.get(key), str)
+                    and value.strip()
+                ),
+                "external_a2a",
+            )
+            rejected.append(
+                RejectedSubmission(goal=goal, code="a2a_input_required")
+            )
+    return rejected
+
+
+def has_pending_a2a(result: Mapping[str, object]) -> bool:
+    """Return whether a graph result retains an unresolved A2A pause."""
+    state = result.get("phytomni_state")
+    pending = state.get("a2a_pending") if isinstance(state, Mapping) else None
+    return isinstance(pending, list) and bool(pending)
 
 
 def project_submission_warnings(raw: object) -> list[dict[str, object]]:

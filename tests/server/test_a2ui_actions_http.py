@@ -12,16 +12,22 @@ import httpx
 import pytest
 from tests.support.a2ui_contract_fakes import (
     cancelled_response,
+    confirm_surface,
     gene_id_form_props,
 )
 
 from mcp_server_phytomni.agents.chat.a2ui_graph import _CANCEL_MESSAGE
 from mcp_server_phytomni.agents.shared.a2ui import A2UI_CATALOG_VERSION
 from mcp_server_phytomni.api import app as api_app_module
+from mcp_server_phytomni.api.lifecycle_contract import (
+    build_agent_run_response,
+    empty_agent_result,
+)
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
     RunSpec,
+    local_run_spec,
 )
 
 pytestmark = pytest.mark.server
@@ -41,12 +47,9 @@ def _checkpoint_available(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _open_surface(surface_id: str) -> dict[str, Any]:
     """Build a paused confirm surface stored on the run row."""
-    return {
-        "catalog_version": A2UI_CATALOG_VERSION,
-        "surface_id": surface_id,
-        "widget": "confirm",
-        "props": {"title": "Confirm", "body": "Proceed?"},
-    }
+    surface = confirm_surface(surface_id)
+    surface["catalog_version"] = A2UI_CATALOG_VERSION
+    return surface
 
 
 def _seed_a2ui_run(
@@ -112,20 +115,16 @@ def _accepted_final_state() -> dict[str, Any]:
 
 def _large_succeeded_response(run_id: str) -> dict[str, Any]:
     """Build a valid terminal response large enough for the size guard."""
-    return {
-        "id": run_id,
-        "run_id": run_id,
-        "object": "agent.run",
-        "agent": "chat",
-        "status": "succeeded",
-        "task_ids": [],
-        "result": {
-            "formatted": {
-                "answer": "x" * (1_048_576 + 1),
-            },
-            "execution": {},
-        },
-    }
+    result = empty_agent_result()
+    result["formatted"]["answer"] = "x" * (1_048_576 + 1)
+    return build_agent_run_response(
+        run_id=run_id,
+        agent="chat",
+        status="succeeded",
+        task_ids=(),
+        result=result,
+        persisted=True,
+    )
 
 
 async def test_a2ui_action_accept_succeeds(
@@ -379,12 +378,7 @@ async def test_a2ui_action_not_input_required_returns_409(
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
     run_id = "run-a2ui-terminal"
     RunRegistry(tasks_db_path).create_run(
-        RunSpec(
-            run_id=run_id,
-            user_id="u1",
-            agent="chat",
-            origin="local",
-        ),
+        local_run_spec(run_id, "u1", "chat"),
         outcome=RunOutcome(
             status="succeeded",
             result={"formatted": {"answer": "done"}},

@@ -27,12 +27,12 @@ from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
 from ...runtime.langgraph_runner import ensure_checkpointer
 from ...runtime.locale import SupportedLocale
-from ...runtime.request_context import bind_accepted_task_ids
 from ...runtime.submission_outcome import (
     AcceptedSubmission,
     RejectedSubmission,
     SubmissionOutcome,
     classify_submissions,
+    rejected_submissions_from_state,
 )
 from ..analyst.agent import (
     ANALYST_CONFIG_FIELD_MAP,
@@ -40,8 +40,10 @@ from ..analyst.agent import (
 )
 from ..shared.analysis import (
     AnalysisAgentCacheSpec,
+    AnalysisCaptureSpec,
     AnalysisStateSpec,
     capture_dispatched_analysis,
+    finalize_analysis_submission,
     get_configured_analysis_agent,
     route_analysis_tasks,
     run_analysis_graph,
@@ -55,7 +57,6 @@ from ..shared.parallel_dispatch import (
 )
 from ..shared.remote_analysis import (
     REMOTE_SUBMISSION_ERRORS,
-    RemoteAnalysisSubmissionError,
     accepted_submission,
     rejected_submission,
 )
@@ -138,22 +139,12 @@ def _network_submission_outcome(
         if isinstance(task_id, str) and task_id.strip():
             accepted.append(accepted_submission(task))
 
-    rejected: list[RejectedSubmission] = []
-    state = result.get("phytomni_state")
-    raw_rejections = (
-        state.get("submission_rejections")
-        if isinstance(state, Mapping)
-        else None
+    rejected = rejected_submissions_from_state(
+        result,
+        pending_keys=("goal_description", "analysis_type", "task_id"),
     )
-    if isinstance(raw_rejections, list):
-        for item in raw_rejections:
-            if not isinstance(item, Mapping):
-                continue
-            goal = item.get("goal")
-            code = item.get("code")
-            if isinstance(goal, str) and isinstance(code, str):
-                rejected.append(RejectedSubmission(goal=goal, code=code))
     if not accepted and not rejected:
+        state = result.get("phytomni_state")
         target = (
             state.get("to_id")
             if isinstance(state, Mapping)
@@ -382,8 +373,10 @@ class GeneNetworkAgents:
             analysis_type,
             "to_id",
             _dispatch,
-            ("network_task", None),
-            captured_exceptions=(),
+            AnalysisCaptureSpec(
+                result_key="network_task",
+                captured_exceptions=(),
+            ),
         )
         return _project_network_submission_update(updates)
 
@@ -423,15 +416,10 @@ class GeneNetworkAgents:
                 },
             ),
         )
-        outcome = _network_submission_outcome(result)
-        if outcome.kind == "rejected":
-            raise RemoteAnalysisSubmissionError("no remote task was accepted")
-        bind_accepted_task_ids(outcome.task_ids)
-        return {
-            **result,
-            "task_ids": list(outcome.task_ids),
-            "submission_warnings": list(outcome.warnings),
-        }
+        return finalize_analysis_submission(
+            result,
+            _network_submission_outcome(result),
+        )
 
 
 async def network_analysis(

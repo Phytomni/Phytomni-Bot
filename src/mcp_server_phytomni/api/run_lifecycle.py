@@ -33,7 +33,7 @@ from ..runtime.run_registry import (
     RunRecord,
     RunRegistry,
     RunRequestInfo,
-    RunSpec,
+    local_run_spec,
 )
 from ..runtime.task_manager import resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
@@ -388,12 +388,7 @@ def record_sync_run(
     run_id = IdFactory().new_id("run", agent)
     try:
         RunRegistry(_database_path(db_path)).create_run(
-            RunSpec(
-                run_id=run_id,
-                user_id=owner,
-                agent=agent,
-                origin="local",
-            ),
+            local_run_spec(run_id, owner, agent),
             outcome=RunOutcome(status="succeeded", result=result),
             request_info=request_info,
         )
@@ -418,12 +413,7 @@ def create_running_stream_run(
     """Write the initial owner-scoped running row for an HTTP stream."""
     try:
         RunRegistry(_database_path(db_path)).create_run(
-            RunSpec(
-                run_id=run_id,
-                user_id=owner,
-                agent=agent,
-                origin="local",
-            ),
+            local_run_spec(run_id, owner, agent),
             outcome=RunOutcome(status="running"),
             request_info=request_info,
         )

@@ -22,6 +22,7 @@ from mcp_server_phytomni.agents.research.agent import (
     ResearchTaskContext,
 )
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.analysis_states import research_graph_state
 
 pytestmark = pytest.mark.agent
 
@@ -217,19 +218,11 @@ async def test_research_state_reduction_handles_multiple_goals(
     monkeypatch.setattr(agent, "_submit_research_task", fake_submit)
 
     final_state = await agent.app.ainvoke(
-        {
-            "paper_text": "Two-goal paper.",
-            "data_list": {},
-            "user_id": "test-user",
-            "obs_file_list": [],
-            "output_dir": "/tmp/research-out",
-            "goals": [],
-            "research_tasks": [],
-            "task_ids": {},
-            "completed_count": 0,
-            "error": None,
-            "locale": "en-US",
-        },
+        research_graph_state(
+            paper_text="Two-goal paper.",
+            output_dir="/tmp/research-out",
+            locale="en-US",
+        ),
         config={"configurable": {"thread_id": "research-multi-goal-test"}},
     )
 

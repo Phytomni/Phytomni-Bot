@@ -15,6 +15,15 @@ import pytest
 from mcp_server_phytomni import server
 from mcp_server_phytomni.api import app as api_app
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
+from tests.support.http_fakes import install_tool_handler
+
+
+def assert_invalid_argument_response(response: httpx.Response) -> None:
+    """Assert the stable 400 envelope shared by resolver route tests."""
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["code"] == "invalid_argument"
+    assert body["error"]["message"] == "invalid request"
 
 
 @dataclass(frozen=True)
@@ -69,6 +78,17 @@ class NativeResolverContext:
     monkeypatch: pytest.MonkeyPatch
 
 
+@dataclass(frozen=True)
+class NativeRunHandlerSpec:
+    """Handler and request data for one native route fixture."""
+
+    tool_name: str
+    handler: Any
+    agent_slug: str
+    arguments: dict[str, Any]
+    dialogue_id: str | None = None
+
+
 def register_gene_capture(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -116,6 +136,58 @@ async def post_native_run(
         f"/v1/agents/{agent_slug}/runs",
         headers={"Authorization": f"Bearer {issued_api_key}"},
         json=payload,
+    )
+
+
+async def post_native_run_with_handler(
+    monkeypatch: pytest.MonkeyPatch,
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    spec: NativeRunHandlerSpec,
+) -> httpx.Response:
+    """Install one tool fake and invoke its native route."""
+    install_tool_handler(monkeypatch, spec.tool_name, spec.handler)
+    return await post_native_run(
+        api_client,
+        issued_api_key,
+        spec.agent_slug,
+        spec.arguments,
+        dialogue_id=spec.dialogue_id,
+    )
+
+
+async def post_duplicate_attachment_run(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    path: str,
+) -> httpx.Response:
+    """Invoke the Chat route with the same path twice for validation tests."""
+    return await post_native_run(
+        api_client,
+        issued_api_key,
+        "chat",
+        {"user_query": "hi", "obs_file_list": [path, path]},
+    )
+
+
+async def post_recorded_analyst_run(
+    monkeypatch: pytest.MonkeyPatch,
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    fake: Callable[[Any], Any],
+    arguments: dict[str, Any],
+) -> httpx.Response:
+    """Invoke the analyst route through the submission recorder seam."""
+    return await post_native_run_with_handler(
+        monkeypatch,
+        api_client,
+        issued_api_key,
+        NativeRunHandlerSpec(
+            tool_name=server.PhytomniAgents.ANALYST_AGENT.value,
+            handler=records_submission("analyst")(fake),
+            agent_slug="analyst",
+            arguments=arguments,
+        ),
     )
 
 

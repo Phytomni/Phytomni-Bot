@@ -34,7 +34,6 @@ from ...config.overrides import (
 from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...graphs.chat_adapters import (
     build_chat_input,
-    build_chat_kwargs_for,
     extract_chat_response,
 )
 from ...mcp.progress_events import emit_progress
@@ -61,6 +60,7 @@ from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import KnowledgeApp, build_knowledge_app
 from ..shared.options import resolve_agent_locale
 from ..shared.parallel_dispatch import FailureRecord
+from .helpers import build_review_chat_kwargs
 from .planning import ReviewPlanningMixin
 from .report import ReviewReportMixin
 from .state import (
@@ -68,18 +68,21 @@ from .state import (
     DeepResearchOutput,
     DeepResearchState,
 )
+from .streaming import (
+    ReviewStreamConfig,
+    ReviewStreamDependencies,
+    build_review_stream_target,
+)
 from .summary import ReviewSummaryMixin
 
 logger = logging.getLogger(__name__)
 
 # Workers MUST NOT raise per the TW-1 sentinel-coexistence contract:
-# downstream ``draft_reduce_node`` iterates the indexed-results list
-# one entry per dimension and would short-circuit on a propagated
-# exception. The worker therefore catches Exception broadly and writes
-# BOTH a legacy empty-string sentinel AND a ``FailureRecord`` to the
-# shared failures channel. Mirrors ``_RETRIEVE_WORKER_CAUGHT`` in
-# ``planning.py`` which carries the same design intent through static
-# analysis (pylint ``W0718``).
+# downstream ``draft_reduce_node`` consumes one indexed result per dimension;
+# a propagated exception would short-circuit. Workers catch broadly and write
+# BOTH a legacy empty-string sentinel and a ``FailureRecord`` to the shared
+# failures channel, mirroring ``_RETRIEVE_WORKER_CAUGHT`` in ``planning.py``.
+# This keeps the intent explicit for static analysis (pylint W0718).
 _DRAFT_WORKER_CAUGHT: tuple[type[Exception], ...] = (Exception,)
 
 # Mirror of ``_DRAFT_WORKER_CAUGHT`` for the review_results fan-out
@@ -510,11 +513,8 @@ class DeepResearchAgent(
         worker's failure logging), and the fully built ``chat_payload``
         the per-worker ``CHAT_APP.ainvoke`` consumes.
         """
-        chat_kwargs = build_chat_kwargs_for(
-            self.review_config,
-            self.sensitive_config,
-            with_follow_up=False,
-            locale=state.get("locale"),
+        chat_kwargs = build_review_chat_kwargs(
+            self.review_config, self.sensitive_config, state.get("locale")
         )
         effective_locale = chat_kwargs["locale"]
         return [
@@ -623,11 +623,8 @@ class DeepResearchAgent(
         awareness), and the draft text under critique — matches the
         legacy ``review_node`` prompt builder in ``report.py``.
         """
-        chat_kwargs = build_chat_kwargs_for(
-            self.review_config,
-            self.sensitive_config,
-            with_follow_up=False,
-            locale=state.get("locale"),
+        chat_kwargs = build_review_chat_kwargs(
+            self.review_config, self.sensitive_config, state.get("locale")
         )
         effective_locale = chat_kwargs["locale"]
         dimensions = state["research_dimensions"]
@@ -976,50 +973,21 @@ def review_stream_target(
     obs_file_list: list[str] | None = None,
     locale: SupportedLocale | None = None,
 ) -> tuple[Any, DeepResearchState]:
-    """Return the cached DeepResearchAgent app + seeded streaming state.
-
-    Mirrors ``review_agent_function``'s acquisition EXACTLY (same
-    no-override config copies and the same ``knowledge_agent`` kwarg)
-    so the registry fingerprint — and thus the cached instance — is
-    identical to a no-override ``review_agent_function`` call. That
-    lets a streaming request share one compiled graph with the
-    blocking path.
-
-    Args:
-        user_query: Research question to expand into a literature review.
-        obs_file_list: Optional OBS files to include as source context.
-
-    Returns:
-        Tuple of the compiled graph app and its initial state dict.
-    """
-    review_config = copy_config_with_overrides(
-        REVIEW_CONFIG,
-        {},
-        REVIEW_CONFIG_FIELD_MAP,
-    )
-    sensitive_config = copy_sensitive_config_with_overrides(
-        get_sensitive_config(),
-        {},
-        field_map=REVIEW_SENSITIVE_FIELD_MAP,
-        secret_field_map=REVIEW_SECRET_FIELD_MAP,
-    )
-    agent = get_cached_agent(
-        "DeepResearchAgent",
-        lambda: DeepResearchAgent(
-            review_config=review_config,
-            sensitive_config=sensitive_config,
-            knowledge_agent=KnowledgeAgent(
-                knowledge_config=review_config,
-                sensitive_config=sensitive_config,
-            ),
-        ),
-        agent_fingerprint_values(
-            review_config=review_config,
-            sensitive_config=sensitive_config,
-        ),
-    )
-    return agent.app, agent.initial_state(
+    """Return the cached review app and seeded streaming state."""
+    return build_review_stream_target(
         user_query,
         obs_file_list,
         locale=locale,
+        dependencies=ReviewStreamDependencies(
+            config=ReviewStreamConfig(
+                review_config=REVIEW_CONFIG,
+                review_config_field_map=REVIEW_CONFIG_FIELD_MAP,
+                review_sensitive_field_map=REVIEW_SENSITIVE_FIELD_MAP,
+                review_secret_field_map=REVIEW_SECRET_FIELD_MAP,
+            ),
+            agent_factory=DeepResearchAgent,
+            knowledge_factory=KnowledgeAgent,
+            get_cached_agent=get_cached_agent,
+            agent_fingerprint_values=agent_fingerprint_values,
+        ),
     )

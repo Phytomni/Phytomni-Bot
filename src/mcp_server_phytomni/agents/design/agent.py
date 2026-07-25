@@ -32,12 +32,12 @@ from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...interop.planner import InteropMode
 from ...runtime.langgraph_runner import ensure_checkpointer
 from ...runtime.locale import SupportedLocale
-from ...runtime.request_context import bind_accepted_task_ids
 from ...runtime.submission_outcome import (
     AcceptedSubmission,
-    RejectedSubmission,
     SubmissionOutcome,
     classify_submissions,
+    has_pending_a2a,
+    rejected_submissions_from_state,
 )
 from ..analyst.agent import (
     ANALYST_CONFIG_FIELD_MAP,
@@ -45,9 +45,11 @@ from ..analyst.agent import (
 )
 from ..shared.analysis import (
     AnalysisAgentCacheSpec,
+    AnalysisCaptureSpec,
     AnalysisStateSpec,
     capture_analysis_result,
     capture_dispatched_analysis,
+    finalize_analysis_submission,
     get_configured_analysis_agent,
     route_analysis_tasks,
     run_analysis_graph,
@@ -77,10 +79,15 @@ from ..shared.parallel_dispatch import (
 from ..shared.remote_analysis import (
     REMOTE_FANOUT_ERRORS,
     RemoteAnalysisRequest,
-    RemoteAnalysisSubmissionError,
     accepted_submission,
     rejected_submission,
     submit_remote_analysis,
+)
+from .entrypoints import (
+    DesignAnalysisRequest,
+    DesignEntrypointDependencies,
+    _DesignAnalysisSpec,
+    submit_design_analysis,
 )
 from .interop import (
     DESIGN_A2A_CAPABILITY,
@@ -95,6 +102,14 @@ from .interop import (
 )
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "DigitalDesignAgents",
+    "DigitalDesignState",
+    "design_module",
+    "promoter_design_for_gene",
+    "protein_structure_for_gene",
+]
 
 DIGITAL_DESIGN_CONFIG = DigitalDesignConfig()
 DIGITAL_DESIGN_CONFIG_FIELD_MAP = {
@@ -220,48 +235,11 @@ def _design_submission_outcome(
                         output_dir=str(item.get("output_dir") or ""),
                     )
                 )
-    rejected: list[RejectedSubmission] = []
-    state = result.get("phytomni_state")
-    raw_rejections = (
-        state.get("submission_rejections")
-        if isinstance(state, Mapping)
-        else None
+    rejected = rejected_submissions_from_state(
+        result,
+        pending_keys=("goal_description", "analysis_type", "task_id"),
     )
-    if isinstance(raw_rejections, list):
-        for item in raw_rejections:
-            if not isinstance(item, Mapping):
-                continue
-            goal = item.get("goal")
-            code = item.get("code")
-            if isinstance(goal, str) and isinstance(code, str):
-                rejected.append(RejectedSubmission(goal=goal, code=code))
-    raw_pending = (
-        state.get("a2a_pending") if isinstance(state, Mapping) else None
-    )
-    if isinstance(raw_pending, list):
-        for item in raw_pending:
-            if not isinstance(item, Mapping):
-                continue
-            goal = next(
-                (
-                    value
-                    for key in ("goal_description", "analysis_type", "task_id")
-                    if isinstance(value := item.get(key), str)
-                    and value.strip()
-                ),
-                "external_a2a",
-            )
-            rejected.append(
-                RejectedSubmission(goal=goal, code="a2a_input_required")
-            )
     return classify_submissions(accepted=accepted, rejected=rejected)
-
-
-def _has_pending_a2a(result: Mapping[str, Any]) -> bool:
-    """Return whether the graph retained an unresolved A2A pause."""
-    state = result.get("phytomni_state")
-    pending = state.get("a2a_pending") if isinstance(state, Mapping) else None
-    return isinstance(pending, list) and bool(pending)
 
 
 class DigitalDesignAgents:
@@ -579,9 +557,10 @@ class DigitalDesignAgents:
                 state,
                 analysis_type=analysis_type,
                 submit_call=failed_submit,
-                result_key=None,
-                result_list_key="design_task_result",
-                captured_exceptions=DESIGN_INTEROP_FAILURES,
+                spec=AnalysisCaptureSpec(
+                    result_list_key="design_task_result",
+                    captured_exceptions=DESIGN_INTEROP_FAILURES,
+                ),
             )
             if mode != "off":
                 updates.update(
@@ -655,8 +634,11 @@ class DigitalDesignAgents:
             analysis_type,
             "gene_id",
             _dispatch,
-            ("design_task_result", "design_task_result"),
-            captured_exceptions=(),
+            AnalysisCaptureSpec(
+                result_key="design_task_result",
+                result_list_key="design_task_result",
+                captured_exceptions=(),
+            ),
         )
         updates = _project_design_submission_updates(updates)
         if mode != "off":
@@ -780,8 +762,11 @@ class DigitalDesignAgents:
             pending["analysis_type"],
             "gene_id",
             _dispatch,
-            ("design_task_result", "design_task_result"),
-            captured_exceptions=(),
+            AnalysisCaptureSpec(
+                result_key="design_task_result",
+                result_list_key="design_task_result",
+                captured_exceptions=(),
+            ),
         )
         updates = _project_design_submission_updates(updates)
         updates.update(
@@ -829,15 +814,11 @@ class DigitalDesignAgents:
                 },
             ),
         )
-        outcome = _design_submission_outcome(result)
-        if outcome.kind == "rejected" or _has_pending_a2a(result):
-            raise RemoteAnalysisSubmissionError("no remote task was accepted")
-        bind_accepted_task_ids(outcome.task_ids)
-        return {
-            **result,
-            "task_ids": list(outcome.task_ids),
-            "submission_warnings": list(outcome.warnings),
-        }
+        return finalize_analysis_submission(
+            result,
+            _design_submission_outcome(result),
+            pending=has_pending_a2a(result),
+        )
 
 
 async def design_module(
@@ -889,69 +870,16 @@ async def design_module(
     )
 
 
-class _DesignAnalysisSpec(NamedTuple):
-    """Static spec bundle for one module-level design analysis wrapper.
-
-    Bundling the four ``analysis_type`` / ``goal_path`` / ``meta_path``
-    / ``compute_resource`` fields keeps ``_submit_design_analysis``
-    within the pylint ``too-many-arguments`` budget while preserving
-    a single shared dispatch helper for both ``protein_structure_for_gene``
-    and ``promoter_design_for_gene``.
-    """
-
-    analysis_type: str
-    goal_path: str
-    meta_path: str
-    compute_resource: Literal["small", "medium", "large"]
-
-
-async def _submit_design_analysis(
-    species_code: str,
-    gene_id: str,
-    spec: _DesignAnalysisSpec,
-    output_dir: str | None,
-    *,
-    is_polling: bool,
-) -> dict[str, Any]:
-    """Build prompt parts and dispatch one analyst submission.
-
-    Shared helper for ``protein_structure_for_gene`` and
-    ``promoter_design_for_gene``. Mirrors the
-    ``DigitalDesignAgents._dispatch_and_wait_analysis`` shape used
-    by the parallel-dispatch graph, but at module level so deep_genome
-    can route its single-gene analysis branches here without
-    constructing a full design graph.
-    """
-    sensitive = get_sensitive_config()
-    goal_description = get_prompt(
-        DIGITAL_DESIGN_CONFIG.PROMPT_FILE,
-        spec.goal_path,
-        {"gene_id": gene_id},
-    )
-    meta = get_prompt(DIGITAL_DESIGN_CONFIG.PROMPT_FILE, spec.meta_path)
-    data_list = get_data_list(
-        DIGITAL_DESIGN_CONFIG.DEEPGENOME_DATA,
-        resolve_data_list_key(spec.analysis_type),
-        species_code,
-    )
-    request = RemoteAnalysisRequest(
-        analysis_type=spec.analysis_type,
-        target_id=gene_id,
-        output_dir=output_dir,
-        goal_description=goal_description,
-        meta=meta,
-        data_list=data_list,
-        compute_resource=spec.compute_resource,
-    )
-    return await submit_remote_analysis(
-        AnalystAgent(
-            analyst_config=DIGITAL_DESIGN_CONFIG,
-            sensitive_config=sensitive,
-        ),
-        DIGITAL_DESIGN_CONFIG,
-        sensitive,
-        request,
-        is_polling=is_polling,
+def _design_entrypoint_dependencies() -> DesignEntrypointDependencies:
+    """Capture injectable producer dependencies from this module."""
+    return DesignEntrypointDependencies(
+        config=DIGITAL_DESIGN_CONFIG,
+        get_sensitive_config=get_sensitive_config,
+        get_prompt=get_prompt,
+        get_data_list=get_data_list,
+        resolve_data_list_key=resolve_data_list_key,
+        analyst_factory=AnalystAgent,
+        submit_remote_analysis=submit_remote_analysis,
     )
 
 
@@ -962,37 +890,21 @@ async def protein_structure_for_gene(
     *,
     is_polling: bool = True,
 ) -> dict[str, Any]:
-    """Submit a protein_structure_analysis task via the analyst subgraph.
-
-    Producer-side counterpart to deep_genome's
-    ``protein_structure_analysis`` dispatch branch. Returns the
-    ``submit_analyst_via_subgraph`` projection so deep_genome's
-    commit-2 rerouting is a straight callee swap.
-
-    Args:
-        species_code: Three-letter species code used to select prepared
-            data.
-        gene_id: Target gene identifier for the structure prompt.
-        output_dir: Optional pre-allocated OBS output directory.
-        is_polling: Whether the analyst graph should block until the
-            submitted task reaches a terminal state. Defaults to
-            ``True`` to preserve deep_genome's polling semantics.
-
-    Returns:
-        Projected dispatch dict containing ``task_id`` / ``output_dir``
-        / ``plan`` / ``tool_usages`` / ``task_status``.
-    """
-    return await _submit_design_analysis(
-        species_code=species_code,
-        gene_id=gene_id,
-        spec=_DesignAnalysisSpec(
-            analysis_type="protein_structure_analysis",
-            goal_path="user/structure_analysis",
-            meta_path="user/structure_analysis_meta",
-            compute_resource="medium",
+    """Submit a protein_structure_analysis task via the analyst subgraph."""
+    return await submit_design_analysis(
+        DesignAnalysisRequest(
+            species_code=species_code,
+            gene_id=gene_id,
+            spec=_DesignAnalysisSpec(
+                analysis_type="protein_structure_analysis",
+                goal_path="user/structure_analysis",
+                meta_path="user/structure_analysis_meta",
+                compute_resource="medium",
+            ),
+            output_dir=output_dir,
+            is_polling=is_polling,
         ),
-        output_dir=output_dir,
-        is_polling=is_polling,
+        _design_entrypoint_dependencies(),
     )
 
 
@@ -1003,35 +915,19 @@ async def promoter_design_for_gene(
     *,
     is_polling: bool = True,
 ) -> dict[str, Any]:
-    """Submit a promoter_analysis task via the analyst subgraph.
-
-    Producer-side counterpart to deep_genome's ``promoter_analysis``
-    dispatch branch. Returns the ``submit_analyst_via_subgraph``
-    projection so deep_genome's commit-2 rerouting is a straight
-    callee swap.
-
-    Args:
-        species_code: Three-letter species code used to select prepared
-            data.
-        gene_id: Target gene identifier for the promoter prompt.
-        output_dir: Optional pre-allocated OBS output directory.
-        is_polling: Whether the analyst graph should block until the
-            submitted task reaches a terminal state. Defaults to
-            ``True`` to preserve deep_genome's polling semantics.
-
-    Returns:
-        Projected dispatch dict containing ``task_id`` / ``output_dir``
-        / ``plan`` / ``tool_usages`` / ``task_status``.
-    """
-    return await _submit_design_analysis(
-        species_code=species_code,
-        gene_id=gene_id,
-        spec=_DesignAnalysisSpec(
-            analysis_type="promoter_analysis",
-            goal_path="user/promoter_analysis",
-            meta_path="user/promoter_analysis_meta",
-            compute_resource="small",
+    """Submit a promoter_analysis task via the analyst subgraph."""
+    return await submit_design_analysis(
+        DesignAnalysisRequest(
+            species_code=species_code,
+            gene_id=gene_id,
+            spec=_DesignAnalysisSpec(
+                analysis_type="promoter_analysis",
+                goal_path="user/promoter_analysis",
+                meta_path="user/promoter_analysis_meta",
+                compute_resource="small",
+            ),
+            output_dir=output_dir,
+            is_polling=is_polling,
         ),
-        output_dir=output_dir,
-        is_polling=is_polling,
+        _design_entrypoint_dependencies(),
     )

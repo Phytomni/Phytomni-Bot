@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.agents.shared.analysis import (
+    AnalysisCaptureSpec,
     _compute_traceback_digest,
     capture_analysis_result,
 )
@@ -156,5 +157,5 @@ async def test_strict_submission_capture_propagates_invariant_errors() -> None:
             {"task_ids": {}, "task_index": 0},
             "design_task_result",
             invariant_failure,
-            captured_exceptions=(),
+            AnalysisCaptureSpec(captured_exceptions=()),
         )

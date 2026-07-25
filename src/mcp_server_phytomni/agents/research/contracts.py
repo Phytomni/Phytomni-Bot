@@ -35,3 +35,15 @@ class ResearchGoalBatch(RootModel[list[ResearchGoal]]):
     """Bounded non-empty list returned by the goal-extraction model."""
 
     root: list[ResearchGoal] = Field(min_length=1, max_length=20)
+
+    def as_dicts(self) -> list[dict[str, str]]:
+        """Return validated goals in the agent state shape."""
+        return [
+            {"goal": item.goal, "context": item.context or ""}
+            for item in self.root
+        ]
+
+    @property
+    def goal_count(self) -> int:
+        """Return the number of validated goals in the batch."""
+        return len(self.root)

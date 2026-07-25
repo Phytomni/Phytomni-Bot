@@ -13,8 +13,7 @@ Pins AG-UI SSE framing (``RunStarted`` / ``TextMessageContent`` /
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Mapping
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from typing import (
     Any,
     cast,
@@ -26,13 +25,11 @@ import pytest
 from mcp_server_phytomni.api import app as api_app
 from mcp_server_phytomni.api.app import _stream_chat_completion
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
-from mcp_server_phytomni.mcp import app as mcp_app
 from mcp_server_phytomni.mcp.result_formatting import (
     run_finished,
     run_started,
     text_message_content,
 )
-from mcp_server_phytomni.runtime import run_registry as run_registry_module
 from mcp_server_phytomni.runtime.request_context import request_context
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
@@ -637,7 +634,7 @@ async def test_disconnect_after_finish_never_attempts_failed_settlement(
 ) -> None:
     """A post-finish disconnect cannot overwrite durable success."""
     statuses: list[str] = []
-    original_settle = api_app._settle_stream_run
+    original_settle = getattr(api_app, "_settle_stream_run")
 
     def record_settlement(
         run_id: str,
@@ -765,271 +762,3 @@ async def test_stream_settle_marks_truncated_when_over_cap(
     assert len(answer.encode("utf-8")) <= 4
     # Wire still carried the full text.
     assert "HelloWorld" in response.text or "Hello" in response.text
-
-
-def _guard_network_escape(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fail fast on any un-mocked raw socket in a streaming test.
-
-    The ``api_client`` fixture dispatches in-process over
-    ``httpx.ASGITransport``, which itself flows through
-    ``httpx.AsyncClient.send`` — so ``send`` cannot be blocked here
-    without severing the test's own transport. Instead this guards the
-    layer BENEATH httpx: the event loop's ``create_connection`` and DNS
-    ``getaddrinfo``, which only fire on a real outbound socket. The
-    knowledge stream drives a fake ``astream``, so no real graph or
-    network call should reach that layer; an escape surfaces as a named
-    error rather than a hang (see the repo-root ``block_external_http``
-    coverage gap, which patches only sync ``socket.create_connection``
-    and ``httpx.*.request``). Built as one raising factory over a
-    (loop-method, label) table so the two guarded paths share one code
-    path rather than two near-identical closures.
-    """
-    loop_cls = asyncio.base_events.BaseEventLoop
-    guarded = (
-        ("create_connection", "a raw async socket"),
-        ("getaddrinfo", "DNS resolution"),
-    )
-
-    def _make_raiser(label: str) -> Any:
-        """Return a callable raising a named offline-escape error."""
-
-        def _raise(*_a: Any, **_k: Any) -> Any:
-            raise RuntimeError(
-                f"offline stream test escaped to {label}; a mock is missing"
-            )
-
-        return _raise
-
-    for method_name, label in guarded:
-        monkeypatch.setattr(loop_cls, method_name, _make_raiser(label))
-
-
-class _FakeCitedStreamApp:
-    """Fake compiled cited-agent graph asserting astream config.
-
-    Records the ``config`` passed to ``astream`` so the test can prove
-    Step 0's ``build_runnable_config`` fix reached the seam, then yields
-    one whitelisted stage update (``retrieve_node`` -> ``retrieving``)
-    plus one cited terminal ``values`` chunk so the terminal projection
-    emits ``TextMessageContent`` + ``Custom`` frames. The stage node and
-    answer are configurable so the same fake pins Knowledge and Review.
-    """
-
-    def __init__(self, *, stage_node: str, answer: str) -> None:
-        """Init the captured config and terminal fixture values."""
-        self.captured_config: Mapping[str, Any] | None = None
-        self._stage_node = stage_node
-        self._answer = answer
-
-    def thread_id(self) -> str | None:
-        """Return the thread_id astream received, or None if unset.
-
-        A public accessor (beyond ``astream``) both reads cleaner at the
-        call site and keeps this streaming-test fake off the R0903
-        single-public-method baseline the sibling fakes are pinned to.
-        """
-        if self.captured_config is None:
-            return None
-        configurable = self.captured_config.get("configurable") or {}
-        return configurable.get("thread_id")
-
-    async def astream(
-        self,
-        _state: Mapping[str, Any],
-        stream_mode: list[str],
-        config: Mapping[str, Any] | None = None,
-        *,
-        subgraphs: bool = False,
-    ) -> AsyncIterator[tuple[tuple[str, ...], str, dict[str, Any]]]:
-        """Record config, then yield one stage + one terminal chunk."""
-        assert stream_mode == ["custom", "updates", "values"]
-        assert subgraphs is True
-        self.captured_config = config
-        yield ((), "updates", {self._stage_node: {}})
-        yield (
-            (),
-            "values",
-            {
-                "final_response": {
-                    "choices": [
-                        {
-                            "message": {
-                                "content": self._answer,
-                                "doc_list": [{"file_id": "f1", "title": "T1"}],
-                                "follow_up_questions": ["next?"],
-                            }
-                        }
-                    ]
-                }
-            },
-        )
-
-
-async def test_stream_phyto_knowledge_emits_agui_frames(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    chat_completion: Callable[..., Any],
-    monkeypatch: pytest.MonkeyPatch,
-    extract_run_started_id: Callable[[str], str],
-) -> None:
-    """``stream=true`` + ``phyto-knowledge`` yields graph AG-UI frames.
-
-    Routes through the real ``_build_graph_stream_target`` ->
-    ``_stream_graph_agent`` seam with the registry accessor replaced by a
-    fake app (no real graph), asserting the SSE body carries the stage
-    ``StepStarted`` frame, the terminal ``TextMessageContent`` answer, the
-    ``Custom`` references frame, and the closing ``RunFinished``. The
-    fake's ``astream`` also asserts it received a ``config`` whose
-    ``thread_id`` is the streamed run's id — the HTTP-layer proof of
-    Step 0.
-    """
-    _guard_network_escape(monkeypatch)
-    fake_app = _FakeCitedStreamApp(
-        stage_node="retrieve_node", answer="Rice photosynthesis [1]."
-    )
-
-    def _fake_target(
-        _user_query: str, obs_file_list: Any = None
-    ) -> tuple[Any, dict[str, Any]]:
-        """Return the fake app + a minimal knowledge initial state."""
-        del obs_file_list
-        return fake_app, {"user_query": _user_query}
-
-    monkeypatch.setattr(mcp_app, "knowledge_stream_target", _fake_target)
-
-    async def _no_enrich(_tool_name: str, _raw: Any) -> None:
-        """Skip bibliographic enrichment so the test stays offline."""
-
-    monkeypatch.setattr(mcp_app, "_maybe_enrich_cited", _no_enrich)
-
-    response = await chat_completion(
-        api_client, issued_api_key, model="phyto-knowledge", stream=True
-    )
-
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    body = response.text
-    assert "event: RunStarted\n" in body
-    assert "event: StepStarted\n" in body
-    assert "event: TextMessageContent\n" in body
-    assert "event: Custom\n" in body
-    assert "event: RunFinished\n" in body
-    assert body.rstrip().endswith("data: [DONE]")
-    started_run_id = extract_run_started_id(body)
-    assert fake_app.thread_id() == started_run_id
-
-
-async def test_stream_phyto_review_emits_agui_frames(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Review's graph stream emits its existing stage/custom vocabulary."""
-    _guard_network_escape(monkeypatch)
-    fake_app = _FakeCitedStreamApp(
-        stage_node="retrieve_reduce_node", answer="Review evidence [1]."
-    )
-
-    def _fake_target(
-        _user_query: str, obs_file_list: Any = None
-    ) -> tuple[Any, dict[str, Any]]:
-        """Return the fake app + a minimal review initial state."""
-        del obs_file_list
-        return fake_app, {"user_query": _user_query}
-
-    monkeypatch.setattr(mcp_app, "review_stream_target", _fake_target)
-
-    async def _no_enrich(_tool_name: str, _raw: Any) -> None:
-        """Skip bibliographic enrichment so the test stays offline."""
-
-    monkeypatch.setattr(mcp_app, "_maybe_enrich_cited", _no_enrich)
-
-    events = [
-        event
-        async for event in mcp_app.invoke_tool_streamed(
-            "ReviewAgent",
-            {"user_query": "review", "obs_file_list": []},
-            run_id="run-review",
-            dialogue_id="dlg-review",
-        )
-    ]
-    types = [event.type for event in events]
-    assert types[0] == "RunStarted"
-    assert "StepStarted" in types
-    assert "TextMessageContent" in types
-    assert "Custom" in types
-    assert types[-1] == "RunFinished"
-    assert any(
-        event.type == "StepStarted" and event.data["step_name"] == "retrieving"
-        for event in events
-    )
-    customs = {
-        event.data["name"]: event.data["value"]
-        for event in events
-        if event.type == "Custom"
-    }
-    assert "phyto.references" in customs
-    assert customs["phyto.follow_up"] == ["next?"]
-
-
-async def test_streamed_knowledge_run_reconcile_short_circuits(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    chat_completion: Callable[..., Any],
-    monkeypatch: pytest.MonkeyPatch,
-    stream_test_tools: Any,
-) -> None:
-    """A settled streamed run skips ``reconcile_task`` on ``GET /runs/{id}``.
-
-    Drives one streamed ``phyto-knowledge`` run to ``RunFinished`` so it
-    settles terminal, then fetches it via ``GET /v1/runs/{run_id}`` and
-    asserts ``reconcile_task`` (mocked at the ``runtime.run_registry``
-    import site) is never called: ``RunRegistry.reconcile`` short-circuits
-    on a terminal cached run instead of probing live ``task_status``.
-    """
-    _guard_network_escape(monkeypatch)
-    fake_app = _FakeCitedStreamApp(
-        stage_node="retrieve_node", answer="Rice photosynthesis [1]."
-    )
-
-    def _fake_target(
-        _user_query: str, obs_file_list: Any = None
-    ) -> tuple[Any, dict[str, Any]]:
-        """Return the fake app + a minimal knowledge initial state."""
-        del obs_file_list
-        return fake_app, {"user_query": _user_query}
-
-    monkeypatch.setattr(mcp_app, "knowledge_stream_target", _fake_target)
-
-    async def _no_enrich(_tool_name: str, _raw: Any) -> None:
-        """Skip bibliographic enrichment so the test stays offline."""
-
-    monkeypatch.setattr(mcp_app, "_maybe_enrich_cited", _no_enrich)
-
-    async def _boom_reconcile(_task_id: str) -> dict[str, Any]:
-        """Fail loudly if reconcile fires on a terminal run."""
-        raise AssertionError(
-            "reconcile_task must not run for a terminal streamed run"
-        )
-
-    monkeypatch.setattr(run_registry_module, "reconcile_task", _boom_reconcile)
-
-    response = await chat_completion(
-        api_client, issued_api_key, model="phyto-knowledge", stream=True
-    )
-    assert response.status_code == 200
-    run_id = stream_test_tools.extract_run_started_id(response.text)
-
-    # The run settled terminal in the shared temp DB, so reconcile must
-    # short-circuit rather than probe. Read the row back through the same
-    # path the fixture pins so the assertion runs against the DB the API
-    # actually wrote to.
-    registry = RunRegistry(db_path=stream_test_tools.tasks_db_path)
-    settled = registry.get_run(run_id, owner="u1")
-    assert settled is not None
-    assert settled.status == "succeeded"
-
-    fetched = await api_client.get(
-        f"/v1/runs/{run_id}",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-    )
-    assert fetched.status_code == 200
-    assert fetched.json()["status"] == "succeeded"

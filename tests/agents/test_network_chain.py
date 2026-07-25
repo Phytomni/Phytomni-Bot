@@ -31,6 +31,7 @@ from mcp_server_phytomni.agents.shared.remote_analysis import (
     RemoteAnalysisSubmissionError,
 )
 from mcp_server_phytomni.config.settings import SensitiveConfig
+from tests.support.analysis_states import install_analysis_prompt_parts
 
 pytestmark = pytest.mark.agent
 
@@ -84,11 +85,7 @@ async def test_network_rejects_blank_remote_task_id(
         sensitive_config=SensitiveConfig.load(),
         analyst_agent=cast(AnalystAgent, analyst_stub),
     )
-    monkeypatch.setattr(
-        agent,
-        "_analysis_prompt_parts",
-        lambda *_args: ("goal", "meta", {}),
-    )
+    install_analysis_prompt_parts(monkeypatch, agent)
     monkeypatch.setattr(
         network_agent,
         "submit_analyst_via_subgraph",
@@ -99,7 +96,7 @@ async def test_network_rejects_blank_remote_task_id(
         RemoteAnalysisSubmissionError,
         match="omitted task_id",
     ):
-        await agent._dispatch_and_wait_analysis(
+        await getattr(agent, "_dispatch_and_wait_analysis")(
             "gene_network_analysis",
             "osa",
             "TO:0000207",
