@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
@@ -16,6 +17,11 @@ from ..agents.shared.a2ui import (
     A2uiSurfaceValidationError,
     project_review_confirm,
     validate_a2ui_surface,
+)
+from ..contracts.deep_genome import (
+    DEEP_GENOME_FINAL_FAILURE_REASONS,
+    DEEP_GENOME_PROGRESS_FIELDS,
+    sanitize_nonnegative_int,
 )
 
 __all__ = [
@@ -118,6 +124,20 @@ _PUBLIC_RUN_HISTORY_FIELDS = (
     "a2a_context_id",
     "a2a_message_id",
 )
+_DEEP_GENOME_PRIVATE_DEBUG_FIELDS = (
+    "task_results",
+    "live_status",
+    "artifacts",
+)
+_DEEP_GENOME_FAILURE_MESSAGES = {
+    "failed": "analysis task failed",
+    "cancelled": "analysis task cancelled",
+    "timed_out": "analysis task timed out",
+}
+_DEEP_GENOME_GENERATED_REASON = re.compile(
+    r"^[0-9]+ of 12 optional analyses unavailable$"
+)
+_DEEP_GENOME_REASON_FALLBACK = "analysis results are partially unavailable"
 
 
 def empty_agent_result(*, degraded: bool = False) -> dict[str, Any]:
@@ -372,7 +392,9 @@ def _safe_review_summary(draft: Any) -> str:
     return "Review approval required."
 
 
-def canonicalize_run_record(record: Mapping[str, Any]) -> dict[str, Any]:
+def canonicalize_run_record(
+    record: Mapping[str, Any], *, debug: bool = False
+) -> dict[str, Any]:
     """Validate one persisted record while preserving its history fields."""
     run_id, _ = _normalize_run_identity(record)
     if run_id is None:
@@ -395,6 +417,12 @@ def canonicalize_run_record(record: Mapping[str, Any]) -> dict[str, Any]:
             answer = formatted.get("answer")
             if isinstance(answer, str):
                 projected["answer"] = answer
+        if record.get("agent") == "deep_genome":
+            _merge_deep_genome_snapshot(
+                projected,
+                source_result=record.get("result"),
+                debug=debug,
+            )
     projected["task_ids"] = canonical["task_ids"]
     if canonical["status"] == "failed":
         projected["error"] = "run failed"
@@ -403,6 +431,151 @@ def canonicalize_run_record(record: Mapping[str, Any]) -> dict[str, Any]:
     if canonical.get("degraded_tracking"):
         projected["degraded_tracking"] = True
     return projected
+
+
+def _merge_deep_genome_snapshot(
+    projected: dict[str, Any],
+    *,
+    source_result: Any,
+    debug: bool,
+) -> None:
+    """Restore the already-sanitized DeepGenome read projection safely."""
+    if not isinstance(source_result, Mapping):
+        return
+    snapshot = _project_deep_genome_snapshot(source_result)
+    if snapshot is None:
+        return
+    result = projected.get("result")
+    if not isinstance(result, dict):
+        return
+    result.update(snapshot)
+    formatted_source = source_result.get("formatted")
+    formatted = result.get("formatted")
+    if isinstance(formatted_source, Mapping) and isinstance(formatted, dict):
+        metadata = formatted.get("metadata")
+        if isinstance(metadata, dict):
+            metadata["report"] = _deep_genome_report_metadata(snapshot)
+    else:
+        result.pop("formatted", None)
+        result.pop("execution", None)
+    if debug:
+        for field in _DEEP_GENOME_PRIVATE_DEBUG_FIELDS:
+            value = source_result.get(field)
+            if value is not None:
+                result[field] = deepcopy(value)
+    best_report = snapshot["final_report"] or snapshot["intermediate_report"]
+    if isinstance(best_report, str) and best_report.strip():
+        projected["answer"] = best_report
+
+
+def _project_deep_genome_snapshot(
+    source: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Allowlist the persisted DeepGenome snapshot after canonicalization."""
+    stage = source.get("report_stage")
+    completeness = source.get("report_completeness")
+    revision = source.get("report_revision")
+    if stage not in {"waiting_for_brief_gene", "intermediate", "final"}:
+        return None
+    if completeness not in {"none", "partial", "complete"}:
+        return None
+    if not isinstance(revision, int) or isinstance(revision, bool):
+        return None
+    return {
+        "intermediate_report": _optional_string(
+            source.get("intermediate_report")
+        ),
+        "final_report": _optional_string(source.get("final_report")),
+        "report_stage": stage,
+        "report_completeness": completeness,
+        "report_revision": sanitize_nonnegative_int(revision),
+        "report_updated_at": _optional_string(source.get("report_updated_at")),
+        "progress": _project_deep_genome_progress(source.get("progress")),
+        "degraded": source.get("degraded") is True,
+        "degraded_reason": _project_deep_genome_reason(
+            source.get("degraded_reason")
+        ),
+        "failures": _project_deep_genome_failures(source.get("failures")),
+    }
+
+
+def _optional_string(value: Any) -> str | None:
+    """Keep public text or null; reject non-string persisted values."""
+    return value if isinstance(value, str) else None
+
+
+def _project_deep_genome_progress(value: Any) -> dict[str, int | bool | str]:
+    """Project the stable ordered progress fields without arbitrary keys."""
+    source = value if isinstance(value, Mapping) else {}
+    planning_complete = source.get("planning_complete") is True
+    brief_gene_status = source.get("brief_gene_status")
+    progress: dict[str, int | bool | str] = {
+        "planning_complete": planning_complete,
+        "brief_gene_status": (
+            brief_gene_status.strip().lower()
+            if isinstance(brief_gene_status, str) and brief_gene_status.strip()
+            else "unknown"
+        ),
+    }
+    for key in DEEP_GENOME_PROGRESS_FIELDS[2:]:
+        progress[key] = sanitize_nonnegative_int(source.get(key))
+    return progress
+
+
+def _project_deep_genome_reason(value: Any) -> str | None:
+    """Keep only fixed public degraded reasons from the snapshot contract."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    normalized = value.strip()
+    if _DEEP_GENOME_GENERATED_REASON.fullmatch(normalized):
+        return normalized
+    if normalized in DEEP_GENOME_FINAL_FAILURE_REASONS:
+        return normalized
+    return _DEEP_GENOME_REASON_FALLBACK
+
+
+def _project_deep_genome_failures(value: Any) -> list[dict[str, str]]:
+    """Project fixed failure text rather than persisted provider details."""
+    if not isinstance(value, list):
+        return []
+    projected: list[dict[str, str]] = []
+    valid_statuses = {"succeeded", "failed", "cancelled", "timed_out"}
+    for item in value:
+        if not isinstance(item, Mapping):
+            continue
+        work_item_key = item.get("work_item_key")
+        status = item.get("status")
+        if (
+            not isinstance(work_item_key, str)
+            or not work_item_key.strip()
+            or status not in valid_statuses
+        ):
+            continue
+        projected.append(
+            {
+                "work_item_key": work_item_key.strip(),
+                "status": status,
+                "message": _DEEP_GENOME_FAILURE_MESSAGES.get(
+                    status, "analysis task unavailable"
+                ),
+            }
+        )
+    return projected
+
+
+def _deep_genome_report_metadata(
+    snapshot: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Build the documented additive metadata from the public snapshot."""
+    return {
+        "stage": snapshot["report_stage"],
+        "completeness": snapshot["report_completeness"],
+        "revision": snapshot["report_revision"],
+        "updated_at": snapshot["report_updated_at"],
+        "progress": snapshot["progress"],
+        "degraded": snapshot["degraded"],
+        "failure_count": len(snapshot["failures"]),
+    }
 
 
 def _normalize_run_identity(
@@ -602,9 +775,11 @@ _METADATA_SCALAR_KEYS = frozenset(
         "gene",
         "gene_id",
         "resolved_gene_id",
+        "resolved_to_id",
         "resolved_species_code",
         "resolve_gene_id",
         "resolve_to_id",
+        "consumer",
         "degraded",
         "degraded_tracking",
         "status",

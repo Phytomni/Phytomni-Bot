@@ -14,6 +14,7 @@ import pytest
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.api import app as api_app
+from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,7 @@ class NativeResolverContext:
 def register_gene_capture(
     monkeypatch: pytest.MonkeyPatch,
     *,
+    agent_slug: str,
     tool_name: str,
     captured: dict[str, Any],
     answer: str,
@@ -81,9 +83,21 @@ def register_gene_capture(
         """Capture the structured species and gene arguments."""
         captured["species_code"] = args.species_code
         captured["gene_id"] = args.gene_id
-        return {"answer": answer, "doc_list": []}
+        task = {
+            "task_id": f"{agent_slug}-resolver-task",
+            "output_dir": "tenant/resolver",
+        }
+        if agent_slug == "network":
+            return {"network_task": task, "answer": answer}
+        if agent_slug == "design":
+            return {"design_task_result": [task], "answer": answer}
+        return {**task, "answer": answer}
 
-    monkeypatch.setitem(server.TOOL_HANDLERS, tool_name, fake)
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        tool_name,
+        records_submission(agent_slug)(fake),
+    )
 
 
 async def post_native_run(
@@ -116,6 +130,7 @@ async def assert_native_resolver_case(
     resolver_calls: list[str] = []
     register_gene_capture(
         context.monkeypatch,
+        agent_slug=case.spec.slug,
         tool_name=case.spec.tool_name,
         captured=captured,
         answer=case.spec.answer,
@@ -174,12 +189,8 @@ async def assert_native_resolver_case(
 
     assert response.status_code == 400
     body = response.json()
-    if scenario == "missing":
-        assert "user_query" in body["error"]["message"]
-    if scenario == "failure":
-        assert case.expected.failure_message in body["error"]["message"]
-    if scenario == "blank":
-        assert "species_code" in body["error"]["message"]
+    assert body["error"]["code"] == "invalid_argument"
+    assert body["error"]["message"] == "invalid request"
     if scenario == "missing":
         assert not resolver_calls
     else:

@@ -241,7 +241,8 @@ async def test_chat_rejects_resolve_flag_on_non_brief_gene_model(
 
     assert response.status_code == 400
     body = response.json()
-    assert "BriefGene" in body["error"]["message"]
+    assert body["error"]["code"] == "invalid_argument"
+    assert body["error"]["message"] == "invalid request"
     assert not resolver_calls
     assert "user_query" not in chat_captured
 
@@ -275,7 +276,8 @@ async def test_chat_resolver_failure_returns_400(
 
     assert response.status_code == 400
     body = response.json()
-    assert "no valid candidate" in body["error"]["message"]
+    assert body["error"]["code"] == "invalid_argument"
+    assert body["error"]["message"] == "invalid request"
     assert "user_query" not in captured
 
 
@@ -401,7 +403,8 @@ async def test_native_runs_rejects_resolve_flag_on_non_brief_gene_agent(
 
     assert response.status_code == 400
     body = response.json()
-    assert "BriefGene" in body["error"]["message"]
+    assert body["error"]["code"] == "invalid_argument"
+    assert body["error"]["message"] == "invalid request"
     assert not resolver_calls
     assert "user_query" not in chat_captured
 
@@ -436,7 +439,8 @@ async def test_native_runs_rejects_missing_user_query(
 
     assert response.status_code == 400
     body = response.json()
-    assert "user_query" in body["error"]["message"]
+    assert body["error"]["code"] == "invalid_argument"
+    assert body["error"]["message"] == "invalid request"
     assert not resolver_calls
 
 
@@ -468,5 +472,6 @@ async def test_native_runs_resolver_failure_returns_400(
 
     assert response.status_code == 400
     body = response.json()
-    assert "non-parseable" in body["error"]["message"]
+    assert body["error"]["code"] == "invalid_argument"
+    assert body["error"]["message"] == "invalid request"
     assert "user_query" not in captured

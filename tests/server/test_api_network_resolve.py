@@ -23,6 +23,7 @@ from mcp_server_phytomni.agents.network.resolve_query import (
     GeneNetworkToIdCandidate,
 )
 from mcp_server_phytomni.api import app as api_app
+from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
 pytestmark = pytest.mark.server
 
@@ -56,12 +57,17 @@ def _stub_network_handler(
     async def fake(args: Any) -> dict[str, Any]:
         captured["species_code"] = args.species_code
         captured["to_id"] = args.to_id
-        return {"answer": "network submission", "doc_list": []}
+        return {
+            "network_task": {
+                "task_id": "network-resolver-task",
+                "output_dir": "tenant/network",
+            }
+        }
 
     monkeypatch.setitem(
         server.TOOL_HANDLERS,
         server.PhytomniAgents.GENE_NETWORK_AGENT.value,
-        fake,
+        records_submission("network")(fake),
     )
 
 
@@ -203,7 +209,8 @@ async def test_native_runs_rejects_resolve_to_id_on_non_network_agent(
 
     assert response.status_code == 400
     body = response.json()
-    assert "GeneNetwork" in body["error"]["message"]
+    assert body["error"]["code"] == "invalid_argument"
+    assert body["error"]["message"] == "invalid request"
     assert not resolver_calls
     assert "user_query" not in captured
 
@@ -242,8 +249,8 @@ async def test_native_runs_rejects_missing_user_query(
 
     assert response.status_code == 400
     body = response.json()
-    assert "user_query" in body["error"]["message"]
-    assert "resolve_to_id" in body["error"]["message"]
+    assert body["error"]["code"] == "invalid_argument"
+    assert body["error"]["message"] == "invalid request"
     assert not resolver_calls
     assert "to_id" not in captured
 
@@ -282,7 +289,8 @@ async def test_native_runs_resolver_failure_returns_400(
 
     assert response.status_code == 400
     body = response.json()
-    assert "catalog" in body["error"]["message"]
+    assert body["error"]["code"] == "invalid_argument"
+    assert body["error"]["message"] == "invalid request"
     assert "to_id" not in captured
 
 
@@ -327,6 +335,7 @@ async def test_native_runs_blank_species_code_returns_400(
 
     assert response.status_code == 400
     body = response.json()
-    assert "species_code" in body["error"]["message"]
+    assert body["error"]["code"] == "invalid_argument"
+    assert body["error"]["message"] == "invalid request"
     assert "to_id" not in captured
     assert "species_code" not in captured

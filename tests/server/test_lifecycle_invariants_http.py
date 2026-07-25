@@ -21,6 +21,7 @@ from mcp_server_phytomni import server
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api import run_lifecycle
 from mcp_server_phytomni.api.app import create_app
+from mcp_server_phytomni.api.lifecycle_contract import canonicalize_run_record
 from mcp_server_phytomni.runtime import (
     submit_recorder as submit_recorder_module,
 )
@@ -38,6 +39,85 @@ from mcp_server_phytomni.runtime.submit_recorder import (
 )
 
 pytestmark = pytest.mark.server
+
+
+def test_canonical_owner_read_preserves_sanitized_deep_genome_snapshot() -> (
+    None
+):
+    """Canonical owner reads retain only the documented snapshot fields."""
+    canonical = canonicalize_run_record(
+        {
+            "id": "run-deep-genome-public",
+            "run_id": "run-deep-genome-public",
+            "agent": "deep_genome",
+            "origin": "remote",
+            "user_id": "u1",
+            "status": "running",
+            "task_ids": ["dg-public"],
+            "result": {
+                "formatted": {
+                    "answer": "stored answer",
+                    "metadata": {
+                        "consumer": "artifact-ui",
+                        "report": {
+                            "stage": "intermediate",
+                            "completeness": "partial",
+                            "revision": 3,
+                            "updated_at": "2026-07-25T00:00:00Z",
+                            "progress": {
+                                "planning_complete": True,
+                                "brief_gene_status": "succeeded",
+                                "total": 12,
+                                "completed": 1,
+                            },
+                            "degraded": True,
+                            "failure_count": 1,
+                            "provider_payload": "private",
+                        },
+                    },
+                },
+                "intermediate_report": "# Intermediate report\n",
+                "final_report": None,
+                "report_stage": "intermediate",
+                "report_completeness": "partial",
+                "report_revision": 3,
+                "report_updated_at": "2026-07-25T00:00:00Z",
+                "progress": {
+                    "planning_complete": True,
+                    "brief_gene_status": "succeeded",
+                    "total": 12,
+                    "completed": 1,
+                },
+                "degraded": True,
+                "degraded_reason": "1 of 12 optional analyses unavailable",
+                "failures": [
+                    {
+                        "work_item_key": "protein_design",
+                        "status": "failed",
+                        "message": "analysis task failed",
+                        "provider_trace": "private",
+                    }
+                ],
+                "provider_payload": "private",
+                "raw": {"provider_payload": "private"},
+            },
+        }
+    )
+
+    result = canonical["result"]
+    assert result["intermediate_report"] == "# Intermediate report\n"
+    assert result["report_revision"] == 3
+    assert result["failures"] == [
+        {
+            "work_item_key": "protein_design",
+            "status": "failed",
+            "message": "analysis task failed",
+        }
+    ]
+    assert "provider_payload" not in result
+    report = result["formatted"]["metadata"]["report"]
+    assert report["revision"] == 3
+    assert "provider_payload" not in report
 
 
 def _auth_headers(api_key: str) -> dict[str, str]:

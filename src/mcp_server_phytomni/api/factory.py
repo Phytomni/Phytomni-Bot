@@ -259,7 +259,7 @@ class _RouteAdapters:
         """Fetch one owner-scoped run through the app-level seam."""
         record = await _app_attr("_fetch_owner_run")(run_id, debug=debug)
         if isinstance(record, Mapping):
-            return canonicalize_run_record(record)
+            return canonicalize_run_record(record, debug=debug)
         return record
 
     def list_owner_runs(
@@ -291,7 +291,7 @@ class _RouteAdapters:
             **response,
             "data": [
                 (
-                    canonicalize_run_record(item)
+                    canonicalize_run_record(item, debug=request.paging.debug)
                     if isinstance(item, Mapping)
                     else item
                 )

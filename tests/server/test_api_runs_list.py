@@ -486,7 +486,8 @@ async def test_list_runs_rejects_user_id_without_service_token(
     )
 
     assert response.status_code == 403
-    assert "service token" in response.json()["error"]["message"].lower()
+    assert response.json()["error"]["code"] == "forbidden"
+    assert response.json()["error"]["message"] == "request is not permitted"
 
 
 async def test_list_runs_delegated_query_with_service_token(

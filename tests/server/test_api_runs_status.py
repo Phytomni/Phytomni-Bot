@@ -22,12 +22,9 @@ from tests.agents.shared.deep_genome_fixtures import (
     attach_formatted_result,
     seed_partial_deep_genome_run,
 )
-from tests.support.run_registry_fakes import (
-    assert_run_not_found,
-    foreign_run_spec,
-    seed_foreign_run,
-)
+from tests.support.run_registry_fakes import foreign_run_spec, seed_foreign_run
 
+from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.runtime import run_registry as run_registry_module
 from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 from mcp_server_phytomni.runtime.run_registry import (
@@ -52,6 +49,8 @@ async def test_get_run_returns_terminal_record(
 ) -> None:
     """A cached terminal run is replayed without any task poll."""
     registry = RunRegistry(tasks_db_path)
+    result = empty_agent_result()
+    result["formatted"]["answer"] = "hello"
     registry.create_run(
         RunSpec(
             run_id="run-sync-1",
@@ -59,7 +58,7 @@ async def test_get_run_returns_terminal_record(
             agent="chat",
             origin="local",
         ),
-        outcome=RunOutcome(status="succeeded", result={"answer": "hello"}),
+        outcome=RunOutcome(status="succeeded", result=result),
     )
     calls = {"n": 0}
 
@@ -81,7 +80,8 @@ async def test_get_run_returns_terminal_record(
     assert body["status"] == "succeeded"
     assert body["agent"] == "chat"
     assert body["origin"] == "local"
-    assert body["result"] == {"answer": "hello"}
+    assert body["result"]["formatted"]["answer"] == "hello"
+    assert "raw" not in body["result"]
     assert body["task_ids"] == []
     assert calls["n"] == 0
 
@@ -94,11 +94,12 @@ async def test_get_run_unknown_id_is_404(
     """An unknown run id yields the unified 404 envelope."""
     _ = tasks_db_path
 
-    await assert_run_not_found(
-        api_client,
+    response = await api_client.get(
         "/v1/runs/does-not-exist",
-        issued_api_key,
+        headers={"Authorization": f"Bearer {issued_api_key}"},
     )
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
 
 
 async def test_get_run_foreign_owner_is_404(
@@ -188,22 +189,16 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
     assert body["origin"] == "remote"
     assert sorted(body["task_ids"]) == ["t-1", "t-2"]
     assert body["expires_at"] is not None
-    # The terminal envelope keeps task_results / live_status pointed at
-    # the reconciled blob and exposes one artifacts descriptor per
-    # succeeded child task, now carrying the globbed object paths.
-    assert body["result"]["task_results"] == body["result"]["live_status"]
-    assert body["result"]["artifacts"] == [
-        {
-            "task_id": "t-1",
-            "output_dir": "/obs/x",
-            "paths": ["/obs/x/fig.png"],
-        },
-        {
-            "task_id": "t-2",
-            "output_dir": "/obs/y",
-            "paths": ["/obs/y/fig.png"],
-        },
+    # The public terminal projection keeps accepted work identity but never
+    # leaks the registry's live task rows or tenant artifact paths.
+    execution = body["result"]["execution"]
+    assert execution["tasks"] == [
+        {"id": "t-1", "accepted": True},
+        {"id": "t-2", "accepted": True},
     ]
+    assert execution["artifacts"] == []
+    assert "task_results" not in body["result"]
+    assert "live_status" not in body["result"]
     # WO-1 contract: an analyst-class terminal run synthesizes a terminal
     # report whose compact answer _extract_answer lifts to the top-level
     # "answer" field chat-ai reads.

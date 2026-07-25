@@ -17,11 +17,7 @@ from typing import Any
 
 import httpx
 import pytest
-from tests.support.run_registry_fakes import (
-    assert_run_not_found,
-    foreign_run_spec,
-    seed_foreign_run,
-)
+from tests.support.run_registry_fakes import foreign_run_spec, seed_foreign_run
 
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
@@ -267,11 +263,12 @@ async def test_get_run_logs_unknown_run_is_404(
     issued_api_key: str,
 ) -> None:
     """An unknown run id returns 404."""
-    await assert_run_not_found(
-        api_client,
+    response = await api_client.get(
         "/v1/runs/does-not-exist/logs",
-        issued_api_key,
+        headers={"Authorization": f"Bearer {issued_api_key}"},
     )
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
 
 
 async def test_get_run_logs_foreign_owner_is_404(
