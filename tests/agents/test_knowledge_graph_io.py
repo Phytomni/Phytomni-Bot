@@ -55,7 +55,13 @@ def test_knowledge_input_required_keys_are_only_user_query() -> None:
     """
     assert _required(KnowledgeInput) == frozenset({"user_query"})
     assert _optional(KnowledgeInput) == frozenset(
-        {"obs_file_list", "repo_id_dict", "is_generate", "is_follow_up"}
+        {
+            "locale",
+            "obs_file_list",
+            "repo_id_dict",
+            "is_generate",
+            "is_follow_up",
+        }
     )
 
 

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import httpx
@@ -14,10 +15,16 @@ import pytest
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.expert import ToolSelection
 from mcp_server_phytomni.api import app as api_app
+from mcp_server_phytomni.api.app_support import (
+    _ErrorResponseOptions,
+    error_response,
+)
 from mcp_server_phytomni.runtime.locale import (
     SupportedLocale,
+    bind_effective_locale,
     current_effective_locale,
 )
+from mcp_server_phytomni.runtime.request_context import reset_request_var
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
@@ -182,6 +189,28 @@ async def test_unsupported_body_locale_is_422(
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "unsupported_locale"
+
+
+def test_error_response_localizes_fixed_codes_but_preserves_dynamic_text() -> (
+    None
+):
+    """Safe fixed errors translate without rewriting identifiers."""
+    token = bind_effective_locale("zh-CN")
+    try:
+        fixed = error_response(
+            400,
+            "invalid request",
+            options=_ErrorResponseOptions(code="invalid_request"),
+        )
+        dynamic = error_response(404, "run not found: run-locale-123")
+    finally:
+        reset_request_var(token)
+
+    assert json.loads(bytes(fixed.body))["error"]["message"] == "请求无效。"
+    assert (
+        json.loads(bytes(dynamic.body))["error"]["message"]
+        == "run not found: run-locale-123"
+    )
 
 
 def _seed_a2ui_run(

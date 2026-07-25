@@ -28,6 +28,7 @@ from ..shared.memory_context import memory_context_for_graph
 from . import service
 from .service import (
     CHAT_CONFIG,
+    _apply_locale_instruction,
     _chat_options,
     _query_with_upload_context,
     _run_phyto_chat,
@@ -74,8 +75,9 @@ async def generate_node(
     """
     chat_kwargs = dict(state.get("chat_kwargs") or {})
     options = _chat_options(chat_kwargs)
-    system_prompt = service.get_prompt(
-        options["prompt_file"], options["prompt_path"]
+    system_prompt = _apply_locale_instruction(
+        service.get_prompt(options["prompt_file"], options["prompt_path"]),
+        options,
     )
     memory_context = memory_context_for_graph(
         runtime.context if runtime is not None else None

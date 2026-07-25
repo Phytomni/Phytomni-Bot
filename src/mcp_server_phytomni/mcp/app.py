@@ -779,7 +779,7 @@ async def _stream_chat_agent(
         user_query=args.user_query,
         obs_file_list=args.obs_file_list,
         server_dir=scratch_server_dir(chat_config, "chat"),
-        **chat_kwargs(chat_config, runtime.sensitive),
+        **chat_kwargs(chat_config, runtime.sensitive, locale=args.locale),
         **obs_kwargs(chat_config, runtime.obs_credentials),
     ):
         yield chunk

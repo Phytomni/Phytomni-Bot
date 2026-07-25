@@ -149,7 +149,7 @@ async def test_stream_phyto_chat_chunks_yields_provider_chunks(
 
     received: list[dict[str, Any]] = []
     async for chunk in chat_service.stream_phyto_chat_chunks(
-        user_query="hi", **_stream_kwargs()
+        user_query="hi", locale="zh-CN", **_stream_kwargs()
     ):
         received.append(chunk)
 
@@ -157,6 +157,7 @@ async def test_stream_phyto_chat_chunks_yields_provider_chunks(
     assert captured["params"]["stream"] is True
     assert captured["params"]["model"] == "pytest-model"
     assert captured["api_key"] == "api-key"
+    assert "Simplified Chinese" in captured["params"]["messages"][0]["content"]
 
 
 async def test_stream_phyto_chat_chunks_prepends_upload_context(

@@ -194,7 +194,12 @@ async def test_phyto_chat_converts_uploads_and_builds_openai_request(
         "params": None,
     }
     messages = captured["completion"]["messages"]
-    assert messages[0] == {"role": "system", "content": "system prompt"}
+    assert messages[0]["role"] == "system"
+    assert (
+        "Write all natural-language prose in English."
+        in messages[0]["content"]
+    )
+    assert messages[0]["content"].endswith("system prompt")
     assert "converted paper text" in messages[1]["content"]
     assert "Summarize the paper." in messages[1]["content"]
     assert captured["completion"]["timeout"] == 3.0
@@ -267,6 +272,7 @@ async def test_phyto_chat_with_follow_attaches_follow_up_questions(
         base_url="https://example.invalid/v1",
         model="pytest-model",
         max_retries=0,
+        locale="zh-CN",
     )
 
     assert result is not None
@@ -278,6 +284,8 @@ async def test_phyto_chat_with_follow_attaches_follow_up_questions(
     ]
     assert calls[0]["obs_file_list"] == ["obs://context.pdf"]
     assert calls[1]["user_query"] == "follow-up prompt"
+    assert calls[0]["locale"] == "zh-CN"
+    assert calls[1]["locale"] == "zh-CN"
 
 
 async def test_run_phyto_chat_cached_dedupes_identical_sampling(

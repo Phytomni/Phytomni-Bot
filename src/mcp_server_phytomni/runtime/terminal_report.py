@@ -23,6 +23,7 @@ from ..graphs.chat_adapters import (
     extract_chat_response,
 )
 from ..storage.downloads import download_obs_file
+from .locale import SupportedLocale, locale_instruction
 from .task_manager import TaskManager, resolve_tasks_db_path
 from .terminal_answer import TerminalAnswerContext
 
@@ -50,6 +51,39 @@ _MAX_TOTAL_PROMPT_CHARS = 120_000
 _SUMMARY_TIMEOUT_SECONDS = 90.0
 _REPORT_TEMP_DIR = "terminal-report"
 
+_REPORT_LABELS: dict[SupportedLocale, dict[str, str]] = {
+    "en-US": {
+        "summary": "Summary",
+        "query": "User Query",
+        "task_status": "Task Status",
+        "agent": "Agent",
+        "status": "Status",
+        "tasks": "Tasks",
+        "outputs": "Outputs",
+        "artifacts": "Artifacts",
+        "text_artifacts_used": "Text Artifacts Used",
+        "artifacts_not_summarized": "Artifacts Not Summarized",
+        "degradation": "Report Degradation",
+        "no_output_dirs": "No output directories were reported.",
+        "no_artifacts": "No artifact files were reported.",
+    },
+    "zh-CN": {
+        "summary": "摘要",
+        "query": "用户查询",
+        "task_status": "任务状态",
+        "agent": "智能体",
+        "status": "状态",
+        "tasks": "任务",
+        "outputs": "输出",
+        "artifacts": "工件",
+        "text_artifacts_used": "已用于总结的文本工件",
+        "artifacts_not_summarized": "未总结的工件",
+        "degradation": "报告降级",
+        "no_output_dirs": "未报告输出目录。",
+        "no_artifacts": "未报告工件文件。",
+    },
+}
+
 logger = logging.getLogger(__name__)
 
 
@@ -62,6 +96,8 @@ class TerminalReportContext(TerminalAnswerContext):
     report synthesizer reads the same shape plus any future
     report-only extensions added here.
     """
+
+    locale: SupportedLocale
 
 
 @dataclass(frozen=True)
@@ -126,25 +162,26 @@ def build_fallback_report(
 
     succeeded = _success_count(context.live)
     total = len(context.live)
-    title = _report_title(context.agent)
-    answer = f"Analysis complete: {succeeded}/{total} tasks succeeded."
+    labels = _REPORT_LABELS[context.locale]
+    title = _report_title(context.agent, context.locale)
+    answer = _report_answer(context)
     lines = [
         f"# {title}",
         "",
-        "## Summary",
+        f"## {labels['summary']}",
         "",
         answer,
     ]
     if context.query:
-        lines.extend(["", "## User Query", "", context.query])
+        lines.extend(["", f"## {labels['query']}", "", context.query])
     lines.extend(
         [
             "",
-            "## Task Status",
+            f"## {labels['task_status']}",
             "",
-            f"- Agent: `{context.agent}`",
-            f"- Status: `{context.status}`",
-            f"- Tasks: {succeeded}/{total} tasks succeeded",
+            f"- {labels['agent']}: `{context.agent}`",
+            f"- {labels['status']}: `{context.status}`",
+            f"- {labels['tasks']}: {succeeded}/{total} tasks succeeded",
         ]
     )
     output_dirs = [
@@ -152,26 +189,33 @@ def build_fallback_report(
         for artifact in context.artifacts
         if artifact.get("output_dir")
     ]
-    lines.extend(["", "## Outputs", ""])
+    lines.extend(["", f"## {labels['outputs']}", ""])
     if output_dirs:
         lines.extend(f"- `{output_dir}`" for output_dir in output_dirs)
     else:
-        lines.append("No output directories were reported.")
+        lines.append(labels["no_output_dirs"])
     artifact_paths = _all_artifact_paths(context.artifacts)
-    lines.extend(["", "## Artifacts", ""])
+    lines.extend(["", f"## {labels['artifacts']}", ""])
     if artifact_paths:
         lines.extend(f"- `{path}`" for path in artifact_paths)
     else:
-        lines.append("No artifact files were reported.")
+        lines.append(labels["no_artifacts"])
     if selected_paths:
-        lines.extend(["", "## Text Artifacts Used", ""])
+        lines.extend(["", f"## {labels['text_artifacts_used']}", ""])
         lines.extend(f"- `{path}`" for path in selected_paths)
     if skipped_paths:
-        lines.extend(["", "## Artifacts Not Summarized", ""])
+        lines.extend(["", f"## {labels['artifacts_not_summarized']}", ""])
         lines.extend(f"- `{path}`" for path in skipped_paths)
     degraded = bool(reason)
     if reason:
-        lines.extend(["", "## Report Degradation", "", reason])
+        lines.extend(
+            [
+                "",
+                f"## {labels['degradation']}",
+                "",
+                _localize_report_reason(reason, context.locale),
+            ]
+        )
     final_report = "\n".join(lines).strip() + "\n"
     return TerminalReportResult(
         final_report=final_report,
@@ -183,8 +227,16 @@ def build_fallback_report(
     )
 
 
-def _report_title(agent: str) -> str:
+def _report_title(agent: str, locale: SupportedLocale) -> str:
     """Return a human-readable final report heading for ``agent``."""
+    if locale == "zh-CN":
+        titles = {
+            "analyst": "分析智能体最终报告",
+            "research": "计算研究最终报告",
+            "design": "数字设计最终报告",
+            "network": "网络分析最终报告",
+        }
+        return titles.get(agent, "分析最终报告")
     titles = {
         "analyst": "Analyst Final Report",
         "research": "In Silico Research Final Report",
@@ -192,6 +244,32 @@ def _report_title(agent: str) -> str:
         "network": "Network Analysis Final Report",
     }
     return titles.get(agent, "Analysis Final Report")
+
+
+def _report_answer(context: TerminalReportContext) -> str:
+    """Return the locale-specific deterministic terminal answer."""
+    succeeded = _success_count(context.live)
+    total = len(context.live)
+    if context.locale == "zh-CN":
+        return f"分析完成：{succeeded}/{total} 个任务成功。"
+    return f"Analysis complete: {succeeded}/{total} tasks succeeded."
+
+
+def _localize_report_reason(reason: str, locale: SupportedLocale) -> str:
+    """Translate only known assembler-owned degradation messages."""
+    if locale == "en-US":
+        return reason
+    known = {
+        "No readable text artifacts were available for LLM summary": (
+            "没有可供 LLM 总结的可读文本工件。"
+        ),
+        "LLM summary returned empty content": "LLM 总结返回了空内容。",
+    }
+    if reason in known:
+        return known[reason]
+    if reason.startswith("LLM summary failed: "):
+        return f"LLM 总结失败：{reason.removeprefix('LLM summary failed: ')}"
+    return reason
 
 
 def _success_count(live: Iterable[dict[str, Any]]) -> int:
@@ -292,7 +370,15 @@ async def synthesize_terminal_report(
             skipped_paths=combined_skipped,
         )
     prompt = _build_report_prompt(context, snippets)
-    use_summarizer = summarizer or _summarize_with_chat
+    if summarizer is None:
+
+        async def localized_summarizer(report_prompt: str) -> str:
+            """Run the default report chat call in the persisted locale."""
+            return await _summarize_with_chat(report_prompt, context.locale)
+
+        use_summarizer: ReportSummarizer = localized_summarizer
+    else:
+        use_summarizer = summarizer
     try:
         report = await asyncio.wait_for(
             use_summarizer(prompt),
@@ -315,10 +401,7 @@ async def synthesize_terminal_report(
         )
     return TerminalReportResult(
         final_report=report,
-        answer=(
-            f"Analysis complete: {_success_count(context.live)}/"
-            f"{len(context.live)} tasks succeeded."
-        ),
+        answer=_report_answer(context),
         selected_paths=selected_paths,
         skipped_paths=combined_skipped,
     )
@@ -331,6 +414,8 @@ def _build_report_prompt(
     """Build a grounded prompt for final report generation."""
 
     lines = [
+        locale_instruction(context.locale),
+        "",
         "Generate a concise markdown final report for a completed "
         "Phytomni remote analysis run.",
         "",
@@ -359,7 +444,9 @@ def _build_report_prompt(
     return "\n".join(lines)
 
 
-async def _summarize_with_chat(prompt: str) -> str:
+async def _summarize_with_chat(
+    prompt: str, locale: SupportedLocale = "en-US"
+) -> str:
     """Generate report markdown through the existing chat subgraph."""
 
     config = ChatConfig()
@@ -368,6 +455,7 @@ async def _summarize_with_chat(prompt: str) -> str:
         config,
         sensitive,
         with_follow_up=False,
+        locale=locale,
     )
     chat_output = await _cached_chat_app().ainvoke(
         build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs)

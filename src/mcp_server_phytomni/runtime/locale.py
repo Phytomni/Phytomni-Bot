@@ -96,6 +96,82 @@ _MESSAGES: Final[dict[str, dict[SupportedLocale, str]]] = {
         "en-US": "The request is invalid.",
         "zh-CN": "请求无效。",
     },
+    "invalid_argument": {
+        "en-US": "invalid request",
+        "zh-CN": "请求无效。",
+    },
+    "unauthenticated": {
+        "en-US": "authentication required",
+        "zh-CN": "需要身份验证。",
+    },
+    "forbidden": {
+        "en-US": "request is not permitted",
+        "zh-CN": "不允许执行此请求。",
+    },
+    "not_found": {
+        "en-US": "resource not found",
+        "zh-CN": "未找到资源。",
+    },
+    "run_state_conflict": {
+        "en-US": "request conflicts with current state",
+        "zh-CN": "请求与当前状态冲突。",
+    },
+    "payload_too_large": {
+        "en-US": "request payload is too large",
+        "zh-CN": "请求内容过大。",
+    },
+    "rate_limited": {
+        "en-US": "request rate limit exceeded",
+        "zh-CN": "请求频率超过限制。",
+    },
+    "internal_invariant_failed": {
+        "en-US": "internal server error",
+        "zh-CN": "服务器内部错误。",
+    },
+    "upstream_failed": {
+        "en-US": "upstream service failed",
+        "zh-CN": "上游服务失败。",
+    },
+    "unavailable": {
+        "en-US": "service unavailable",
+        "zh-CN": "服务不可用。",
+    },
+    "upstream_timeout": {
+        "en-US": "upstream service timed out",
+        "zh-CN": "上游服务超时。",
+    },
+    "run_persistence_failed": {
+        "en-US": "The completed run could not be persisted.",
+        "zh-CN": "无法持久化已完成的运行。",
+    },
+    "running_without_work": {
+        "en-US": "The run has no executable work.",
+        "zh-CN": "运行没有可执行的工作。",
+    },
+    "succeeded_without_persistence": {
+        "en-US": "The completed run could not be persisted.",
+        "zh-CN": "已完成的运行无法持久化。",
+    },
+    "input_required_without_surface": {
+        "en-US": "The input-required response is invalid.",
+        "zh-CN": "需要输入的响应无效。",
+    },
+    "projection_failed": {
+        "en-US": "Result projection failed.",
+        "zh-CN": "结果投影失败。",
+    },
+    "a2ui_action_conflict": {
+        "en-US": "This input request has already been handled.",
+        "zh-CN": "此输入请求已被处理。",
+    },
+    "checkpoint_not_available": {
+        "en-US": "This input request is no longer available.",
+        "zh-CN": "此输入请求已不可用。",
+    },
+    "routing_contract_violation": {
+        "en-US": "The routing contract is invalid.",
+        "zh-CN": "路由契约无效。",
+    },
     "attachment_not_found": {
         "en-US": "The requested attachment was not found.",
         "zh-CN": "未找到请求的附件。",

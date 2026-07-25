@@ -1039,6 +1039,7 @@ class RunRegistry:
                     live=live,
                     artifacts=artifacts,
                     query=current.request_info.query,
+                    locale=current.request_info.locale or "en-US",
                 )
             )
             persist_terminal_report(live, report_result)

@@ -42,6 +42,7 @@ from ..runtime.locale import (
     SupportedLocale,
     UnsupportedLocaleError,
     bind_effective_locale,
+    current_effective_locale,
     message_for,
     resolve_effective_locale,
 )
@@ -82,6 +83,21 @@ _DEFAULT_ERROR_CODES = {
     504: "upstream_timeout",
 }
 
+_SAFE_DEFAULT_MESSAGES = {
+    400: "invalid request",
+    401: "authentication required",
+    403: "request is not permitted",
+    404: "resource not found",
+    409: "request conflicts with current state",
+    413: "request payload is too large",
+    422: "request validation failed",
+    429: "request rate limit exceeded",
+    500: "internal server error",
+    502: "upstream service failed",
+    503: "service unavailable",
+    504: "upstream service timed out",
+}
+
 
 @dataclass(frozen=True, slots=True)
 class _ErrorResponseOptions:
@@ -107,11 +123,21 @@ def error_response(
 ) -> JSONResponse:
     """Build a unified error-envelope JSON response."""
     options = options or _ErrorResponseOptions()
+    code = options.code or _DEFAULT_ERROR_CODES.get(status_code, "error")
+    public_message = message
+    locale = current_effective_locale()
+    if locale == "zh-CN":
+        is_fixed_default = message == _SAFE_DEFAULT_MESSAGES.get(status_code)
+        if options.code is not None or is_fixed_default:
+            try:
+                public_message = message_for(code, locale)
+            except KeyError:
+                # Unknown domain codes keep their already-sanitized message.
+                public_message = message
     payload = ApiErrorResponse(
         error=ApiErrorDetail(
-            code=options.code
-            or _DEFAULT_ERROR_CODES.get(status_code, "error"),
-            message=message,
+            code=code,
+            message=public_message,
             request_id=current_request_id() or "unknown",
             stage=options.stage,
             retryable=options.retryable,

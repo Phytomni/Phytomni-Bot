@@ -13,7 +13,7 @@ import importlib
 import logging
 from collections.abc import AsyncIterator
 from functools import lru_cache
-from typing import Any, NamedTuple, TypedDict, Unpack
+from typing import Any, NamedTuple, NotRequired, TypedDict, Unpack
 
 from httpx import ConnectError, HTTPStatusError, TimeoutException
 from mcp.shared.exceptions import McpError
@@ -37,7 +37,11 @@ from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
 from ...func_cache import LONG_TTL_SECONDS, func_cache
 from ...runtime.langgraph_runner import ainvoke_graph
-from ...runtime.locale import SupportedLocale, current_effective_locale
+from ...runtime.locale import (
+    SupportedLocale,
+    current_effective_locale,
+    locale_instruction,
+)
 from ...storage.downloads import download_list_convert
 
 logger = logging.getLogger(__name__)
@@ -57,6 +61,7 @@ class _ChatCacheKey(NamedTuple):
 
     messages: list[dict[str, str]]
     response_format: dict[str, Any]
+    locale: SupportedLocale
 
 
 class _ChatCacheRequest(NamedTuple):
@@ -95,6 +100,7 @@ class ChatCacheCall(TypedDict):
     user: str
     timeout: float
     stream: bool
+    locale: NotRequired[SupportedLocale]
 
 
 async def phyto_chat_with_follow(
@@ -358,6 +364,7 @@ def _chat_options(values: dict[str, Any]) -> dict[str, Any]:
     )
     response_format = values.get("response_format")
     retriable_codes = values.get("retriable_codes")
+    effective_locale = values.get("locale") or current_effective_locale()
     return {
         "prompt_file": values.get("prompt_file", CHAT_CONFIG.PROMPT_FILE),
         "prompt_path": values.get("prompt_path", CHAT_CONFIG.PROMPT_PATH),
@@ -404,7 +411,19 @@ def _chat_options(values: dict[str, Any]) -> dict[str, Any]:
         ),
         "max_workers": values.get("max_workers", CHAT_CONFIG.MAX_WORKERS),
         "max_tokens": values.get("max_tokens", CHAT_CONFIG.MAX_TOKENS),
+        "locale": effective_locale,
+        "locale_instruction": locale_instruction(effective_locale),
     }
+
+
+def _apply_locale_instruction(
+    system_prompt: str, options: dict[str, Any]
+) -> str:
+    """Prepend the request locale instruction to a provider system prompt."""
+    instruction = options.get("locale_instruction")
+    if not isinstance(instruction, str) or not instruction:
+        return system_prompt
+    return f"{instruction}\n\n{system_prompt}"
 
 
 async def _query_with_upload_context(
@@ -524,6 +543,7 @@ async def run_phyto_chat_cached(
     cache_key = _ChatCacheKey(
         messages=call["messages"],
         response_format=call["response_format"],
+        locale=call.get("locale") or current_effective_locale(),
     )
     request = _ChatCacheRequest(
         model=call["model"],
@@ -584,6 +604,7 @@ async def _run_phyto_chat(
                 user=options["user"],
                 timeout=options["timeout"],
                 stream=options["stream"],
+                locale=options["locale"],
             )
         except HTTPStatusError as exc:
             if await retry_http_status_or_raise(
@@ -616,6 +637,8 @@ async def _run_phyto_chat(
 async def stream_phyto_chat_chunks(
     user_query: str,
     obs_file_list: list[str] | None = None,
+    *,
+    locale: SupportedLocale | None = None,
     **kwargs: Any,
 ) -> AsyncIterator[dict[str, Any]]:
     """Yield raw provider chunks for one streaming chat completion.
@@ -651,17 +674,19 @@ async def stream_phyto_chat_chunks(
             transient transport errors.
     """
     obs_file_list = [] if obs_file_list is None else list(obs_file_list)
-    options = _chat_options(kwargs)
+    option_values = dict(kwargs)
+    if locale is not None:
+        option_values["locale"] = locale
+    options = _chat_options(option_values)
     if obs_file_list:
         user_query = await _query_with_upload_context(
             user_query, obs_file_list, options
         )
+    system_prompt = get_prompt(options["prompt_file"], options["prompt_path"])
     messages = [
         {
             "role": "system",
-            "content": get_prompt(
-                options["prompt_file"], options["prompt_path"]
-            ),
+            "content": _apply_locale_instruction(system_prompt, options),
         },
         {"role": "user", "content": user_query},
     ]

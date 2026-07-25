@@ -76,6 +76,7 @@ def test_report_context_and_snippet_shapes() -> None:
             }
         ],
         query="design an sgRNA workflow",
+        locale="en-US",
     )
     snippet = TextArtifactSnippet(
         path="/obs/bucket/run-a/report.md",
@@ -109,6 +110,7 @@ def test_build_fallback_report_includes_metadata_and_artifacts() -> None:
             }
         ],
         query="build a co-expression network",
+        locale="en-US",
     )
 
     result = build_fallback_report(
@@ -136,6 +138,7 @@ def test_build_fallback_report_handles_empty_artifacts() -> None:
         live=[{"task_id": "task-1", "status": "succeeded"}],
         artifacts=[],
         query=None,
+        locale="en-US",
     )
 
     result = build_fallback_report(context)
@@ -144,6 +147,32 @@ def test_build_fallback_report_handles_empty_artifacts() -> None:
     assert "# Analyst Final Report" in result.final_report
     assert "No output directories were reported." in result.final_report
     assert result.answer == "Analysis complete: 1/1 tasks succeeded."
+
+
+def test_build_fallback_report_uses_context_locale_for_bot_prose() -> None:
+    """Chinese fallback prose changes while paths and query stay exact."""
+    context = TerminalReportContext(
+        agent="analyst",
+        status="succeeded",
+        live=[{"task_id": "task-zh", "status": "succeeded"}],
+        artifacts=[
+            {
+                "task_id": "task-zh",
+                "output_dir": "/obs/bucket/zh-run",
+                "paths": ["/obs/bucket/zh-run/report.md"],
+            }
+        ],
+        query="分析 Os01g0177400",
+        locale="zh-CN",
+    )
+
+    result = build_fallback_report(context)
+
+    assert "# 分析智能体最终报告" in result.final_report
+    assert "分析完成：1/1 个任务成功。" in result.final_report
+    assert "分析 Os01g0177400" in result.final_report
+    assert "/obs/bucket/zh-run/report.md" in result.final_report
+    assert result.answer == "分析完成：1/1 个任务成功。"
 
 
 async def _fake_reader(path: str) -> str:
@@ -227,6 +256,7 @@ async def test_synthesize_terminal_report_uses_llm_report() -> None:
             }
         ],
         query="find candidate genes",
+        locale="en-US",
     )
 
     result = await synthesize_terminal_report(
@@ -257,6 +287,7 @@ async def test_synthesize_terminal_report_falls_back_on_empty_summary() -> (
             }
         ],
         query="design primers",
+        locale="en-US",
     )
 
     result = await synthesize_terminal_report(
@@ -284,6 +315,7 @@ async def test_synthesize_report_falls_back_on_summary_exception() -> None:
             }
         ],
         query="analyze dataset",
+        locale="en-US",
     )
 
     result = await synthesize_terminal_report(
@@ -326,6 +358,7 @@ def test_persist_terminal_report_updates_first_live_task() -> None:
             live=live,
             artifacts=[],
             query=None,
+            locale="en-US",
         ),
         reason="LLM summary returned empty content",
     )
