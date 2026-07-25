@@ -11,10 +11,12 @@ import pytest
 from mcp_server_phytomni.runtime.locale import current_effective_locale
 from mcp_server_phytomni.runtime.request_context import (
     bind_accepted_task_ids,
+    bind_recorder_degraded,
     bind_request_id,
     bind_request_user,
     bind_run_id,
     current_accepted_task_ids,
+    current_recorder_degraded,
     current_request_id,
     current_request_user,
     current_run_id,
@@ -99,3 +101,17 @@ def test_request_context_seeds_and_restores_accepted_task_ids() -> None:
         assert current_accepted_task_ids() == ("accepted-1", "accepted-2")
 
     assert current_accepted_task_ids() == ("outer-task",)
+
+
+def test_request_context_seeds_and_restores_recorder_state() -> None:
+    """Recorder degradation is scoped to one request and never leaks."""
+    outer_token = bind_recorder_degraded(True)
+    try:
+        with request_context("alice", "req-recorder"):
+            assert current_recorder_degraded() is False
+            bind_recorder_degraded(True)
+            assert current_recorder_degraded() is True
+        assert current_recorder_degraded() is True
+    finally:
+        reset_request_var(outer_token)
+    assert current_recorder_degraded() is False

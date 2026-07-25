@@ -308,9 +308,17 @@ async def test_stream_priming_empty_returns_json_and_fails_run(
     assert response.status_code == 500
     assert response.headers["content-type"].startswith("application/json")
     assert response.json()["error"]["message"] == "internal server error"
+    assert "event:" not in response.text
+    assert "data: [DONE]" not in response.text
     records = RunRegistry(tasks_db_path).list_runs(owner="u1")
     assert records
     assert records[-1].status == "failed"
+    assert records[-1].result == {
+        "formatted": {"answer": ""},
+        "raw": None,
+        "stream": True,
+        "partial": True,
+    }
 
 
 @pytest.mark.parametrize(
@@ -621,6 +629,34 @@ async def test_stream_run_succeeds_when_client_disconnects_after_finish(
     assert result is not None
     assert result["formatted"]["answer"] == "Hi"
     assert result["partial"] is False
+
+
+async def test_disconnect_after_finish_never_attempts_failed_settlement(
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A post-finish disconnect cannot overwrite durable success."""
+    statuses: list[str] = []
+    original_settle = api_app._settle_stream_run
+
+    def record_settlement(
+        run_id: str,
+        owner: str,
+        status: str,
+        result: dict[str, Any],
+    ) -> bool:
+        statuses.append(status)
+        return original_settle(run_id, owner, status, result)
+
+    monkeypatch.setattr(api_app, "_settle_stream_run", record_settlement)
+    status, result = await _drive_stream_until(
+        tasks_db_path, monkeypatch, stop_after_finish=True
+    )
+
+    assert status == "succeeded"
+    assert result is not None
+    assert result["partial"] is False
+    assert statuses == ["succeeded"]
 
 
 async def test_stream_run_fails_when_client_disconnects_before_finish(

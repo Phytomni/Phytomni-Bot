@@ -74,6 +74,7 @@ def _seed_run(
     run_id: str,
     status: str,
     agent: str = "review",
+    owner: str = "u1",
 ) -> str:
     """Seed an owner-scoped review run for resume tests."""
     result = None
@@ -98,7 +99,7 @@ def _seed_run(
     RunRegistry(tasks_db_path).create_run(
         RunSpec(
             run_id=run_id,
-            user_id="u1",
+            user_id=owner,
             agent=agent,
             origin="local",
         ),
@@ -117,6 +118,29 @@ async def test_resume_unknown_thread_returns_404(
 
     response = await api_client.post(
         "/v1/runs/run-missing/resume",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={"approved": True},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+
+
+async def test_resume_foreign_owner_returns_same_404_as_unknown_run(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """A foreign paused run stays indistinguishable from an unknown id."""
+    run_id = _seed_run(
+        tasks_db_path,
+        run_id="run-foreign-owner",
+        status="input_required",
+        owner="other-user",
+    )
+
+    response = await api_client.post(
+        f"/v1/runs/{run_id}/resume",
         headers={"Authorization": f"Bearer {issued_api_key}"},
         json={"approved": True},
     )
@@ -332,6 +356,14 @@ async def test_review_run_interrupt_then_resume_finishes(
     assert body["run_id"] == thread_id
     assert body["status"] == "succeeded"
     assert body["result"]["formatted"]["answer"] == "Approved final review."
+    record = RunRegistry(tasks_db_path).get_run(thread_id, owner="u1")
+    assert record is not None
+    assert record.status == "succeeded"
+    actions = RunRegistry(tasks_db_path).list_a2ui_actions(
+        owner="u1", run_id=thread_id
+    )
+    assert len(actions) == 1
+    assert actions[0].outcome == "succeeded"
 
 
 async def test_review_chat_completion_interrupt_body(
