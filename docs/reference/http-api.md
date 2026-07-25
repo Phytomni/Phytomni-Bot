@@ -853,7 +853,9 @@ Go assigns it.
 Routes marked **svc** require the service token configured via
 `API_SERVICE_TOKEN`, sent as `Authorization: Bearer <token>` or
 `X-Service-Token: <token>`. When the env var is unset the routes return
-`503 admin path not enabled`; an absent or wrong token returns `401`.
+`503` with the safe error envelope `code=unavailable`,
+`message=service unavailable`, and `retryable=false`; the internal
+configuration detail is redacted. An absent or wrong token returns `401`.
 The service token is intentionally separate from `ptm_...` user keys
 so a leaked user key cannot escalate to key-issuance scope.
 
