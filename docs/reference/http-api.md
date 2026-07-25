@@ -502,13 +502,38 @@ for the service token). Missing or wrong service token returns
 `403 user_id query parameter requires the service token`. The
 owner-only path (no `user_id`) keeps its existing contract.
 
+### Run lifecycle conditions
+
+The public run status is valid only when its durable backing condition is
+present:
+
+| Status           | Required durable condition                                   |
+| ---------------- | ------------------------------------------------------------ |
+| `input_required` | Persisted run plus a valid `v1.0` A2UI surface               |
+| `running`        | Persisted run, or real accepted tasks plus degraded tracking |
+| `succeeded`      | Persisted run plus the canonical result projection           |
+| `failed`         | Safe error projection with no private payload                |
+
+Every error response uses the public `error` envelope with `code`, safe
+`message`, `request_id`, `stage` when applicable, and `retryable`. Internal
+exception text, SQL, credentials, private paths, provider payloads, and model
+output are never part of an error response.
+
 `POST /v1/runs/{thread_id}/resume` accepts
 `{"approved": bool, "edits": string | null}` for a ReviewAgent run
 whose current status is `input_required`. The `thread_id` is the same
 value as the Bot `run_id` returned in the interrupt body. Unknown runs
 return `404`, terminal or otherwise non-paused runs return `409`,
 malformed resume bodies return FastAPI's normal `422`, and a missing
-checkpoint returns `409 no pause point for run`. If the resumed graph
+checkpoint returns `409` with `code=checkpoint_not_available`, message
+`This input request is no longer available.`, and `stage=resume_checkpoint`.
+The checkpoint probe happens before the durable action claim, so this failure
+does not consume the input request. Classic `/resume` is independent of the
+`A2UI_ENABLED` flag, but it shares the same persistent first-uplink claim as
+`/a2ui-actions`; a later transport receives `409` with
+`code=a2ui_action_conflict`, message
+`This input request has already been handled.`, and `stage=resume_claim`.
+If the resumed graph
 pauses again, the response repeats
 `{"interrupt": {"thread_id", "draft"}, "status": "input_required"}`;
 otherwise it settles the run as `succeeded` and returns the normal
@@ -566,25 +591,26 @@ duplicate, malformed, or over-shape actions use the unified `400` envelope.
 Web still owns end-user identity and tenant selection; these Bot-side limits
 are an additional boundary, not an ownership substitute.
 
-Copyable A2UI downlink / uplink / success / error goldens live under
+Copyable A2UI downlink / uplink / success / `input_required` / error goldens live under
 [`docs/contracts/a2ui/`](../contracts/a2ui/README.md) for Web and Go
 gateway consumers: `chat_confirm`, `review_confirm`, `chat_form`,
 `chat_choice`, `review_form`, `review_choice`, plus
-`multi_turn/round2_downlink.json` (`sfc-contract-2`). Those fixtures
-lock shapes only; this section and the offline HTTP tests remain
-authoritative for runtime behavior.
+`multi_turn/round2_downlink.json` and
+`multi_turn/round2_input_required.json` (`sfc-contract-2`). Those fixtures
+lock shapes only; this section and the offline HTTP tests remain authoritative
+for runtime behavior.
 
 | Condition                    | HTTP  | Detail                             |
 | ---------------------------- | ----- | ---------------------------------- |
-| `A2UI_ENABLED` off           | `403` | `a2ui disabled`                    |
+| `A2UI_ENABLED` off           | `403` | `forbidden`, `a2ui disabled`       |
 | Unknown or foreign run       | `404` | `run not found: <run_id>`          |
 | Path/body `run_id` mismatch  | `400` | `run_id mismatch`                  |
 | Invalid widget payload       | `400` | e.g. missing `accepted` on confirm |
 | Run not `input_required`     | `409` | `run is not awaiting input`        |
 | No open surface on run       | `409` | `no open a2ui surface`             |
 | `surface_id` ≠ draft         | `409` | `surface_id mismatch`              |
-| Missing LangGraph checkpoint | `409` | `no pause point for run`           |
-| Second POST after success    | `409` | terminal run                       |
+| Missing LangGraph checkpoint | `409` | `checkpoint_not_available`         |
+| Second POST after success    | `409` | `a2ui_action_conflict`             |
 | Body above 65,536 bytes      | `413` | `a2ui request body too large`      |
 | Response above 1 MiB         | `413` | `a2ui response body too large`     |
 | Malformed or over-shape body | `400` | `invalid a2ui action envelope`     |

@@ -22,6 +22,7 @@ from mcp_server_phytomni.agents.shared.a2ui import (
     build_choice_template_props,
     build_form_template_props,
     build_submitted_value,
+    validate_a2ui_surface,
 )
 
 pytestmark = pytest.mark.server
@@ -149,6 +150,28 @@ _FORM_CHOICE_CONTRACTS = (
             downlink, cancelled=True
         ),
     ),
+)
+
+_INPUT_REQUIRED_CONTRACTS: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "review_confirm",
+        "input_required.json",
+        "surface-review-fixture",
+        "confirm",
+    ),
+    (
+        "review_form",
+        "input_required.json",
+        "surface-review-form-fixture",
+        "form",
+    ),
+    (
+        "review_choice",
+        "input_required.json",
+        "surface-review-choice-fixture",
+        "choice",
+    ),
+    ("multi_turn", "round2_input_required.json", "sfc-contract-2", "choice"),
 )
 
 
@@ -383,3 +406,39 @@ def test_multi_turn_round2_downlink_exists() -> None:
     assert model.catalog_version == A2UI_CATALOG_VERSION
     assert model.surface_id == "sfc-contract-2"
     assert model.widget == "choice"
+
+
+@pytest.mark.parametrize(
+    ("name", "filename", "surface_id", "widget"),
+    _INPUT_REQUIRED_CONTRACTS,
+    ids=lambda value: value[0] if isinstance(value, tuple) else str(value),
+)
+def test_input_required_golden_is_full_review_body(
+    name: str,
+    filename: str,
+    surface_id: str,
+    widget: str,
+) -> None:
+    """Full Review pause bodies carry a strict, resumable surface."""
+    raw = _load(_A2UI_ROOT / name / filename)
+    assert raw["id"] == raw["run_id"]
+    assert raw["object"] == "agent.run"
+    assert raw["agent"] == "review"
+    assert raw["status"] == "input_required"
+    assert raw["task_ids"] == []
+    interrupt = raw["result"]["interrupt"]
+    assert interrupt["thread_id"] == raw["run_id"]
+    surface = interrupt["draft"]["a2ui"]
+    validated = A2uiDownlinkValue.model_validate(surface)
+    validate_a2ui_surface(surface)
+    assert validated.surface_id == surface_id
+    assert validated.widget == widget
+
+
+def test_multi_turn_input_required_uses_fresh_surface_id() -> None:
+    """Round two cannot replay the round-one Review surface id."""
+    round_one = _load(_A2UI_ROOT / "review_confirm" / "input_required.json")
+    round_two = _load(_A2UI_ROOT / "multi_turn" / "round2_input_required.json")
+    first_id = round_one["result"]["interrupt"]["draft"]["a2ui"]["surface_id"]
+    second_id = round_two["result"]["interrupt"]["draft"]["a2ui"]["surface_id"]
+    assert first_id != second_id

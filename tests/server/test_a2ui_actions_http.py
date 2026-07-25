@@ -611,7 +611,11 @@ async def test_a2ui_action_no_checkpoint_returns_409(
     )
 
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == "checkpoint_not_available"
+    error = response.json()["error"]
+    assert error["code"] == "checkpoint_not_available"
+    assert error["message"] == "This input request is no longer available."
+    assert error["stage"] == "resume_checkpoint"
+    assert error["retryable"] is False
     assert (
         RunRegistry(tasks_db_path).list_a2ui_actions(owner="u1", run_id=run_id)
         == []

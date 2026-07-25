@@ -36,6 +36,14 @@ Chat and Review A2UI pauses are bounded to **two rounds**
 `surface_id`. The shape-lock golden for round 2 is
 `multi_turn/round2_downlink.json` (`sfc-contract-2`).
 
+The complete canonical `agent.run` pause bodies are available as
+`review_confirm/input_required.json`, `review_form/input_required.json`,
+`review_choice/input_required.json`, and
+`multi_turn/round2_input_required.json`. They carry the resumable
+`result.interrupt.draft.a2ui` surface, `run_id`, `thread_id`, and an empty
+`task_ids` list. The direct native Review response may also expose the same
+interrupt as a legacy top-level `interrupt` alias; the persisted `GET /v1/runs/{run_id}` projection uses `result.interrupt`.
+
 ## AG-UI Custom frame example
 
 Downlink values arrive wrapped in an AG-UI `Custom` frame:
@@ -74,41 +82,45 @@ these files do not claim that cross-repository integration is complete.
 
 ## File index
 
-| File                                 | Purpose                             |
-| ------------------------------------ | ----------------------------------- |
-| `chat_confirm/downlink.json`         | Bot → client Chat confirm widget    |
-| `chat_confirm/uplink_accept.json`    | Client → Bot accept action          |
-| `chat_confirm/uplink_reject.json`    | Client → Bot reject action          |
-| `chat_confirm/success_accept.json`   | Terminal success after accept       |
-| `chat_confirm/success_reject.json`   | Terminal success after reject       |
-| `chat_confirm/errors/*.json`         | Shared error matrix (see below)     |
-| `review_confirm/downlink.json`       | Bot → client Review confirm widget  |
-| `review_confirm/uplink_accept.json`  | Client → Bot approve action         |
-| `review_confirm/uplink_reject.json`  | Client → Bot reject action          |
-| `review_confirm/success_accept.json` | Terminal success after approve      |
-| `review_confirm/success_reject.json` | Terminal success after reject       |
-| `review_confirm/errors/*.json`       | Same error matrix as chat_confirm   |
-| `chat_form/downlink.json`            | Bot → client Chat form widget       |
-| `chat_form/uplink_submit.json`       | Client → Bot form submit            |
-| `chat_form/uplink_cancel.json`       | Client → Bot form cancel            |
-| `chat_form/success_submit.json`      | Terminal success after submit       |
-| `chat_form/success_cancel.json`      | Terminal success after cancel       |
-| `chat_choice/downlink.json`          | Bot → client Chat choice widget     |
-| `chat_choice/uplink_submit.json`     | Client → Bot choice submit          |
-| `chat_choice/uplink_cancel.json`     | Client → Bot choice cancel          |
-| `chat_choice/success_submit.json`    | Terminal success after submit       |
-| `chat_choice/success_cancel.json`    | Terminal success after cancel       |
-| `review_form/downlink.json`          | Bot → client Review form widget     |
-| `review_form/uplink_submit.json`     | Client → Bot Review form submit     |
-| `review_form/uplink_cancel.json`     | Client → Bot Review form cancel     |
-| `review_form/success_submit.json`    | Terminal success after submit       |
-| `review_form/success_cancel.json`    | Terminal success after cancel       |
-| `review_choice/downlink.json`        | Bot → client Review choice widget   |
-| `review_choice/uplink_submit.json`   | Client → Bot Review choice submit   |
-| `review_choice/uplink_cancel.json`   | Client → Bot Review choice cancel   |
-| `review_choice/success_submit.json`  | Terminal success after submit       |
-| `review_choice/success_cancel.json`  | Terminal success after cancel       |
-| `multi_turn/round2_downlink.json`    | Round-2 downlink (`sfc-contract-2`) |
+| File                                    | Purpose                             |
+| --------------------------------------- | ----------------------------------- |
+| `chat_confirm/downlink.json`            | Bot → client Chat confirm widget    |
+| `chat_confirm/uplink_accept.json`       | Client → Bot accept action          |
+| `chat_confirm/uplink_reject.json`       | Client → Bot reject action          |
+| `chat_confirm/success_accept.json`      | Terminal success after accept       |
+| `chat_confirm/success_reject.json`      | Terminal success after reject       |
+| `chat_confirm/errors/*.json`            | Shared error matrix (see below)     |
+| `review_confirm/downlink.json`          | Bot → client Review confirm widget  |
+| `review_confirm/input_required.json`    | Full Review confirm pause body      |
+| `review_confirm/uplink_accept.json`     | Client → Bot approve action         |
+| `review_confirm/uplink_reject.json`     | Client → Bot reject action          |
+| `review_confirm/success_accept.json`    | Terminal success after approve      |
+| `review_confirm/success_reject.json`    | Terminal success after reject       |
+| `review_confirm/errors/*.json`          | Same error matrix as chat_confirm   |
+| `chat_form/downlink.json`               | Bot → client Chat form widget       |
+| `chat_form/uplink_submit.json`          | Client → Bot form submit            |
+| `chat_form/uplink_cancel.json`          | Client → Bot form cancel            |
+| `chat_form/success_submit.json`         | Terminal success after submit       |
+| `chat_form/success_cancel.json`         | Terminal success after cancel       |
+| `chat_choice/downlink.json`             | Bot → client Chat choice widget     |
+| `chat_choice/uplink_submit.json`        | Client → Bot choice submit          |
+| `chat_choice/uplink_cancel.json`        | Client → Bot choice cancel          |
+| `chat_choice/success_submit.json`       | Terminal success after submit       |
+| `chat_choice/success_cancel.json`       | Terminal success after cancel       |
+| `review_form/downlink.json`             | Bot → client Review form widget     |
+| `review_form/input_required.json`       | Full Review form pause body         |
+| `review_form/uplink_submit.json`        | Client → Bot Review form submit     |
+| `review_form/uplink_cancel.json`        | Client → Bot Review form cancel     |
+| `review_form/success_submit.json`       | Terminal success after submit       |
+| `review_form/success_cancel.json`       | Terminal success after cancel       |
+| `review_choice/downlink.json`           | Bot → client Review choice widget   |
+| `review_choice/input_required.json`     | Full Review choice pause body       |
+| `review_choice/uplink_submit.json`      | Client → Bot Review choice submit   |
+| `review_choice/uplink_cancel.json`      | Client → Bot Review choice cancel   |
+| `review_choice/success_submit.json`     | Terminal success after submit       |
+| `review_choice/success_cancel.json`     | Terminal success after cancel       |
+| `multi_turn/round2_downlink.json`       | Round-2 downlink (`sfc-contract-2`) |
+| `multi_turn/round2_input_required.json` | Full round-2 pause body             |
 
 ### Error matrix (`chat_confirm/errors/` and `review_confirm/errors/`)
 

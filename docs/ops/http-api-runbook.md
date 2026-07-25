@@ -718,7 +718,38 @@ The credential-injecting relay (`/v1/relay/*`) is off unless
   Run the API as one replica, or keep `/resume` and `/a2ui-actions`
   traffic pinned to a node that shares the same checkpoint file. A
   different replica can see the run row in `input_required` but miss the
-  LangGraph checkpoint and return `409 no pause point for run`.
+  LangGraph checkpoint and return `409 checkpoint_not_available` with the
+  safe message `This input request is no longer available.`.
+
+### Inspect A2UI action claims
+
+The first-uplink audit is stored in `run_a2ui_actions` inside the configured
+tasks database. Inspect only identity, outcome, and timestamps; action
+payloads and graph state are intentionally not stored in this table:
+
+```bash
+sqlite3 "$API_TASKS_DB_PATH" \
+  "SELECT run_id, user_id, surface_id, widget, action_id, channel, \
+          outcome, claimed_at, completed_at \
+     FROM run_a2ui_actions \
+    ORDER BY claimed_at DESC LIMIT 100;"
+```
+
+For one run, add an owner-scoped predicate without selecting any payload:
+
+```bash
+sqlite3 "$API_TASKS_DB_PATH" \
+  "SELECT run_id, user_id, surface_id, widget, action_id, channel, \
+          outcome, claimed_at, completed_at \
+     FROM run_a2ui_actions \
+    WHERE run_id = '$RUN_ID' AND user_id = '$USER_ID' \
+    ORDER BY claimed_at ASC;"
+```
+
+`channel` identifies `a2ui` versus `classic`; `outcome` is `claimed`,
+`input_required`, `succeeded`, or `failed`. A completed row is immutable for
+the original surface, so a repeated or cross-transport submission returns
+the stable `a2ui_action_conflict` response rather than replaying a result.
 
 ## Direct GaussDB / BI Safety
 

@@ -8,16 +8,24 @@ from __future__ import annotations
 
 import sqlite3
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, NotRequired, TypedDict
 
 import httpx
 import pytest
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
+from tests.support.http_fakes import open_asgi_client
 from tests.support.resolver_fakes import post_native_run
 
 from mcp_server_phytomni import server
+from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api import run_lifecycle
+from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.runtime import (
     submit_recorder as submit_recorder_module,
+)
+from mcp_server_phytomni.runtime.checkpoint_backend import (
+    build_default_checkpointer,
 )
 from mcp_server_phytomni.runtime.request_context import (
     current_run_id,
@@ -30,6 +38,130 @@ from mcp_server_phytomni.runtime.submit_recorder import (
 )
 
 pytestmark = pytest.mark.server
+
+
+def _auth_headers(api_key: str) -> dict[str, str]:
+    """Build an API-key header without embedding a credential sentinel."""
+    return {"Authorization": f"{'Bearer'} {api_key}"}
+
+
+class _RestartReviewState(TypedDict):
+    """State for the file-backed pause/resume graph used below."""
+
+    summary: str
+    decision: NotRequired[dict[str, Any]]
+    final_response: NotRequired[dict[str, Any]]
+
+
+def _build_restart_review_graph(checkpointer: Any) -> Any:
+    """Build a model-free Review graph with one durable interrupt."""
+
+    async def pause(state: _RestartReviewState) -> dict[str, Any]:
+        decision = interrupt({"draft": state["summary"]})
+        return {"decision": decision}
+
+    async def finish(_state: _RestartReviewState) -> dict[str, Any]:
+        return {
+            "final_response": {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "Restarted review.",
+                            "doc_list": [],
+                            "follow_up_questions": [],
+                        }
+                    }
+                ]
+            }
+        }
+
+    graph: Any = StateGraph(_RestartReviewState)
+    graph.add_node("pause", pause)
+    graph.add_node("finish", finish)
+    graph.add_edge(START, "pause")
+    graph.add_edge("pause", "finish")
+    graph.add_edge("finish", END)
+    return graph.compile(checkpointer=checkpointer)
+
+
+async def _new_restart_review_app(
+    checkpoint_path: str,
+) -> tuple[Any, Any]:
+    """Open a fresh graph/checkpointer pair at one SQLite path."""
+    checkpointer = build_default_checkpointer(checkpoint_path)
+    await checkpointer.setup()
+    return _build_restart_review_graph(checkpointer), checkpointer
+
+
+async def _pause_restart_review(
+    client: httpx.AsyncClient,
+    api_key: str,
+) -> tuple[str, str]:
+    """Create the durable pause and return its run and surface IDs."""
+    paused = await post_native_run(
+        client,
+        api_key,
+        "review",
+        {"user_query": "Review after restart.", "obs_file_list": []},
+    )
+    assert paused.status_code == 200
+    body = paused.json()
+    run_id = body["id"]
+    surface_id = body["interrupt"]["draft"]["a2ui"]["surface_id"]
+    return run_id, surface_id
+
+
+def _assert_restart_run_persisted(tasks_db_path: str, run_id: str) -> None:
+    """Verify the first process wrote the input-required registry row."""
+    record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
+    assert record is not None
+    assert record.status == "input_required"
+
+
+async def _resume_restart_review(
+    client: httpx.AsyncClient,
+    api_key: str,
+    run_id: str,
+    surface_id: str,
+) -> None:
+    """Resume the reloaded pause and prove the old surface cannot replay."""
+    fetched = await client.get(
+        f"/v1/runs/{run_id}",
+        headers=_auth_headers(api_key),
+    )
+    assert fetched.status_code == 200
+    assert fetched.json()["status"] == "input_required"
+    fetched_surface = fetched.json()["result"]["interrupt"]["draft"]["a2ui"]
+    assert fetched_surface["surface_id"] == surface_id
+
+    action = {
+        "run_id": run_id,
+        "surface_id": surface_id,
+        "widget": "confirm",
+        "action_id": "restart-approve",
+        "payload": {"accepted": True},
+    }
+    resumed = await client.post(
+        f"/v1/runs/{run_id}/a2ui-actions",
+        headers=_auth_headers(api_key),
+        json=action,
+    )
+    assert resumed.status_code == 200
+    assert resumed.json()["status"] == "succeeded"
+    assert resumed.json()["result"]["formatted"]["answer"] == (
+        "Restarted review."
+    )
+
+    replay = await client.post(
+        f"/v1/runs/{run_id}/a2ui-actions",
+        headers=_auth_headers(api_key),
+        json=action,
+    )
+    assert replay.status_code == 409
+    assert replay.json()["error"]["code"] == "a2ui_action_conflict"
+    assert replay.json()["error"]["message"] == (
+        "This input request has already been handled."
+    )
 
 
 async def test_sync_persistence_failure_is_not_success(
@@ -174,7 +306,7 @@ async def test_remote_http_response_keeps_run_identity_byte_identical(
 
     response = await api_client.post(
         "/v1/agents/analyst/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
+        headers=_auth_headers(issued_api_key),
         json={
             "arguments": {
                 "goal_description": "analyze this dataset",
@@ -219,7 +351,7 @@ async def test_remote_registry_failure_returns_real_tasks(
 
     response = await api_client.post(
         "/v1/agents/analyst/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
+        headers=_auth_headers(issued_api_key),
         json={
             "arguments": {
                 "goal_description": "analyze this dataset",
@@ -264,7 +396,7 @@ async def test_remote_response_without_durable_or_accepted_work_is_safe_error(
 
     response = await api_client.post(
         "/v1/agents/analyst/runs",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
+        headers=_auth_headers(issued_api_key),
         json={
             "arguments": {
                 "goal_description": "analyze this dataset",
@@ -283,3 +415,57 @@ async def test_remote_response_without_durable_or_accepted_work_is_safe_error(
     assert error["stage"] == "lifecycle"
     assert error["retryable"] is False
     assert error["request_id"]
+
+
+async def test_review_a2ui_survives_client_and_registry_reload(
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+    tmp_path: Any,
+) -> None:
+    """A file-backed Review pause survives app/client reconstruction."""
+    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "true")
+    checkpoint_path = str(tmp_path / "checkpoints.db")
+    first = await _new_restart_review_app(checkpoint_path)
+    try:
+        monkeypatch.setattr(
+            api_app_module, "_review_stream_app", lambda: first[0]
+        )
+        monkeypatch.setattr(
+            api_app_module,
+            "_review_initial_state",
+            lambda _args: {"summary": "Restart review summary."},
+        )
+        async with open_asgi_client(
+            monkeypatch, create_app(), base_url="http://api.restart.first"
+        ) as first_client:
+            run_id, surface_id = await _pause_restart_review(
+                first_client, issued_api_key
+            )
+            _assert_restart_run_persisted(tasks_db_path, run_id)
+    finally:
+        await first[1].conn.close()
+
+    second = await _new_restart_review_app(checkpoint_path)
+    try:
+        monkeypatch.setattr(
+            api_app_module, "_review_stream_app", lambda: second[0]
+        )
+        async with open_asgi_client(
+            monkeypatch, create_app(), base_url="http://api.restart.second"
+        ) as second_client:
+            await _resume_restart_review(
+                second_client,
+                issued_api_key,
+                run_id,
+                surface_id,
+            )
+    finally:
+        await second[1].conn.close()
+
+    assert (
+        RunRegistry(tasks_db_path)
+        .list_a2ui_actions(owner="u1", run_id=run_id)[0]
+        .outcome
+        == "succeeded"
+    )

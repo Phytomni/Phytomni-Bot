@@ -1,0 +1,35 @@
+{
+  "id": "run-review-fixture",
+  "run_id": "run-review-fixture",
+  "object": "agent.run",
+  "agent": "review",
+  "status": "input_required",
+  "task_ids": [],
+  "result": {
+    "interrupt": {
+      "thread_id": "run-review-fixture",
+      "draft": {
+        "summary": "Select the review path.",
+        "a2ui": {
+          "catalog_version": "v1.0",
+          "surface_id": "surface-review-choice-fixture",
+          "widget": "choice",
+          "props": {
+            "title": "Yes / No",
+            "options": [
+              {
+                "id": "yes",
+                "label": "Yes"
+              },
+              {
+                "id": "no",
+                "label": "No"
+              }
+            ],
+            "multiple": false
+          }
+        }
+      }
+    }
+  }
+}

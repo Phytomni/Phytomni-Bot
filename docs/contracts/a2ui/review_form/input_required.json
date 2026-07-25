@@ -1,0 +1,32 @@
+{
+  "id": "run-review-fixture",
+  "run_id": "run-review-fixture",
+  "object": "agent.run",
+  "agent": "review",
+  "status": "input_required",
+  "task_ids": [],
+  "result": {
+    "interrupt": {
+      "thread_id": "run-review-fixture",
+      "draft": {
+        "summary": "Please provide the gene id.",
+        "a2ui": {
+          "catalog_version": "v1.0",
+          "surface_id": "surface-review-form-fixture",
+          "widget": "form",
+          "props": {
+            "title": "Gene ID",
+            "fields": [
+              {
+                "name": "gene_id",
+                "label": "Gene ID",
+                "type": "text",
+                "required": true
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}
