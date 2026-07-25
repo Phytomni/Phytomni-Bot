@@ -151,6 +151,88 @@ async def test_http_client_submits_and_reads_run() -> None:
     assert requests[1].url.path == "/v1/runs/run-1"
 
 
+async def test_http_client_submit_sends_locale_at_request_root() -> None:
+    """Submit locale belongs beside arguments in the native-run body."""
+    client, requests = _scripted_client(
+        [
+            _json_response(
+                202,
+                {"id": "run-1", "task_ids": ["task-1"], "status": "running"},
+            )
+        ]
+    )
+    async with client:
+        api = PhytomniHttpClient("https://bot.invalid", "key", client=client)
+        submitted = await api.submit(
+            "research",
+            {"user_query": "question"},
+            locale="zh-CN",
+        )
+
+    assert submitted.run_id == "run-1"
+    assert jsonlib.loads(requests[0].content) == {
+        "arguments": {"user_query": "question"},
+        "locale": "zh-CN",
+    }
+
+
+async def test_http_client_accepts_degraded_task_submission() -> None:
+    """Accepted task ids remain usable when local run tracking degrades."""
+    client, _ = _scripted_client(
+        [
+            _json_response(
+                202,
+                {
+                    "id": None,
+                    "status": "running",
+                    "task_ids": ["task-upstream-1"],
+                    "degraded_tracking": True,
+                },
+            )
+        ]
+    )
+    async with client:
+        api = PhytomniHttpClient("https://bot.invalid", "key", client=client)
+        submitted = await api.submit("research", {"user_query": "question"})
+
+    assert submitted.run_id is None
+    assert submitted.task_ids == ("task-upstream-1",)
+    assert submitted.tracking_degraded is True
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "id": None,
+            "status": "running",
+            "task_ids": [],
+            "degraded_tracking": True,
+        },
+        {
+            "id": None,
+            "status": "running",
+            "task_ids": ["task-upstream-1"],
+            "degraded_tracking": False,
+        },
+        {
+            "id": None,
+            "status": "running",
+            "task_ids": ["task-upstream-1"],
+        },
+    ],
+)
+async def test_http_client_rejects_unusable_degraded_submission(
+    payload: dict[str, Any],
+) -> None:
+    """A null id needs nonempty task ids and an explicit degraded flag."""
+    client, _ = _scripted_client([_json_response(202, payload)])
+    async with client:
+        api = PhytomniHttpClient("https://bot.invalid", "key", client=client)
+        with pytest.raises(RunProtocolError, match="neither durable id"):
+            await api.submit("research", {"user_query": "question"})
+
+
 async def test_http_client_errors_never_expose_key_or_body() -> None:
     """HTTP status failures use fixed text without upstream response data."""
     client, _ = _scripted_client(

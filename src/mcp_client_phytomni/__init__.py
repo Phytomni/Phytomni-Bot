@@ -26,6 +26,7 @@ from .http_client import (
     RunProtocolError,
     RunSnapshot,
     SubmittedRun,
+    SupportedLocale,
 )
 from .tool_result_formatters import (
     FormattedToolResult,
@@ -44,6 +45,7 @@ __all__ = [
     "RoutedQueryResult",
     "ServerCommand",
     "SubmittedRun",
+    "SupportedLocale",
     "ToolCallError",
     "format_tool_result",
     "parse_tool_payload",

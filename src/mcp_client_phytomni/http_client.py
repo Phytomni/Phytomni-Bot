@@ -19,6 +19,7 @@ from mcp_server_phytomni.contracts.deep_genome import (
     DeepGenomeReportSnapshot,
     sanitize_nonnegative_int,
 )
+from mcp_server_phytomni.runtime.locale import SupportedLocale
 
 _RUN_STATUSES = frozenset({"running", "input_required", "succeeded", "failed"})
 _REPORT_STAGES = frozenset({"waiting_for_brief_gene", "intermediate", "final"})
@@ -29,6 +30,7 @@ __all__ = [
     "PhytomniHttpClient",
     "RunProtocolError",
     "RunSnapshot",
+    "SupportedLocale",
     "SubmittedRun",
 ]
 
@@ -45,9 +47,10 @@ class RunProtocolError(HttpClientError):
 class SubmittedRun:
     """Accepted run identity returned by the asynchronous submit endpoint."""
 
-    run_id: str
+    run_id: str | None
     task_ids: tuple[str, ...] = ()
     status: str | None = None
+    tracking_degraded: bool = False
 
 
 @dataclass(frozen=True)
@@ -135,23 +138,38 @@ class PhytomniHttpClient:
         self,
         agent: str,
         arguments: Mapping[str, Any],
+        *,
+        locale: SupportedLocale | None = None,
     ) -> SubmittedRun:
         """Submit one agent run and validate its accepted identity."""
         if not isinstance(agent, str) or not agent.strip():
             raise ValueError("agent is required")
         if not isinstance(arguments, Mapping):
             raise TypeError("arguments must be a mapping")
+        request_body: dict[str, Any] = {"arguments": dict(arguments)}
+        if locale is not None:
+            request_body["locale"] = locale
         payload = await self._request(
             "POST",
             ("v1", "agents", agent, "runs"),
             expected_status=202,
-            json_body={"arguments": dict(arguments)},
+            json_body=request_body,
         )
-        body = _require_mapping(payload, "submit")
-        run_id = _required_text(body.get("id"), "submit id")
-        task_ids = _optional_task_ids(body.get("task_ids"))
-        status = _optional_status(body.get("status"))
-        return SubmittedRun(run_id=run_id, task_ids=task_ids, status=status)
+        response = _require_mapping(payload, "submit")
+        run_id = _optional_text(response.get("id"))
+        task_ids = _optional_task_ids(response.get("task_ids"))
+        status = _optional_status(response.get("status"))
+        tracking_degraded = response.get("degraded_tracking") is True
+        if run_id is None and not (task_ids and tracking_degraded):
+            raise RunProtocolError(
+                "accepted run has neither durable id nor degraded task ids"
+            )
+        return SubmittedRun(
+            run_id=run_id,
+            task_ids=task_ids,
+            status=status,
+            tracking_degraded=tracking_degraded,
+        )
 
     async def get_run(self, run_id: str) -> RunSnapshot:
         """Read one owner-scoped run snapshot without remote polling."""
