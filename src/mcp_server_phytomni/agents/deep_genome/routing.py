@@ -178,6 +178,7 @@ def build_analyst_sends(state: RoutingState) -> list[Send]:
         send_payload: dict[str, Any] = {
             "task_index": index,
             "task_submit_sleep": index * sleep_time,
+            "locale": state.get("locale"),
             **task,
         }
         for identity_key in ("task_id", "run_id", "owner", "output_dir"):

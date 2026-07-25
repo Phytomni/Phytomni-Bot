@@ -16,11 +16,13 @@ from collections.abc import Callable, Mapping
 from typing import Any, cast
 
 from ..agents.knowledge.state import KnowledgeInput
+from ..agents.shared.options import resolve_agent_locale
+from ..runtime.locale import SupportedLocale
 
-KnowledgeInputAdapter = Callable[
-    [str, Mapping[str, int]],
-    KnowledgeInput,
-]
+KnowledgeInputAdapter = Callable[..., KnowledgeInput]
+"""Retrieve-input adapter accepting legacy and locale-aware call shapes."""
+
+
 KnowledgeOutputAdapter = Callable[
     [Mapping[str, Any]],
     list[dict[str, Any]],
@@ -55,12 +57,14 @@ def make_knowledge_input_adapter(
     def _adapter(
         query: str,
         repo_id_dict: Mapping[str, int],
+        locale: SupportedLocale | None = None,
     ) -> KnowledgeInput:
         payload: dict[str, Any] = {
             query_key: query,
             output_key: dict(repo_id_dict),
             "is_generate": False,
             "is_follow_up": False,
+            "locale": resolve_agent_locale(locale),
         }
         return cast(KnowledgeInput, payload)
 

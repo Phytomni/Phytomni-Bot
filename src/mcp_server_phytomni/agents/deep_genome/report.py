@@ -32,10 +32,12 @@ from ...runtime.deep_genome_store import (
     DeepGenomeStore,
     DeepGenomeTransitionError,
 )
+from ...runtime.locale import SupportedLocale
 from ...runtime.task_manager import resolve_tasks_db_path
 from ...storage.path_policy import RunIdentity
 from ...storage.scratch import ScratchTarget, resolve_scratch_dir
 from ..chat.service import _cached_chat_app
+from ..shared.options import resolve_agent_locale
 from .coordinator import (
     DeepGenomeWorkflowError,
     workflow_outcome_for_state,
@@ -309,6 +311,7 @@ class DeepGenomeReportMixin:
         self: Any,
         user_query: str,
         repo_id_dict: dict[str, int],
+        locale: SupportedLocale | None = None,
     ) -> dict[str, Any] | None:
         """Dispatch one protocol retrieval via the knowledge subgraph.
 
@@ -337,12 +340,15 @@ class DeepGenomeReportMixin:
                 "repo_id_dict": repo_id_dict,
                 "is_generate": True,
                 "is_follow_up": False,
+                "locale": resolve_agent_locale(locale),
             }
         )
         return knowledge_output["final_response"]
 
     async def _dispatch_chat(
-        self: Any, user_query: str
+        self: Any,
+        user_query: str,
+        locale: SupportedLocale | None = None,
     ) -> dict[str, Any] | None:
         """Dispatch one chat call via the shared chat subgraph.
 
@@ -360,7 +366,10 @@ class DeepGenomeReportMixin:
             Chat completion dict matching the historical chat-completion
             return shape (``{"choices": [...]}``).
         """
-        chat_kwargs_bag = self._chat_kwargs()
+        chat_kwargs_bag = {
+            **self._chat_kwargs(),
+            "locale": resolve_agent_locale(locale),
+        }
         chat_output = await _cached_chat_app().ainvoke(
             build_chat_input(
                 user_query=user_query, chat_kwargs=chat_kwargs_bag
@@ -473,12 +482,16 @@ class DeepGenomeReportMixin:
 
         part12_str = self._preamble_and_analysis(state)
         experiment_response = await self._dispatch_chat(
-            self._experiment_prompt(state, part12_str)
+            self._experiment_prompt(state, part12_str),
+            state.get("locale"),
         )
         experiment_list = parse_json_list_fragment(
             message_content(experiment_response)
         )
-        experiments_str = await self._experiment_protocols(experiment_list)
+        experiments_str = await self._experiment_protocols(
+            experiment_list,
+            state.get("locale"),
+        )
 
         return {
             "experiment_report": experiments_str,
@@ -521,6 +534,7 @@ class DeepGenomeReportMixin:
     async def _experiment_protocols(
         self: Any,
         experiments: list[Any],
+        locale: SupportedLocale | None = None,
     ) -> str:
         """Retrieve protocol sections for recommended experiments."""
         sections = []
@@ -532,6 +546,7 @@ class DeepGenomeReportMixin:
                         DEEP_GENOME_CONFIG.PROTOCOL_PAGE_SIZE
                     )
                 },
+                locale=locale,
             )
             sections.append(
                 f"## {index + 1}. Step-by-Step {experiment} Protocol\n\n"
@@ -564,7 +579,8 @@ class DeepGenomeReportMixin:
                     "analysis_sections": part12_str,
                     "protocol_sections": experiment_report,
                 },
-            )
+            ),
+            state.get("locale"),
         )
 
         protocol_content = ""
@@ -626,7 +642,8 @@ class DeepGenomeReportMixin:
                     "species_string": SPECIES_CODE_MAP[species_code],
                     "content": content,
                 },
-            )
+            ),
+            state.get("locale"),
         )
 
         discussion_content = ""
@@ -666,7 +683,8 @@ class DeepGenomeReportMixin:
                     "species_string": SPECIES_CODE_MAP[state["species_code"]],
                     "content": self._summary_source_content(state),
                 },
-            )
+            ),
+            state.get("locale"),
         )
 
         return {"summary_report": message_content(summary_response)}
@@ -729,7 +747,8 @@ class DeepGenomeReportMixin:
                         "user_query": f"Analyze the gene {gene_id}",
                         "system_response": part0145_str,
                     },
-                )
+                ),
+                state.get("locale"),
             )
             follow_up_list = parse_follow_up_questions(
                 message_content(follow_up_response)

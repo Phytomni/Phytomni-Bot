@@ -23,6 +23,7 @@ from ..config.defaults import (
     ServerConfig,
 )
 from ..config.settings import SensitiveConfig
+from ..runtime.locale import SupportedLocale
 
 __all__ = [
     "HandlerRuntime",
@@ -60,11 +61,14 @@ def load_handler_runtime() -> HandlerRuntime:
 
 
 def chat_kwargs(
-    config: ChatConfig, sensitive: SensitiveConfig
+    config: ChatConfig,
+    sensitive: SensitiveConfig,
+    *,
+    locale: SupportedLocale | None = None,
 ) -> dict[str, Any]:
     """Return phyto_chat-flavored kwargs for a handler wrapper call.
 
-    Delegates to the shared ``build_chat_kwargs`` for the 17-field
+    Delegates to the shared ``build_chat_kwargs`` for the 19-field
     chat + retry block (prompt / api / model / sampling / timeout /
     retries) and overlays ``response_format`` and ``max_tokens`` from
     the handler's config defaults so wrappers that take those extras
@@ -73,7 +77,7 @@ def chat_kwargs(
     Typed to ``ChatConfig`` because ``RESPONSE_FORMAT`` first appears
     on that subclass; ServerConfig alone is not enough.
     """
-    kwargs = build_chat_kwargs({}, config, sensitive)
+    kwargs = build_chat_kwargs({}, config, sensitive, locale=locale)
     kwargs["response_format"] = config.RESPONSE_FORMAT
     kwargs["max_tokens"] = config.MAX_TOKENS
     return kwargs

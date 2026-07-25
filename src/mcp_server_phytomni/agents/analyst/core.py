@@ -42,6 +42,7 @@ from ..shared.knowledge_subgraph import (
     make_knowledge_after_router,
     mount_knowledge_node,
 )
+from ..shared.options import resolve_agent_locale
 from .defaults import ANALYST_CONFIG, ANALYST_CONFIG_FIELD_MAP
 from .graph import AnalystGraphMixin
 from .graph_chat_subgraph import AnalystChatSubgraphMixin
@@ -545,6 +546,7 @@ class AnalystAgent(
         input_fingerprint = kwargs.get("input_fingerprint") or ""
         initial_state = {
             "query": query,
+            "locale": resolve_agent_locale(kwargs.get("locale")),
             "goal_description": kwargs.get("goal_description"),
             "obs_file_list": obs_file_list,
             "data_list": kwargs.get("preset_data_list") or {},

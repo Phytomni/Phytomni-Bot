@@ -133,6 +133,7 @@ class ReviewPlanningMixin:
                 },
             },
             with_follow_up=False,
+            locale=state.get("locale"),
         )
         chat_payload = build_chat_input(user_query, chat_kwargs)
         return {
@@ -309,6 +310,7 @@ class ReviewPlanningMixin:
                     "knowledge_payload": build_review_knowledge_input(
                         dimension=dim,
                         repo_id_dict=repo_id_dict,
+                        locale=state.get("locale"),
                     ),
                 },
             )

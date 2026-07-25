@@ -90,6 +90,7 @@ def make_evolution_mount_node(
             "gene_id": gene_id,
             "target_taxids": "All",
             "is_polling": False,
+            "locale": state.get("locale"),
         }
         try:
             evo_output: dict[str, Any] = await evolution_app.ainvoke(evo_input)

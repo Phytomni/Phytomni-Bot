@@ -73,7 +73,7 @@ async def test_parse_query_prep_node_stages_payload() -> None:
     assert chat_payload is not None
     assert "Analyse photosynthesis" in chat_payload["user_query"]
     assert isinstance(chat_payload["chat_kwargs"], dict)
-    assert len(chat_payload["chat_kwargs"]) == 17
+    assert len(chat_payload["chat_kwargs"]) == 19
     assert chat_payload["chat_kwargs"]["response_format"] == {
         "type": "json_schema"
     }
@@ -116,7 +116,7 @@ async def test_data_select_prep_node_stages_payload() -> None:
     assert result["pending_post"] == "data_select_post_node"
     chat_payload = result["chat_payload"]
     assert "study photosynthesis pathway" in chat_payload["user_query"]
-    assert len(chat_payload["chat_kwargs"]) == 17
+    assert len(chat_payload["chat_kwargs"]) == 19
     assert chat_payload["chat_kwargs"]["response_format"] == {
         "type": "json_schema"
     }
@@ -144,7 +144,7 @@ async def test_plan_prep_node_stages_payload() -> None:
     chat_payload = result["chat_payload"]
     assert "retr-ctx" in chat_payload["user_query"]
     assert "assemble transcriptome" in chat_payload["user_query"]
-    assert len(chat_payload["chat_kwargs"]) == 17
+    assert len(chat_payload["chat_kwargs"]) == 19
     # plan_node defers to analyst_config.RESPONSE_FORMAT
     assert chat_payload["chat_kwargs"]["response_format"] == (
         agent.analyst_config.RESPONSE_FORMAT
@@ -172,7 +172,7 @@ async def test_check_prep_node_stages_payload() -> None:
     assert result["pending_post"] == "check_post_node"
     chat_payload = result["chat_payload"]
     assert "draft plan" in chat_payload["user_query"]
-    assert len(chat_payload["chat_kwargs"]) == 17
+    assert len(chat_payload["chat_kwargs"]) == 19
     assert chat_payload["chat_kwargs"]["response_format"] == {
         "type": "json_object"
     }
@@ -207,7 +207,7 @@ async def test_tool_extract_prep_node_stages_payload() -> None:
     assert result["pending_post"] == "tool_extract_post_node"
     chat_payload = result["chat_payload"]
     assert "trimmomatic" in chat_payload["user_query"]
-    assert len(chat_payload["chat_kwargs"]) == 17
+    assert len(chat_payload["chat_kwargs"]) == 19
     assert chat_payload["chat_kwargs"]["response_format"] == {
         "type": "json_object"
     }

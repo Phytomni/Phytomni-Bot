@@ -18,6 +18,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..agents.knowledge.state import KnowledgeInput
+from ..runtime.locale import SupportedLocale
 from .knowledge_adapters import (
     make_knowledge_input_adapter,
     make_knowledge_output_adapter,
@@ -30,6 +31,7 @@ _extract_output = make_knowledge_output_adapter("retrieved_docs")
 def build_review_knowledge_input(
     dimension: str,
     repo_id_dict: Mapping[str, int],
+    locale: SupportedLocale | None = None,
 ) -> KnowledgeInput:
     """Wrap a per-dimension retrieve call into a ``KnowledgeInput`` dict.
 
@@ -54,7 +56,7 @@ def build_review_knowledge_input(
         override and the two flag overrides that pin the retrieve-only
         path (``is_generate=False``, ``is_follow_up=False``).
     """
-    return _build_input(dimension, repo_id_dict)
+    return _build_input(dimension, repo_id_dict, locale)
 
 
 def extract_review_knowledge_response(

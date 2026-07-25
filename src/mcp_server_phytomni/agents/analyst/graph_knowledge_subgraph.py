@@ -62,6 +62,7 @@ class AnalystKnowledgeSubgraphMixin:
             "knowledge_payload": build_analyst_knowledge_input(
                 state["goal_description"],
                 self.analyst_config.REPO_ID_DICT,
+                state.get("locale"),
             ),
             "pending_post_knowledge": "method_retrieve_post_node",
         }

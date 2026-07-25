@@ -18,12 +18,15 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..agents.knowledge.state import KnowledgeInput
+from ..agents.shared.options import resolve_agent_locale
+from ..runtime.locale import SupportedLocale
 
 
 def build_data_knowledge_input(
     user_query: str,
     data_repo_id: str,
     page_size: int,
+    locale: SupportedLocale | None = None,
 ) -> KnowledgeInput:
     """Wrap a data retrieve call's inputs into a ``KnowledgeInput`` dict.
 
@@ -58,6 +61,7 @@ def build_data_knowledge_input(
         "repo_id_dict": {data_repo_id: page_size},
         "is_generate": False,
         "is_follow_up": False,
+        "locale": resolve_agent_locale(locale),
     }
 
 

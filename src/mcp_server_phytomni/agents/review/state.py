@@ -25,6 +25,7 @@ from typing import (
     TypedDict,
 )
 
+from ...runtime.locale import SupportedLocale
 from ..shared.parallel_dispatch import ParallelDispatchState
 
 
@@ -38,6 +39,7 @@ class DeepResearchInput(TypedDict, total=False):
     """
 
     original_user_query: Required[str]
+    locale: SupportedLocale
     obs_file_list: list[str]
 
 
@@ -73,6 +75,7 @@ class DeepResearchState(ParallelDispatchState):
     """
 
     original_user_query: str
+    locale: SupportedLocale
     user_query: str
     obs_file_list: list[str]
     upload_context: str

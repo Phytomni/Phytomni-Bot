@@ -47,6 +47,7 @@ from ...runtime.langgraph_runner import (
     ensure_checkpointer,
     make_async_router,
 )
+from ...runtime.locale import SupportedLocale
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
 from ..shared.a2ui.loop import A2UI_MAX_ROUNDS, next_a2ui_round
@@ -58,6 +59,7 @@ from ..shared.chat_subgraph import (
 )
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import KnowledgeApp, build_knowledge_app
+from ..shared.options import resolve_agent_locale
 from ..shared.parallel_dispatch import FailureRecord
 from .planning import ReviewPlanningMixin
 from .report import ReviewReportMixin
@@ -512,7 +514,9 @@ class DeepResearchAgent(
             self.review_config,
             self.sensitive_config,
             with_follow_up=False,
+            locale=state.get("locale"),
         )
+        effective_locale = chat_kwargs["locale"]
         return [
             Send(
                 "draft_worker_node",
@@ -528,6 +532,7 @@ class DeepResearchAgent(
                         ),
                         chat_kwargs=chat_kwargs,
                     ),
+                    "locale": effective_locale,
                 },
             )
             for i, param in enumerate(state["dimension_params"])
@@ -622,7 +627,9 @@ class DeepResearchAgent(
             self.review_config,
             self.sensitive_config,
             with_follow_up=False,
+            locale=state.get("locale"),
         )
+        effective_locale = chat_kwargs["locale"]
         dimensions = state["research_dimensions"]
         draft_contents = state["draft_contents"]
         return [
@@ -647,6 +654,7 @@ class DeepResearchAgent(
                         ),
                         chat_kwargs=chat_kwargs,
                     ),
+                    "locale": effective_locale,
                 },
             )
             for i, draft_text in enumerate(draft_contents)
@@ -798,6 +806,7 @@ class DeepResearchAgent(
                     "draft_content": drafts[i],
                     "review_content": reviews[i],
                     "raw_doc_list": raw_doc_list,
+                    "locale": resolve_agent_locale(state.get("locale")),
                 },
             )
             for i in range(len(dimensions))
@@ -807,6 +816,7 @@ class DeepResearchAgent(
         self,
         user_query: str,
         obs_file_list: list[str] | None = None,
+        locale: SupportedLocale | None = None,
     ) -> DeepResearchState:
         """Build the graph's initial state dict from wrapper arguments.
 
@@ -827,6 +837,7 @@ class DeepResearchAgent(
         """
         initial_state: DeepResearchState = {
             "original_user_query": user_query,
+            "locale": resolve_agent_locale(locale),
             "user_query": "",
             "obs_file_list": obs_file_list or [],
             "upload_context": "",
@@ -884,6 +895,7 @@ class DeepResearchAgent(
         user_query: str,
         obs_file_list: list[str] | None = None,
         thread_id: str | None = None,
+        locale: SupportedLocale | None = None,
     ) -> dict[str, Any]:
         """Execute the DeepResearchAgent workflow.
 
@@ -896,7 +908,11 @@ class DeepResearchAgent(
             Chat-completions-style final response payload with review text,
             ordered references, and follow-up questions.
         """
-        initial_state = self.initial_state(user_query, obs_file_list)
+        initial_state = self.initial_state(
+            user_query,
+            obs_file_list,
+            locale=locale,
+        )
         final_state = await ainvoke_graph(
             self.app, initial_state, thread_id=thread_id
         )
@@ -906,6 +922,8 @@ class DeepResearchAgent(
 async def review_agent_function(
     user_query: str,
     obs_file_list: list[str] | None = None,
+    *,
+    locale: SupportedLocale | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Run the LangGraph deep research review workflow.
@@ -919,6 +937,7 @@ async def review_agent_function(
     Returns:
         Chat-completions-style final response payload from DeepResearchAgent.
     """
+    effective_locale = resolve_agent_locale(locale)
     review_config = copy_config_with_overrides(
         REVIEW_CONFIG,
         kwargs,
@@ -948,12 +967,14 @@ async def review_agent_function(
     return await agent.arun(
         user_query=user_query,
         obs_file_list=obs_file_list or [],
+        locale=effective_locale,
     )
 
 
 def review_stream_target(
     user_query: str,
     obs_file_list: list[str] | None = None,
+    locale: SupportedLocale | None = None,
 ) -> tuple[Any, DeepResearchState]:
     """Return the cached DeepResearchAgent app + seeded streaming state.
 
@@ -997,4 +1018,8 @@ def review_stream_target(
             sensitive_config=sensitive_config,
         ),
     )
-    return agent.app, agent.initial_state(user_query, obs_file_list)
+    return agent.app, agent.initial_state(
+        user_query,
+        obs_file_list,
+        locale=locale,
+    )

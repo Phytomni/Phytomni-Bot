@@ -27,7 +27,9 @@ from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
 )
+from ...runtime.locale import SupportedLocale
 from ..knowledge.agent import KnowledgeAgent
+from ..shared.options import resolve_agent_locale
 from .core import (
     BRIEF_CONFIG,
     BriefGeneAgent,
@@ -95,6 +97,8 @@ BRIEF_GENE_SECRET_FIELD_MAP = {
 
 async def brief_gene_function(
     user_query: str,
+    *,
+    locale: SupportedLocale | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Run the LangGraph brief gene function workflow.
@@ -108,6 +112,7 @@ async def brief_gene_function(
         Chat-completions-style final response payload from
         BriefGeneAgent.
     """
+    effective_locale = resolve_agent_locale(locale)
     brief_config = copy_config_with_overrides(
         BRIEF_CONFIG,
         kwargs,
@@ -134,7 +139,7 @@ async def brief_gene_function(
             sensitive_config=sensitive_config,
         ),
     )
-    return await agent.arun(user_query=user_query)
+    return await agent.arun(user_query=user_query, locale=effective_locale)
 
 
 def brief_gene_stream_seed(
@@ -179,4 +184,7 @@ def brief_gene_stream_seed(
             sensitive_config=sensitive_config,
         ),
     )
-    return agent.app, initial_brief_gene_state(args.user_query)
+    return agent.app, initial_brief_gene_state(
+        args.user_query,
+        locale=args.locale,
+    )

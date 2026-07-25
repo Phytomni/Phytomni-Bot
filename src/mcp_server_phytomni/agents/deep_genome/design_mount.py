@@ -132,6 +132,7 @@ def make_design_mount_node(
             "species_code": species_code,
             "gene_id": gene_id,
             "is_polling": False,
+            "locale": state.get("locale"),
         }
         try:
             design_output: dict[str, Any] = await design_app.ainvoke(

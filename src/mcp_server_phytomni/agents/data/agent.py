@@ -44,6 +44,7 @@ from ...runtime.langgraph_runner import (
     ensure_checkpointer,
     make_async_router,
 )
+from ...runtime.locale import SupportedLocale
 from ..shared.chat_subgraph import mount_chat_node
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import (
@@ -52,6 +53,7 @@ from ..shared.knowledge_subgraph import (
     make_knowledge_after_router,
     mount_knowledge_node,
 )
+from ..shared.options import resolve_agent_locale
 from .nl2sql import (
     Nl2SqlRequest,
     _default_dialog_id,
@@ -87,6 +89,8 @@ DATA_SECRET_FIELD_MAP = {"api_key": "API_KEY"}
 async def rewrite_nl2sql(
     user_query: str,
     is_rewrite: bool = True,
+    *,
+    locale: SupportedLocale | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Compatibility wrapper around the LangGraph-based DataAgent.
@@ -99,6 +103,7 @@ async def rewrite_nl2sql(
     Returns:
         Final DataAgent response dictionary from the LangGraph workflow.
     """
+    effective_locale = resolve_agent_locale(locale)
     active_dialog_id = kwargs.get("dialog_id") or _default_dialog_id()
     arguments = {**kwargs, "dialog_id": active_dialog_id}
     data_config = copy_config_with_overrides(
@@ -127,6 +132,7 @@ async def rewrite_nl2sql(
         user_query=user_query,
         is_rewrite=is_rewrite,
         thread_id=active_dialog_id,
+        locale=effective_locale,
     )
 
 
@@ -170,6 +176,7 @@ def data_stream_seed(
     )
     return agent.app, {
         "user_query": args.user_query,
+        "locale": resolve_agent_locale(args.locale),
         "is_rewrite": True,
         "retrieve_prompt": None,
         "rewrite_query": None,
@@ -341,6 +348,7 @@ class DataAgent:
                 state["user_query"],
                 self.data_config.DATA_REPO_ID,
                 self.data_config.DATA_PAGE_SIZE,
+                state.get("locale"),
             ),
             "pending_post_knowledge": "retrieve_post_node",
         }
@@ -413,7 +421,9 @@ class DataAgent:
             ``chat_payload``.
         """
         chat_kwargs = build_chat_kwargs_for(
-            self.data_config, self.sensitive_config
+            self.data_config,
+            self.sensitive_config,
+            locale=state.get("locale"),
         )
         chat_payload = build_chat_input(
             user_query=state["retrieve_prompt"],
@@ -507,6 +517,7 @@ class DataAgent:
         user_query: str,
         is_rewrite: bool = True,
         thread_id: str | None = None,
+        locale: SupportedLocale | None = None,
     ):
         """Execute the DataAgent workflow.
 
@@ -525,6 +536,7 @@ class DataAgent:
         """
         initial_state = {
             "user_query": user_query,
+            "locale": resolve_agent_locale(locale),
             "is_rewrite": is_rewrite,
             "retrieve_prompt": None,
             "rewrite_query": None,

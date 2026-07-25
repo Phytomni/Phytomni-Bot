@@ -60,9 +60,11 @@ async def extract_region_codes_node(
     ``None``. Always sets ``vci_analysis_task`` so the schema-filtered
     output keeps a consistent shape across happy and failure paths.
     """
-    codes = await environment_region_codes(
-        state["query"], state.get("kwargs") or {}
-    )
+    kwargs = {
+        **(state.get("kwargs") or {}),
+        "locale": state.get("locale"),
+    }
+    codes = await environment_region_codes(state["query"], kwargs)
     if codes is None:
         return {"region_codes": None, "vci_analysis_task": None}
     return {"region_codes": list(codes)}

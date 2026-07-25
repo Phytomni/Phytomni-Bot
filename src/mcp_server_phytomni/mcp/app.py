@@ -430,6 +430,7 @@ def _build_graph_stream_target(
         return knowledge_stream_target(
             knowledge_args.user_query,
             obs_file_list=knowledge_args.obs_file_list,
+            locale=knowledge_args.locale,
         )
     if tool_name == PhytomniAgents.BRIEF_GENE_AGENT.value:
         return brief_gene_stream_seed(cast(BriefGeneAgent, args))
@@ -437,6 +438,7 @@ def _build_graph_stream_target(
     return review_stream_target(
         review_args.user_query,
         obs_file_list=review_args.obs_file_list,
+        locale=review_args.locale,
     )
 
 

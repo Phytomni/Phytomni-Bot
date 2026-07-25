@@ -110,7 +110,7 @@ async def handle_chat_agent(args: ChatAgent) -> HandlerResult:
         user_query=args.user_query,
         obs_file_list=args.obs_file_list,
         server_dir=scratch_server_dir(chat_config, "chat"),
-        **chat_kwargs(chat_config, runtime.sensitive),
+        **chat_kwargs(chat_config, runtime.sensitive, locale=args.locale),
         **obs_kwargs(chat_config, runtime.obs_credentials),
     )
 
@@ -130,7 +130,7 @@ async def handle_knowledge_agent(args: KnowledgeAgent) -> HandlerResult:
         user_query=args.user_query,
         obs_file_list=args.obs_file_list,
         server_dir=scratch_server_dir(knowledge_config, "knowledge"),
-        **chat_kwargs(knowledge_config, runtime.sensitive),
+        **chat_kwargs(knowledge_config, runtime.sensitive, locale=args.locale),
         **retrieve_kwargs(knowledge_config),
         **obs_kwargs(knowledge_config, runtime.obs_credentials),
     )
@@ -164,7 +164,7 @@ async def handle_data_agent(args: DataAgent) -> HandlerResult:
         dialog_id=data_config.DIALOG_ID,
         need_insight=data_config.NEED_INSIGHT,
         simplify_response=data_config.SIMPLIFY_RESPONSE,
-        **chat_kwargs(data_config, runtime.sensitive),
+        **chat_kwargs(data_config, runtime.sensitive, locale=args.locale),
     )
 
 
@@ -193,7 +193,7 @@ async def handle_analyst_agent(args: AnalystAgent) -> HandlerResult:
         task_name=analyst_config.TASK_NAME + "-retrieve-plan",
         compute_resource=analyst_config.COMPUTE_RESOURCE,
         meta_meta=None,
-        **chat_kwargs(analyst_config, runtime.sensitive),
+        **chat_kwargs(analyst_config, runtime.sensitive, locale=args.locale),
         **retrieve_kwargs(analyst_config),
         **obs_kwargs(analyst_config, runtime.obs_credentials),
         **coder_kwargs(runtime.sensitive),
@@ -216,7 +216,7 @@ async def handle_review_agent(args: ReviewAgent) -> HandlerResult:
         user_query=args.user_query,
         obs_file_list=args.obs_file_list,
         server_dir=scratch_server_dir(review_config, "review"),
-        **chat_kwargs(review_config, runtime.sensitive),
+        **chat_kwargs(review_config, runtime.sensitive, locale=args.locale),
         **retrieve_kwargs(review_config),
         **obs_kwargs(review_config, runtime.obs_credentials),
     )
@@ -236,7 +236,7 @@ async def handle_brief_gene_agent(args: BriefGeneAgent) -> HandlerResult:
     return await brief_gene_function(
         user_query=args.user_query,
         max_concurrency=brief_config.MAX_CONCURRENCY,
-        **chat_kwargs(brief_config, runtime.sensitive),
+        **chat_kwargs(brief_config, runtime.sensitive, locale=args.locale),
         **retrieve_kwargs(brief_config),
     )
 
@@ -276,7 +276,9 @@ async def handle_deep_genome_agent(args: DeepGenomeAgent) -> HandlerResult:
         max_poll=deep_genome_config.MAX_POLL,
         access_key_id=runtime.obs_credentials[0],
         secret_access_key=runtime.obs_credentials[1],
-        **chat_kwargs(deep_genome_config, runtime.sensitive),
+        **chat_kwargs(
+            deep_genome_config, runtime.sensitive, locale=args.locale
+        ),
         **retrieve_kwargs(deep_genome_config),
         **coder_kwargs(runtime.sensitive),
         **analysis_platform_kwargs(deep_genome_config),
@@ -308,7 +310,7 @@ async def handle_in_silico_research_agent(
         interop_targets=args.interop_targets,
         server_dir=scratch_server_dir(in_silico_config, "research"),
         execute_code=in_silico_config.EXECUTE_CODE,
-        **chat_kwargs(in_silico_config, runtime.sensitive),
+        **chat_kwargs(in_silico_config, runtime.sensitive, locale=args.locale),
         **retrieve_kwargs(in_silico_config),
         **obs_kwargs(in_silico_config, runtime.obs_credentials),
         **coder_kwargs(runtime.sensitive),
@@ -334,6 +336,7 @@ async def handle_digital_design_agent(
     return await design_module(
         species_code=args.species_code,
         gene_id=args.gene_id,
+        locale=args.locale,
         interop_mode=args.interop_mode,
         interop_targets=args.interop_targets,
         user_id=current_request_user() or design_config.USER_ID,
@@ -373,6 +376,7 @@ async def handle_gene_network_agent(
     return await network_analysis(
         species_code=args.species_code,
         to_id=args.to_id,
+        locale=args.locale,
         user_id=current_request_user() or network_config.USER_ID,
         batch=False,
         prompt_file=network_config.PROMPT_FILE,

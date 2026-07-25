@@ -19,6 +19,8 @@ with the legacy ``AnalystAgentsState`` alias.
 
 from typing import Any, NotRequired, Required, TypedDict
 
+from ...runtime.locale import SupportedLocale
+
 
 class AnalystInput(TypedDict, total=False):
     """Request fields a parent graph supplies when mounting analyst.
@@ -30,6 +32,7 @@ class AnalystInput(TypedDict, total=False):
     """
 
     query: Required[str]
+    locale: SupportedLocale
     goal_description: str
     preset_plan: str
     data_list: dict[str, str]
@@ -92,6 +95,7 @@ class AnalystState(TypedDict):
     """
 
     query: str
+    locale: SupportedLocale
     goal_description: str
     obs_file_list: list
     data_list: dict[str, str]

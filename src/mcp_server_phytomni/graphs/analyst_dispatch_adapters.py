@@ -24,6 +24,7 @@ from langchain_core.runnables import RunnableConfig
 from ..agents.analyst.state import AnalystInput
 from ..agents.analyst.task_ops import probe_live_status
 from ..agents.shared.analysis import prepare_analyst_dispatch_context
+from ..agents.shared.options import resolve_agent_locale
 from ..runtime.task_dedup import (
     analyst_task_fingerprint,
     mint_caller_owned_task_id,
@@ -89,6 +90,7 @@ def map_send_payload_to_analyst_input(
         data_list=data_list,
         compute_resource=payload["compute_resource"],
         output_dir=payload.get("output_dir") or "",
+        locale=resolve_agent_locale(payload.get("locale")),
         is_polling=is_polling,
         is_auto_select=False,
         is_preset_plan=True,

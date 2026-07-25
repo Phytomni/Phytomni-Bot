@@ -14,6 +14,8 @@ time; lazy annotations would collapse ``Required[]`` markers into
 
 from typing import Any, Required, TypedDict
 
+from ...runtime.locale import SupportedLocale
+
 
 class EvolutionInput(TypedDict, total=False):
     """Public input contract for the evolution subgraph.
@@ -51,6 +53,7 @@ class EvolutionInput(TypedDict, total=False):
     batch: bool
     enable_auto_select: bool
     is_polling: bool
+    locale: SupportedLocale
     target_taxids: str
     kwargs: dict[str, Any]
 
@@ -83,6 +86,7 @@ class EvolutionState(TypedDict, total=False):
     batch: bool
     enable_auto_select: bool
     is_polling: bool
+    locale: SupportedLocale
     kwargs: dict[str, Any]
     target_taxids: str | None
     evolution_agents_task: dict[str, Any] | None

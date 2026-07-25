@@ -100,6 +100,7 @@ ANALYST_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
         "is_polling",
         "is_auto_select",
         "is_preset_plan",
+        "locale",
     },
     required_input_fields={"query"},
     output_fields={
@@ -174,7 +175,7 @@ ANALYST_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
 
 
 BRIEF_GENE_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
-    input_fields={"user_query", "is_follow_up"},
+    input_fields={"user_query", "is_follow_up", "locale"},
     required_input_fields={"user_query"},
     output_fields={
         "gene_id",
@@ -262,7 +263,7 @@ BRIEF_GENE_STATE_PREAMBLE_FIELDS = {
 
 
 DATA_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
-    input_fields={"user_query", "is_rewrite"},
+    input_fields={"user_query", "is_rewrite", "locale"},
     required_input_fields={"user_query"},
     output_fields={"final_response"},
     expected_nodes={
@@ -297,6 +298,7 @@ KNOWLEDGE_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
         "repo_id_dict",
         "is_generate",
         "is_follow_up",
+        "locale",
     },
     required_input_fields={"user_query"},
     output_fields={"retrieved_docs", "final_response"},
@@ -329,7 +331,7 @@ KNOWLEDGE_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
 
 
 REVIEW_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
-    input_fields={"original_user_query", "obs_file_list"},
+    input_fields={"original_user_query", "obs_file_list", "locale"},
     required_input_fields={"original_user_query"},
     output_fields={"final_response", "summary_content"},
     expected_nodes={
@@ -399,8 +401,13 @@ def assert_chat_mount_topology(
     """
     input_schema = app.get_input_schema().model_json_schema()
     definitions = input_schema.get("$defs", {})
-    assert len(definitions) == 1
-    input_definition = next(iter(definitions.values()))
+    input_ref = input_schema.get("$ref")
+    input_name = input_ref.rsplit("/", maxsplit=1)[-1] if input_ref else None
+    input_definition = (
+        definitions[input_name]
+        if input_name is not None
+        else next(iter(definitions.values()))
+    )
     assert set(input_definition["properties"]) == topology.input_fields
     assert (
         set(input_definition.get("required", ()))

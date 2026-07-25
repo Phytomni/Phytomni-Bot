@@ -37,6 +37,7 @@ from ..shared.options import (
     SubmitKwargsSpec,
     build_chat_kwargs,
     build_submit_kwargs,
+    resolve_agent_locale,
 )
 
 DEEP_GENOME_CONFIG = DeepGenomeConfig()
@@ -232,6 +233,7 @@ async def evo_test_analysis(
         batch: Whether to reuse the provided output directory.
         enable_auto_select: Whether AnalystAgent may auto-select
             tools.
+        locale: Optional response locale.
         **kwargs: Keyword-compatible chat, OBS, and submit overrides.
 
     Returns:
@@ -247,6 +249,7 @@ async def evo_test_analysis(
         "gene_id": gene_id,
         "batch": batch,
         "enable_auto_select": enable_auto_select,
+        "locale": resolve_agent_locale(kwargs.get("locale")),
         "kwargs": kwargs,
     }
     final_state = await ainvoke_graph(_cached_evolution_app(), initial_state)

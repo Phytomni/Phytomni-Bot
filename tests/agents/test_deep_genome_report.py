@@ -29,6 +29,7 @@ from mcp_server_phytomni.agents.deep_genome.report import (
 )
 from mcp_server_phytomni.config.defaults import DeepGenomeConfig
 from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
+from mcp_server_phytomni.runtime.locale import SupportedLocale
 from tests.agents.shared.deep_genome_fixtures import (
     concrete_barrier_work_items,
     failed_concrete_barrier_data,
@@ -55,9 +56,13 @@ class _ReportProbe(DeepGenomeReportMixin):
         """Wire the single config attribute the protected helpers read."""
         self.deep_genome_config = DeepGenomeConfig()
 
-    async def _dispatch_chat(self, user_query: str) -> dict[str, Any]:
+    async def _dispatch_chat(
+        self,
+        user_query: str,
+        locale: SupportedLocale | None = None,
+    ) -> dict[str, Any]:
         """Return canned follow-up questions for final-report tests."""
-        del user_query
+        del user_query, locale
         return {"choices": [{"message": {"content": '["Q1?", "Q2?"]'}}]}
 
     def preamble_and_analysis(self, state: DeepGenomeState) -> str:

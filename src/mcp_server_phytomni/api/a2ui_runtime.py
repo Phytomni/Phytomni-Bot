@@ -171,6 +171,7 @@ def build_chat_initial_state(arguments: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "user_query": str(arguments["user_query"]),
         "obs_file_list": list(arguments.get("obs_file_list") or []),
+        "locale": arguments.get("locale") or current_effective_locale(),
         "chat_kwargs": chat_kwargs(chat_config, runtime.sensitive),
     }
 
@@ -184,7 +185,9 @@ def build_review_stream_app() -> Any:
 def build_review_initial_state(args: ReviewAgentArgs) -> Mapping[str, Any]:
     """Build the ReviewAgent initial graph state for one request."""
     _, initial_state = review_stream_target(
-        args.user_query, args.obs_file_list
+        args.user_query,
+        args.obs_file_list,
+        locale=current_effective_locale(),
     )
     return initial_state
 

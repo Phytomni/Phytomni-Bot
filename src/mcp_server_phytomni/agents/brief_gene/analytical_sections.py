@@ -75,7 +75,12 @@ async def _call_section_llm(
     )
     response = await phyto_chat(
         user_query=user_query,
-        **build_chat_kwargs({}, BRIEF_GENE_CONFIG, sensitive_config),
+        **build_chat_kwargs(
+            {},
+            BRIEF_GENE_CONFIG,
+            sensitive_config,
+            locale=state.get("locale"),
+        ),
     )
     return message_content(response)
 

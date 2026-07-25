@@ -75,6 +75,7 @@ class ReviewSummaryMixin:
             self.review_config,
             self.sensitive_config,
             with_follow_up=False,
+            locale=state.get("locale"),
         )
         chat_payload = build_chat_input(
             get_prompt(
@@ -147,6 +148,7 @@ class ReviewSummaryMixin:
             self.review_config,
             self.sensitive_config,
             with_follow_up=True,
+            locale=state.get("locale"),
         )
         chat_payload = build_chat_input(
             get_prompt(

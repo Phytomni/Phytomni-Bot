@@ -31,6 +31,7 @@ from ...config.defaults import DigitalDesignConfig
 from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...interop.planner import InteropMode
 from ...runtime.langgraph_runner import ensure_checkpointer
+from ...runtime.locale import SupportedLocale
 from ...runtime.request_context import bind_accepted_task_ids
 from ...runtime.submission_outcome import (
     AcceptedSubmission,
@@ -67,6 +68,7 @@ from ..shared.interop import (
     resolve_interop_dependencies,
     update_a2a_pending_from_result,
 )
+from ..shared.options import resolve_agent_locale
 from ..shared.parallel_dispatch import (
     ParallelDispatchSpec,
     ParallelDispatchState,
@@ -163,6 +165,7 @@ class DigitalDesignState(ParallelDispatchState):
 
     species_code: str
     gene_id: str
+    locale: SupportedLocale
     user_id: str
     batch: bool
     output_dir: str | None
@@ -813,6 +816,7 @@ class DigitalDesignAgents:
             {
                 "species_code": species_code,
                 "gene_id": gene_id,
+                "locale": resolve_agent_locale(kwargs.get("locale")),
                 **initial_interop_state(kwargs),
             },
             kwargs,
@@ -841,6 +845,8 @@ async def design_module(
     gene_id: str,
     user_id: str | None = None,
     batch: bool = True,
+    *,
+    locale: SupportedLocale | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Compatibility wrapper around the LangGraph digital design agent.
@@ -855,6 +861,7 @@ async def design_module(
     Returns:
         Digital design task submission result.
     """
+    effective_locale = resolve_agent_locale(locale)
     agent = get_configured_analysis_agent(
         AnalysisAgentCacheSpec(
             "DigitalDesignAgents",
@@ -878,6 +885,7 @@ async def design_module(
         output_dir=kwargs.get("output_dir"),
         interop_mode=kwargs.get("interop_mode", "off"),
         interop_targets=kwargs.get("interop_targets", []),
+        locale=effective_locale,
     )
 
 

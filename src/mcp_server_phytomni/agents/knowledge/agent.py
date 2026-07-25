@@ -43,6 +43,7 @@ from ...runtime.langgraph_runner import (
     ensure_checkpointer,
     make_async_router,
 )
+from ...runtime.locale import SupportedLocale
 from ...runtime.memory import MemoryGraphContext
 from ...storage.downloads import download_list_convert
 from ..shared.chat_subgraph import (
@@ -51,6 +52,7 @@ from ..shared.chat_subgraph import (
 )
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.memory_context import memory_context_for_graph
+from ..shared.options import resolve_agent_locale
 from .retrieval import multi_retrieve, rerank, retrieve
 from .state import (
     KnowledgeAgentState,
@@ -347,7 +349,9 @@ class KnowledgeAgent:
             chat_query = f"{memory_context}\n\n{chat_query}"
 
         chat_kwargs = build_chat_kwargs_for(
-            self.knowledge_config, self.sensitive_config
+            self.knowledge_config,
+            self.sensitive_config,
+            locale=state.get("locale"),
         )
         chat_payload = build_chat_input(
             user_query=chat_query, chat_kwargs=chat_kwargs
@@ -451,7 +455,9 @@ class KnowledgeAgent:
             follow_up_query = f"{memory_context}\n\n{follow_up_query}"
 
         chat_kwargs = build_chat_kwargs_for(
-            self.knowledge_config, self.sensitive_config
+            self.knowledge_config,
+            self.sensitive_config,
+            locale=state.get("locale"),
         )
         chat_payload = build_chat_input(
             user_query=follow_up_query, chat_kwargs=chat_kwargs
@@ -560,6 +566,7 @@ class KnowledgeAgent:
         repo_id_dict: dict[str, int] | None = None,
         is_generate: bool = True,
         is_follow_up: bool = True,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """Build the graph's initial state dict from wrapper arguments.
 
@@ -584,6 +591,7 @@ class KnowledgeAgent:
         """
         return {
             "user_query": user_query,
+            "locale": resolve_agent_locale(kwargs.get("locale")),
             "obs_file_list": obs_file_list or [],
             "repo_id_dict": repo_id_dict,
             "upload_context": "",
@@ -631,6 +639,7 @@ class KnowledgeAgent:
             repo_id_dict=repo_id_dict,
             is_generate=is_generate,
             is_follow_up=is_follow_up,
+            locale=kwargs.get("locale"),
         )
 
         final_state = await ainvoke_graph(
@@ -684,6 +693,7 @@ async def multi_retrieve_generate(
     Returns:
         KnowledgeAgent final response or retrieved documents.
     """
+    effective_locale = resolve_agent_locale(kwargs.get("locale"))
     knowledge_config = _knowledge_config_with_overrides(**kwargs)
     sensitive_config = _knowledge_sensitive_config_with_overrides(**kwargs)
     agent = get_cached_agent(
@@ -703,12 +713,14 @@ async def multi_retrieve_generate(
         repo_id_dict=repo_id_dict,
         is_generate=is_generate,
         is_follow_up=is_follow_up,
+        locale=effective_locale,
     )
 
 
 def knowledge_stream_target(
     user_query: str,
     obs_file_list: list[str] | None = None,
+    locale: SupportedLocale | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     """Return the cached KnowledgeAgent app + seeded streaming state.
 
@@ -740,7 +752,9 @@ def knowledge_stream_target(
         ),
     )
     return agent.app, agent.initial_state(
-        user_query, obs_file_list=obs_file_list
+        user_query,
+        obs_file_list=obs_file_list,
+        locale=locale,
     )
 
 

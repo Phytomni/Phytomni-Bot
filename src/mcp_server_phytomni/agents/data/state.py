@@ -19,6 +19,8 @@ in tests remain valid without an unrelated migration.
 
 from typing import Any, Required, TypedDict
 
+from ...runtime.locale import SupportedLocale
+
 
 class DataInput(TypedDict, total=False):
     """Request fields a parent graph supplies when mounting data.
@@ -30,6 +32,7 @@ class DataInput(TypedDict, total=False):
     """
 
     user_query: Required[str]
+    locale: SupportedLocale
     is_rewrite: bool
 
 
@@ -64,6 +67,7 @@ class DataState(TypedDict):
     """
 
     user_query: str
+    locale: SupportedLocale
     is_rewrite: bool
     retrieve_prompt: str
     rewrite_query: str

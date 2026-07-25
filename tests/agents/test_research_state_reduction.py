@@ -86,6 +86,7 @@ async def test_research_state_reduction_dispatches_single_goal(
     async def fake_extract(
         user_query: str,
         obs_file_list: list[str],
+        locale: str | None = None,
     ) -> list[dict[str, str]]:
         """Return one fixed research goal to drive single-task dispatch.
 
@@ -98,6 +99,7 @@ async def test_research_state_reduction_dispatches_single_goal(
         """
         assert "PHYB" in user_query
         assert obs_file_list == []
+        assert locale == "en-US"
         return list(extracted)
 
     async def fake_submit(task: ResearchTaskContext) -> dict[str, Any]:
@@ -133,6 +135,7 @@ async def test_research_state_reduction_dispatches_single_goal(
             ),
         },
         "paper_text": "Study PHYB regulation in rice under drought.",
+        "locale": "en-US",
     }
     config = {"configurable": {"thread_id": "research-reduction-test"}}
 
@@ -180,6 +183,7 @@ async def test_research_state_reduction_handles_multiple_goals(
     async def fake_extract(
         user_query: str,
         obs_file_list: list[str],
+        locale: str | None = None,
     ) -> list[dict[str, str]]:
         """Return two research goals so prepare_tasks fans out twice.
 
@@ -192,6 +196,7 @@ async def test_research_state_reduction_handles_multiple_goals(
         """
         assert user_query
         assert obs_file_list == []
+        assert locale == "en-US"
         return list(extracted)
 
     async def fake_submit(task: ResearchTaskContext) -> dict[str, Any]:
@@ -223,6 +228,7 @@ async def test_research_state_reduction_handles_multiple_goals(
             "task_ids": {},
             "completed_count": 0,
             "error": None,
+            "locale": "en-US",
         },
         config={"configurable": {"thread_id": "research-multi-goal-test"}},
     )

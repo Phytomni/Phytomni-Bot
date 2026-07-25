@@ -130,7 +130,8 @@ class BriefGeneKnowledgeSubgraphMixin:
             tasks: list[dict[str, Any]] = [
                 {
                     "knowledge_input": build_brief_gene_knowledge_input(
-                        f"{species}\n{symbol}"
+                        f"{species}\n{symbol}",
+                        state.get("locale"),
                     ),
                     "task_label": symbol,
                 }
@@ -140,7 +141,8 @@ class BriefGeneKnowledgeSubgraphMixin:
             tasks = [
                 {
                     "knowledge_input": build_brief_gene_knowledge_input(
-                        state["user_query"]
+                        state["user_query"],
+                        state.get("locale"),
                     ),
                     "task_label": state["user_query"],
                 }

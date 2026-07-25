@@ -153,6 +153,7 @@ def make_brief_gene_mount_node(
         brief_input: dict[str, Any] = {
             "user_query": gene_id,
             "is_follow_up": False,
+            "locale": state.get("locale"),
         }
         try:
             brief_output = await brief_gene_app.ainvoke(brief_input)

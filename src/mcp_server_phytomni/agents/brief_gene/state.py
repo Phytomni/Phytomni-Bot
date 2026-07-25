@@ -26,6 +26,7 @@ from typing import (
     TypedDict,
 )
 
+from ...runtime.locale import SupportedLocale
 from ..shared.parallel_dispatch import DegradedRecord
 
 
@@ -41,6 +42,7 @@ class BriefGeneInput(TypedDict, total=False):
     """
 
     user_query: Required[str]
+    locale: SupportedLocale
     is_follow_up: bool
 
 
@@ -89,6 +91,7 @@ class BriefGeneState(TypedDict):
     """
 
     user_query: str
+    locale: SupportedLocale
     is_follow_up: bool
     gene_found: bool
     gene_id: str

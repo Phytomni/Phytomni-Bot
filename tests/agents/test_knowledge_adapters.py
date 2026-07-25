@@ -49,6 +49,7 @@ def test_input_factory_preserves_the_shared_retrieve_shape() -> None:
             "repo_id_dict": repo_id_dict,
             "is_generate": False,
             "is_follow_up": False,
+            "locale": "en-US",
         }
     )
     assert analyst_payload.get("repo_id_dict") is not repo_id_dict

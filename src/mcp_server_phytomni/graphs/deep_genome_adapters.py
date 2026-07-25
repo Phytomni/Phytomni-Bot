@@ -18,12 +18,15 @@ from collections.abc import Mapping
 
 from ..agents.deep_genome.formatting import SPECIES_CODE_MAP
 from ..agents.knowledge.state import KnowledgeInput
+from ..agents.shared.options import resolve_agent_locale
+from ..runtime.locale import SupportedLocale
 
 
 def map_deepgenome_to_knowledge_input(
     gene_symbol: str,
     species_code: str,
     repo_id_dict: Mapping[str, int],
+    locale: SupportedLocale | None = None,
 ) -> KnowledgeInput:
     """Build a ``KnowledgeInput`` for the DeepGenome literature step.
 
@@ -57,4 +60,5 @@ def map_deepgenome_to_knowledge_input(
         repo_id_dict=dict(repo_id_dict),
         is_generate=False,
         is_follow_up=False,
+        locale=resolve_agent_locale(locale),
     )

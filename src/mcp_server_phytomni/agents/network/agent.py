@@ -26,6 +26,7 @@ from ...config.defaults import GeneNetworkConfig
 from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
 from ...runtime.langgraph_runner import ensure_checkpointer
+from ...runtime.locale import SupportedLocale
 from ...runtime.request_context import bind_accepted_task_ids
 from ...runtime.submission_outcome import (
     AcceptedSubmission,
@@ -46,6 +47,7 @@ from ..shared.analysis import (
     run_analysis_graph,
 )
 from ..shared.analysis_storage import get_data_list
+from ..shared.options import resolve_agent_locale
 from ..shared.parallel_dispatch import (
     ParallelDispatchSpec,
     ParallelDispatchState,
@@ -98,6 +100,7 @@ class GeneNetworkState(ParallelDispatchState):
 
     species_code: str  # Three-letter species code (e.g. "osa")
     to_id: str  # Trait Ontology id formatted like "TO:0000207"
+    locale: SupportedLocale
     user_id: str  # User identifier
     batch: bool  # Whether this is batch processing
     output_dir: str | None
@@ -405,7 +408,11 @@ class GeneNetworkAgents:
         """
         result = await run_analysis_graph(
             self.app,
-            {"species_code": species_code, "to_id": to_id},
+            {
+                "species_code": species_code,
+                "to_id": to_id,
+                "locale": resolve_agent_locale(kwargs.get("locale")),
+            },
             kwargs,
             ("network_task", "error", "failures"),
             AnalysisStateSpec(
@@ -432,6 +439,8 @@ async def network_analysis(
     to_id: str,
     user_id: str | None = None,
     batch: bool = False,
+    *,
+    locale: SupportedLocale | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Compatibility wrapper around the LangGraph gene network agent.
@@ -446,6 +455,7 @@ async def network_analysis(
     Returns:
         Gene network task submission result.
     """
+    effective_locale = resolve_agent_locale(locale)
     agent = get_configured_analysis_agent(
         AnalysisAgentCacheSpec(
             "GeneNetworkAgents",
@@ -467,4 +477,5 @@ async def network_analysis(
         user_id=user_id,
         batch=batch,
         output_dir=kwargs.get("output_dir"),
+        locale=effective_locale,
     )

@@ -14,6 +14,8 @@ into a ``total=False`` key.
 
 from typing import Any, Required, TypedDict
 
+from ...runtime.locale import SupportedLocale
+
 
 class EnvironmentInput(TypedDict, total=False):
     """Public input contract for the environment VCI subgraph.
@@ -39,6 +41,7 @@ class EnvironmentInput(TypedDict, total=False):
 
     query: Required[str]
     batch: bool
+    locale: SupportedLocale
     kwargs: dict[str, Any]
 
 
@@ -66,6 +69,7 @@ class EnvironmentState(TypedDict, total=False):
 
     query: Required[str]
     batch: bool
+    locale: SupportedLocale
     kwargs: dict[str, Any]
     region_codes: list[str | None] | None
     vci_analysis_task: dict[str, Any] | None

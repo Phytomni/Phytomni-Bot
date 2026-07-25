@@ -21,6 +21,8 @@ valid.
 
 from typing import Any, Required, TypedDict
 
+from ...runtime.locale import SupportedLocale
+
 
 class KnowledgeInput(TypedDict, total=False):
     """Request fields a parent graph supplies when mounting knowledge.
@@ -33,6 +35,7 @@ class KnowledgeInput(TypedDict, total=False):
     """
 
     user_query: Required[str]
+    locale: SupportedLocale
     obs_file_list: list[str] | None
     repo_id_dict: dict[str, int] | None
     is_generate: bool
@@ -66,6 +69,7 @@ class KnowledgeState(TypedDict):
     """
 
     user_query: str
+    locale: SupportedLocale
     obs_file_list: list[str] | None
     repo_id_dict: dict[str, int] | None
     upload_context: str

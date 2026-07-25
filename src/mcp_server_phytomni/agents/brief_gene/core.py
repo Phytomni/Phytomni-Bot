@@ -29,6 +29,7 @@ from ...runtime.langgraph_runner import (
     ensure_checkpointer,
     make_async_router,
 )
+from ...runtime.locale import SupportedLocale
 from ..knowledge.agent import KnowledgeAgent
 from ..shared.chat_subgraph import (
     make_chat_after_router,
@@ -36,6 +37,7 @@ from ..shared.chat_subgraph import (
 )
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import KnowledgeApp, build_knowledge_app
+from ..shared.options import resolve_agent_locale
 from ..shared.sql import sql_literal
 from .analytical_sections import (
     _run_section_application_node,
@@ -84,6 +86,7 @@ async def _render_preamble_async_node(
 
 def initial_brief_gene_state(
     user_query: str,
+    locale: SupportedLocale | None = None,
 ) -> BriefGeneAgentState:
     """Build the 40-key initial state dict for a BriefGene graph run.
 
@@ -102,6 +105,7 @@ def initial_brief_gene_state(
         BriefGeneAgentState,
         {
             "user_query": user_query,
+            "locale": resolve_agent_locale(locale),
             "is_follow_up": True,
             "gene_found": False,
             "gene_id": "",
@@ -497,6 +501,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             self.brief_config,
             self.sensitive_config,
             with_follow_up=False,
+            locale=state.get("locale"),
         )
         chat_payload = build_chat_input(rendered_user_query, chat_kwargs)
         return {
@@ -542,7 +547,10 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
         }
 
     async def arun(
-        self, user_query: str, thread_id: str | None = None
+        self,
+        user_query: str,
+        thread_id: str | None = None,
+        locale: SupportedLocale | None = None,
     ) -> dict[str, Any]:
         """Execute the BriefGeneAgent workflow.
 
@@ -554,7 +562,7 @@ class BriefGeneAgent(BriefGeneKnowledgeSubgraphMixin):
             Chat-completions-style final response payload with content,
             references, and follow-up questions.
         """
-        initial_state = initial_brief_gene_state(user_query)
+        initial_state = initial_brief_gene_state(user_query, locale=locale)
         final_state = await ainvoke_graph(
             self.app, initial_state, thread_id=thread_id
         )

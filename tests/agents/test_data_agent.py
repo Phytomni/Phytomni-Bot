@@ -243,6 +243,7 @@ async def test_data_agent_arun_invokes_compiled_graph_with_thread_id():
     assert fake_graph.state == {
         "user_query": "plant height in rice",
         "is_rewrite": False,
+        "locale": "en-US",
         "retrieve_prompt": None,
         "rewrite_query": None,
         "final_response": None,
@@ -283,6 +284,7 @@ async def test_rewrite_nl2sql_uses_dialog_id_as_thread_id(
             user_query: str,
             is_rewrite: bool = True,
             thread_id: str | None = None,
+            locale: str | None = None,
         ) -> dict[str, object]:
             """Capture the graph invocation.
 
@@ -298,6 +300,7 @@ async def test_rewrite_nl2sql_uses_dialog_id_as_thread_id(
                 "user_query": user_query,
                 "is_rewrite": is_rewrite,
                 "thread_id": thread_id,
+                "locale": locale,
             }
             return {"ok": True}
 
@@ -338,6 +341,7 @@ async def test_rewrite_nl2sql_uses_dialog_id_as_thread_id(
         "user_query": "plant height in rice",
         "is_rewrite": False,
         "thread_id": "dialog-1",
+        "locale": "en-US",
     }
 
 
@@ -572,6 +576,7 @@ def test_data_stream_seed_returns_app_and_initial_state(
     assert state == {
         "user_query": "gene count in rice",
         "is_rewrite": True,
+        "locale": "en-US",
         "retrieve_prompt": None,
         "rewrite_query": None,
         "final_response": None,

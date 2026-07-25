@@ -18,10 +18,13 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..agents.knowledge.state import KnowledgeInput
+from ..agents.shared.options import resolve_agent_locale
+from ..runtime.locale import SupportedLocale
 
 
 def build_brief_gene_knowledge_input(
     user_query: str,
+    locale: SupportedLocale | None = None,
 ) -> KnowledgeInput:
     """Wrap a brief_gene retrieve call's inputs into a ``KnowledgeInput`` dict.
 
@@ -48,6 +51,7 @@ def build_brief_gene_knowledge_input(
         "user_query": user_query,
         "is_generate": False,
         "is_follow_up": False,
+        "locale": resolve_agent_locale(locale),
     }
 
 

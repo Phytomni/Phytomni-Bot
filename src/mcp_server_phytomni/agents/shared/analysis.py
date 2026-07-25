@@ -219,6 +219,7 @@ def route_analysis_tasks(
                 "species_code": state["species_code"],
                 target_key: state[target_key],
                 "output_dir": state.get("output_dir"),
+                "locale": state.get("locale"),
                 **task,
             },
         )

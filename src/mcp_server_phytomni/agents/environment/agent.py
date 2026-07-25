@@ -23,6 +23,7 @@ from ...config.defaults import EnvironmentConfig
 from ...config.settings import get_sensitive_config
 from ...graphs.chat_adapters import build_chat_input, extract_chat_response
 from ...runtime.langgraph_runner import ainvoke_graph
+from ...runtime.locale import SupportedLocale
 from ...storage.path_policy import RunIdentity
 from ..analyst.agent import submit
 from ..chat.service import _cached_chat_app
@@ -31,6 +32,7 @@ from ..shared.options import (
     SubmitKwargsSpec,
     build_chat_kwargs,
     build_submit_kwargs,
+    resolve_agent_locale,
 )
 
 ENVIRONMENT_CONFIG = EnvironmentConfig()
@@ -142,6 +144,8 @@ def _cached_environment_app() -> Any:
 async def region_vci_analysis(
     query: str,
     batch: bool = False,
+    *,
+    locale: SupportedLocale | None = None,
     **kwargs: Any,
 ) -> dict:
     """Run a regional VCI analysis workflow and return task results.
@@ -155,6 +159,7 @@ async def region_vci_analysis(
     Args:
         query: Natural-language region analysis request.
         batch: Whether to reuse the provided output directory.
+        locale: Optional response locale.
         **kwargs: Keyword-compatible chat, OBS, and submit overrides.
 
     Returns:
@@ -165,6 +170,7 @@ async def region_vci_analysis(
     initial_state: dict[str, Any] = {
         "query": query,
         "batch": batch,
+        "locale": resolve_agent_locale(locale),
         "kwargs": kwargs,
     }
     final_state = await ainvoke_graph(_cached_environment_app(), initial_state)

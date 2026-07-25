@@ -16,6 +16,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..agents.knowledge.state import KnowledgeInput
+from ..runtime.locale import SupportedLocale
 from .knowledge_adapters import (
     make_knowledge_input_adapter,
     make_knowledge_output_adapter,
@@ -28,6 +29,7 @@ _extract_output = make_knowledge_output_adapter("retrieved_docs")
 def build_analyst_knowledge_input(
     user_query: str,
     repo_id_dict: Mapping[str, int],
+    locale: SupportedLocale | None = None,
 ) -> KnowledgeInput:
     """Wrap an analyst retrieve call's inputs into a ``KnowledgeInput`` dict.
 
@@ -54,7 +56,7 @@ def build_analyst_knowledge_input(
         overrides that pin the retrieve-only path
         (``is_generate=False``, ``is_follow_up=False``).
     """
-    return _build_input(user_query, repo_id_dict)
+    return _build_input(user_query, repo_id_dict, locale)
 
 
 def extract_analyst_knowledge_response(

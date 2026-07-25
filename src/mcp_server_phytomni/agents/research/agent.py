@@ -41,6 +41,7 @@ from ...runtime.langgraph_runner import (
     capture_workflow_boundary,
     ensure_checkpointer,
 )
+from ...runtime.locale import SupportedLocale
 from ...runtime.request_context import bind_accepted_task_ids
 from ...runtime.submission_outcome import (
     AcceptedSubmission,
@@ -79,6 +80,7 @@ from ..shared.interop import (
     resolve_required_interop_dependencies,
     update_a2a_pending_from_result,
 )
+from ..shared.options import resolve_agent_locale
 from ..shared.parallel_dispatch import (
     ParallelDispatchSpec,
     ParallelDispatchState,
@@ -190,6 +192,7 @@ class InSilicoResearchState(ParallelDispatchState):
 
     paper_text: str
     data_list: dict[str, str]
+    locale: SupportedLocale
     user_id: str
     obs_file_list: list[str]
     output_dir: str | None
@@ -349,6 +352,7 @@ class InSilicoResearchAgents:
                     "output_dir": state.get("output_dir"),
                     "interop_mode": state.get("interop_mode", "off"),
                     "interop_targets": state.get("interop_targets", []),
+                    "locale": resolve_agent_locale(state.get("locale")),
                     **task,
                 },
             )
@@ -356,7 +360,10 @@ class InSilicoResearchAgents:
         ]
 
     async def _extract_goals(
-        self, user_query: str, obs_file_list: list[str]
+        self,
+        user_query: str,
+        obs_file_list: list[str],
+        locale: SupportedLocale | None = None,
     ) -> list[dict[str, str]]:
         """Extract research goals from scientific paper text.
 
@@ -389,6 +396,7 @@ class InSilicoResearchAgents:
             self.in_silico_config,
             self.sensitive_config,
             response_format=_RESEARCH_GOALS_RESPONSE_FORMAT,
+            locale=locale,
         )
         chat_output = await _cached_chat_app().ainvoke(
             build_chat_input(
@@ -584,7 +592,11 @@ class InSilicoResearchAgents:
             Returns:
                 State update containing extracted goals and no error.
             """
-            goals = await self._extract_goals(paper_text, obs_file_list)
+            goals = await self._extract_goals(
+                paper_text,
+                obs_file_list,
+                state.get("locale"),
+            )
             logger.info("Extracted %d research goals", len(goals))
             return {"goals": goals, "error": None}
 
@@ -939,6 +951,7 @@ class InSilicoResearchAgents:
                 "paper_text": paper_text,
                 "data_list": data_list,
                 "obs_file_list": kwargs.get("obs_file_list") or [],
+                "locale": resolve_agent_locale(kwargs.get("locale")),
                 **initial_interop_state(kwargs),
             },
             kwargs,
@@ -990,6 +1003,7 @@ async def in_silico_research(
     Returns:
         In-silico research goals, task IDs, and any workflow error.
     """
+    effective_locale = resolve_agent_locale(kwargs.get("locale"))
     in_silico_config = copy_config_with_overrides(
         IN_SILICO_CONFIG,
         kwargs,
@@ -1024,4 +1038,5 @@ async def in_silico_research(
         output_dir=output_dir,
         interop_mode=kwargs.get("interop_mode", "off"),
         interop_targets=kwargs.get("interop_targets", []),
+        locale=effective_locale,
     )

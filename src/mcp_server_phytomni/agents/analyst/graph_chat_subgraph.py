@@ -89,6 +89,7 @@ class AnalystChatSubgraphMixin:
             self.analyst_config,
             self.sensitive_config,
             response_format={"type": "json_schema"},
+            locale=state.get("locale"),
         )
         chat_payload = build_chat_input(parse_prompt, chat_kwargs)
         return {
@@ -187,6 +188,7 @@ class AnalystChatSubgraphMixin:
             self.analyst_config,
             self.sensitive_config,
             response_format={"type": "json_schema"},
+            locale=state.get("locale"),
         )
         chat_payload = build_chat_input(selection_prompt, chat_kwargs)
         return {
@@ -323,6 +325,7 @@ class AnalystChatSubgraphMixin:
         chat_kwargs = build_chat_kwargs_for(
             self.analyst_config,
             self.sensitive_config,
+            locale=state.get("locale"),
         )
         chat_payload = build_chat_input(user_query, chat_kwargs)
         return {
@@ -413,6 +416,7 @@ class AnalystChatSubgraphMixin:
             self.analyst_config,
             self.sensitive_config,
             response_format={"type": "json_object"},
+            locale=state.get("locale"),
         )
         chat_payload = build_chat_input(check_prompt, chat_kwargs)
         return {
@@ -508,6 +512,7 @@ class AnalystChatSubgraphMixin:
             self.analyst_config,
             self.sensitive_config,
             response_format={"type": "json_object"},
+            locale=state.get("locale"),
         )
         chat_payload = build_chat_input(tool_extract_prompt, chat_kwargs)
         return {

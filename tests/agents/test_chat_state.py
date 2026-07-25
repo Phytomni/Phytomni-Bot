@@ -52,7 +52,9 @@ def test_chat_input_required_keys_are_only_user_query() -> None:
     through defaults the graph fills in when missing.
     """
     assert _required(ChatInput) == frozenset({"user_query"})
-    assert _optional(ChatInput) == frozenset({"obs_file_list", "chat_kwargs"})
+    assert _optional(ChatInput) == frozenset(
+        {"obs_file_list", "chat_kwargs", "locale"}
+    )
 
 
 def test_chat_output_carries_response_key_always() -> None:

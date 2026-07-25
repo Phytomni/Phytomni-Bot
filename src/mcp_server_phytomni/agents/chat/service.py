@@ -37,6 +37,7 @@ from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
 from ...func_cache import LONG_TTL_SECONDS, func_cache
 from ...runtime.langgraph_runner import ainvoke_graph
+from ...runtime.locale import SupportedLocale, current_effective_locale
 from ...storage.downloads import download_list_convert
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,8 @@ async def phyto_chat_with_follow(
     user_query: str,
     obs_file_list: list[str] | None = None,
     semaphore: asyncio.Semaphore | None = None,
+    *,
+    locale: SupportedLocale | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Generate text using a Phyto language model with optional file context.
@@ -181,18 +184,24 @@ async def phyto_chat_with_follow(
             ...     obs_file_list=files
             ... )
     """
+    effective_locale = locale or current_effective_locale()
     prompt_file = kwargs.get("prompt_file", CHAT_CONFIG.PROMPT_FILE)
 
     phyto_response = await phyto_chat(
         user_query=user_query,
         obs_file_list=obs_file_list,
         semaphore=semaphore,
+        locale=effective_locale,
         **kwargs,
     )
 
     system_response_content = message_content(phyto_response)
 
-    follow_kwargs = {**kwargs, "prompt_file": prompt_file}
+    follow_kwargs = {
+        **kwargs,
+        "prompt_file": prompt_file,
+        "locale": effective_locale,
+    }
     follow_up_response = await phyto_chat(
         user_query=get_prompt(
             prompt_file,
@@ -221,6 +230,8 @@ async def phyto_chat(
     user_query: str,
     obs_file_list: list[str] | None = None,
     semaphore: asyncio.Semaphore | None = None,
+    *,
+    locale: SupportedLocale | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Generate text using a Phyto language model with optional file context.
@@ -302,13 +313,19 @@ async def phyto_chat(
             ...     obs_file_list=files
             ... )
     """
-    chat_kwargs: dict[str, Any] = {**kwargs, "with_follow_up": False}
+    effective_locale = locale or current_effective_locale()
+    chat_kwargs: dict[str, Any] = {
+        **kwargs,
+        "with_follow_up": False,
+        "locale": effective_locale,
+    }
     if semaphore is not None:
         chat_kwargs["semaphore"] = semaphore
     initial_state: dict[str, Any] = {
         "user_query": user_query,
         "obs_file_list": list(obs_file_list) if obs_file_list else [],
         "chat_kwargs": chat_kwargs,
+        "locale": effective_locale,
     }
     final_state = await ainvoke_graph(_cached_chat_app(), initial_state)
     return final_state.get("response")

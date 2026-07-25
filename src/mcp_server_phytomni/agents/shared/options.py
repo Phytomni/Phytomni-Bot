@@ -11,12 +11,19 @@ and task-submission services.
 from dataclasses import dataclass
 from typing import Any
 
+from ...runtime.locale import (
+    SupportedLocale,
+    current_effective_locale,
+    locale_instruction,
+)
+
 __all__ = [
     "SubmitKwargsSpec",
     "build_chat_kwargs",
     "build_resolver_chat_kwargs",
     "build_submit_kwargs",
     "copy_resource_dict",
+    "resolve_agent_locale",
     "retry_codes_from_kwargs",
 ]
 
@@ -70,10 +77,19 @@ def retry_codes_from_kwargs(kwargs: dict[str, Any], config: Any) -> list[int]:
     return list(retriable_codes)
 
 
+def resolve_agent_locale(
+    locale: SupportedLocale | None,
+) -> SupportedLocale:
+    """Resolve an agent call's explicit or request-bound locale."""
+    return locale or current_effective_locale()
+
+
 def build_chat_kwargs(
     kwargs: dict[str, Any],
     config: Any,
     sensitive_config: Any,
+    *,
+    locale: SupportedLocale | None = None,
 ) -> dict[str, Any]:
     """Return common phyto_chat keyword arguments.
 
@@ -92,6 +108,7 @@ def build_chat_kwargs(
     Returns:
         Keyword arguments suitable for forwarding to ``phyto_chat``.
     """
+    effective_locale = resolve_agent_locale(locale or kwargs.get("locale"))
     result: dict[str, Any] = {
         "prompt_file": kwargs.get("prompt_file", config.PROMPT_FILE),
         "prompt_path": kwargs.get("prompt_path", config.PROMPT_PATH),
@@ -120,6 +137,8 @@ def build_chat_kwargs(
         "timeout": kwargs.get("timeout", config.TIMEOUT),
         "retriable_codes": retry_codes_from_kwargs(kwargs, config),
         "max_retries": kwargs.get("max_retries", config.MAX_RETRIES),
+        "locale": effective_locale,
+        "locale_instruction": locale_instruction(effective_locale),
     }
     if "with_follow_up" in kwargs:
         result["with_follow_up"] = kwargs["with_follow_up"]
@@ -131,6 +150,8 @@ def build_resolver_chat_kwargs(
     response_format: dict[str, Any],
     config: Any,
     sensitive_config: Any,
+    *,
+    locale: SupportedLocale | None = None,
 ) -> dict[str, Any]:
     """Return shared chat options for a structured query resolver.
 
@@ -151,6 +172,7 @@ def build_resolver_chat_kwargs(
         {"prompt_path": prompt_path},
         config,
         sensitive_config,
+        locale=locale,
     )
     result["response_format"] = response_format
     return result

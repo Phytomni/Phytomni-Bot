@@ -67,7 +67,11 @@ async def resolve_target_taxids_node(
     presupplied = state.get("target_taxids")
     if presupplied:
         return {"target_taxids": presupplied}
-    taxids = await target_taxids(state["query"], state.get("kwargs") or {})
+    kwargs = {
+        **(state.get("kwargs") or {}),
+        "locale": state.get("locale"),
+    }
+    taxids = await target_taxids(state["query"], kwargs)
     if taxids is None:
         return {"target_taxids": None, "evolution_agents_task": None}
     return {"target_taxids": taxids}

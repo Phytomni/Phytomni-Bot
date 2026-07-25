@@ -23,6 +23,7 @@ from ...runtime.task_dedup import (
     verify_live_status,
 )
 from ...runtime.task_manager import TaskManager, resolve_tasks_db_path
+from ..shared.options import resolve_agent_locale
 from .submission import _build_submit_agent, _shared_arun_kwargs
 from .task_ops import probe_live_status
 
@@ -110,6 +111,7 @@ async def retrieve_plan_submit(
         is_auto_select=True,
         is_polling=False,
         input_fingerprint=fingerprint,
+        locale=resolve_agent_locale(kwargs.get("locale")),
     )
     if meta_meta:
         result["meta_meta"] = meta_meta

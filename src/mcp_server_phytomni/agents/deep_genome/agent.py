@@ -48,6 +48,7 @@ from ...runtime.live_tasks import (
     deregister_live_task,
     register_live_task,
 )
+from ...runtime.locale import SupportedLocale
 from ...runtime.request_context import (
     bind_pre_recorded_task_id,
     bind_run_id,
@@ -65,6 +66,7 @@ from ..design.agent import DigitalDesignAgents
 from ..evolution.builder import build_evolution_graph
 from ..knowledge.agent import KnowledgeAgent
 from ..shared.knowledge_subgraph import build_knowledge_app
+from ..shared.options import resolve_agent_locale
 from ..shared.parallel_dispatch import DegradedRecord, FailureRecord
 from .brief_gene_mount import (
     RequiredBriefGeneError,
@@ -226,6 +228,7 @@ class DeepGenomeState(TypedDict):
 
     species_code: str
     gene_id: str
+    locale: SupportedLocale
     config_params: dict[str, Any]
     gene_annotation: dict[str, Any]
     skip_synthesize: bool
@@ -608,6 +611,7 @@ class DeepGenomeAgents(
         initial_state: dict[str, Any] = {
             "species_code": species_code,
             "gene_id": gene_id,
+            "locale": resolve_agent_locale(kwargs.get("locale")),
             "config_params": config_params,
             "part1_completed_branches": 0,
             "experiment_completed_branches": 0,
@@ -843,6 +847,8 @@ async def gene_function(
     species_code: str,
     gene_id: str,
     user_id: str | None = None,
+    *,
+    locale: SupportedLocale | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Run the LangGraph deep genome analysis workflow.
@@ -858,6 +864,7 @@ async def gene_function(
         Final DeepGenome workflow state containing reports, task outputs, and
         follow-up analysis fields.
     """
+    effective_locale = resolve_agent_locale(locale)
     deep_genome_config = copy_config_with_overrides(
         DEEP_GENOME_CONFIG,
         kwargs,
@@ -896,4 +903,5 @@ async def gene_function(
         user_id=user_id,
         config_params=kwargs.get("config_params"),
         thread_id=kwargs.get("thread_id"),
+        locale=effective_locale,
     )

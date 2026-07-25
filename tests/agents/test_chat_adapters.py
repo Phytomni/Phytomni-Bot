@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the shared consumer-agent-to-chat subgraph IO mappers.
 
-Pins the 17-key bag the data / knowledge / analyst chat sites pass
+Pins the 19-key bag the data / knowledge / analyst chat sites pass
 to ``phyto_chat`` / ``CHAT_APP`` so the structural-mount wiring
 projects the same arguments without drift. Covers the kwargs builder
 (with and without the analyst-only ``response_format`` override), the
@@ -45,10 +45,10 @@ def test_fake_sensitive_config_exposes_secret_and_model_fields() -> None:
     assert config.MODEL_ID == "phyto-llm-v1"
 
 
-def test_build_chat_kwargs_for_packs_all_17_fields() -> None:
-    """The returned dict has all 17 keys with the expected values.
+def test_build_chat_kwargs_for_packs_all_19_fields() -> None:
+    """The returned dict has all 19 keys with the expected values.
 
-    Pins the shared 17-key bag the data / knowledge / analyst chat
+    Pins the shared 19-key bag the data / knowledge / analyst chat
     sites pass. If the dispatch site ever adds or drops a kwarg, this
     test fails first so the adapter and the call sites stay aligned.
     """
@@ -75,8 +75,15 @@ def test_build_chat_kwargs_for_packs_all_17_fields() -> None:
         "timeout": 120.0,
         "retriable_codes": [429, 500, 502, 503, 504],
         "max_retries": 3,
+        "locale": "en-US",
+        "locale_instruction": (
+            "Write all natural-language prose in English. Preserve "
+            "identifiers, "
+            "sequences, numbers, citations, tool names, and structured keys "
+            "exactly."
+        ),
     }
-    assert len(kwargs) == 17
+    assert len(kwargs) == 19
 
 
 def test_build_chat_kwargs_for_response_format_override() -> None:
@@ -116,7 +123,7 @@ def test_build_chat_kwargs_for_default_inherits_config() -> None:
 
 
 def test_build_chat_input_minimum() -> None:
-    """Without an OBS file list, ``ChatInput`` carries only the two keys.
+    """Without OBS files, ``ChatInput`` carries chat keys and locale.
 
     Pins that omitting ``obs_file_list`` keeps the key absent so the
     chat subgraph's ``prepare_context`` node skips the upload branch
@@ -132,6 +139,7 @@ def test_build_chat_input_minimum() -> None:
     assert result == {
         "user_query": "What is photosynthesis?",
         "chat_kwargs": bag,
+        "locale": "en-US",
     }
     assert "obs_file_list" not in result
 

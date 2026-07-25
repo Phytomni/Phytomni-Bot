@@ -14,6 +14,8 @@ collapse every ``Required`` field into a ``total=False`` key.
 
 from typing import Any, Required, TypedDict
 
+from ...runtime.locale import SupportedLocale
+
 
 class ChatInput(TypedDict, total=False):
     """Public input contract for the chat subgraph.
@@ -38,6 +40,7 @@ class ChatInput(TypedDict, total=False):
     user_query: Required[str]
     obs_file_list: list[str]
     chat_kwargs: dict[str, Any]
+    locale: SupportedLocale
 
 
 class ChatOutput(TypedDict):
@@ -65,5 +68,6 @@ class ChatState(TypedDict, total=False):
     user_query: Required[str]
     obs_file_list: list[str]
     chat_kwargs: dict[str, Any]
+    locale: SupportedLocale
     upload_context: str | None
     response: dict[str, Any] | None

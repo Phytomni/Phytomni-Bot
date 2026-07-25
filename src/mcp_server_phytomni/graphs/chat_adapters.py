@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Shared consumer-agent-to-chat subgraph IO mappers.
 
-Data / Knowledge / Analyst chat sites pass the same 17-key bag to
+Data / Knowledge / Analyst chat sites pass the same 19-key bag to
 ``phyto_chat`` and unwrap the chat-completion dict the same way; the
 structural-mount wiring routes those calls through the shared chat
 subgraph. Two optional kwargs encode
@@ -19,6 +19,7 @@ from typing import Any
 
 from ..agents.chat.state import ChatInput
 from ..agents.shared.options import build_chat_kwargs
+from ..runtime.locale import SupportedLocale, current_effective_locale
 
 
 def build_chat_kwargs_for(
@@ -27,6 +28,7 @@ def build_chat_kwargs_for(
     *,
     response_format: dict[str, Any] | None = None,
     with_follow_up: bool | None = None,
+    locale: SupportedLocale | None = None,
 ) -> dict[str, Any]:
     """Pack the ``phyto_chat`` keyword bag a consumer chat node passes.
 
@@ -73,7 +75,12 @@ def build_chat_kwargs_for(
         overrides["response_format"] = response_format
     if with_follow_up is not None:
         overrides["with_follow_up"] = with_follow_up
-    return build_chat_kwargs(overrides, config, sensitive_config)
+    return build_chat_kwargs(
+        overrides,
+        config,
+        sensitive_config,
+        locale=locale,
+    )
 
 
 def build_chat_input(
@@ -81,6 +88,7 @@ def build_chat_input(
     chat_kwargs: Mapping[str, Any],
     *,
     obs_file_list: list[str] | None = None,
+    locale: SupportedLocale | None = None,
 ) -> ChatInput:
     """Wrap a consumer chat call's inputs into a ``ChatInput`` dict.
 
@@ -112,6 +120,9 @@ def build_chat_input(
     result: ChatInput = {
         "user_query": user_query,
         "chat_kwargs": dict(chat_kwargs),
+        "locale": locale
+        or chat_kwargs.get("locale")
+        or current_effective_locale(),
     }
     if obs_file_list:
         result["obs_file_list"] = list(obs_file_list)
