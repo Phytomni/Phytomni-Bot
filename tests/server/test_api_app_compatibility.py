@@ -49,8 +49,12 @@ from mcp_server_phytomni.runtime.run_registry import (
 pytestmark = pytest.mark.server
 
 _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
+# Generated from ``_openapi_hash(create_app())`` after the intentional public
+# schema additions in 7321656 (locale), dd99f82 (dataset uploads), and bcf20b6
+# (attachment capabilities).  ``_normalized_openapi`` removes only the
+# unstable version and server fields before hashing.
 _OPENAPI_HASH = (
-    "6a28247527a0b0f9e7845fe4356b5160d4aa631d41d5e3404ed26e002fb36a8b"
+    "b4e3a3daed722d79b2adb792041a307d0916a92663de0f433c3e3e0d08c0c53d"
 )
 
 
@@ -538,7 +542,7 @@ def test_default_application_contract_is_literal() -> None:
     document = _normalized_openapi(app)
     assert _openapi_hash(app) == _OPENAPI_HASH
     assert len(document["paths"]) == 33
-    assert len(document["components"]["schemas"]) == 14
+    assert len(document["components"]["schemas"]) == 15
     assert all(
         operation.get("operationId")
         for path_item in document["paths"].values()
@@ -570,8 +574,8 @@ def test_optional_application_contract_is_literal(
     assert _original_lifespan_name(app) == "_http_lifespan"
 
 
-def _error_code(response: httpx.Response) -> int:
-    """Return the unified numeric error code from an HTTP response."""
+def _error_code(response: httpx.Response) -> str:
+    """Return the unified safe string error code from an HTTP response."""
     body = response.json()
     assert set(body) >= {"error"}
     assert isinstance(body["error"], dict)
@@ -587,7 +591,13 @@ async def test_auth_owner_and_disabled_scope_boundaries(
     """Lock unauthenticated, wrong-scope, and foreign-owner failures."""
     unauthenticated = await api_client.get("/v1/models")
     assert unauthenticated.status_code == 401
-    assert _error_code(unauthenticated) == 401
+    assert _error_code(unauthenticated) == "unauthenticated"
+    assert unauthenticated.json()["error"] == {
+        "code": "unauthenticated",
+        "message": "authentication required",
+        "request_id": unauthenticated.json()["error"]["request_id"],
+        "retryable": False,
+    }
 
     RunRegistry(tasks_db_path).create_run(
         RunSpec("foreign-run", "other-user", "chat", "local"),
@@ -598,7 +608,9 @@ async def test_auth_owner_and_disabled_scope_boundaries(
         headers={"Authorization": f"Bearer {issued_api_key}"},
     )
     assert foreign.status_code == 404
-    assert _error_code(foreign) == 404
+    assert _error_code(foreign) == "not_found"
+    assert foreign.json()["error"]["message"] == "resource not found"
+    assert foreign.json()["error"]["retryable"] is False
 
     monkeypatch.setenv("PHYTOMNI_RELAY_ENABLED", "1")
     relay = await api_client.post(
@@ -607,7 +619,9 @@ async def test_auth_owner_and_disabled_scope_boundaries(
         json={},
     )
     assert relay.status_code == 403
-    assert _error_code(relay) == 403
+    assert _error_code(relay) == "forbidden"
+    assert relay.json()["error"]["message"] == "request is not permitted"
+    assert relay.json()["error"]["retryable"] is False
 
     monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "1")
     malformed_a2ui = await api_client.post(
@@ -616,7 +630,9 @@ async def test_auth_owner_and_disabled_scope_boundaries(
         content=b"{",
     )
     assert malformed_a2ui.status_code == 400
-    assert _error_code(malformed_a2ui) == 400
+    assert _error_code(malformed_a2ui) == "invalid_argument"
+    assert malformed_a2ui.json()["error"]["message"] == "invalid request"
+    assert malformed_a2ui.json()["error"]["retryable"] is False
 
 
 async def test_a2a_rejects_missing_protocol_version(
@@ -639,7 +655,11 @@ async def test_a2a_rejects_missing_protocol_version(
             json={"jsonrpc": "2.0", "id": 1, "method": "GetTask"},
         )
     assert response.status_code == 400
-    assert _error_code(response) == 400
+    assert _error_code(response) == "invalid_argument"
+    assert response.json()["error"]["message"] == (
+        "A2A-Version must be exactly 1.0"
+    )
+    assert response.json()["error"]["retryable"] is False
 
 
 def test_application_routes_keep_shared_mcp_seams() -> None:

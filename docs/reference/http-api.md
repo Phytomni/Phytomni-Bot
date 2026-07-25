@@ -64,7 +64,7 @@ X-API-Key: ptm_...
 Every response carries an `X-Request-Id`. Errors on native routes use:
 
 ```json
-{"error": {"type": "...", "code": 400, "message": "...", "request_id": "..."}}
+{"error": {"code": "invalid_argument", "message": "invalid request", "request_id": "...", "retryable": false}}
 ```
 
 Over-budget callers get `429` with `Retry-After`. SSE streaming is
@@ -1295,6 +1295,13 @@ actually-executed query, plan, or goal list without toggling
 `debug=true`. Full intermediate state remains in
 `raw.phytomni_state` under debug mode; metadata is a curated subset.
 
+The phrase “task fields” below means the bounded fields emitted by the
+shared task formatter: `task_id`, `output_dir`, `compute_resource`, `status`,
+and `log_status`, together with the universal outcome fields
+`succeeded_count`, `failed_count`, and `failures`. Remote fan-out agents also
+expose the sanitized `task_ids` tuple when their formatter supports it; the
+value contains only non-empty string task identifiers.
+
 | Agent                                         | Default-mode `formatted.metadata` keys                                                                                       |
 | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | DataAgent                                     | `user_query`, `rewrite_query`, `is_rewrite`                                                                                  |
@@ -1303,7 +1310,7 @@ actually-executed query, plan, or goal list without toggling
 | DeepGenomeAgent                               | `task_id`, `output_dir`, `species_code`, `gene_id`, `compute_resource`, plus task fields                                     |
 | InSilicoResearchAgent                         | `task_ids`, `goals`, `output_dir`, `error`, plus task fields and optional `interop` / `degraded_interop`                     |
 | DigitalDesignAgent                            | `task_ids`, `goal_description` (≤256 B), plus task fields, `output_dirs`, and optional `interop` / `degraded_interop`        |
-| GeneNetworkAgent                              | `goal_description` (≤256 B), plus task fields                                                                                |
+| GeneNetworkAgent                              | `task_ids`, `goal_description` (≤256 B), plus task fields                                                                    |
 
 Text fields exceeding their byte cap are truncated with a marker
 pointing to the full document in `raw.phytomni_state.<key>`.

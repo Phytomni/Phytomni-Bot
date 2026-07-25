@@ -231,6 +231,7 @@ def test_deep_genome_status_uses_only_contract_progress_fields() -> None:
             frozenset(
                 {
                     "task_id",
+                    "task_ids",
                     "output_dir",
                     "compute_resource",
                     "status",

@@ -53,7 +53,11 @@ async def test_post_returns_503_when_service_token_unconfigured(
     )
 
     assert response.status_code == 503
-    assert "not enabled" in response.json()["error"]["message"]
+    error = response.json()["error"]
+    assert error["code"] == "unavailable"
+    assert error["message"] == "service unavailable"
+    assert error["retryable"] is False
+    assert "not enabled" not in error["message"]
 
 
 async def test_post_returns_401_when_wrong_service_token(

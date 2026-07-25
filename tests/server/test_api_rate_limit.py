@@ -68,7 +68,10 @@ async def test_over_budget_returns_429_with_retry_after(
 
     assert blocked.status_code == 429
     assert int(blocked.headers["Retry-After"]) >= 1
-    assert blocked.json()["error"]["code"] == 429
+    error = blocked.json()["error"]
+    assert error["code"] == "rate_limited"
+    assert error["message"] == "request rate limit exceeded"
+    assert error["retryable"] is False
 
 
 async def test_zero_limit_disables_rate_limiting(

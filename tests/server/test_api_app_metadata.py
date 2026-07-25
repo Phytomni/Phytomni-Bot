@@ -46,5 +46,7 @@ async def test_unknown_route_uses_unified_error_envelope(
     body = response.json()
     assert set(body) == {"error"}
     error = body["error"]
-    assert set(error) == {"type", "code", "message", "request_id"}
-    assert error["code"] == 404
+    assert set(error) == {"code", "message", "request_id", "retryable"}
+    assert error["code"] == "not_found"
+    assert error["message"] == "resource not found"
+    assert error["retryable"] is False
