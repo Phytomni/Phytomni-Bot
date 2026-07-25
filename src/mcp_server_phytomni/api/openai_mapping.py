@@ -19,6 +19,10 @@ from typing import Any
 
 from ..mcp.result_formatting import AguiEvent
 from ..storage.path_policy import IdFactory
+from .agent_capabilities import (
+    get_agent_slug_for_tool,
+    get_attachment_capability,
+)
 
 __all__ = [
     "MODEL_TO_TOOL",
@@ -39,10 +43,6 @@ MODEL_TO_TOOL = {
     "phyto-review": "ReviewAgent",
     "phyto-brief-gene": "BriefGeneAgent",
 }
-
-# Tools whose request schema carries an obs_file_list field. BriefGene
-# only takes a single gene/transcript id, so it rejects document lists.
-_OBS_CAPABLE_TOOLS = {"ChatAgent", "KnowledgeAgent", "ReviewAgent"}
 
 # Tools that support HTTP-side resolve_gene_id LLM preprocessing.
 # DeepGenome / DigitalDesign share BriefGene's canonical gene id
@@ -85,7 +85,10 @@ def tool_for_model(model: str) -> str | None:
 
 def tool_accepts_obs(tool_name: str) -> bool:
     """Return True when the tool's schema accepts obs_file_list."""
-    return tool_name in _OBS_CAPABLE_TOOLS
+    slug = get_agent_slug_for_tool(tool_name)
+    if slug is None:
+        return False
+    return get_attachment_capability(slug).document_context is not None
 
 
 def tool_accepts_resolve_gene_id(tool_name: str) -> bool:
