@@ -134,6 +134,52 @@ async def test_native_body_locale_beats_header(
     assert captured["locale"] == "zh-CN"
 
 
+@pytest.mark.parametrize(
+    "case",
+    [
+        ("en-GB, zh-CN;q=0.9", "中文问题", "en-US"),
+        ("fr-FR, zh-TW;q=0.9", "English question", "zh-CN"),
+        ("fr-FR", "中文问题", "zh-CN"),
+        (None, "English question", "en-US"),
+    ],
+)
+async def test_locale_falls_back_from_header_to_latest_query(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    case: tuple[str | None, str, SupportedLocale],
+) -> None:
+    """Header normalization precedes latest-query language inference."""
+    accept_language, query, expected = case
+    captured: dict[str, Any] = {}
+
+    async def fake(args: Any) -> dict[str, Any]:
+        captured["locale"] = args.locale
+        return _chat_result()
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        fake,
+    )
+    headers = _auth(issued_api_key)
+    if accept_language is not None:
+        headers["Accept-Language"] = accept_language
+    response = await api_client.post(
+        "/v1/agents/chat/runs",
+        headers=headers,
+        json={
+            "arguments": {
+                "user_query": query,
+                "obs_file_list": [],
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured["locale"] == expected
+
+
 async def test_expert_body_locale_reaches_selected_agent(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

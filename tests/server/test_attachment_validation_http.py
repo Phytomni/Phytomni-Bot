@@ -13,6 +13,9 @@ import pytest
 from tests.support.resolver_fakes import post_native_run
 
 from mcp_server_phytomni import server
+from mcp_server_phytomni.api.agent_capabilities import (
+    serialize_agent_capability,
+)
 from mcp_server_phytomni.api.attachments import (
     AttachmentContractError,
     validate_agent_attachments,
@@ -132,6 +135,19 @@ def test_native_attachment_matrix(
             arguments=arguments,
             code="attachment_not_supported",
         )
+
+
+def test_validator_limits_match_public_attachment_contract() -> None:
+    """The validator and public capability descriptor share exact limits."""
+    for slug, channel in (
+        ("chat", "document_context"),
+        ("analyst", "datasets"),
+        ("research", "datasets"),
+    ):
+        limits = serialize_agent_capability(slug)["attachments"][channel]
+        assert limits["max_file_bytes"] == 26_214_400
+        assert limits["max_files"] == 10
+        assert limits["max_total_bytes"] == 52_428_800
 
 
 def test_duplicate_paths_are_rejected_across_channels(

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -106,6 +107,21 @@ def test_capability_golden_is_byte_stable() -> None:
     golden = golden_path.read_text(encoding="utf-8")
     assert json.loads(golden) == actual
     assert golden == json.dumps(actual, ensure_ascii=False, indent=2) + "\n"
+    assert hashlib.sha256(golden.encode("utf-8")).hexdigest() == (
+        "cb4e1a6cc9dbd327747dabf74b2ad7dce7fcf24c5a128cd2a1a6afcc87c05d52"
+    )
+
+
+def test_attachment_limits_are_public_and_exact() -> None:
+    """The published limits match the invocation validator contract."""
+    for slug, channel in (
+        ("chat", "document_context"),
+        ("analyst", "datasets"),
+    ):
+        limits = serialize_agent_capability(slug)["attachments"][channel]
+        assert limits["max_file_bytes"] == 26_214_400
+        assert limits["max_files"] == 10
+        assert limits["max_total_bytes"] == 52_428_800
 
 
 def test_obs_policy_reads_attachment_registry() -> None:

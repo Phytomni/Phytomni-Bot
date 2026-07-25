@@ -163,6 +163,28 @@ The aliasing matches the existing `PHYTOMNI_TLS_VERIFY` / `PHYTOMNI_CA_BUNDLE` c
 | `A2A_MAX_HISTORY_MESSAGES`   | `32`                              | no         | Maximum messages projected by `GetTask`; bounded to `0..256`, where `0` disables history projection. Accepts `PHYTOMNI_A2A_MAX_HISTORY_MESSAGES`.                                                                                                        |
 | `A2A_MAX_ARTIFACT_BYTES`     | `262144`                          | no         | Maximum UTF-8 bytes in one local A2A answer artifact; bounded to `1024..16777216`. Accepts `PHYTOMNI_A2A_MAX_ARTIFACT_BYTES`.                                                                                                                            |
 
+### Attachment Invocation Limits
+
+`API_UPLOAD_MAX_BYTES` is the upload-stream ceiling and defaults to
+26,214,400 bytes (25 MiB). After a successful upload, native agent runs and
+Expert routing apply the immutable attachment contract below to registered
+user uploads:
+
+| Limit                  | Value      | Applies to                             |
+| ---------------------- | ---------- | -------------------------------------- |
+| Maximum files          | 10         | One native or Expert request           |
+| Maximum bytes per file | 26,214,400 | One registered document or CSV dataset |
+| Maximum total bytes    | 52,428,800 | All registered uploads in one request  |
+
+The limits are inclusive; the validator rejects only values above them.
+Duplicate paths are rejected before budget evaluation. The owner-scoped
+`user_uploads` registry is stored in the SQLite database selected by
+`API_TASKS_DB_PATH`; there is no separate registry path or environment
+override. `API_UPLOAD_PREFIX` is also the managed-path boundary: a path below
+that prefix without a matching owner row is rejected rather than treated as
+a legacy dataset. Legacy preconfigured `data_list` paths are a separate
+policy and are not user-upload metadata.
+
 SQLite store defaults are relative to the service working directory. In
 systemd or container deployments, set absolute paths or pin the service
 working directory so restarts use the same stores.

@@ -75,6 +75,50 @@ the-loop runs must use non-stream chat or native runs plus
 `stream: true` returns `400` with a per-model message. See the SSE
 Streaming section below.
 
+## Locale
+
+The HTTP API accepts `locale` as a top-level request field on
+`/v1/chat/completions`, `/v1/agents/{agent}/runs`, and `/v1/query/route`.
+For a native run, the body shape is:
+
+```json
+{
+  "arguments": {
+    "user_query": "What is this rice gene?"
+  },
+  "locale": "en-US"
+}
+```
+
+Locale resolution is deterministic:
+
+1. An explicit body value wins and must be exactly `en-US` or `zh-CN`.
+1. Otherwise the first supported item in `Accept-Language` is used. `en`
+   and `en-*` normalize to `en-US`; `zh` and `zh-*` normalize to `zh-CN`.
+   Unsupported header items are skipped.
+1. Otherwise the latest user-facing query is inferred as `zh-CN` when it
+   contains Han characters, and `en-US` otherwise.
+
+An unsupported explicit value returns `422` with code
+`unsupported_locale`. Locale controls generated prose and fixed localized
+error messages; it is never an authorization input or a tool-selection
+input. The resolved value is stored on the run. Review resume and Chat/Review
+A2UI action requests inherit that stored locale; a legacy run with a null
+locale backfills it from the stored query instead of trusting resume headers.
+
+Example:
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
+  -H "Authorization: Bearer ptm_..." \
+  -H 'Accept-Language: zh-TW, en;q=0.8' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "arguments": {"user_query": "What is this rice gene?", "obs_file_list": []},
+    "locale": "en-US"
+  }'
+```
+
 ## Endpoints
 
 | Method   | Path                                     | Auth  | Purpose                                                                                                                                                                                                 |
@@ -138,14 +182,46 @@ than silently inherit `[]`.
 
 Each row also carries an additive `capabilities` object. Its stable keys are
 `streaming`, `interactive`, `report_states`, `artifacts`, and
-`degraded_outcomes`; `report_states` is always a JSON list. The current facts
-are `chat` (streaming + interactive), `knowledge` (streaming), `review`
-(streaming + interactive), `brief_gene` (streaming), and `deep_genome`
-(`report_states: ["intermediate", "final"]`, artifacts, and degraded
-outcomes). `data`, `analyst`, `research`, `design`, and `network` currently
-advertise all five values as false/empty. Consumers must treat this object as
-the capability source of truth and fail closed for an unknown slug; it does
-not grant permission or change the canonical route name.
+`degraded_outcomes`, and `attachments`; `report_states` is always a JSON
+list. The attachment descriptor is either `null` or an object with a public
+argument name, formats, and exact limits. A representative document
+descriptor is:
+
+```json
+{
+  "argument": "obs_file_list",
+  "extensions": ["pdf", "docx", "pptx", "xls", "xlsx", "msg"],
+  "max_file_bytes": 26214400,
+  "max_files": 10,
+  "max_total_bytes": 52428800
+}
+```
+
+The current attachment matrix is:
+
+| Agent slug    | Document context | CSV datasets | Expert forwarding |
+| ------------- | ---------------- | ------------ | ----------------- |
+| `chat`        | `obs_file_list`  | no           | yes               |
+| `knowledge`   | `obs_file_list`  | no           | yes               |
+| `data`        | no               | no           | no                |
+| `review`      | `obs_file_list`  | no           | yes               |
+| `brief_gene`  | no               | no           | no                |
+| `analyst`     | `obs_file_list`  | `data_list`  | no                |
+| `deep_genome` | no               | no           | no                |
+| `research`    | `obs_file_list`  | `data_list`  | no                |
+| `design`      | no               | no           | no                |
+| `network`     | no               | no           | no                |
+
+`agent_context` uploads use the document channel. `dataset` uploads use the
+CSV channel, require UTF-8 or UTF-8-BOM comma-delimited CSV, and require a
+nonblank `data_list` description at invocation. The complete deterministic
+golden is
+[`docs/contracts/agents/capabilities.json`](../contracts/agents/capabilities.json)
+with SHA256
+`cb4e1a6cc9dbd327747dabf74b2ad7dce7fcf24c5a128cd2a1a6afcc87c05d52` for the
+current UTF-8 file including its final newline. Consumers must treat this
+object as the capability source of truth and fail closed for an unknown slug;
+it does not grant permission or change the canonical route name.
 
 ## User-scoped memory CRUD (opt-in)
 
@@ -668,8 +744,8 @@ inspect the raw per-task payloads when a log looks unexpectedly thin.
 `POST /v1/files` accepts one `multipart/form-data` upload through the
 standard `file` field and an optional `purpose` field. The `purpose`
 value MUST be one of the OpenAI-files compatible literals
-`agent_context` (default) / `assistants` / `batch` / `fine-tune` /
-`vision` / `user_data`; any other value returns `422` through the
+`agent_context` (default) / `assistants` / `batch` / `dataset` /
+`fine-tune` / `vision` / `user_data`; any other value returns `422` through the
 unified error envelope. The response carries the OpenAI-files
 compatible shape — `id` / `object: "file"` / `bytes` / `filename` /
 `purpose` / `created_at` — plus `obs_path` (the public
@@ -707,6 +783,65 @@ curl -s http://127.0.0.1:8080/v1/files \
   -F file=@report.pdf \
   -F purpose=agent_context
 ```
+
+`purpose=dataset` is validated before storage as a nonempty UTF-8 or
+UTF-8-BOM comma-delimited CSV with unique nonblank headers and at least one
+data row. Every successful upload returns `201` only after its owner-scoped
+`user_uploads` metadata row is registered. If the OBS object write succeeds
+but metadata registration fails, the API returns `500` with code
+`upload_metadata_failed` and does not advertise the path; the stored object
+then requires operator orphan review.
+
+## Attachment Invocation Contract
+
+Native runs and Expert routing validate attachments before the selected
+handler is called. A path returned by `POST /v1/files` is a managed upload:
+the caller must own its registry row, and its purpose and filename format
+must match the selected channel. A path below the managed upload prefix with
+no owner-scoped row is not accepted as a legacy path. This prevents a caller
+from turning an arbitrary OBS path into an authenticated upload reference.
+
+The document channel accepts `agent_context` metadata with `pdf`, `docx`,
+`pptx`, `xls`, `xlsx`, or `msg` filenames for Chat, Knowledge, Review,
+Analyst, and Research. The dataset channel accepts `dataset` metadata only
+for Analyst and Research. Each dataset's `data_list[path]` description must
+be nonblank.
+
+The registered-upload limits are inclusive at the boundary: at most 10
+attachments, at most 26,214,400 bytes per attachment, and at most 52,428,800
+bytes across one request. Exact repeated paths are rejected before capability
+or budget evaluation, including a repeat across `obs_file_list` and
+`data_list`. Legacy preconfigured OBS dataset paths remain a separate
+`data_list` policy for Analyst and Research; they do not prove ownership of a
+new upload and are not converted into `user_uploads` metadata.
+
+Attachment contract failures return `422` with one of these stable codes:
+`attachment_not_found`, `attachment_not_supported`,
+`attachment_format_unsupported`, `attachment_duplicate`,
+`attachment_limit_exceeded`, `attachment_purpose_mismatch`, or
+`attachment_description_required`. Public messages never echo the submitted
+OBS path. Design and Network retain their legacy attachment fields for
+schema compatibility, but any nonempty value is rejected during migration.
+
+Native example using a registered upload:
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
+  -H "Authorization: Bearer ptm_..." \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "arguments": {
+      "user_query": "Summarize the uploaded paper.",
+      "obs_file_list": ["/obs/phytomni/agent_data/uploads/u1/request/upload_.../paper.pdf"]
+    },
+    "locale": "en-US"
+  }'
+```
+
+`/v1/chat/completions` keeps its existing model capability gate: the
+`obs_file_list` field is forwarded only for Chat, Knowledge, and Review
+models. Native runs and Expert routing apply the owner, metadata, duplicate,
+purpose, format, description, and budget checks above.
 
 `POST /v1/chat/completions` and `POST /v1/agents/{agent}/runs` accept
 an optional `dialogue_id` field that groups runs into one visible

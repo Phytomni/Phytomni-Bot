@@ -229,7 +229,18 @@ adds a JSON-compatible `capabilities` object:
   "interactive": false,
   "report_states": [],
   "artifacts": false,
-  "degraded_outcomes": false
+  "degraded_outcomes": false,
+  "attachments": {
+    "document_context": {
+      "argument": "obs_file_list",
+      "extensions": ["pdf", "docx", "pptx", "xls", "xlsx", "msg"],
+      "max_file_bytes": 26214400,
+      "max_files": 10,
+      "max_total_bytes": 52428800
+    },
+    "datasets": null,
+    "expert_forwarding": true
+  }
 }
 ```
 
@@ -241,6 +252,31 @@ interactive; `chat`, `knowledge`, `review`, and `brief_gene` are streamable.
 `data` has no chat-completions alias and must not be added to a stream model
 map. Treat unknown capability slugs as unsupported and keep authorization
 separate from this metadata.
+
+The attachment channels are exact: Chat, Knowledge, and Review accept
+document context; Analyst and Research accept document context plus CSV
+datasets; Data, BriefGene, DeepGenome, Design, and Network accept neither.
+The complete deterministic golden is
+`docs/contracts/agents/capabilities.json` (SHA256
+`cb4e1a6cc9dbd327747dabf74b2ad7dce7fcf24c5a128cd2a1a6afcc87c05d52`). The
+descriptor is a capability preflight, not an authorization grant.
+
+### Locale Ingress And Resume
+
+For `/v1/chat/completions`, `/v1/agents/{agent}/runs`, and
+`/v1/query/route`, resolve locale in this order: explicit top-level body
+value, first supported `Accept-Language` item, then latest-query inference.
+Only `en-US` and `zh-CN` are accepted explicitly. `en` / `en-*` normalize to
+`en-US`; `zh` / `zh-*` normalize to `zh-CN`; unsupported header items are
+skipped. If no supported header remains, Han characters in the latest query
+select `zh-CN`, otherwise `en-US`. An unsupported explicit body value is
+`422 unsupported_locale`.
+
+Locale is presentation and prompt context only. It must not be used to
+authorize a key or select a tool. The resolved value is persisted with the
+run and is inherited by Review resume and Chat/Review A2UI actions. For a
+legacy run whose stored locale is null, the resume path infers it from the
+stored query and does not trust the resume request's headers.
 
 ### Memory CRUD operations (opt-in)
 
@@ -506,8 +542,8 @@ alongside the candidate-B owner-key revival.
 `POST /v1/files` accepts one `multipart/form-data` upload through the
 standard `file` field with an optional `purpose` field. The
 `purpose` value MUST be one of `agent_context` (default) /
-`assistants` / `batch` / `fine-tune` / `vision` / `user_data`; any
-other value returns `422`. Stored under
+`assistants` / `batch` / `dataset` / `fine-tune` / `vision` / `user_data`;
+any other value returns `422`. Stored under
 `agent_data/uploads/{user_id}/{request_id}/{file_id}/{safe_filename}`;
 the response carries the OpenAI-files compatible shape plus
 `obs_path` (the public `/obs/<bucket>/<key>` form) and a `path` alias
@@ -527,6 +563,55 @@ path-traversal segments collapse to the basename
 characters rewrite to `-` (`my report (final).pdf` →
 `my-report-final.pdf`, response `201`). Only empty bodies and
 empty / `.` / `..` filenames return `400`.
+
+`purpose=dataset` is validated before storage as a nonempty UTF-8 or
+UTF-8-BOM comma-delimited CSV with unique nonblank headers and at least one
+data row. A `201` response means both the OBS object and the owner-scoped
+`user_uploads` metadata row were persisted. If the object write succeeds but
+metadata registration fails, the route returns `500 upload_metadata_failed`
+and does not advertise the path.
+
+### Attachment Preflight And Orphan Review
+
+Native runs and Expert routing validate attachment paths before invoking the
+selected handler. A managed path below `API_UPLOAD_PREFIX` must have a
+matching `user_uploads` row owned by the authenticated user. The purpose,
+filename extension, byte size, and channel must match the public capability
+descriptor. Arbitrary managed-prefix paths and foreign-owner rows are
+rejected; do not infer ownership from an OBS key.
+
+Use the following exact limits for registered uploads: 10 files per request,
+26,214,400 bytes per file, and 52,428,800 bytes in total. The limits are
+inclusive. Duplicate paths are rejected before budget checks, including a
+path repeated across `obs_file_list` and `data_list`. Dataset descriptions
+must be nonblank. Legacy preconfigured OBS paths in `data_list` are a
+separate Analyst/Research policy, are not upload-registry evidence, and are
+not automatically migrated.
+
+The stable native/Expert `422` codes are `attachment_not_found`,
+`attachment_not_supported`, `attachment_format_unsupported`,
+`attachment_duplicate`, `attachment_limit_exceeded`,
+`attachment_purpose_mismatch`, and `attachment_description_required`.
+Responses do not echo submitted OBS paths. Design and Network keep their
+legacy attachment fields only for schema compatibility; nonempty values are
+fail-closed during migration.
+
+When investigating a stale upload or registry/object mismatch, use a
+read-only owner/operator connection to the database selected by
+`API_TASKS_DB_PATH` and bind the cutoff timestamp to the `?` parameter. Keep
+the inspection projection limited to:
+
+```sql
+SELECT file_id, user_id, obs_path, purpose, byte_size, created_at
+FROM user_uploads
+WHERE created_at < ?;
+```
+
+This query lists registered metadata candidates only. An object created before
+metadata registration failure will not have a row and must be correlated
+with the request id, OBS listing, and service logs before any action. Do not
+delete objects or registry rows automatically from this runbook; cleanup
+requires evidence from both the object store and the registry.
 
 ## Expert Routing Operations
 
@@ -1165,7 +1250,7 @@ cache keeps the marginal cost near zero for repeated identical queries.
   413 stream indicates either a misconfigured client or a deliberate
   ceiling bump request. Raise the env var and restart to widen.
 - `422` — the supplied `purpose` form field is outside the allowed
-  `Literal` enum (`agent_context` / `assistants` / `batch` /
+  `Literal` enum (`agent_context` / `assistants` / `batch` / `dataset` /
   `fine-tune` / `vision` / `user_data`). FastAPI's
   `RequestValidationError` flows through the unified envelope.
   Tell the client to send one of the six allowed values; do NOT
@@ -1179,8 +1264,11 @@ cache keeps the marginal cost near zero for repeated identical queries.
 
 Stored uploads live under
 `agent_data/uploads/{user_id}/{request_id}/{file_id}/{safe_filename}`
-in OBS. There is no GC; orphaned uploads stay forever until the bucket
-TTL or an out-of-band sweep removes them.
+in OBS. There is no automatic GC. An object left by a
+`upload_metadata_failed` response is not advertised and may have no
+`user_uploads` row; use [Attachment Preflight And Orphan Review](#attachment-preflight-and-orphan-review)
+to correlate request, object-store, and registry evidence before any
+operator-approved cleanup.
 
 ### Startup Failure
 

@@ -105,6 +105,42 @@ A2UI goldens for Web/Go consumers (`chat_confirm`, `review_confirm`,
 `multi_turn`) live under
 [docs/contracts/a2ui/](docs/contracts/a2ui/README.md).
 
+### Locale And File Attachments
+
+HTTP agent requests accept `locale` at the top level. The precedence is
+explicit body value, the first supported `Accept-Language` item, then
+inference from the latest user query (`zh-CN` for Han characters, otherwise
+`en-US`). Header values `en` / `en-*` normalize to `en-US`, and `zh` /
+`zh-*` normalize to `zh-CN`. A body value outside `en-US` / `zh-CN` returns
+`422 unsupported_locale`. Locale affects generated natural-language text and
+fixed error messages only; it is never an authorization or tool-selection
+input. Paused runs keep their stored locale when resumed.
+
+Example native run:
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
+  -H "Authorization: Bearer ptm_..." \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "arguments": {"user_query": "What is this rice gene?", "obs_file_list": []},
+    "locale": "en-US"
+  }'
+```
+
+Use `POST /v1/files` to obtain a trusted `obs_path`, then pass that path to a
+capable agent. `purpose=agent_context` accepts document context for Chat,
+Knowledge, Review, Analyst, and Research; `purpose=dataset` is a validated
+CSV channel for Analyst and Research and requires a nonblank `data_list`
+description. The invocation limits are 10 registered uploads, 26,214,400
+bytes per upload, and 52,428,800 bytes in total. Repeated paths, foreign
+owners, unregistered managed paths, unsupported channels, and metadata
+mismatches fail closed. Existing preconfigured OBS paths in `data_list` are a
+separate legacy policy and are not user-upload registration evidence. See the
+[HTTP attachment contract](docs/reference/http-api.md#attachment-invocation-contract)
+and [operator runbook](docs/ops/http-api-runbook.md#attachment-preflight-and-orphan-review)
+for the capability matrix, stable error codes, and orphan review boundary.
+
 HTTP streaming has two explicit failure boundaries. The API eagerly prepares
 the tool and primes the first AG-UI event before committing SSE response
 headers; setup or priming failures are ordinary JSON errors and settle a
