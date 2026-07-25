@@ -41,6 +41,28 @@ def test_r0801_uses_message_endpoints_not_json_path() -> None:
     assert finding.tool_version == "pylint 4.0.5"
 
 
+def test_r0801_resolves_short_namespace_package_module() -> None:
+    """Short Pylint labels from namespace test roots still resolve safely."""
+    document = [
+        {
+            "message-id": "R0801",
+            "path": "tests/unit/api/a2a/test_executor.py",
+            "line": 77,
+            "message": (
+                "Similar lines in 2 files\n"
+                "==api.a2a.test_executor:[77:82]\n"
+                "==test_a2ui_actions_http:[118:123]\n"
+                '            "agent": "chat",\n'
+            ),
+        }
+    ]
+
+    finding = parse_pylint_json(_ROOT, json.dumps(document), "pylint 4.0.5")[0]
+
+    assert finding.path == "tests/unit/api/a2a/test_executor.py"
+    assert finding.peer_path == "tests/server/test_a2ui_actions_http.py"
+
+
 def test_r0903_resolves_the_class_symbol() -> None:
     """R0903 points to the exact class rather than only its file."""
     finding = parse_pylint_json(

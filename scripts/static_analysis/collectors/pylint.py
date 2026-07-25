@@ -125,12 +125,19 @@ def _module_name(root: Path, path: Path) -> str:
 
 
 def _resolve_module(root: Path, module: str, tracked: Sequence[Path]) -> Path:
+    """Resolve Pylint's module label back to one tracked source path."""
     module_names = {module}
     if module.endswith(".__init__"):
         module_names.add(module[: -len(".__init__")])
     for path in tracked:
         if _module_name(root, path) in module_names:
             return path
+    suffix = f".{module}"
+    suffix_matches = tuple(
+        path for path in tracked if _module_name(root, path).endswith(suffix)
+    )
+    if len(suffix_matches) == 1:
+        return suffix_matches[0]
     direct = root / f"{module.replace('.', '/')}.py"
     if direct.is_file():
         return direct
