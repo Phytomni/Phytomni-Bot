@@ -16,13 +16,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...common.prompts import get_prompt
-from ...common.responses import message_content
 from ...config.defaults import BriefGeneConfig
-from ...config.settings import get_sensitive_config
 from ..chat.service import phyto_chat
-from ..shared.options import build_chat_kwargs
 from .analytical_sections import _build_section_context
+from .chat_helpers import (
+    BriefGenePromptRequest,
+    complete_brief_gene_prompt,
+)
 from .render import _render_basic_genomic_information
 from .state import BriefGeneAgentState
 
@@ -63,19 +63,14 @@ async def _run_introduction_node(
     ``deep_genome``'s mount IO projection (so deep_genome's old
     ``_run_report_introduction`` LLM call is no longer needed).
     """
-    sensitive_config = get_sensitive_config()
-    user_query = get_prompt(
-        BRIEF_GENE_CONFIG.PROMPT_FILE,
-        "user/brief_gene_introduction",
-        _build_introduction_context(state),
-    )
-    response = await phyto_chat(
-        user_query=user_query,
-        **build_chat_kwargs(
-            {},
-            BRIEF_GENE_CONFIG,
-            sensitive_config,
+    report = await complete_brief_gene_prompt(
+        BriefGenePromptRequest(
+            prompt_file=BRIEF_GENE_CONFIG.PROMPT_FILE,
+            prompt_path="user/brief_gene_introduction",
+            prompt_context=_build_introduction_context(state),
+            chat=phyto_chat,
+            config=BRIEF_GENE_CONFIG,
             locale=state.get("locale"),
-        ),
+        )
     )
-    return {"introduction_report": message_content(response)}
+    return {"introduction_report": report}

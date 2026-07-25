@@ -13,10 +13,7 @@ import logging
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime
-from functools import partial
-from typing import BinaryIO
 
-from anyio.to_thread import run_sync
 from fastapi import Request, UploadFile
 from fastapi.responses import JSONResponse
 
@@ -39,6 +36,7 @@ from .app_support import _ErrorResponseOptions
 from .schemas import FileUploadResponse, UploadPurpose
 from .upload_validation import (
     CsvUploadValidationError,
+    seek_upload_size,
     validate_csv_upload,
 )
 
@@ -103,21 +101,6 @@ def _dataset_error(
     )
 
 
-def _seek_upload_size(stream: BinaryIO) -> int:
-    """Return a seekable upload's byte size and leave it at position zero."""
-    try:
-        stream.seek(0, 2)
-        byte_size = stream.tell()
-        stream.seek(0)
-    except (OSError, ValueError) as exc:
-        raise CsvUploadValidationError(
-            "dataset stream is not seekable"
-        ) from exc
-    if byte_size < 0:
-        raise CsvUploadValidationError("dataset size is invalid")
-    return byte_size
-
-
 async def _validate_dataset_upload(
     file: UploadFile,
     *,
@@ -127,15 +110,13 @@ async def _validate_dataset_upload(
     """Validate a dataset before the upload body is buffered or stored."""
     try:
         validated_format(file.filename or "", "dataset")
-        byte_size = _seek_upload_size(file.file)
+        byte_size = seek_upload_size(file.file)
         if byte_size > max_bytes:
             return error_response(
                 413,
                 f"upload exceeds maximum size of {max_bytes} bytes",
             )
-        await run_sync(
-            partial(validate_csv_upload, file.file, byte_size=byte_size)
-        )
+        validate_csv_upload(file.file, byte_size=byte_size)
     except (CsvUploadValidationError, InvalidUploadError) as exc:
         return _dataset_error(error_response, str(exc))
     return None

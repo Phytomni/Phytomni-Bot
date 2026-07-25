@@ -18,8 +18,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..agents.knowledge.state import KnowledgeInput
-from ..agents.shared.options import resolve_agent_locale
 from ..runtime.locale import SupportedLocale
+from .knowledge_adapters import (
+    build_retrieve_only_knowledge_input,
+    extract_retrieved_docs,
+)
 
 
 def build_brief_gene_knowledge_input(
@@ -47,34 +50,11 @@ def build_brief_gene_knowledge_input(
         flag overrides that pin the retrieve-only path
         (``is_generate=False``, ``is_follow_up=False``).
     """
-    return {
-        "user_query": user_query,
-        "is_generate": False,
-        "is_follow_up": False,
-        "locale": resolve_agent_locale(locale),
-    }
+    return build_retrieve_only_knowledge_input(user_query, locale=locale)
 
 
 def extract_brief_gene_knowledge_response(
     knowledge_output: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
-    """Project ``KnowledgeOutput.retrieved_docs`` into the per-worker doc list.
-
-    Each fan-out worker reads its KnowledgeAgent subgraph's final
-    state, projects out the doc list, and writes a single
-    ``(task_index, doc_list)`` tuple onto the indexed-results
-    reducer; the reduce node sorts the tuples back into order,
-    merges the docs by score descending, and applies the
-    ``TOP_N`` cap. This helper centralises the ``retrieved_docs``
-    unwrap so a future KnowledgeOutput shape change lands here only.
-
-    Args:
-        knowledge_output: The knowledge subgraph's final state mapping
-            (``KnowledgeOutput``-shaped).
-
-    Returns:
-        The raw retrieved-doc list, or ``[]`` if the upstream returned
-        ``None`` or omitted the key.
-    """
-    docs = knowledge_output.get("retrieved_docs")
-    return list(docs) if docs is not None else []
+    """Return retrieved docs produced by one BriefGene worker."""
+    return extract_retrieved_docs(knowledge_output)

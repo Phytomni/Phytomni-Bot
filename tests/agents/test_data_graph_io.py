@@ -53,7 +53,7 @@ def test_data_input_required_keys_are_only_user_query() -> None:
     retrieve-then-rewrite branch active without extra wiring.
     """
     assert _required(DataInput) == frozenset({"user_query"})
-    assert _optional(DataInput) == frozenset({"is_rewrite"})
+    assert _optional(DataInput) == frozenset({"is_rewrite", "locale"})
 
 
 def test_data_output_carries_final_response_always() -> None:

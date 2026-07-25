@@ -27,7 +27,6 @@ from ..agents.review.agent import review_agent_function
 from ..config.defaults import (
     AnalystConfig,
     BriefGeneConfig,
-    ChatConfig,
     DataConfig,
     DeepGenomeConfig,
     DigitalDesignConfig,
@@ -46,6 +45,7 @@ from .handler_support import (
     analysis_platform_kwargs,
     chat_kwargs,
     coder_kwargs,
+    load_chat_runtime,
     load_handler_runtime,
     obs_kwargs,
     retrieve_kwargs,
@@ -104,8 +104,7 @@ async def handle_chat_agent(args: ChatAgent) -> HandlerResult:
     Returns:
         ChatAgent response envelope dict.
     """
-    chat_config = ChatConfig()
-    runtime = load_handler_runtime()
+    chat_config, runtime = load_chat_runtime()
     return await phyto_chat_with_follow(
         user_query=args.user_query,
         obs_file_list=args.obs_file_list,

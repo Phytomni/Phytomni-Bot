@@ -10,7 +10,15 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from tests.support.resolver_fakes import post_native_run
+from tests.support.http_fakes import (
+    assert_duplicate_attachment_response,
+    install_rejection_handler,
+)
+from tests.support.resolver_fakes import (
+    NativeRunHandlerSpec,
+    post_duplicate_attachment_run,
+    post_native_run_with_handler,
+)
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.api.agent_capabilities import (
@@ -398,16 +406,16 @@ async def test_http_native_run_validates_registered_upload_before_handler(
         assert args.obs_file_list == [path]
         return {"answer": "ok", "doc_list": []}
 
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.CHAT_AGENT.value,
-        fake,
-    )
-    response = await post_native_run(
+    response = await post_native_run_with_handler(
+        monkeypatch,
         api_client,
         issued_api_key,
-        "chat",
-        {"user_query": "hi", "obs_file_list": [path]},
+        NativeRunHandlerSpec(
+            tool_name=server.PhytomniAgents.CHAT_AGENT.value,
+            handler=fake,
+            agent_slug="chat",
+            arguments={"user_query": "hi", "obs_file_list": [path]},
+        ),
     )
     assert response.status_code == 200
     assert invoked
@@ -419,29 +427,17 @@ async def test_http_attachment_error_has_stable_projection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Duplicate paths stop the handler and use the unified 422 error body."""
-    invoked = False
-
-    async def fake(_args: Any) -> dict[str, Any]:
-        nonlocal invoked
-        invoked = True
-        return {"answer": "must not run", "doc_list": []}
-
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.CHAT_AGENT.value,
-        fake,
+    marker = install_rejection_handler(
+        monkeypatch, server.PhytomniAgents.CHAT_AGENT.value
     )
     path = "/obs/phytomni/agent_data/uploads/u1/fixture/missing.pdf"
-    response = await post_native_run(
-        api_client,
-        issued_api_key,
-        "chat",
-        {"user_query": "hi", "obs_file_list": [path, path]},
+    response = await post_duplicate_attachment_run(
+        api_client, issued_api_key, path
     )
-    assert response.status_code == 422
+    assert_duplicate_attachment_response(response)
     error = response.json()["error"]
     assert error["code"] == "attachment_duplicate"
     assert error["stage"] == "attachment_validation"
     assert error["retryable"] is False
     assert path not in response.text
-    assert not invoked
+    assert not marker["called"]

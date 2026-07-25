@@ -15,6 +15,7 @@ from typing import BinaryIO, Literal
 __all__ = [
     "CsvUploadInfo",
     "CsvUploadValidationError",
+    "seek_upload_size",
     "validate_csv_upload",
 ]
 
@@ -40,6 +41,21 @@ def _rewind(stream: BinaryIO) -> None:
         raise CsvUploadValidationError(
             "dataset stream is not seekable"
         ) from exc
+
+
+def seek_upload_size(stream: BinaryIO) -> int:
+    """Return a seekable upload's byte size and leave it at position zero."""
+    try:
+        stream.seek(0, 2)
+        byte_size = stream.tell()
+    except (OSError, ValueError) as exc:
+        raise CsvUploadValidationError(
+            "dataset stream is not seekable"
+        ) from exc
+    _rewind(stream)
+    if byte_size < 0:
+        raise CsvUploadValidationError("dataset size is invalid")
+    return byte_size
 
 
 def validate_csv_upload(

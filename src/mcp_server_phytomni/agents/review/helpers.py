@@ -15,9 +15,28 @@ import re
 from json import loads
 from typing import Any
 
+from ...graphs.chat_adapters import build_chat_kwargs_for
+from ...runtime.locale import SupportedLocale
+
 CITATION_PATTERN = (
     r"\[(?:add )?document [^\]]+\]|\[[Ss]?\d+-\d{3}\]|\[[sS]?\d{3}\]"
 )
+
+
+def build_review_chat_kwargs(
+    config: Any,
+    sensitive_config: Any,
+    locale: SupportedLocale | None,
+    *,
+    with_follow_up: bool = False,
+) -> dict[str, Any]:
+    """Build the shared review Chat options for one workflow node."""
+    return build_chat_kwargs_for(
+        config,
+        sensitive_config,
+        with_follow_up=with_follow_up,
+        locale=locale,
+    )
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:

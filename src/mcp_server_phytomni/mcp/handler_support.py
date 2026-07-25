@@ -30,6 +30,7 @@ __all__ = [
     "analysis_platform_kwargs",
     "chat_kwargs",
     "coder_kwargs",
+    "load_chat_runtime",
     "load_handler_runtime",
     "obs_kwargs",
     "retrieve_kwargs",
@@ -58,6 +59,11 @@ def load_handler_runtime() -> HandlerRuntime:
         sensitive=sensitive,
         obs_credentials=sensitive.obs_credentials(),
     )
+
+
+def load_chat_runtime() -> tuple[ChatConfig, HandlerRuntime]:
+    """Load the Chat config and sensitive handler runtime together."""
+    return ChatConfig(), load_handler_runtime()
 
 
 def chat_kwargs(

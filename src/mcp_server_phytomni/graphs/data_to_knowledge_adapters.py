@@ -18,8 +18,11 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..agents.knowledge.state import KnowledgeInput
-from ..agents.shared.options import resolve_agent_locale
 from ..runtime.locale import SupportedLocale
+from .knowledge_adapters import (
+    build_retrieve_only_knowledge_input,
+    extract_retrieved_docs,
+)
 
 
 def build_data_knowledge_input(
@@ -56,35 +59,15 @@ def build_data_knowledge_input(
         two flag overrides that pin the retrieve-only path
         (``is_generate=False``, ``is_follow_up=False``).
     """
-    return {
-        "user_query": user_query,
-        "repo_id_dict": {data_repo_id: page_size},
-        "is_generate": False,
-        "is_follow_up": False,
-        "locale": resolve_agent_locale(locale),
-    }
+    return build_retrieve_only_knowledge_input(
+        user_query,
+        locale=locale,
+        repo_id_dict={data_repo_id: page_size},
+    )
 
 
 def extract_data_knowledge_response(
     knowledge_output: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
-    """Project ``KnowledgeOutput.retrieved_docs`` into the doc list.
-
-    The data rewrite step reads the raw doc list and runs its own
-    fragment formatting + token-budget truncation + prompt-template
-    stitch; the knowledge subgraph stores the docs under
-    ``KnowledgeOutput.retrieved_docs``. This helper unwraps the list
-    and defaults to ``[]`` when the upstream returned no docs so the
-    downstream fragment loop still iterates over a list rather than
-    ``None``.
-
-    Args:
-        knowledge_output: The knowledge subgraph's final state mapping
-            (``KnowledgeOutput``-shaped).
-
-    Returns:
-        The raw retrieved-doc list, or ``[]`` if the upstream returned
-        ``None`` or omitted the key.
-    """
-    docs = knowledge_output.get("retrieved_docs")
-    return list(docs) if docs is not None else []
+    """Return retrieved docs consumed by the Data rewrite step."""
+    return extract_retrieved_docs(knowledge_output)

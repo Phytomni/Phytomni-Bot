@@ -16,13 +16,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from ...common.prompts import get_prompt
-from ...common.responses import message_content
 from ...config.defaults import BriefGeneConfig
-from ...config.settings import get_sensitive_config
 from ...mcp.progress_events import emit_progress
 from ..chat.service import phyto_chat
-from ..shared.options import build_chat_kwargs
+from .chat_helpers import (
+    BriefGenePromptRequest,
+    complete_brief_gene_prompt,
+)
 from .state import BriefGeneAgentState
 
 BRIEF_GENE_CONFIG = BriefGeneConfig()
@@ -67,22 +67,16 @@ async def _call_section_llm(
     the brief_gene config-derived kwargs, and extracts the
     string content from the chat-completions response.
     """
-    sensitive_config = get_sensitive_config()
-    user_query = get_prompt(
-        BRIEF_GENE_CONFIG.PROMPT_FILE,
-        prompt_path,
-        _build_section_context(state),
-    )
-    response = await phyto_chat(
-        user_query=user_query,
-        **build_chat_kwargs(
-            {},
-            BRIEF_GENE_CONFIG,
-            sensitive_config,
+    return await complete_brief_gene_prompt(
+        BriefGenePromptRequest(
+            prompt_file=BRIEF_GENE_CONFIG.PROMPT_FILE,
+            prompt_path=prompt_path,
+            prompt_context=_build_section_context(state),
+            chat=phyto_chat,
+            config=BRIEF_GENE_CONFIG,
             locale=state.get("locale"),
-        ),
+        )
     )
-    return message_content(response)
 
 
 async def _run_section_discovery_node(

@@ -42,7 +42,6 @@ from ..agents.shared.gauss import aclose_gauss_pool
 from ..agents.shared.intermediate_state import merge_intermediate_state
 from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..common.logging_config import configure_logging
-from ..config.defaults import ChatConfig
 from ..runtime.langgraph_runner import build_runnable_config
 from ..runtime.request_context import current_request_id
 from ..runtime.resume import (
@@ -51,7 +50,11 @@ from ..runtime.resume import (
     elicit_review_decision,
 )
 from ..storage.path_policy import IdFactory
-from .handler_support import chat_kwargs, load_handler_runtime, obs_kwargs
+from .handler_support import (
+    chat_kwargs,
+    load_chat_runtime,
+    obs_kwargs,
+)
 from .handlers import (
     handle_analyst_agent,
     handle_brief_gene_agent,
@@ -773,8 +776,7 @@ async def _stream_chat_agent(
     Yields:
         One OpenAI ``chat.completion.chunk`` dict per upstream chunk.
     """
-    chat_config = ChatConfig()
-    runtime = load_handler_runtime()
+    chat_config, runtime = load_chat_runtime()
     async for chunk in stream_phyto_chat_chunks(
         user_query=args.user_query,
         obs_file_list=args.obs_file_list,

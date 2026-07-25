@@ -20,9 +20,9 @@ from typing import TYPE_CHECKING, Any
 
 from ...common.prompts import get_prompt
 from ...common.responses import message_content, parse_json_list_fragment
-from ...graphs.chat_adapters import build_chat_input, build_chat_kwargs_for
+from ...graphs.chat_adapters import build_chat_input
 from ...mcp.progress_events import emit_progress
-from .helpers import _renumber_citations
+from .helpers import _renumber_citations, build_review_chat_kwargs
 
 if TYPE_CHECKING:
     from .agent import DeepResearchState
@@ -71,11 +71,8 @@ class ReviewSummaryMixin:
                 report.get("revised_report", "")
             )
 
-        chat_kwargs = build_chat_kwargs_for(
-            self.review_config,
-            self.sensitive_config,
-            with_follow_up=False,
-            locale=state.get("locale"),
+        chat_kwargs = build_review_chat_kwargs(
+            self.review_config, self.sensitive_config, state.get("locale")
         )
         chat_payload = build_chat_input(
             get_prompt(
@@ -144,11 +141,11 @@ class ReviewSummaryMixin:
             state["summary_content"],
             [*state["all_raw_doc_list"], *state["add_doc_list"]],
         )
-        chat_kwargs = build_chat_kwargs_for(
+        chat_kwargs = build_review_chat_kwargs(
             self.review_config,
             self.sensitive_config,
+            state.get("locale"),
             with_follow_up=True,
-            locale=state.get("locale"),
         )
         chat_payload = build_chat_input(
             get_prompt(

@@ -11,6 +11,15 @@ from typing import Any
 
 import httpx
 import pytest
+from tests.support.a2ui_contract_fakes import (
+    chat_terminal_state,
+    confirm_surface,
+)
+from tests.support.chat_fakes import (
+    ChatCompletionOptions,
+    chat_completion_payload,
+)
+from tests.support.http_fakes import install_tool_handler
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.expert import ToolSelection
@@ -29,7 +38,7 @@ from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
     RunRequestInfo,
-    RunSpec,
+    local_run_spec,
 )
 
 pytestmark = pytest.mark.server
@@ -42,21 +51,11 @@ def _auth(api_key: str) -> dict[str, str]:
 
 def _chat_result() -> dict[str, Any]:
     """Return a minimal successful ChatAgent provider payload."""
-    return {
-        "id": "chatcmpl-locale",
-        "object": "chat.completion",
-        "choices": [
-            {
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": "done",
-                    "follow_up_questions": [],
-                },
-                "finish_reason": "stop",
-            }
-        ],
-    }
+    return chat_completion_payload(
+        "chatcmpl-locale",
+        "done",
+        ChatCompletionOptions(follow_up_questions=[]),
+    )
 
 
 async def test_chat_body_locale_beats_header_and_persists(
@@ -72,10 +71,8 @@ async def test_chat_body_locale_beats_header_and_persists(
         captured["locale"] = args.locale
         return _chat_result()
 
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.CHAT_AGENT.value,
-        fake,
+    install_tool_handler(
+        monkeypatch, server.PhytomniAgents.CHAT_AGENT.value, fake
     )
     response = await api_client.post(
         "/v1/chat/completions",
@@ -110,10 +107,8 @@ async def test_native_body_locale_beats_header(
         captured["locale"] = args.locale
         return _chat_result()
 
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.CHAT_AGENT.value,
-        fake,
+    install_tool_handler(
+        monkeypatch, server.PhytomniAgents.CHAT_AGENT.value, fake
     )
     response = await api_client.post(
         "/v1/agents/chat/runs",
@@ -157,10 +152,8 @@ async def test_locale_falls_back_from_header_to_latest_query(
         captured["locale"] = args.locale
         return _chat_result()
 
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.CHAT_AGENT.value,
-        fake,
+    install_tool_handler(
+        monkeypatch, server.PhytomniAgents.CHAT_AGENT.value, fake
     )
     headers = _auth(issued_api_key)
     if accept_language is not None:
@@ -196,10 +189,8 @@ async def test_expert_body_locale_reaches_selected_agent(
         return _chat_result()
 
     monkeypatch.setattr(api_app, "select_agent_tool", fake_select)
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.CHAT_AGENT.value,
-        fake,
+    install_tool_handler(
+        monkeypatch, server.PhytomniAgents.CHAT_AGENT.value, fake
     )
     response = await api_client.post(
         "/v1/query/route",
@@ -271,23 +262,13 @@ def _seed_a2ui_run(
         "interrupt": {
             "thread_id": run_id,
             "draft": {
-                "a2ui": {
-                    "catalog_version": "v1.0",
-                    "surface_id": f"{run_id}-surface",
-                    "widget": "confirm",
-                    "props": {"title": "Confirm", "body": "Proceed?"},
-                }
+                "a2ui": confirm_surface(f"{run_id}-surface"),
             },
         },
         "status": "input_required",
     }
     RunRegistry(tasks_db_path).create_run(
-        RunSpec(
-            run_id=run_id,
-            user_id="u1",
-            agent="chat",
-            origin="local",
-        ),
+        local_run_spec(run_id, "u1", "chat"),
         outcome=RunOutcome(status="input_required", result=result),
         request_info=RunRequestInfo(query=query, locale=locale),
     )
@@ -328,22 +309,8 @@ async def test_a2ui_action_inherits_or_backfills_locale(
     ) -> dict[str, Any]:
         assert current_effective_locale() == expected_locale
         return {
-            "response": {
-                "choices": [
-                    {
-                        "message": {
-                            "content": "done",
-                            "follow_up_questions": [],
-                        }
-                    }
-                ]
-            },
-            "a2ui_surface": {
-                "catalog_version": "v1.0",
-                "surface_id": f"{run_id}-surface",
-                "widget": "confirm",
-                "props": {"title": "Confirm", "body": "Proceed?"},
-            },
+            **chat_terminal_state(),
+            "a2ui_surface": confirm_surface(f"{run_id}-surface"),
         }
 
     monkeypatch.setattr(api_app, "_has_graph_checkpoint", has_checkpoint)

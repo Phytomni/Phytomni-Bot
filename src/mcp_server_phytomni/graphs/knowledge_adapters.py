@@ -4,10 +4,9 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Shared mappings for retrieve-only KnowledgeAgent subgraph calls.
 
-Analyst and Review both pass the same ``KnowledgeInput`` fields and both
-consume ``KnowledgeOutput.retrieved_docs``.  The factories in this module
-centralize only those byte-equivalent projections; domain-specific query
-construction, task ordering, and failure handling remain in their callers.
+Analyst, Review, BriefGene, and Data share only the byte-equivalent
+retrieve-only projections in this module. Domain-specific query construction,
+task ordering, and failure handling remain in their callers.
 """
 
 from __future__ import annotations
@@ -18,6 +17,16 @@ from typing import Any, cast
 from ..agents.knowledge.state import KnowledgeInput
 from ..agents.shared.options import resolve_agent_locale
 from ..runtime.locale import SupportedLocale
+
+__all__ = [
+    "build_retrieve_only_knowledge_input",
+    "extract_retrieved_docs",
+    "KnowledgeInputAdapter",
+    "KnowledgeOutputAdapter",
+    "make_knowledge_input_adapter",
+    "make_knowledge_output_adapter",
+]
+
 
 KnowledgeInputAdapter = Callable[..., KnowledgeInput]
 """Retrieve-input adapter accepting legacy and locale-aware call shapes."""
@@ -33,24 +42,7 @@ def make_knowledge_input_adapter(
     query_key: str,
     output_key: str,
 ) -> KnowledgeInputAdapter:
-    """Create a named retrieve-only input projection.
-
-    ``query_key`` and ``output_key`` name the two fields emitted into the
-    child request.  Callers should use this factory only when both domains
-    have proven that the query and repository-budget projections are
-    identical.
-
-    Args:
-        query_key: Output key receiving the query string.
-        output_key: Output key receiving the copied repository budget map.
-
-    Returns:
-        A synchronous adapter accepting the query and repository budget and
-        returning the retrieve-only ``KnowledgeInput`` shape.
-
-    Raises:
-        ValueError: If either output key is empty.
-    """
+    """Create a named retrieve-only input projection."""
     if not query_key or not output_key:
         raise ValueError("knowledge input adapter keys must be non-empty")
 
@@ -76,22 +68,7 @@ def make_knowledge_input_adapter(
 def make_knowledge_output_adapter(
     response_key: str,
 ) -> KnowledgeOutputAdapter:
-    """Create a named projection of one ``KnowledgeOutput`` list field.
-
-    The returned adapter copies a present list and turns a missing or
-    ``None`` value into ``[]``.  This preserves the downstream retrieval
-    loops' list-shaped contract without deciding how a domain handles
-    failures.
-
-    Args:
-        response_key: Output key containing the retrieved document list.
-
-    Returns:
-        A synchronous adapter that unwraps the selected response list.
-
-    Raises:
-        ValueError: If ``response_key`` is empty.
-    """
+    """Create a named projection of one ``KnowledgeOutput`` list field."""
     if not response_key:
         raise ValueError("knowledge output adapter key must be non-empty")
 
@@ -104,3 +81,29 @@ def make_knowledge_output_adapter(
     _adapter.__name__ = f"knowledge_output_{response_key}"
     _adapter.__qualname__ = _adapter.__name__
     return _adapter
+
+
+def build_retrieve_only_knowledge_input(
+    user_query: str,
+    *,
+    locale: SupportedLocale | None = None,
+    repo_id_dict: Mapping[str, int] | None = None,
+) -> KnowledgeInput:
+    """Build the common input shape for a retrieve-only child graph."""
+    payload: KnowledgeInput = {
+        "user_query": user_query,
+        "is_generate": False,
+        "is_follow_up": False,
+        "locale": resolve_agent_locale(locale),
+    }
+    if repo_id_dict is not None:
+        payload["repo_id_dict"] = dict(repo_id_dict)
+    return payload
+
+
+def extract_retrieved_docs(
+    knowledge_output: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Return the detached retrieved-doc list from a child graph result."""
+    docs = knowledge_output.get("retrieved_docs")
+    return list(docs) if docs is not None else []

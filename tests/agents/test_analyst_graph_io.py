@@ -123,6 +123,7 @@ def test_analyst_state_carries_full_field_union() -> None:
         "is_polling",
         "is_auto_select",
         "is_preset_plan",
+        "locale",
         "error_detail",
         "pending_post",
         "chat_payload",
