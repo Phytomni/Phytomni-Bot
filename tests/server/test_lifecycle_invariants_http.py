@@ -120,6 +120,68 @@ def test_canonical_owner_read_preserves_sanitized_deep_genome_snapshot() -> (
     assert "provider_payload" not in report
 
 
+@pytest.mark.parametrize(
+    ("field", "malformed_value"),
+    (
+        ("report_stage", []),
+        ("report_completeness", {"provider": "private"}),
+        (
+            "failures",
+            [
+                {
+                    "work_item_key": "protein_design",
+                    "status": ["failed"],
+                    "provider_trace": "private",
+                }
+            ],
+        ),
+    ),
+)
+def test_canonical_owner_read_redacts_unhashable_deep_genome_snapshot_fields(
+    field: str, malformed_value: Any
+) -> None:
+    """Malformed persisted snapshots remain redacted on owner reads."""
+    result: dict[str, Any] = {
+        "formatted": {
+            "answer": "stored answer",
+            "metadata": {"provider_payload": "private"},
+        },
+        "intermediate_report": "# Intermediate report\n",
+        "report_stage": "intermediate",
+        "report_completeness": "partial",
+        "report_revision": 3,
+        "failures": [
+            {
+                "work_item_key": "protein_design",
+                "status": "failed",
+                "provider_trace": "private",
+            }
+        ],
+        "provider_payload": "private",
+    }
+    result[field] = malformed_value
+
+    canonical = canonicalize_run_record(
+        {
+            "id": "run-malformed-deep-genome",
+            "run_id": "run-malformed-deep-genome",
+            "agent": "deep_genome",
+            "origin": "remote",
+            "user_id": "u1",
+            "status": "running",
+            "task_ids": ["dg-malformed"],
+            "result": result,
+        }
+    )
+
+    projected = canonical["result"]
+    assert "provider_payload" not in str(projected)
+    if field == "failures":
+        assert projected["failures"] == []
+    else:
+        assert "intermediate_report" not in projected
+
+
 def _auth_headers(api_key: str) -> dict[str, str]:
     """Build an API-key header without embedding a credential sentinel."""
     return {"Authorization": f"{'Bearer'} {api_key}"}

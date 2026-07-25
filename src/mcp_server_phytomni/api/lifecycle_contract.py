@@ -475,9 +475,17 @@ def _project_deep_genome_snapshot(
     stage = source.get("report_stage")
     completeness = source.get("report_completeness")
     revision = source.get("report_revision")
-    if stage not in {"waiting_for_brief_gene", "intermediate", "final"}:
+    if not isinstance(stage, str) or stage not in {
+        "waiting_for_brief_gene",
+        "intermediate",
+        "final",
+    }:
         return None
-    if completeness not in {"none", "partial", "complete"}:
+    if not isinstance(completeness, str) or completeness not in {
+        "none",
+        "partial",
+        "complete",
+    }:
         return None
     if not isinstance(revision, int) or isinstance(revision, bool):
         return None
@@ -548,6 +556,7 @@ def _project_deep_genome_failures(value: Any) -> list[dict[str, str]]:
         if (
             not isinstance(work_item_key, str)
             or not work_item_key.strip()
+            or not isinstance(status, str)
             or status not in valid_statuses
         ):
             continue
