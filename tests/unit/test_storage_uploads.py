@@ -28,6 +28,8 @@ from mcp_server_phytomni.storage.uploads import (
     UploadTooLargeError,
     safe_upload_filename,
     upload_user_file,
+    validated_format,
+    validated_media_type,
 )
 
 pytestmark = pytest.mark.unit
@@ -196,6 +198,23 @@ def test_safe_upload_filename_rejects_empty_and_dot_names() -> None:
     for bad in ("", "   ", ".", ".."):
         with pytest.raises(InvalidUploadError):
             safe_upload_filename(bad)
+
+
+def test_upload_metadata_format_and_media_type_are_deterministic() -> None:
+    """Metadata classification uses the sanitized filename and purpose."""
+    assert validated_format("report.pdf", "agent_context") == "pdf"
+    assert validated_media_type("report.pdf", "agent_context") == (
+        "application/pdf"
+    )
+    assert validated_format("table.csv", "dataset") == "csv"
+    assert validated_media_type("table.csv", "dataset") == "text/csv"
+    assert validated_format("README", "agent_context") == "binary"
+
+
+def test_dataset_format_requires_csv_suffix() -> None:
+    """The dataset purpose cannot be attached to an unrelated file type."""
+    with pytest.raises(InvalidUploadError, match="CSV"):
+        validated_format("table.tsv", "dataset")
 
 
 async def test_upload_user_file_anonymizes_missing_user_id(

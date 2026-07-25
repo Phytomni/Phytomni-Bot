@@ -60,3 +60,17 @@ def test_path_not_settable_in_dump() -> None:
     assert dumped["path"] == "/obs/a"
     obj2 = obj.model_copy(update={"obs_path": "/obs/c"})
     assert obj2.model_dump()["path"] == "/obs/c"
+
+
+def test_dataset_purpose_is_an_allowed_upload_value() -> None:
+    """Structured dataset uploads use the additive purpose value."""
+    response = FileUploadResponse(
+        id="upload_csv",
+        bytes=3,
+        filename="data.csv",
+        purpose="dataset",
+        created_at=1,
+        obs_path="/obs/b/data.csv",
+    )
+
+    assert response.purpose == "dataset"

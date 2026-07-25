@@ -34,6 +34,7 @@ UploadPurpose = Literal[
     "agent_context",
     "assistants",
     "batch",
+    "dataset",
     "fine-tune",
     "vision",
     "user_data",

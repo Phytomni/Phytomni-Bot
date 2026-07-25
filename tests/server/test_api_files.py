@@ -11,6 +11,7 @@ request-id correlation between the response header and ``obs_path``.
 
 from __future__ import annotations
 
+import sqlite3
 from types import SimpleNamespace
 from typing import Any
 
@@ -75,6 +76,7 @@ async def test_upload_file_honors_purpose_form_field(
         "agent_context",
         "assistants",
         "batch",
+        "dataset",
         "fine-tune",
         "vision",
         "user_data",
@@ -86,17 +88,57 @@ async def test_upload_file_accepts_every_allowed_purpose(
     fake_obs_client: Any,
     purpose: str,
 ) -> None:
-    """All six UploadPurpose Literal values are accepted (AF-002)."""
+    """All seven UploadPurpose Literal values are accepted (AF-002)."""
     del fake_obs_client
     response = await api_client.post(
         "/v1/files",
         headers={"Authorization": f"Bearer {issued_api_key}"},
-        files={"file": ("x.bin", b"data", "application/octet-stream")},
+        files={
+            "file": (
+                "x.csv" if purpose == "dataset" else "x.bin",
+                b"data",
+                (
+                    "text/csv"
+                    if purpose == "dataset"
+                    else "application/octet-stream"
+                ),
+            )
+        },
         data={"purpose": purpose},
     )
 
     assert response.status_code == 201
     assert response.json()["purpose"] == purpose
+
+
+async def test_upload_file_does_not_advertise_unregistered_object(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    fake_obs_client: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Metadata persistence failure blocks the 201 upload response."""
+
+    def _fail_record(_self: Any, _metadata: Any) -> None:
+        """Raise the simulated persistence failure."""
+        raise sqlite3.OperationalError("disk full")
+
+    monkeypatch.setattr(
+        file_upload_module.UploadRegistry, "record", _fail_record
+    )
+    response = await api_client.post(
+        "/v1/files",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        files={"file": ("report.pdf", b"hello", "application/pdf")},
+    )
+
+    assert response.status_code == 500
+    body = response.json()["error"]
+    assert body["code"] == "upload_metadata_failed"
+    assert body["stage"] == "upload_persist"
+    assert body["retryable"] is False
+    assert "obs_path" not in response.text
+    assert fake_obs_client.captured["put_content"]["content"] == b"hello"
 
 
 async def test_upload_file_rejects_unknown_purpose_with_422(
@@ -120,7 +162,7 @@ async def test_upload_file_rejects_unknown_purpose_with_422(
 
     assert response.status_code == 422
     body = response.json()
-    assert body["error"]["code"] == 422
+    assert body["error"]["code"] == "invalid_request"
     assert "put_content" not in fake_obs_client.captured
 
 
@@ -177,7 +219,7 @@ async def test_upload_file_pre_read_rejects_oversized_content_length(
     )
 
     assert response.status_code == 413
-    assert response.json()["error"]["code"] == 413
+    assert response.json()["error"]["code"] == "payload_too_large"
     assert "put_content" not in fake_obs_client.captured
 
 
@@ -240,7 +282,7 @@ async def test_upload_file_byte_budget_breach_returns_413_without_writing(
     )
 
     assert response.status_code == 413
-    assert response.json()["error"]["code"] == 413
+    assert response.json()["error"]["code"] == "payload_too_large"
     assert "put_content" not in fake_obs_client.captured
 
 
@@ -258,7 +300,7 @@ async def test_upload_file_rejects_empty_body(
     )
 
     assert response.status_code == 400
-    assert response.json()["error"]["code"] == 400
+    assert response.json()["error"]["code"] == "invalid_argument"
 
 
 async def test_upload_file_sanitizes_traversal_filename(

@@ -118,6 +118,40 @@ def safe_upload_filename(original_filename: str) -> str:
     return f"{safe_stem}{suffix}" if suffix else safe_stem
 
 
+_MEDIA_TYPES = {
+    "csv": "text/csv",
+    "docx": (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml."
+        "document"
+    ),
+    "msg": "application/vnd.ms-outlook",
+    "pdf": "application/pdf",
+    "pptx": (
+        "application/vnd.openxmlformats-officedocument.presentationml."
+        "presentation"
+    ),
+    "txt": "text/plain",
+    "xls": "application/vnd.ms-excel",
+    "xlsx": (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml." "sheet"
+    ),
+}
+
+
+def validated_format(filename: str, purpose: str) -> str:
+    """Return a stable extension label, enforcing CSV dataset inputs."""
+    extension = Path(filename).suffix.lower().lstrip(".")
+    if purpose == "dataset" and extension != "csv":
+        raise InvalidUploadError("dataset uploads require a CSV filename")
+    return extension or "binary"
+
+
+def validated_media_type(filename: str, purpose: str) -> str:
+    """Return a fixed media type derived from the validated filename."""
+    extension = validated_format(filename, purpose)
+    return _MEDIA_TYPES.get(extension, "application/octet-stream")
+
+
 async def upload_user_file(request: UploadRequest) -> UploadRecord:
     """Validate and store one user upload, returning its OBS coordinates.
 

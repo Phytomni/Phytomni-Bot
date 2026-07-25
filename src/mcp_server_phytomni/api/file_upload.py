@@ -9,6 +9,8 @@ Public functions: handle_file_upload, read_with_byte_budget.
 
 from __future__ import annotations
 
+import logging
+import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -17,23 +19,65 @@ from fastapi.responses import JSONResponse
 
 from ..config.defaults import ApiConfig
 from ..runtime.request_context import current_request_id
+from ..runtime.task_manager import resolve_tasks_db_path
+from ..runtime.upload_registry import UploadMetadata, UploadRegistry
 from ..storage.path_policy import IdFactory
 from ..storage.uploads import (
     InvalidUploadError,
+    UploadRecord,
     UploadRequest,
     UploadStorageOptions,
     UploadTooLargeError,
     upload_user_file,
+    validated_format,
+    validated_media_type,
 )
+from .app_support import _ErrorResponseOptions
 from .schemas import FileUploadResponse, UploadPurpose
 
-ErrorEnvelope = Callable[[int, str], JSONResponse]
+logger = logging.getLogger(__name__)
+
+ErrorEnvelope = Callable[..., JSONResponse]
 
 # 64 KiB chunks keep the per-call read modest and bound peak memory
 # to ``max_bytes + DEFAULT_READ_CHUNK_SIZE - 1`` even when the
 # Content-Length header is absent or falsified (chunked transfer
 # encoding), closing the AF-001 OOM window in audit 2026-05-26.
 DEFAULT_READ_CHUNK_SIZE = 64 * 1024
+
+
+class UploadMetadataPersistenceError(RuntimeError):
+    """Raised when an accepted OBS object cannot be registered locally."""
+
+
+def _persist_upload_metadata(
+    record: UploadRecord,
+    *,
+    user_id: str,
+    purpose: UploadPurpose,
+) -> int:
+    """Persist trusted upload metadata and return its response timestamp."""
+    created_at = datetime.now(UTC)
+    metadata = UploadMetadata(
+        file_id=record.file_id,
+        user_id=user_id,
+        obs_path=record.obs_path,
+        filename=record.filename,
+        purpose=purpose,
+        byte_size=record.bytes,
+        format=validated_format(record.filename, purpose),
+        media_type=validated_media_type(record.filename, purpose),
+        created_at=created_at.isoformat(),
+    )
+    try:
+        UploadRegistry(resolve_tasks_db_path()).record(metadata)
+    except (sqlite3.Error, OSError) as exc:
+        logger.error(
+            "upload metadata persistence failed (%s)",
+            exc.__class__.__name__,
+        )
+        raise UploadMetadataPersistenceError from exc
+    return int(created_at.timestamp())
 
 
 async def read_with_byte_budget(
@@ -123,6 +167,7 @@ async def handle_file_upload(
         )
     request_id = current_request_id() or IdFactory().new_id("request")
     try:
+        validated_format(file.filename or "", purpose)
         record = await upload_user_file(
             request=UploadRequest(
                 file_bytes=file_bytes,
@@ -139,11 +184,27 @@ async def handle_file_upload(
         return error_response(413, str(exc))
     except InvalidUploadError as exc:
         return error_response(400, str(exc))
+    try:
+        created_at = _persist_upload_metadata(
+            record,
+            user_id=user_id,
+            purpose=purpose,
+        )
+    except UploadMetadataPersistenceError:
+        return error_response(
+            500,
+            "The uploaded object could not be registered.",
+            options=_ErrorResponseOptions(
+                code="upload_metadata_failed",
+                stage="upload_persist",
+                retryable=False,
+            ),
+        )
     return FileUploadResponse(
         id=record.file_id,
         bytes=record.bytes,
         filename=record.filename,
         purpose=purpose,
-        created_at=int(datetime.now(UTC).timestamp()),
+        created_at=created_at,
         obs_path=record.obs_path,
     )
