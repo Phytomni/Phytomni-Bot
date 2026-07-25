@@ -24,6 +24,7 @@ from ..agents.shared.a2ui.validation import (
     A2uiSurfaceValidationError,
     validate_a2ui_surface,
 )
+from .locale import SUPPORTED_LOCALES, SupportedLocale
 from .sqlite import sqlite_transaction
 from .submission_outcome import project_submission_warnings
 from .task_manager import (
@@ -115,6 +116,7 @@ CREATE TABLE IF NOT EXISTS runs (
     tool_name TEXT,
     model TEXT,
     request_json TEXT,
+    locale TEXT,
     a2a_task_id TEXT,
     a2a_context_id TEXT,
     a2a_message_id TEXT
@@ -131,6 +133,7 @@ _REQUEST_INFO_COLUMNS = (
     ("tool_name", "TEXT"),
     ("model", "TEXT"),
     ("request_json", "TEXT"),
+    ("locale", "TEXT"),
 )
 
 _A2A_COLUMNS = (
@@ -353,6 +356,7 @@ class RunRequestInfo:
             ``/v1/chat/completions``; ``None`` for native agent runs.
         request_json: Full JSON snapshot of the request body so an
             auditor can replay or diff the call.
+        locale: Effective natural-language locale bound to the request.
         a2a: Protocol ids when the request came through the A2A facade.
     """
 
@@ -361,7 +365,13 @@ class RunRequestInfo:
     tool_name: str | None = None
     model: str | None = None
     request_json: str | None = None
+    locale: SupportedLocale | None = None
     a2a: A2ACorrelation = A2ACorrelation()
+
+    def __post_init__(self) -> None:
+        """Reject unsupported values when hydrating persisted metadata."""
+        if self.locale is not None and self.locale not in SUPPORTED_LOCALES:
+            raise ValueError(f"unsupported persisted locale: {self.locale}")
 
 
 @dataclass(frozen=True)
@@ -536,8 +546,11 @@ class RunRegistry:
                     result_json, error, created_at, updated_at,
                     expires_at,
                     dialogue_id, query, tool_name, model, request_json,
+                    locale,
                     a2a_task_id, a2a_context_id, a2a_message_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
                 """,
                 (
                     spec.run_id,
@@ -555,6 +568,7 @@ class RunRegistry:
                     info.tool_name,
                     info.model,
                     info.request_json,
+                    info.locale,
                     a2a_info.task_id,
                     a2a_info.context_id,
                     a2a_info.message_id,
@@ -593,6 +607,7 @@ class RunRegistry:
                     tool_name = ?,
                     model = ?,
                     request_json = ?,
+                    locale = ?,
                     updated_at = ?
                 WHERE run_id = ? AND user_id = ?
                 """,
@@ -602,6 +617,7 @@ class RunRegistry:
                     request_info.tool_name,
                     request_info.model,
                     request_info.request_json,
+                    request_info.locale,
                     _now_iso(),
                     run_id,
                     owner,
@@ -840,6 +856,7 @@ class RunRegistry:
                 SELECT run_id, user_id, agent, origin, status, result_json,
                        error, created_at, updated_at, expires_at,
                        dialogue_id, query, tool_name, model, request_json,
+                       locale,
                        a2a_task_id, a2a_context_id, a2a_message_id
                 FROM runs WHERE run_id = ? AND user_id = ?
                 """,
@@ -904,6 +921,7 @@ class RunRegistry:
                 SELECT run_id, user_id, agent, origin, status, result_json,
                        error, created_at, updated_at, expires_at,
                        dialogue_id, query, tool_name, model, request_json,
+                       locale,
                        a2a_task_id, a2a_context_id, a2a_message_id
                 FROM runs WHERE a2a_task_id = ? AND user_id = ?
                 ORDER BY updated_at DESC, run_id DESC LIMIT 1
@@ -955,6 +973,7 @@ class RunRegistry:
                        result_json, error, created_at, updated_at,
                        expires_at,
                        dialogue_id, query, tool_name, model, request_json,
+                       locale,
                        a2a_task_id, a2a_context_id, a2a_message_id
                 FROM runs WHERE {where}
                 ORDER BY created_at DESC, run_id
@@ -1282,6 +1301,7 @@ def _row_to_record(
             tool_name=row["tool_name"],
             model=row["model"],
             request_json=row["request_json"],
+            locale=row["locale"],
             a2a=A2ACorrelation(
                 task_id=row["a2a_task_id"],
                 context_id=row["a2a_context_id"],

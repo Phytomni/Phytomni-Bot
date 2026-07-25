@@ -501,6 +501,7 @@ def test_create_run_persists_request_info(tmp_path: Path) -> None:
         tool_name="KnowledgeAgent",
         model="phyto-knowledge",
         request_json='{"messages": []}',
+        locale="zh-CN",
     )
 
     registry.create_run(
@@ -543,6 +544,7 @@ def test_update_request_info_overwrites_existing(tmp_path: Path) -> None:
         tool_name="ChatAgent",
         model="phyto-chat",
         request_json='{"x": 1}',
+        locale="zh-CN",
     )
     updated = registry.update_request_info(
         "run-up", owner="alice", request_info=new_info
@@ -693,8 +695,26 @@ def test_init_db_migrates_legacy_table_in_place(tmp_path: Path) -> None:
     assert record.spec.user_id == "alice"
     assert record.status == "succeeded"
     assert record.request_info == RunRequestInfo()
+    with sqlite3.connect(db) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+    assert "locale" in columns
     # The migration is rerun-safe; opening again does not raise.
     RunRegistry(db)
+
+
+def test_invalid_persisted_locale_fails_closed(tmp_path: Path) -> None:
+    """A stored locale outside the public enum cannot hydrate a run."""
+    registry, _, db = _make_registry(tmp_path)
+    registry.create_run(RunSpec("run-locale-bad", "alice", "chat", "local"))
+    with closed_sqlite_connection(db) as conn:
+        conn.execute(
+            "UPDATE runs SET locale = ? WHERE run_id = ?",
+            ("fr-FR", "run-locale-bad"),
+        )
+        conn.commit()
+
+    with pytest.raises(ValueError, match="unsupported persisted locale"):
+        registry.get_run("run-locale-bad", owner="alice")
 
 
 def test_terminal_payload_rolls_up_degraded() -> None:

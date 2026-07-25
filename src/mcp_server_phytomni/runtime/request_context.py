@@ -19,6 +19,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import Any
 
+from .locale import SupportedLocale, bind_effective_locale
+
 __all__ = [
     "bind_accepted_task_ids",
     "bind_recorder_degraded",
@@ -161,8 +163,10 @@ def request_context(
     user_id: str | None,
     request_id: str | None,
     run_id: str | None = None,
+    *,
+    locale: SupportedLocale | None = None,
 ) -> Generator[None, None, None]:
-    """Bind user, request, and run ids for the duration of the block.
+    """Bind request identity and locale for the duration of the block.
 
     Args:
         user_id: Authenticated user id, or None.
@@ -171,6 +175,8 @@ def request_context(
             ``None`` since most callers (test harnesses, the HTTP
             middleware entry) want the run id to be discovered later
             by the chokepoint inside the block.
+        locale: Effective natural-language locale. Defaults to ``en-US``
+            for legacy callers that resolve locale at a later ingress.
 
     Yields:
         None while all request contextvars are bound. Accepted task ids
@@ -182,6 +188,7 @@ def request_context(
     user_token = bind_request_user(user_id)
     id_token = bind_request_id(request_id)
     run_token = bind_run_id(run_id)
+    locale_token = bind_effective_locale(locale or "en-US")
     pre_recorded_token = bind_pre_recorded_task_id(None)
     degraded_token = bind_recorder_degraded(False)
     accepted_task_ids_token = bind_accepted_task_ids(())
@@ -191,6 +198,7 @@ def request_context(
         reset_request_var(accepted_task_ids_token)
         reset_request_var(degraded_token)
         reset_request_var(pre_recorded_token)
+        reset_request_var(locale_token)
         reset_request_var(run_token)
         reset_request_var(id_token)
         reset_request_var(user_token)

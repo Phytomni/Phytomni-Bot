@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from mcp_server_phytomni.runtime.locale import current_effective_locale
 from mcp_server_phytomni.runtime.request_context import (
     bind_accepted_task_ids,
     bind_request_id,
@@ -30,6 +31,7 @@ def test_unbound_getters_return_none() -> None:
     assert current_request_id() is None
     assert current_run_id() is None
     assert current_accepted_task_ids() == ()
+    assert current_effective_locale() == "en-US"
 
 
 def test_run_id_bind_get_reset() -> None:
@@ -78,6 +80,13 @@ def test_request_context_defaults_run_id_to_none() -> None:
             reset_request_var(chokepoint_token)
         assert current_run_id() is None
     assert current_run_id() is None
+
+
+def test_request_context_brackets_effective_locale() -> None:
+    """The request scope restores locale after a bound request exits."""
+    with request_context("alice", "req-locale", locale="zh-CN"):
+        assert current_effective_locale() == "zh-CN"
+    assert current_effective_locale() == "en-US"
 
 
 def test_request_context_seeds_and_restores_accepted_task_ids() -> None:
