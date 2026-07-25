@@ -90,13 +90,14 @@ async def test_upload_file_accepts_every_allowed_purpose(
 ) -> None:
     """All seven UploadPurpose Literal values are accepted (AF-002)."""
     del fake_obs_client
+    payload = b"column\nvalue\n" if purpose == "dataset" else b"data"
     response = await api_client.post(
         "/v1/files",
         headers={"Authorization": f"Bearer {issued_api_key}"},
         files={
             "file": (
                 "x.csv" if purpose == "dataset" else "x.bin",
-                b"data",
+                payload,
                 (
                     "text/csv"
                     if purpose == "dataset"
@@ -109,6 +110,75 @@ async def test_upload_file_accepts_every_allowed_purpose(
 
     assert response.status_code == 201
     assert response.json()["purpose"] == purpose
+
+
+@pytest.mark.parametrize(
+    ("filename", "payload"),
+    [
+        ("table.tsv", b"gene,value\nOs01g1,1\n"),
+        ("table.csv.gz", b"gene,value\nOs01g1,1\n"),
+        ("table.csv", b"gene,gene\nOs01g1,1\n"),
+    ],
+)
+async def test_upload_file_rejects_invalid_dataset_before_obs(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    fake_obs_client: Any,
+    filename: str,
+    payload: bytes,
+) -> None:
+    """Invalid dataset names/content return 422 without an OBS write."""
+    response = await api_client.post(
+        "/v1/files",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        files={"file": (filename, payload, "text/csv")},
+        data={"purpose": "dataset"},
+    )
+
+    assert response.status_code == 422
+    body = response.json()["error"]
+    assert body["code"] == "invalid_dataset_format"
+    assert body["stage"] == "upload_validation"
+    assert body["retryable"] is False
+    assert "put_content" not in fake_obs_client.captured
+
+
+async def test_dataset_upload_limit_is_inclusive(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    fake_obs_client: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dataset at the byte ceiling passes, while the next byte fails."""
+    monkeypatch.setattr(
+        file_upload_module,
+        "ApiConfig",
+        lambda: SimpleNamespace(
+            API_UPLOAD_MAX_BYTES=16,
+            API_UPLOAD_PREFIX="agent_data/uploads",
+        ),
+    )
+    payload = b"col\n" + b"a\n" * 6
+
+    accepted = await api_client.post(
+        "/v1/files",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        files={"file": ("table.csv", payload, "text/csv")},
+        data={"purpose": "dataset"},
+    )
+    assert accepted.status_code == 201
+    put_content = fake_obs_client.captured["put_content"]["content"]
+    assert put_content == payload
+
+    rejected = await api_client.post(
+        "/v1/files",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        files={"file": ("table.csv", payload + b"x", "text/csv")},
+        data={"purpose": "dataset"},
+    )
+    assert rejected.status_code == 413
+    assert rejected.json()["error"]["code"] == "payload_too_large"
+    assert fake_obs_client.captured["put_content"]["content"] == payload
 
 
 async def test_upload_file_does_not_advertise_unregistered_object(

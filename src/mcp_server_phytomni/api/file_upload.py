@@ -13,7 +13,10 @@ import logging
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime
+from functools import partial
+from typing import BinaryIO
 
+from anyio.to_thread import run_sync
 from fastapi import Request, UploadFile
 from fastapi.responses import JSONResponse
 
@@ -34,6 +37,10 @@ from ..storage.uploads import (
 )
 from .app_support import _ErrorResponseOptions
 from .schemas import FileUploadResponse, UploadPurpose
+from .upload_validation import (
+    CsvUploadValidationError,
+    validate_csv_upload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +87,60 @@ def _persist_upload_metadata(
     return int(created_at.timestamp())
 
 
+def _dataset_error(
+    error_response: ErrorEnvelope,
+    message: str,
+) -> JSONResponse:
+    """Build the stable public error for dataset validation failures."""
+    return error_response(
+        422,
+        message,
+        options=_ErrorResponseOptions(
+            code="invalid_dataset_format",
+            stage="upload_validation",
+            retryable=False,
+        ),
+    )
+
+
+def _seek_upload_size(stream: BinaryIO) -> int:
+    """Return a seekable upload's byte size and leave it at position zero."""
+    try:
+        stream.seek(0, 2)
+        byte_size = stream.tell()
+        stream.seek(0)
+    except (OSError, ValueError) as exc:
+        raise CsvUploadValidationError(
+            "dataset stream is not seekable"
+        ) from exc
+    if byte_size < 0:
+        raise CsvUploadValidationError("dataset size is invalid")
+    return byte_size
+
+
+async def _validate_dataset_upload(
+    file: UploadFile,
+    *,
+    max_bytes: int,
+    error_response: ErrorEnvelope,
+) -> JSONResponse | None:
+    """Validate a dataset before the upload body is buffered or stored."""
+    try:
+        validated_format(file.filename or "", "dataset")
+        byte_size = _seek_upload_size(file.file)
+        if byte_size > max_bytes:
+            return error_response(
+                413,
+                f"upload exceeds maximum size of {max_bytes} bytes",
+            )
+        await run_sync(
+            partial(validate_csv_upload, file.file, byte_size=byte_size)
+        )
+    except (CsvUploadValidationError, InvalidUploadError) as exc:
+        return _dataset_error(error_response, str(exc))
+    return None
+
+
 async def read_with_byte_budget(
     file: UploadFile,
     max_bytes: int,
@@ -111,6 +172,22 @@ async def read_with_byte_budget(
         buffer.extend(chunk)
         if len(buffer) > max_bytes:
             return None
+
+
+async def _store_upload(
+    upload_request: UploadRequest,
+    *,
+    purpose: UploadPurpose,
+    error_response: ErrorEnvelope,
+) -> UploadRecord | JSONResponse:
+    """Validate and store an already-buffered upload body."""
+    try:
+        validated_format(upload_request.original_filename, purpose)
+        return await upload_user_file(request=upload_request)
+    except UploadTooLargeError as exc:
+        return error_response(413, str(exc))
+    except InvalidUploadError as exc:
+        return error_response(400, str(exc))
 
 
 async def handle_file_upload(
@@ -148,8 +225,16 @@ async def handle_file_upload(
     """
     config = ApiConfig()
     max_bytes = config.API_UPLOAD_MAX_BYTES
+    if purpose == "dataset":
+        validation_error = await _validate_dataset_upload(
+            file,
+            max_bytes=max_bytes,
+            error_response=error_response,
+        )
+        if validation_error is not None:
+            return validation_error
     declared = request.headers.get("content-length")
-    if declared is not None:
+    if declared is not None and purpose != "dataset":
         try:
             declared_int: int | None = int(declared)
         except ValueError:
@@ -166,24 +251,23 @@ async def handle_file_upload(
             f"upload exceeds maximum size of {max_bytes} bytes",
         )
     request_id = current_request_id() or IdFactory().new_id("request")
-    try:
-        validated_format(file.filename or "", purpose)
-        record = await upload_user_file(
-            request=UploadRequest(
-                file_bytes=file_bytes,
-                original_filename=file.filename or "",
-                user_id=user_id,
-                request_id=request_id,
-                storage=UploadStorageOptions(
-                    max_bytes=max_bytes,
-                    prefix=config.API_UPLOAD_PREFIX,
-                ),
-            )
-        )
-    except UploadTooLargeError as exc:
-        return error_response(413, str(exc))
-    except InvalidUploadError as exc:
-        return error_response(400, str(exc))
+    stored = await _store_upload(
+        UploadRequest(
+            file_bytes=file_bytes,
+            original_filename=file.filename or "",
+            user_id=user_id,
+            request_id=request_id,
+            storage=UploadStorageOptions(
+                max_bytes=max_bytes,
+                prefix=config.API_UPLOAD_PREFIX,
+            ),
+        ),
+        purpose=purpose,
+        error_response=error_response,
+    )
+    if isinstance(stored, JSONResponse):
+        return stored
+    record = stored
     try:
         created_at = _persist_upload_metadata(
             record,
