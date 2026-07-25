@@ -38,6 +38,13 @@ from ..interop.capabilities import DiscoveryError, DiscoveryResult
 from ..interop.models import InteropTarget
 from ..interop.registry import InteropRegistry
 from ..mcp.result_formatting import strip_agent_result
+from ..runtime.locale import (
+    SupportedLocale,
+    UnsupportedLocaleError,
+    bind_effective_locale,
+    message_for,
+    resolve_effective_locale,
+)
 from ..runtime.memory import MemoryWrite
 from ..runtime.request_context import (
     bind_accepted_task_ids,
@@ -51,6 +58,7 @@ from ..runtime.request_context import (
 )
 from ..storage.path_policy import IdFactory
 from . import run_lifecycle
+from .lifecycle_contract import SafeApiError
 from .schemas import (
     ApiErrorDetail,
     ApiErrorResponse,
@@ -114,6 +122,31 @@ def error_response(
         content=payload.model_dump(exclude_none=True),
         headers=dict(options.headers or {}),
     )
+
+
+def resolve_http_locale(
+    *,
+    explicit: str | None,
+    accept_language: str | None,
+    latest_user_query: str,
+) -> SupportedLocale:
+    """Resolve and bind the effective locale for one HTTP request."""
+    try:
+        locale = resolve_effective_locale(
+            explicit=explicit,
+            accept_language=accept_language,
+            latest_user_query=latest_user_query,
+        )
+    except UnsupportedLocaleError as exc:
+        raise SafeApiError(
+            status_code=422,
+            code="unsupported_locale",
+            message=message_for("unsupported_locale", "en-US"),
+            stage="request_validation",
+            retryable=False,
+        ) from exc
+    bind_effective_locale(locale)
+    return locale
 
 
 def memory_response(record: Any) -> MemoryResponse:
@@ -184,6 +217,7 @@ def request_context_middleware(app: ASGIApp) -> ASGIApp:
         pre_recorded_token = bind_pre_recorded_task_id(None)
         accepted_task_ids_token = bind_accepted_task_ids(())
         degraded_token = bind_recorder_degraded(False)
+        locale_token = bind_effective_locale("en-US")
 
         async def send_with_header(message: Message) -> None:
             """Attach X-Request-Id on the response start event."""
@@ -201,6 +235,7 @@ def request_context_middleware(app: ASGIApp) -> ASGIApp:
             reset_request_var(run_token)
             reset_request_var(user_token)
             reset_request_var(id_token)
+            reset_request_var(locale_token)
 
     return asgi
 
@@ -345,6 +380,7 @@ __all__ = [
     "memory_write",
     "reconcile_run_task_logs",
     "request_context_middleware",
+    "resolve_http_locale",
     "store_path_writable",
     "stream_answer_max_bytes",
 ]

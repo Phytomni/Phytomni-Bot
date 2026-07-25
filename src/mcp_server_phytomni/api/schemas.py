@@ -18,6 +18,7 @@ from pydantic import (
 )
 
 from ..mcp.schemas import AGENT_TOOL_DEFINITIONS
+from ..runtime.locale import SupportedLocale
 
 _CANONICAL_AGENT_TOOL_NAMES = frozenset(
     name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
@@ -132,6 +133,7 @@ class ChatCompletionRequest(BaseModel):
     resolve_gene_id: bool | None = None
     dialogue_id: str | None = None
     debug: bool | None = None
+    locale: SupportedLocale | None = None
 
 
 class AgentRunRequest(BaseModel):
@@ -155,6 +157,7 @@ class AgentRunRequest(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
     dialogue_id: str | None = None
     debug: bool | None = None
+    locale: SupportedLocale | None = None
 
 
 class ResumeRequest(BaseModel):
@@ -218,6 +221,7 @@ class ExpertQueryRequest(BaseModel):
     dialogue_id: str | None = None
     allowed_tools: list[str] = Field(min_length=1, max_length=10)
     forced_tool: str | None = None
+    locale: SupportedLocale | None = None
 
     @model_validator(mode="after")
     def validate_tool_constraints(self) -> ExpertQueryRequest:

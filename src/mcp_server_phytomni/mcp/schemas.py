@@ -14,6 +14,13 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
+from ..runtime.locale import SupportedLocale
+
+_LOCALE_DESCRIPTION = (
+    "Optional natural-language response locale. Allowed values: en-US, "
+    "zh-CN."
+)
+
 
 class ChatAgent(BaseModel):
     """Input parameters for general ChatAgent Q&A and file summarization.
@@ -50,6 +57,9 @@ class ChatAgent(BaseModel):
             },
         ),
     ]
+    locale: Annotated[
+        SupportedLocale | None, Field(description=_LOCALE_DESCRIPTION)
+    ] = None
 
 
 class KnowledgeAgent(BaseModel):
@@ -86,6 +96,9 @@ class KnowledgeAgent(BaseModel):
             },
         ),
     ]
+    locale: Annotated[
+        SupportedLocale | None, Field(description=_LOCALE_DESCRIPTION)
+    ] = None
 
 
 class DataAgent(BaseModel):
@@ -105,6 +118,9 @@ class DataAgent(BaseModel):
             "or filter constraints when available.",
         ),
     ]
+    locale: Annotated[
+        SupportedLocale | None, Field(description=_LOCALE_DESCRIPTION)
+    ] = None
 
 
 class AnalystAgent(BaseModel):
@@ -165,6 +181,9 @@ class AnalystAgent(BaseModel):
             },
         ),
     ]
+    locale: Annotated[
+        SupportedLocale | None, Field(description=_LOCALE_DESCRIPTION)
+    ] = None
 
 
 class DeepGenomeAgent(BaseModel):
@@ -259,6 +278,9 @@ class DeepGenomeAgent(BaseModel):
             "questions.",
         ),
     ]
+    locale: Annotated[
+        SupportedLocale | None, Field(description=_LOCALE_DESCRIPTION)
+    ] = None
 
 
 class ReviewAgent(BaseModel):
@@ -295,6 +317,9 @@ class ReviewAgent(BaseModel):
             },
         ),
     ]
+    locale: Annotated[
+        SupportedLocale | None, Field(description=_LOCALE_DESCRIPTION)
+    ] = None
 
 
 class BriefGeneAgent(BaseModel):
@@ -313,6 +338,9 @@ class BriefGeneAgent(BaseModel):
             "question as this value.",
         ),
     ]
+    locale: Annotated[
+        SupportedLocale | None, Field(description=_LOCALE_DESCRIPTION)
+    ] = None
 
 
 class InSilicoResearchAgent(BaseModel):
@@ -392,6 +420,9 @@ class InSilicoResearchAgent(BaseModel):
             "request. Never provide a URL, command, credential, or token."
         ),
     )
+    locale: Annotated[
+        SupportedLocale | None, Field(description=_LOCALE_DESCRIPTION)
+    ] = None
 
 
 class DigitalDesignAgent(BaseModel):
@@ -524,6 +555,9 @@ class DigitalDesignAgent(BaseModel):
             "request. Never provide a URL, command, credential, or token."
         ),
     )
+    locale: Annotated[
+        SupportedLocale | None, Field(description=_LOCALE_DESCRIPTION)
+    ] = None
 
 
 class GeneNetworkAgent(BaseModel):
@@ -635,6 +669,9 @@ class GeneNetworkAgent(BaseModel):
             },
         ),
     ]
+    locale: Annotated[
+        SupportedLocale | None, Field(description=_LOCALE_DESCRIPTION)
+    ] = None
 
 
 class GetTaskStatus(BaseModel):

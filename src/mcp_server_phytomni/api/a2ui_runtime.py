@@ -46,6 +46,7 @@ from ..runtime.langgraph_runner import (
     build_runnable_config,
     ensure_checkpointer,
 )
+from ..runtime.locale import current_effective_locale
 from ..runtime.resume import aresume_graph, detect_interrupt
 from ..runtime.run_registry import (
     RunOutcome,
@@ -199,6 +200,7 @@ def build_review_request_info(
         tool_name="ReviewAgent",
         model=payload.model,
         request_json=payload.model_dump_json(),
+        locale=current_effective_locale(),
     )
 
 
@@ -318,6 +320,7 @@ def _prepare_chat_stream(
         tool_name="ChatAgent",
         model=payload.model,
         request_json=payload.model_dump_json(),
+        locale=current_effective_locale(),
     )
     dependencies.persistence.create_stream_run(
         run_id, agent_slug, owner, request_info

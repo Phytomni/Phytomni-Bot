@@ -79,6 +79,21 @@ def test_chat_agent_validates_required_fields():
         schemas.ChatAgent.model_validate({"user_query": "missing file list"})
 
 
+def test_canonical_agent_models_accept_locale_and_status_does_not() -> None:
+    """All ten agent DTOs expose the exact locale enum; status does not."""
+    for payload_path, model in DEMO_PAYLOAD_TO_MODEL.items():
+        payload = json.loads(
+            (DEMO_PAYLOADS_DIR / payload_path).read_text(encoding="utf-8")
+        )
+        if model is schemas.GetTaskStatus:
+            assert "locale" not in model.model_json_schema()["properties"]
+            continue
+        payload["locale"] = "zh-CN"
+        instance = model.model_validate(payload)
+        assert getattr(instance, "locale") == "zh-CN"
+        assert "locale" not in model.model_json_schema()["required"]
+
+
 @pytest.mark.parametrize(
     ("member_name", "value"),
     [

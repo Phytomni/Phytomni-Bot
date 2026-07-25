@@ -44,6 +44,7 @@ from ..mcp.result_formatting import (
 )
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
 from ..runtime import task_reconcile as _task_reconcile
+from ..runtime.locale import current_effective_locale
 from ..runtime.request_context import (
     current_accepted_task_ids,
     current_recorder_degraded,
@@ -123,6 +124,7 @@ _http_lifespan = getattr(_app_support, "_http_lifespan")
 _interop_result_body = getattr(_app_support, "interop_result_body")
 _memory_audit_response = getattr(_app_support, "memory_audit_response")
 _memory_response = getattr(_app_support, "memory_response")
+resolve_http_locale = getattr(_app_support, "resolve_http_locale")
 _memory_revision = getattr(_app_support, "memory_revision")
 _memory_write = getattr(_app_support, "memory_write")
 _reconcile_run_task_logs = getattr(_app_support, "reconcile_run_task_logs")
@@ -315,6 +317,7 @@ async def _prepare_agent_run(
         tool_name=tool_name,
         model=None,
         request_json=request_json,
+        locale=current_effective_locale(),
     )
     return _AgentRunPreparation(
         tool_name=tool_name,
@@ -564,6 +567,7 @@ async def _route_expert_query(
             detail="router selected an unavailable tool",
         )
     arguments = dict(selection.arguments)
+    arguments["locale"] = current_effective_locale()
     if tool_accepts_obs(selection.tool_name):
         arguments["obs_file_list"] = list(payload.obs_file_list)
     try:

@@ -21,7 +21,9 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse, Response
 
+from ...runtime.locale import SupportedLocale, current_effective_locale
 from ...runtime.run_registry import RunRequestInfo
+from ..app_support import resolve_http_locale
 from ..auth import ApiPrincipal
 from ..schemas import (
     AgentRunRequest,
@@ -166,6 +168,7 @@ def _register_chat_route(
     )
     async def chat_completions(
         payload: ChatCompletionRequest,
+        request: Request,
         principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
     ) -> Response:
         """Run a chat-like agent in an OpenAI-compatible shape.
@@ -182,9 +185,8 @@ def _register_chat_route(
                 status_code=404,
                 detail=f"model not found: {payload.model}",
             )
-        obs_files = payload.obs_file_list or []
         accepts_obs = dependencies.chat.input.tool_accepts_obs(tool_name)
-        if obs_files and not accepts_obs:
+        if payload.obs_file_list and not accepts_obs:
             raise HTTPException(
                 status_code=400,
                 detail=f"model {payload.model} does not accept "
@@ -196,6 +198,11 @@ def _register_chat_route(
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        resolve_http_locale(
+            explicit=payload.locale,
+            accept_language=request.headers.get("accept-language"),
+            latest_user_query=user_query,
+        )
         user_query, resolve_meta = (
             await dependencies.chat.input.resolve_chat_query(
                 raw_query=user_query,
@@ -206,9 +213,12 @@ def _register_chat_route(
                 ),
             )
         )
-        arguments: dict[str, Any] = {"user_query": user_query}
+        arguments: dict[str, Any] = {
+            "user_query": user_query,
+            "locale": current_effective_locale(),
+        }
         if accepts_obs:
-            arguments["obs_file_list"] = obs_files
+            arguments["obs_file_list"] = payload.obs_file_list or []
         if payload.stream:
             return await dependencies.chat.execution.stream_chat_completion(
                 tool_name=tool_name,
@@ -242,7 +252,10 @@ def _register_chat_route(
                 ),
                 result=envelope_dict,
                 request_info=_chat_run_request_info(
-                    payload, user_query, tool_name
+                    payload,
+                    user_query,
+                    tool_name,
+                    current_effective_locale(),
                 ),
             )
         completion = dependencies.chat.projection.to_chat_completion(
@@ -280,6 +293,7 @@ def _chat_run_request_info(
     payload: ChatCompletionRequest,
     user_query: str,
     tool_name: str,
+    locale: SupportedLocale,
 ) -> Any:
     """Build the run-registry request record without app-layer imports."""
     return RunRequestInfo(
@@ -288,7 +302,17 @@ def _chat_run_request_info(
         tool_name=tool_name,
         model=payload.model,
         request_json=payload.model_dump_json(),
+        locale=locale,
     )
+
+
+def _latest_argument_query(arguments: Mapping[str, Any]) -> str:
+    """Find the latest nonblank user-facing query in native arguments."""
+    for key in ("user_query", "query", "research_topic"):
+        value = arguments.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
 
 
 def _register_native_routes(
@@ -336,13 +360,21 @@ def _register_native_routes(
     async def create_agent_run(
         agent: str,
         payload: AgentRunRequest,
+        request: Request,
         principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
     ) -> JSONResponse:
         """Invoke one agent by slug and return its agent.run envelope."""
         del principal
+        locale = resolve_http_locale(
+            explicit=payload.locale,
+            accept_language=request.headers.get("accept-language"),
+            latest_user_query=_latest_argument_query(payload.arguments),
+        )
+        arguments = dict(payload.arguments)
+        arguments["locale"] = locale
         body, status_code = await dependencies.native.invoke_agent_run(
             agent=agent,
-            arguments=payload.arguments,
+            arguments=arguments,
             dialogue_id=payload.dialogue_id,
             debug=dependencies.chat.projection.resolve_debug(payload.debug),
             request_json=payload.model_dump_json(),
@@ -355,10 +387,16 @@ def _register_native_routes(
     )
     async def route_query(
         payload: ExpertQueryRequest,
+        request: Request,
         principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
     ) -> JSONResponse:
         """Autonomously route a query to an agent and return its run."""
         del principal
+        resolve_http_locale(
+            explicit=payload.locale,
+            accept_language=request.headers.get("accept-language"),
+            latest_user_query=payload.user_query,
+        )
         body, status_code = await dependencies.native.route_expert_query(
             payload, debug=dependencies.chat.projection.resolve_debug(None)
         )

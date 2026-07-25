@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException
@@ -22,6 +22,10 @@ from ..agents.shared.a2ui import (
 )
 from ..config.defaults import ApiConfig
 from ..mcp.result_formatting import strip_agent_result
+from ..runtime.locale import (
+    bind_effective_locale,
+    resolve_effective_locale,
+)
 from ..runtime.resume import NoCheckpointError, detect_interrupt
 from ..runtime.run_registry import (
     A2UIActionClaim,
@@ -263,6 +267,38 @@ def open_surface_for_action(
     return open_surface
 
 
+def _bind_record_locale(
+    record: RunRecord,
+    *,
+    registry: RunRegistry,
+    owner: str,
+) -> None:
+    """Bind a run's stored locale, backfilling legacy rows once."""
+    locale = record.request_info.locale
+    if locale is None:
+        locale = resolve_effective_locale(
+            explicit=None,
+            accept_language=None,
+            latest_user_query=record.request_info.query or "",
+        )
+        request_info = replace(record.request_info, locale=locale)
+        try:
+            persisted = registry.update_request_info(
+                record.spec.run_id,
+                owner=owner,
+                request_info=request_info,
+            )
+        except _PERSISTENCE_ERRORS as exc:
+            raise run_lifecycle.RunPersistenceError(
+                "run locale persistence failed"
+            ) from exc
+        if persisted is not True:
+            raise run_lifecycle.RunPersistenceError(
+                "run locale persistence failed"
+            )
+    bind_effective_locale(locale)
+
+
 @dataclass(frozen=True, slots=True)
 class _ActionContext:
     """Validated owner, surface, graph, and registry for one uplink."""
@@ -293,6 +329,7 @@ def _prepare_action_context(
             status_code=404,
             detail=f"run not found: {run_id}",
         )
+    _bind_record_locale(record, registry=registry, owner=owner)
     agent = record.spec.agent
     if agent not in ("chat", "review"):
         raise HTTPException(
@@ -632,6 +669,7 @@ def _prepare_review_resume_context(
             status_code=404,
             detail=f"run not found: {thread_id}",
         )
+    _bind_record_locale(record, registry=registry, owner=owner)
     if record.status != "input_required":
         if registry.list_a2ui_actions(owner=owner, run_id=thread_id):
             raise A2UIActionConflict("surface has already been claimed")

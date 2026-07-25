@@ -33,6 +33,7 @@ from ..config.settings import SensitiveConfig
 from ..interop.cache import DiscoveryCache
 from ..interop.capabilities import DiscoveryResult
 from ..interop.registry import InteropRegistry, InteropRegistryError
+from ..runtime.locale import message_for
 from ..runtime.memory import (
     MemorySchemaError,
     MemoryStore,
@@ -765,9 +766,22 @@ def _register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(
         _request: Request,
-        _exc: RequestValidationError,
+        exc: RequestValidationError,
     ) -> JSONResponse:
         """Render request validation errors as 422 envelopes."""
+        if any(
+            "locale" in {str(part) for part in error.get("loc", ())}
+            for error in exc.errors()
+        ):
+            return _app_attr("_error_response")(
+                422,
+                message_for("unsupported_locale", "en-US"),
+                options=_ErrorResponseOptions(
+                    code="unsupported_locale",
+                    stage="request_validation",
+                    retryable=False,
+                ),
+            )
         return _app_attr("_error_response")(422, "request validation failed")
 
     @app.exception_handler(LifecycleInvariantError)
