@@ -722,9 +722,9 @@ def _register_a2a_routes(
         """Authenticate and dispatch one A2A v1 JSON-RPC request."""
         del principal
         if a2a_version != "1.0":
-            raise HTTPException(
-                status_code=400,
-                detail="A2A-Version must be exactly 1.0",
+            return _app_attr("_error_response")(
+                400,
+                "A2A-Version must be exactly 1.0",
             )
         return await a2a_route.endpoint(request)
 

@@ -387,7 +387,10 @@ def canonicalize_run_record(record: Mapping[str, Any]) -> dict[str, Any]:
     projected["id"] = run_id
     projected["run_id"] = run_id
     if canonical["status"] == "input_required":
-        projected["result"] = {"interrupt": canonical["interrupt"]}
+        projected["result"] = {
+            "interrupt": canonical["interrupt"],
+            "status": "input_required",
+        }
     else:
         projected["result"] = canonical["result"]
         formatted = canonical["result"].get("formatted")
