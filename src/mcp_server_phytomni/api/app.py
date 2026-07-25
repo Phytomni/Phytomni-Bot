@@ -77,6 +77,7 @@ from .a2a import runtime as a2a_runtime
 from .a2a.executor import (
     A2ARegistration,
 )
+from .attachments import validate_native_attachments
 from .compat import (
     _a2ui_interrupt_body,
     _a2ui_runtime_dependencies,
@@ -327,6 +328,17 @@ async def _prepare_agent_run(
     )
 
 
+def _routing_contract_error(message: str) -> SafeApiError:
+    """Return one sanitized Expert routing contract failure."""
+    return SafeApiError(
+        status_code=502,
+        code=SafeErrorCode.ROUTING_CONTRACT_VIOLATION.value,
+        message=message,
+        stage="routing",
+        retryable=False,
+    )
+
+
 def _format_agent_run_result(
     envelope: Any,
     *,
@@ -474,6 +486,12 @@ async def _invoke_agent_run(
         dialogue_id=dialogue_id,
         request_json=request_json,
     )
+    validate_native_attachments(
+        agent,
+        arguments,
+        owner=prepared.owner,
+        db_path=resolve_tasks_db_path(),
+    )
     if agent == "review":
         execution = await _run_review_with_interrupt(
             arguments=arguments,
@@ -546,14 +564,12 @@ async def _route_expert_query(
         )
     except ToolSelectionError as exc:
         _LOGGER.warning("Expert routing selection contract failed: %s", exc)
-        raise HTTPException(
-            status_code=502,
-            detail="router did not resolve one permitted agent",
+        raise _routing_contract_error(
+            "router did not resolve one permitted agent"
         ) from exc
     if selection is None:
-        raise HTTPException(
-            status_code=502,
-            detail="router did not resolve one permitted agent",
+        raise _routing_contract_error(
+            "router did not resolve one permitted agent"
         )
     request_json = payload.model_dump_json()
     slug = _TOOL_TO_AGENT_SLUG.get(selection.tool_name)
@@ -562,12 +578,18 @@ async def _route_expert_query(
             "Expert router selected an unknown tool: %s",
             selection.tool_name,
         )
-        raise HTTPException(
-            status_code=502,
-            detail="router selected an unavailable tool",
-        )
+        raise _routing_contract_error("router selected an unavailable tool")
     arguments = dict(selection.arguments)
     arguments["locale"] = current_effective_locale()
+    validation_arguments = dict(arguments)
+    if payload.obs_file_list:
+        validation_arguments["obs_file_list"] = list(payload.obs_file_list)
+    validate_native_attachments(
+        slug,
+        validation_arguments,
+        owner=current_request_user() or "anonymous",
+        db_path=resolve_tasks_db_path(),
+    )
     if tool_accepts_obs(selection.tool_name):
         arguments["obs_file_list"] = list(payload.obs_file_list)
     try:

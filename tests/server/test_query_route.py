@@ -31,10 +31,17 @@ from mcp_server_phytomni.agents.expert import (
 )
 from mcp_server_phytomni.agents.expert import router as expert_router
 from mcp_server_phytomni.api.auth import ApiKeyStore
+from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.api.schemas import ExpertQueryRequest
+from mcp_server_phytomni.config.defaults import ApiConfig, ServerConfig
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
+from mcp_server_phytomni.runtime.upload_registry import (
+    UploadMetadata,
+    UploadRegistry,
+)
+from mcp_server_phytomni.storage.obs_storage import obs_path_from_key
 
 pytestmark = pytest.mark.server
 
@@ -217,6 +224,24 @@ async def test_route_sync_agent_returns_resolved_slug(
     obs attachment reaches the obs-capable knowledge tool.
     """
     captured: dict[str, Any] = {}
+    path = obs_path_from_key(
+        ServerConfig().BUCKET_NAME,
+        f"{ApiConfig().API_UPLOAD_PREFIX.strip('/')}/u1/expert/"
+        "knowledge/context.pdf",
+    )
+    UploadRegistry(tasks_db_path).record(
+        UploadMetadata(
+            file_id="knowledge-context",
+            user_id="u1",
+            obs_path=path,
+            filename="context.pdf",
+            purpose="agent_context",
+            byte_size=1_024,
+            format="pdf",
+            media_type="application/pdf",
+            created_at="2026-07-25T00:00:00+00:00",
+        )
+    )
 
     async def fake(args: Any) -> dict[str, Any]:
         captured["args"] = args
@@ -237,7 +262,7 @@ async def test_route_sync_agent_returns_resolved_slug(
         headers=_auth(issued_api_key),
         json={
             "user_query": "rice drought",
-            "obs_file_list": ["/obs/x.pdf"],
+            "obs_file_list": [path],
             "allowed_tools": ["KnowledgeAgent"],
         },
     )
@@ -251,7 +276,7 @@ async def test_route_sync_agent_returns_resolved_slug(
     assert "answer" in formatted
     assert "references" in formatted
     # The verbatim attachment reached the obs-capable tool.
-    assert captured["args"].obs_file_list == ["/obs/x.pdf"]
+    assert captured["args"].obs_file_list == [path]
     assert captured["args"].user_query == "rice drought"
 
     record = RunRegistry(tasks_db_path).list_runs(owner="u1")[0]
@@ -415,7 +440,17 @@ async def test_route_forces_every_canonical_tool_to_its_native_slug(
 
     async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
         invoked.append(kwargs)
-        return ({"agent": kwargs["agent"], "status": "succeeded"}, 200)
+        return (
+            {
+                "id": f"route-{kwargs['agent']}",
+                "object": "agent.run",
+                "agent": kwargs["agent"],
+                "status": "succeeded",
+                "task_ids": [],
+                "result": empty_agent_result(),
+            },
+            200,
+        )
 
     monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
     _patch_select(monkeypatch, ToolSelection(tool_name, arguments))
@@ -503,15 +538,35 @@ async def test_route_injects_obs_only_for_obs_capable_tool(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
 ) -> None:
-    """obs_file_list is injected for knowledge but not for data.
+    """Expert validates attachments before forwarding supported arguments.
 
-    Pins the ``tool_accepts_obs`` gate: only chat / knowledge / review
-    receive the attachment. Patches ``_invoke_agent_run`` to capture the
-    exact arguments the route assembled, independent of model extra-field
-    behavior.
+    Knowledge receives a registered document path. Data retains the existing
+    no-forwarding argument shape, while the original attachment is still
+    rejected by the shared capability validator.
     """
     captured: dict[str, dict[str, Any]] = {}
+    registry = UploadRegistry(tasks_db_path)
+    file_id = "expert-context"
+    path = obs_path_from_key(
+        ServerConfig().BUCKET_NAME,
+        f"{ApiConfig().API_UPLOAD_PREFIX.strip('/')}/u1/expert/"
+        f"{file_id}/context.pdf",
+    )
+    registry.record(
+        UploadMetadata(
+            file_id=file_id,
+            user_id="u1",
+            obs_path=path,
+            filename="context.pdf",
+            purpose="agent_context",
+            byte_size=1_024,
+            format="pdf",
+            media_type="application/pdf",
+            created_at="2026-07-25T00:00:00+00:00",
+        )
+    )
 
     async def fake_invoke(
         *, agent: str, arguments: dict[str, Any], **_kwargs: Any
@@ -539,23 +594,25 @@ async def test_route_injects_obs_only_for_obs_capable_tool(
         headers=_auth(issued_api_key),
         json={
             "user_query": "q",
-            "obs_file_list": ["/obs/x.pdf"],
+            "obs_file_list": [path],
             "allowed_tools": ["KnowledgeAgent"],
         },
     )
-    assert captured["knowledge"]["obs_file_list"] == ["/obs/x.pdf"]
+    assert captured["knowledge"]["obs_file_list"] == [path]
 
     _patch_select(monkeypatch, ToolSelection("DataAgent", {"user_query": "q"}))
-    await api_client.post(
+    response = await api_client.post(
         "/v1/query/route",
         headers=_auth(issued_api_key),
         json={
             "user_query": "q",
-            "obs_file_list": ["/obs/x.pdf"],
+            "obs_file_list": [path],
             "allowed_tools": ["DataAgent"],
         },
     )
-    assert "obs_file_list" not in captured["data"]
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "attachment_not_supported"
+    assert "data" not in captured
 
 
 async def test_route_requires_auth(

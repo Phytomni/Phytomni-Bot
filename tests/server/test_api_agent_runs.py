@@ -308,6 +308,39 @@ async def test_agent_run_sync_writes_local_run(
     assert record.status == "succeeded"
 
 
+async def test_native_run_rejects_duplicate_attachments_before_handler(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """Duplicate attachment references fail before tool dispatch."""
+    del tasks_db_path
+    invoked = False
+
+    async def fake(_args: Any) -> dict[str, Any]:
+        nonlocal invoked
+        invoked = True
+        return {"answer": "must not run", "doc_list": []}
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        fake,
+    )
+    path = "/obs/phytomni/agent_data/uploads/u1/fixture/duplicate.pdf"
+    response = await post_native_run(
+        api_client,
+        issued_api_key,
+        "chat",
+        {"user_query": "hi", "obs_file_list": [path, path]},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "attachment_duplicate"
+    assert not invoked
+
+
 async def test_agent_run_sync_persistence_failure_returns_safe_500(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

@@ -431,7 +431,8 @@ class DigitalDesignAgent(BaseModel):
     Attributes:
         species_code: Three-letter species code for design analysis.
         gene_id: Single target gene identifier.
-        obs_file_list: Optional uploaded context files.
+        obs_file_list: Legacy compatibility field; nonempty values are
+            unsupported during migration.
         interop_mode: External delegation policy. Defaults to local-only.
         interop_targets: Operator-registered target ids eligible for
             delegation.
@@ -524,15 +525,11 @@ class DigitalDesignAgent(BaseModel):
     obs_file_list: Annotated[
         list[str],
         Field(
-            description="OBS paths for optional uploaded context files. Use "
-            "complete OBS paths exactly as provided, pass [] when no files "
-            "are supplied, and do not invent file paths. Supported file "
-            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook.",
+            description="Legacy compatibility field. Nonempty values are "
+            "unsupported during migration; pass [] only. Do not invent "
+            "file paths.",
             json_schema_extra={
-                "example": [
-                    "/obs/phytomni/path/to/document.pdf",
-                    "/obs/phytomni/path/to/document.docx",
-                ],
+                "example": [],
                 "x-java-default": "new ArrayList<>()",
                 "x-csharp-default": "new List<string>()",
             },
@@ -566,7 +563,8 @@ class GeneNetworkAgent(BaseModel):
     Attributes:
         species_code: Three-letter species code for network analysis.
         to_id: Trait Ontology identifier for the target phenotype.
-        obs_file_list: Optional uploaded context files.
+        obs_file_list: Legacy compatibility field; nonempty values are
+            unsupported during migration.
     """
 
     species_code: Annotated[
@@ -655,15 +653,11 @@ class GeneNetworkAgent(BaseModel):
     obs_file_list: Annotated[
         list[str],
         Field(
-            description="OBS paths for optional uploaded context files. Use "
-            "complete OBS paths exactly as provided, pass [] when no files "
-            "are supplied, and do not invent file paths. Supported file "
-            "types: PPTX, DOCX, XLSX, XLS, PDF, Outlook.",
+            description="Legacy compatibility field. Nonempty values are "
+            "unsupported during migration; pass [] only. Do not invent "
+            "file paths.",
             json_schema_extra={
-                "example": [
-                    "/obs/phytomni/path/to/document.pdf",
-                    "/obs/phytomni/path/to/document.docx",
-                ],
+                "example": [],
                 "x-java-default": "new ArrayList<>()",
                 "x-csharp-default": "new List<string>()",
             },
