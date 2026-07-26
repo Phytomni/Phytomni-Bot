@@ -31,6 +31,32 @@ def test_obsfs_branch_lists_files_as_public_paths(tmp_path):
     ]
 
 
+def test_obsfs_branch_lists_objects_with_actual_sizes(tmp_path):
+    """Mounted files expose stat sizes and private source paths internally."""
+    bucket = "phytomni"
+    mount_root = tmp_path
+    run_dir = mount_root / bucket / "agent_data" / "u1" / "run0"
+    run_dir.mkdir(parents=True)
+    (run_dir / "summary.csv").write_bytes(b"abcde")
+
+    objects = artifact_listing.list_artifact_objects(
+        f"/obs/{bucket}/agent_data/u1/run0",
+        bucket_name=bucket,
+        obs_server="https://obs.example",
+        mount_root=str(mount_root),
+    )
+
+    assert len(objects) == 1
+    assert objects[0].relative_path == "summary.csv"
+    assert objects[0].size_bytes == 5
+    assert objects[0].source_path.endswith(
+        "/phytomni/agent_data/u1/run0/summary.csv"
+    )
+    assert objects[0].download_ref == (
+        "/obs/phytomni/agent_data/u1/run0/summary.csv"
+    )
+
+
 def test_sdk_branch_used_when_obsfs_absent(monkeypatch, tmp_path):
     """With no obsfs mount, the SDK list path is used and its keys are
     converted to public paths."""
@@ -57,6 +83,44 @@ def test_sdk_branch_used_when_obsfs_absent(monkeypatch, tmp_path):
     ]
     assert calls["args"][0] == "phytomni"
     assert calls["args"][1] == "agent_data/u1/run0"
+
+
+def test_sdk_branch_lists_objects_using_head_sizes(monkeypatch, tmp_path):
+    """SDK object listings obtain actual sizes through the metadata seam."""
+    monkeypatch.setattr(
+        artifact_listing,
+        "list_object_keys",
+        lambda *args, **kwargs: [
+            "agent_data/u1/run0/summary.csv",
+            "agent_data/u1/other/secret.csv",
+        ],
+    )
+    sizes = {}
+
+    def fake_object_size(bucket, key, *, obs_server, mount_root):
+        sizes[(bucket, key, obs_server, mount_root)] = True
+        return 37
+
+    monkeypatch.setattr(artifact_listing, "object_size", fake_object_size)
+
+    objects = artifact_listing.list_artifact_objects(
+        "/obs/phytomni/agent_data/u1/run0",
+        bucket_name="phytomni",
+        obs_server="https://obs.example",
+        mount_root=str(tmp_path),
+    )
+
+    assert [(item.relative_path, item.size_bytes) for item in objects] == [
+        ("summary.csv", 37)
+    ]
+    assert list(sizes) == [
+        (
+            "phytomni",
+            "agent_data/u1/run0/summary.csv",
+            "https://obs.example",
+            str(tmp_path),
+        )
+    ]
 
 
 def test_obsfs_mounted_but_dir_absent_falls_back_to_sdk(monkeypatch, tmp_path):

@@ -13,7 +13,13 @@ mid-iteration once it has started yielding.
 
 from __future__ import annotations
 
-from mcp_server_phytomni.storage.obs_relay_ops import list_object_keys
+from dataclasses import dataclass
+from pathlib import Path
+
+from mcp_server_phytomni.storage.obs_relay_ops import (
+    list_object_keys,
+    object_size,
+)
 from mcp_server_phytomni.storage.obs_storage import (
     DEFAULT_OBSFS_MOUNT_ROOT,
     normalize_obs_object_key,
@@ -22,7 +28,128 @@ from mcp_server_phytomni.storage.obs_storage import (
     obsfs_path_for,
 )
 
-__all__ = ["list_artifact_paths"]
+__all__ = [
+    "ListedArtifactObject",
+    "list_artifact_objects",
+    "list_artifact_paths",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class ListedArtifactObject:
+    """One output object with actual size and a safe download reference."""
+
+    relative_path: str
+    source_path: str
+    size_bytes: int
+    download_ref: str | None = None
+
+
+def list_artifact_objects(
+    output_dir: str,
+    *,
+    bucket_name: str,
+    obs_server: str,
+    mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+) -> list[ListedArtifactObject]:
+    """List output objects with actual byte sizes.
+
+    The obsfs branch obtains sizes from ``stat`` on the mounted file. The
+    SDK branch obtains each size with an object metadata request; no producer
+    manifest value is consulted here. All returned references stay under the
+    requested output-directory prefix.
+    """
+    object_key = normalize_obs_object_key(output_dir, bucket_name)
+    base_key = object_key.rstrip("/")
+    if obsfs_bucket_available(bucket_name, mount_root):
+        dir_path = obsfs_path_for(output_dir, bucket_name, mount_root)
+        if dir_path.is_dir():
+            return _list_obsfs_objects(
+                dir_path,
+                base_key=base_key,
+                bucket_name=bucket_name,
+            )
+
+    prefix = f"{base_key}/" if base_key else ""
+    return _list_sdk_objects(
+        list_object_keys(bucket_name, prefix, obs_server=obs_server),
+        base_key=base_key,
+        bucket_name=bucket_name,
+        obs_server=obs_server,
+        mount_root=mount_root,
+    )
+
+
+def _list_obsfs_objects(
+    directory: Path,
+    *,
+    base_key: str,
+    bucket_name: str,
+) -> list[ListedArtifactObject]:
+    """Build object records from one confined obsfs directory."""
+    dir_path = directory
+    objects: list[ListedArtifactObject] = []
+    for path in sorted(dir_path.rglob("*")):
+        if not path.is_file():
+            continue
+        relative_path = path.relative_to(dir_path).as_posix()
+        object_key = (
+            f"{base_key}/{relative_path}" if base_key else relative_path
+        )
+        download_ref = obs_path_from_key(bucket_name, object_key)
+        objects.append(
+            ListedArtifactObject(
+                relative_path=relative_path,
+                source_path=str(path),
+                size_bytes=path.stat().st_size,
+                download_ref=download_ref,
+            )
+        )
+    return objects
+
+
+def _list_sdk_objects(
+    keys: list[str],
+    *,
+    base_key: str,
+    bucket_name: str,
+    obs_server: str,
+    mount_root: str,
+) -> list[ListedArtifactObject]:
+    """Build object records from SDK keys after prefix confinement."""
+    objects: list[ListedArtifactObject] = []
+    for key in keys:
+        safe_key = normalize_obs_object_key(key, bucket_name)
+        relative_path = _relative_output_path(safe_key, base_key)
+        if relative_path is None:
+            continue
+        download_ref = obs_path_from_key(bucket_name, safe_key)
+        objects.append(
+            ListedArtifactObject(
+                relative_path=relative_path,
+                source_path=download_ref,
+                size_bytes=object_size(
+                    bucket_name,
+                    safe_key,
+                    obs_server=obs_server,
+                    mount_root=mount_root,
+                ),
+                download_ref=download_ref,
+            )
+        )
+    return objects
+
+
+def _relative_output_path(key: str, base_key: str) -> str | None:
+    """Return a key's relative path only when it is under base_key."""
+    if base_key:
+        prefix = f"{base_key}/"
+        if not key.startswith(prefix):
+            return None
+        relative_path = key[len(prefix) :]
+    else:
+        relative_path = key
+    return relative_path or None
 
 
 def list_artifact_paths(
