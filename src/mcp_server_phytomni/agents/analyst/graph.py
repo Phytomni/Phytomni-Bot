@@ -33,6 +33,7 @@ from ...common.httpx_client import get_async_client
 from ...common.prompts import get_prompt
 from ...common.relay_client import current_relay_client
 from ...config.relay_mode import relay_mode_enabled
+from ...runtime.artifact_roles import append_artifact_manifest_contract
 from ...storage.path_policy import RunIdentity, task_tmp_key
 from ..knowledge.retrieval import retrieve
 from ..shared.analysis_storage import ensure_run_output_dir
@@ -294,7 +295,7 @@ class AnalystGraphMixin:
             "the output folder into a zip file (zip -r $output_dir.zip "
             "$output_dir)."
         )
-        return (
+        return append_artifact_manifest_contract(
             f"  ### EXECUTION PLAN\n{plan}\n\n"
             f"### TOOL USAGE\n{state.get('tool_usages', '')}"
         )

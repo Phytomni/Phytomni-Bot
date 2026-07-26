@@ -12,9 +12,11 @@ their invariants now live in ``tests/unit/test_task_dedup.py``.
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
+from mcp_server_phytomni.agents.analyst.graph import AnalystGraphMixin
 from mcp_server_phytomni.agents.analyst.submission import (
     SubmissionOptions,
     _submit_user_and_thread_id,
@@ -131,3 +133,23 @@ def test_submit_user_and_thread_id_falls_back_to_run_identity() -> None:
     assert user_id  # anonymous fallback is non-empty
     assert thread_id  # scoped fallback is non-empty
     assert thread_id != user_id  # scoped id encodes operation, not just user
+
+
+def test_analyst_submit_requires_artifact_manifest() -> None:
+    """The shared Analyst submit prompt requires semantic output metadata."""
+    submit_meta = getattr(AnalystGraphMixin, "_submit_meta")
+    prompt = submit_meta(cast(Any, {"plan": "plan", "tool_usages": "tools"}))
+
+    assert ".phytomni-artifacts.json" in prompt
+    assert '"version": "1.0"' in prompt
+    for role in (
+        "scientific_report",
+        "scientific_table",
+        "scientific_text",
+        "scientific_figure",
+        "input",
+        "execution_log",
+        "diagnostic",
+    ):
+        assert role in prompt
+    assert "Do not classify by filename extension" in prompt

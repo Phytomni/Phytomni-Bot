@@ -175,6 +175,52 @@ def test_route_contract_maps_every_logical_branch() -> None:
     )
 
 
+def test_deep_genome_dispatch_requests_same_manifest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DeepGenome's Analyst dispatch carries the shared manifest contract."""
+
+    def fake_prompt_parts(
+        context: Any,
+        *,
+        prompt_file: str,
+        data_file: str,
+    ) -> tuple[str, dict[str, Any], str, str]:
+        assert context.analysis_type == "smoc_analysis"
+        assert prompt_file == "prompt.yaml"
+        assert data_file == "data.json"
+        return "goal", {}, "meta", "small"
+
+    monkeypatch.setattr(
+        dispatch_module.deep_genome_routing,
+        "build_analysis_prompt_parts",
+        fake_prompt_parts,
+    )
+    dispatcher = SimpleNamespace(
+        deep_genome_config=SimpleNamespace(
+            PROMPT_FILE="prompt.yaml",
+            DEEPGENOME_DATA="data.json",
+        )
+    )
+    context = dispatch_module.AnalysisDispatchContext(
+        "smoc_analysis",
+        "osa",
+        "Os01g0100100",
+        "/obs/output",
+    )
+
+    analysis_prompt_parts = getattr(
+        dispatch_module.DeepGenomeDispatchMixin, "_analysis_prompt_parts"
+    )
+    _goal, _data, instructions, _compute = analysis_prompt_parts(
+        dispatcher, context
+    )
+
+    assert ".phytomni-artifacts.json" in instructions
+    assert '"version": "1.0"' in instructions
+    assert "Do not classify by filename extension" in instructions
+
+
 async def test_acceptance_transition_and_restart_contract(
     tmp_path: Path,
 ) -> None:

@@ -22,6 +22,7 @@ from langgraph.graph import END
 
 from ...config.relay_mode import relay_mode_enabled
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
+from ...runtime.artifact_roles import append_artifact_manifest_contract
 from ...runtime.deep_genome_store import (
     DeepGenomeReservation,
     DeepGenomeStore,
@@ -846,10 +847,18 @@ class DeepGenomeDispatchMixin:
         context: AnalysisDispatchContext,
     ) -> tuple[str, dict[str, Any], str, str]:
         """Build goal, data list, meta prompt, and compute resource."""
-        return deep_genome_routing.build_analysis_prompt_parts(
-            context,
-            prompt_file=self.deep_genome_config.PROMPT_FILE,
-            data_file=self.deep_genome_config.DEEPGENOME_DATA,
+        goal, data_list, meta, compute_resource = (
+            deep_genome_routing.build_analysis_prompt_parts(
+                context,
+                prompt_file=self.deep_genome_config.PROMPT_FILE,
+                data_file=self.deep_genome_config.DEEPGENOME_DATA,
+            )
+        )
+        return (
+            goal,
+            data_list,
+            append_artifact_manifest_contract(meta),
+            compute_resource,
         )
 
     async def _submit_analysis_task(

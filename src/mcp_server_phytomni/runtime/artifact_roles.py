@@ -30,15 +30,49 @@ from ..mcp.formatting.models import ExecutionWarning
 from ..storage.artifact_listing import ListedArtifactObject
 
 __all__ = [
+    "ARTIFACT_MANIFEST_FILENAME",
+    "ARTIFACT_MANIFEST_INSTRUCTIONS",
     "ArtifactManifest",
     "ArtifactManifestItem",
     "ArtifactRole",
     "ClassifiedArtifact",
     "PublicArtifactDescriptor",
+    "append_artifact_manifest_contract",
     "classify_artifacts",
 ]
 
-_MANIFEST_FILENAME = ".phytomni-artifacts.json"
+ARTIFACT_MANIFEST_FILENAME = ".phytomni-artifacts.json"
+ARTIFACT_MANIFEST_INSTRUCTIONS = """### ARTIFACT MANIFEST CONTRACT
+
+Write `.phytomni-artifacts.json` as the last output file in the output
+directory. Use this exact JSON shape and list every other output artifact
+exactly once:
+
+{
+  "version": "1.0",
+  "artifacts": [
+    {
+      "path": "tables/gene_summary.csv",
+      "role": "scientific_table",
+      "media_type": "text/csv"
+    },
+    {
+      "path": "logs/analysis.log",
+      "role": "execution_log",
+      "media_type": "text/plain"
+    }
+  ]
+}
+
+Allowed roles are `scientific_report`, `scientific_table`,
+`scientific_text`, `scientific_figure`, `input`, `execution_log`,
+`diagnostic`, and `unknown`. Use paths relative to the output directory.
+Do not classify by filename extension; classify by semantic producer
+knowledge. Use `unknown` when the producer cannot prove a role. Do not put
+credentials, provider payloads, or absolute paths in the manifest. Keep
+writing `result_files.json` for compatibility, but it does not grant report
+eligibility.
+"""
 _UNKNOWN_MEDIA_TYPE = "application/octet-stream"
 _MANIFEST_WARNING_STAGE = "artifact_manifest"
 _REPORT_TEXT_ROLES = frozenset(
@@ -257,4 +291,11 @@ def _unknown_artifact(
 
 def _is_manifest_file(listed: ListedArtifactObject) -> bool:
     """Return whether a listed object is the producer manifest itself."""
-    return listed.relative_path == _MANIFEST_FILENAME
+    return listed.relative_path == ARTIFACT_MANIFEST_FILENAME
+
+
+def append_artifact_manifest_contract(text: str) -> str:
+    """Append the producer manifest contract once to a prompt."""
+    if ARTIFACT_MANIFEST_INSTRUCTIONS in text:
+        return text
+    return f"{text.rstrip()}\n\n{ARTIFACT_MANIFEST_INSTRUCTIONS}"
