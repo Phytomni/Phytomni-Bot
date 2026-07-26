@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass(frozen=True)
@@ -23,12 +23,46 @@ class FormattedToolResult:
     output_dirs: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class ExecutionWarning:
+    """Safe warning metadata for an operational execution projection."""
+
+    code: str
+    retryable: bool = False
+    stage: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ReportExecution:
+    """Safe report assembly state kept outside scientific display fields."""
+
+    state: Literal["none", "intermediate", "final", "degraded"] = "none"
+    degraded: bool = False
+    source_artifact_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionProjection:
+    """Canonical operational projection for one normalized tool result."""
+
+    tracking: Mapping[str, Any] = field(
+        default_factory=lambda: {"degraded": False}
+    )
+    warnings: tuple[ExecutionWarning, ...] = ()
+    tasks: tuple[Mapping[str, Any], ...] = ()
+    artifacts: tuple[Mapping[str, Any], ...] = ()
+    output_dirs: tuple[str, ...] = ()
+    report: ReportExecution | None = None
+    diagnostics: tuple[Mapping[str, Any], ...] = ()
+
+
 @dataclass(frozen=True)
 class ToolResultEnvelope:
-    """Full tool response carrying display and sanitized raw payloads."""
+    """Full tool response carrying display, execution, and raw payloads."""
 
     formatted: FormattedToolResult
     raw: Any
+    execution: ExecutionProjection = field(default_factory=ExecutionProjection)
 
 
 @dataclass(frozen=True)
@@ -53,8 +87,11 @@ def format_tool_chunk(payload: Mapping[str, Any]) -> FormattedToolChunk:
 
 __all__ = [
     "AguiEvent",
+    "ExecutionProjection",
+    "ExecutionWarning",
     "FormattedToolChunk",
     "FormattedToolResult",
+    "ReportExecution",
     "ToolResultEnvelope",
     "format_tool_chunk",
 ]

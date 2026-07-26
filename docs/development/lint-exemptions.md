@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `106`
+- Authorized records: `104`
 
 ## Informational counts
 
@@ -22,7 +22,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:prop-decorator`                             |       1 |
 | `pylint:C0103`                                    |       1 |
 | `pylint:C0116`                                    |       1 |
-| `pylint:R0801`                                    |      24 |
+| `pylint:R0801`                                    |      22 |
 | `pylint:R0903`                                    |       6 |
 | `pylint:R0913`                                    |       1 |
 | `pylint:R0917`                                    |       1 |
@@ -71,8 +71,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0074` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/api/relay/audit_filter.py | 27:38 | `sha256:e403f78e603f501a9592111cdd3963a7670f069c42cb5d1e1755b764d1dc32e9` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_relay_audit_filter.py, static-analysis-inventory |
 | `SAE-TMP-0075` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/config/required_env.py | 16:28 | `sha256:0a106c71d1e188f33ba116a1a15980da2ccbd8924042f13b31d0dd5df3f2585c` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/config/test_required_env.py, tests/unit/test_defaults.py, static-analysis-inventory |
 | `SAE-TMP-0076` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/config/required_env.py | 41:46 | `sha256:b181294b667a5a5e3b3cc601d177d1d5e50806e12df472c917d370454afa17f9` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/config/test_required_env.py, static-analysis-inventory |
-| `SAE-TMP-0078` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/mcp/app.py | 780:785 | `sha256:4c2673434de4835a32b1085cbd8e36172497c7b73904ce45cc1f227c178fa454` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/server/test_mcp_app_invoke.py, tests/server/test_mcp_app_validation.py, static-analysis-inventory |
-| `SAE-TMP-0079` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/mcp/formatting/redaction.py | 96:103 | `sha256:c86ec598be4d49f7c482637da7fe2718b2d0255d1e71da2ce15a11632488de4a` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_result_formatting_projection.py, static-analysis-inventory |
 | `SAE-TMP-0083` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 45:52 | `sha256:781cbd4798bbd051136fe6306e69070b99da317486e9f110b66c4c53f764ebd8` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_models.py, tests/server/test_memory_http.py, static-analysis-inventory |
 | `SAE-TMP-0084` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 59:64 | `sha256:dab91daad1dc692da89b2d3c4bedfcd081201a6cd5e592f6d9f289f0ad825f66` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_models.py, tests/server/test_memory_http.py, static-analysis-inventory |
 | `SAE-TMP-0085` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/runtime/memory/__init__.py | 73:79 | `sha256:02a0ef0f7f5041c275b28c1c4c24c010eae62e1de902e15478e70af3b9aa9b42` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_memory_accessor.py, tests/server/test_memory_http.py, static-analysis-inventory |
@@ -653,46 +651,6 @@ Risk:
 
 ```text
 A stale expected tuple can block a legitimate deployment change; update it with the configuration contract and environment template.
-```
-
-### `SAE-TMP-0078`
-
-Rationale:
-
-```text
-The MCP app and handler modules independently bind arguments for raw/enveloped dispatch and domain handler calls. Repository owner approved this compatibility boundary on 2026-07-20.
-```
-
-Counterfactual:
-
-```text
-Aliasing the argument projections would couple the raw/enveloped MCP seam to handler dispatch and make a local compatibility change cross the public boundary.
-```
-
-Risk:
-
-```text
-Argument binding changes can alter validation or response envelopes; preserve app and handler characterization tests.
-```
-
-### `SAE-TMP-0079`
-
-Rationale:
-
-```text
-The response projection test independently fixes the canonical OpenAI field order and presence contract. Repository owner approved this protocol oracle on 2026-07-20.
-```
-
-Counterfactual:
-
-```text
-Importing the production field tuple would allow a canonical field to be removed from the response and expected value simultaneously.
-```
-
-Risk:
-
-```text
-Consumers depend on canonical placement; any intentional field change requires compatibility review.
 ```
 
 ### `SAE-TMP-0083`

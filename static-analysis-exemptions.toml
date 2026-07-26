@@ -538,46 +538,6 @@ risk = "A stale expected tuple can block a legitimate deployment change; update 
 tests = ["tests/unit/config/test_required_env.py", "static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0078"
-tool = "pylint"
-rule = "R0801"
-classification = "structural"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/mcp/app.py"
-symbol = "780:785"
-peer_path = "src/mcp_server_phytomni/mcp/handlers.py"
-peer_symbol = "108:113"
-fingerprint = "sha256:4c2673434de4835a32b1085cbd8e36172497c7b73904ce45cc1f227c178fa454"
-owner = "bot-maintainers"
-introduced_on = 2026-07-20
-review_on = 2027-01-17
-rationale = "The MCP app and handler modules independently bind arguments for raw/enveloped dispatch and domain handler calls. Repository owner approved this compatibility boundary on 2026-07-20."
-counterfactual = "Aliasing the argument projections would couple the raw/enveloped MCP seam to handler dispatch and make a local compatibility change cross the public boundary."
-risk = "Argument binding changes can alter validation or response envelopes; preserve app and handler characterization tests."
-tests = ["tests/server/test_mcp_app_invoke.py", "tests/server/test_mcp_app_validation.py", "static-analysis-inventory"]
-
-[[exemptions]]
-id = "SAE-TMP-0079"
-tool = "pylint"
-rule = "R0801"
-classification = "structural"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/mcp/formatting/redaction.py"
-symbol = "96:103"
-peer_path = "tests/unit/test_result_formatting_projection.py"
-peer_symbol = "377:384"
-fingerprint = "sha256:c86ec598be4d49f7c482637da7fe2718b2d0255d1e71da2ce15a11632488de4a"
-owner = "bot-maintainers"
-introduced_on = 2026-07-20
-review_on = 2027-01-17
-rationale = "The response projection test independently fixes the canonical OpenAI field order and presence contract. Repository owner approved this protocol oracle on 2026-07-20."
-counterfactual = "Importing the production field tuple would allow a canonical field to be removed from the response and expected value simultaneously."
-risk = "Consumers depend on canonical placement; any intentional field change requires compatibility review."
-tests = ["tests/unit/test_result_formatting_projection.py", "static-analysis-inventory"]
-
-[[exemptions]]
 id = "SAE-TMP-0083"
 tool = "pylint"
 rule = "R0801"

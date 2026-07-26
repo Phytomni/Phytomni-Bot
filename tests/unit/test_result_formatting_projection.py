@@ -11,13 +11,20 @@ Covers ``resolve_debug`` (env override + per-request flag),
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import make_dataclass
+from dataclasses import asdict, make_dataclass
+from json import dumps
 
 import pytest
 
 from mcp_server_phytomni.mcp.formatting import models as formatting_models
 from mcp_server_phytomni.mcp.formatting import (
     redaction as formatting_redaction,
+)
+from mcp_server_phytomni.mcp.formatting.execution import (
+    ExecutionProjection,
+    ReportExecution,
+    apply_compatibility_projection,
+    build_execution_projection,
 )
 from mcp_server_phytomni.mcp.result_formatting import (
     FormattedToolResult,
@@ -135,6 +142,80 @@ def test_formatter_matrix_preserves_partial_reports_and_extensions() -> None:
     assert envelope.formatted.metadata["report_completeness"] == "partial"
     assert envelope.formatted.metadata["degraded"] is True
     assert envelope.raw["extension_field"] == {"vendor_value": 3}
+
+
+def test_execution_fields_do_not_enter_formatted() -> None:
+    """Keep task and path telemetry in the execution projection only."""
+    envelope = build_tool_result_envelope(
+        "AnalystAgent",
+        {
+            "answer": "scientific answer",
+            "task_id": "task-sentinel",
+            "output_dir": "/private/path-sentinel",
+            "status": "submitted",
+        },
+    )
+    formatted_json = dumps(asdict(envelope.formatted))
+    execution_json = dumps(asdict(envelope.execution))
+
+    assert "scientific answer" in formatted_json
+    assert "task-sentinel" not in formatted_json
+    assert "path-sentinel" not in formatted_json
+    assert "task-sentinel" in execution_json
+
+
+def test_compatibility_values_derive_from_execution() -> None:
+    """Project temporary formatted compatibility fields from execution."""
+    execution = ExecutionProjection(
+        output_dirs=("owner-scoped/out",),
+        report=ReportExecution(
+            state="final",
+            degraded=False,
+            source_artifact_count=2,
+        ),
+    )
+    formatted = FormattedToolResult(answer="answer")
+
+    projected = apply_compatibility_projection(formatted, execution)
+
+    assert projected.output_dirs == ("owner-scoped/out",)
+    assert projected.metadata["report"]["state"] == "final"
+
+
+def test_execution_projection_uses_safe_structured_fields() -> None:
+    """Drop provider payloads while retaining stable execution descriptors."""
+    execution = build_execution_projection(
+        "AnalystAgent",
+        {
+            "task_id": "task-1",
+            "status": "succeeded",
+            "submission_warnings": [
+                {"code": "upstream_partial", "stage": "analysis"}
+            ],
+            "artifacts": [
+                {
+                    "artifact_id": "artifact-1",
+                    "role": "scientific_report",
+                    "size_bytes": 12,
+                    "provider_payload": "drop",
+                }
+            ],
+            "provider_payload": {"secret": "drop"},
+        },
+    )
+
+    assert execution.tasks == (
+        {"id": "task-1", "accepted": True, "status": "succeeded"},
+    )
+    assert execution.warnings[0].code == "upstream_partial"
+    assert execution.artifacts == (
+        {
+            "id": "artifact-1",
+            "role": "scientific_report",
+            "size_bytes": 12,
+        },
+    )
+    assert "provider_payload" not in dumps(asdict(execution))
 
 
 def test_formatter_matrix_rejects_malformed_task_payload() -> None:
@@ -374,15 +455,10 @@ def test_strip_chat_completion_keeps_standard_top_level() -> None:
     """id, object, created, model, choices, usage, formatted kept."""
     completion = _build_full_completion()
     stripped = strip_chat_completion(completion)
-    assert set(stripped.keys()) == {
-        "id",
-        "object",
-        "created",
-        "model",
-        "choices",
-        "usage",
-        "formatted",
-    }
+    expected = frozenset(
+        {"id", "object", "created", "model", "choices", "usage", "formatted"}
+    )
+    assert set(stripped) == expected
 
 
 def test_strip_chat_completion_cleans_message_keeps_reasoning() -> None:

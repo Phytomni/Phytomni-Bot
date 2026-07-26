@@ -13,6 +13,7 @@ from . import universal_failures as _universal_failures
 from .formatting import agui as _formatting_agui
 from .formatting import cited as _formatting_cited
 from .formatting import dispatch as _formatting_dispatch
+from .formatting import execution as _formatting_execution
 from .formatting import models as _formatting_models
 from .formatting import redaction as _formatting_redaction
 from .formatting import tasks as _formatting_tasks
@@ -35,11 +36,18 @@ text_message_end = _formatting_agui.text_message_end
 text_message_start = _formatting_agui.text_message_start
 
 FormattedToolChunk = _formatting_models.FormattedToolChunk
+ExecutionProjection = _formatting_models.ExecutionProjection
+ExecutionWarning = _formatting_models.ExecutionWarning
 FormattedToolResult = _formatting_models.FormattedToolResult
+ReportExecution = _formatting_models.ReportExecution
 ToolResultEnvelope = _formatting_models.ToolResultEnvelope
 format_tool_chunk = _formatting_models.format_tool_chunk
 
 build_tool_result_envelope = _formatting_dispatch.build_tool_result_envelope
+apply_compatibility_projection = (
+    _formatting_execution.apply_compatibility_projection
+)
+build_execution_projection = _formatting_execution.build_execution_projection
 format_tool_result = _formatting_dispatch.format_tool_result
 is_cited_tool = _formatting_dispatch.is_cited_tool
 _normalize_tool_name = _formatting_dispatch.normalize_tool_name

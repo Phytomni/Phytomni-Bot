@@ -43,6 +43,7 @@ from ..storage.path_policy import RunIdentity
 from ..storage.scratch import ScratchTarget, resolve_scratch_dir
 from .handler_support import (
     analysis_platform_kwargs,
+    chat_call_kwargs,
     chat_kwargs,
     coder_kwargs,
     load_chat_runtime,
@@ -106,11 +107,12 @@ async def handle_chat_agent(args: ChatAgent) -> HandlerResult:
     """
     chat_config, runtime = load_chat_runtime()
     return await phyto_chat_with_follow(
-        user_query=args.user_query,
-        obs_file_list=args.obs_file_list,
-        server_dir=scratch_server_dir(chat_config, "chat"),
-        **chat_kwargs(chat_config, runtime.sensitive, locale=args.locale),
-        **obs_kwargs(chat_config, runtime.obs_credentials),
+        **chat_call_kwargs(
+            request=args,
+            server_dir=scratch_server_dir(chat_config, "chat"),
+            config=chat_config,
+            runtime=runtime,
+        )
     )
 
 

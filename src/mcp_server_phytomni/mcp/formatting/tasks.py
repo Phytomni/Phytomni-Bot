@@ -74,8 +74,10 @@ def format_task_result(content: Mapping[str, Any]) -> FormattedToolResult:
         string_or_none(content.get("compute_resource"))
     )
     failed = not task_id
+    supplied_answer = string_or_none(content.get("answer"))
     return FormattedToolResult(
-        answer=(
+        answer=supplied_answer
+        or (
             "Task submission failed: missing task_id"
             if failed
             else f"Task created successfully:{task_id}"

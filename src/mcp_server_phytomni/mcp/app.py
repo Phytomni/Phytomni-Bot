@@ -51,9 +51,8 @@ from ..runtime.resume import (
 )
 from ..storage.path_policy import IdFactory
 from .handler_support import (
-    chat_kwargs,
+    chat_call_kwargs,
     load_chat_runtime,
-    obs_kwargs,
 )
 from .handlers import (
     handle_analyst_agent,
@@ -76,6 +75,7 @@ from .result_formatting import (
     ToolResultEnvelope,
     build_tool_result_envelope,
     custom,
+    format_tool_result,
     is_cited_tool,
     resolve_debug,
     run_finished,
@@ -225,7 +225,12 @@ async def invoke_tool_formatted(
         McpError: If the tool is unknown or arguments fail validation.
     """
     envelope = await invoke_tool_enveloped(name, arguments)
-    return envelope.formatted
+    # Keep this explicitly legacy: callers that selected the historical
+    # display-only shim still receive formatter metadata until the MCP and
+    # HTTP surfaces migrate to the canonical execution block.
+    return format_tool_result(
+        _tool_name(name), envelope.raw, arguments=arguments
+    )
 
 
 async def invoke_tool_enveloped(
@@ -777,13 +782,10 @@ async def _stream_chat_agent(
         One OpenAI ``chat.completion.chunk`` dict per upstream chunk.
     """
     chat_config, runtime = load_chat_runtime()
-    async for chunk in stream_phyto_chat_chunks(
-        user_query=args.user_query,
-        obs_file_list=args.obs_file_list,
-        server_dir=scratch_server_dir(chat_config, "chat"),
-        **chat_kwargs(chat_config, runtime.sensitive, locale=args.locale),
-        **obs_kwargs(chat_config, runtime.obs_credentials),
-    ):
+    call_kwargs = chat_call_kwargs(
+        args, scratch_server_dir(chat_config, "chat"), chat_config, runtime
+    )
+    async for chunk in stream_phyto_chat_chunks(**call_kwargs):
         yield chunk
 
 

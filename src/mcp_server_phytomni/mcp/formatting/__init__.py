@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Leaf result-formatting modules and compatibility helpers."""
 
-from . import agui, cited, dispatch, models, redaction, tasks
+from . import agui, cited, dispatch, execution, models, redaction, tasks
 from .agui import (
     AguiEvent,
     custom,
@@ -16,9 +16,16 @@ from .agui import (
     text_message_end,
     text_message_start,
 )
+from .execution import (
+    apply_compatibility_projection,
+    build_execution_projection,
+)
 from .models import (
+    ExecutionProjection,
+    ExecutionWarning,
     FormattedToolChunk,
     FormattedToolResult,
+    ReportExecution,
     ToolResultEnvelope,
     format_tool_chunk,
 )
@@ -36,12 +43,18 @@ __all__ = [
     "custom",
     "cited",
     "dispatch",
+    "execution",
+    "ExecutionProjection",
+    "ExecutionWarning",
     "models",
     "FormattedToolChunk",
     "FormattedToolResult",
+    "ReportExecution",
     "redaction",
     "ToolResultEnvelope",
     "format_tool_chunk",
+    "apply_compatibility_projection",
+    "build_execution_projection",
     "is_sensitive_key",
     "resolve_debug",
     "run_error",

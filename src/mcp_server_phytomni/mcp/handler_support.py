@@ -24,10 +24,12 @@ from ..config.defaults import (
 )
 from ..config.settings import SensitiveConfig
 from ..runtime.locale import SupportedLocale
+from .schemas import ChatAgent
 
 __all__ = [
     "HandlerRuntime",
     "analysis_platform_kwargs",
+    "chat_call_kwargs",
     "chat_kwargs",
     "coder_kwargs",
     "load_chat_runtime",
@@ -87,6 +89,22 @@ def chat_kwargs(
     kwargs["response_format"] = config.RESPONSE_FORMAT
     kwargs["max_tokens"] = config.MAX_TOKENS
     return kwargs
+
+
+def chat_call_kwargs(
+    request: ChatAgent,
+    server_dir: str,
+    config: ChatConfig,
+    runtime: HandlerRuntime,
+) -> dict[str, Any]:
+    """Return the complete provider kwargs for a chat execution path."""
+    return {
+        "user_query": request.user_query,
+        "obs_file_list": request.obs_file_list,
+        "server_dir": server_dir,
+        **chat_kwargs(config, runtime.sensitive, locale=request.locale),
+        **obs_kwargs(config, runtime.obs_credentials),
+    }
 
 
 def retrieve_kwargs(config: KnowledgeConfig) -> dict[str, Any]:

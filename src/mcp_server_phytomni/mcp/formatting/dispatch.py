@@ -13,6 +13,10 @@ from ...common.reasoning_content import normalize_chat_completion_dict
 from . import cited as _cited
 from . import tasks as _tasks
 from ._shared import json_dumps, payload_mapping
+from .execution import (
+    apply_compatibility_projection,
+    build_execution_projection,
+)
 from .models import FormattedToolResult, ToolResultEnvelope
 from .redaction import sanitize_raw
 
@@ -72,13 +76,21 @@ def build_tool_result_envelope(
 ) -> ToolResultEnvelope:
     """Build a full result envelope for one tool response."""
     normalized_payload = normalize_chat_completion_dict(payload)
-    return ToolResultEnvelope(
-        formatted=format_tool_result(
+    execution = build_execution_projection(
+        normalize_tool_name(tool_name), normalized_payload
+    )
+    formatted = apply_compatibility_projection(
+        format_tool_result(
             tool_name,
             normalized_payload,
             arguments=arguments,
         ),
+        execution,
+    )
+    return ToolResultEnvelope(
+        formatted=formatted,
         raw=sanitize_raw(normalized_payload),
+        execution=execution,
     )
 
 
