@@ -73,6 +73,15 @@ def _failed_resume_result() -> dict[str, Any]:
     """Return a safe failure payload without retaining backend exceptions."""
     return {
         "formatted": {"answer": ""},
+        "execution": {
+            "tracking": {"degraded": True},
+            "warnings": [{"code": "a2ui_resume_failed", "retryable": False}],
+            "tasks": [],
+            "artifacts": [],
+            "output_dirs": [],
+            "report": None,
+            "diagnostics": [],
+        },
         "raw": None,
         "error": "a2ui resume failed",
     }

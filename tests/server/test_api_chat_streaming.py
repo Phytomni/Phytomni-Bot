@@ -310,12 +310,12 @@ async def test_stream_priming_empty_returns_json_and_fails_run(
     records = RunRegistry(tasks_db_path).list_runs(owner="u1")
     assert records
     assert records[-1].status == "failed"
-    assert records[-1].result == {
-        "formatted": {"answer": ""},
-        "raw": None,
-        "stream": True,
-        "partial": True,
-    }
+    assert records[-1].result is not None
+    assert records[-1].result["formatted"] == {"answer": ""}
+    assert records[-1].result["execution"]["tracking"] == {"degraded": False}
+    assert records[-1].result["raw"] is None
+    assert records[-1].result["stream"] is True
+    assert records[-1].result["partial"] is True
 
 
 @pytest.mark.parametrize(

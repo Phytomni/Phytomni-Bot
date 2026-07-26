@@ -141,7 +141,10 @@ def flatten_messages(
 
 
 def to_chat_completion(
-    formatted: Mapping[str, Any], raw: Any, model: str
+    formatted: Mapping[str, Any],
+    raw: Any,
+    model: str,
+    execution: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Shape an envelope into an OpenAI ChatCompletion + envelope dict.
 
@@ -152,13 +155,15 @@ def to_chat_completion(
     top level. Otherwise a single assistant message is synthesized from
     ``formatted["answer"]``. Both branches attach the full
     ``formatted`` and ``raw`` blocks at the top level so clients can
-    pick the display view or the full sanitized payload.
+    pick the display view or the full sanitized payload. When supplied,
+    the canonical ``execution`` projection is attached beside them.
 
     Args:
         formatted: ``asdict(FormattedToolResult)`` carrying the
             normalized display fields.
         raw: Sanitized handler payload returned by the agent path.
         model: The requested model id, echoed back.
+        execution: Optional canonical operational projection.
 
     Returns:
         A JSON-serializable ChatCompletion-shaped dict with top-level
@@ -191,6 +196,8 @@ def to_chat_completion(
     completion["formatted"] = (
         dict(formatted) if isinstance(formatted, Mapping) else formatted
     )
+    if execution is not None:
+        completion["execution"] = dict(execution)
     completion["raw"] = raw
     return completion
 

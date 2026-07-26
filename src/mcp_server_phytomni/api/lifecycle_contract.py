@@ -245,6 +245,9 @@ def build_agent_run_response(
 ) -> dict[str, Any]:
     """Validate and serialize one canonical public agent.run."""
     _validate_response_options(options)
+    degraded_tracking = options.get("degraded_tracking", False) or (
+        _execution_is_degraded(options["result"])
+    )
     request = _AgentRunResponseInput(
         run_id=run_id,
         agent=agent,
@@ -253,7 +256,7 @@ def build_agent_run_response(
         options=_AgentRunResponseOptions(
             result=options["result"],
             persisted=options["persisted"],
-            degraded_tracking=options.get("degraded_tracking", False),
+            degraded_tracking=degraded_tracking,
             include_run_id=options.get("include_run_id", True),
         ),
     )
@@ -355,6 +358,15 @@ def _task_ids_from_result(result: Mapping[str, Any]) -> tuple[str, ...]:
     if isinstance(task_id, str) and task_id.strip():
         return (task_id.strip(),)
     return ()
+
+
+def _execution_is_degraded(result: Mapping[str, Any]) -> bool:
+    """Derive the compatibility flag from the canonical execution block."""
+    execution = result.get("execution")
+    tracking = (
+        execution.get("tracking") if isinstance(execution, Mapping) else None
+    )
+    return isinstance(tracking, Mapping) and tracking.get("degraded") is True
 
 
 def _ensure_review_interrupt_surface(
@@ -836,7 +848,7 @@ def _project_record_list(
     value: Any, keys: Sequence[str]
 ) -> list[dict[str, Any]]:
     """Project a list of records with no arbitrary nested values."""
-    if not isinstance(value, list):
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         return []
     return [
         _project_scalar_fields(item, keys)
@@ -849,7 +861,7 @@ def _project_string_list(value: Any) -> list[str]:
     """Keep only public string values from an untrusted list."""
     return (
         [item for item in value if isinstance(item, str)]
-        if isinstance(value, list)
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes))
         else []
     )
 

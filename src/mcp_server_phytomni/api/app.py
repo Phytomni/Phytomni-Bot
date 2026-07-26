@@ -337,11 +337,18 @@ def _format_agent_run_result(
         if not isinstance(existing_meta, dict):
             existing_meta = {}
         formatted_dict["metadata"] = {**existing_meta, **resolve_meta}
+    execution = getattr(envelope, "execution", None)
+    if execution is None:
+        # Keep compatibility for narrow adapters that still provide the
+        # historical two-field envelope during the migration.
+        execution_dict: dict[str, Any] = {
+            "warnings": _project_submission_warnings(envelope.raw),
+        }
+    else:
+        execution_dict = asdict(execution)
     result = {
         "formatted": formatted_dict,
-        "execution": {
-            "warnings": _project_submission_warnings(envelope.raw),
-        },
+        "execution": execution_dict,
         "raw": envelope.raw,
     }
     response_result = result if debug else strip_agent_result(result)
@@ -418,6 +425,7 @@ def _sync_agent_run_response(
         task_ids=(),
         result=canonical["result"],
         persisted=True,
+        degraded_tracking=canonical.get("degraded_tracking") is True,
     )
     return body, 200
 
@@ -733,11 +741,15 @@ async def _review_chat_completion_response(
         # the native interrupt body so clients can resume with the Bot
         # run id without guessing inside choices[].
         return JSONResponse(_review_run_body(execution, debug=True))
-    result = execution.result or {"formatted": {"answer": ""}, "raw": None}
+    result = execution.result or {
+        **empty_agent_result(),
+        "raw": None,
+    }
     completion = to_chat_completion(
         result.get("formatted", {}),
         result.get("raw"),
         payload.model,
+        result.get("execution"),
     )
     completion["run_id"] = execution.run_id
     if not resolve_debug(payload.debug):

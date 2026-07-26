@@ -71,6 +71,7 @@ from .handlers import (
 from .progress_events import PROGRESS_KIND
 from .result_formatting import (
     AguiEvent,
+    ExecutionProjection,
     FormattedToolResult,
     ToolResultEnvelope,
     build_tool_result_envelope,
@@ -678,11 +679,19 @@ async def _stdio_terminal_payload(
         MCP text content containing the serialized formatted result.
     """
     if final_state is None:
-        return _text_response({"formatted": {}})
+        return _text_response(
+            {
+                "formatted": {},
+                "execution": asdict(ExecutionProjection()),
+            }
+        )
     merged = merge_intermediate_state(dict(final_state))
     await _maybe_enrich_cited(tool_name, merged)
     envelope = build_tool_result_envelope(tool_name, merged)
-    payload: dict[str, Any] = {"formatted": asdict(envelope.formatted)}
+    payload: dict[str, Any] = {
+        "formatted": asdict(envelope.formatted),
+        "execution": asdict(envelope.execution),
+    }
     if resolve_debug(None):
         payload["raw"] = envelope.raw
     return _text_response(payload)
@@ -839,6 +848,7 @@ async def dispatch_tool(
     envelope = await invoke_tool_enveloped(name, arguments)
     payload: dict[str, Any] = {
         "formatted": asdict(envelope.formatted),
+        "execution": asdict(envelope.execution),
     }
     if resolve_debug(None):
         payload["raw"] = envelope.raw

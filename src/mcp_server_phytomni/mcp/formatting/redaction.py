@@ -101,6 +101,7 @@ _CHAT_COMPLETION_KEEP = frozenset(
         "choices",
         "usage",
         "formatted",
+        "execution",
         "run_id",
         "degraded_tracking",
     }

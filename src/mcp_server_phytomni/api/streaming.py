@@ -35,6 +35,7 @@ from ..mcp.stream_lifecycle import (
 )
 from ..runtime.run_registry import RunRequestInfo
 from . import a2ui_runtime
+from .lifecycle_contract import empty_agent_result
 from .openai_mapping import to_chat_completion_chunks
 from .schemas import ChatCompletionRequest
 from .stream_answer import StreamAnswerAccumulator
@@ -120,6 +121,7 @@ def failed_stream_result() -> dict[str, Any]:
     """Return the minimal failed result persisted after pre-open failure."""
     return {
         "formatted": {"answer": ""},
+        "execution": empty_agent_result()["execution"],
         "raw": None,
         "stream": True,
         "partial": True,
@@ -310,6 +312,7 @@ async def stream_chat_completion(
                 "succeeded",
                 {
                     "formatted": {"answer": snapshot.answer},
+                    "execution": empty_agent_result()["execution"],
                     "raw": None,
                     "stream": True,
                     "truncated": snapshot.truncated,
@@ -328,6 +331,7 @@ async def stream_chat_completion(
                 "failed",
                 {
                     "formatted": {"answer": snapshot.answer},
+                    "execution": empty_agent_result()["execution"],
                     "raw": None,
                     "stream": True,
                     "truncated": snapshot.truncated,

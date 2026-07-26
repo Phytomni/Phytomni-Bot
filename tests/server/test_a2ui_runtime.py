@@ -270,11 +270,20 @@ async def test_checkpoint_and_failure_settlement(
     failed = RunRegistry(db_path).get_run("run-failure", owner="alice")
     assert failed is not None
     assert failed.status == "failed"
-    assert failed.result == {
-        "formatted": {"answer": ""},
-        "raw": None,
-        "error": "a2ui resume failed",
-    }
+    assert failed.result is not None
+    assert failed.result["formatted"] == {"answer": ""}
+    assert failed.result["raw"] is None
+    assert failed.result["error"] == "a2ui resume failed"
+    execution = failed.result["execution"]
+    assert execution["tracking"] == {"degraded": True}
+    assert execution["warnings"] == [
+        {"code": "a2ui_resume_failed", "retryable": False}
+    ]
+    assert execution["report"] is None
+    assert all(
+        execution[key] == []
+        for key in ("tasks", "artifacts", "output_dirs", "diagnostics")
+    )
 
 
 async def test_first_uplink_wins(

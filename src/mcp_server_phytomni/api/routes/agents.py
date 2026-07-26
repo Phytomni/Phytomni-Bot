@@ -238,6 +238,7 @@ def _register_chat_route(
         formatted_dict = _formatted_with_metadata(envelope, resolve_meta)
         envelope_dict = {
             "formatted": formatted_dict,
+            "execution": asdict(envelope.execution),
             "raw": envelope.raw,
         }
         agent_slug = dependencies.catalog.model_to_agent_slug.get(
@@ -258,13 +259,16 @@ def _register_chat_route(
                     current_effective_locale(),
                 ),
             )
+        if chat_run_id is None and agent_slug is not None:
+            envelope_dict["execution"]["tracking"] = {"degraded": True}
         completion = dependencies.chat.projection.to_chat_completion(
             formatted_dict,
             envelope.raw,
             payload.model,
+            envelope_dict["execution"],
         )
         completion["run_id"] = chat_run_id
-        if chat_run_id is None and agent_slug is not None:
+        if envelope_dict["execution"]["tracking"].get("degraded") is True:
             completion["degraded_tracking"] = True
         if not dependencies.chat.projection.resolve_debug(payload.debug):
             completion = dependencies.chat.projection.strip_chat_completion(

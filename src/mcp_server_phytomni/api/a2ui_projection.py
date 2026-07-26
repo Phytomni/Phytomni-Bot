@@ -86,6 +86,7 @@ def format_chat_result(
     envelope = build_tool_result_envelope("ChatAgent", raw_payload)
     return {
         "formatted": asdict(envelope.formatted),
+        "execution": asdict(envelope.execution),
         "raw": envelope.raw,
         "a2ui": submitted_a2ui_value(prior_surface, resume_payload),
     }
@@ -105,6 +106,7 @@ def format_review_result(
     )
     return {
         "formatted": asdict(envelope.formatted),
+        "execution": asdict(envelope.execution),
         "raw": envelope.raw,
     }
 
