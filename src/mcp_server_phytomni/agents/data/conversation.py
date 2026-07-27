@@ -48,11 +48,12 @@ _SUMMARY_ROW_RE = re.compile(
     r"(?:\[[^\]]+,\s*[^\]]+\]|\{[^{}:]+:\s*[^{}]+\}|\|[^\n]+\|)",
     re.IGNORECASE,
 )
+# Keep the machine-field vocabulary bounded so ordinary scientific prose can
+# contain ``secret`` without being treated as a credential.
 _SUMMARY_SECRET_FIELD_RE = re.compile(
     r"""
     (?:
         (?<![a-z0-9])
-        (?:[a-z0-9]+[ _-]+)*
         (?:
             pass(?:word|wd|phrase)?
             |token
@@ -63,29 +64,77 @@ _SUMMARY_SECRET_FIELD_RE = re.compile(
         )
         |
         (?<![a-z0-9])
-        (?:[a-z0-9]+[ _-]+)*
         (?:
-            access
-            |api
-            |private
-            |secret
+            db
+            |database
+            |prior[ _-]+session
+            |session
+            |refresh
+            |access
             |credential
             |authorization
             |bearer
+            |api
+            |private
+            |secret
             |x[ _-]?auth
         )
         [ _-]+
-        (?:access[ _-]+)?
         (?:
             pass(?:word|wd|phrase)?
             |token
+            |credential(?:s)?
+            |authorization
+            |bearer
+            |secret
+            |access[ _-]+key(?:[ _-]+id)?
             |key(?:[ _-]+id)?
             |header
             |ref(?:erence)?
-            |secret
+            |id
+            |value
+            |name
         )
     )
     (?=\s*(?:=|:))
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+_SUMMARY_SECRET_NAME_RE = re.compile(
+    r"""
+    (?<![a-z0-9])
+    (?:
+        db
+        |database
+        |prior[-_]session
+        |session
+        |refresh
+        |access
+        |credential
+        |authorization
+        |bearer
+        |api
+        |private
+        |secret
+        |x[-_]auth
+    )
+    [-_]+
+    (?:
+        pass(?:word|wd|phrase)?
+        |token
+        |credential(?:s)?
+        |authorization
+        |bearer
+        |secret
+        |access[-_]key(?:[-_]id)?
+        |key(?:[-_]id)?
+        |header
+        |ref(?:erence)?
+        |id
+        |value
+        |name
+    )
+    (?![a-z0-9])
     """,
     re.IGNORECASE | re.VERBOSE,
 )
@@ -223,6 +272,8 @@ def _validated_aggregate_summary(value: object) -> str | None:
     if _SUMMARY_ROW_RE.search(summary):
         return None
     if _SUMMARY_SECRET_FIELD_RE.search(summary):
+        return None
+    if _SUMMARY_SECRET_NAME_RE.search(summary):
         return None
     if _SUMMARY_SECRET_PHRASE_RE.search(summary):
         return None

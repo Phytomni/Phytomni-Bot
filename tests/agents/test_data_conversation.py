@@ -244,6 +244,14 @@ def test_delta_uses_only_canonical_valid_aggregate_summary() -> None:
         "db-password: scrubbed",
         "refresh_token = scrubbed",
         "refresh-token: scrubbed",
+        "session_id = x",
+        "session-id: x",
+        "prior_session_id = x",
+        "prior-session-id: x",
+        "authorization_value: x",
+        "authorization-value = x",
+        "db_password",
+        "db-password",
     ],
 )
 def test_delta_rejects_unsafe_aggregate_summary(
@@ -283,13 +291,19 @@ def test_delta_accepts_scientific_prose_containing_secret_word() -> None:
     assert delta.summary_update == summary
 
 
-def test_prepare_drops_unsafe_projection_summary_during_rehydration() -> None:
+@pytest.mark.parametrize(
+    "prior_summary",
+    ["access_token = abc", "db_password"],
+)
+def test_prepare_drops_unsafe_projection_summary_during_rehydration(
+    prior_summary: str,
+) -> None:
     """Unsafe prior task summaries never flow back into the next delta."""
     adapter = DataConversationAdapter()
     adapter.prepare(
         _projection(
             "Show expression by tissue",
-            delta=ContextDelta(summary_update="access_token = abc"),
+            delta=ContextDelta(summary_update=prior_summary),
         )
     )
 
@@ -305,7 +319,7 @@ def test_prepare_drops_unsafe_projection_summary_during_rehydration() -> None:
     payload = json.dumps(delta.model_dump(mode="json"), sort_keys=True)
 
     assert delta.summary_update is None
-    assert "access_token = abc" not in payload
+    assert prior_summary not in payload
 
 
 def test_delta_rejects_generic_raw_and_formatted_summaries() -> None:
