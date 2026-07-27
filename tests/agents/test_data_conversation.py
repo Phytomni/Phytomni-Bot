@@ -222,11 +222,11 @@ def test_delta_uses_only_canonical_valid_aggregate_summary() -> None:
         "SELECT gene_id, secret FROM credentials",
         "postgresql://user:pass@example/db",
         "['leaf', 10], ['root', 5]",
-        "password: hunter2",
-        "passwd = hunter2",
+        "password: scrubbed",
+        "passwd = scrubbed",
         "secret token for expression export",
-        "authorization: Bearer ptm_secret_value",
-        "api_key=sk-test",
+        "authorization: Bearer scrubbed",
+        "api_key=scrubbed",
         "credential_ref = peerref",
         "access_token = abc",
         "session_token = abc",
@@ -234,8 +234,16 @@ def test_delta_uses_only_canonical_valid_aggregate_summary() -> None:
         "bearer_token = x",
         "access-token: abc",
         "authorization-header: x",
-        "access_key_id = AKIAIOSFODNN7EXAMPLE",
-        "private_key = hidden-key-material",
+        "access_key_id = scrubbed",
+        "private_key = scrubbed",
+        "secret_key = scrubbed",
+        "secret-key: scrubbed",
+        "secret_access_key = scrubbed",
+        "secret-access-key: scrubbed",
+        "db_password = scrubbed",
+        "db-password: scrubbed",
+        "refresh_token = scrubbed",
+        "refresh-token: scrubbed",
     ],
 )
 def test_delta_rejects_unsafe_aggregate_summary(
@@ -255,6 +263,24 @@ def test_delta_rejects_unsafe_aggregate_summary(
     )
 
     assert delta.summary_update is None
+
+
+def test_delta_accepts_scientific_prose_containing_secret_word() -> None:
+    """A normal scientific sentence is not a credential field."""
+    adapter = DataConversationAdapter()
+    adapter.prepare(_projection("Show expression by tissue"))
+
+    summary = "Secret protein abundance was measured"
+    delta = adapter.delta(
+        _result(
+            headers=["tissue", "expression"],
+            rows=[["leaf", 10], ["root", 5]],
+            summary="ignored",
+            aggregate_summary=summary,
+        )
+    )
+
+    assert delta.summary_update == summary
 
 
 def test_prepare_drops_unsafe_projection_summary_during_rehydration() -> None:

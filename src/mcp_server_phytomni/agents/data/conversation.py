@@ -50,45 +50,54 @@ _SUMMARY_ROW_RE = re.compile(
 )
 _SUMMARY_SECRET_FIELD_RE = re.compile(
     r"""
-    \b
     (?:
-        pass(?:word|wd)?
-        |secret
-        |token
-        |credential(?:s)?
-        |authorization
-        |bearer
-        |(?:credential|authorization|bearer|session|access|api|private|x[ _-]?auth)
-          [ _-]?
-          (?:
-              ref
-              |token
-              |header
-              |secret
-              |key(?:[ _-]?id)?
-              |id
-              |value
-              |name
-          )
+        (?<![a-z0-9])
+        (?:[a-z0-9]+[ _-]+)*
+        (?:
+            pass(?:word|wd|phrase)?
+            |token
+            |credential(?:s)?
+            |authorization
+            |bearer
+            |secret
+        )
+        |
+        (?<![a-z0-9])
+        (?:[a-z0-9]+[ _-]+)*
+        (?:
+            access
+            |api
+            |private
+            |secret
+            |credential
+            |authorization
+            |bearer
+            |x[ _-]?auth
+        )
+        [ _-]+
+        (?:access[ _-]+)?
+        (?:
+            pass(?:word|wd|phrase)?
+            |token
+            |key(?:[ _-]+id)?
+            |header
+            |ref(?:erence)?
+            |secret
+        )
     )
-    \b
-    \s*(?:=|:)
+    (?=\s*(?:=|:))
     """,
     re.IGNORECASE | re.VERBOSE,
 )
 _SUMMARY_SECRET_PHRASE_RE = re.compile(
     r"""
     (?:
-        \bpassword\b
-        |\bpasswd\b
-        |\bsecret(?:[ _-]+token)?\b
+        \b(?:api|access|private|credential|secret|x[ _-]?auth)
+          [ _-]+
+          (?:access[ _-]+)?
+          (?:key(?:[ _-]+id)?|token|header|ref(?:erence)?)\b
         |\bauthorization\s*:\s*bearer\b
         |\bbearer\s+[a-z0-9._-]+\b
-        |\bapi[ _-]?key\b
-        |\bcredential[ _-]?ref\b
-        |\baccess[ _-]?key(?:[ _-]?id)?\b
-        |\bprivate[ _-]?key\b
-        |\bx[ _-]?auth[ _-]?token\b
     )
     """,
     re.IGNORECASE | re.VERBOSE,
