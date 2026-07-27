@@ -318,7 +318,7 @@ async def test_missing_or_schema_incompatible_context_requires_rebuild(
     first = await service.execute_turn(_envelope(turn_id="2"))
     assert first.stage is not None
     await service.acknowledge_settlement(_envelope(turn_id="2"), "b" * 64)
-    with store._write() as connection:  # noqa: SLF001 - test corruption seam
+    with store._write() as connection:
         connection.execute(
             "UPDATE conversation_contexts SET schema_version = 99 WHERE conversation_key = ?",
             (str(_CONVERSATION_KEY),),
@@ -487,6 +487,58 @@ async def test_valid_entity_and_artifact_delta_stages_successfully(
         (item.artifact_id, item.display_name)
         for item in result.context.artifact_index
     ] == [("artifact-1", "updated results table")]
+
+
+@pytest.mark.asyncio
+async def test_incremental_advance_preserves_unpaired_user_before_later_pair(
+    store: ConversationContextStore,
+) -> None:
+    """Normal advance appends ordered turns without collapsing history."""
+    outcomes = iter(
+        (
+            AgentOutcome(result={"answer": "U2"}),
+            AgentOutcome(
+                result={"answer": "A3"},
+                assistant_summary="A3",
+                context_delta=ContextDelta(summary_update="A3"),
+            ),
+        )
+    )
+
+    async def invoke(*_args: object) -> AgentOutcome:
+        return next(outcomes)
+
+    service = _service(store, invoke=invoke)
+    first = _envelope()
+    await service.execute_turn(first)
+    await service.acknowledge_settlement(first, "b" * 64)
+    second_payload = _envelope(
+        turn_id="2",
+        ledger_cursor=2,
+        ledger_version="b" * 64,
+        base_business_context_version=1,
+    ).model_dump(mode="json")
+    second_payload["current_message"] = {
+        "content": "U3",
+        "locale": "en-US",
+    }
+    second_payload["history_delta"] = [
+        {"turn_id": "2", "role": "user", "content": "U3"}
+    ]
+    second = await service.execute_turn(
+        ConversationEnvelopeV1.model_validate(second_payload)
+    )
+
+    assert second.context is not None
+    assert [
+        (item.role, item.content) for item in second.context.recent_turns
+    ] == [
+        ("user", "keep rice samples"),
+        ("user", "U3"),
+        ("assistant", "A3"),
+    ]
+    assert second.context.recent_user_turns == ["keep rice samples", "U3"]
+    assert second.context.assistant_summaries == ["A3"]
 
 
 @pytest.mark.asyncio

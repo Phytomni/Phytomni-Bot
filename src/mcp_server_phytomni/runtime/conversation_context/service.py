@@ -19,6 +19,7 @@ from .models import (
     ContextDelta,
     ContextProjection,
     ConversationEnvelopeV1,
+    RoleTaggedTurn,
 )
 from .projection import (
     build_context_projection,
@@ -474,16 +475,24 @@ class ConversationContextService:
             data["per_agent_memory"][memory.agent_id] = memory.model_dump(
                 mode="python"
             )
+        recent_turns = list(data["recent_turns"])
         if add_current_user_turn:
-            user_turns = list(data["recent_user_turns"])
-            user_turns.append(
-                envelope.current_message.content[:MAX_CONTEXT_TEXT_CHARS]
+            recent_turns.append(
+                RoleTaggedTurn(
+                    role="user",
+                    content=envelope.current_message.content[
+                        :MAX_CONTEXT_TEXT_CHARS
+                    ],
+                ).model_dump(mode="python")
             )
-            data["recent_user_turns"] = user_turns[-MAX_CONTEXT_ITEMS:]
         if assistant_summary:
-            summaries = list(data["assistant_summaries"])
-            summaries.append(assistant_summary[:MAX_CONTEXT_TEXT_CHARS])
-            data["assistant_summaries"] = summaries[-MAX_CONTEXT_ITEMS:]
+            recent_turns.append(
+                RoleTaggedTurn(
+                    role="assistant",
+                    content=assistant_summary[:MAX_CONTEXT_TEXT_CHARS],
+                ).model_dump(mode="python")
+            )
+        data["recent_turns"] = recent_turns[-MAX_CONTEXT_ITEMS:]
         data.update(
             {
                 "version": envelope.base_business_context_version + 1,
@@ -539,8 +548,8 @@ class ConversationContextService:
 __all__ = [
     "AgentOutcome",
     "AgentSelection",
-    "ConversationContextService",
     "ContextStageMetadata",
+    "ConversationContextService",
     "PrepareStatus",
     "PreparedTurn",
     "SettlementMismatchError",

@@ -33,6 +33,7 @@ from mcp_server_phytomni.runtime.conversation_context.adapters import (
 )
 from mcp_server_phytomni.runtime.conversation_context.models import (
     ContextProjection,
+    RoleTaggedTurn,
 )
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
@@ -181,8 +182,12 @@ def test_chat_context_adapter_keeps_native_role_history_separate_from_query() ->
     dispatch = canonical_agent_invocation(
         ContextProjection(
             current_query="U3",
-            relevant_user_turns=["U1", "U2"],
-            relevant_assistant_summaries=["A1", "A2"],
+            relevant_recent_turns=[
+                RoleTaggedTurn(role="user", content="U1"),
+                RoleTaggedTurn(role="assistant", content="A1"),
+                RoleTaggedTurn(role="user", content="U2"),
+                RoleTaggedTurn(role="assistant", content="A2"),
+            ],
             agent_thread_id="ctx-" + "a" * 64,
             locale="en-US",
             token_budget=100,
@@ -204,9 +209,14 @@ def test_chat_context_adapter_keeps_unpaired_user_at_degraded_boundary() -> (
     """A missing assistant summary does not reorder later user history."""
     dispatch = canonical_agent_invocation(
         ContextProjection(
-            current_query="U3",
-            relevant_user_turns=["U1", "U2"],
-            relevant_assistant_summaries=["A1"],
+            current_query="U2",
+            relevant_recent_turns=[
+                RoleTaggedTurn(role="user", content="U1"),
+                RoleTaggedTurn(role="assistant", content="A1"),
+                RoleTaggedTurn(role="user", content="U2"),
+                RoleTaggedTurn(role="user", content="U3"),
+                RoleTaggedTurn(role="assistant", content="A3"),
+            ],
             agent_thread_id="ctx-" + "a" * 64,
             locale="en-US",
             token_budget=100,
@@ -217,6 +227,8 @@ def test_chat_context_adapter_keeps_unpaired_user_at_degraded_boundary() -> (
         {"role": "user", "content": "U1"},
         {"role": "assistant", "content": "A1"},
         {"role": "user", "content": "U2"},
+        {"role": "user", "content": "U3"},
+        {"role": "assistant", "content": "A3"},
     )
 
 
@@ -248,9 +260,9 @@ async def test_chat_context_v1_stages_native_history_and_replays_turn(
         )
 
     envelope = _conversation_envelope()
-    envelope["turn_id"] = "5"
-    envelope["request_id"] = "request-5"
-    envelope["ledger_cursor"] = 5
+    envelope["turn_id"] = "6"
+    envelope["request_id"] = "request-6"
+    envelope["ledger_cursor"] = 6
     envelope["current_message"]["content"] = "U2"
     envelope["history_delta"] = [
         {
@@ -271,12 +283,17 @@ async def test_chat_context_v1_stages_native_history_and_replays_turn(
         },
         {
             "turn_id": "4",
-            "role": "assistant",
-            "content": "A2",
-            "summary": "A2",
+            "role": "user",
+            "content": "U3",
         },
         {
             "turn_id": "5",
+            "role": "assistant",
+            "content": "A3",
+            "summary": "A3",
+        },
+        {
+            "turn_id": "6",
             "role": "user",
             "content": "U2",
         },
@@ -311,7 +328,8 @@ async def test_chat_context_v1_stages_native_history_and_replays_turn(
             {"role": "user", "content": "U1"},
             {"role": "assistant", "content": "A1"},
             {"role": "user", "content": "U2"},
-            {"role": "assistant", "content": "A2"},
+            {"role": "user", "content": "U3"},
+            {"role": "assistant", "content": "A3"},
         ),
     }
     stage = first.json()["conversation_context"]

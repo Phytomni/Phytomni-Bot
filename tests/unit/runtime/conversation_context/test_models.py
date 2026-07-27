@@ -15,13 +15,15 @@ from mcp_server_phytomni.api.schemas import (
     ExpertQueryRequest,
 )
 from mcp_server_phytomni.runtime.conversation_context.models import (
-    ArtifactRefV1,
-    LedgerEntryV1,
     MAX_ARTIFACT_METADATA_CHARS,
     MAX_CURRENT_MESSAGE_CHARS,
     MAX_HISTORY_DELTA_ENTRIES,
     MAX_LEDGER_SUMMARY_CHARS,
+    ArtifactRefV1,
+    BusinessContext,
+    ContextProjection,
     ConversationEnvelopeV1,
+    LedgerEntryV1,
 )
 
 pytestmark = pytest.mark.unit
@@ -248,7 +250,47 @@ def test_current_message_can_mention_paths_without_becoming_metadata() -> None:
         "locale": "en-US",
     }
 
-    assert ConversationEnvelopeV1.model_validate(payload).current_message.content
+    assert ConversationEnvelopeV1.model_validate(
+        payload
+    ).current_message.content
+
+
+def test_business_context_and_projection_derive_compatibility_history() -> (
+    None
+):
+    """Ordered role-tagged history remains compatible with legacy fields."""
+    context = BusinessContext.model_validate(
+        {
+            "schema_version": 1,
+            "version": 2,
+            "last_applied_ledger_cursor": 3,
+            "last_applied_ledger_version": "a" * 64,
+            "observed_mode": "expert",
+            "recent_turns": [
+                {"role": "user", "content": "U1"},
+                {"role": "assistant", "content": "A1"},
+                {"role": "user", "content": "U2"},
+            ],
+        }
+    )
+    projection = ContextProjection.model_validate(
+        {
+            "current_query": "U3",
+            "relevant_recent_turns": [
+                {"role": "user", "content": "U1"},
+                {"role": "assistant", "content": "A1"},
+                {"role": "user", "content": "U2"},
+            ],
+            "agent_thread_id": "ctx-" + "a" * 64,
+            "locale": "en-US",
+            "token_budget": 128,
+        }
+    )
+
+    assert context.recent_user_turns == ["U1", "U2"]
+    assert context.assistant_summaries == ["A1"]
+    assert projection.relevant_user_turns == ["U1", "U2"]
+    assert projection.relevant_assistant_summaries == ["A1"]
 
 
 @pytest.mark.parametrize(

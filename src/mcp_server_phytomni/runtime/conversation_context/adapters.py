@@ -7,7 +7,6 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
-from itertools import zip_longest
 from typing import Any
 
 from ...agents.expert import ToolSelection, ToolSelectionError
@@ -42,32 +41,27 @@ RouterSelector = Callable[..., Awaitable[ToolSelection | None]]
 StoreFactory = Callable[[], ConversationContextStore]
 
 
+def _native_history_from_turns(
+    turns: Sequence[Mapping[str, str] | object],
+) -> tuple[dict[str, str], ...]:
+    """Preserve the bounded chronological native-role history exactly."""
+    messages: list[dict[str, str]] = []
+    for turn in turns:
+        role = getattr(turn, "role", None)
+        content = getattr(turn, "content", None)
+        if role is None and isinstance(turn, Mapping):
+            role = turn.get("role")
+            content = turn.get("content")
+        if role in {"user", "assistant"} and isinstance(content, str):
+            messages.append({"role": role, "content": content})
+    return tuple(messages)
+
+
 def _native_history_from_projection(
     projection: ContextProjection,
 ) -> tuple[dict[str, str], ...]:
     """Return bounded native turns without adding fields to MCP schemas."""
-    return _interleave_native_history(
-        projection.relevant_user_turns,
-        projection.relevant_assistant_summaries,
-    )
-
-
-def _interleave_native_history(
-    user_turns: Sequence[str],
-    assistant_summaries: Sequence[str],
-) -> tuple[dict[str, str], ...]:
-    """Pair chronological streams, keeping a user before its summary."""
-    messages: list[dict[str, str]] = []
-    for user_turn, assistant_summary in zip_longest(
-        user_turns, assistant_summaries
-    ):
-        if user_turn is not None:
-            messages.append({"role": "user", "content": user_turn})
-        if assistant_summary is not None:
-            messages.append(
-                {"role": "assistant", "content": assistant_summary}
-            )
-    return tuple(messages)
+    return _native_history_from_turns(projection.relevant_recent_turns)
 
 
 def canonical_agent_invocation(
@@ -89,10 +83,7 @@ def native_history_from_context(
     context: BusinessContext,
 ) -> tuple[dict[str, str], ...]:
     """Build bounded router history from Bot-owned semantic context."""
-    return _interleave_native_history(
-        context.recent_user_turns,
-        context.assistant_summaries,
-    )
+    return _native_history_from_turns(context.recent_turns)
 
 
 class ConversationContextExecutor:
@@ -115,8 +106,8 @@ class ConversationContextExecutor:
         self._async_invoker: ContextVar[AsyncInvoker | None] = ContextVar(
             "conversation_context_async_invoker", default=None
         )
-        self._selected_arguments: ContextVar[dict[str, Any]] = ContextVar(
-            "conversation_context_selected_arguments", default={}
+        self._selected_arguments: ContextVar[dict[str, Any] | None] = (
+            ContextVar("conversation_context_selected_arguments", default=None)
         )
 
     def _service_for_request(self) -> ConversationContextService:
@@ -179,7 +170,7 @@ class ConversationContextExecutor:
             envelope,
             canonical_agent_invocation(
                 projection,
-                selected_arguments=self._selected_arguments.get(),
+                selected_arguments=self._selected_arguments.get() or {},
             ),
         )
 
@@ -191,7 +182,7 @@ class ConversationContextExecutor:
         invoke = self._async_invoker.get()
         if invoke is None:
             raise RuntimeError("context async invoker is unavailable")
-        arguments = dict(self._selected_arguments.get())
+        arguments = dict(self._selected_arguments.get() or {})
         arguments.setdefault("user_query", envelope.current_message.content)
         arguments["locale"] = envelope.current_message.locale
         return await invoke(selected_agent_id, envelope, arguments)

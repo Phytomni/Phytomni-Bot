@@ -18,6 +18,7 @@ from mcp_server_phytomni.runtime.conversation_context.models import (
     ContextEntity,
     ContextStageMetadata,
     PerAgentMemory,
+    RoleTaggedTurn,
 )
 from mcp_server_phytomni.runtime.conversation_context.projection import (
     agent_thread_id,
@@ -56,8 +57,10 @@ def _context() -> BusinessContext:
             )
         ],
         open_questions=["q" * 50],
-        recent_user_turns=["u" * 300],
-        assistant_summaries=["a" * 100],
+        recent_turns=[
+            RoleTaggedTurn(role="user", content="u" * 300),
+            RoleTaggedTurn(role="assistant", content="a" * 100),
+        ],
         artifact_index=[_envelope_artifact()],
         per_agent_memory={
             "DataAgent": PerAgentMemory(
@@ -158,9 +161,55 @@ def test_rebuild_is_deterministic_and_keeps_only_assistant_summaries() -> None:
     )
 
     assert first.model_dump(mode="json") == second.model_dump(mode="json")
+    assert [(item.role, item.content) for item in first.recent_turns] == [
+        ("user", "Find rice genes."),
+        ("assistant", "Found two candidate genes."),
+    ]
     assert first.recent_user_turns == ["Find rice genes."]
     assert first.assistant_summaries == ["Found two candidate genes."]
     assert "full report" not in first.model_dump_json()
+
+
+def test_projection_excludes_only_rebuilt_trailing_user_position() -> None:
+    """Repeated current text does not erase an earlier unmatched user turn."""
+    context = rebuild_business_context(
+        conversation_key=_CONVERSATION_KEY,
+        ledger_entries=[
+            {"turn_id": "1", "role": "user", "content": "U1"},
+            {"turn_id": "2", "role": "assistant", "summary": "A1"},
+            {"turn_id": "3", "role": "user", "content": "U2"},
+            {"turn_id": "4", "role": "user", "content": "U3"},
+            {"turn_id": "5", "role": "assistant", "summary": "A3"},
+            {"turn_id": "6", "role": "user", "content": "U2"},
+        ],
+        artifact_refs=[],
+        ledger_cursor=6,
+        ledger_version="c" * 64,
+        observed_mode="expert",
+    )
+
+    projection = build_context_projection(
+        conversation_key=_CONVERSATION_KEY,
+        current_query="U2",
+        locale="en-US",
+        selected_agent_id="DataAgent",
+        context=context,
+        authorized_artifacts=[],
+        api_config=_config(),
+        exclude_current_user_turn=True,
+    )
+
+    assert [
+        (item.role, item.content) for item in projection.relevant_recent_turns
+    ] == [
+        ("user", "U1"),
+        ("assistant", "A1"),
+        ("user", "U2"),
+        ("user", "U3"),
+        ("assistant", "A3"),
+    ]
+    assert projection.relevant_user_turns == ["U1", "U2", "U3"]
+    assert projection.relevant_assistant_summaries == ["A1", "A3"]
 
 
 def test_agent_thread_id_is_opaque_and_stable() -> None:
@@ -362,15 +411,18 @@ def test_rebuild_bounds_large_ledgers_and_preserves_recent_summaries() -> None:
         observed_mode="expert",
     )
 
-    assert len(context.recent_user_turns) == 50
-    assert context.recent_user_turns[0] == "user-50"
-    assert context.recent_user_turns[-1] == "user-99"
+    assert context.recent_user_turns == []
     assert len(context.assistant_summaries) == 50
     assert context.assistant_summaries[0] == "summary-50"
     assert context.assistant_summaries[-1] == "summary-99"
+    assert len(context.recent_turns) == 50
+    assert context.recent_turns[0].role == "assistant"
+    assert context.recent_turns[0].content == "summary-50"
+    assert context.recent_turns[-1].role == "assistant"
+    assert context.recent_turns[-1].content == "summary-99"
     assert all(
-        len(item) <= MAX_CONTEXT_TEXT_CHARS
-        for item in context.recent_user_turns
+        len(item.content) <= MAX_CONTEXT_TEXT_CHARS
+        for item in context.recent_turns
     )
     assert "full report" not in context.model_dump_json()
 

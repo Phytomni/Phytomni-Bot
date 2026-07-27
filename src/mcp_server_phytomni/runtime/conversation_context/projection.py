@@ -18,6 +18,7 @@ from .models import (
     ContextDelta,
     ContextProjection,
     PerAgentMemory,
+    RoleTaggedTurn,
 )
 
 
@@ -145,18 +146,52 @@ def build_context_projection(
         else:
             result.pop(name, None)
 
+    def sync_recent_turn_compatibility() -> None:
+        turns = result.get("relevant_recent_turns", [])
+        user_turns: list[str] = []
+        assistant_summaries: list[str] = []
+        for turn in turns:
+            role = turn["role"]
+            content = turn["content"]
+            if role == "user":
+                user_turns.append(content)
+            else:
+                assistant_summaries.append(content)
+        result["relevant_user_turns"] = user_turns
+        result["relevant_assistant_summaries"] = assistant_summaries
+
     admit(
         "active_entities",
         [item.model_dump(mode="json") for item in context.active_entities],
     )
     admit("open_questions", context.open_questions)
-    user_turns = list(context.recent_user_turns)
-    if exclude_current_user_turn:
+    recent_turns = list(context.recent_turns)
+    if (
+        exclude_current_user_turn
+        and recent_turns
+        and recent_turns[-1].role == "user"
+    ):
         # Rebuilt contexts include the envelope's current user turn as their
         # trailing slot; dispatch carries that turn separately as current_query.
-        user_turns = user_turns[:-1]
-    admit("relevant_user_turns", user_turns)
-    admit("relevant_assistant_summaries", context.assistant_summaries)
+        recent_turns = recent_turns[:-1]
+    admitted_turns: list[dict[str, str]] = []
+    for turn in [item.model_dump(mode="json") for item in recent_turns]:
+        result["relevant_recent_turns"] = [*admitted_turns, turn]
+        sync_recent_turn_compatibility()
+        if fits():
+            admitted_turns.append(turn)
+        else:
+            truncated = True
+            break
+    if len(admitted_turns) < len(recent_turns):
+        truncated = True
+    if admitted_turns:
+        result["relevant_recent_turns"] = admitted_turns
+        sync_recent_turn_compatibility()
+    else:
+        result.pop("relevant_recent_turns", None)
+        result.pop("relevant_user_turns", None)
+        result.pop("relevant_assistant_summaries", None)
     envelope_ids = {item.artifact_id for item in authorized_artifacts}
     artifacts = [
         item.model_dump(mode="json")
@@ -169,10 +204,7 @@ def build_context_projection(
     projection = ContextProjection(
         current_query=result["current_query"],
         task_summary=result.get("task_summary", ""),
-        relevant_user_turns=result.get("relevant_user_turns", []),
-        relevant_assistant_summaries=result.get(
-            "relevant_assistant_summaries", []
-        ),
+        relevant_recent_turns=result.get("relevant_recent_turns", []),
         active_entities=result.get("active_entities", []),
         open_questions=result.get("open_questions", []),
         artifact_refs=result.get("artifact_refs", []),
@@ -205,8 +237,7 @@ def rebuild_business_context(
     observed_mode: str,
 ) -> BusinessContext:
     """Rebuild semantic context from bounded, ordered ledger input."""
-    users: list[str] = []
-    summaries: list[str] = []
+    recent_turns: list[RoleTaggedTurn] = []
 
     def bound_text(value: str) -> str:
         """Keep both ends of oversized text while preserving a fixed bound."""
@@ -218,17 +249,23 @@ def rebuild_business_context(
     for raw in ledger_entries:
         role = raw.get("role")
         if role == "user" and isinstance(raw.get("content"), str):
-            users.append(bound_text(raw["content"]))
+            recent_turns.append(
+                RoleTaggedTurn(role="user", content=bound_text(raw["content"]))
+            )
         elif role == "assistant" and isinstance(raw.get("summary"), str):
-            summaries.append(bound_text(raw["summary"]))
+            recent_turns.append(
+                RoleTaggedTurn(
+                    role="assistant",
+                    content=bound_text(raw["summary"]),
+                )
+            )
     return BusinessContext(
         schema_version=1,
         version=0,
         last_applied_ledger_cursor=ledger_cursor,
         last_applied_ledger_version=ledger_version,
         observed_mode=observed_mode,
-        recent_user_turns=users[-50:],
-        assistant_summaries=summaries[-50:],
+        recent_turns=recent_turns[-50:],
         artifact_index=list(artifact_refs),
         per_agent_memory={
             agent: PerAgentMemory(
