@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
+from itertools import zip_longest
 from typing import Any
 
 from ...agents.expert import ToolSelection, ToolSelectionError
@@ -45,16 +46,28 @@ def _native_history_from_projection(
     projection: ContextProjection,
 ) -> tuple[dict[str, str], ...]:
     """Return bounded native turns without adding fields to MCP schemas."""
-    user_turns = list(projection.relevant_user_turns)
-    if user_turns and user_turns[-1] == projection.current_query:
-        user_turns.pop()
-    return tuple(
-        [{"role": "user", "content": content} for content in user_turns]
-        + [
-            {"role": "assistant", "content": content}
-            for content in projection.relevant_assistant_summaries
-        ]
+    return _interleave_native_history(
+        projection.relevant_user_turns,
+        projection.relevant_assistant_summaries,
     )
+
+
+def _interleave_native_history(
+    user_turns: Sequence[str],
+    assistant_summaries: Sequence[str],
+) -> tuple[dict[str, str], ...]:
+    """Pair chronological streams, keeping a user before its summary."""
+    messages: list[dict[str, str]] = []
+    for user_turn, assistant_summary in zip_longest(
+        user_turns, assistant_summaries
+    ):
+        if user_turn is not None:
+            messages.append({"role": "user", "content": user_turn})
+        if assistant_summary is not None:
+            messages.append(
+                {"role": "assistant", "content": assistant_summary}
+            )
+    return tuple(messages)
 
 
 def canonical_agent_invocation(
@@ -76,15 +89,9 @@ def native_history_from_context(
     context: BusinessContext,
 ) -> tuple[dict[str, str], ...]:
     """Build bounded router history from Bot-owned semantic context."""
-    return tuple(
-        [
-            {"role": "user", "content": content}
-            for content in context.recent_user_turns
-        ]
-        + [
-            {"role": "assistant", "content": content}
-            for content in context.assistant_summaries
-        ]
+    return _interleave_native_history(
+        context.recent_user_turns,
+        context.assistant_summaries,
     )
 
 

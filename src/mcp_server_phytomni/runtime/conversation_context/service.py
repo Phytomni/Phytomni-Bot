@@ -330,6 +330,7 @@ class ConversationContextService:
                 context=context,
                 authorized_artifacts=envelope.artifact_refs,
                 api_config=self.api_config,
+                exclude_current_user_turn=rebuilt,
             )
             try:
                 outcome = await self.invoke(

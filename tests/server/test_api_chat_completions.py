@@ -180,22 +180,43 @@ def test_chat_context_adapter_keeps_native_role_history_separate_from_query() ->
     """Chat receives native prior roles while dispatch sees only the latest turn."""
     dispatch = canonical_agent_invocation(
         ContextProjection(
-            current_query="What about that mechanism?",
-            relevant_user_turns=[
-                "Explain photosynthesis.",
-                "What about that mechanism?",
-            ],
-            relevant_assistant_summaries=["Explained light capture."],
+            current_query="U3",
+            relevant_user_turns=["U1", "U2"],
+            relevant_assistant_summaries=["A1", "A2"],
             agent_thread_id="ctx-" + "a" * 64,
             locale="en-US",
             token_budget=100,
         )
     )
 
-    assert dispatch.arguments["user_query"] == "What about that mechanism?"
+    assert dispatch.arguments["user_query"] == "U3"
     assert dispatch.conversation_messages == (
-        {"role": "user", "content": "Explain photosynthesis."},
-        {"role": "assistant", "content": "Explained light capture."},
+        {"role": "user", "content": "U1"},
+        {"role": "assistant", "content": "A1"},
+        {"role": "user", "content": "U2"},
+        {"role": "assistant", "content": "A2"},
+    )
+
+
+def test_chat_context_adapter_keeps_unpaired_user_at_degraded_boundary() -> (
+    None
+):
+    """A missing assistant summary does not reorder later user history."""
+    dispatch = canonical_agent_invocation(
+        ContextProjection(
+            current_query="U3",
+            relevant_user_turns=["U1", "U2"],
+            relevant_assistant_summaries=["A1"],
+            agent_thread_id="ctx-" + "a" * 64,
+            locale="en-US",
+            token_budget=100,
+        )
+    )
+
+    assert dispatch.conversation_messages == (
+        {"role": "user", "content": "U1"},
+        {"role": "assistant", "content": "A1"},
+        {"role": "user", "content": "U2"},
     )
 
 
@@ -227,25 +248,37 @@ async def test_chat_context_v1_stages_native_history_and_replays_turn(
         )
 
     envelope = _conversation_envelope()
-    envelope["turn_id"] = "3"
-    envelope["request_id"] = "request-3"
-    envelope["ledger_cursor"] = 3
+    envelope["turn_id"] = "5"
+    envelope["request_id"] = "request-5"
+    envelope["ledger_cursor"] = 5
+    envelope["current_message"]["content"] = "U2"
     envelope["history_delta"] = [
         {
             "turn_id": "1",
             "role": "user",
-            "content": "Explain photosynthesis.",
+            "content": "U1",
         },
         {
             "turn_id": "2",
             "role": "assistant",
-            "content": "Light capture starts the process.",
-            "summary": "Light capture starts the process.",
+            "content": "A1",
+            "summary": "A1",
         },
         {
             "turn_id": "3",
             "role": "user",
-            "content": "What is photosynthesis?",
+            "content": "U2",
+        },
+        {
+            "turn_id": "4",
+            "role": "assistant",
+            "content": "A2",
+            "summary": "A2",
+        },
+        {
+            "turn_id": "5",
+            "role": "user",
+            "content": "U2",
         },
     ]
     monkeypatch.setattr(api_app, "invoke_tool_enveloped", fake_invoke)
@@ -270,16 +303,15 @@ async def test_chat_context_v1_stages_native_history_and_replays_turn(
     assert captured == {
         "tool_name": "ChatAgent",
         "arguments": {
-            "user_query": "What is photosynthesis?",
+            "user_query": "U2",
             "locale": "en-US",
             "obs_file_list": [],
         },
         "conversation_messages": (
-            {"role": "user", "content": "Explain photosynthesis."},
-            {
-                "role": "assistant",
-                "content": "Light capture starts the process.",
-            },
+            {"role": "user", "content": "U1"},
+            {"role": "assistant", "content": "A1"},
+            {"role": "user", "content": "U2"},
+            {"role": "assistant", "content": "A2"},
         ),
     }
     stage = first.json()["conversation_context"]

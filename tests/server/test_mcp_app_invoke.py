@@ -104,7 +104,12 @@ async def test_v1_history_reaches_chat_handler_through_raw_dispatch(
         "phyto_chat_with_follow",
         fake_chat,
     )
-    history = ({"role": "user", "content": "Earlier turn."},)
+    history = (
+        {"role": "user", "content": "U1"},
+        {"role": "assistant", "content": "A1"},
+        {"role": "user", "content": "U2"},
+        {"role": "assistant", "content": "A2"},
+    )
 
     arguments = _payload(demo_data_dir, "chat_agent.json")
     await mcp_app.invoke_tool_enveloped(

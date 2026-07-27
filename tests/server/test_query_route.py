@@ -358,6 +358,7 @@ async def test_context_expert_router_keeps_full_allowlist_and_async_202(
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
     received: list[str] = []
+    received_history: tuple[dict[str, str], ...] = ()
     allowed = [
         "ChatAgent",
         "DataAgent",
@@ -371,7 +372,9 @@ async def test_context_expert_router_keeps_full_allowlist_and_async_202(
     async def select(
         _query: str, _history: Any, *, allowed_tools: Any, forced_tool: Any
     ) -> ToolSelection:
+        nonlocal received_history
         received.extend(allowed_tools)
+        received_history = _history
         assert forced_tool is None
         return ToolSelection(
             "AnalystAgent",
@@ -392,6 +395,26 @@ async def test_context_expert_router_keeps_full_allowlist_and_async_202(
         records_submission("analyst")(submit),
     )
     envelope = _conversation_envelope(allowed_agent_ids=allowed)
+    envelope["turn_id"] = "5"
+    envelope["request_id"] = "request-5"
+    envelope["ledger_cursor"] = 5
+    envelope["history_delta"] = [
+        {"turn_id": "1", "role": "user", "content": "U1"},
+        {
+            "turn_id": "2",
+            "role": "assistant",
+            "content": "A1",
+            "summary": "A1",
+        },
+        {"turn_id": "3", "role": "user", "content": "U2"},
+        {
+            "turn_id": "4",
+            "role": "assistant",
+            "content": "A2",
+            "summary": "A2",
+        },
+        {"turn_id": "5", "role": "user", "content": "U3"},
+    ]
     response = await api_client.post(
         "/v1/query/route",
         headers=_auth(issued_api_key),
@@ -406,6 +429,13 @@ async def test_context_expert_router_keeps_full_allowlist_and_async_202(
     assert response.json()["status"] == "running"
     assert "conversation_context" not in response.json()
     assert received == allowed
+    assert received_history == (
+        {"role": "user", "content": "U1"},
+        {"role": "assistant", "content": "A1"},
+        {"role": "user", "content": "U2"},
+        {"role": "assistant", "content": "A2"},
+        {"role": "user", "content": "U3"},
+    )
 
 
 async def test_context_expert_rebuilds_before_routing_when_state_is_missing(

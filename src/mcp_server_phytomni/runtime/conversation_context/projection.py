@@ -66,6 +66,7 @@ def build_context_projection(
     authorized_artifacts: Sequence[ArtifactRefV1],
     api_config: ApiConfig,
     estimator: TokenEstimator | None = None,
+    exclude_current_user_turn: bool = False,
 ) -> ContextProjection:
     """Admit context sections in the documented priority order."""
     estimator = estimator or ConservativeTokenEstimator()
@@ -149,7 +150,12 @@ def build_context_projection(
         [item.model_dump(mode="json") for item in context.active_entities],
     )
     admit("open_questions", context.open_questions)
-    admit("relevant_user_turns", context.recent_user_turns)
+    user_turns = list(context.recent_user_turns)
+    if exclude_current_user_turn:
+        # Rebuilt contexts include the envelope's current user turn as their
+        # trailing slot; dispatch carries that turn separately as current_query.
+        user_turns = user_turns[:-1]
+    admit("relevant_user_turns", user_turns)
     admit("relevant_assistant_summaries", context.assistant_summaries)
     envelope_ids = {item.artifact_id for item in authorized_artifacts}
     artifacts = [

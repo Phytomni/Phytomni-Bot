@@ -41,6 +41,19 @@ Focused result: `235 passed in 1.43s`. The Task 9 packet also passed
 `UV_CACHE_DIR=/tmp/phytomni-uv-cache make scoped` gate passed with `2173 passed`; the secret scan and static-analysis exemption reconciliation were
 clean. The public-document sentinel scan returned no matches.
 
+### Task 6 latest review follow-up
+
+The isolated-worktree follow-up after `b56517ad` passed `116` focused
+route/query/MCP/context tests. It preserves native chronological history as
+`U1, A1, U2, A2` at both router and private raw-dispatch seams, preserves an
+earlier repeated user message, and excludes only the rebuilt envelope's
+trailing user-turn slot while keeping `current_query` separate for dispatch.
+The private MCP dispatcher/handler path remains task-local and absent from
+public MCP/Pydantic arguments. Instant ChatAgent normalization, disabled
+Expert `404`, V0 behavior, async `202`, allowlists, duplicate replay,
+rebuild/staging, and dark activation remain unchanged. This is Bot-local
+evidence; Web/Go and staging acceptance remain `External Pending`.
+
 ### Scientific report capability rows
 
 | Bot row                         | Report states           | Artifacts           | Degraded outcomes   | Status           |
@@ -63,6 +76,7 @@ clean. The public-document sentinel scan returned no matches.
 | Section 10 Review/Chat A2UI        | Spec 10; lifecycle Tasks 5-8        | `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac` | local       | A2UI packet                | 75 Task 8 tests passed     | pause golden             | Lifecycle plan  | Needs Verification | external consumer absent     | keep flags dark             |
 | Section 11 artifacts/reports       | Spec 11; projection Tasks 3-8       | `b23d5dba15e1108c5c431f4e66a7f0a2b02ebbf3` | local       | report packet              | 235 focused; 2173 scoped   | role manifest            | Projection plan | Bot Ready          | Web/Go acceptance external   | revert report commits       |
 | Section 12 Expert                  | Spec 12; Expert Tasks 1-6           | `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac` | local       | Expert packet              | Legacy route baseline      | selector request         | Expert plan     | Needs Verification | shared integration absent    | keep route dark             |
+| Section 12 latest review follow-up  | Spec 12; Expert Task 6              | `b56517ad` + current follow-up             | local       | route/context/MCP packet   | 116 focused passed         | ordered private history  | Expert plan     | Needs Verification | external acceptance absent   | keep route dark             |
 | Section 13 errors                  | Spec 13; lifecycle/Expert/Data      | `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac` | local       | safe error packet          | Lifecycle portion covered  | safe error body          | Lifecycle plan  | Needs Verification | later mappings absent        | revert mapping commits      |
 | Section 14 DataAgent               | Spec 14; Data Tasks 1-5             | `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac` | external    | exact-query replay         | Not authorized             | stage event              | Data plan       | External Pending   | backend authorization absent | no behavior change          |
 | Section 15 Analyst                 | Spec 15; Data Tasks 6-7             | `7556596188c564fef0eb41cc3f9f7d22b06f5064` | local/ext   | correlation probe          | 107 focused; 2174 scoped   | run/task IDs             | Data plan       | External Pending   | historical L2 external       | no historical write         |
