@@ -227,7 +227,13 @@ def test_delta_uses_only_canonical_valid_aggregate_summary() -> None:
         "secret token for expression export",
         "authorization: Bearer ptm_secret_value",
         "api_key=sk-test",
-        "credential_ref = peer-token",
+        "credential_ref = peerref",
+        "access_token = abc",
+        "session_token = abc",
+        "authorization_header = x",
+        "bearer_token = x",
+        "access-token: abc",
+        "authorization-header: x",
         "access_key_id = AKIAIOSFODNN7EXAMPLE",
         "private_key = hidden-key-material",
     ],
@@ -249,6 +255,31 @@ def test_delta_rejects_unsafe_aggregate_summary(
     )
 
     assert delta.summary_update is None
+
+
+def test_prepare_drops_unsafe_projection_summary_during_rehydration() -> None:
+    """Unsafe prior task summaries never flow back into the next delta."""
+    adapter = DataConversationAdapter()
+    adapter.prepare(
+        _projection(
+            "Show expression by tissue",
+            delta=ContextDelta(summary_update="access_token = abc"),
+        )
+    )
+
+    delta = adapter.delta(
+        _result(
+            headers=["tissue", "expression"],
+            rows=[["leaf", 10], ["root", 5]],
+            summary="ignored",
+            aggregate_summary=None,
+        )
+    )
+
+    payload = json.dumps(delta.model_dump(mode="json"), sort_keys=True)
+
+    assert delta.summary_update is None
+    assert "access_token = abc" not in payload
 
 
 def test_delta_rejects_generic_raw_and_formatted_summaries() -> None:

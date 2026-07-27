@@ -48,19 +48,45 @@ _SUMMARY_ROW_RE = re.compile(
     r"(?:\[[^\]]+,\s*[^\]]+\]|\{[^{}:]+:\s*[^{}]+\}|\|[^\n]+\|)",
     re.IGNORECASE,
 )
-_SUMMARY_SECRET_RE = re.compile(
+_SUMMARY_SECRET_FIELD_RE = re.compile(
+    r"""
+    \b
+    (?:
+        pass(?:word|wd)?
+        |secret
+        |token
+        |credential(?:s)?
+        |authorization
+        |bearer
+        |(?:credential|authorization|bearer|session|access|api|private|x[ _-]?auth)
+          [ _-]?
+          (?:
+              ref
+              |token
+              |header
+              |secret
+              |key(?:[ _-]?id)?
+              |id
+              |value
+              |name
+          )
+    )
+    \b
+    \s*(?:=|:)
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+_SUMMARY_SECRET_PHRASE_RE = re.compile(
     r"""
     (?:
         \bpassword\b
         |\bpasswd\b
-        |\bsecret\b
-        |\btoken\b
-        |\bcredential(?:s)?\b
-        |\bauthorization\b
-        |\bbearer\b
-        |\bapi(?:[ _-]?key|[ _-]?token)\b
+        |\bsecret(?:[ _-]+token)?\b
+        |\bauthorization\s*:\s*bearer\b
+        |\bbearer\s+[a-z0-9._-]+\b
+        |\bapi[ _-]?key\b
+        |\bcredential[ _-]?ref\b
         |\baccess[ _-]?key(?:[ _-]?id)?\b
-        |\bsecret[ _-]?access[ _-]?key\b
         |\bprivate[ _-]?key\b
         |\bx[ _-]?auth[ _-]?token\b
     )
@@ -187,7 +213,9 @@ def _validated_aggregate_summary(value: object) -> str | None:
         return None
     if _SUMMARY_ROW_RE.search(summary):
         return None
-    if _SUMMARY_SECRET_RE.search(summary):
+    if _SUMMARY_SECRET_FIELD_RE.search(summary):
+        return None
+    if _SUMMARY_SECRET_PHRASE_RE.search(summary):
         return None
     return summary
 
