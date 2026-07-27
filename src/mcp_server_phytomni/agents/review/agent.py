@@ -60,6 +60,11 @@ from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import KnowledgeApp, build_knowledge_app
 from ..shared.options import resolve_agent_locale
 from ..shared.parallel_dispatch import FailureRecord
+from .conversation import (
+    ReviewClarificationError,
+    ReviewConversationAdapter,
+    review_clarification_result,
+)
 from .helpers import build_review_chat_kwargs
 from .planning import ReviewPlanningMixin
 from .report import ReviewReportMixin
@@ -884,6 +889,11 @@ class DeepResearchAgent(
             "approval_pending": False,
             "approval_decision": {},
             "a2ui_round": 0,
+            # Private conversation metadata is additive to the graph state;
+            # DeepResearchInput/DeepResearchOutput remain unchanged.
+            "review_operation": None,
+            "report_artifact_id": None,
+            "report_revision": 0,
         }
         return initial_state
 
@@ -893,6 +903,7 @@ class DeepResearchAgent(
         obs_file_list: list[str] | None = None,
         thread_id: str | None = None,
         locale: SupportedLocale | None = None,
+        review_operation: str | None = None,
     ) -> dict[str, Any]:
         """Execute the DeepResearchAgent workflow.
 
@@ -910,10 +921,18 @@ class DeepResearchAgent(
             obs_file_list,
             locale=locale,
         )
+        initial_state["review_operation"] = review_operation
         final_state = await ainvoke_graph(
             self.app, initial_state, thread_id=thread_id
         )
-        return merge_intermediate_state(final_state)
+        return merge_intermediate_state(
+            final_state,
+            extra_excluded_keys={
+                "review_operation",
+                "report_artifact_id",
+                "report_revision",
+            },
+        )
 
 
 async def review_agent_function(
@@ -934,6 +953,10 @@ async def review_agent_function(
     Returns:
         Chat-completions-style final response payload from DeepResearchAgent.
     """
+    thread_id = kwargs.pop("thread_id", None)
+    review_adapter = kwargs.pop("review_adapter", None)
+    review_projection = kwargs.pop("review_projection", None)
+    review_operation = kwargs.pop("review_operation", None)
     effective_locale = resolve_agent_locale(locale)
     review_config = copy_config_with_overrides(
         REVIEW_CONFIG,
@@ -961,11 +984,45 @@ async def review_agent_function(
             sensitive_config=sensitive_config,
         ),
     )
-    return await agent.arun(
-        user_query=user_query,
-        obs_file_list=obs_file_list or [],
-        locale=effective_locale,
-    )
+    if isinstance(review_adapter, ReviewConversationAdapter):
+        if review_projection is not None and review_adapter.snapshot is None:
+            try:
+                await review_adapter.prepare_from_agent(
+                    review_projection,
+                    agent,
+                    thread_id or review_projection.agent_thread_id,
+                )
+            except ReviewClarificationError as exc:
+                return review_clarification_result(str(exc))
+        if review_adapter.operation == "follow_up":
+            result = await review_adapter.follow_up(agent._chat)
+            review_adapter.capture_result(result)
+            return result
+        if review_adapter.operation == "local_revision":
+            try:
+                result = await review_adapter.local_revision(agent._chat)
+            except ReviewClarificationError as exc:
+                return review_clarification_result(str(exc))
+            review_adapter.capture_result(result)
+            return result
+        review_operation = (
+            review_adapter.operation.value
+            if review_adapter.operation is not None
+            else review_operation
+        )
+    try:
+        result = await agent.arun(
+            user_query=user_query,
+            obs_file_list=obs_file_list or [],
+            thread_id=thread_id,
+            locale=effective_locale,
+            review_operation=review_operation,
+        )
+    except ReviewClarificationError as exc:
+        return review_clarification_result(str(exc))
+    if isinstance(review_adapter, ReviewConversationAdapter):
+        review_adapter.capture_result(result)
+    return result
 
 
 def review_stream_target(

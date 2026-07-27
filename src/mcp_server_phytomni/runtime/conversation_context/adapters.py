@@ -15,6 +15,10 @@ from ...agents.knowledge.conversation import (
     KnowledgeClarificationError,
     KnowledgeConversationAdapter,
 )
+from ...agents.review.conversation import (
+    ReviewClarificationError,
+    ReviewConversationAdapter,
+)
 from ...config.defaults import ApiConfig
 from .models import BusinessContext, ContextProjection, ConversationEnvelopeV1
 from .service import (
@@ -141,6 +145,43 @@ def data_agent_invocation(
     )
 
 
+def review_agent_invocation(
+    projection: ContextProjection,
+    *,
+    selected_arguments: Mapping[str, Any] | None = None,
+) -> ContextAgentInvocation:
+    """Project Review context into private bounded conversation state."""
+    arguments = dict(selected_arguments or {})
+    checkpoint = arguments.pop("review_checkpoint", None)
+    arguments.pop("review_operation", None)
+    arguments["user_query"] = projection.current_query
+    arguments["locale"] = projection.locale
+    adapter = ReviewConversationAdapter()
+    try:
+        prepared = adapter.prepare(
+            projection,
+            snapshot=checkpoint,
+            allow_unresolved_section=checkpoint is None,
+        )
+    except ReviewClarificationError as exc:
+        return ContextAgentInvocation(
+            arguments=arguments,
+            conversation_messages=(),
+            agent_thread_id=projection.agent_thread_id,
+            private_agent_state={"clarification_message": str(exc)},
+        )
+    return ContextAgentInvocation(
+        arguments=arguments,
+        conversation_messages=_native_history_from_projection(projection),
+        agent_thread_id=prepared["thread_id"],
+        private_agent_state={
+            "review_adapter": adapter,
+            "review_operation": prepared["operation"].value,
+            "review_projection": projection,
+        },
+    )
+
+
 def native_history_from_context(
     context: BusinessContext,
 ) -> tuple[dict[str, str], ...]:
@@ -227,24 +268,27 @@ class ConversationContextExecutor:
         invoke = self._sync_invoker.get()
         if invoke is None:
             raise RuntimeError("context sync invoker is unavailable")
-        dispatch = (
-            knowledge_agent_invocation(
+        selected_arguments = self._selected_arguments.get() or {}
+        if selected_agent_id == "KnowledgeAgent":
+            dispatch = knowledge_agent_invocation(
                 projection,
-                selected_arguments=self._selected_arguments.get() or {},
+                selected_arguments=selected_arguments,
             )
-            if selected_agent_id == "KnowledgeAgent"
-            else (
-                data_agent_invocation(
-                    projection,
-                    selected_arguments=self._selected_arguments.get() or {},
-                )
-                if selected_agent_id == "DataAgent"
-                else canonical_agent_invocation(
-                    projection,
-                    selected_arguments=self._selected_arguments.get() or {},
-                )
+        elif selected_agent_id == "DataAgent":
+            dispatch = data_agent_invocation(
+                projection,
+                selected_arguments=selected_arguments,
             )
-        )
+        elif selected_agent_id == "ReviewAgent":
+            dispatch = review_agent_invocation(
+                projection,
+                selected_arguments=selected_arguments,
+            )
+        else:
+            dispatch = canonical_agent_invocation(
+                projection,
+                selected_arguments=selected_arguments,
+            )
         return await invoke(
             selected_agent_id,
             envelope,
@@ -272,4 +316,5 @@ __all__ = [
     "data_agent_invocation",
     "knowledge_agent_invocation",
     "native_history_from_context",
+    "review_agent_invocation",
 ]

@@ -26,6 +26,7 @@ from ..agents.knowledge.agent import multi_retrieve_generate
 from ..agents.network.agent import network_analysis
 from ..agents.research.agent import in_silico_research
 from ..agents.review.agent import review_agent_function
+from ..agents.review.conversation import review_clarification_result
 from ..config.defaults import (
     AnalystConfig,
     BriefGeneConfig,
@@ -311,6 +312,10 @@ async def handle_review_agent(args: ReviewAgent) -> HandlerResult:
     """
     review_config = ReviewConfig()
     runtime = load_handler_runtime()
+    private_state = private_agent_state()
+    clarification = private_state.get("clarification_message")
+    if isinstance(clarification, str) and clarification.strip():
+        return review_clarification_result(clarification)
     return await review_agent_function(
         user_query=args.user_query,
         obs_file_list=args.obs_file_list,
@@ -318,6 +323,9 @@ async def handle_review_agent(args: ReviewAgent) -> HandlerResult:
         **chat_kwargs(review_config, runtime.sensitive, locale=args.locale),
         **retrieve_kwargs(review_config),
         **obs_kwargs(review_config, runtime.obs_credentials),
+        thread_id=private_agent_thread_id(),
+        review_adapter=private_state.get("review_adapter"),
+        review_projection=private_state.get("review_projection"),
     )
 
 

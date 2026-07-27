@@ -94,3 +94,13 @@ def test_review_initial_state_seeds_interop_channels() -> None:
 
     assert not state["interop"]
     assert state["degraded_interop"] is False
+
+
+def test_review_initial_state_seeds_private_conversation_metadata() -> None:
+    """Review state carries bounded operation metadata without public IO changes."""
+    agent = DeepResearchAgent.__new__(DeepResearchAgent)
+    state = agent.initial_state("plant stress review")
+
+    assert state["review_operation"] is None
+    assert state["report_artifact_id"] is None
+    assert state["report_revision"] == 0
