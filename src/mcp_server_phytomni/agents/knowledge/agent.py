@@ -750,13 +750,18 @@ async def multi_retrieve_generate(
             sensitive_config=sensitive_config,
         ),
     )
+    arun_kwargs: dict[str, Any] = {
+        "user_query": user_query,
+        "obs_file_list": obs_file_list or [],
+        "repo_id_dict": repo_id_dict,
+        "is_generate": is_generate,
+        "is_follow_up": is_follow_up,
+        "locale": effective_locale,
+    }
+    if "conversation_messages" in kwargs:
+        arun_kwargs["conversation_messages"] = kwargs["conversation_messages"]
     return await agent.arun(
-        user_query=user_query,
-        obs_file_list=obs_file_list or [],
-        repo_id_dict=repo_id_dict,
-        is_generate=is_generate,
-        is_follow_up=is_follow_up,
-        locale=effective_locale,
+        **arun_kwargs,
     )
 
 

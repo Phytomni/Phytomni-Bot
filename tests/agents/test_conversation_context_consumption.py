@@ -12,7 +12,12 @@ import pytest
 
 from mcp_server_phytomni.agents.chat import graph as chat_graph
 from mcp_server_phytomni.agents.chat import service as chat_service
-from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
+from mcp_server_phytomni.agents.knowledge import agent as knowledge_agent
+from mcp_server_phytomni.agents.knowledge.agent import (
+    KnowledgeAgent,
+    multi_retrieve_generate,
+    retrieve_generate,
+)
 from mcp_server_phytomni.config.defaults import KnowledgeConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
@@ -109,3 +114,58 @@ async def test_knowledge_arun_consumes_private_history_in_chat_subgraph_input(
         message["content"] for message in chat_kwargs["conversation_messages"]
     ] == ["U1", "A1", "U2", "A2"]
     assert "current query" in captured["chat_input"]["user_query"]
+
+
+async def test_knowledge_compatibility_wrappers_forward_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Compatibility wrappers pass private history into ``KnowledgeAgent.arun``."""
+
+    class FakeKnowledgeAgent:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def arun(self, **kwargs: Any) -> dict[str, Any]:
+            self.calls.append(kwargs)
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    fake_agent = FakeKnowledgeAgent()
+
+    monkeypatch.setattr(
+        knowledge_agent,
+        "get_cached_agent",
+        lambda *_args, **_kwargs: fake_agent,
+    )
+    monkeypatch.setattr(
+        knowledge_agent,
+        "_knowledge_config_with_overrides",
+        lambda **_kwargs: KnowledgeConfig(),
+    )
+    monkeypatch.setattr(
+        knowledge_agent,
+        "_knowledge_sensitive_config_with_overrides",
+        lambda **_kwargs: SensitiveConfig.load(),
+    )
+
+    await multi_retrieve_generate(
+        "first query",
+        conversation_messages=_HISTORY,
+    )
+    await retrieve_generate(
+        "second query",
+        repo_id="repo-1",
+        page_size=3,
+        conversation_messages=(
+            {"role": "user", "content": "Other U"},
+            {"role": "assistant", "content": "Other A"},
+        ),
+    )
+    await multi_retrieve_generate("legacy query")
+
+    assert fake_agent.calls[0]["conversation_messages"] == _HISTORY
+    assert fake_agent.calls[1]["conversation_messages"] == (
+        {"role": "user", "content": "Other U"},
+        {"role": "assistant", "content": "Other A"},
+    )
+    assert fake_agent.calls[1]["repo_id_dict"] == {"repo-1": 3}
+    assert "conversation_messages" not in fake_agent.calls[2]

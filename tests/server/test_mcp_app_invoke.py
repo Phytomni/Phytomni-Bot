@@ -25,6 +25,7 @@ from tests.support.formatting_fakes import (
     network_task_payload,
 )
 
+from mcp_server_phytomni.agents.knowledge import agent as knowledge_agent
 from mcp_server_phytomni.mcp import app as mcp_app
 from mcp_server_phytomni.mcp import handlers as mcp_handlers
 from mcp_server_phytomni.mcp.result_formatting import FormattedToolResult
@@ -171,6 +172,86 @@ async def test_v1_history_reaches_expert_handler_through_raw_dispatch(
     )
 
     assert captured["conversation_messages"] == history
+    assert "conversation_messages" not in mcp_app.KnowledgeAgent.model_fields
+
+
+async def test_v1_history_reaches_knowledge_wrapper_without_leakage(
+    demo_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Back-to-back Knowledge dispatches keep handler history isolated."""
+
+    class FakeKnowledgeAgent:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def arun(self, **kwargs: Any) -> dict[str, Any]:
+            self.calls.append(kwargs)
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+    fake_agent = FakeKnowledgeAgent()
+
+    monkeypatch.setattr(mcp_handlers, "KnowledgeConfig", lambda: object())
+    monkeypatch.setattr(
+        mcp_handlers,
+        "load_handler_runtime",
+        lambda: SimpleNamespace(
+            sensitive=object(), obs_credentials=("a", "b")
+        ),
+    )
+    monkeypatch.setattr(
+        mcp_handlers,
+        "scratch_server_dir",
+        lambda *_args: "/tmp/knowledge",
+    )
+    monkeypatch.setattr(
+        mcp_handlers, "chat_kwargs", lambda *_args, **_kwargs: {}
+    )
+    monkeypatch.setattr(mcp_handlers, "retrieve_kwargs", lambda _config: {})
+    monkeypatch.setattr(mcp_handlers, "obs_kwargs", lambda *_args: {})
+    monkeypatch.setattr(
+        knowledge_agent,
+        "get_cached_agent",
+        lambda *_args, **_kwargs: fake_agent,
+    )
+    monkeypatch.setattr(
+        knowledge_agent,
+        "_knowledge_config_with_overrides",
+        lambda **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        knowledge_agent,
+        "_knowledge_sensitive_config_with_overrides",
+        lambda **_kwargs: object(),
+    )
+    first_history = (
+        {"role": "user", "content": "First U"},
+        {"role": "assistant", "content": "First A"},
+    )
+    second_history = (
+        {"role": "user", "content": "Second U"},
+        {"role": "assistant", "content": "Second A"},
+    )
+    arguments = _payload(demo_data_dir, "knowledge_agent.json")
+
+    await mcp_app.invoke_tool_enveloped(
+        PhytomniAgents.KNOWLEDGE_AGENT.value,
+        arguments,
+        conversation_messages=first_history,
+    )
+    await mcp_app.invoke_tool_enveloped(
+        PhytomniAgents.KNOWLEDGE_AGENT.value,
+        arguments,
+        conversation_messages=second_history,
+    )
+    await mcp_app.invoke_tool_enveloped(
+        PhytomniAgents.KNOWLEDGE_AGENT.value,
+        arguments,
+    )
+
+    assert fake_agent.calls[0]["conversation_messages"] == first_history
+    assert fake_agent.calls[1]["conversation_messages"] == second_history
+    assert fake_agent.calls[2]["conversation_messages"] == ()
     assert "conversation_messages" not in mcp_app.KnowledgeAgent.model_fields
 
 
