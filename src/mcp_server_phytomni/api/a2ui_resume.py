@@ -22,6 +22,7 @@ from ..agents.shared.a2ui import (
 from ..config.defaults import ApiConfig
 from ..mcp.result_formatting import strip_agent_result
 from ..runtime.error_types import LOCAL_DURABLE_ERRORS
+from ..runtime.execution_defaults import empty_execution_projection
 from ..runtime.locale import (
     bind_effective_locale,
     resolve_effective_locale,
@@ -71,20 +72,14 @@ _PERSISTENCE_ERRORS = LOCAL_DURABLE_ERRORS
 
 def _failed_resume_result() -> dict[str, Any]:
     """Return a safe failure payload without retaining backend exceptions."""
-    return {
-        "formatted": {"answer": ""},
-        "execution": {
-            "tracking": {"degraded": True},
-            "warnings": [{"code": "a2ui_resume_failed", "retryable": False}],
-            "tasks": [],
-            "artifacts": [],
-            "output_dirs": [],
-            "report": None,
-            "diagnostics": [],
-        },
-        "raw": None,
-        "error": "a2ui resume failed",
-    }
+    result = empty_execution_projection(degraded=True)
+    result["formatted"] = {"answer": ""}
+    result["execution"]["warnings"] = [
+        {"code": "a2ui_resume_failed", "retryable": False}
+    ]
+    result["raw"] = None
+    result["error"] = "a2ui resume failed"
+    return result
 
 
 def _checkpoint_error() -> SafeApiError:

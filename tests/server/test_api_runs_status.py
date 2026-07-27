@@ -30,6 +30,9 @@ from tests.support.run_registry_fakes import (
 
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.runtime import run_registry as run_registry_module
+from mcp_server_phytomni.runtime import (
+    run_registry_reports as run_registry_reports_module,
+)
 from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
@@ -41,6 +44,7 @@ from mcp_server_phytomni.runtime.task_manager import (
     Submission,
     TaskManager,
 )
+from mcp_server_phytomni.runtime.terminal_artifacts import TerminalArtifactSet
 
 pytestmark = pytest.mark.server
 
@@ -171,15 +175,14 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
 
     monkeypatch.setattr(run_registry_module, "reconcile_task", fake)
 
-    async def fake_enumerate(live: list, **_kwargs: Any) -> list:
-        """Populate artifact paths without touching OBS at the HTTP layer."""
-        for row in live:
-            if row.get("output_dir"):
-                row["artifact_paths"] = [f"{row['output_dir']}/fig.png"]
-        return live
+    async def fake_collect(**_kwargs: Any) -> TerminalArtifactSet:
+        """Return no artifacts without touching OBS at the HTTP layer."""
+        return TerminalArtifactSet(artifacts=(), warnings=())
 
     monkeypatch.setattr(
-        run_registry_module, "enumerate_artifact_paths", fake_enumerate
+        run_registry_reports_module,
+        "collect_terminal_artifact_set",
+        fake_collect,
     )
 
     response = await api_client.get(
@@ -196,17 +199,20 @@ async def test_get_run_reconciles_non_terminal_to_terminal(
     # leaks the registry's live task rows or tenant artifact paths.
     execution = body["result"]["execution"]
     assert execution["tasks"] == [
-        {"id": "t-1", "accepted": True},
-        {"id": "t-2", "accepted": True},
+        {"id": "t-1", "accepted": True, "status": "succeeded"},
+        {"id": "t-2", "accepted": True, "status": "succeeded"},
     ]
     assert execution["artifacts"] == []
     assert "task_results" not in body["result"]
     assert "live_status" not in body["result"]
-    # WO-1 contract: an analyst-class terminal run synthesizes a terminal
-    # report whose compact answer _extract_answer lifts to the top-level
-    # "answer" field chat-ai reads.
+    # WO-1 contract: an analyst-class terminal run always has a nonblank
+    # report answer, even when no validated scientific artifact is present.
     answer = body["result"]["formatted"]["answer"]
-    assert answer == "Analysis complete: 2/2 tasks succeeded."
+    assert answer.startswith("The analysis reached a terminal outcome")
+    assert body["result"]["execution"]["report"]["state"] == "degraded"
+    assert body["result"]["formatted"]["metadata"]["report"] == (
+        body["result"]["execution"]["report"]
+    )
     assert body["answer"] == answer
 
 

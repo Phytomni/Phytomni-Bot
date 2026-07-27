@@ -31,6 +31,9 @@ from mcp_server_phytomni.mcp.handlers import (
 from mcp_server_phytomni.runtime import (
     submit_recorder as submit_recorder_module,
 )
+from mcp_server_phytomni.runtime.execution_defaults import (
+    empty_execution_projection,
+)
 from mcp_server_phytomni.runtime.request_context import (
     current_accepted_task_ids,
     current_recorder_degraded,
@@ -104,25 +107,14 @@ async def test_decorator_records_task_run_and_passes_result_through(
     assert listing[0].spec.origin == "remote"
     assert listing[0].status == "running"
     assert listing[0].task_ids == ("T-1",)
-    # Submit-time write seeds the envelope shape so a client polling
-    # /v1/runs/{id} during running sees the same key set as terminal.
-    assert listing[0].result == {
-        "task_results": [
-            {
-                "task_id": "T-1",
-                "status": "submitted",
-                "output_dir": "/obs/run",
-            }
-        ],
-        "live_status": [
-            {
-                "task_id": "T-1",
-                "status": "submitted",
-                "output_dir": "/obs/run",
-            }
-        ],
-        "artifacts": [],
-    }
+    # Submit-time write seeds the canonical envelope so a client polling
+    # /v1/runs/{id} during running sees the same field ownership as terminal.
+    expected = empty_execution_projection()
+    expected["execution"]["tasks"] = [
+        {"id": "T-1", "accepted": True, "status": "submitted"}
+    ]
+    expected["execution"]["output_dirs"] = ["/obs/run"]
+    assert listing[0].result == expected
 
 
 def test_record_upsert_preserves_prior_fingerprint(
@@ -301,15 +293,14 @@ def test_record_persists_safe_submission_warnings(
 
     run = RunRegistry(tasks_db_path).list_runs(owner="anonymous")[0]
     assert run.result is not None
-    assert run.result["execution"] == {
-        "warnings": [
-            {
-                "code": "partial_submission",
-                "retryable": False,
-                "rejected_count": 1,
-            }
-        ]
-    }
+    assert run.result["execution"]["tracking"] == {"degraded": True}
+    assert run.result["execution"]["warnings"] == [
+        {
+            "code": "partial_submission",
+            "retryable": False,
+            "rejected_count": 1,
+        }
+    ]
 
 
 def test_record_handles_network_nested_task(tasks_db_path: str) -> None:

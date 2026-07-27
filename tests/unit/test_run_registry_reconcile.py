@@ -17,13 +17,20 @@ from tests.unit.test_run_registry import (
     _seed_async_run,
 )
 
+from mcp_server_phytomni.mcp.formatting.models import ReportExecution
 from mcp_server_phytomni.runtime import run_registry
+from mcp_server_phytomni.runtime.artifact_roles import ArtifactRole
+from mcp_server_phytomni.runtime.execution_models import ExecutionWarning
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRequestInfo,
     RunSpec,
 )
 from mcp_server_phytomni.runtime.task_manager import Submission
+from mcp_server_phytomni.runtime.terminal_report import (
+    TerminalReportAssembly,
+)
+from mcp_server_phytomni.storage.artifact_listing import ListedArtifactObject
 
 pytestmark = pytest.mark.unit
 
@@ -32,6 +39,46 @@ async def _empty_lister(output_dir: str) -> list:
     """No-op artifact lister for reconcile tests (avoids real OBS I/O)."""
     assert isinstance(output_dir, str)
     return []
+
+
+async def _report_object_lister(
+    output_dir: str,
+) -> list[ListedArtifactObject]:
+    """Return one manifest-backed scientific text object."""
+    return [
+        ListedArtifactObject(
+            relative_path="report.md",
+            source_path=f"{output_dir}/report.md",
+            size_bytes=64,
+            download_ref=f"{output_dir}/report.md",
+        )
+    ]
+
+
+async def _report_manifest(_output_dir: str) -> dict[str, object]:
+    """Declare the report object as scientific text for tests."""
+    return {
+        "version": "1.0",
+        "artifacts": [
+            {
+                "path": "report.md",
+                "role": "scientific_report",
+                "media_type": "text/markdown",
+            }
+        ],
+    }
+
+
+def _final_report_assembly(agent: str) -> TerminalReportAssembly:
+    """Build a deterministic report result for one report-capable agent."""
+    return TerminalReportAssembly(
+        answer=f"# {agent.title()} report\n\nValidated scientific result.",
+        report=ReportExecution(
+            state="final",
+            degraded=False,
+            source_artifact_count=1,
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -44,11 +91,6 @@ class _FakeReportResult:
     degraded_reason: str | None = None
     selected_paths: tuple = ()
     skipped_paths: tuple = ()
-
-
-async def _no_report_synthesizer(_context: Any) -> Any:
-    """Return a no-op result so terminal-report synthesis is neutral."""
-    return _FakeReportResult()
 
 
 @pytest.mark.asyncio
@@ -111,11 +153,13 @@ async def test_reconcile_aggregates_all_succeeded_into_terminal(
     assert record.status == "succeeded"
     assert record.timestamps.expires_at is not None
     assert record.result is not None
-    assert record.result["task_results"] == record.result["live_status"]
-    assert record.result["artifacts"] == [
-        {"task_id": "t-1", "output_dir": "/obs/a", "paths": []},
-        {"task_id": "t-2", "output_dir": "/obs/b", "paths": []},
+    assert set(record.result) == {"formatted", "execution"}
+    assert record.result["execution"]["tasks"] == [
+        {"id": "t-1", "accepted": True, "status": "succeeded"},
+        {"id": "t-2", "accepted": True, "status": "completed"},
     ]
+    assert record.result["execution"]["artifacts"] == []
+    assert record.result["execution"]["report"]["state"] == "degraded"
     cached = registry.get_run("run-r", owner="alice")
     assert cached is not None
     assert cached.status == "succeeded"
@@ -161,9 +205,6 @@ async def test_reconcile_surfaces_deep_genome_final_report(
     assert record.status == "succeeded"
     assert record.result is not None
     assert record.result["final_report"] == report_md
-    # formatted.answer is always present when the synthesizer emits one,
-    # even alongside a child final_report.
-    assert "formatted" in record.result
     assert record.result["formatted"]["answer"]
 
 
@@ -171,12 +212,7 @@ async def test_reconcile_surfaces_deep_genome_final_report(
 async def test_reconcile_final_report_none_without_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A run whose children persist no report keeps final_report None.
-
-    Analyst / design / network runs never write final_report, so the
-    terminal payload's ``final_report`` key is present (shape stays
-    stable) but null.
-    """
+    """A report-capable run without scientific text degrades safely."""
     registry, manager, _ = _make_registry(tmp_path)
     _seed_async_run(
         registry,
@@ -195,21 +231,19 @@ async def test_reconcile_final_report_none_without_report(
         }
 
     monkeypatch.setattr(run_registry, "reconcile_task", fake)
-    monkeypatch.setattr(
-        run_registry,
-        "synthesize_terminal_report",
-        _no_report_synthesizer,
-    )
-
     record = await registry.reconcile(
         "run-an", owner="alice", lister=_empty_lister
     )
 
     assert record is not None
     assert record.result is not None
-    assert record.result["final_report"] is None
-    # With no child report, the synthesized answer fills formatted.answer.
-    assert record.result["formatted"]["answer"]
+    assert set(record.result) == {"formatted", "execution"}
+    assert record.result["formatted"]["answer"].strip()
+    assert record.result["execution"]["report"] == {
+        "state": "degraded",
+        "degraded": True,
+        "source_artifact_count": 0,
+    }
 
 
 @pytest.mark.asyncio
@@ -239,12 +273,15 @@ async def test_reconcile_propagates_failure_status(
     assert record.error is not None
     assert "t-2" in record.error
     assert record.result is not None
-    assert record.result["task_results"] == [
-        {"task_id": "t-1", "status": "succeeded"},
-        {"task_id": "t-2", "status": "failed"},
+    assert set(record.result) == {"formatted", "execution"}
+    assert record.result["execution"]["tasks"] == [
+        {"id": "t-1", "accepted": True, "status": "succeeded"},
+        {"id": "t-2", "accepted": True, "status": "failed"},
     ]
-    assert record.result["live_status"] == record.result["task_results"]
-    assert not record.result["artifacts"]
+    assert not record.result["execution"]["artifacts"]
+    assert record.result["execution"]["diagnostics"] == [
+        {"code": "task_failed", "retryable": False, "stage": "reconcile"}
+    ]
 
 
 @pytest.mark.asyncio
@@ -284,22 +321,16 @@ async def test_reconcile_carries_submit_warnings_to_terminal_payload(
         return {"task_id": task_id, "status": "succeeded"}
 
     monkeypatch.setattr(run_registry, "reconcile_task", fake)
-    monkeypatch.setattr(
-        run_registry,
-        "synthesize_terminal_report",
-        _no_report_synthesizer,
-    )
-
     record = await registry.reconcile("run-warn", owner="alice")
 
     assert record is not None
     assert record.result is not None
-    assert record.result["execution"]["warnings"] == [
-        {
-            "code": "partial_submission",
-            "retryable": False,
-            "rejected_count": 1,
-        }
+    codes = [
+        warning["code"] for warning in record.result["execution"]["warnings"]
+    ]
+    assert codes == [
+        "partial_submission",
+        "report_no_scientific_text",
     ]
 
 
@@ -326,12 +357,6 @@ async def test_reconcile_assembles_answer_and_paths_once(
         }
 
     monkeypatch.setattr(run_registry, "reconcile_task", fake)
-    monkeypatch.setattr(
-        run_registry,
-        "synthesize_terminal_report",
-        _no_report_synthesizer,
-    )
-
     glob_calls = {"n": 0}
 
     async def counting_lister(output_dir: str) -> list:
@@ -347,9 +372,19 @@ async def test_reconcile_assembles_answer_and_paths_once(
     assert first.status == "succeeded"
     assert first.result is not None
     assert first.result["formatted"]["answer"].startswith(
-        "**Analysis complete"
+        "The analysis reached a terminal outcome"
     )
-    assert first.result["artifacts"][0]["paths"] == ["/obs/p/r1/fig.png"]
+    assert first.result["execution"]["artifacts"] == [
+        {
+            "role": "unknown",
+            "name": "fig.png",
+            "media_type": "application/octet-stream",
+            "size_bytes": 0,
+            "downloadable": True,
+            "report_context_eligible": False,
+            "download_ref": "/obs/p/r1/fig.png",
+        }
+    ]
 
     second = await registry.reconcile(
         "run-once", owner="alice", lister=counting_lister
@@ -426,10 +461,76 @@ async def test_reconcile_concurrent_first_polls_are_idempotent(
     assert rec1.result is not None and rec2.result is not None
     settled = rec1.result["formatted"]["answer"]
     assert rec2.result["formatted"]["answer"] == settled
-    assert rec1.result["artifacts"][0]["paths"] == ["/obs/cc/plot.png"]
+    assert rec1.result["execution"]["artifacts"][0]["name"] == "plot.png"
     cached = registry.get_run("run-cc", owner="alice")
     assert cached is not None and cached.result is not None
     assert cached.result["formatted"]["answer"] == settled
+
+
+@pytest.mark.parametrize(
+    "agent",
+    ["analyst", "research", "design", "network"],
+)
+@pytest.mark.asyncio
+async def test_report_agents_have_manifest_backed_final_reports(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    agent: str,
+) -> None:
+    """Every analyst-class agent persists one scientific final report."""
+    registry, manager, _ = _make_registry(tmp_path)
+    spec = RunSpec(f"run-{agent}", "alice", agent, "remote")
+    _seed_async_run(registry, manager, spec, (f"task-{agent}",))
+    registry.update_request_info(
+        spec.run_id,
+        owner="alice",
+        request_info=RunRequestInfo(query=f"summarize {agent}"),
+    )
+
+    async def fake_reconcile(task_id: str) -> dict[str, Any]:
+        """Return one successful child with a producer output directory."""
+        return {
+            "task_id": task_id,
+            "status": "succeeded",
+            "output_dir": "/obs/bucket/out",
+        }
+
+    async def fake_assemble(**kwargs: Any) -> TerminalReportAssembly:
+        """Return a deterministic report after checking scientific input."""
+        assert kwargs["context"].agent == agent
+        artifacts = tuple(kwargs["artifacts"])
+        assert len(artifacts) == 1
+        assert artifacts[0].role is ArtifactRole.SCIENTIFIC_REPORT
+        return _final_report_assembly(agent)
+
+    monkeypatch.setattr(run_registry, "reconcile_task", fake_reconcile)
+    monkeypatch.setattr(
+        run_registry,
+        "assemble_terminal_report",
+        fake_assemble,
+    )
+
+    record = await registry.reconcile(
+        spec.run_id,
+        owner="alice",
+        object_lister=_report_object_lister,
+        manifest_loader=_report_manifest,
+    )
+
+    assert record is not None
+    assert record.result is not None
+    result = record.result
+    assert set(result) == {"formatted", "execution"}
+    assert result["formatted"]["answer"].strip()
+    assert result["execution"]["report"]["state"] == "final"
+    assert result["execution"]["report"]["degraded"] is False
+    assert result["execution"]["artifacts"][0]["role"] == ("scientific_report")
+    assert result["formatted"]["metadata"]["report"] == (
+        result["execution"]["report"]
+    )
+    assert manager.get_task_final_report(f"task-{agent}") == (
+        result["formatted"]["answer"]
+    )
 
 
 @pytest.mark.asyncio
@@ -454,51 +555,40 @@ async def test_reconcile_terminal_analyst_run_includes_final_report(
             "output_dir": "/obs/bucket/out",
         }
 
-    async def fake_synthesize_terminal_report(
-        context: Any,
-    ) -> Any:
+    async def fake_assemble(**kwargs: Any) -> TerminalReportAssembly:
         """Return a canned report result for the analyst agent."""
-        assert context.agent == "analyst"
-        return _FakeReportResult(
-            final_report="# Analyst Final Report\n\nLLM summary.",
-            answer="Analysis complete: 1/1 tasks succeeded.",
+        assert kwargs["context"].agent == "analyst"
+        return TerminalReportAssembly(
+            answer="# Analyst Final Report\n\nLLM summary.",
+            report=ReportExecution(
+                state="final",
+                degraded=False,
+                source_artifact_count=1,
+            ),
         )
-
-    async def fake_lister(output_dir: str) -> list:
-        """Return one artifact path for any output directory."""
-        return [f"{output_dir}/report.md"]
 
     monkeypatch.setattr(run_registry, "reconcile_task", fake_reconcile_task)
     monkeypatch.setattr(
         run_registry,
-        "synthesize_terminal_report",
-        fake_synthesize_terminal_report,
-    )
-    monkeypatch.setattr(
-        "mcp_server_phytomni.runtime.terminal_report.resolve_tasks_db_path",
-        lambda: manager.db_path,
+        "assemble_terminal_report",
+        fake_assemble,
     )
 
     record = await registry.reconcile(
-        "run-tr", owner="alice", lister=fake_lister
+        "run-tr",
+        owner="alice",
+        object_lister=_report_object_lister,
+        manifest_loader=_report_manifest,
     )
 
     assert record is not None
     assert record.status == "succeeded"
     assert record.result is not None
-    assert record.result["final_report"] == (
+    assert record.result["formatted"]["answer"] == (
         "# Analyst Final Report\n\nLLM summary."
     )
-    assert record.result["formatted"]["answer"] == (
-        "Analysis complete: 1/1 tasks succeeded."
-    )
-    assert record.result["artifacts"] == [
-        {
-            "task_id": "task-1",
-            "output_dir": "/obs/bucket/out",
-            "paths": ["/obs/bucket/out/report.md"],
-        }
-    ]
+    assert record.result["execution"]["report"]["state"] == "final"
+    assert record.result["execution"]["artifacts"][0]["name"] == ("report.md")
     assert manager.get_task_final_report("task-1") == (
         "# Analyst Final Report\n\nLLM summary."
     )
@@ -533,38 +623,53 @@ async def test_reconcile_terminal_report_degraded_reaches_payload(
         degraded_reason="LLM summary returned empty content",
     )
 
-    async def fake_synthesize(_context: Any) -> Any:
+    async def fake_assemble(**_kwargs: Any) -> TerminalReportAssembly:
         """Return a degraded report result."""
-        return _degraded_result
-
-    async def fake_lister(output_dir: str) -> list:
-        """Return one artifact path."""
-        return [f"{output_dir}/report.md"]
+        return TerminalReportAssembly(
+            answer=_degraded_result.final_report,
+            report=ReportExecution(
+                state="degraded",
+                degraded=True,
+                source_artifact_count=1,
+            ),
+            warnings=(
+                ExecutionWarning(
+                    code="report_synthesis_failed",
+                    stage="terminal_report",
+                ),
+            ),
+        )
 
     monkeypatch.setattr(run_registry, "reconcile_task", fake_reconcile_task)
     monkeypatch.setattr(
         run_registry,
-        "synthesize_terminal_report",
-        fake_synthesize,
-    )
-    monkeypatch.setattr(
-        "mcp_server_phytomni.runtime.terminal_report.resolve_tasks_db_path",
-        lambda: manager.db_path,
+        "assemble_terminal_report",
+        fake_assemble,
     )
 
     record = await registry.reconcile(
-        "run-deg", owner="alice", lister=fake_lister
+        "run-deg",
+        owner="alice",
+        object_lister=_report_object_lister,
+        manifest_loader=_report_manifest,
     )
 
     assert record is not None
     assert record.result is not None
-    assert record.result["degraded"] is True
-    assert record.result["task_results"][0]["degraded_reason"] == (
-        "LLM summary returned empty content"
-    )
-    assert manager.get_task_degraded("task-1") == (
-        "LLM summary returned empty content"
-    )
+    assert record.result["execution"]["tracking"]["degraded"] is True
+    assert record.result["execution"]["report"] == {
+        "state": "degraded",
+        "degraded": True,
+        "source_artifact_count": 1,
+    }
+    assert record.result["execution"]["warnings"] == [
+        {
+            "code": "report_synthesis_failed",
+            "retryable": False,
+            "stage": "terminal_report",
+        }
+    ]
+    assert manager.get_task_degraded("task-1") == ("report_synthesis_failed")
 
 
 @pytest.mark.asyncio
@@ -597,7 +702,7 @@ async def test_reconcile_non_target_agent_skips_terminal_report(
     monkeypatch.setattr(run_registry, "reconcile_task", fake_reconcile_task)
     monkeypatch.setattr(
         run_registry,
-        "synthesize_terminal_report",
+        "assemble_terminal_report",
         tracking_synthesize,
     )
 

@@ -1,0 +1,377 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+"""Report projections used by the run registry terminal settlement path."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass
+from pathlib import PurePosixPath
+from typing import Any
+
+from ..mcp.formatting.execution import apply_compatibility_projection
+from ..mcp.formatting.models import ExecutionProjection, FormattedToolResult
+from ..storage.artifact_listing import ListedArtifactObject
+from .execution_models import ExecutionWarning
+from .run_registry_models import _FAILURE_STATUSES
+from .submission_outcome import project_submission_warnings
+from .task_manager import TaskManager
+from .terminal_artifacts import (
+    ArtifactLister,
+    ArtifactObjectLister,
+    ManifestLoader,
+    TerminalArtifactSet,
+    collect_terminal_artifact_set,
+)
+from .terminal_report import (
+    TerminalReportAssembly,
+    TerminalReportResult,
+    persist_terminal_report,
+)
+
+_SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
+
+
+@dataclass(frozen=True, slots=True)
+class ReportArtifactSources:
+    """Optional artifact seams injected by run reconciliation tests/callers."""
+
+    lister: ArtifactLister | None = None
+    object_lister: ArtifactObjectLister | None = None
+    manifest_loader: ManifestLoader | None = None
+
+
+async def collect_report_artifact_set(
+    live: Sequence[dict[str, Any]],
+    *,
+    lister: ArtifactLister | None,
+    object_lister: ArtifactObjectLister | None,
+    manifest_loader: ManifestLoader | None,
+) -> TerminalArtifactSet:
+    """Collect classified artifacts for every successful child task."""
+    sets: list[TerminalArtifactSet] = []
+    for row in live:
+        status = str(row.get("status") or "").lower()
+        identity = _report_row_identity(
+            status,
+            output_dir=row.get("output_dir"),
+            task_id=row.get("task_id"),
+        )
+        if identity is None:
+            continue
+        task_id, output_dir = identity
+        if object_lister is not None:
+            artifact_set = await collect_terminal_artifact_set(
+                task_id=task_id,
+                output_dir=output_dir,
+                lister=object_lister,
+                manifest_loader=manifest_loader,
+            )
+        elif lister is not None:
+            artifact_set = await _collect_legacy_artifact_set(
+                task_id=task_id,
+                output_dir=output_dir,
+                lister=lister,
+                manifest_loader=manifest_loader,
+            )
+        else:
+            artifact_set = await collect_terminal_artifact_set(
+                task_id=task_id,
+                output_dir=output_dir,
+                manifest_loader=manifest_loader,
+            )
+        sets.append(artifact_set)
+    return _merge_artifact_sets(sets)
+
+
+def _report_row_identity(
+    status: str,
+    *,
+    output_dir: object,
+    task_id: object,
+) -> tuple[str, str] | None:
+    """Return typed task/output identity when the row is listable."""
+    if (
+        status not in _SUCCESS_STATUSES
+        or not isinstance(output_dir, str)
+        or not output_dir
+        or not isinstance(task_id, str)
+        or not task_id
+    ):
+        return None
+    return task_id, output_dir
+
+
+def _merge_artifact_sets(
+    sets: Sequence[TerminalArtifactSet],
+) -> TerminalArtifactSet:
+    """Combine child artifact sets while preserving child/list order."""
+    return TerminalArtifactSet(
+        artifacts=tuple(
+            artifact
+            for artifact_set in sets
+            for artifact in artifact_set.artifacts
+        ),
+        warnings=tuple(
+            warning
+            for artifact_set in sets
+            for warning in artifact_set.warnings
+        ),
+    )
+
+
+async def _collect_legacy_artifact_set(
+    *,
+    task_id: str,
+    output_dir: str,
+    lister: ArtifactLister,
+    manifest_loader: ManifestLoader | None,
+) -> TerminalArtifactSet:
+    """Adapt the historical path lister to the structured collector."""
+
+    async def object_lister(directory: str) -> list[ListedArtifactObject]:
+        """Convert path-only results without inferring scientific roles."""
+        paths = await lister(directory)
+        return [
+            _listed_artifact_from_legacy_path(directory, path)
+            for path in paths
+            if isinstance(path, str) and path
+        ]
+
+    async def missing_manifest(_directory: str) -> None:
+        """Keep path-only compatibility fail-closed without OBS reads."""
+        return None
+
+    return await collect_terminal_artifact_set(
+        task_id=task_id,
+        output_dir=output_dir,
+        lister=object_lister,
+        manifest_loader=manifest_loader or missing_manifest,
+    )
+
+
+def _listed_artifact_from_legacy_path(
+    output_dir: str, path: str
+) -> ListedArtifactObject:
+    """Build an unknown-safe object record from a legacy public path."""
+    prefix = output_dir.rstrip("/") + "/"
+    relative_path = (
+        path[len(prefix) :]
+        if path.startswith(prefix)
+        else PurePosixPath(path).name
+    )
+    return ListedArtifactObject(
+        relative_path=relative_path or "artifact",
+        source_path=path,
+        size_bytes=0,
+        download_ref=path,
+    )
+
+
+def persist_report_compatibility(
+    live: list[dict[str, Any]],
+    report: TerminalReportAssembly,
+    db_path: str,
+) -> None:
+    """Keep the task-log report column aligned with canonical assembly."""
+    reason = next(
+        (
+            warning.code
+            for warning in report.warnings
+            if warning.code.startswith("report_")
+        ),
+        None,
+    )
+    persist_terminal_report(
+        live,
+        TerminalReportResult(
+            final_report=report.answer,
+            answer=report.answer,
+            degraded=report.report.degraded,
+            degraded_reason=reason,
+        ),
+        task_manager=TaskManager(db_path),
+    )
+
+
+def canonical_terminal_payload(
+    status: str,
+    live: list[dict[str, Any]],
+    artifact_set: TerminalArtifactSet,
+    report: TerminalReportAssembly,
+    *,
+    warnings: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any], str | None]:
+    """Build the single persisted projection for analyst-class runs."""
+    execution = _build_execution_projection(
+        status, live, artifact_set, report, warnings
+    )
+    formatted = apply_compatibility_projection(
+        FormattedToolResult(answer=report.answer), execution
+    )
+    payload = _json_compatible(
+        {"formatted": asdict(formatted), "execution": asdict(execution)}
+    )
+    return payload, _terminal_error(status, live)
+
+
+def _build_execution_projection(
+    status: str,
+    live: list[dict[str, Any]],
+    artifact_set: TerminalArtifactSet,
+    report: TerminalReportAssembly,
+    warnings: list[dict[str, Any]] | None,
+) -> ExecutionProjection:
+    """Build the bounded operational projection for a terminal report."""
+    submission_warnings = _execution_warnings(warnings)
+    failure_warnings = _failure_warnings(status, live)
+    return ExecutionProjection(
+        tracking={
+            "degraded": _tracking_is_degraded(
+                status, live, submission_warnings, artifact_set, report
+            )
+        },
+        warnings=(
+            *submission_warnings,
+            *artifact_set.warnings,
+            *failure_warnings,
+            *report.warnings,
+        ),
+        tasks=tuple(_public_task_row(row) for row in live),
+        artifacts=tuple(
+            asdict(artifact.to_public()) for artifact in artifact_set.artifacts
+        ),
+        output_dirs=tuple(_public_output_dirs(live)),
+        report=report.report,
+        diagnostics=tuple(_failure_diagnostics(status, live)),
+    )
+
+
+def _tracking_is_degraded(
+    status: str,
+    live: Sequence[Mapping[str, Any]],
+    submission_warnings: Sequence[ExecutionWarning],
+    artifact_set: TerminalArtifactSet,
+    report: TerminalReportAssembly,
+) -> bool:
+    """Return whether any safe terminal signal requires degraded tracking."""
+    return (
+        status != "succeeded"
+        or bool(submission_warnings)
+        or bool(artifact_set.warnings)
+        or bool(_failure_warnings(status, live))
+        or report.report.degraded
+        or any_degraded(live)
+    )
+
+
+def _terminal_error(
+    status: str, live: Sequence[Mapping[str, Any]]
+) -> str | None:
+    """Return a stable terminal error without provider or exception text."""
+    if status == "succeeded":
+        return None
+    failed = failed_task_ids(live)
+    return f"one or more tasks failed: {', '.join(failed)}"
+
+
+def _public_task_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Project one reconciled task into the execution-only task shape."""
+    task_id = row.get("task_id")
+    projected: dict[str, Any] = {
+        "id": str(task_id) if task_id is not None else "unknown",
+        "accepted": (
+            row["accepted"] if isinstance(row.get("accepted"), bool) else True
+        ),
+    }
+    status = row.get("status")
+    if isinstance(status, str) and status:
+        projected["status"] = status
+    return projected
+
+
+def _public_output_dirs(live: Sequence[Mapping[str, Any]]) -> list[str]:
+    """Return nonblank owner-scoped output references in task order."""
+    return [
+        output_dir
+        for row in live
+        if isinstance(output_dir := row.get("output_dir"), str) and output_dir
+    ]
+
+
+def _execution_warnings(
+    warnings: Sequence[Mapping[str, Any]] | None,
+) -> tuple[ExecutionWarning, ...]:
+    """Convert persisted submit warnings into the canonical warning type."""
+    if not warnings:
+        return ()
+    projected: list[ExecutionWarning] = []
+    for item in warnings:
+        code = item.get("code")
+        if not isinstance(code, str) or not code:
+            continue
+        stage = item.get("stage")
+        projected.append(
+            ExecutionWarning(
+                code=code,
+                retryable=item.get("retryable") is True,
+                stage=stage if isinstance(stage, str) else "submission",
+            )
+        )
+    return tuple(projected)
+
+
+def _failure_warnings(
+    status: str, live: Sequence[Mapping[str, Any]]
+) -> tuple[ExecutionWarning, ...]:
+    """Return one stable warning for a failed aggregate run."""
+    if status == "succeeded":
+        return ()
+    code = "task_failed" if failed_task_ids(live) else "run_not_succeeded"
+    return (ExecutionWarning(code=code, stage="reconcile"),)
+
+
+def _failure_diagnostics(
+    status: str, live: Sequence[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    """Return bounded diagnostics without task payloads or exceptions."""
+    if status == "succeeded":
+        return []
+    code = "task_failed" if failed_task_ids(live) else "run_not_succeeded"
+    return [{"code": code, "retryable": False, "stage": "reconcile"}]
+
+
+def failed_task_ids(live: Sequence[Mapping[str, Any]]) -> list[str]:
+    """Return stable failed task ids for the terminal error string."""
+    return [
+        str(row.get("task_id", "?"))
+        for row in live
+        if str(row.get("status") or "").lower() in _FAILURE_STATUSES
+    ]
+
+
+def _json_compatible(value: Any) -> Any:
+    """Normalize dataclass tuples to the JSON shape stored in SQLite."""
+    return json.loads(json.dumps(value))
+
+
+def stored_submission_warnings(
+    result: Mapping[str, Any] | None,
+) -> list[dict[str, object]]:
+    """Carry safe submit-time warnings into the terminal result."""
+    if not isinstance(result, Mapping):
+        return []
+    execution = result.get("execution")
+    raw = (
+        execution.get("warnings")
+        if isinstance(execution, Mapping)
+        else result.get("submission_warnings")
+    )
+    return project_submission_warnings(raw)
+
+
+def any_degraded(live: Sequence[Mapping[str, Any]]) -> bool:
+    """Return True when any reconciled child task is degraded."""
+    return any(bool(row.get("degraded")) for row in live)

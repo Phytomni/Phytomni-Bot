@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ..storage.path_policy import IdFactory
+from .execution_defaults import empty_execution_projection
 from .request_context import (
     bind_accepted_task_ids,
     bind_recorder_degraded,
@@ -173,20 +174,23 @@ def _initial_submission_result(
     """Build the in-flight result envelope seeded before child writes."""
     task_rows = [
         {
-            "task_id": task_id,
+            "id": task_id,
+            "accepted": True,
             "status": "submitted",
-            "output_dir": output_dir,
         }
-        for task_id, output_dir, _fingerprint, _source in submissions
+        for task_id, _output_dir, _fingerprint, _source in submissions
     ]
-    initial_result: dict[str, Any] = {
-        "task_results": task_rows,
-        "live_status": task_rows,
-        "artifacts": [],
-    }
+    output_dirs = [
+        output_dir
+        for _task_id, output_dir, _fingerprint, _source in submissions
+    ]
+    initial_result = empty_execution_projection()
+    initial_result["execution"]["tasks"] = task_rows
+    initial_result["execution"]["output_dirs"] = output_dirs
     warnings = project_submission_warnings(result.get("submission_warnings"))
     if warnings:
-        initial_result["execution"] = {"warnings": warnings}
+        initial_result["execution"]["warnings"] = warnings
+        initial_result["execution"]["tracking"] = {"degraded": True}
     return initial_result
 
 
@@ -253,11 +257,10 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
     run_id = IdFactory().new_id("run", agent)
     now = datetime.now(UTC).isoformat()
     db_path = resolve_tasks_db_path()
-    # Seed the run row with the same envelope shape ``_terminal_payload``
-    # writes later so a client polling ``GET /v1/runs/{id}`` while the
-    # run is still in flight sees ``task_results`` / ``live_status`` /
-    # ``artifacts`` keyed exactly as on the terminal branch, just with
-    # placeholder ``submitted`` rows and an empty artifacts list.
+    # Seed the run row with the same canonical envelope shape reconciliation
+    # writes later so a client polling ``GET /v1/runs/{id}`` while the run is
+    # still in flight sees empty scientific content and submitted execution
+    # rows without a field-ownership transition at terminal settlement.
     initial_result = _initial_submission_result(result, submissions)
     try:
         RunRegistry(db_path).create_run(

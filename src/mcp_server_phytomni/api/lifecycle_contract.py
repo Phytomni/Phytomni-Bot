@@ -24,6 +24,7 @@ from ..contracts.deep_genome import (
     DEEP_GENOME_PROGRESS_FIELDS,
     sanitize_nonnegative_int,
 )
+from ..runtime.execution_defaults import empty_execution_projection
 
 __all__ = [
     "LifecycleInvariantError",
@@ -154,8 +155,8 @@ _DEEP_GENOME_REASON_FALLBACK = "analysis results are partially unavailable"
 
 def empty_agent_result(*, degraded: bool = False) -> dict[str, Any]:
     """Return the smallest canonical scientific/execution projection."""
+    result = empty_execution_projection(degraded=degraded)
     warnings: list[dict[str, Any]] = []
-    tasks: list[dict[str, Any]] = []
     if degraded:
         warnings = [
             {
@@ -163,24 +164,8 @@ def empty_agent_result(*, degraded: bool = False) -> dict[str, Any]:
                 "retryable": False,
             }
         ]
-    return {
-        "formatted": {
-            "answer": "",
-            "follow_up_questions": [],
-            "references": [],
-            "tabular": {},
-            "metadata": {},
-        },
-        "execution": {
-            "tracking": {"degraded": degraded},
-            "warnings": warnings,
-            "tasks": tasks,
-            "artifacts": [],
-            "output_dirs": [],
-            "report": None,
-            "diagnostics": [],
-        },
-    }
+    result["execution"]["warnings"] = warnings
+    return result
 
 
 def _validated_task_ids(task_ids: Sequence[str]) -> list[str]:
@@ -892,6 +877,17 @@ def _project_formatted(
     answer = formatted.get("answer")
     follow_up = formatted.get("follow_up_questions")
     metadata = formatted.get("metadata")
+    projected_metadata = (
+        _project_scalar_fields(metadata, _METADATA_SCALAR_KEYS)
+        if isinstance(metadata, Mapping)
+        else {}
+    )
+    report = metadata.get("report") if isinstance(metadata, Mapping) else None
+    if isinstance(report, Mapping):
+        projected_metadata["report"] = _project_scalar_fields(
+            report,
+            ("state", "degraded", "source_artifact_count"),
+        )
     return {
         "answer": answer if isinstance(answer, str) else defaults["answer"],
         "follow_up_questions": _project_string_list(follow_up),
@@ -899,11 +895,7 @@ def _project_formatted(
             formatted.get("references"), _REFERENCE_KEYS
         ),
         "tabular": _project_tabular(formatted.get("tabular")),
-        "metadata": (
-            _project_scalar_fields(metadata, _METADATA_SCALAR_KEYS)
-            if isinstance(metadata, Mapping)
-            else {}
-        ),
+        "metadata": projected_metadata,
     }
 
 
@@ -935,10 +927,14 @@ def _project_execution(
                 "id",
                 "role",
                 "name",
+                "media_type",
+                "downloadable",
+                "report_context_eligible",
                 "mime_type",
                 "size_bytes",
                 "output_dir",
                 "uri",
+                "download_ref",
             ),
         ),
         "output_dirs": _project_string_list(execution.get("output_dirs")),
@@ -948,6 +944,8 @@ def _project_execution(
                 (
                     "role",
                     "state",
+                    "degraded",
+                    "source_artifact_count",
                     "artifact_id",
                     "mime_type",
                     "size_bytes",

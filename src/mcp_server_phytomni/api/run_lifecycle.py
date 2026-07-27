@@ -198,13 +198,14 @@ def extract_answer(result: Any) -> str | None:
 def run_record_to_dict(record: Any) -> dict[str, Any]:
     """Flatten a ``RunRecord`` into the public HTTP run envelope."""
     info = record.request_info
-    return {
+    result = record.result
+    payload: dict[str, Any] = {
         "run_id": record.spec.run_id,
         "agent": record.spec.agent,
         "origin": record.spec.origin,
         "user_id": record.spec.user_id,
         "status": record.status,
-        "result": record.result,
+        "result": result,
         "error": record.error,
         "created_at": record.timestamps.created_at,
         "updated_at": record.timestamps.updated_at,
@@ -217,8 +218,22 @@ def run_record_to_dict(record: Any) -> dict[str, Any]:
         "a2a_task_id": record.a2a.task_id,
         "a2a_context_id": record.a2a.context_id,
         "a2a_message_id": record.a2a.message_id,
-        "answer": extract_answer(record.result),
+        "answer": extract_answer(result),
     }
+    if _result_tracking_is_degraded(result):
+        payload["degraded_tracking"] = True
+    return payload
+
+
+def _result_tracking_is_degraded(result: Any) -> bool:
+    """Derive the compatibility flag without rebuilding the result."""
+    if not isinstance(result, Mapping):
+        return False
+    execution = result.get("execution")
+    tracking = (
+        execution.get("tracking") if isinstance(execution, Mapping) else {}
+    )
+    return isinstance(tracking, Mapping) and tracking.get("degraded") is True
 
 
 def agent_run_response(

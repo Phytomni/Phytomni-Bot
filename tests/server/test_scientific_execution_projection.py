@@ -124,6 +124,65 @@ def test_operational_sentinels_only_live_in_execution(
     assert set(result) == {"formatted", "execution"}
 
 
+def test_terminal_report_metadata_survives_run_projection() -> None:
+    """Polling keeps report metadata and public artifact descriptors."""
+    report = {
+        "state": "final",
+        "degraded": False,
+        "source_artifact_count": 1,
+    }
+    result = _canonical_result(
+        {
+            "formatted": {
+                "answer": "# Final report",
+                "follow_up_questions": [],
+                "references": [],
+                "tabular": {},
+                "metadata": {"report": report},
+            },
+            "execution": {
+                "tracking": {"degraded": False},
+                "warnings": [],
+                "tasks": [
+                    {
+                        "id": "task-final",
+                        "accepted": True,
+                        "status": "succeeded",
+                    }
+                ],
+                "artifacts": [
+                    {
+                        "role": "scientific_report",
+                        "name": "report.md",
+                        "media_type": "text/markdown",
+                        "size_bytes": 32,
+                        "downloadable": True,
+                        "report_context_eligible": True,
+                        "download_ref": "/obs/public/report.md",
+                    }
+                ],
+                "output_dirs": ["/obs/public"],
+                "report": report,
+                "diagnostics": [],
+            },
+        }
+    )
+
+    assert result["formatted"]["metadata"]["report"] == report
+    assert result["execution"]["report"] == report
+    assert result["execution"]["artifacts"] == [
+        {
+            "role": "scientific_report",
+            "name": "report.md",
+            "media_type": "text/markdown",
+            "size_bytes": 32,
+            "downloadable": True,
+            "report_context_eligible": True,
+            "download_ref": "/obs/public/report.md",
+        }
+    ]
+
+
 def test_stream_settlement_keeps_execution_and_strips_raw() -> None:
     """Pre-open stream failures use the same sibling execution block."""
     result = failed_stream_result()

@@ -15,7 +15,7 @@ from __future__ import annotations
 import contextlib
 import json
 import sqlite3
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import Any
 
 from .run_registry_models import (
@@ -47,8 +47,15 @@ from .run_registry_models import (
     _surface_identity_from_result,
     local_run_spec,
 )
+from .run_registry_reports import (
+    ReportArtifactSources,
+    any_degraded,
+    canonical_terminal_payload,
+    collect_report_artifact_set,
+    persist_report_compatibility,
+    stored_submission_warnings,
+)
 from .sqlite import sqlite_transaction
-from .submission_outcome import project_submission_warnings
 from .task_manager import (
     TaskManager,
     _expires_at_for,
@@ -58,14 +65,15 @@ from .task_reconcile import reconcile_task
 from .terminal_answer import TerminalAnswerContext, synthesize_terminal_answer
 from .terminal_artifacts import (
     ArtifactLister,
+    ArtifactObjectLister,
+    ManifestLoader,
     collect_terminal_artifacts,
     enumerate_artifact_paths,
 )
 from .terminal_report import (
     TerminalReportContext,
+    assemble_terminal_report,
     is_terminal_report_agent,
-    persist_terminal_report,
-    synthesize_terminal_report,
 )
 
 __all__ = [
@@ -525,8 +533,7 @@ class RunRegistry:
             if row is None:
                 return None
             task_rows = conn.execute(
-                "SELECT task_id FROM tasks WHERE run_id = ? "
-                "ORDER BY task_id",
+                "SELECT task_id FROM tasks WHERE run_id = ? ORDER BY task_id",
                 (run_id,),
             ).fetchall()
         return _row_to_record(row, task_rows)
@@ -591,8 +598,7 @@ class RunRegistry:
             if row is None:
                 return None
             task_rows = conn.execute(
-                "SELECT task_id FROM tasks WHERE run_id = ? "
-                "ORDER BY task_id",
+                "SELECT task_id FROM tasks WHERE run_id = ? ORDER BY task_id",
                 (row["run_id"],),
             ).fetchall()
         return _row_to_record(row, task_rows)
@@ -656,6 +662,8 @@ class RunRegistry:
         *,
         owner: str,
         lister: ArtifactLister | None = None,
+        object_lister: ArtifactObjectLister | None = None,
+        manifest_loader: ManifestLoader | None = None,
     ) -> RunRecord | None:
         """Refresh a non-terminal run by polling its child tasks.
 
@@ -681,6 +689,18 @@ class RunRegistry:
         new_status = _aggregate_status([row["status"] for row in live])
         if new_status not in _TERMINAL_RUN_STATUSES:
             return self._touch_running(current, new_status)
+        if is_terminal_report_agent(current.spec.agent):
+            return await self._settle_report_terminal(
+                current,
+                new_status,
+                live,
+                sources=ReportArtifactSources(
+                    lister=lister,
+                    object_lister=object_lister,
+                    manifest_loader=manifest_loader,
+                ),
+            )
+
         if new_status == "succeeded":
             live = await enumerate_artifact_paths(live, lister=lister)
         artifacts = (
@@ -688,21 +708,6 @@ class RunRegistry:
             if new_status == "succeeded"
             else []
         )
-        report_result = None
-        if new_status == "succeeded" and is_terminal_report_agent(
-            current.spec.agent
-        ):
-            report_result = await synthesize_terminal_report(
-                TerminalReportContext(
-                    agent=current.spec.agent,
-                    status=new_status,
-                    live=live,
-                    artifacts=artifacts,
-                    query=current.request_info.query,
-                    locale=current.request_info.locale or "en-US",
-                )
-            )
-            persist_terminal_report(live, report_result)
         answer = await synthesize_terminal_answer(
             TerminalAnswerContext(
                 agent=current.spec.agent,
@@ -712,18 +717,52 @@ class RunRegistry:
                 query=current.request_info.query,
             )
         )
-        if report_result is not None and report_result.answer:
-            answer = report_result.answer
-        result_payload, error = _terminal_payload(
+        legacy_result_payload, error = _terminal_payload(
             new_status,
             live,
             artifacts,
             answer,
-            warnings=_stored_submission_warnings(current.result),
+            warnings=stored_submission_warnings(current.result),
         )
         return self._settle_terminal(
-            current, new_status, result_payload, error
+            current, new_status, legacy_result_payload, error
         )
+
+    async def _settle_report_terminal(
+        self,
+        current: RunRecord,
+        status: str,
+        live: list[dict[str, Any]],
+        *,
+        sources: ReportArtifactSources,
+    ) -> RunRecord:
+        """Assemble and persist the canonical analyst-class report."""
+        artifact_set = await collect_report_artifact_set(
+            live,
+            lister=sources.lister,
+            object_lister=sources.object_lister,
+            manifest_loader=sources.manifest_loader,
+        )
+        report = await assemble_terminal_report(
+            context=TerminalReportContext(
+                agent=current.spec.agent,
+                status=status,
+                live=live,
+                artifacts=artifact_set.artifacts,
+                query=current.request_info.query,
+                locale=current.request_info.locale or "en-US",
+            ),
+            artifacts=artifact_set.artifacts if status == "succeeded" else (),
+        )
+        persist_report_compatibility(live, report, self.db_path)
+        result_payload, error = canonical_terminal_payload(
+            status,
+            live,
+            artifact_set,
+            report,
+            warnings=stored_submission_warnings(current.result),
+        )
+        return self._settle_terminal(current, status, result_payload, error)
 
     def purge_expired(self) -> int:
         """Delete runs whose ``expires_at`` has elapsed and their tasks.
@@ -756,8 +795,7 @@ class RunRegistry:
         now = _now_iso()
         with sqlite_transaction(self.db_path) as conn:
             conn.execute(
-                "UPDATE runs SET status = ?, updated_at = ? "
-                "WHERE run_id = ?",
+                "UPDATE runs SET status = ?, updated_at = ? WHERE run_id = ?",
                 (status, now, current.spec.run_id),
             )
         return RunRecord(
@@ -872,7 +910,7 @@ def _terminal_payload(
         "live_status": live,
         "artifacts": artifacts,
         "final_report": _first_final_report(live),
-        "degraded": _any_degraded(live),
+        "degraded": any_degraded(live),
     }
     if answer:
         payload["formatted"] = {"answer": answer}
@@ -888,21 +926,6 @@ def _terminal_payload(
     return payload, f"one or more tasks failed: {', '.join(failed)}"
 
 
-def _stored_submission_warnings(
-    result: Mapping[str, Any] | None,
-) -> list[dict[str, object]]:
-    """Carry safe submit-time warnings into the terminal result."""
-    if not isinstance(result, Mapping):
-        return []
-    execution = result.get("execution")
-    raw = (
-        execution.get("warnings")
-        if isinstance(execution, Mapping)
-        else result.get("submission_warnings")
-    )
-    return project_submission_warnings(raw)
-
-
 def _first_final_report(live: list[dict[str, Any]]) -> str | None:
     """Return the first non-empty child ``final_report``, else None.
 
@@ -916,17 +939,6 @@ def _first_final_report(live: list[dict[str, Any]]) -> str | None:
         if isinstance(report, str) and report:
             return report
     return None
-
-
-def _any_degraded(live: list[dict[str, Any]]) -> bool:
-    """Return True when any reconciled child task is degraded.
-
-    DeepGenome flags optional analysis or literature degradation on its
-    reconciled row; rolling the flag up to the run aggregate lets a client
-    polling /v1/runs/{id} learn a child degraded without walking
-    ``task_results`` (which still carries the per-task ``degraded_reason``).
-    """
-    return any(bool(row.get("degraded")) for row in live)
 
 
 def _row_to_record(
