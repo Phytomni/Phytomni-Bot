@@ -27,7 +27,9 @@ from ..agents.brief_gene.resolve_query import resolve_brief_gene_user_query
 from ..agents.deep_genome.resolve_query import resolve_deep_genome_user_query
 from ..agents.design.resolve_query import resolve_design_user_query
 from ..agents.expert import (
-    ToolSelectionError,
+    ExpertProviderError,
+    ExpertProviderTimeoutError,
+    ExpertRoutingContractError,
     select_agent_tool,
 )
 from ..agents.network.resolve_query import resolve_network_user_query
@@ -105,6 +107,7 @@ from .lifecycle_contract import (
     build_agent_run_response,
     canonicalize_agent_run_body,
     empty_agent_result,
+    expert_safe_error,
 )
 from .openai_mapping import (
     to_chat_completion,
@@ -316,12 +319,12 @@ async def _prepare_agent_run(
     )
 
 
-def _routing_contract_error(message: str) -> SafeApiError:
+def _routing_contract_error() -> SafeApiError:
     """Return one sanitized Expert routing contract failure."""
-    return SafeApiError(
+    return expert_safe_error(
+        SafeErrorCode.ROUTING_CONTRACT_VIOLATION,
         status_code=502,
-        code=SafeErrorCode.ROUTING_CONTRACT_VIOLATION.value,
-        message=message,
+        locale=current_effective_locale(),
         stage="routing",
         retryable=False,
     )
@@ -455,38 +458,11 @@ async def _invoke_agent_run(
     request_json: str | None = None,
     debug: bool = False,
 ) -> tuple[dict[str, Any], int]:
-    """Dispatch one ``/v1/agents/{agent}/runs`` call and shape the body.
+    """Dispatch one native run through the shared lifecycle contract.
 
-    Owns the slug -> tool lookup, the shared ``invoke_tool_formatted``
-    call, the ``apply_runs_resolver`` HTTP-only pre-shaping boundary, and
-    the origin-aware run id resolution. Returns the
-    ``agent.run`` envelope: sync agents get ``status="succeeded"`` at
-    HTTP 200, remote agents get ``status="running"`` plus the child
-    ``task_ids`` at HTTP 202 (the submission ack convention) so a
-    client can immediately poll ``/v1/runs/{id}`` for the live status.
-    The formatted result is surfaced in both cases — sync clients
-    consume it directly; remote clients can read the raw payload for
-    additional context but should track the run by ``id`` and
-    ``task_ids`` since those are uniformly populated for every
-    remote agent. Analysis dedup hits also return the caller's own
-    run id and fresh task id at 202 (the reuse mints a caller-owned
-    row recorded through the normal chokepoint path); the only case
-    where ``id=null`` / ``task_ids=[]`` is returned is when the
-    local registry write fails and ``degraded_tracking: True`` is
-    added to the body.
-
-    Args:
-        agent: Public agent alias (e.g. ``"chat"``).
-        arguments: Tool-specific kwargs forwarded to the agent.
-        debug: When True, include the raw handler payload in the
-            result block. Default strips it to reduce response volume.
-
-    Returns:
-        ``(body, status_code)`` — ``body`` is the ``agent.run``
-        envelope (``id`` / ``object`` / ``agent`` / ``status`` /
-        ``task_ids`` / ``result``), ``status_code`` is 202 for remote
-        submissions and 200 for synchronous completions.
-
+    The seam owns resolver, attachment, projection, persistence, and
+    sync/remote response behavior. Accepted remote work returns 202 with
+    task identity; synchronous work returns 200 after persistence.
     """
     prepared = await _prepare_agent_run(
         agent=agent,
@@ -542,27 +518,7 @@ def _resolve_remote_run(owner: str) -> run_lifecycle.ResolvedRemoteRun:
 async def _route_expert_query(
     payload: ExpertQueryRequest, *, debug: bool
 ) -> tuple[dict[str, Any], int]:
-    """Autonomously route an Expert query and shape its agent.run body.
-
-    Runs the in-process LLM tool selector, maps the chosen tool name back
-    to its agent slug, prepares attachments through the capability registry,
-    then delegates to ``_invoke_agent_run`` so the resolved slug,
-    formatted envelope, and sync(200)/remote(202) branching all come from
-    the same path as ``POST /v1/agents/{slug}/runs``.
-
-    Args:
-        payload: The validated Expert routing request.
-        debug: Whether to keep the raw handler payload in the result.
-
-    Returns:
-        ``(body, status_code)`` — the ``agent.run`` envelope plus its HTTP
-        status, identical in shape to ``_invoke_agent_run``.
-
-    Raises:
-        HTTPException: 400 when the router produces arguments that fail the
-            agent schema; 502 when the routing contract cannot resolve a
-            permitted agent or selects a tool outside the agent set.
-    """
+    """Route one constrained Expert request to a native agent run."""
     try:
         selection = await select_agent_tool(
             payload.user_query,
@@ -570,19 +526,34 @@ async def _route_expert_query(
             allowed_tools=payload.allowed_tools,
             forced_tool=payload.forced_tool,
         )
-    except ToolSelectionError as exc:
-        _LOGGER.warning("Expert routing selection contract failed: %s", exc)
-        raise _routing_contract_error(
-            "router did not resolve one permitted agent"
+    except ExpertRoutingContractError as exc:
+        _LOGGER.warning(
+            "Expert routing selection contract failed (%s)",
+            exc.__class__.__name__,
+        )
+        raise _routing_contract_error() from exc
+    except ExpertProviderTimeoutError as exc:
+        raise expert_safe_error(
+            SafeErrorCode.UPSTREAM_TIMEOUT,
+            status_code=504,
+            locale=current_effective_locale(),
+            stage="routing",
+            retryable=True,
+        ) from exc
+    except ExpertProviderError as exc:
+        raise expert_safe_error(
+            SafeErrorCode.ROUTING_UPSTREAM_FAILED,
+            status_code=502,
+            locale=current_effective_locale(),
+            stage="routing",
+            retryable=True,
         ) from exc
     if selection is None:
-        raise _routing_contract_error(
-            "router did not resolve one permitted agent"
-        )
+        raise _routing_contract_error()
     slug = _TOOL_TO_AGENT_SLUG.get(selection.tool_name)
     if slug is None:
         _LOGGER.warning("Expert routing selected an unavailable tool")
-        raise _routing_contract_error("router selected an unavailable tool")
+        raise _routing_contract_error()
     request_json = json.dumps(
         {
             "agent": slug,
@@ -612,9 +583,12 @@ async def _route_expert_query(
         )
     except McpError as exc:
         if exc.error.code == INVALID_PARAMS:
-            raise HTTPException(
+            raise expert_safe_error(
+                SafeErrorCode.SELECTED_AGENT_INVALID_ARGUMENT,
                 status_code=400,
-                detail=f"router produced invalid arguments for {slug}",
+                locale=current_effective_locale(),
+                stage="dispatch_validation",
+                retryable=False,
             ) from exc
         raise
 

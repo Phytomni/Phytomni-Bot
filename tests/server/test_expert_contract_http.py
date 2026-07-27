@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -17,7 +18,12 @@ import pytest
 from tests.support.http_fakes import assert_degraded_tracking_response
 
 from mcp_server_phytomni import server
-from mcp_server_phytomni.agents.expert import ToolSelection
+from mcp_server_phytomni.agents.expert import (
+    ExpertProviderError,
+    ExpertProviderTimeoutError,
+    ExpertRoutingContractError,
+    ToolSelection,
+)
 from mcp_server_phytomni.api import app as api_app
 from mcp_server_phytomni.runtime import (
     submit_recorder as submit_recorder_module,
@@ -26,6 +32,12 @@ from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
 pytestmark = pytest.mark.server
+
+
+@pytest.fixture(autouse=True)
+def _expert_tasks_db(tasks_db_path: str) -> None:
+    """Give every Expert contract test an isolated run registry."""
+    _ = tasks_db_path
 
 
 def _auth(api_key: str) -> dict[str, str]:
@@ -110,6 +122,16 @@ class _ParityCase:
     selected_args: dict[str, Any]
 
 
+@dataclass(frozen=True, slots=True)
+class _FailureCase:
+    """One typed Expert failure and its public mapping."""
+
+    failure: type[Exception]
+    expected_status: int
+    expected_code: str
+    retryable: bool
+
+
 _PARITY_CASES = (
     pytest.param(
         _ParityCase(
@@ -158,6 +180,37 @@ _PARITY_CASES = (
             {"user_query": "q", "data_list": {}, "obs_file_list": []},
         ),
         id="research-remote",
+    ),
+)
+
+
+_FAILURE_CASES = (
+    pytest.param(
+        _FailureCase(
+            ExpertRoutingContractError,
+            502,
+            "routing_contract_violation",
+            False,
+        ),
+        id="contract",
+    ),
+    pytest.param(
+        _FailureCase(
+            ExpertProviderTimeoutError,
+            504,
+            "upstream_timeout",
+            True,
+        ),
+        id="timeout",
+    ),
+    pytest.param(
+        _FailureCase(
+            ExpertProviderError,
+            502,
+            "routing_upstream_failed",
+            True,
+        ),
+        id="provider",
     ),
 )
 
@@ -270,6 +323,48 @@ async def test_expert_partial_remote_preserves_execution_warnings(
         }
     ]
     assert "must not leak" not in response.text
+
+
+@pytest.mark.parametrize(
+    "case",
+    _FAILURE_CASES,
+)
+async def test_expert_routing_failures_are_safe_and_side_effect_free(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    case: _FailureCase,
+) -> None:
+    """Typed selector/provider failures never dispatch or persist a run."""
+    sentinel = (
+        "ROUTER-PROMPT-SENTINEL RAW-MODEL-SENTINEL "
+        "ALLOWLIST-SENTINEL PROVIDER-PAYLOAD-SENTINEL "
+        "credential-like-sentinel"
+    )
+
+    async def fail_select(*_args: Any, **_kwargs: Any) -> ToolSelection:
+        raise case.failure(sentinel)
+
+    monkeypatch.setattr(api_app, "select_agent_tool", fail_select)
+    caplog.set_level(logging.WARNING, logger="mcp_server_phytomni.api.app")
+
+    response = await _post_forced_expert(
+        api_client,
+        issued_api_key,
+        "ChatAgent",
+    )
+
+    assert response.status_code == case.expected_status
+    error = response.json()["error"]
+    assert error["code"] == case.expected_code
+    assert error["stage"] == "routing"
+    assert error["retryable"] is case.retryable
+    assert sentinel not in response.text
+    assert sentinel not in caplog.text
+    assert not RunRegistry(api_app.resolve_tasks_db_path()).list_runs(
+        owner="u1"
+    )
 
 
 async def test_expert_degraded_remote_preserves_accepted_task_ids(

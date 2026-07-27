@@ -172,6 +172,14 @@ _MESSAGES: Final[dict[str, dict[SupportedLocale, str]]] = {
         "en-US": "The routing contract is invalid.",
         "zh-CN": "路由契约无效。",
     },
+    "routing_upstream_failed": {
+        "en-US": "The routing upstream service failed.",
+        "zh-CN": "路由上游服务失败。",
+    },
+    "selected_agent_invalid_argument": {
+        "en-US": "The selected agent arguments are invalid.",
+        "zh-CN": "所选智能体参数无效。",
+    },
     "attachment_not_found": {
         "en-US": "The requested attachment was not found.",
         "zh-CN": "未找到请求的附件。",

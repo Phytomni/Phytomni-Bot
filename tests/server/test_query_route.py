@@ -671,9 +671,11 @@ async def test_route_selection_failure_returns_sanitized_502(
         },
     )
     assert response.status_code == 502
-    assert (
-        response.json()["error"]["message"]
-        == "router did not resolve one permitted agent"
+    assert response.json()["error"]["code"] == ("routing_contract_violation")
+    assert response.json()["error"]["stage"] == "routing"
+    assert response.json()["error"]["retryable"] is False
+    assert response.json()["error"]["message"] == (
+        "The routing contract is invalid."
     )
     assert "DataAgent" not in response.text
     assert "secret selection" not in response.text
@@ -697,9 +699,11 @@ async def test_route_no_selection_returns_sanitized_502(
     )
 
     assert response.status_code == 502
-    assert (
-        response.json()["error"]["message"]
-        == "router did not resolve one permitted agent"
+    assert response.json()["error"]["code"] == ("routing_contract_violation")
+    assert response.json()["error"]["stage"] == "routing"
+    assert response.json()["error"]["retryable"] is False
+    assert response.json()["error"]["message"] == (
+        "The routing contract is invalid."
     )
     assert "ChatAgent" not in response.text
     assert "DataAgent" not in response.text
@@ -737,6 +741,7 @@ async def test_route_invalid_arguments_returns_400(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
 ) -> None:
     """LLM-extracted arguments that fail the agent schema -> 400.
 
@@ -764,4 +769,10 @@ async def test_route_invalid_arguments_returns_400(
         json={"user_query": "rice", "allowed_tools": ["KnowledgeAgent"]},
     )
     assert response.status_code == 400
+    assert response.json()["error"]["code"] == (
+        "selected_agent_invalid_argument"
+    )
+    assert response.json()["error"]["stage"] == "dispatch_validation"
+    assert response.json()["error"]["retryable"] is False
     assert invoked == 0
+    assert not RunRegistry(tasks_db_path).list_runs(owner="u1")

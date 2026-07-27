@@ -25,6 +25,7 @@ from ..runtime.deep_genome_store_projection import (
     snapshot_metadata_from_mapping,
 )
 from ..runtime.execution_defaults import empty_execution_projection
+from ..runtime.locale import SupportedLocale, message_for
 
 __all__ = [
     "LifecycleInvariantError",
@@ -34,6 +35,7 @@ __all__ = [
     "canonicalize_agent_run_body",
     "canonicalize_run_record",
     "empty_agent_result",
+    "expert_safe_error",
     "run_persistence_error",
 ]
 
@@ -49,6 +51,8 @@ class SafeErrorCode(StrEnum):
     A2UI_ACTION_CONFLICT = "a2ui_action_conflict"
     CHECKPOINT_NOT_AVAILABLE = "checkpoint_not_available"
     ROUTING_CONTRACT_VIOLATION = "routing_contract_violation"
+    ROUTING_UPSTREAM_FAILED = "routing_upstream_failed"
+    SELECTED_AGENT_INVALID_ARGUMENT = "selected_agent_invalid_argument"
     UPSTREAM_FAILED = "upstream_failed"
     UPSTREAM_TIMEOUT = "upstream_timeout"
 
@@ -73,6 +77,24 @@ class SafeApiError(RuntimeError):
 
     def __post_init__(self) -> None:
         RuntimeError.__init__(self, self.code)
+
+
+def expert_safe_error(
+    code: SafeErrorCode,
+    *,
+    status_code: int,
+    locale: SupportedLocale,
+    stage: str,
+    retryable: bool,
+) -> SafeApiError:
+    """Build one localized, request-data-free Expert error."""
+    return SafeApiError(
+        status_code=status_code,
+        code=code.value,
+        message=message_for(code.value, locale),
+        stage=stage,
+        retryable=retryable,
+    )
 
 
 def run_persistence_error() -> SafeApiError:

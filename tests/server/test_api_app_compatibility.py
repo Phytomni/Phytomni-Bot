@@ -666,6 +666,9 @@ def test_application_routes_keep_shared_mcp_seams() -> None:
     run_source = inspect.getsource(
         getattr(api_app_module, "_invoke_agent_run")
     )
+    prepare_source = inspect.getsource(
+        getattr(api_app_module, "_prepare_agent_run")
+    )
     for seam in (
         "invoke_tool_enveloped",
         "invoke_tool_streamed",
@@ -673,7 +676,7 @@ def test_application_routes_keep_shared_mcp_seams() -> None:
         "_route_expert_query",
     ):
         assert seam in source
-    assert "apply_runs_resolver" in run_source
+    assert "apply_runs_resolver" in prepare_source
     assert "resolve_chat_query" in source
     assert "_maybe_resolve_brief_gene_query" not in source
     assert "_maybe_resolve_brief_gene_query" not in run_source
