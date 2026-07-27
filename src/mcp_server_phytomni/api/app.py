@@ -25,7 +25,10 @@ from mcp.types import INVALID_PARAMS
 from ..agents.brief_gene.resolve_query import resolve_brief_gene_user_query
 from ..agents.deep_genome.resolve_query import resolve_deep_genome_user_query
 from ..agents.design.resolve_query import resolve_design_user_query
-from ..agents.expert import ToolSelectionError, select_agent_tool
+from ..agents.expert import (
+    ToolSelectionError,
+    select_agent_tool,
+)
 from ..agents.network.resolve_query import resolve_network_user_query
 from ..common import logging_config as _logging_config
 from ..config.defaults import ApiConfig
@@ -80,7 +83,10 @@ from .a2a import runtime as a2a_runtime
 from .a2a.executor import (
     A2ARegistration,
 )
-from .attachments import validate_native_attachments
+from .attachments import (
+    prepare_expert_arguments,
+    validate_native_attachments,
+)
 from .compat import (
     _a2ui_interrupt_body,
     _a2ui_runtime_dependencies,
@@ -101,7 +107,6 @@ from .lifecycle_contract import (
 )
 from .openai_mapping import (
     to_chat_completion,
-    tool_accepts_obs,
     tool_accepts_stream,
 )
 from .resolvers import (
@@ -531,8 +536,8 @@ async def _route_expert_query(
     """Autonomously route an Expert query and shape its agent.run body.
 
     Runs the in-process LLM tool selector, maps the chosen tool name back
-    to its agent slug, injects ``obs_file_list`` only for obs-capable
-    tools, then delegates to ``_invoke_agent_run`` so the resolved slug,
+    to its agent slug, prepares attachments through the capability registry,
+    then delegates to ``_invoke_agent_run`` so the resolved slug,
     formatted envelope, and sync(200)/remote(202) branching all come from
     the same path as ``POST /v1/agents/{slug}/runs``.
 
@@ -568,24 +573,16 @@ async def _route_expert_query(
     request_json = payload.model_dump_json()
     slug = _TOOL_TO_AGENT_SLUG.get(selection.tool_name)
     if slug is None:
-        _LOGGER.warning(
-            "Expert router selected an unknown tool: %s",
-            selection.tool_name,
-        )
+        _LOGGER.warning("Expert routing selected an unavailable tool")
         raise _routing_contract_error("router selected an unavailable tool")
-    arguments = dict(selection.arguments)
-    arguments["locale"] = current_effective_locale()
-    validation_arguments = dict(arguments)
-    if payload.obs_file_list:
-        validation_arguments["obs_file_list"] = list(payload.obs_file_list)
-    validate_native_attachments(
+    owner = current_request_user() or "anonymous"
+    arguments = prepare_expert_arguments(
         slug,
-        validation_arguments,
-        owner=current_request_user() or "anonymous",
+        selection.arguments,
+        obs_file_list=payload.obs_file_list,
+        owner=owner,
         db_path=resolve_tasks_db_path(),
     )
-    if tool_accepts_obs(selection.tool_name):
-        arguments["obs_file_list"] = list(payload.obs_file_list)
     try:
         return await _invoke_agent_run(
             agent=slug,

@@ -11,6 +11,7 @@ from pathlib import PurePosixPath
 from typing import Any, NoReturn
 
 from ..config.defaults import ApiConfig, ServerConfig
+from ..runtime.locale import current_effective_locale
 from ..runtime.upload_registry import UploadMetadata, UploadRegistry
 from ..storage.obs_storage import ObsPathError, normalize_obs_object_key
 from .agent_capabilities import (
@@ -18,6 +19,7 @@ from .agent_capabilities import (
     MAX_FILE_BYTES,
     MAX_FILES,
     MAX_TOTAL_BYTES,
+    get_agent_capability,
     get_attachment_capability,
 )
 from .lifecycle_contract import SafeApiError
@@ -27,6 +29,7 @@ __all__ = [
     "AttachmentSelection",
     "is_managed_upload_path",
     "legacy_dataset_path_allowed",
+    "prepare_expert_arguments",
     "validate_agent_attachments",
 ]
 
@@ -85,6 +88,48 @@ def validate_native_attachments(
             stage="attachment_validation",
             retryable=False,
         ) from exc
+
+
+def prepare_expert_arguments(
+    agent: str,
+    selected_arguments: Mapping[str, Any],
+    *,
+    obs_file_list: Sequence[str],
+    owner: str,
+    db_path: str,
+) -> dict[str, Any]:
+    """Prepare Expert arguments under the selected capability contract."""
+    capability = get_agent_capability(agent)
+    arguments = dict(selected_arguments)
+    selected_obs_file_list = arguments.get("obs_file_list")
+    arguments.pop("obs_file_list", None)
+    arguments["locale"] = current_effective_locale()
+    if obs_file_list:
+        if not capability.attachments.expert_forwarding:
+            raise SafeApiError(
+                status_code=422,
+                code="attachment_not_supported",
+                message=(
+                    "The selected agent does not accept Expert attachments."
+                ),
+                stage="attachment_validation",
+                retryable=False,
+            )
+        arguments["obs_file_list"] = list(obs_file_list)
+    elif (
+        selected_obs_file_list == []
+        or capability.attachments.document_context is not None
+    ):
+        # Preserve the empty schema value; selector-generated paths are not
+        # trusted or forwarded.
+        arguments["obs_file_list"] = []
+    validate_native_attachments(
+        agent,
+        arguments,
+        owner=owner,
+        db_path=db_path,
+    )
+    return arguments
 
 
 def validate_agent_attachments(

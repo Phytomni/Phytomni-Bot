@@ -536,18 +536,30 @@ async def test_route_strict_failures_never_invoke_agent(
         }
 
 
-async def test_route_injects_obs_only_for_obs_capable_tool(
+@pytest.mark.parametrize(
+    "case",
+    [
+        ("ChatAgent", "chat", True),
+        ("KnowledgeAgent", "knowledge", True),
+        ("DataAgent", "data", False),
+        ("ReviewAgent", "review", True),
+        ("BriefGeneAgent", "brief_gene", False),
+        ("AnalystAgent", "analyst", False),
+        ("DeepGenomeAgent", "deep_genome", False),
+        ("InSilicoResearchAgent", "research", False),
+        ("DigitalDesignAgent", "design", False),
+        ("GeneNetworkAgent", "network", False),
+    ],
+)
+async def test_route_attachment_forwarding_follows_capability_matrix(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
+    case: tuple[str, str, bool],
 ) -> None:
-    """Expert validates attachments before forwarding supported arguments.
-
-    Knowledge receives a registered document path. Data retains the existing
-    no-forwarding argument shape, while the original attachment is still
-    rejected by the shared capability validator.
-    """
+    """Expert forwarding follows the registry's exact ten-tool matrix."""
+    tool_name, slug, forwarded = case
     captured: dict[str, dict[str, Any]] = {}
     registry = UploadRegistry(tasks_db_path)
     file_id = "expert-context"
@@ -589,32 +601,28 @@ async def test_route_injects_obs_only_for_obs_capable_tool(
     monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
 
     _patch_select(
-        monkeypatch, ToolSelection("KnowledgeAgent", {"user_query": "q"})
+        monkeypatch,
+        ToolSelection(
+            tool_name,
+            {"user_query": "q", "obs_file_list": ["selector-private"]},
+        ),
     )
-    await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json={
-            "user_query": "q",
-            "obs_file_list": [path],
-            "allowed_tools": ["KnowledgeAgent"],
-        },
-    )
-    assert captured["knowledge"]["obs_file_list"] == [path]
-
-    _patch_select(monkeypatch, ToolSelection("DataAgent", {"user_query": "q"}))
     response = await api_client.post(
         "/v1/query/route",
         headers=_auth(issued_api_key),
         json={
             "user_query": "q",
             "obs_file_list": [path],
-            "allowed_tools": ["DataAgent"],
+            "allowed_tools": [tool_name],
         },
     )
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "attachment_not_supported"
-    assert "data" not in captured
+    if forwarded:
+        assert response.status_code == 200
+        assert captured[slug]["obs_file_list"] == [path]
+    else:
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == ("attachment_not_supported")
+        assert slug not in captured
 
 
 async def test_route_requires_auth(
