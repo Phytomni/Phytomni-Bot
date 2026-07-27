@@ -14,14 +14,18 @@ parent graph's ``compile()`` time.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from contextlib import AbstractAsyncContextManager
 from typing import Any
 
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from ..chat.service import _cached_chat_app
+from .graph_routing import make_after_router
 
 CHAT_APP: CompiledStateGraph = _cached_chat_app()
+
+type ChatInvokeContextFactory = Callable[[], AbstractAsyncContextManager[None]]
 
 
 def _default_chat_input(state: Any) -> dict[str, Any]:
@@ -39,6 +43,7 @@ def make_chat_node_wrapper(
     build_input_fn: Callable[[Any], dict[str, Any]],
     extract_output_fn: Callable[[dict[str, Any]], Any],
     response_key: str,
+    invoke_context_factory: ChatInvokeContextFactory | None = None,
 ) -> Callable[..., Awaitable[dict[str, Any]]]:
     """Return an async node body that adapts consumer state to chat IO.
 
@@ -68,7 +73,11 @@ def make_chat_node_wrapper(
 
     async def _chat_node(state: Any) -> dict[str, Any]:
         chat_input = build_input_fn(state)
-        chat_output = await CHAT_APP.ainvoke(chat_input)
+        if invoke_context_factory is None:
+            chat_output = await CHAT_APP.ainvoke(chat_input)
+        else:
+            async with invoke_context_factory():
+                chat_output = await CHAT_APP.ainvoke(chat_input)
         return {response_key: extract_output_fn(chat_output)}
 
     return _chat_node
@@ -80,6 +89,7 @@ def mount_chat_node(
     build_input_fn: Callable[[Any], dict[str, Any]] = _default_chat_input,
     extract_output_fn: Callable[[dict[str, Any]], Any] = _default_chat_output,
     response_key: str = "chat_response",
+    invoke_context_factory: ChatInvokeContextFactory | None = None,
 ) -> None:
     """Register the shared ``chat`` wrapper on a consumer workflow.
 
@@ -95,6 +105,8 @@ def mount_chat_node(
             to the common ``response`` field.
         response_key: Consumer state key receiving the projected response.
             Defaults to ``chat_response``.
+        invoke_context_factory: Optional async context factory wrapping the
+            shared chat invocation. Defaults to no additional context.
     """
     workflow.add_node(
         "chat",
@@ -102,6 +114,7 @@ def mount_chat_node(
             build_input_fn=build_input_fn,
             extract_output_fn=extract_output_fn,
             response_key=response_key,
+            invoke_context_factory=invoke_context_factory,
         ),
     )
 
@@ -133,15 +146,8 @@ def make_chat_after_router(
         the next node name.
     """
 
-    def _router(state: Any) -> str:
-        pending = state.get(pending_post_key)
-        if isinstance(pending, str) and pending:
-            return pending
-        if default is not None:
-            return default
-        raise ValueError(
-            f"chat after-router has no branch: state[{pending_post_key!r}] "
-            "is unset or empty and no default was configured"
-        )
-
-    return _router
+    return make_after_router(
+        pending_post_key=pending_post_key,
+        default=default,
+        label="chat",
+    )

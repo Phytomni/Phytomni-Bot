@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse, Response
 
 from ...runtime.locale import SupportedLocale, current_effective_locale
 from ...runtime.run_registry import RunRequestInfo
+from ...runtime.stage_trace import DataStage, trace_data_stage
 from ..app_support import resolve_http_locale
 from ..auth import ApiPrincipal
 from ..schemas import (
@@ -369,13 +370,28 @@ def _register_native_routes(
     ) -> JSONResponse:
         """Invoke one agent by slug and return its agent.run envelope."""
         del principal
-        locale = resolve_http_locale(
-            explicit=payload.locale,
-            accept_language=request.headers.get("accept-language"),
-            latest_user_query=_latest_argument_query(payload.arguments),
-        )
-        arguments = dict(payload.arguments)
-        arguments["locale"] = locale
+        if agent == "data":
+            async with trace_data_stage(
+                DataStage.NATIVE_REQUEST,
+                dependency="http",
+            ):
+                locale = resolve_http_locale(
+                    explicit=payload.locale,
+                    accept_language=request.headers.get("accept-language"),
+                    latest_user_query=_latest_argument_query(
+                        payload.arguments
+                    ),
+                )
+                arguments = dict(payload.arguments)
+                arguments["locale"] = locale
+        else:
+            locale = resolve_http_locale(
+                explicit=payload.locale,
+                accept_language=request.headers.get("accept-language"),
+                latest_user_query=_latest_argument_query(payload.arguments),
+            )
+            arguments = dict(payload.arguments)
+            arguments["locale"] = locale
         body, status_code = await dependencies.native.invoke_agent_run(
             agent=agent,
             arguments=arguments,

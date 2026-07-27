@@ -11,7 +11,7 @@ import logging
 import re
 import time
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from contextvars import Token
 from dataclasses import asdict, dataclass
 from enum import StrEnum
@@ -31,12 +31,14 @@ __all__ = [
     "bind_stage_trace",
     "classify_stage_error",
     "current_stage_trace",
+    "stage_failure_from_exception",
     "trace_data_stage",
 ]
 
 _LOGGER = logging.getLogger(__name__)
 _SAFE_LABEL = re.compile(r"^[a-z0-9_:-]{1,64}$")
 _SAFE_ERROR_CLASS = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+_STAGE_FAILURE_ATTRIBUTE = "_phytomni_stage_failure"
 
 
 class DataStage(StrEnum):
@@ -132,6 +134,41 @@ def _safe_http_status(value: int) -> int:
     return value
 
 
+def stage_failure_from_exception(
+    exc: BaseException,
+) -> tuple[str, str, int | None] | None:
+    """Find fixed stage metadata attached by a child execution context."""
+    seen: set[int] = set()
+
+    def walk(current: BaseException) -> tuple[str, str, int | None] | None:
+        """Search one exception and its safe causal children."""
+        marker = id(current)
+        if marker in seen:
+            return None
+        seen.add(marker)
+        value = getattr(current, _STAGE_FAILURE_ATTRIBUTE, None)
+        if (
+            isinstance(value, tuple)
+            and len(value) == 3
+            and all(isinstance(item, str) for item in value[:2])
+            and (value[2] is None or isinstance(value[2], int))
+        ):
+            return value
+        if isinstance(current, BaseExceptionGroup):
+            for child in current.exceptions:
+                found = walk(child)
+                if found is not None:
+                    return found
+        for child in (current.__cause__, current.__context__):
+            if child is not None:
+                found = walk(child)
+                if found is not None:
+                    return found
+        return None
+
+    return walk(exc)
+
+
 def classify_stage_error(exc: BaseException) -> tuple[str, int]:
     """Classify common failures without inspecting their messages."""
     if isinstance(exc, (TimeoutError, asyncio.TimeoutError)):
@@ -163,6 +200,12 @@ async def trace_data_stage(
         error_code = _safe_label(classified_code, fallback="stage_failed")
         error_class = _safe_error_class(exc.__class__.__name__)
         http_status = _safe_http_status(classified_status)
+        with suppress(AttributeError, TypeError):
+            setattr(
+                exc,
+                _STAGE_FAILURE_ATTRIBUTE,
+                (stage.value, error_code, http_status),
+            )
         raise
     finally:
         event = StageTraceEvent(

@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -66,6 +67,7 @@ from ..runtime.run_registry import (
     RunRegistry,
     RunRequestInfo,
 )
+from ..runtime.stage_trace import DataStage, trace_data_stage
 from ..runtime.submission_outcome import (
     project_submission_warnings as _project_warnings,
 )
@@ -404,7 +406,7 @@ def _remote_agent_run_response(
     return body, 202
 
 
-def _sync_agent_run_response(
+async def _sync_agent_run_response(
     *,
     agent: str,
     owner: str,
@@ -414,12 +416,21 @@ def _sync_agent_run_response(
 ) -> tuple[dict[str, Any], int]:
     """Persist and shape a terminal synchronous agent response."""
     try:
-        run_id = _record_sync_run(
-            agent=agent,
-            owner=owner,
-            result=result,
-            request_info=request_info,
+        persistence_context = (
+            trace_data_stage(
+                DataStage.RUN_PERSIST,
+                dependency="run_registry",
+            )
+            if agent == "data"
+            else nullcontext()
         )
+        async with persistence_context:
+            run_id = _record_sync_run(
+                agent=agent,
+                owner=owner,
+                result=result,
+                request_info=request_info,
+            )
     except run_lifecycle.RunPersistenceError as exc:
         raise SafeApiError(
             status_code=500,
@@ -458,12 +469,7 @@ async def _invoke_agent_run(
     request_json: str | None = None,
     debug: bool = False,
 ) -> tuple[dict[str, Any], int]:
-    """Dispatch one native run through the shared lifecycle contract.
-
-    The seam owns resolver, attachment, projection, persistence, and
-    sync/remote response behavior. Accepted remote work returns 202 with
-    task identity; synchronous work returns 200 after persistence.
-    """
+    """Dispatch one native run through the shared lifecycle contract."""
     prepared = await _prepare_agent_run(
         agent=agent,
         arguments=arguments,
@@ -482,26 +488,45 @@ async def _invoke_agent_run(
             request_info=prepared.request_info,
         )
         return _review_run_body(execution, debug=debug), 200
-    envelope = await invoke_tool_enveloped(prepared.tool_name, arguments)
-    result, response_result = _format_agent_run_result(
-        envelope,
-        resolve_meta=prepared.resolve_meta,
-        debug=debug,
-    )
-    if agent in _REMOTE_AGENT_SLUGS:
-        return _remote_agent_run_response(
+    try:
+        envelope = await invoke_tool_enveloped(prepared.tool_name, arguments)
+        format_context = (
+            trace_data_stage(
+                DataStage.RESULT_FORMAT,
+                dependency="formatter",
+            )
+            if agent == "data"
+            else nullcontext()
+        )
+        async with format_context:
+            result, response_result = _format_agent_run_result(
+                envelope,
+                resolve_meta=prepared.resolve_meta,
+                debug=debug,
+            )
+        if agent in _REMOTE_AGENT_SLUGS:
+            return _remote_agent_run_response(
+                agent=agent,
+                owner=prepared.owner,
+                request_info=prepared.request_info,
+                response_result=response_result,
+            )
+        return await _sync_agent_run_response(
             agent=agent,
             owner=prepared.owner,
             request_info=prepared.request_info,
+            result=result,
             response_result=response_result,
         )
-    return _sync_agent_run_response(
-        agent=agent,
-        owner=prepared.owner,
-        request_info=prepared.request_info,
-        result=result,
-        response_result=response_result,
-    )
+    except SafeApiError:
+        raise
+    except Exception as exc:
+        safe_error = (
+            _factory.project_data_stage_error(exc) if agent == "data" else None
+        )
+        if safe_error is None:
+            raise
+        raise safe_error from exc
 
 
 def _resolve_remote_run(owner: str) -> run_lifecycle.ResolvedRemoteRun:

@@ -22,6 +22,7 @@ from langgraph.graph.state import CompiledStateGraph
 from ...runtime.memory import MemoryGraphContext
 from ..knowledge.agent import KnowledgeAgent
 from ..knowledge.state import KnowledgeInput, KnowledgeOutput, KnowledgeState
+from .graph_routing import make_after_router
 
 type KnowledgeApp = CompiledStateGraph[
     KnowledgeState, MemoryGraphContext, KnowledgeInput, KnowledgeOutput
@@ -154,16 +155,8 @@ def make_knowledge_after_router(
         the next node name.
     """
 
-    def _router(state: Any) -> str:
-        pending = state.get(pending_post_key)
-        if isinstance(pending, str) and pending:
-            return pending
-        if default is not None:
-            return default
-        raise ValueError(
-            f"knowledge after-router has no branch: "
-            f"state[{pending_post_key!r}] is unset or empty and no "
-            "default was configured"
-        )
-
-    return _router
+    return make_after_router(
+        pending_post_key=pending_post_key,
+        default=default,
+        label="knowledge",
+    )

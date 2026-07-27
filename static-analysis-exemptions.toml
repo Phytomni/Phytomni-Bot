@@ -438,26 +438,6 @@ risk = "Dispatch changes can misroute or misreport analysis jobs; keep the two d
 tests = ["tests/agents/test_environment_analyst_subgraph.py", "tests/agents/test_evolution_analyst_subgraph.py", "static-analysis-inventory"]
 
 [[exemptions]]
-id = "SAE-TMP-0071"
-tool = "pylint"
-rule = "R0801"
-classification = "structural"
-mechanism = "diagnostic"
-target_kind = "pair"
-path = "src/mcp_server_phytomni/agents/shared/chat_subgraph.py"
-symbol = "101:142"
-peer_path = "src/mcp_server_phytomni/agents/shared/knowledge_subgraph.py"
-peer_symbol = "126:163"
-fingerprint = "sha256:e6c553359093f37502c15611b3d82295a314c4d2579ff20ffb23bab3a54980de"
-owner = "bot-maintainers"
-introduced_on = 2026-07-20
-review_on = 2027-01-17
-rationale = "Chat and Knowledge subgraphs intentionally retain parallel wrappers and routers with separate state keys and error defaults. Repository owner approved this boundary on 2026-07-20."
-counterfactual = "Aliasing the chat and knowledge wrappers would couple independent router keys, defaults, and error semantics across public agent flows."
-risk = "Subgraph wrapper changes can alter routing or fallback behavior; preserve separate wrapper and support tests."
-tests = ["tests/agents/test_chat_subgraph_wrapper.py", "tests/agents/test_knowledge_subgraph_support.py", "static-analysis-inventory"]
-
-[[exemptions]]
 id = "SAE-TMP-0073"
 tool = "pylint"
 rule = "R0801"

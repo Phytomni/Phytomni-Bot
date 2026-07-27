@@ -10,7 +10,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 - Schema version: `1`
 - Policy default: `deny`
-- Authorized records: `104`
+- Authorized records: `103`
 
 ## Informational counts
 
@@ -22,7 +22,7 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `mypy:prop-decorator`                             |       1 |
 | `pylint:C0103`                                    |       1 |
 | `pylint:C0116`                                    |       1 |
-| `pylint:R0801`                                    |      22 |
+| `pylint:R0801`                                    |      21 |
 | `pylint:R0903`                                    |       6 |
 | `pylint:R0913`                                    |       1 |
 | `pylint:R0917`                                    |       1 |
@@ -66,7 +66,6 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 | `SAE-TMP-0066` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/design/agent.py | 771:801 | `sha256:a12cebe8c905e0486c0e550f549236dd16f342d51bef2385d00c5474b7dcd76d` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_design_interop.py, tests/agents/test_research_interop.py, static-analysis-inventory |
 | `SAE-TMP-0068` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/environment/agent.py | 91:98 | `sha256:1d2314ab58ae61d77b3cdf87fb285fda0f3f68578e52c9798527027118c37cc6` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_environment_chat_subgraph.py, tests/agents/test_evolution_chat_subgraph.py, static-analysis-inventory |
 | `SAE-TMP-0069` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/environment/graph.py | 183:189 | `sha256:498ba1c179fd8527195e76108ad2d23523e8a4b508958952439fbef5f7dc0d2c` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_environment_analyst_subgraph.py, tests/agents/test_evolution_analyst_subgraph.py, static-analysis-inventory |
-| `SAE-TMP-0071` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/agents/shared/chat_subgraph.py | 101:142 | `sha256:e6c553359093f37502c15611b3d82295a314c4d2579ff20ffb23bab3a54980de` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/agents/test_chat_subgraph_wrapper.py, tests/agents/test_knowledge_subgraph_support.py, static-analysis-inventory |
 | `SAE-TMP-0073` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/api/relay/__init__.py | 20:25 | `sha256:11110a31a61699cdd16bc8f75aa9c481305c2dad14bf2bb7471c6c45723cd27a` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/server/test_relay_mount.py, tests/server/test_relay_audit_routes.py, static-analysis-inventory |
 | `SAE-TMP-0074` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/api/relay/audit_filter.py | 27:38 | `sha256:e403f78e603f501a9592111cdd3963a7670f069c42cb5d1e1755b764d1dc32e9` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/test_relay_audit_filter.py, static-analysis-inventory |
 | `SAE-TMP-0075` | pylint | R0801 | structural | diagnostic | pair | src/mcp_server_phytomni/config/required_env.py | 16:28 | `sha256:0a106c71d1e188f33ba116a1a15980da2ccbd8924042f13b31d0dd5df3f2585c` | bot-maintainers | 2026-07-20 | 2027-01-17 | — | — | tests/unit/config/test_required_env.py, tests/unit/test_defaults.py, static-analysis-inventory |
@@ -551,26 +550,6 @@ Risk:
 
 ```text
 Dispatch changes can misroute or misreport analysis jobs; keep the two domain graph tests independent.
-```
-
-### `SAE-TMP-0071`
-
-Rationale:
-
-```text
-Chat and Knowledge subgraphs intentionally retain parallel wrappers and routers with separate state keys and error defaults. Repository owner approved this boundary on 2026-07-20.
-```
-
-Counterfactual:
-
-```text
-Aliasing the chat and knowledge wrappers would couple independent router keys, defaults, and error semantics across public agent flows.
-```
-
-Risk:
-
-```text
-Subgraph wrapper changes can alter routing or fallback behavior; preserve separate wrapper and support tests.
 ```
 
 ### `SAE-TMP-0073`

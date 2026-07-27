@@ -41,6 +41,10 @@ from ..runtime.memory import (
     memory_policy_from_config,
 )
 from ..runtime.run_registry import RunFilter, RunRequestInfo
+from ..runtime.stage_trace import (
+    current_stage_trace,
+    stage_failure_from_exception,
+)
 from . import run_lifecycle
 from .a2a.executor import A2AHandlerOptions, A2ARequestHandler
 from .admin_auth import require_service_principal
@@ -75,6 +79,41 @@ from .schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def project_data_stage_error(exc: BaseException) -> SafeApiError | None:
+    """Project the first failed DataAgent stage into a safe API error."""
+    failure = stage_failure_from_exception(exc)
+    if failure is not None:
+        stage, error_code, final_http_status = failure
+        status_code = final_http_status or 500
+    else:
+        event = next(
+            (
+                candidate
+                for candidate in current_stage_trace()
+                if candidate.error_code is not None
+            ),
+            None,
+        )
+        if event is None:
+            return None
+        stage = event.stage
+        error_code = event.error_code or "internal_invariant_failed"
+        status_code = event.final_http_status or 500
+    message = {
+        400: "invalid request",
+        502: "upstream service failed",
+        503: "service unavailable",
+        504: "upstream service timed out",
+    }.get(status_code, "internal server error")
+    return SafeApiError(
+        status_code=status_code,
+        code=error_code,
+        message=message,
+        stage=stage,
+        retryable=status_code in {502, 503, 504},
+    )
 
 
 def _safe_api_error_for_lifecycle(
@@ -788,7 +827,24 @@ def _register_error_handlers(app: FastAPI) -> None:
         _exc: Exception,
     ) -> JSONResponse:
         """Render unexpected errors as 500 envelopes."""
-        return _app_attr("_error_response")(500, "internal server error")
+        failed_events = tuple(
+            event
+            for event in current_stage_trace()
+            if event.error_code is not None
+        )
+        if not failed_events:
+            return _app_attr("_error_response")(500, "internal server error")
+        event = failed_events[0]
+        status_code = event.final_http_status or 500
+        return _app_attr("_error_response")(
+            status_code,
+            _SAFE_DEFAULT_MESSAGES.get(status_code, "internal server error"),
+            options=_ErrorResponseOptions(
+                code=event.error_code,
+                stage=event.stage,
+                retryable=status_code in {502, 503, 504},
+            ),
+        )
 
 
 def build_app() -> FastAPI:

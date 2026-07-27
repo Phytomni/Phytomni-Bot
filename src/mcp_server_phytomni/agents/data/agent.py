@@ -10,6 +10,7 @@ Functions: rewrite_nl2sql, retrieve_and_generate.
 """
 
 import logging
+from collections.abc import Mapping
 from typing import Any, Literal
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -45,6 +46,8 @@ from ...runtime.langgraph_runner import (
     make_async_router,
 )
 from ...runtime.locale import SupportedLocale
+from ...runtime.request_context import current_request_id
+from ...runtime.stage_trace import DataStage, trace_data_stage
 from ..shared.chat_subgraph import mount_chat_node
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import (
@@ -62,6 +65,31 @@ from .nl2sql import (
 from .state import DataAgentState, DataInput, DataOutput, DataState
 
 logger = logging.getLogger(__name__)
+
+
+def _result_kind(result: Any) -> str:
+    """Return a fixed, payload-free classification for a result value."""
+    if isinstance(result, Mapping):
+        return "mapping"
+    if isinstance(result, list):
+        return "list"
+    if result is None:
+        return "none"
+    return "scalar"
+
+
+def _result_row_count(result: Any) -> int | None:
+    """Return a bounded-shape row count without logging result contents."""
+    if isinstance(result, list):
+        return len(result)
+    if not isinstance(result, Mapping):
+        return None
+    for key in ("data", "rows", "result"):
+        value = result.get(key)
+        if isinstance(value, list):
+            return len(value)
+    return None
+
 
 DATA_CONFIG = DataConfig()
 
@@ -256,7 +284,13 @@ class DataAgent:
 
         workflow.add_node("rewrite_prep_node", self.rewrite_prep_node)
         workflow.add_node("rewrite_post_node", self.rewrite_post_node)
-        mount_chat_node(workflow)
+        mount_chat_node(
+            workflow,
+            invoke_context_factory=lambda: trace_data_stage(
+                DataStage.DATA_REWRITE,
+                dependency="llm",
+            ),
+        )
         workflow.add_conditional_edges(
             START,
             make_async_router(self.route_start),
@@ -485,31 +519,48 @@ class DataAgent:
             query = state["rewrite_query"]
         else:
             query = state["user_query"]
-        request = Nl2SqlRequest.from_kwargs(
-            query,
-            {
-                "database_url": self.data_config.DATABASE_URL,
-                "workspace_id": self.data_config.WORKSPACE_ID,
-                "subject_id": self.data_config.SUBJECT_ID,
-                "dialog_id": (
-                    self.data_config.DIALOG_ID or _default_dialog_id()
-                ),
-                "need_insight": self.data_config.NEED_INSIGHT,
-                "simplify_response": self.data_config.SIMPLIFY_RESPONSE,
-                "timeout": self.data_config.TIMEOUT,
-                "retriable_codes": self.data_config.RETRIABLE_CODES,
-                "max_retries": self.data_config.MAX_RETRIES,
+        async with trace_data_stage(
+            DataStage.NL2SQL_REQUEST,
+            dependency="nl2sql",
+        ):
+            request = Nl2SqlRequest.from_kwargs(
+                query,
+                {
+                    "database_url": self.data_config.DATABASE_URL,
+                    "workspace_id": self.data_config.WORKSPACE_ID,
+                    "subject_id": self.data_config.SUBJECT_ID,
+                    "dialog_id": (
+                        self.data_config.DIALOG_ID or _default_dialog_id()
+                    ),
+                    "need_insight": self.data_config.NEED_INSIGHT,
+                    "simplify_response": self.data_config.SIMPLIFY_RESPONSE,
+                    "timeout": self.data_config.TIMEOUT,
+                    "retriable_codes": self.data_config.RETRIABLE_CODES,
+                    "max_retries": self.data_config.MAX_RETRIES,
+                },
+            )
+        async with trace_data_stage(
+            DataStage.DATABASE_QUERY,
+            dependency="database",
+        ):
+            result = await execute_nl2sql_request(request)
+            if result is None:
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message="No response received from SQL database",
+                    )
+                )
+        logger.debug(
+            "DataAgent result received",
+            extra={
+                "request_id": current_request_id() or "unknown",
+                "agent": "data",
+                "stage": DataStage.DATABASE_QUERY.value,
+                "result_kind": _result_kind(result),
+                "row_count": _result_row_count(result),
             },
         )
-        result = await execute_nl2sql_request(request)
-        if result is None:
-            raise McpError(
-                ErrorData(
-                    code=INTERNAL_ERROR,
-                    message="No response received from SQL database",
-                )
-            )
-        logger.debug("nl2sql response: %s", result)
         return {"final_response": result}
 
     async def arun(
