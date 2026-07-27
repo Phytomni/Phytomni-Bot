@@ -79,6 +79,10 @@ PrivateConversationMessages = tuple[dict[str, str], ...]
 _private_conversation_messages: ContextVar[PrivateConversationMessages] = (
     ContextVar("private_conversation_messages", default=())
 )
+PrivateAgentThreadId = str | None
+_private_agent_thread_id: ContextVar[PrivateAgentThreadId] = ContextVar(
+    "private_agent_thread_id", default=None
+)
 
 
 def set_private_conversation_messages(
@@ -100,6 +104,25 @@ def reset_private_conversation_messages(
 def private_conversation_messages() -> PrivateConversationMessages:
     """Return V1 history available only to the active handler invocation."""
     return _private_conversation_messages.get()
+
+
+def set_private_agent_thread_id(
+    thread_id: str | None,
+) -> Token[PrivateAgentThreadId]:
+    """Set the stable V1 Chat thread for one in-process dispatch."""
+    return _private_agent_thread_id.set(thread_id)
+
+
+def reset_private_agent_thread_id(
+    token: Token[PrivateAgentThreadId],
+) -> None:
+    """Restore the private thread context after one raw dispatch."""
+    _private_agent_thread_id.reset(token)
+
+
+def private_agent_thread_id() -> str | None:
+    """Return the stable V1 Chat thread for the active dispatch."""
+    return _private_agent_thread_id.get()
 
 
 def scratch_server_dir(config: ServerConfig, scope: str) -> str:
@@ -134,6 +157,9 @@ async def handle_chat_agent(args: ChatAgent) -> HandlerResult:
         ChatAgent response envelope dict.
     """
     chat_config, runtime = load_chat_runtime()
+    thread_kwargs = {}
+    if (thread_id := private_agent_thread_id()) is not None:
+        thread_kwargs["thread_id"] = thread_id
     return await phyto_chat_with_follow(
         **chat_call_kwargs(
             request=args,
@@ -142,6 +168,7 @@ async def handle_chat_agent(args: ChatAgent) -> HandlerResult:
             runtime=runtime,
         ),
         conversation_messages=private_conversation_messages(),
+        **thread_kwargs,
     )
 
 

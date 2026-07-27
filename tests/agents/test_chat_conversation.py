@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+import mcp_server_phytomni.agents.chat.service as chat_service
 from mcp_server_phytomni.agents.chat.graph import chat_messages_for_state
 from mcp_server_phytomni.agents.chat.service import phyto_chat
 
@@ -113,3 +114,35 @@ async def test_phyto_chat_passes_thread_id_and_history_in_state(
     assert "conversation_messages" not in captured["initial_state"][
         "chat_kwargs"
     ]
+
+
+async def test_phyto_chat_with_follow_strips_thread_id_from_nested_follow_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the primary Chat graph call receives the private thread."""
+    calls: list[dict[str, Any]] = []
+
+    async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
+        calls.append(kwargs)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": "primary answer"
+                        if len(calls) == 1
+                        else "[]"
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr(chat_service, "phyto_chat", fake_phyto_chat)
+    monkeypatch.setattr(chat_service, "get_prompt", lambda *_args, **_kwargs: "follow-up")
+
+    await chat_service.phyto_chat_with_follow(
+        user_query="What about drought response?",
+        thread_id="ctx-chat-thread-2",
+    )
+
+    assert calls[0]["thread_id"] == "ctx-chat-thread-2"
+    assert "thread_id" not in calls[1]

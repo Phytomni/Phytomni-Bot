@@ -25,6 +25,7 @@ from tests.support.formatting_fakes import (
     network_task_payload,
 )
 
+import mcp_server_phytomni.agents.chat.service as chat_service
 from mcp_server_phytomni.agents.knowledge import agent as knowledge_agent
 from mcp_server_phytomni.mcp import app as mcp_app
 from mcp_server_phytomni.mcp import handlers as mcp_handlers
@@ -78,12 +79,20 @@ async def test_v1_history_reaches_chat_handler_through_raw_dispatch(
     demo_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Private V1 history reaches ChatAgent without entering its schema."""
-    captured: dict[str, Any] = {}
+    """Private V1 thread and history reach only the primary Chat call."""
+    captured: list[dict[str, Any]] = []
 
     async def fake_chat(**kwargs: Any) -> dict[str, Any]:
-        captured.update(kwargs)
-        return {"answer": "ok"}
+        captured.append(kwargs)
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": "ok" if len(captured) == 1 else "[]"
+                    }
+                }
+            ]
+        }
 
     monkeypatch.setattr(
         mcp_handlers,
@@ -101,9 +110,12 @@ async def test_v1_history_reaches_chat_handler_through_raw_dispatch(
         lambda **kwargs: {"user_query": kwargs["request"].user_query},
     )
     monkeypatch.setattr(
-        mcp_handlers,
-        "phyto_chat_with_follow",
+        "mcp_server_phytomni.agents.chat.service.phyto_chat",
         fake_chat,
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.service.get_prompt",
+        lambda *_args, **_kwargs: "follow-up",
     )
     history = (
         {"role": "user", "content": "U1"},
@@ -111,16 +123,29 @@ async def test_v1_history_reaches_chat_handler_through_raw_dispatch(
         {"role": "user", "content": "U2"},
         {"role": "assistant", "content": "A2"},
     )
+    thread_id = "ctx-" + "b" * 64
 
     arguments = _payload(demo_data_dir, "chat_agent.json")
     await mcp_app.invoke_tool_enveloped(
         PhytomniAgents.CHAT_AGENT.value,
         arguments,
         conversation_messages=history,
+        agent_thread_id=thread_id,
     )
 
-    assert captured == {
+    assert captured[0] == {
         "user_query": arguments["user_query"],
+        "locale": "en-US",
+        "obs_file_list": None,
+        "semaphore": None,
+        "conversation_messages": history,
+        "thread_id": thread_id,
+    }
+    assert captured[1] == {
+        "user_query": "follow-up",
+        "locale": "en-US",
+        "semaphore": None,
+        "prompt_file": chat_service.CHAT_CONFIG.PROMPT_FILE,
         "conversation_messages": history,
     }
     assert "conversation_messages" not in mcp_app.ChatAgent.model_fields

@@ -357,6 +357,7 @@ async def _execute_context_chat(
                 "ChatAgent",
                 arguments,
                 conversation_messages=dispatch.conversation_messages,
+                agent_thread_id=dispatch.agent_thread_id,
             )
         )
         formatted_dict = _formatted_with_metadata(tool_envelope, resolve_meta)

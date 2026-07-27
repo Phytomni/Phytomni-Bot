@@ -347,12 +347,14 @@ class _RouteAdapters:
         arguments: dict[str, Any],
         *,
         conversation_messages: tuple[dict[str, str], ...] = (),
+        agent_thread_id: str | None = None,
     ) -> Any:
         """Invoke one tool through the request-time app compatibility seam."""
         return await _app_attr("invoke_tool_enveloped")(
             name,
             arguments,
             conversation_messages=conversation_messages,
+            agent_thread_id=agent_thread_id,
         )
 
     async def invoke_agent_run(

@@ -66,8 +66,10 @@ from .handlers import (
     handle_in_silico_research_agent,
     handle_knowledge_agent,
     handle_review_agent,
+    reset_private_agent_thread_id,
     reset_private_conversation_messages,
     scratch_server_dir,
+    set_private_agent_thread_id,
     set_private_conversation_messages,
 )
 from .progress_events import PROGRESS_KIND
@@ -178,6 +180,7 @@ async def invoke_tool_raw(
     arguments: dict[str, Any],
     *,
     conversation_messages: Sequence[Mapping[str, str]] = (),
+    agent_thread_id: str | None = None,
 ) -> Any:
     """Validate arguments and call a tool handler, returning its payload.
 
@@ -191,6 +194,8 @@ async def invoke_tool_raw(
         arguments: JSON object passed to the selected tool.
         conversation_messages: Private native-role history held in a
             task-local handler context, never in public tool arguments.
+        agent_thread_id: Private stable Chat thread held in a task-local
+            handler context, never in public tool arguments.
 
     Returns:
         The unwrapped handler response payload.
@@ -211,11 +216,13 @@ async def invoke_tool_raw(
             _format_validation_error(tool_name, exc)
         ) from exc
 
-    token = set_private_conversation_messages(conversation_messages)
+    messages_token = set_private_conversation_messages(conversation_messages)
+    thread_token = set_private_agent_thread_id(agent_thread_id)
     try:
         return await handler(args)
     finally:
-        reset_private_conversation_messages(token)
+        reset_private_agent_thread_id(thread_token)
+        reset_private_conversation_messages(messages_token)
 
 
 async def invoke_tool_formatted(
@@ -252,6 +259,7 @@ async def invoke_tool_enveloped(
     arguments: dict[str, Any],
     *,
     conversation_messages: Sequence[Mapping[str, str]] = (),
+    agent_thread_id: str | None = None,
 ) -> ToolResultEnvelope:
     """Validate arguments, call a handler, and preserve raw payload.
 
@@ -265,6 +273,8 @@ async def invoke_tool_enveloped(
         arguments: JSON object passed to the selected tool.
         conversation_messages: Private native-role history for in-process
             invocation adapters; it is excluded from public MCP schemas.
+        agent_thread_id: Private stable Chat thread for in-process V1
+            invocation; it is excluded from public MCP schemas.
 
     Returns:
         Full result envelope for the selected tool.
@@ -276,6 +286,7 @@ async def invoke_tool_enveloped(
         name,
         arguments,
         conversation_messages=conversation_messages,
+        agent_thread_id=agent_thread_id,
     )
     await _maybe_enrich_cited(_tool_name(name), raw)
     return build_tool_result_envelope(

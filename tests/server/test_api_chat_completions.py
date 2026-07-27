@@ -23,17 +23,18 @@ from tests.support.chat_fakes import (
     misplaced_reasoning_message,
 )
 
-import mcp_server_phytomni.api.app as api_app
+import mcp_server_phytomni.agents.chat.service as chat_service
 from mcp_server_phytomni import server
-from mcp_server_phytomni.mcp.result_formatting import (
-    build_tool_result_envelope,
-)
+from mcp_server_phytomni.mcp import handlers as mcp_handlers
 from mcp_server_phytomni.runtime.conversation_context.adapters import (
     canonical_agent_invocation,
 )
 from mcp_server_phytomni.runtime.conversation_context.models import (
     ContextProjection,
     RoleTaggedTurn,
+)
+from mcp_server_phytomni.runtime.conversation_context.projection import (
+    agent_thread_id as context_agent_thread_id,
 )
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
@@ -179,6 +180,9 @@ def test_chat_context_adapter_keeps_native_role_history_separate_from_query() ->
     None
 ):
     """Chat receives native prior roles while dispatch sees only the latest turn."""
+    thread_id = context_agent_thread_id(
+        UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7"), "ChatAgent"
+    )
     dispatch = canonical_agent_invocation(
         ContextProjection(
             current_query="U3",
@@ -188,13 +192,14 @@ def test_chat_context_adapter_keeps_native_role_history_separate_from_query() ->
                 RoleTaggedTurn(role="user", content="U2"),
                 RoleTaggedTurn(role="assistant", content="A2"),
             ],
-            agent_thread_id="ctx-" + "a" * 64,
+            agent_thread_id=thread_id,
             locale="en-US",
             token_budget=100,
         )
     )
 
     assert dispatch.arguments["user_query"] == "U3"
+    assert dispatch.agent_thread_id == thread_id
     assert dispatch.conversation_messages == (
         {"role": "user", "content": "U1"},
         {"role": "assistant", "content": "A1"},
@@ -242,21 +247,14 @@ async def test_chat_context_v1_stages_native_history_and_replays_turn(
     """Instant V1 passes bounded native history to the Chat invoker once."""
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
-    captured: dict[str, Any] = {}
+    captured: list[dict[str, Any]] = []
 
-    async def fake_invoke(
-        tool_name: str,
-        arguments: dict[str, Any],
-        *,
-        conversation_messages: tuple[dict[str, str], ...] = (),
-    ) -> Any:
-        captured["tool_name"] = tool_name
-        captured["arguments"] = arguments
-        captured["conversation_messages"] = conversation_messages
-        return build_tool_result_envelope(
-            tool_name,
-            chat_completion_payload("chatcmpl-context", "A staged answer."),
-            arguments=arguments,
+    async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
+        captured.append(dict(kwargs))
+        content = "A staged answer." if len(captured) == 1 else "[]"
+        return chat_completion_payload(
+            f"chatcmpl-context-{len(captured)}",
+            content,
         )
 
     envelope = _conversation_envelope()
@@ -298,7 +296,32 @@ async def test_chat_context_v1_stages_native_history_and_replays_turn(
             "content": "U2",
         },
     ]
-    monkeypatch.setattr(api_app, "invoke_tool_enveloped", fake_invoke)
+    monkeypatch.setattr(
+        mcp_handlers,
+        "load_chat_runtime",
+        lambda: (object(), object()),
+    )
+    monkeypatch.setattr(
+        mcp_handlers,
+        "scratch_server_dir",
+        lambda *_args: "/tmp/chat",
+    )
+    monkeypatch.setattr(
+        mcp_handlers,
+        "chat_call_kwargs",
+        lambda **kwargs: {
+            "user_query": kwargs["request"].user_query,
+            "locale": kwargs["request"].locale,
+        },
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.service.phyto_chat",
+        fake_phyto_chat,
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.service.get_prompt",
+        lambda *_args, **_kwargs: "follow-up",
+    )
     first = await chat_completion(
         api_client,
         issued_api_key,
@@ -317,13 +340,12 @@ async def test_chat_context_v1_stages_native_history_and_replays_turn(
     assert second.status_code == 200
     assert first.json() == second.json()
     assert first.json()["model"] == "phyto-chat"
-    assert captured == {
-        "tool_name": "ChatAgent",
-        "arguments": {
-            "user_query": "U2",
-            "locale": "en-US",
-            "obs_file_list": [],
-        },
+    assert len(captured) == 2
+    assert captured[0] == {
+        "user_query": "U2",
+        "locale": "en-US",
+        "obs_file_list": None,
+        "semaphore": None,
         "conversation_messages": (
             {"role": "user", "content": "U1"},
             {"role": "assistant", "content": "A1"},
@@ -331,6 +353,22 @@ async def test_chat_context_v1_stages_native_history_and_replays_turn(
             {"role": "user", "content": "U3"},
             {"role": "assistant", "content": "A3"},
         ),
+        "thread_id": context_agent_thread_id(
+            UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7"), "ChatAgent"
+        ),
+    }
+    assert captured[1] == {
+        "user_query": "follow-up",
+        "locale": "en-US",
+        "conversation_messages": (
+            {"role": "user", "content": "U1"},
+            {"role": "assistant", "content": "A1"},
+            {"role": "user", "content": "U2"},
+            {"role": "user", "content": "U3"},
+            {"role": "assistant", "content": "A3"},
+        ),
+        "semaphore": None,
+        "prompt_file": chat_service.CHAT_CONFIG.PROMPT_FILE,
     }
     stage = first.json()["conversation_context"]
     assert stage["selected_agent_id"] == "ChatAgent"

@@ -27,6 +27,7 @@ class ContextAgentInvocation:
 
     arguments: dict[str, Any]
     conversation_messages: tuple[dict[str, str], ...]
+    agent_thread_id: str
 
 
 SyncInvoker = Callable[
@@ -76,6 +77,7 @@ def canonical_agent_invocation(
     return ContextAgentInvocation(
         arguments=arguments,
         conversation_messages=_native_history_from_projection(projection),
+        agent_thread_id=projection.agent_thread_id,
     )
 
 
