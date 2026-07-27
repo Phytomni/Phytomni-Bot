@@ -25,6 +25,7 @@ pytestmark = pytest.mark.agent
 
 _CONVERSATION_KEY = UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")
 _OTHER_CONVERSATION_KEY = UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8")
+_MISSING = object()
 
 
 def _projection(
@@ -54,11 +55,15 @@ def _result(
     headers: list[str],
     rows: list[list[object]],
     summary: str,
+    aggregate_summary: str | object = _MISSING,
+    raw_summary: str | None = None,
+    formatted_answer: str | None = None,
+    dataset_ids: list[str] | None = None,
     table_id: str = "expression_table",
     artifact_id: str = "artifact-expression",
 ) -> dict[str, object]:
     """Build one native DataAgent run envelope for delta extraction."""
-    return {
+    result = {
         "id": "run-data",
         "object": "agent.run",
         "agent": "data",
@@ -66,7 +71,7 @@ def _result(
         "task_ids": [],
         "result": {
             "formatted": {
-                "answer": summary,
+                "answer": formatted_answer if formatted_answer is not None else summary,
                 "metadata": {
                     "user_query": "placeholder",
                     "rewrite_query": "placeholder",
@@ -76,14 +81,22 @@ def _result(
             "raw": {
                 "header": [{"caption": header} for header in headers],
                 "data": rows,
+                "dataset_ids": dataset_ids or ["expression"],
                 "table_id": table_id,
                 "artifact_id": artifact_id,
-                "summary": summary,
+                "summary": raw_summary if raw_summary is not None else summary,
                 "sql": "SELECT * FROM secrets",
                 "database_url": "postgresql://user:pass@example/db",
             },
         },
     }
+    raw = result["result"]["raw"]
+    assert isinstance(raw, dict)
+    if aggregate_summary is _MISSING:
+        raw["aggregate_summary"] = summary
+    elif aggregate_summary is not None:
+        raw["aggregate_summary"] = aggregate_summary
+    return result
 
 
 def test_prepare_merges_follow_up_filters_and_grouping_without_losing_dataset() -> (
@@ -182,3 +195,93 @@ def test_delta_stores_only_bounded_intent_metadata_without_rows_or_sql() -> (
     assert "leaf" not in payload
     assert "SELECT * FROM secrets" not in payload
     assert "postgresql://user:pass@example/db" not in payload
+
+
+def test_delta_uses_only_canonical_valid_aggregate_summary() -> None:
+    """Only the structured aggregate summary may reach shared context."""
+    adapter = DataConversationAdapter()
+    adapter.prepare(_projection("Show expression by tissue"))
+
+    delta = adapter.delta(
+        _result(
+            headers=["tissue", "expression"],
+            rows=[["leaf", 10], ["root", 5]],
+            summary="2 expression rows grouped by tissue",
+            aggregate_summary="2 expression rows grouped by tissue",
+            raw_summary="SELECT secret FROM credentials",
+            formatted_answer="postgresql://user:pass@example/db",
+        )
+    )
+
+    assert delta.summary_update == "2 expression rows grouped by tissue"
+
+
+@pytest.mark.parametrize(
+    "aggregate_summary",
+    [
+        "SELECT gene_id, secret FROM credentials",
+        "postgresql://user:pass@example/db",
+        "['leaf', 10], ['root', 5]",
+    ],
+)
+def test_delta_rejects_unsafe_aggregate_summary(
+    aggregate_summary: str,
+) -> None:
+    """Unsafe aggregate text must not be retained in task summaries."""
+    adapter = DataConversationAdapter()
+    adapter.prepare(_projection("Show expression by tissue"))
+
+    delta = adapter.delta(
+        _result(
+            headers=["tissue", "expression"],
+            rows=[["leaf", 10], ["root", 5]],
+            summary="ignored",
+            aggregate_summary=aggregate_summary,
+        )
+    )
+
+    assert delta.summary_update is None
+
+
+def test_delta_rejects_generic_raw_and_formatted_summaries() -> None:
+    """Legacy answer/summary fields are ignored when canonical summary is absent."""
+    adapter = DataConversationAdapter()
+    adapter.prepare(_projection("Show expression by tissue"))
+
+    delta = adapter.delta(
+        _result(
+            headers=["tissue", "expression"],
+            rows=[["leaf", 10], ["root", 5]],
+            summary="ignored",
+            aggregate_summary=None,
+            raw_summary="expression rows by tissue",
+            formatted_answer="expression rows by tissue",
+        )
+    )
+
+    assert delta.summary_update is None
+
+
+def test_delta_rejects_oversized_or_invalid_metadata_without_persisting_it() -> (
+    None
+):
+    """Oversized lists and malformed artifact ids fail closed."""
+    adapter = DataConversationAdapter()
+    adapter.prepare(_projection("Show expression by tissue"))
+
+    delta = adapter.delta(
+        _result(
+            headers=[f"column_{index}" for index in range(17)],
+            rows=[["leaf", 10], ["root", 5]],
+            summary="2 expression rows grouped by tissue",
+            dataset_ids=[f"dataset_{index}" for index in range(9)],
+            artifact_id="s3://bucket/private-table.csv",
+        )
+    )
+
+    payload = json.dumps(delta.model_dump(mode="json"), sort_keys=True)
+
+    assert "data:dataset:expression" in payload
+    assert "dataset_0" not in payload
+    assert "column_16" not in payload
+    assert "s3://bucket/private-table.csv" not in payload

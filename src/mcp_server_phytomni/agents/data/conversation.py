@@ -36,6 +36,18 @@ _DATA_NAMESPACE = "data"
 _MAX_INTENT_ITEMS = 8
 _MAX_INTENT_COLUMNS = 16
 _IntentToken = Annotated[str, Field(min_length=1, max_length=128)]
+_SUMMARY_SQL_RE = re.compile(
+    r"\b(?:select|insert|update|delete|drop|alter|create|truncate|grant)\b",
+    re.IGNORECASE,
+)
+_SUMMARY_DSN_RE = re.compile(
+    r"\b(?:postgres(?:ql)?|mysql|mariadb|mongodb|redis|amqp)://",
+    re.IGNORECASE,
+)
+_SUMMARY_ROW_RE = re.compile(
+    r"(?:\[[^\]]+,\s*[^\]]+\]|\{[^{}:]+:\s*[^{}]+\}|\|[^\n]+\|)",
+    re.IGNORECASE,
+)
 
 
 class _StructuredIntent(BaseModel):
@@ -92,6 +104,16 @@ def _bounded_text(value: str | None, *, limit: int = 512) -> str | None:
     return text[:limit]
 
 
+def _validated_text(value: str | None, *, limit: int = 512) -> str | None:
+    """Normalize text and reject oversized values instead of truncating."""
+    if not isinstance(value, str):
+        return None
+    text = _SPACE_RE.sub(" ", value).strip()
+    if not text or len(text) > limit:
+        return None
+    return text
+
+
 def _normalize_token(value: str) -> str:
     """Return one lowercase semantic token."""
     return re.sub(r"[^a-z0-9_-]+", "-", value.lower()).strip("-")
@@ -114,6 +136,39 @@ def _normalize_list(
         if len(ordered) >= limit:
             break
     return tuple(ordered.values())
+
+
+def _validated_list(
+    values: Sequence[str],
+    *,
+    limit: int = _MAX_INTENT_ITEMS,
+) -> tuple[str, ...] | None:
+    """Dedupe ordered strings but reject overflow or oversized items."""
+    ordered: OrderedDict[str, str] = OrderedDict()
+    for value in values:
+        bounded = _validated_text(value, limit=128)
+        if bounded is None:
+            return None
+        lowered = bounded.lower()
+        if lowered not in ordered:
+            ordered[lowered] = bounded
+        if len(ordered) > limit:
+            return None
+    return tuple(ordered.values())
+
+
+def _validated_aggregate_summary(value: object) -> str | None:
+    """Accept only one bounded aggregate narrative, never raw rows or SQL."""
+    summary = _validated_text(value, limit=1024) if isinstance(value, str) else None
+    if summary is None:
+        return None
+    if _SUMMARY_SQL_RE.search(summary):
+        return None
+    if _SUMMARY_DSN_RE.search(summary):
+        return None
+    if _SUMMARY_ROW_RE.search(summary):
+        return None
+    return summary
 
 
 def _dataset_from_query(query: str) -> str | None:
@@ -249,17 +304,20 @@ def _intent_from_projection(
         if projection.artifact_refs
         else None
     )
-    summary = _bounded_text(projection.task_summary, limit=1024)
-    return _StructuredIntent(
-        dataset_ids=_normalize_list(dataset_ids),
-        table_ids=_normalize_list(table_ids),
-        dimensions=_normalize_list(dimensions),
-        filters=_normalize_list(filters),
-        columns=_normalize_list(columns, limit=_MAX_INTENT_COLUMNS),
-        row_count=row_count,
-        aggregate_summary=summary,
-        artifact_id=artifact_id,
-    )
+    summary = _validated_aggregate_summary(projection.task_summary)
+    try:
+        return _StructuredIntent(
+            dataset_ids=_normalize_list(dataset_ids),
+            table_ids=_normalize_list(table_ids),
+            dimensions=_normalize_list(dimensions),
+            filters=_normalize_list(filters),
+            columns=_normalize_list(columns, limit=_MAX_INTENT_COLUMNS),
+            row_count=row_count,
+            aggregate_summary=summary,
+            artifact_id=_validated_text(artifact_id, limit=128),
+        )
+    except ValidationError:
+        return _StructuredIntent()
 
 
 def _intent_with_query(
@@ -356,8 +414,11 @@ def _mapping_strings(
         if isinstance(value, str):
             values.append(value)
         elif isinstance(value, Sequence) and not isinstance(value, str):
-            values.extend(str(item) for item in value if isinstance(item, str))
-    return _normalize_list(values, limit=limit)
+            if any(not isinstance(item, str) for item in value):
+                return ()
+            values.extend(value)
+    validated = _validated_list(values, limit=limit)
+    return validated or ()
 
 
 def _headers(result: Mapping[str, Any]) -> tuple[str, ...]:
@@ -371,7 +432,11 @@ def _headers(result: Mapping[str, Any]) -> tuple[str, ...]:
                 caption = item.get("caption") or item.get("name")
                 if isinstance(caption, str):
                     captions.append(caption)
-        normalized = _normalize_list(captions, limit=_MAX_INTENT_COLUMNS)
+                else:
+                    return ()
+            else:
+                return ()
+        normalized = _validated_list(captions, limit=_MAX_INTENT_COLUMNS)
         if normalized:
             return normalized
     formatted = _formatted_payload(result)
@@ -379,10 +444,13 @@ def _headers(result: Mapping[str, Any]) -> tuple[str, ...]:
     if isinstance(tabular, Mapping):
         headers = tabular.get("headers")
         if isinstance(headers, Sequence) and not isinstance(headers, str):
-            return _normalize_list(
-                [item for item in headers if isinstance(item, str)],
+            if any(not isinstance(item, str) for item in headers):
+                return ()
+            normalized = _validated_list(
+                headers,
                 limit=_MAX_INTENT_COLUMNS,
             )
+            return normalized or ()
     return ()
 
 
@@ -404,17 +472,13 @@ def _row_count(result: Mapping[str, Any]) -> int | None:
 def _summary(result: Mapping[str, Any]) -> str | None:
     """Return a bounded aggregate summary without raw rows or SQL."""
     raw = _raw_payload(result)
-    for key in ("summary", "aggregate_summary", "insight"):
-        if (summary := _bounded_text(raw.get(key), limit=1024)) is not None:
-            return summary
-    formatted = _formatted_payload(result)
-    return _bounded_text(formatted.get("answer"), limit=1024)
+    return _validated_aggregate_summary(raw.get("aggregate_summary"))
 
 
 def _artifact_upserts(result: Mapping[str, Any]) -> list[ArtifactRefV1]:
     """Project a bounded artifact reference when one is present."""
     raw = _raw_payload(result)
-    artifact_id = _bounded_text(
+    artifact_id = _validated_text(
         raw.get("artifact_id")
         or raw.get("artifact")
         or raw.get("artifact_ref"),
