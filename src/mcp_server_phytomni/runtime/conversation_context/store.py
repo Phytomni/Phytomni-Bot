@@ -97,6 +97,7 @@ class StagedTurn:
     schema_version: int
     ledger_cursor: int
     observed_mode: str
+    stage_metadata: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -110,6 +111,7 @@ class StoredTurn:
     route_source: str | None
     result: dict[str, Any] | None
     delta: dict[str, Any] | None
+    stage_metadata: dict[str, Any] | None
     ledger_version: str | None
     created_at: str
     updated_at: str
@@ -140,6 +142,7 @@ def _pack_delta(staged: StagedTurn) -> str:
                 "schema_version": staged.schema_version,
                 "ledger_cursor": staged.ledger_cursor,
                 "observed_mode": staged.observed_mode,
+                "stage_metadata": staged.stage_metadata,
             },
             "value": staged.delta,
         }
@@ -148,22 +151,30 @@ def _pack_delta(staged: StagedTurn) -> str:
 
 def _unpack_delta(
     value: str | None,
-) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+) -> tuple[dict[str, Any] | None, dict[str, Any], dict[str, Any] | None]:
     decoded = _decode(value)
     if decoded is None:
-        return None, {
-            "schema_version": 1,
-            "ledger_cursor": 0,
-            "observed_mode": "",
-        }
+        return (
+            None,
+            {
+                "schema_version": 1,
+                "ledger_cursor": 0,
+                "observed_mode": "",
+            },
+            None,
+        )
     metadata = decoded.get("__conversation_context_store__")
     if metadata is None:
-        return decoded, {
-            "schema_version": 1,
-            "ledger_cursor": 0,
-            "observed_mode": "",
-        }
-    return decoded["value"], metadata
+        return (
+            decoded,
+            {
+                "schema_version": 1,
+                "ledger_cursor": 0,
+                "observed_mode": "",
+            },
+            None,
+        )
+    return decoded["value"], metadata, metadata.get("stage_metadata")
 
 
 def _now() -> str:
@@ -216,7 +227,7 @@ class ConversationContextStore:
 
     @staticmethod
     def _turn(row: tuple[Any, ...]) -> StoredTurn:
-        delta, _metadata = _unpack_delta(row[8])
+        delta, _metadata, stage_metadata = _unpack_delta(row[8])
         return StoredTurn(
             conversation_key=row[0],
             turn_id=row[1],
@@ -227,6 +238,7 @@ class ConversationContextStore:
             route_source=row[6],
             result=_decode(row[7]),
             delta=delta,
+            stage_metadata=stage_metadata,
             ledger_version=row[9],
             created_at=row[10],
             updated_at=row[11],
@@ -366,11 +378,15 @@ class ConversationContextStore:
             current = 0 if context is None else context[2]
             if current != expected_version or turn[3] != expected_version:
                 raise ContextVersionConflictError(key)
-            data, metadata = _unpack_delta(turn[8])
+            data, metadata, _stage_metadata = _unpack_delta(turn[8])
             assert data is not None
             schema_version = metadata["schema_version"]
             cursor = metadata["ledger_cursor"]
             mode = metadata["observed_mode"]
+            context_data = dict(data)
+            if "last_applied_ledger_version" in context_data:
+                context_data["last_applied_ledger_version"] = ledger_version
+            context_json = _json(context_data)
             if context is None:
                 connection.execute(
                     "INSERT INTO conversation_contexts VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 'not_requested', ?, NULL)",
@@ -381,7 +397,7 @@ class ConversationContextStore:
                         cursor,
                         ledger_version,
                         mode,
-                        _json(data),
+                        context_json,
                         now,
                     ),
                 )
@@ -394,7 +410,7 @@ class ConversationContextStore:
                         cursor,
                         ledger_version,
                         mode,
-                        _json(data),
+                        context_json,
                         now,
                         key,
                         expected_version,

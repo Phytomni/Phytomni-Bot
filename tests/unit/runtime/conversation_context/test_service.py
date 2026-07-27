@@ -12,8 +12,10 @@ from uuid import UUID
 import pytest
 
 from mcp_server_phytomni.runtime.conversation_context.models import (
+    ArtifactRefV1,
     BusinessContext,
     ContextDelta,
+    ContextEntity,
     ConversationEnvelopeV1,
 )
 from mcp_server_phytomni.runtime.conversation_context.service import (
@@ -43,6 +45,7 @@ def _envelope(
     ledger_cursor: int = 1,
     ledger_version: str = "a" * 64,
     base_business_context_version: int = 0,
+    artifact_refs: list[dict[str, str]] | None = None,
 ) -> ConversationEnvelopeV1:
     """Build one bounded gateway envelope for the service seam."""
     return ConversationEnvelopeV1.model_validate(
@@ -54,7 +57,10 @@ def _envelope(
             "request_id": f"request-{turn_id}",
             "operation": operation,
             "mode": mode,
-            "current_message": {"content": "keep rice samples", "locale": "en-US"},
+            "current_message": {
+                "content": "keep rice samples",
+                "locale": "en-US",
+            },
             "requested_agent_id": requested_agent_id,
             "allowed_agent_ids": allowed_agent_ids
             or ["ChatAgent", "KnowledgeAgent", "DataAgent"],
@@ -62,9 +68,13 @@ def _envelope(
             "ledger_version": ledger_version,
             "base_business_context_version": base_business_context_version,
             "history_delta": [
-                {"turn_id": turn_id, "role": "user", "content": "keep rice samples"}
+                {
+                    "turn_id": turn_id,
+                    "role": "user",
+                    "content": "keep rice samples",
+                }
             ],
-            "artifact_refs": [],
+            "artifact_refs": artifact_refs or [],
         }
     )
 
@@ -206,12 +216,36 @@ async def test_duplicate_staged_and_committed_turns_do_not_reinvoke_agent(
 
 
 @pytest.mark.asyncio
+async def test_settlement_persists_acknowledged_ledger_for_next_append(
+    store: ConversationContextStore,
+) -> None:
+    """A settlement version becomes the valid base for the next ledger turn."""
+    service = _service(store)
+    first = _envelope()
+
+    await service.execute_turn(first)
+    await service.acknowledge_settlement(first, "b" * 64)
+    next_turn = await service.prepare_turn(
+        _envelope(
+            turn_id="2",
+            ledger_cursor=2,
+            ledger_version="b" * 64,
+            base_business_context_version=1,
+        )
+    )
+
+    assert next_turn.status is PrepareStatus.READY
+
+
+@pytest.mark.asyncio
 async def test_duplicate_in_progress_turn_returns_explicit_status(
     store: ConversationContextStore,
 ) -> None:
     """A concurrent retry never starts a second agent invocation."""
     envelope = _envelope()
-    store.begin_turn(str(envelope.conversation_key), envelope.turn_id, "append", 0)
+    store.begin_turn(
+        str(envelope.conversation_key), envelope.turn_id, "append", 0
+    )
 
     prepared = await _service(store).prepare_turn(envelope)
 
@@ -247,6 +281,27 @@ async def test_stale_or_invalidated_context_requires_rebuild(
 
     assert prepared.status is PrepareStatus.REBUILD_REQUIRED
     assert existing_version == 1
+
+
+@pytest.mark.asyncio
+async def test_rebuild_required_turn_is_failed_and_retries_as_rebuild_required(
+    store: ConversationContextStore,
+) -> None:
+    """A rejected context proposal cannot trap a retry in IN_PROGRESS."""
+    service = _service(store)
+    envelope = _envelope(base_business_context_version=3)
+
+    first = await service.prepare_turn(envelope)
+    duplicate = await service.prepare_turn(envelope)
+
+    assert first.status is PrepareStatus.REBUILD_REQUIRED
+    assert duplicate.status is PrepareStatus.REBUILD_REQUIRED
+    assert (
+        store.begin_turn(str(_CONVERSATION_KEY), "1", "append", 3).turn.state
+        == "failed"
+    )
+    with pytest.raises(ValueError, match="duplicate turn proposal"):
+        await service.prepare_turn(_envelope(base_business_context_version=2))
 
 
 @pytest.mark.asyncio
@@ -308,8 +363,170 @@ async def test_delta_failure_stages_degraded_but_failed_or_canceled_does_not(
     assert degraded.stage.context_degraded is True
     assert failed.status is PrepareStatus.IN_PROGRESS
     assert canceled.status is PrepareStatus.IN_PROGRESS
-    assert store.begin_turn(str(_CONVERSATION_KEY), "2", "append", 0).turn.state == "failed"
-    assert store.begin_turn(str(_CONVERSATION_KEY), "3", "append", 0).turn.state == "failed"
+    assert (
+        store.begin_turn(str(_CONVERSATION_KEY), "2", "append", 0).turn.state
+        == "failed"
+    )
+    assert (
+        store.begin_turn(str(_CONVERSATION_KEY), "3", "append", 0).turn.state
+        == "failed"
+    )
+
+
+@pytest.mark.asyncio
+async def test_invalid_delta_is_discarded_before_degraded_staging(
+    store: ConversationContextStore,
+) -> None:
+    """An invalid artifact delta cannot mutate the successful answer context."""
+    unauthorized = ArtifactRefV1(
+        artifact_id="not-authorized",
+        display_name="untrusted output",
+    )
+
+    async def invoke(*_args: object) -> AgentOutcome:
+        return AgentOutcome(
+            result={"answer": "visible"},
+            assistant_summary="must not persist",
+            context_delta=ContextDelta(
+                summary_update="must not persist",
+                entity_upserts=[
+                    ContextEntity(
+                        entity_id="gene-1",
+                        entity_type="gene",
+                        label="rice gene",
+                    )
+                ],
+                artifact_upserts=[unauthorized],
+            ),
+        )
+
+    result = await _service(store, invoke=invoke).execute_turn(_envelope())
+
+    assert result.status is PrepareStatus.RETURN_STAGED
+    assert result.stage is not None
+    assert result.stage.context_degraded is True
+    assert result.context is not None
+    assert result.context.task_summary == ""
+    assert result.context.active_entities == []
+    assert result.context.assistant_summaries == []
+    assert result.context.artifact_index == []
+
+
+@pytest.mark.asyncio
+async def test_valid_entity_and_artifact_delta_stages_successfully(
+    store: ConversationContextStore,
+) -> None:
+    """Keyed entity and artifact merges replace existing matching IDs."""
+    initial_artifact = ArtifactRefV1(
+        artifact_id="artifact-1",
+        display_name="initial results table",
+    )
+    updated_artifact = ArtifactRefV1(
+        artifact_id="artifact-1",
+        display_name="updated results table",
+    )
+    outcomes = iter(
+        (
+            AgentOutcome(
+                result={"answer": "first"},
+                context_delta=ContextDelta(
+                    entity_upserts=[
+                        ContextEntity(
+                            entity_id="gene-1",
+                            entity_type="gene",
+                            label="initial rice gene",
+                        )
+                    ],
+                    artifact_upserts=[initial_artifact],
+                ),
+            ),
+            AgentOutcome(
+                result={"answer": "second"},
+                context_delta=ContextDelta(
+                    entity_upserts=[
+                        ContextEntity(
+                            entity_id="gene-1",
+                            entity_type="gene",
+                            label="updated rice gene",
+                        )
+                    ],
+                    artifact_upserts=[updated_artifact],
+                ),
+            ),
+        )
+    )
+
+    async def invoke(*_args: object) -> AgentOutcome:
+        return next(outcomes)
+
+    service = _service(store, invoke=invoke)
+    first = _envelope(
+        artifact_refs=[initial_artifact.model_dump(mode="json")],
+    )
+    await service.execute_turn(first)
+    await service.acknowledge_settlement(first, "b" * 64)
+    result = await service.execute_turn(
+        _envelope(
+            turn_id="2",
+            ledger_cursor=2,
+            ledger_version="b" * 64,
+            base_business_context_version=1,
+            artifact_refs=[updated_artifact.model_dump(mode="json")],
+        )
+    )
+
+    assert result.status is PrepareStatus.RETURN_STAGED
+    assert result.context is not None
+    assert [
+        (item.entity_id, item.label) for item in result.context.active_entities
+    ] == [("gene-1", "updated rice gene")]
+    assert [
+        (item.artifact_id, item.display_name)
+        for item in result.context.artifact_index
+    ] == [("artifact-1", "updated results table")]
+
+
+@pytest.mark.asyncio
+async def test_duplicate_turns_reconstruct_staged_metadata(
+    store: ConversationContextStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retries preserve route and degradation metadata across settlement."""
+    from mcp_server_phytomni.runtime.conversation_context import (
+        service as module,
+    )
+
+    original_projection = module.build_context_projection
+
+    def truncated_projection(*args: object, **kwargs: object):
+        return original_projection(*args, **kwargs).model_copy(
+            update={"context_truncated": True}
+        )
+
+    async def invoke(*_args: object) -> AgentOutcome:
+        return AgentOutcome(
+            result={"answer": "visible"},
+            context_delta_error=True,
+        )
+
+    monkeypatch.setattr(
+        module, "build_context_projection", truncated_projection
+    )
+    service = _service(store, invoke=invoke)
+    envelope = _envelope(requested_agent_id="ChatAgent")
+    first = await service.execute_turn(envelope)
+    duplicate = await service.execute_turn(envelope)
+    await service.acknowledge_settlement(envelope, "b" * 64)
+    committed = await service.execute_turn(envelope)
+
+    assert first.stage is not None
+    assert first.stage.route_source == "explicit_selection"
+    assert first.stage.route_reason_code == "EXPLICIT_SELECTION"
+    assert first.stage.context_truncated is True
+    assert first.stage.context_rebuilt is True
+    assert first.stage.context_degraded is True
+    assert duplicate.stage == first.stage
+    assert committed.stage == first.stage
 
 
 @pytest.mark.asyncio
@@ -381,7 +598,9 @@ async def test_different_conversations_execute_without_a_global_lock(
 
     service = _service(store, invoke=invoke)
     second = _envelope(turn_id="2").model_copy(
-        update={"conversation_key": UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43b00")}
+        update={
+            "conversation_key": UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43b00")
+        }
     )
     first_task = asyncio.create_task(service.execute_turn(_envelope()))
     second_task = asyncio.create_task(service.execute_turn(second))

@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
+from weakref import WeakValueDictionary
 
 from ...config.defaults import ApiConfig
 from .models import (
@@ -83,12 +84,24 @@ class SettlementMismatchError(RuntimeError):
     """Raised when an acknowledgment does not match the staged proposal."""
 
 
-Router = Callable[[str, tuple[str, ...], BusinessContext], Awaitable[AgentSelection]]
-Invoker = Callable[[str, ConversationEnvelopeV1, ContextProjection], Awaitable[AgentOutcome]]
-AsyncDelegator = Callable[[str, ConversationEnvelopeV1], Awaitable[dict[str, object]]]
+Router = Callable[
+    [str, tuple[str, ...], BusinessContext], Awaitable[AgentSelection]
+]
+Invoker = Callable[
+    [str, ConversationEnvelopeV1, ContextProjection], Awaitable[AgentOutcome]
+]
+AsyncDelegator = Callable[
+    [str, ConversationEnvelopeV1], Awaitable[dict[str, object]]
+]
 
 _SYNC_CONTEXT_AGENTS = frozenset(
-    {"ChatAgent", "KnowledgeAgent", "DataAgent", "ReviewAgent", "BriefGeneAgent"}
+    {
+        "ChatAgent",
+        "KnowledgeAgent",
+        "DataAgent",
+        "ReviewAgent",
+        "BriefGeneAgent",
+    }
 )
 
 
@@ -109,7 +122,9 @@ class ConversationContextService:
         self.invoke = invoke
         self.delegate_async = delegate_async
         self.api_config = api_config or ApiConfig()
-        self._locks: dict[str, asyncio.Lock] = {}
+        self._locks: WeakValueDictionary[str, asyncio.Lock] = (
+            WeakValueDictionary()
+        )
 
     def _lock(self, key: str) -> asyncio.Lock:
         lock = self._locks.get(key)
@@ -192,15 +207,20 @@ class ConversationContextService:
             return (
                 stored is not None
                 and stored.context.get("last_applied_ledger_version")
-                == envelope.ledger_version
+                == turn.ledger_version
             )
         return True
 
-    async def _prepare_locked(self, envelope: ConversationEnvelopeV1) -> PreparedTurn:
+    async def _prepare_locked(
+        self, envelope: ConversationEnvelopeV1
+    ) -> PreparedTurn:
         """Prepare a turn while the conversation lock is held."""
         key = self._key(envelope)
         begun = self.store.begin_turn(
-            key, envelope.turn_id, envelope.operation, envelope.base_business_context_version
+            key,
+            envelope.turn_id,
+            envelope.operation,
+            envelope.base_business_context_version,
         )
         turn = begun.turn
         if not begun.created:
@@ -211,24 +231,35 @@ class ConversationContextService:
                     PrepareStatus.RETURN_STAGED,
                     stored_turn=turn,
                     result=turn.result,
-                    stage=self._stage_from_turn(turn, envelope),
+                    stage=self._stage_from_turn(turn),
                 )
             if turn.state == "committed":
                 return PreparedTurn(
                     PrepareStatus.RETURN_COMMITTED,
                     stored_turn=turn,
                     result=turn.result,
-                    stage=self._stage_from_turn(turn, envelope),
+                    stage=self._stage_from_turn(turn),
                 )
+            if turn.state == "failed":
+                _context, _rebuilt, failure = self._context_for(
+                    envelope, self.store.load_context(key)
+                )
+                if failure is not None:
+                    return PreparedTurn(failure, stored_turn=turn)
             return PreparedTurn(PrepareStatus.IN_PROGRESS, stored_turn=turn)
         stored = self.store.load_context(key)
         context, _rebuilt, failure = self._context_for(envelope, stored)
         if failure is not None:
+            self.store.mark_turn_failed(key, envelope.turn_id)
             return PreparedTurn(failure, stored_turn=turn)
         assert context is not None
-        return PreparedTurn(PrepareStatus.READY, context=context, stored_turn=turn)
+        return PreparedTurn(
+            PrepareStatus.READY, context=context, stored_turn=turn
+        )
 
-    async def prepare_turn(self, envelope: ConversationEnvelopeV1) -> PreparedTurn:
+    async def prepare_turn(
+        self, envelope: ConversationEnvelopeV1
+    ) -> PreparedTurn:
         """Validate, deduplicate, and prepare a turn without invoking an agent."""
         if not isinstance(envelope, ConversationEnvelopeV1):
             raise TypeError("envelope must be ConversationEnvelopeV1")
@@ -236,24 +267,16 @@ class ConversationContextService:
             return await self._prepare_locked(envelope)
 
     @staticmethod
-    def _stage_from_turn(
-        turn: StoredTurn, envelope: ConversationEnvelopeV1
-    ) -> ContextStageMetadata | None:
-        if turn.selected_agent_id is None or turn.route_source is None:
+    def _stage_from_turn(turn: StoredTurn) -> ContextStageMetadata | None:
+        if turn.stage_metadata is None:
             return None
         return ContextStageMetadata(
-            selected_agent_id=turn.selected_agent_id,
-            route_source=turn.route_source,
-            route_reason_code="STAGED",
-            base_business_context_version=turn.base_context_version,
-            proposed_business_context_version=turn.base_context_version + 1,
-            last_applied_ledger_cursor=envelope.ledger_cursor,
-            context_truncated=False,
-            context_rebuilt=False,
-            context_degraded=False,
+            **turn.stage_metadata,
         )
 
-    async def execute_turn(self, envelope: ConversationEnvelopeV1) -> PreparedTurn:
+    async def execute_turn(
+        self, envelope: ConversationEnvelopeV1
+    ) -> PreparedTurn:
         """Run the full prepare, invoke, stage lifecycle."""
         if not isinstance(envelope, ConversationEnvelopeV1):
             raise TypeError("envelope must be ConversationEnvelopeV1")
@@ -262,14 +285,19 @@ class ConversationContextService:
             prepared = await self._prepare_locked(envelope)
             if prepared.status is not PrepareStatus.READY:
                 return prepared
-            assert prepared.context is not None and prepared.stored_turn is not None
+            assert (
+                prepared.context is not None
+                and prepared.stored_turn is not None
+            )
             context = prepared.context
             rebuilt = prepared.context.version == 0
             if envelope.mode == "instant":
                 selection = AgentSelection("ChatAgent", "INSTANT_LOCK")
                 route_source = "instant_lock"
             elif envelope.requested_agent_id is not None:
-                selection = AgentSelection(envelope.requested_agent_id, "EXPLICIT_SELECTION")
+                selection = AgentSelection(
+                    envelope.requested_agent_id, "EXPLICIT_SELECTION"
+                )
                 route_source = "explicit_selection"
             else:
                 selection = await self.router(
@@ -280,7 +308,9 @@ class ConversationContextService:
                 route_source = "router"
             if selection.selected_agent_id not in envelope.allowed_agent_ids:
                 self.store.mark_turn_failed(key, envelope.turn_id)
-                raise ValueError("selected agent is outside the envelope allowlist")
+                raise ValueError(
+                    "selected agent is outside the envelope allowlist"
+                )
             if selection.selected_agent_id not in _SYNC_CONTEXT_AGENTS:
                 try:
                     result = await self.delegate_async(
@@ -289,7 +319,9 @@ class ConversationContextService:
                 except BaseException:
                     self.store.mark_turn_failed(key, envelope.turn_id)
                     raise
-                return PreparedTurn(PrepareStatus.READY, context=context, result=result)
+                return PreparedTurn(
+                    PrepareStatus.READY, context=context, result=result
+                )
             projection = build_context_projection(
                 conversation_key=envelope.conversation_key,
                 current_query=envelope.current_message.content,
@@ -311,8 +343,11 @@ class ConversationContextService:
                 return PreparedTurn(
                     PrepareStatus.IN_PROGRESS, stored_turn=prepared.stored_turn
                 )
-            degraded = outcome.context_delta_error or outcome.context_delta is None
-            delta = outcome.context_delta or ContextDelta()
+            degraded = (
+                outcome.context_delta_error or outcome.context_delta is None
+            )
+            delta = ContextDelta() if degraded else outcome.context_delta
+            assert delta is not None
             if not degraded:
                 try:
                     validate_context_delta(
@@ -325,6 +360,7 @@ class ConversationContextService:
                     )
                 except ValueError:
                     degraded = True
+                    delta = ContextDelta()
             proposed = self._advance_context(
                 context,
                 envelope,
@@ -339,7 +375,8 @@ class ConversationContextService:
                 route_source=route_source,
                 route_reason_code=selection.reason_code,
                 base_business_context_version=envelope.base_business_context_version,
-                proposed_business_context_version=envelope.base_business_context_version + 1,
+                proposed_business_context_version=envelope.base_business_context_version
+                + 1,
                 last_applied_ledger_cursor=envelope.ledger_cursor,
                 context_truncated=projection.context_truncated,
                 context_rebuilt=rebuilt,
@@ -359,6 +396,23 @@ class ConversationContextService:
                     schema_version=proposed.schema_version,
                     ledger_cursor=envelope.ledger_cursor,
                     observed_mode=envelope.mode,
+                    stage_metadata={
+                        "selected_agent_id": stage.selected_agent_id,
+                        "route_source": stage.route_source,
+                        "route_reason_code": stage.route_reason_code,
+                        "base_business_context_version": (
+                            stage.base_business_context_version
+                        ),
+                        "proposed_business_context_version": (
+                            stage.proposed_business_context_version
+                        ),
+                        "last_applied_ledger_cursor": (
+                            stage.last_applied_ledger_cursor
+                        ),
+                        "context_truncated": stage.context_truncated,
+                        "context_rebuilt": stage.context_rebuilt,
+                        "context_degraded": stage.context_degraded,
+                    },
                 ),
             )
             return PreparedTurn(
@@ -383,22 +437,47 @@ class ConversationContextService:
         data = context.model_dump(mode="python")
         if delta.summary_update is not None:
             data["task_summary"] = delta.summary_update
-        entities = {item["entity_id"]: item for item in data["active_entities"]}
-        entities.update(item.model_dump(mode="python") for item in delta.entity_upserts)
+        entities = {
+            item["entity_id"]: item for item in data["active_entities"]
+        }
+        entities.update(
+            {
+                item.entity_id: item.model_dump(mode="python")
+                for item in delta.entity_upserts
+            }
+        )
         for item in delta.entity_removals:
             entities.pop(str(item), None)
         data["active_entities"] = list(entities.values())
         if delta.open_question_updates:
-            data["open_questions"] = [item.model_dump(mode="python") if hasattr(item, "model_dump") else item for item in delta.open_question_updates]
-        artifacts = {item["artifact_id"]: item for item in data["artifact_index"]}
-        artifacts.update(item.model_dump(mode="python") for item in delta.artifact_upserts)
+            data["open_questions"] = [
+                (
+                    item.model_dump(mode="python")
+                    if hasattr(item, "model_dump")
+                    else item
+                )
+                for item in delta.open_question_updates
+            ]
+        artifacts = {
+            item["artifact_id"]: item for item in data["artifact_index"]
+        }
+        artifacts.update(
+            {
+                item.artifact_id: item.model_dump(mode="python")
+                for item in delta.artifact_upserts
+            }
+        )
         data["artifact_index"] = list(artifacts.values())
         if delta.agent_memory_update is not None:
             memory = delta.agent_memory_update
-            data["per_agent_memory"][memory.agent_id] = memory.model_dump(mode="python")
+            data["per_agent_memory"][memory.agent_id] = memory.model_dump(
+                mode="python"
+            )
         if add_current_user_turn:
             user_turns = list(data["recent_user_turns"])
-            user_turns.append(envelope.current_message.content[:MAX_CONTEXT_TEXT_CHARS])
+            user_turns.append(
+                envelope.current_message.content[:MAX_CONTEXT_TEXT_CHARS]
+            )
             data["recent_user_turns"] = user_turns[-MAX_CONTEXT_ITEMS:]
         if assistant_summary:
             summaries = list(data["assistant_summaries"])
@@ -421,16 +500,28 @@ class ConversationContextService:
         key = self._key(envelope)
         async with self._lock(key):
             turn = self.store.begin_turn(
-                key, envelope.turn_id, envelope.operation, envelope.base_business_context_version
+                key,
+                envelope.turn_id,
+                envelope.operation,
+                envelope.base_business_context_version,
             ).turn
             if not self._matches_duplicate(turn, envelope):
-                raise SettlementMismatchError("settlement does not match turn proposal")
+                raise SettlementMismatchError(
+                    "settlement does not match turn proposal"
+                )
             if turn.state == "committed":
                 if turn.ledger_version != ledger_version:
-                    raise SettlementMismatchError("repeated settlement has a different ledger version")
+                    raise SettlementMismatchError(
+                        "repeated settlement has a different ledger version"
+                    )
                 return self.store.load_context(key)
-            if turn.state != "staged" or turn.ledger_version != envelope.ledger_version:
-                raise SettlementMismatchError("settlement does not match staged turn")
+            if (
+                turn.state != "staged"
+                or turn.ledger_version != envelope.ledger_version
+            ):
+                raise SettlementMismatchError(
+                    "settlement does not match staged turn"
+                )
             try:
                 return self.store.commit_staged_turn(
                     key,
@@ -439,7 +530,9 @@ class ConversationContextService:
                     ledger_version,
                 )
             except (ContextVersionConflictError, KeyError) as exc:
-                raise SettlementMismatchError("settlement compare-and-swap failed") from exc
+                raise SettlementMismatchError(
+                    "settlement compare-and-swap failed"
+                ) from exc
 
 
 __all__ = [

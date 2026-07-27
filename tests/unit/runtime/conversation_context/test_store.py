@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 from contextlib import contextmanager
@@ -45,6 +46,7 @@ def _staged(
     result: dict[str, object] | None = None,
     delta: dict[str, object] | None = None,
     ledger_version: str = "a" * 64,
+    stage_metadata: dict[str, object] | None = None,
 ) -> StagedTurn:
     """Return one valid, intentionally unordered terminal proposal."""
     return StagedTurn(
@@ -58,6 +60,7 @@ def _staged(
         schema_version=1,
         ledger_cursor=9,
         observed_mode="instant",
+        stage_metadata=stage_metadata or {},
     )
 
 
@@ -152,6 +155,28 @@ def test_commit_staged_turn_compare_and_swaps_from_zero_to_one(
     assert context.context == {"summary": "bounded context"}
 
 
+def test_commit_updates_serialized_context_to_acknowledged_ledger_version(
+    store: ConversationContextStore,
+) -> None:
+    """The context JSON reflects the ledger version accepted at settlement."""
+    store.begin_turn("conversation-1", "1", "append", 0)
+    store.stage_turn(
+        "conversation-1",
+        "1",
+        _staged(
+            delta={
+                "last_applied_ledger_version": "a" * 64,
+                "summary": "bounded context",
+            }
+        ),
+    )
+
+    context = store.commit_staged_turn("conversation-1", "1", 0, "b" * 64)
+
+    assert context.ledger_version == "b" * 64
+    assert context.context["last_applied_ledger_version"] == "b" * 64
+
+
 def test_commit_rejects_a_stale_compare_and_swap(
     store: ConversationContextStore,
 ) -> None:
@@ -187,6 +212,54 @@ def test_duplicate_staging_returns_the_byte_equivalent_terminal_result(
         assert connection.execute(
             "SELECT COUNT(*) FROM conversation_turns"
         ).fetchone() == (1,)
+
+
+def test_staged_turn_round_trips_opaque_stage_metadata(
+    store: ConversationContextStore,
+) -> None:
+    """Duplicate reads retain the bounded service metadata without widening it."""
+    metadata = {
+        "selected_agent_id": "ChatAgent",
+        "context_degraded": True,
+        "context_truncated": False,
+    }
+    store.begin_turn("conversation-1", "1", "append", 0)
+    staged = store.stage_turn(
+        "conversation-1", "1", _staged(stage_metadata=metadata)
+    )
+    duplicate = store.begin_turn("conversation-1", "1", "append", 0).turn
+
+    assert staged.stage_metadata == metadata
+    assert duplicate.stage_metadata == metadata
+
+
+def test_legacy_staged_turn_without_metadata_still_deserializes(
+    store: ConversationContextStore,
+) -> None:
+    """Rows written before stage metadata remain readable during retries."""
+    store.begin_turn("conversation-1", "1", "append", 0)
+    store.stage_turn("conversation-1", "1", _staged())
+    legacy_delta = json.dumps(
+        {
+            "__conversation_context_store__": {
+                "schema_version": 1,
+                "ledger_cursor": 9,
+                "observed_mode": "instant",
+            },
+            "value": {"summary": "bounded context"},
+        }
+    )
+    with store._write() as connection:  # noqa: SLF001 - legacy row seam
+        connection.execute(
+            "UPDATE conversation_turns SET delta_json = ? "
+            "WHERE conversation_key = ? AND turn_id = ?",
+            (legacy_delta, "conversation-1", "1"),
+        )
+
+    legacy = store.begin_turn("conversation-1", "1", "append", 0).turn
+
+    assert legacy.state == "staged"
+    assert legacy.stage_metadata is None
 
 
 def test_conflicting_duplicate_staging_fails_closed(
