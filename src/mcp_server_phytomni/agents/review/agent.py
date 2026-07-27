@@ -14,6 +14,7 @@ pipeline.py-style siblings.
 """
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -956,6 +957,7 @@ async def review_agent_function(
     thread_id = kwargs.pop("thread_id", None)
     review_adapter = kwargs.pop("review_adapter", None)
     review_projection = kwargs.pop("review_projection", None)
+    review_turn_id = kwargs.pop("review_turn_id", None)
     review_operation = kwargs.pop("review_operation", None)
     effective_locale = resolve_agent_locale(locale)
     review_config = copy_config_with_overrides(
@@ -992,6 +994,7 @@ async def review_agent_function(
                     agent,
                     review_adapter.stable_thread_id
                     or review_projection.agent_thread_id,
+                    turn_id=review_turn_id,
                 )
             except ReviewClarificationError as exc:
                 review_adapter.mark_failed()
@@ -1037,6 +1040,37 @@ async def review_agent_function(
     if isinstance(review_adapter, ReviewConversationAdapter):
         review_adapter.capture_result(result)
     return result
+
+
+async def load_review_settlement_adapter(
+    metadata: Mapping[str, Any],
+    staged_turn: Any,
+) -> ReviewConversationAdapter:
+    """Rebuild one pending Review adapter from durable staged-turn metadata."""
+    review_config = REVIEW_CONFIG
+    sensitive_config = get_sensitive_config()
+    agent = get_cached_agent(
+        "DeepResearchAgent",
+        lambda: DeepResearchAgent(
+            review_config=review_config,
+            sensitive_config=sensitive_config,
+            knowledge_agent=KnowledgeAgent(
+                knowledge_config=review_config,
+                sensitive_config=sensitive_config,
+            ),
+        ),
+        agent_fingerprint_values(
+            review_config=review_config,
+            sensitive_config=sensitive_config,
+        ),
+    )
+    adapter = ReviewConversationAdapter()
+    await adapter.restore_settlement(
+        metadata,
+        agent,
+        getattr(staged_turn, "result", None),
+    )
+    return adapter
 
 
 def review_stream_target(

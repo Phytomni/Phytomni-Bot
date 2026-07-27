@@ -28,8 +28,9 @@ from .service import (
     ConversationContextService,
     PreparedTurn,
     PrepareStatus,
+    review_settlement_metadata_from_turn,
 )
-from .store import ConversationContextStore
+from .store import ConversationContextStore, StoredTurn
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,6 +53,9 @@ AsyncInvoker = Callable[
 ]
 RouterSelector = Callable[..., Awaitable[ToolSelection | None]]
 StoreFactory = Callable[[], ConversationContextStore]
+ReviewSettlementLoader = Callable[
+    [Mapping[str, Any], StoredTurn], Awaitable[ReviewConversationAdapter]
+]
 
 
 def _native_history_from_turns(
@@ -155,7 +159,11 @@ def review_agent_invocation(
 ) -> ContextAgentInvocation:
     """Project Review context into private bounded conversation state."""
     arguments = dict(selected_arguments or {})
-    checkpoint = arguments.pop("review_checkpoint", None)
+    # Review checkpoints are private LangGraph state.  The native V1 seam
+    # reloads the stable derived thread in ``prepare_from_agent``; accepting a
+    # request-local checkpoint here would let stale router arguments influence
+    # operation selection before that authoritative read.
+    arguments.pop("review_checkpoint", None)
     arguments.pop("review_operation", None)
     arguments["user_query"] = projection.current_query
     arguments["locale"] = projection.locale
@@ -163,8 +171,7 @@ def review_agent_invocation(
     try:
         prepared = adapter.prepare(
             projection,
-            snapshot=checkpoint,
-            allow_unresolved_section=checkpoint is None,
+            allow_unresolved_section=True,
             turn_id=turn_id,
         )
     except ReviewClarificationError as exc:
@@ -205,10 +212,12 @@ class ConversationContextExecutor:
         store_factory: StoreFactory,
         select_agent: RouterSelector,
         api_config_factory: Callable[[], ApiConfig] = ApiConfig,
+        review_settlement_loader: ReviewSettlementLoader | None = None,
     ) -> None:
         self._store_factory = store_factory
         self._select_agent = select_agent
         self._api_config_factory = api_config_factory
+        self._review_settlement_loader = review_settlement_loader
         self._service: ConversationContextService | None = None
         self._sync_invoker: ContextVar[SyncInvoker | None] = ContextVar(
             "conversation_context_sync_invoker", default=None
@@ -226,6 +235,7 @@ class ConversationContextExecutor:
             tuple[str, str], ReviewConversationAdapter
         ] = {}
         self._pending_review_lock = asyncio.Lock()
+        self._max_pending_review_settlements = 256
 
     def _service_for_request(self) -> ConversationContextService:
         if self._service is None:
@@ -254,9 +264,98 @@ class ConversationContextExecutor:
         if not adapter.settlement_ready:
             return
         async with self._pending_review_lock:
+            if len(self._pending_review_settlements) >= (
+                self._max_pending_review_settlements
+            ):
+                oldest = next(iter(self._pending_review_settlements))
+                self._pending_review_settlements.pop(oldest, None)
             self._pending_review_settlements[
                 self._review_settlement_key(envelope)
             ] = adapter
+
+    async def _load_review_settlement_adapter(
+        self,
+        key: tuple[str, str],
+        staged_turn: StoredTurn | None,
+    ) -> ReviewConversationAdapter | None:
+        """Load a pending adapter from memory or durable staged metadata."""
+        async with self._pending_review_lock:
+            adapter = self._pending_review_settlements.pop(key, None)
+        if adapter is not None:
+            return adapter
+        if staged_turn is None or self._review_settlement_loader is None:
+            return None
+        metadata = review_settlement_metadata_from_turn(staged_turn)
+        if metadata is None:
+            return None
+        return await self._review_settlement_loader(metadata, staged_turn)
+
+    async def _acknowledge_review_settlement_key(
+        self,
+        key: tuple[str, str],
+        *,
+        accepted: bool,
+        staged_turn: StoredTurn | None = None,
+    ) -> bool:
+        """Apply one durable Review acknowledgment by conversation identity."""
+        service = self._service_for_request()
+        current_turn = service.store.load_turn(*key)
+        staged_turn = current_turn or staged_turn
+        metadata = review_settlement_metadata_from_turn(staged_turn)
+        if metadata is not None:
+            settlement_state = metadata.get("settlement_state", "pending")
+            if settlement_state == "promoted":
+                return accepted
+            if settlement_state in {"rejected", "failed"}:
+                return False
+        adapter = await self._load_review_settlement_adapter(key, staged_turn)
+        if adapter is None:
+            return False
+        if not accepted:
+            adapter.mark_failed()
+            cleanup_error: BaseException | None = None
+            try:
+                await adapter.discard_pending_candidate()
+            except (
+                BaseException  # noqa: BLE001 - preserve cancellation marker
+            ) as exc:
+                cleanup_error = exc
+            marker_saved = (
+                metadata is None
+                or service.update_review_settlement_metadata(
+                    key[0], key[1], {"settlement_state": "rejected"}
+                )
+            )
+            if cleanup_error is not None:
+                raise cleanup_error
+            return marker_saved
+        try:
+            await adapter.settle_async(True)
+        except BaseException:
+            adapter.mark_failed()
+            try:
+                await adapter.discard_pending_candidate()
+            finally:
+                if metadata is not None:
+                    service.update_review_settlement_metadata(
+                        key[0], key[1], {"settlement_state": "failed"}
+                    )
+            raise
+        if (
+            metadata is not None
+            and not service.update_review_settlement_metadata(
+                key[0],
+                key[1],
+                {
+                    "settlement_state": "promoted",
+                    "report_revision": adapter.report_revision,
+                },
+            )
+        ):
+            raise RuntimeError(
+                "Review settlement marker could not be persisted"
+            )
+        return True
 
     async def acknowledge_review_settlement(
         self,
@@ -270,23 +369,25 @@ class ConversationContextExecutor:
         the staged turn. A missing or rejected acknowledgement discards the
         candidate and leaves the active Review checkpoint untouched.
         """
-        async with self._pending_review_lock:
-            adapter = self._pending_review_settlements.pop(
-                self._review_settlement_key(envelope), None
-            )
-        if adapter is None:
-            return False
-        if not accepted:
-            adapter.mark_failed()
-            await adapter.discard_pending_candidate()
-            return True
-        try:
-            await adapter.settle_async(True)
-        except BaseException:
-            adapter.mark_failed()
-            await adapter.discard_pending_candidate()
-            raise
-        return True
+        return await self._acknowledge_review_settlement_key(
+            self._review_settlement_key(envelope),
+            accepted=accepted,
+        )
+
+    async def acknowledge_review_settlement_for_turn(
+        self,
+        conversation_key: str,
+        turn_id: str,
+        *,
+        accepted: bool,
+        staged_turn: StoredTurn | None = None,
+    ) -> bool:
+        """Acknowledge Review from the HTTP settlement route after restart."""
+        return await self._acknowledge_review_settlement_key(
+            (conversation_key, turn_id),
+            accepted=accepted,
+            staged_turn=staged_turn,
+        )
 
     async def execute(
         self,

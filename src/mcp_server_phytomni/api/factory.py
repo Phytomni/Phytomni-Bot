@@ -715,6 +715,7 @@ def _register_conversation_context_routes(
     app: FastAPI,
     runtime: _RuntimeState,
     adapters: _RouteAdapters,
+    context_executor: ConversationContextExecutor,
 ) -> None:
     """Register authenticated V1 context mutation routes."""
     if not adapters.conversation_context_enabled():
@@ -725,6 +726,9 @@ def _register_conversation_context_routes(
             enabled=adapters.conversation_context_enabled,
             require_agents=runtime.require_scope("agents"),
             get_store=runtime.get_conversation_context_store,
+            acknowledge_review_settlement=(
+                context_executor.acknowledge_review_settlement_for_turn
+            ),
         ),
     )
 
@@ -866,10 +870,19 @@ def _build_context_executor(
         """Resolve the selector lazily so established test seams remain live."""
         return await _app_attr("select_agent_tool")(*args, **kwargs)
 
+    async def load_review_settlement(
+        metadata: Mapping[str, Any], staged_turn: Any
+    ) -> Any:
+        """Rebuild Review promotion state through its private agent seam."""
+        from ..agents.review.agent import load_review_settlement_adapter
+
+        return await load_review_settlement_adapter(metadata, staged_turn)
+
     return ConversationContextExecutor(
         store_factory=runtime.get_conversation_context_store,
         select_agent=select_agent,
         api_config_factory=_api_config,
+        review_settlement_loader=load_review_settlement,
     )
 
 
@@ -880,14 +893,11 @@ def build_app(
     app = _build_base_app()
     runtime = _RuntimeState(rate_limit=_app_attr("make_rate_limiter")())
     adapters = _RouteAdapters(runtime)
+    context_executor = context_executor or _build_context_executor(runtime)
     agent_dependencies = _build_agent_dependencies(
         runtime,
         adapters,
-        (
-            context_executor
-            if context_executor is not None
-            else _build_context_executor(runtime)
-        ),
+        context_executor,
     )
 
     _register_interop_route(app, runtime, runtime.require_scope)
@@ -895,7 +905,9 @@ def build_app(
     agent_routes.register_model_route(app, agent_dependencies)
     _register_memory_and_admin_routes(app, runtime, adapters)
     agent_routes.register_agent_routes(app, agent_dependencies)
-    _register_conversation_context_routes(app, runtime, adapters)
+    _register_conversation_context_routes(
+        app, runtime, adapters, context_executor
+    )
     _register_run_routes(app, runtime, adapters)
     _register_a2a_routes(app, runtime.require_scope)
     app.include_router(_app_attr("create_relay_router")())

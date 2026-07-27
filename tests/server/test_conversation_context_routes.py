@@ -81,6 +81,7 @@ def _stage_turn(
     *,
     turn_id: str = "1",
     base_version: int = 0,
+    review_metadata: dict[str, object] | None = None,
 ) -> None:
     """Seed one staged terminal result without exposing it to HTTP."""
     store.begin_turn(str(_CONVERSATION_KEY), turn_id, "append", base_version)
@@ -122,7 +123,11 @@ def _stage_turn(
             schema_version=1,
             ledger_cursor=base_version + 1,
             observed_mode="instant",
-            stage_metadata={},
+            stage_metadata=(
+                {"_review_settlement": review_metadata}
+                if review_metadata is not None
+                else {}
+            ),
         ),
     )
 
@@ -280,6 +285,81 @@ async def test_settlement_commits_once_and_redacts_context_contents(
     ):
         assert marker not in committed.text
         assert marker not in repeated.text
+
+
+async def test_settlement_route_invokes_injected_review_ack_after_commit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The production route hands durable Review metadata to the executor."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "true")
+    tasks_db = tmp_path / "server_tasks.db"
+    keys_db = tmp_path / "keys.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tasks_db))
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(keys_db))
+    key = ApiKeyStore(str(keys_db)).create(user_id="u1").api_key
+
+    class SpyExecutor:
+        def __init__(self) -> None:
+            self.calls: list[tuple[str, str, bool, str]] = []
+
+        async def execute(self, **_kwargs: object) -> object:
+            raise AssertionError("the route test does not invoke Expert")
+
+        async def acknowledge_review_settlement_for_turn(
+            self,
+            conversation_key: str,
+            turn_id: str,
+            *,
+            accepted: bool,
+            staged_turn: object,
+        ) -> bool:
+            self.calls.append(
+                (
+                    conversation_key,
+                    turn_id,
+                    accepted,
+                    getattr(staged_turn, "stage_metadata", {})[
+                        "_review_settlement"
+                    ]["candidate_thread_id"],
+                )
+            )
+            return True
+
+    executor = SpyExecutor()
+    store = ConversationContextStore(str(tasks_db))
+    metadata = {
+        "version": 1,
+        "operation": "new_review",
+        "stable_thread_id": "ctx-stable",
+        "candidate_thread_id": "ctx-candidate",
+        "turn_id": "1",
+        "report_revision": 0,
+        "settlement_state": "pending",
+    }
+    _stage_turn(store, review_metadata=metadata)
+
+    async with open_asgi_client(
+        monkeypatch,
+        create_app(context_executor=executor),
+        base_url="http://api.context.test",
+    ) as client:
+        response = await client.post(
+            "/v1/conversation-context/settle",
+            headers=_headers(key),
+            json=_settlement_payload(),
+        )
+
+    assert response.status_code == 200
+    assert executor.calls == [
+        (
+            str(_CONVERSATION_KEY),
+            "1",
+            True,
+            "ctx-candidate",
+        )
+    ]
+    assert "candidate_thread_id" not in response.text
 
 
 async def test_settlement_rejects_unknown_or_mismatched_turns(

@@ -537,7 +537,8 @@ async def test_context_expert_review_follow_up_and_local_revision_use_native_ada
         UUID(envelope["conversation_key"]), "ReviewAgent"
     )
     assert fake_agent.app.state_reads == [
-        {"configurable": {"thread_id": expected_thread}}
+        {"configurable": {"thread_id": expected_thread}},
+        {"configurable": {"thread_id": expected_thread}},
     ]
     assert fake_agent.app.updates == []
     staged = ConversationContextStore(str(db_path)).load_turn(
@@ -652,7 +653,8 @@ async def test_context_expert_review_full_graph_uses_candidate_thread(
     assert candidate_thread != stable_thread
     assert candidate_thread.startswith(f"{stable_thread}:candidate:")
     assert fake_agent.app.state_reads == [
-        {"configurable": {"thread_id": stable_thread}}
+        {"configurable": {"thread_id": stable_thread}},
+        {"configurable": {"thread_id": candidate_thread}},
     ]
     assert fake_agent.app.updates == []
     assert (
@@ -665,6 +667,88 @@ async def test_context_expert_review_full_graph_uses_candidate_thread(
     assert staged is not None
     assert staged.state == "staged"
     assert staged.delta is not None
+    assert staged.stage_metadata is not None
+    assert (
+        staged.stage_metadata["_review_settlement"]["candidate_thread_id"]
+        == candidate_thread
+    )
+    assert "_review_settlement" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_context_expert_review_missing_candidate_fails_before_staging(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A public graph answer is not healthy until its candidate checkpoint exists."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    db_path = tmp_path / "context.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+    query = "Review maize heat tolerance."
+    envelope = _conversation_envelope(
+        turn_id="11",
+        requested_agent_id="ReviewAgent",
+        allowed_agent_ids=["ReviewAgent"],
+    )
+    envelope["current_message"]["content"] = query
+    envelope["history_delta"] = [
+        {"turn_id": "11", "role": "user", "content": query}
+    ]
+
+    class FakeApp:
+        def __init__(self) -> None:
+            self.updates: list[dict[str, Any]] = []
+
+        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
+            return {}
+
+        async def aupdate_state(
+            self, _config: dict[str, Any], *, values: dict[str, Any]
+        ) -> None:
+            self.updates.append(values)
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.app = FakeApp()
+            self.graph_calls = 0
+
+        async def arun(self, **_kwargs: Any) -> dict[str, Any]:
+            self.graph_calls += 1
+            return {
+                "choices": [{"message": {"content": "Current public answer."}}]
+            }
+
+    fake_agent = FakeAgent()
+    _patch_review_runtime(monkeypatch, fake_agent)
+    monkeypatch.setattr(
+        api_app,
+        "_run_review_with_interrupt",
+        lambda **_kwargs: pytest.fail(
+            "V1 Review must use the native graph invocation seam"
+        ),
+    )
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["ReviewAgent"],
+            "conversation": envelope,
+        },
+    )
+
+    assert response.status_code == 409
+    assert fake_agent.graph_calls == 1
+    assert fake_agent.app.updates == []
+    stored = ConversationContextStore(str(db_path)).load_turn(
+        envelope["conversation_key"], envelope["turn_id"]
+    )
+    assert stored is not None
+    assert stored.state == "failed"
+    assert stored.delta is None
 
 
 @pytest.mark.asyncio

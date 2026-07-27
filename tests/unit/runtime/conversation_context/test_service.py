@@ -585,6 +585,57 @@ async def test_duplicate_turns_reconstruct_staged_metadata(
 
 
 @pytest.mark.asyncio
+async def test_review_settlement_metadata_is_durable_but_not_public(
+    store: ConversationContextStore,
+) -> None:
+    """Opaque Review checkpoint identities survive retries without API leakage."""
+
+    async def invoke(*_args: object) -> AgentOutcome:
+        return AgentOutcome(
+            result={"answer": "review"},
+            context_delta=ContextDelta(summary_update="review"),
+            private_stage_metadata={
+                "version": 1,
+                "operation": "new_review",
+                "stable_thread_id": "ctx-stable",
+                "candidate_thread_id": "ctx-candidate",
+                "turn_id": "1",
+                "report_revision": 0,
+                "settlement_state": "pending",
+            },
+        )
+
+    service = _service(store, invoke=invoke)
+    envelope = _envelope(
+        requested_agent_id="ReviewAgent", allowed_agent_ids=["ReviewAgent"]
+    )
+    prepared = await service.execute_turn(envelope)
+    stored = store.load_turn(str(_CONVERSATION_KEY), envelope.turn_id)
+
+    assert prepared.stage is not None
+    assert stored is not None
+    assert stored.stage_metadata is not None
+    assert (
+        stored.stage_metadata["_review_settlement"]["candidate_thread_id"]
+        == "ctx-candidate"
+    )
+    assert "_review_settlement" not in prepared.stage.__dict__
+
+    assert service.update_review_settlement_metadata(
+        str(_CONVERSATION_KEY),
+        envelope.turn_id,
+        {"settlement_state": "promoted"},
+    )
+    updated = store.load_turn(str(_CONVERSATION_KEY), envelope.turn_id)
+    assert updated is not None
+    assert updated.stage_metadata is not None
+    assert (
+        updated.stage_metadata["_review_settlement"]["settlement_state"]
+        == "promoted"
+    )
+
+
+@pytest.mark.asyncio
 async def test_async_agent_delegates_without_projection_or_staging(
     store: ConversationContextStore,
 ) -> None:

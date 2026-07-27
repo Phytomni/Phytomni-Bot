@@ -711,10 +711,25 @@ async def _execute_context_expert(
                     assistant_summary=_agent_response_summary(body),
                     status="failed",
                 )
+            if not await adapter.validate_settlement_candidate():
+                return AgentOutcome(
+                    result=body,
+                    assistant_summary=_agent_response_summary(body),
+                    status="failed",
+                )
+            settlement_metadata = adapter.settlement_metadata()
+            if settlement_metadata is None:
+                adapter.mark_failed()
+                return AgentOutcome(
+                    result=body,
+                    assistant_summary=_agent_response_summary(body),
+                    status="failed",
+                )
             return AgentOutcome(
                 result=body,
                 assistant_summary=_agent_response_summary(body),
                 context_delta=adapter.delta(body),
+                private_stage_metadata=settlement_metadata,
             )
         return outcome
 

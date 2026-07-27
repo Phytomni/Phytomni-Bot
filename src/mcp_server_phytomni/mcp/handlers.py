@@ -326,6 +326,7 @@ async def handle_review_agent(args: ReviewAgent) -> HandlerResult:
         thread_id=private_agent_thread_id(),
         review_adapter=private_state.get("review_adapter"),
         review_projection=private_state.get("review_projection"),
+        review_turn_id=private_state.get("review_turn_id"),
     )
 
 

@@ -5,17 +5,21 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException
 
 from ...runtime.conversation_context.projection import agent_thread_id
+from ...runtime.conversation_context.service import (
+    review_settlement_metadata_from_turn,
+)
 from ...runtime.conversation_context.store import (
     ContextVersionConflictError,
     ConversationContextStore,
     ConversationTombstonedError,
+    StoredTurn,
 )
 from ...runtime.langgraph_runner import ensure_checkpointer
 from ..auth import ApiPrincipal
@@ -43,6 +47,7 @@ class ContextRouteDependencies:
     enabled: Callable[[], bool]
     require_agents: Callable[..., Any]
     get_store: Callable[[], ConversationContextStore]
+    acknowledge_review_settlement: Callable[..., Awaitable[bool]] | None = None
 
 
 def _require_enabled(dependencies: ContextRouteDependencies) -> None:
@@ -98,6 +103,32 @@ def register_conversation_context_routes(
             raise HTTPException(
                 status_code=409, detail="context settlement conflict"
             ) from exc
+        staged_turn: StoredTurn | None = store.load_turn(key, payload.turn_id)
+        review_metadata = review_settlement_metadata_from_turn(staged_turn)
+        if review_metadata is not None:
+            callback = dependencies.acknowledge_review_settlement
+            if callback is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Review settlement is not available",
+                )
+            try:
+                acknowledged = await callback(
+                    key,
+                    payload.turn_id,
+                    accepted=True,
+                    staged_turn=staged_turn,
+                )
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Review settlement is pending",
+                ) from exc
+            if not acknowledged:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Review settlement was not promoted",
+                )
         return ContextMutationResponse(
             state=settlement.state,
             context_version=settlement.context.context_version,

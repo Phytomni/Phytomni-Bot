@@ -5,8 +5,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+import json
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 from weakref import WeakValueDictionary
@@ -56,6 +58,7 @@ class AgentOutcome:
     context_delta: ContextDelta | None = None
     context_delta_error: bool = False
     status: str = "succeeded"
+    private_stage_metadata: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -83,6 +86,68 @@ class PreparedTurn:
 
 class SettlementMismatchError(RuntimeError):
     """Raised when an acknowledgment does not match the staged proposal."""
+
+
+_PRIVATE_REVIEW_STAGE_KEY = "_review_settlement"
+_PUBLIC_STAGE_FIELDS = frozenset(
+    {
+        "selected_agent_id",
+        "route_source",
+        "route_reason_code",
+        "base_business_context_version",
+        "proposed_business_context_version",
+        "last_applied_ledger_cursor",
+        "context_truncated",
+        "context_rebuilt",
+        "context_degraded",
+    }
+)
+_REVIEW_STAGE_FIELDS = frozenset(
+    {
+        "version",
+        "operation",
+        "stable_thread_id",
+        "candidate_thread_id",
+        "turn_id",
+        "report_revision",
+        "settlement_state",
+    }
+)
+
+
+def _bounded_review_stage_metadata(
+    value: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Keep only bounded checkpoint identities in durable turn metadata."""
+    result: dict[str, Any] = {}
+    for key in _REVIEW_STAGE_FIELDS:
+        candidate = value.get(key)
+        if key in {"version", "report_revision"}:
+            if isinstance(candidate, bool) or not isinstance(candidate, int):
+                continue
+            result[key] = max(0, candidate)
+        elif key == "candidate_thread_id":
+            if candidate is None:
+                result[key] = None
+            elif isinstance(candidate, str) and candidate:
+                result[key] = candidate[:512]
+        elif isinstance(candidate, str) and candidate:
+            limit = 64 if key == "turn_id" else 512
+            result[key] = candidate[:limit]
+    required = {"version", "operation", "stable_thread_id", "turn_id"}
+    return result if required.issubset(result) else None
+
+
+def review_settlement_metadata_from_turn(
+    turn: StoredTurn | None,
+) -> dict[str, Any] | None:
+    """Read bounded private Review metadata without exposing report content."""
+    if turn is None or not isinstance(turn.stage_metadata, Mapping):
+        return None
+    metadata = turn.stage_metadata.get(_PRIVATE_REVIEW_STAGE_KEY)
+    if not isinstance(metadata, Mapping):
+        return None
+    return dict(metadata)
 
 
 Router = Callable[
@@ -271,9 +336,66 @@ class ConversationContextService:
     def _stage_from_turn(turn: StoredTurn) -> ContextStageMetadata | None:
         if turn.stage_metadata is None:
             return None
+        public_metadata = {
+            key: turn.stage_metadata[key]
+            for key in _PUBLIC_STAGE_FIELDS
+            if key in turn.stage_metadata
+        }
+        if len(public_metadata) != len(_PUBLIC_STAGE_FIELDS):
+            return None
         return ContextStageMetadata(
-            **turn.stage_metadata,
+            **public_metadata,
         )
+
+    def update_review_settlement_metadata(
+        self,
+        key: str,
+        turn_id: str,
+        updates: Mapping[str, Any],
+    ) -> bool:
+        """Persist a small Review settlement marker on a staged turn."""
+        with self.store._write() as connection:
+            row = connection.execute(
+                "SELECT delta_json FROM conversation_turns "
+                "WHERE conversation_key = ? AND turn_id = ?",
+                (key, turn_id),
+            ).fetchone()
+            if row is None or row[0] is None:
+                return False
+            decoded = json.loads(row[0])
+            envelope = decoded.get("__conversation_context_store__")
+            if not isinstance(envelope, Mapping):
+                return False
+            stage_metadata = envelope.get("stage_metadata")
+            if not isinstance(stage_metadata, Mapping):
+                return False
+            current = stage_metadata.get(_PRIVATE_REVIEW_STAGE_KEY)
+            if not isinstance(current, Mapping):
+                return False
+            updated = dict(current)
+            updated.update(dict(updates))
+            new_stage_metadata = dict(stage_metadata)
+            new_stage_metadata[_PRIVATE_REVIEW_STAGE_KEY] = updated
+            new_envelope = dict(envelope)
+            new_envelope["stage_metadata"] = new_stage_metadata
+            new_decoded = dict(decoded)
+            new_decoded["__conversation_context_store__"] = new_envelope
+            connection.execute(
+                "UPDATE conversation_turns SET delta_json = ?, updated_at = ? "
+                "WHERE conversation_key = ? AND turn_id = ?",
+                (
+                    json.dumps(
+                        new_decoded,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                    datetime.now(UTC).isoformat(),
+                    key,
+                    turn_id,
+                ),
+            )
+        return True
 
     async def execute_turn(
         self, envelope: ConversationEnvelopeV1
@@ -384,6 +506,27 @@ class ConversationContextService:
                 context_rebuilt=rebuilt,
                 context_degraded=degraded,
             )
+            stage_metadata: dict[str, Any] = {
+                "selected_agent_id": stage.selected_agent_id,
+                "route_source": stage.route_source,
+                "route_reason_code": stage.route_reason_code,
+                "base_business_context_version": (
+                    stage.base_business_context_version
+                ),
+                "proposed_business_context_version": (
+                    stage.proposed_business_context_version
+                ),
+                "last_applied_ledger_cursor": stage.last_applied_ledger_cursor,
+                "context_truncated": stage.context_truncated,
+                "context_rebuilt": stage.context_rebuilt,
+                "context_degraded": stage.context_degraded,
+            }
+            if outcome.private_stage_metadata is not None:
+                review_metadata = _bounded_review_stage_metadata(
+                    outcome.private_stage_metadata
+                )
+                if review_metadata is not None:
+                    stage_metadata[_PRIVATE_REVIEW_STAGE_KEY] = review_metadata
             stored = self.store.stage_turn(
                 key,
                 envelope.turn_id,
@@ -398,23 +541,7 @@ class ConversationContextService:
                     schema_version=proposed.schema_version,
                     ledger_cursor=envelope.ledger_cursor,
                     observed_mode=envelope.mode,
-                    stage_metadata={
-                        "selected_agent_id": stage.selected_agent_id,
-                        "route_source": stage.route_source,
-                        "route_reason_code": stage.route_reason_code,
-                        "base_business_context_version": (
-                            stage.base_business_context_version
-                        ),
-                        "proposed_business_context_version": (
-                            stage.proposed_business_context_version
-                        ),
-                        "last_applied_ledger_cursor": (
-                            stage.last_applied_ledger_cursor
-                        ),
-                        "context_truncated": stage.context_truncated,
-                        "context_rebuilt": stage.context_rebuilt,
-                        "context_degraded": stage.context_degraded,
-                    },
+                    stage_metadata=stage_metadata,
                 ),
             )
             return PreparedTurn(
@@ -553,4 +680,5 @@ __all__ = [
     "PrepareStatus",
     "PreparedTurn",
     "SettlementMismatchError",
+    "review_settlement_metadata_from_turn",
 ]

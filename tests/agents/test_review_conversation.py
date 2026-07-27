@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import asdict
 from typing import Any
 from uuid import UUID
@@ -43,6 +44,7 @@ from mcp_server_phytomni.runtime.conversation_context.service import (
 )
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ConversationContextStore,
+    StagedTurn,
 )
 
 pytestmark = pytest.mark.agent
@@ -389,6 +391,7 @@ def test_review_invocation_keeps_operation_and_checkpoint_private() -> None:
     assert dispatch.agent_thread_id == _THREAD_ID
     adapter = dispatch.private_agent_state["review_adapter"]
     assert adapter.operation is ReviewConversationOperation.FOLLOW_UP
+    assert adapter.snapshot is None
     assert dispatch.private_agent_state["review_projection"] is projection
 
 
@@ -406,6 +409,218 @@ def test_review_invocation_derives_candidate_thread_from_turn_id() -> None:
     assert dispatch.private_agent_state["review_turn_id"] == "turn-7"
 
 
+def test_new_review_requires_a_turn_id_before_graph_execution() -> None:
+    """A caller without the envelope identity cannot receive a graph thread."""
+    with pytest.raises(ReviewClarificationError, match="turn id"):
+        ReviewConversationAdapter().prepare(
+            _projection("Review maize heat tolerance", active=False)
+        )
+
+
+@pytest.mark.asyncio
+async def test_prepare_from_agent_rejects_stale_snapshot_when_stable_is_missing() -> (
+    None
+):
+    """A request-local checkpoint never substitutes for the stable thread."""
+
+    class EmptyApp:
+        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
+            return {}
+
+    class EmptyAgent:
+        def __init__(self) -> None:
+            self.app = EmptyApp()
+
+    projection = _projection("What evidence supports that claim?")
+    adapter = ReviewConversationAdapter()
+    adapter.prepare(projection, snapshot=_checkpoint_state())
+
+    with pytest.raises(ReviewClarificationError, match="checkpoint"):
+        await adapter.prepare_from_agent(
+            projection,
+            EmptyAgent(),
+            _THREAD_ID,
+        )
+
+
+@pytest.mark.asyncio
+async def test_prepare_from_agent_does_not_reuse_a_prior_turn_id() -> None:
+    """A missing current envelope identity cannot run a new Review graph."""
+
+    class EmptyApp:
+        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
+            return {}
+
+    class EmptyAgent:
+        def __init__(self) -> None:
+            self.app = EmptyApp()
+
+    projection = _projection("Review maize heat tolerance", active=False)
+    adapter = ReviewConversationAdapter()
+    adapter.prepare(projection, turn_id="stale-turn")
+
+    with pytest.raises(ReviewClarificationError, match="turn id"):
+        await adapter.prepare_from_agent(projection, EmptyAgent(), _THREAD_ID)
+
+
+@pytest.mark.asyncio
+async def test_missing_candidate_fails_readiness_before_settlement() -> None:
+    """A successful public answer cannot stage without a durable candidate."""
+
+    class EmptyApp:
+        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
+            return {}
+
+    class EmptyAgent:
+        def __init__(self) -> None:
+            self.app = EmptyApp()
+
+    projection = _projection("Review maize heat tolerance", active=False)
+    adapter = ReviewConversationAdapter()
+    await adapter.prepare_from_agent(
+        projection, EmptyAgent(), _THREAD_ID, turn_id="10"
+    )
+    adapter.capture_result(
+        {"choices": [{"message": {"content": "Current answer."}}]}
+    )
+
+    assert await adapter.validate_settlement_candidate() is False
+    assert adapter.settlement_ready is False
+
+
+@pytest.mark.asyncio
+async def test_review_ack_reconstructs_from_durable_metadata_after_restart(
+    tmp_path: Any,
+) -> None:
+    """A fresh executor promotes a staged candidate without the old adapter."""
+    stable_state = _checkpoint_state()
+    candidate_state = {
+        "original_user_query": "Review maize heat tolerance",
+        "summary_content": "# Candidate report\n\nCandidate evidence.",
+        "research_dimensions": ["Evidence"],
+        "report_artifact_id": "report-1",
+        "report_revision": 4,
+    }
+
+    class FakeApp:
+        def __init__(self) -> None:
+            self.states = {
+                _THREAD_ID: dict(stable_state),
+            }
+            self.updates: list[str] = []
+
+        async def aget_state(self, config: dict[str, Any]) -> dict[str, Any]:
+            return self.states.get(config["configurable"]["thread_id"], {})
+
+        async def aupdate_state(
+            self, config: dict[str, Any], *, values: dict[str, Any]
+        ) -> None:
+            thread_id = config["configurable"]["thread_id"]
+            self.updates.append(thread_id)
+            self.states.setdefault(thread_id, {}).update(values)
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.app = FakeApp()
+
+    agent = FakeAgent()
+    prepared = ReviewConversationAdapter()
+    prepared._agent = agent
+    prepared.prepare(
+        _projection("Review maize heat tolerance", active=False), turn_id="10"
+    )
+    metadata = prepared.settlement_metadata()
+    assert metadata is not None
+    metadata["report_revision"] = 4
+    candidate_thread = metadata["candidate_thread_id"]
+    assert isinstance(candidate_thread, str)
+    agent.app.states[candidate_thread] = candidate_state
+
+    store = ConversationContextStore(str(tmp_path / "context.sqlite"))
+    key = str(_CONVERSATION_KEY)
+    store.begin_turn(key, "10", "append", 0)
+    store.stage_turn(
+        key,
+        "10",
+        StagedTurn(
+            operation="append",
+            base_context_version=0,
+            selected_agent_id="ReviewAgent",
+            route_source="explicit_selection",
+            result={"choices": [{"message": {"content": "answer"}}]},
+            delta={
+                "schema_version": 1,
+                "version": 1,
+                "last_applied_ledger_cursor": 1,
+                "last_applied_ledger_version": "a" * 64,
+                "observed_mode": "expert",
+                "task_summary": "review",
+                "active_entities": [],
+                "open_questions": [],
+                "recent_user_turns": [],
+                "assistant_summaries": [],
+                "artifact_index": [],
+                "per_agent_memory": {},
+            },
+            ledger_version="a" * 64,
+            schema_version=1,
+            ledger_cursor=1,
+            observed_mode="expert",
+            stage_metadata={
+                "selected_agent_id": "ReviewAgent",
+                "route_source": "explicit_selection",
+                "route_reason_code": "EXPLICIT_SELECTION",
+                "base_business_context_version": 0,
+                "proposed_business_context_version": 1,
+                "last_applied_ledger_cursor": 1,
+                "context_truncated": False,
+                "context_rebuilt": True,
+                "context_degraded": False,
+                "_review_settlement": metadata,
+            },
+        ),
+    )
+
+    loaded: list[dict[str, Any]] = []
+
+    async def loader(
+        durable_metadata: Mapping[str, Any], staged_turn: StagedTurn
+    ) -> ReviewConversationAdapter:
+        loaded.append(dict(durable_metadata))
+        adapter = ReviewConversationAdapter()
+        await adapter.restore_settlement(
+            durable_metadata,
+            agent,
+            staged_turn.result,
+        )
+        return adapter
+
+    executor = ConversationContextExecutor(
+        store_factory=lambda: store,
+        select_agent=lambda *_args, **_kwargs: pytest.fail(
+            "settlement reconstruction must not route"
+        ),
+        review_settlement_loader=loader,
+    )
+    assert await executor.acknowledge_review_settlement_for_turn(
+        key, "10", accepted=True
+    )
+    assert agent.app.states[_THREAD_ID]["report_revision"] == 5
+    assert agent.app.updates == [_THREAD_ID]
+    assert loaded
+    stored = store.load_turn(key, "10")
+    assert stored is not None
+    assert stored.stage_metadata is not None
+    assert (
+        stored.stage_metadata["_review_settlement"]["settlement_state"]
+        == "promoted"
+    )
+    assert await executor.acknowledge_review_settlement_for_turn(
+        key, "10", accepted=True
+    )
+    assert agent.app.updates == [_THREAD_ID]
+
+
 def test_scope_change_stages_focus_until_successful_settlement() -> None:
     """A failed scope switch leaves the prior Review checkpoint active."""
     snapshot = extract_review_checkpoint(_checkpoint_state())
@@ -413,7 +628,7 @@ def test_scope_change_stages_focus_until_successful_settlement() -> None:
     adapter = ReviewConversationAdapter()
     query = "Now investigate maize heat tolerance using a new source set."
 
-    adapter.prepare(_projection(query), snapshot=snapshot)
+    adapter.prepare(_projection(query), snapshot=snapshot, turn_id="scope-1")
     assert adapter.active_snapshot == snapshot
     assert adapter.staged_snapshot is not None
     assert adapter.staged_snapshot.research_question == query
@@ -422,7 +637,7 @@ def test_scope_change_stages_focus_until_successful_settlement() -> None:
     assert adapter.active_snapshot == snapshot
     assert adapter.staged_snapshot is None
 
-    adapter.prepare(_projection(query), snapshot=snapshot)
+    adapter.prepare(_projection(query), snapshot=snapshot, turn_id="scope-1")
     assert adapter.settle(True) == 5
     assert adapter.active_snapshot is not None
     assert adapter.active_snapshot.research_question == query
@@ -488,6 +703,15 @@ async def test_review_wrapper_answers_follow_up_without_running_the_graph(
     captured: dict[str, str] = {}
 
     class FakeAgent:
+        class FakeApp:
+            async def aget_state(
+                self, _config: dict[str, Any]
+            ) -> dict[str, Any]:
+                return _checkpoint_state()
+
+        def __init__(self) -> None:
+            self.app = self.FakeApp()
+
         async def _chat(self, prompt: str) -> dict[str, Any]:
             captured["prompt"] = prompt
             return {"choices": [{"message": {"content": "Bounded answer."}}]}
@@ -516,7 +740,7 @@ async def test_review_wrapper_marks_failed_when_full_graph_returns_clarification
     """Full-graph clarification must clear the prepared success flag."""
     projection = _projection("Review drought tolerance in rice", active=False)
     adapter = ReviewConversationAdapter()
-    adapter.prepare(projection)
+    adapter.prepare(projection, turn_id="clarification-1")
 
     class FakeAgent:
         async def arun(self, **_kwargs: Any) -> dict[str, Any]:
@@ -530,6 +754,7 @@ async def test_review_wrapper_marks_failed_when_full_graph_returns_clarification
         thread_id=adapter.execution_thread_id,
         review_adapter=adapter,
         review_projection=projection,
+        review_turn_id="clarification-1",
     )
 
     assert result["choices"][0]["message"]["content"] == "graph clarification"
@@ -675,7 +900,7 @@ async def test_executor_defers_review_checkpoint_until_explicit_ack(
             self.updates: list[dict[str, Any]] = []
 
         async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
-            return {}
+            return _checkpoint_state()
 
         async def aupdate_state(
             self, _config: dict[str, Any], *, values: dict[str, Any]
@@ -726,14 +951,14 @@ async def test_executor_defers_review_checkpoint_until_explicit_ack(
     assert prepared.status is PrepareStatus.RETURN_STAGED
     adapter = captured["adapter"]
     assert fake_agent.app.updates == []
-    assert adapter.report_revision == 0
+    assert adapter.report_revision == 4
     assert (
         await executor.acknowledge_review_settlement(envelope, accepted=False)
         is True
     )
     assert fake_agent.app.updates == []
-    assert adapter.report_revision == 0
-    assert adapter.active_snapshot is None
+    assert adapter.report_revision == 4
+    assert adapter.active_snapshot is not None
     assert (
         await executor.acknowledge_review_settlement(envelope, accepted=True)
         is False
@@ -754,8 +979,8 @@ async def test_executor_defers_review_checkpoint_until_explicit_ack(
         await executor.acknowledge_review_settlement(envelope, accepted=True)
         is True
     )
-    assert fake_agent.app.updates == [{"report_revision": 1}]
-    assert accepted_adapter.report_revision == 1
+    assert fake_agent.app.updates == [{"report_revision": 5}]
+    assert accepted_adapter.report_revision == 5
 
 
 @pytest.mark.asyncio
@@ -851,6 +1076,7 @@ async def test_new_review_promotes_candidate_only_after_ack_and_reject_discards_
         thread_id=adapter.execution_thread_id,
         review_adapter=adapter,
         review_projection=projection,
+        review_turn_id=envelope.turn_id,
     )
 
     assert result["choices"][0]["message"]["content"] == (
@@ -896,6 +1122,7 @@ async def test_new_review_promotes_candidate_only_after_ack_and_reject_discards_
         thread_id=rejected_adapter.execution_thread_id,
         review_adapter=rejected_adapter,
         review_projection=rejected_projection,
+        review_turn_id="8",
     )
     rejected_candidate = rejected_adapter.candidate_thread_id
     assert rejected_candidate is not None
@@ -953,7 +1180,9 @@ async def test_failed_review_ack_discards_candidate_without_advancing_stable_sta
     adapter = ReviewConversationAdapter()
     adapter.prepare(projection, turn_id="9")
     agent = FailingAgent()
-    await adapter.prepare_from_agent(projection, agent, _THREAD_ID)
+    await adapter.prepare_from_agent(
+        projection, agent, _THREAD_ID, turn_id="9"
+    )
     adapter.capture_result(
         {
             "choices": [{"message": {"content": "Candidate answer."}}],
