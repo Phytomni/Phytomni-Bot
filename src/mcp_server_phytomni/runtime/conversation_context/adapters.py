@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -216,6 +217,10 @@ class ConversationContextExecutor:
         self._review_adapter: ContextVar[ReviewConversationAdapter | None] = (
             ContextVar("conversation_context_review_adapter", default=None)
         )
+        self._pending_review_settlements: dict[
+            tuple[str, str], ReviewConversationAdapter
+        ] = {}
+        self._pending_review_lock = asyncio.Lock()
 
     def _service_for_request(self) -> ConversationContextService:
         if self._service is None:
@@ -227,6 +232,54 @@ class ConversationContextExecutor:
                 api_config=self._api_config_factory(),
             )
         return self._service
+
+    @staticmethod
+    def _review_settlement_key(
+        envelope: ConversationEnvelopeV1,
+    ) -> tuple[str, str]:
+        """Use the stable Go envelope identity for deferred Review state."""
+        return str(envelope.conversation_key), envelope.turn_id
+
+    async def defer_review_settlement(
+        self,
+        envelope: ConversationEnvelopeV1,
+        adapter: ReviewConversationAdapter,
+    ) -> None:
+        """Retain one successful Review candidate until Go acknowledges it."""
+        if not adapter.settlement_ready:
+            return
+        async with self._pending_review_lock:
+            self._pending_review_settlements[
+                self._review_settlement_key(envelope)
+            ] = adapter
+
+    async def acknowledge_review_settlement(
+        self,
+        envelope: ConversationEnvelopeV1,
+        *,
+        accepted: bool,
+    ) -> bool:
+        """Commit private Review state only after an explicit durable ack.
+
+        The caller must invoke this seam only after the Go ledger has accepted
+        the staged turn. A missing or rejected acknowledgement discards the
+        candidate and leaves the active Review checkpoint untouched.
+        """
+        async with self._pending_review_lock:
+            adapter = self._pending_review_settlements.pop(
+                self._review_settlement_key(envelope), None
+            )
+        if adapter is None:
+            return False
+        if not accepted:
+            adapter.mark_failed()
+            return True
+        try:
+            await adapter.settle_async(True)
+        except BaseException:
+            adapter.mark_failed()
+            raise
+        return True
 
     async def execute(
         self,
@@ -244,18 +297,21 @@ class ConversationContextExecutor:
             prepared = await self._service_for_request().execute_turn(envelope)
             adapter = self._review_adapter.get()
             if adapter is not None:
-                settled = (
+                ready_to_stage = (
                     prepared.status is PrepareStatus.RETURN_STAGED
                     and prepared.stage is not None
                     and not prepared.stage.context_degraded
                     and adapter.settlement_ready
                 )
-                await adapter.settle_async(settled)
+                if ready_to_stage:
+                    await self.defer_review_settlement(envelope, adapter)
+                else:
+                    adapter.mark_failed()
             return prepared
         except BaseException:
             adapter = self._review_adapter.get()
             if adapter is not None:
-                await adapter.settle_async(False)
+                adapter.mark_failed()
             raise
         finally:
             self._review_adapter.reset(review_token)

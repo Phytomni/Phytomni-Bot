@@ -644,10 +644,16 @@ async def _execute_context_expert(
                 "clarification_message"
             )
             if isinstance(clarification, str) and clarification.strip():
+                if selected_agent_id != "ReviewAgent":
+                    return AgentOutcome(
+                        result=_clarification_agent_run(slug, clarification),
+                        assistant_summary=clarification,
+                        context_delta=ContextDelta(),
+                    )
                 return AgentOutcome(
                     result=_clarification_agent_run(slug, clarification),
                     assistant_summary=clarification,
-                    context_delta=ContextDelta(),
+                    status="failed",
                 )
         arguments = dict(dispatch.arguments)
         if dependencies.chat.input.tool_accepts_obs(selected_agent_id):
@@ -698,7 +704,7 @@ async def _execute_context_expert(
                 return AgentOutcome(
                     result=body,
                     assistant_summary=_agent_response_summary(body),
-                    context_delta=ContextDelta(),
+                    status="failed",
                 )
             return AgentOutcome(
                 result=body,

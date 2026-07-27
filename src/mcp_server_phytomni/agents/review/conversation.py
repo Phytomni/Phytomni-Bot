@@ -28,6 +28,7 @@ from ...runtime.conversation_context.models import (
     PerAgentMemory,
 )
 from ...runtime.langgraph_runner import build_runnable_config
+from .helpers import _renumber_citations
 
 _MAX_SOURCE_IDS = MAX_CONTEXT_ITEMS
 _MAX_HEADINGS = MAX_CONTEXT_ITEMS
@@ -37,6 +38,17 @@ _MAX_SECTION_CHARS = MAX_CONTEXT_TEXT_CHARS
 _MAX_CLAIM_CHARS = 512
 _MAX_PROMPT_CHARS = MAX_CONTEXT_TEXT_CHARS
 _MAX_SUMMARY_CHARS = 1024
+_INVALID_RESPONSE_TEXT = frozenset(
+    {
+        "no answer generated",
+        "no answer generated.",
+        "no summary generated",
+        "no summary generated.",
+        "n/a",
+        "none",
+        "null",
+    }
+)
 
 _REVISION_WORDS = re.compile(
     r"\b(?:revise|revision|rewrite|rewritten|edit|edited|update|updated|"
@@ -68,7 +80,7 @@ class ReviewConversationOperation(StrEnum):
 
 
 class ReviewClarificationError(ValueError):
-    """Raised when a Review turn cannot identify an active section."""
+    """Raised when a Review turn cannot produce a valid bounded result."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -652,9 +664,7 @@ def classify_review_operation(
         return ReviewConversationOperation.NEW_REVIEW
     if _REVISION_WORDS.search(text) and _section_reference(text, snapshot):
         return ReviewConversationOperation.LOCAL_REVISION
-    if _SCOPE_WORDS.search(text) or re.match(
-        r"^\s*(?:review|investigate|compare|research)\b", text, re.IGNORECASE
-    ):
+    if _SCOPE_WORDS.search(text):
         return ReviewConversationOperation.SCOPE_CHANGE
     return ReviewConversationOperation.FOLLOW_UP
 
@@ -770,6 +780,12 @@ def _response_text(response: object) -> str:
     return ""
 
 
+def _usable_response_text(value: str) -> bool:
+    """Reject empty and known placeholder model responses."""
+    normalized = value.strip().casefold()
+    return bool(normalized) and normalized not in _INVALID_RESPONSE_TEXT
+
+
 def _follow_up_questions(result: Mapping[str, Any]) -> list[str]:
     """Extract a bounded follow-up list without copying report state."""
     nested = result.get("result")
@@ -788,6 +804,81 @@ def _follow_up_questions(result: Mapping[str, Any]) -> list[str]:
                     )
                 )
     return []
+
+
+def _bounded_doc_list(value: object) -> list[dict[str, Any]]:
+    """Copy the existing ordered Review references without expanding scope."""
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        return []
+    return [dict(item) for item in value if isinstance(item, Mapping)][
+        :MAX_CONTEXT_ITEMS
+    ]
+
+
+def _ordered_doc_list(
+    value: object, *, depth: int = 0
+) -> list[dict[str, Any]]:
+    """Find Review's existing ordered references through known result wrappers."""
+    if depth > 4 or not isinstance(value, Mapping):
+        return []
+    for key in ("ordered_doc_list", "doc_list", "references"):
+        documents = _bounded_doc_list(value.get(key))
+        if documents:
+            return documents
+    for key in (
+        "choices",
+        "message",
+        "final_response",
+        "phytomni_state",
+        "result",
+        "raw",
+        "formatted",
+        "channel_values",
+        "values",
+        "state",
+    ):
+        nested = value.get(key)
+        if isinstance(nested, Sequence) and not isinstance(
+            nested, (str, bytes)
+        ):
+            for item in nested:
+                documents = _ordered_doc_list(item, depth=depth + 1)
+                if documents:
+                    return documents
+        else:
+            documents = _ordered_doc_list(nested, depth=depth + 1)
+            if documents:
+                return documents
+    return []
+
+
+def _raw_doc_list(value: object) -> list[dict[str, Any]]:
+    """Collect bounded raw documents only for citation-helper lookup."""
+    if not isinstance(value, Mapping):
+        return []
+    documents: list[dict[str, Any]] = []
+    for key in ("all_raw_doc_list", "add_doc_list"):
+        documents.extend(_bounded_doc_list(value.get(key)))
+    return documents[:MAX_CONTEXT_ITEMS]
+
+
+def _reference_metadata(
+    value: object,
+) -> list[dict[str, Any]]:
+    """Recover ordered references and raw inputs from one private result."""
+    state_values = _state_values(value)
+    if not isinstance(state_values, Mapping):
+        return []
+    ordered = _ordered_doc_list(value)
+    raw = _raw_doc_list(value)
+    if state_values is not value:
+        ordered = ordered or _ordered_doc_list(state_values)
+        raw = raw or _raw_doc_list(state_values)
+    if not ordered:
+        report = state_values.get("summary_content")
+        if isinstance(report, str) and raw:
+            _formatted, ordered = _renumber_citations(report, raw)
+    return ordered
 
 
 def _review_summary(
@@ -830,6 +921,7 @@ class ReviewConversationAdapter:
         self._agent: Any | None = None
         self._thread_id: str | None = None
         self._pending_report_text: str | None = None
+        self._ordered_doc_list: list[dict[str, Any]] = []
 
     def prepare(
         self,
@@ -840,9 +932,11 @@ class ReviewConversationAdapter:
         report_document: ReviewReportDocument | None = None,
     ) -> dict[str, Any]:
         """Classify and project one Review turn."""
+        self._ordered_doc_list = []
         if snapshot is not None and not isinstance(
             snapshot, ReviewCheckpointSnapshot
         ):
+            self._ordered_doc_list = _reference_metadata(snapshot)
             report_document = extract_review_report_document(snapshot)
             snapshot = extract_review_checkpoint(snapshot)
         elif report_document is None and self._agent is None:
@@ -916,11 +1010,13 @@ class ReviewConversationAdapter:
         self._agent = agent
         self._thread_id = thread_id
         document = extract_review_report_document(state)
-        return self.prepare(
+        prepared = self.prepare(
             projection,
             snapshot=snapshot,
             report_document=document,
         )
+        self._ordered_doc_list = _reference_metadata(state)
+        return prepared
 
     @property
     def operation(self) -> ReviewConversationOperation | None:
@@ -962,12 +1058,25 @@ class ReviewConversationAdapter:
         """Capture only bounded metadata from a completed Review result."""
         if self._prepared is None:
             raise RuntimeError("prepare must run before capture_result")
+        if not self._operation_successful:
+            return
+        ordered = _reference_metadata(result)
+        if ordered:
+            self._ordered_doc_list = ordered
+        answer = _answer_from_result(result)
         captured_answer = (
-            _bounded_text(_answer_from_result(result), _MAX_SUMMARY_CHARS)
+            _bounded_text(answer, _MAX_SUMMARY_CHARS)
             if self._prepared.operation
             is ReviewConversationOperation.FOLLOW_UP
             else ""
         )
+        document = extract_review_report_document(result.get("phytomni_state"))
+        checkpoint = extract_review_checkpoint(result.get("phytomni_state"))
+        if not _usable_response_text(answer) and (
+            document is None or not _usable_response_text(document.text)
+        ):
+            self.mark_failed()
+            return
         self._captured_result = {
             "result": {
                 "formatted": {
@@ -976,11 +1085,9 @@ class ReviewConversationAdapter:
                 }
             }
         }
-        document = extract_review_report_document(result.get("phytomni_state"))
         if document is not None and document.text:
             self._report_document = document
             self._pending_report_text = document.text
-        checkpoint = extract_review_checkpoint(result.get("phytomni_state"))
         if checkpoint is not None:
             self._staged_snapshot = checkpoint
         if self._last_revised_section is not None:
@@ -1059,8 +1166,12 @@ class ReviewConversationAdapter:
         if self._prepared is None:
             raise RuntimeError("prepare must run before follow_up")
         response = await chat(self.follow_up_prompt())
-        answer = _response_text(response) or "No answer generated."
-        self._operation_successful = bool(answer.strip())
+        answer = _response_text(response)
+        if not _usable_response_text(answer):
+            self.mark_failed()
+            raise ReviewClarificationError(
+                "Review follow-up returned empty or invalid content."
+            )
         return self._answer_result(
             answer, ReviewConversationOperation.FOLLOW_UP
         )
@@ -1154,7 +1265,9 @@ class ReviewConversationAdapter:
                 {
                     "message": {
                         "content": content,
-                        "doc_list": [],
+                        "doc_list": [
+                            dict(item) for item in self._ordered_doc_list
+                        ],
                         "total": 10000,
                         "follow_up_questions": [],
                     }
@@ -1197,9 +1310,9 @@ async def revise_section(
     if inspect.isawaitable(response):
         response = await response
     text = _response_text(response)
-    if not text:
+    if not _usable_response_text(text):
         raise ReviewClarificationError(
-            "Review section revision returned empty content."
+            "Review section revision returned empty or invalid content."
         )
     return RevisedSection(
         section_id=section_id,

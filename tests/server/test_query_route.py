@@ -444,6 +444,10 @@ async def test_context_expert_explicit_selection_stages_without_router(
     [
         ("What new evidence supports that claim?", "Bounded evidence answer."),
         (
+            "Review the new evidence supporting that claim.",
+            "Bounded evidence answer.",
+        ),
+        (
             "Rewrite the Evidence section to state the limitation.",
             _REVIEW_REPORT.replace(
                 "Evidence claim [document:2].",
@@ -535,12 +539,7 @@ async def test_context_expert_review_follow_up_and_local_revision_use_native_ada
     assert fake_agent.app.state_reads == [
         {"configurable": {"thread_id": expected_thread}}
     ]
-    assert fake_agent.app.updates
-    update_config, update_values = fake_agent.app.updates[-1]
-    assert update_config == {"configurable": {"thread_id": expected_thread}}
-    assert update_values["report_revision"] == 5
-    if "Evidence section" in query:
-        assert update_values["summary_content"] == answer
+    assert fake_agent.app.updates == []
     staged = ConversationContextStore(str(db_path)).load_turn(
         envelope["conversation_key"], envelope["turn_id"]
     )
@@ -607,15 +606,150 @@ async def test_context_expert_review_empty_local_revision_does_not_settle(
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 409
     assert fake_agent.graph_calls == 0
     assert fake_agent.app.updates == []
     staged = ConversationContextStore(str(db_path)).load_turn(
         envelope["conversation_key"], envelope["turn_id"]
     )
     assert staged is not None
-    assert staged.delta is not None
+    assert staged.state == "failed"
+    assert staged.delta is None
     assert "Review section revision completed." not in json.dumps(staged.delta)
+
+
+@pytest.mark.asyncio
+async def test_context_expert_review_empty_follow_up_fails_without_staging(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An empty Review follow-up is failed and cannot settle context."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    db_path = tmp_path / "context.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+
+    class FakeApp:
+        def __init__(self) -> None:
+            self.updates: list[dict[str, Any]] = []
+
+        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
+            return _review_checkpoint_state()
+
+        async def aupdate_state(
+            self, _config: dict[str, Any], *, values: dict[str, Any]
+        ) -> None:
+            self.updates.append(values)
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.app = FakeApp()
+
+        async def _chat(self, _prompt: str) -> dict[str, Any]:
+            return {"choices": [{"message": {"content": ""}}]}
+
+        async def arun(self, **_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("empty follow-up must not rerun graph")
+
+    fake_agent = FakeAgent()
+    _patch_review_runtime(monkeypatch, fake_agent)
+    monkeypatch.setattr(
+        api_app,
+        "_run_review_with_interrupt",
+        lambda **_kwargs: pytest.fail(
+            "V1 Review must not enter the full graph"
+        ),
+    )
+    envelope = _review_context_envelope(
+        "What new evidence supports that claim?", turn_id="4"
+    )
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["ReviewAgent"],
+            "conversation": envelope,
+        },
+    )
+
+    assert response.status_code == 409
+    assert fake_agent.app.updates == []
+    staged = ConversationContextStore(str(db_path)).load_turn(
+        envelope["conversation_key"], envelope["turn_id"]
+    )
+    assert staged is not None
+    assert staged.state == "failed"
+    assert staged.delta is None
+
+
+@pytest.mark.asyncio
+async def test_context_expert_review_unknown_section_clarification_fails_turn(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An unknown local section is clarification, never a healthy stage."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    db_path = tmp_path / "context.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+
+    class FakeApp:
+        def __init__(self) -> None:
+            self.updates: list[dict[str, Any]] = []
+
+        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
+            return _review_checkpoint_state()
+
+        async def aupdate_state(
+            self, _config: dict[str, Any], *, values: dict[str, Any]
+        ) -> None:
+            self.updates.append(values)
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.app = FakeApp()
+
+        async def _chat(self, _prompt: str) -> dict[str, Any]:
+            raise AssertionError("unknown section must clarify before chat")
+
+        async def arun(self, **_kwargs: Any) -> dict[str, Any]:
+            raise AssertionError("unknown section must not rerun graph")
+
+    fake_agent = FakeAgent()
+    _patch_review_runtime(monkeypatch, fake_agent)
+    monkeypatch.setattr(
+        api_app,
+        "_run_review_with_interrupt",
+        lambda **_kwargs: pytest.fail(
+            "V1 Review must not enter the full graph"
+        ),
+    )
+    envelope = _review_context_envelope(
+        "Rewrite the Methods section to be shorter.", turn_id="5"
+    )
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["ReviewAgent"],
+            "conversation": envelope,
+        },
+    )
+
+    assert response.status_code == 409
+    assert fake_agent.app.updates == []
+    staged = ConversationContextStore(str(db_path)).load_turn(
+        envelope["conversation_key"], envelope["turn_id"]
+    )
+    assert staged is not None
+    assert staged.state == "failed"
+    assert staged.delta is None
 
 
 async def test_context_expert_data_reuses_private_ids_and_stages_bounded_intent(

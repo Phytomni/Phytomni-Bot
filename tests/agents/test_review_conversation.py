@@ -26,13 +26,23 @@ from mcp_server_phytomni.agents.review.conversation import (
     revise_section,
 )
 from mcp_server_phytomni.runtime.conversation_context.adapters import (
+    ConversationContextExecutor,
     review_agent_invocation,
 )
 from mcp_server_phytomni.runtime.conversation_context.models import (
+    ContextDelta,
     ContextProjection,
+    ConversationEnvelopeV1,
 )
 from mcp_server_phytomni.runtime.conversation_context.projection import (
     agent_thread_id,
+)
+from mcp_server_phytomni.runtime.conversation_context.service import (
+    AgentOutcome,
+    PrepareStatus,
+)
+from mcp_server_phytomni.runtime.conversation_context.store import (
+    ConversationContextStore,
 )
 
 pytestmark = pytest.mark.agent
@@ -130,18 +140,22 @@ def test_classify_review_operation_covers_all_four_intents() -> None:
 
 
 def test_new_evidence_question_remains_a_follow_up() -> None:
-    """A new evidence request does not implicitly replace the active review."""
+    """New evidence wording does not implicitly replace the active review."""
     snapshot = extract_review_checkpoint(_checkpoint_state())
     assert snapshot is not None
 
-    assert (
-        classify_review_operation(
-            "What new evidence supports that claim?",
-            active_review=True,
-            snapshot=snapshot,
+    for query in (
+        "What new evidence supports that claim?",
+        "Review the new evidence supporting that claim.",
+    ):
+        assert (
+            classify_review_operation(
+                query,
+                active_review=True,
+                snapshot=snapshot,
+            )
+            is ReviewConversationOperation.FOLLOW_UP
         )
-        is ReviewConversationOperation.FOLLOW_UP
-    )
 
 
 def test_extract_review_checkpoint_admits_only_bounded_review_snapshot() -> (
@@ -277,8 +291,50 @@ async def test_local_revision_reassembles_the_original_report_bytes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_empty_local_revision_does_not_advance_revision() -> None:
-    """An empty focused response is a failed revision, not an unchanged one."""
+async def test_local_revision_preserves_ordered_citation_metadata() -> None:
+    """A cited local revision keeps the Review renderer's ordered documents."""
+    report = (
+        "# Review summary\n\n"
+        "Intro framing with [document:7].\n\n"
+        "## Evidence\nEvidence claim [document:1].\n"
+    )
+    documents = [
+        {"doc_id": 7, "title": "First source", "content": "first"},
+        {"doc_id": 1, "title": "Second source", "content": "second"},
+    ]
+    checkpoint = {
+        "values": {
+            "original_user_query": "Review drought tolerance in rice",
+            "summary_content": report,
+            "research_dimensions": ["Evidence"],
+            "ordered_doc_list": documents,
+            "report_artifact_id": "report-1",
+            "report_revision": 4,
+        }
+    }
+    adapter = ReviewConversationAdapter()
+    adapter.prepare(
+        _projection("Rewrite the Evidence section to state the limitation."),
+        snapshot=checkpoint,
+    )
+
+    async def fake_chat(_prompt: str) -> dict[str, Any]:
+        return {
+            "choices": [
+                {"message": {"content": "Evidence claim is qualified."}}
+            ]
+        }
+
+    result = await adapter.local_revision(fake_chat)
+    assert result["choices"][0]["message"]["doc_list"] == documents
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("content", ["", "No answer generated."])
+async def test_invalid_local_revision_does_not_advance_revision(
+    content: str,
+) -> None:
+    """Empty and placeholder focused responses fail the revision."""
     snapshot = extract_review_checkpoint(_checkpoint_state())
     assert snapshot is not None
     adapter = ReviewConversationAdapter()
@@ -288,11 +344,33 @@ async def test_empty_local_revision_does_not_advance_revision() -> None:
     )
 
     async def empty_chat(_prompt: str) -> dict[str, Any]:
-        return {"choices": [{"message": {"content": ""}}]}
+        return {"choices": [{"message": {"content": content}}]}
 
     with pytest.raises(ReviewClarificationError, match="revision"):
         await adapter.local_revision(empty_chat)
     assert adapter.settle(False) == 4
+    assert adapter.report_revision == 4
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("content", ["", "No answer generated."])
+async def test_invalid_follow_up_is_not_a_successful_answer(
+    content: str,
+) -> None:
+    """Empty and placeholder follow-ups fail instead of inventing an answer."""
+    snapshot = extract_review_checkpoint(_checkpoint_state())
+    assert snapshot is not None
+    adapter = ReviewConversationAdapter()
+    adapter.prepare(
+        _projection("What evidence supports that claim?"), snapshot=snapshot
+    )
+
+    async def empty_chat(_prompt: str) -> dict[str, Any]:
+        return {"choices": [{"message": {"content": content}}]}
+
+    with pytest.raises(ReviewClarificationError, match="follow-up"):
+        await adapter.follow_up(empty_chat)
+    assert adapter.settlement_ready is False
     assert adapter.report_revision == 4
 
 
@@ -445,10 +523,17 @@ def test_delta_never_persists_the_full_report_and_settlement_controls_revision()
     assert adapter.report_revision == 4
     adapter.capture_result(
         {
+            "choices": [
+                {
+                    "message": {
+                        "content": "A bounded evidence answer.",
+                    }
+                }
+            ],
             "phytomni_state": {
                 "original_user_query": "new scope",
                 "report_revision": 99,
-            }
+            },
         }
     )
     assert adapter.settle(False) == 4
@@ -480,3 +565,125 @@ async def test_review_wrapper_forwards_private_thread_id_without_schema_change(
     assert result == {"ok": True}
     assert captured["thread_id"] == _THREAD_ID
     assert captured["user_query"] == "Review drought tolerance in rice"
+
+
+@pytest.mark.asyncio
+async def test_executor_defers_review_checkpoint_until_explicit_ack(
+    tmp_path: Any,
+) -> None:
+    """Staging never updates Review state before the durable ack seam."""
+    envelope = ConversationEnvelopeV1.model_validate(
+        {
+            "schema_version": 1,
+            "conversation_key": str(_CONVERSATION_KEY),
+            "dialogue_id": str(_CONVERSATION_KEY),
+            "turn_id": "1",
+            "request_id": "request-1",
+            "operation": "append",
+            "mode": "expert",
+            "current_message": {
+                "content": "Review drought tolerance in rice",
+                "locale": "en-US",
+            },
+            "requested_agent_id": "ReviewAgent",
+            "allowed_agent_ids": ["ReviewAgent"],
+            "ledger_cursor": 1,
+            "ledger_version": "a" * 64,
+            "base_business_context_version": 0,
+            "history_delta": [
+                {
+                    "turn_id": "1",
+                    "role": "user",
+                    "content": "Review drought tolerance in rice",
+                }
+            ],
+            "artifact_refs": [],
+        }
+    )
+
+    class FakeApp:
+        def __init__(self) -> None:
+            self.updates: list[dict[str, Any]] = []
+
+        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
+            return {}
+
+        async def aupdate_state(
+            self, _config: dict[str, Any], *, values: dict[str, Any]
+        ) -> None:
+            self.updates.append(values)
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.app = FakeApp()
+
+    fake_agent = FakeAgent()
+    captured: dict[str, Any] = {}
+
+    async def invoke(
+        _selected_agent_id: str,
+        _envelope: ConversationEnvelopeV1,
+        dispatch: Any,
+    ) -> AgentOutcome:
+        adapter = dispatch.private_agent_state["review_adapter"]
+        await adapter.prepare_from_agent(
+            dispatch.private_agent_state["review_projection"],
+            fake_agent,
+            dispatch.agent_thread_id,
+        )
+        adapter.capture_result(
+            {"choices": [{"message": {"content": "Review complete."}}]}
+        )
+        captured["adapter"] = adapter
+        return AgentOutcome(result={"ok": True}, context_delta=ContextDelta())
+
+    async def forbidden_router(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("explicit Review selection must not route")
+
+    executor = ConversationContextExecutor(
+        store_factory=lambda: ConversationContextStore(
+            str(tmp_path / "context.sqlite")
+        ),
+        select_agent=forbidden_router,
+    )
+    prepared = await executor.execute(
+        envelope=envelope,
+        invoke=invoke,
+        delegate_async=lambda *_args: pytest.fail(
+            "Review must not delegate asynchronously"
+        ),
+    )
+
+    assert prepared.status is PrepareStatus.RETURN_STAGED
+    adapter = captured["adapter"]
+    assert fake_agent.app.updates == []
+    assert adapter.report_revision == 0
+    assert (
+        await executor.acknowledge_review_settlement(envelope, accepted=False)
+        is True
+    )
+    assert fake_agent.app.updates == []
+    assert adapter.report_revision == 0
+    assert adapter.active_snapshot is None
+    assert (
+        await executor.acknowledge_review_settlement(envelope, accepted=True)
+        is False
+    )
+
+    accepted_adapter = ReviewConversationAdapter()
+    await accepted_adapter.prepare_from_agent(
+        _projection("Review drought tolerance in rice"),
+        fake_agent,
+        _THREAD_ID,
+    )
+    accepted_adapter.capture_result(
+        {"choices": [{"message": {"content": "Review complete."}}]}
+    )
+    await executor.defer_review_settlement(envelope, accepted_adapter)
+    assert fake_agent.app.updates == []
+    assert (
+        await executor.acknowledge_review_settlement(envelope, accepted=True)
+        is True
+    )
+    assert fake_agent.app.updates == [{"report_revision": 1}]
+    assert accepted_adapter.report_revision == 1
