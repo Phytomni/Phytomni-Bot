@@ -218,7 +218,7 @@ nonblank `data_list` description at invocation. The complete deterministic
 golden is
 [`docs/contracts/agents/capabilities.json`](../contracts/agents/capabilities.json)
 with SHA256
-`cb4e1a6cc9dbd327747dabf74b2ad7dce7fcf24c5a128cd2a1a6afcc87c05d52` for the
+`b13f327b1dd1012ef24936cf3183bd37a19d0e1e8ec3dd7a5115352d0ea492b5` for the
 current UTF-8 file including its final newline. Consumers must treat this
 object as the capability source of truth and fail closed for an unknown slug;
 it does not grant permission or change the canonical route name.
@@ -550,23 +550,22 @@ fields; `answer` is sourced from `result.formatted.answer`. The
 `debug=true` flag keeps the full `result.raw` block (default mode
 strips it, see *Response Projection* below).
 
-DeepGenome rows are the exception to the generic formatted-answer shortcut:
-the list route and `GET /v1/runs/{run_id}` use the same owner-scoped public
-snapshot projection. `answer` prefers a nonblank `final_report` and falls
-back to `intermediate_report`; the report stage, completeness, revision,
-progress, degraded state, and sanitized failure list are returned from the
-local SQLite snapshot. A list read never reconciles or probes concrete remote
-children. Default mode removes `task_results`, `live_status`, `artifacts`, and
-`raw`; `debug=true` retains those registry fields for authorized diagnostics.
+DeepGenome rows use the same owner-scoped canonical projection as every other
+run. `answer` is sourced from `result.formatted.answer`, preferring the best
+nonblank final or intermediate snapshot report. The report contract is carried
+by `result.execution.report` (`state`, `degraded`, and
+`source_artifact_count`); bounded snapshot progress remains under
+`result.formatted.metadata.deep_genome`. A list read never reconciles or probes
+concrete remote children. Default mode emits only the public `formatted` and
+`execution` blocks; task results, live status, private artifact records, and
+raw data remain debug-only compatibility fields.
 
-For a persisted DeepGenome result that already contains a `formatted` mapping,
-both projections also attach the additive
-`result.formatted.metadata.report` block. It contains `stage`,
-`completeness`, `revision`, `updated_at`, `progress`, `degraded`, and
-`failure_count`, all derived from the same sanitized snapshot as the
-top-level fields. Existing `formatted.metadata` keys are preserved. Older
-rows without a formatted block keep the top-level projection and do not receive
-an invented placeholder; consumers must therefore support both shapes.
+`result.formatted.metadata.report` is an additive, deprecated compatibility
+adapter derived from `result.execution.report`. It contains the same three
+report fields and never becomes an independent source of truth. Existing
+formatted metadata is preserved after public allowlisting, and legacy rows
+without a canonical block are normalized when their bounded snapshot can be
+validated.
 
 `GET /v1/runs?user_id=<other-user>` lets an upstream operator list
 any tenant's runs. The user key in `Authorization: Bearer ptm_...`
@@ -1289,6 +1288,114 @@ mirrored in `formatted.metadata.output_dir` for single-task consumers).
 `raw.phytomni_state` carries the LangGraph intermediate state for
 agents that populate it.
 
+### Scientific and execution result projection
+
+Default HTTP run responses separate scientific content from operational
+execution state. The following synchronous shape is complete even when no
+report or task exists:
+
+```json
+{
+  "result": {
+    "formatted": {
+      "answer": "Scientific result",
+      "follow_up_questions": [],
+      "references": [],
+      "tabular": {},
+      "metadata": {}
+    },
+    "execution": {
+      "tracking": {
+        "degraded": false
+      },
+      "warnings": [],
+      "tasks": [],
+      "artifacts": [],
+      "output_dirs": [],
+      "report": null,
+      "diagnostics": []
+    }
+  }
+}
+```
+
+A terminal analyst-class run uses the same envelope and places the report
+state beside the scientific answer:
+
+```json
+{
+  "result": {
+    "formatted": {
+      "answer": "# Scientific result\n",
+      "follow_up_questions": [],
+      "references": [],
+      "tabular": {},
+      "metadata": {
+        "report": {
+          "state": "final",
+          "degraded": false,
+          "source_artifact_count": 1
+        }
+      }
+    },
+    "execution": {
+      "tracking": {
+        "degraded": false
+      },
+      "warnings": [],
+      "tasks": [
+        {
+          "id": "task-123",
+          "accepted": true,
+          "status": "succeeded"
+        }
+      ],
+      "artifacts": [
+        {
+          "role": "scientific_report",
+          "name": "report.md",
+          "media_type": "text/markdown",
+          "size_bytes": 2048,
+          "downloadable": true,
+          "report_context_eligible": true,
+          "download_ref": "/obs/public/report.md"
+        }
+      ],
+      "output_dirs": ["/obs/public"],
+      "report": {
+        "state": "final",
+        "degraded": false,
+        "source_artifact_count": 1
+      },
+      "diagnostics": []
+    }
+  }
+}
+```
+
+`formatted.answer`, follow-up questions, references, and scientific metadata
+are the user-facing scientific surface. `execution` is the only public home
+for task ids, output locations, artifact descriptors, warnings, diagnostics,
+tracking degradation, and report state. `raw` is omitted by default and is
+available only through an explicit authorized debug projection.
+
+The old `result.final_report`, `result.intermediate_report`,
+`result.artifacts`, `result.task_results`, `result.live_status`, and
+`result.degraded` fields are deprecated compatibility inputs/diagnostic fields;
+new producers must write the canonical blocks above. Clients must migrate as
+follows:
+
+| Deprecated field                                     | Canonical replacement                                                | Removal condition                                                |
+| ---------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `result.final_report` / `result.intermediate_report` | `formatted.answer` plus `execution.report.state`                     | Web/Go consumers render the canonical answer and state.          |
+| `result.artifacts`                                   | `execution.artifacts`                                                | Web/Go consumers use public descriptors and download references. |
+| `result.task_results` / `result.live_status`         | `execution.tasks`, `execution.warnings`, and `execution.diagnostics` | Operator diagnostics no longer depend on private child rows.     |
+| `result.degraded`                                    | `execution.tracking.degraded` and `execution.report.degraded`        | Clients branch only on the canonical degradation signals.        |
+
+These compatibility fields remain an external migration boundary until
+Web/Go consumers provide current acceptance evidence. They are not a reason to
+add a second producer path or to copy private values into `formatted`.
+
 ### Per-Agent `formatted.metadata` Keys
 
 Default-mode responses include a curated subset of LangGraph
@@ -1369,6 +1476,81 @@ answer even on partial failure.
   answer stays a success. A user-visible `⚠️ Literature retrieval degraded`
   banner also rides `message.content`.
 
+### Artifact and report admission
+
+Terminal report synthesis is producer-role based. The filename extension is
+never sufficient to grant scientific meaning. The eight exact manifest roles
+are:
+
+| Role                | `report_context_eligible` | Meaning                                                                   |
+| ------------------- | ------------------------- | ------------------------------------------------------------------------- |
+| `scientific_report` | `true`                    | Producer-declared report prose.                                           |
+| `scientific_table`  | `true`                    | Producer-declared scientific table.                                       |
+| `scientific_text`   | `true`                    | Producer-declared scientific text or notes.                               |
+| `scientific_figure` | `false`                   | Figure or image output; listed but not read into the first report prompt. |
+| `input`             | `false`                   | Input material copied or retained by the producer.                        |
+| `execution_log`     | `false`                   | Operational log; never scientific evidence.                               |
+| `diagnostic`        | `false`                   | Manifest or diagnostic metadata.                                          |
+| `unknown`           | `false`                   | No proven producer meaning.                                               |
+
+The producer writes `.phytomni-artifacts.json` last in each output directory.
+It must validate against this bounded schema and list every other output once:
+
+```json
+{
+  "version": "1.0",
+  "artifacts": [
+    {
+      "path": "tables/gene_summary.csv",
+      "role": "scientific_table",
+      "media_type": "text/csv"
+    }
+  ]
+}
+```
+
+Paths are normalized relative POSIX paths. The manifest rejects absolute,
+parent, empty, backslash, duplicate, and control-character paths. A missing or
+invalid manifest makes every listed object `unknown`; the manifest object
+itself is `diagnostic`. A listed object absent from the manifest is `unknown`,
+and a manifest declaration with no listed object produces the fixed
+`artifact_manifest_path_not_listed` warning without creating a synthetic
+artifact. Unknown objects are downloadable when a safe download reference
+exists, but never enter report context.
+
+The public descriptor is deliberately path-minimal:
+
+```json
+{
+  "role": "scientific_report",
+  "name": "report.md",
+  "media_type": "text/markdown",
+  "size_bytes": 2048,
+  "downloadable": true,
+  "report_context_eligible": true,
+  "download_ref": "/obs/public/report.md"
+}
+```
+
+It never contains `source_path`, a local mount path, provider payloads, or
+credentials. Report admission applies limits in this order: validate the
+manifest, enumerate actual objects and retain their verified byte sizes,
+filter to the three eligible roles, keep at most 8 text artifacts, reject an
+artifact over 32,768 bytes, read at most 32,768 UTF-8 bytes per artifact, then
+cap the combined prompt at 120,000 characters. Empty, unreadable, or invalid
+text is skipped with a stable execution warning; it is not copied into the
+scientific answer.
+
+If no eligible scientific text remains, the deterministic fallback has
+`execution.report.state="degraded"`,
+`execution.report.source_artifact_count=0`, and warning
+`report_no_scientific_text`. If reading or synthesis fails, the fallback keeps
+the report non-empty, sets `execution.tracking.degraded=true`, uses
+`execution.report.state="degraded"`, and emits only fixed warning codes such
+as `report_artifact_read_failed` or `report_synthesis_failed`. Provider error
+text, private paths, raw logs, diagnostic details, and credential-shaped
+fragments never enter the scientific surface.
+
 Remote agents (`analyst`, `deep_genome`, `research`, `design`, `network`)
 respond `202` with `status: "running"` and `task_ids` listing every child
 task registered by the submit path. Poll `/v1/runs/{run_id}` for live status;
@@ -1378,9 +1560,11 @@ persists each report revision.
 
 The submit response is a submission acknowledgement, not a completed report.
 Use `GetTaskStatus` or `GET /v1/runs/{run_id}` for one non-blocking lookup. A
-succeeded analyst-class task exposes `final_report`; Design and Network also
-expose their real artifact/output paths. Offline mocks validate the shape; this
-does not prove live backend acceptance.
+succeeded analyst-class task exposes its final report through
+`result.formatted.answer` with `result.execution.report.state="final"`;
+public artifact descriptors and output directories are siblings under
+`result.execution`. Offline mocks validate the shape; this does not prove live
+backend acceptance.
 
 `deep_genome` runs the whole report workflow in-process in the background, so
 unlike the other remote agents its terminal product is a local markdown report
@@ -1388,11 +1572,10 @@ rather than an upstream-platform artifact. The coordinator persists a public
 snapshot after BriefGene and after each optional analysis transition. While
 the run is active, `GetTaskStatus.formatted.answer` and
 the `answer` field of `GET /v1/runs/{run_id}` select the latest nonblank
-`intermediate_report`; after successful synthesis they select `final_report`.
-Failed umbrellas retain their last intermediate report and leave
-`final_report` null. Analyst-class terminal reports follow the same
-`result.final_report` contract described below; synchronous agent results
-leave it `null`.
+intermediate report. After successful synthesis, the same answer is paired
+with `result.execution.report.state="final"`. Failed umbrellas retain their
+last usable answer and expose a degraded execution report; default responses
+do not emit snapshot fields such as `final_report` or `intermediate_report`.
 
 The DeepGenome snapshot fields are shared across MCP, HTTP, and the HTTP-backed
 CLI: `report_stage`, `report_completeness`, monotonic `report_revision`, UTC
@@ -1402,14 +1585,14 @@ fail independently. BriefGene failure fails the umbrella; after BriefGene
 succeeds, partial analysis failure is represented in the snapshot and does not
 hide the best report. A final report is published only after synthesis succeeds.
 
-Artifact-oriented consumers should prefer the optional
-`result.formatted.metadata.report` adapter when it is present. Keep the last
-accepted `revision` per umbrella run, ignore stale or equal revisions, render
-`intermediate_report` while `stage=intermediate`, and switch permanently to
-`final_report` when `stage=final`. `degraded=true` and `failure_count` are
-warning metadata, not permission to label a partial report complete. The
-top-level fields remain the compatibility fallback for rows without the
-adapter.
+Artifact-oriented consumers should read `result.execution.report` and retain
+the last accepted DeepGenome revision from `result.formatted.metadata.deep_genome`.
+Ignore stale or equal revisions, render `formatted.answer` while
+`stage=intermediate`, and switch permanently to the answer paired with
+`execution.report.state="final"` when `stage=final`. `degraded=true` and
+`failure_count` are warning metadata, not permission to label a partial report
+complete. `formatted.metadata.report` is retained only as a derived
+compatibility adapter.
 
 ### DeepGenome persistence and restart boundary
 
@@ -1424,12 +1607,13 @@ poll the analysis platform. The HTTP GET path, MCP `GetTaskStatus`, and the
 HTTP-backed CLI read the persisted snapshot instead of issuing remote probes.
 
 Each accepted transition updates the snapshot with a monotonic
-`report_revision`. The current `intermediate_report` is therefore available
-after BriefGene and after each optional analysis transition; `final_report`
-appears only after a usable analysis result and successful final synthesis.
-BriefGene failure is terminal with no report and zero remote submissions.
-Optional failures remain isolated and are reported through `degraded`, counts,
-and fixed failure messages while the best intermediate report remains visible.
+`report_revision`. The best intermediate or final text is therefore available
+through `formatted.answer` after BriefGene and after each optional analysis
+transition; `execution.report.state="final"` appears only after a usable
+analysis result and successful final synthesis. BriefGene failure is terminal
+with no report and zero remote submissions. Optional failures remain isolated
+and are reported through `execution.report.degraded`, bounded counts, and fixed
+warning messages while the best answer remains visible.
 
 The coordinator is intentionally in-process. A service restart does not
 resume after process restart; the read path marks an orphaned nonterminal
@@ -1443,12 +1627,11 @@ A `deep_genome` report whose optional mounted sub-analysis degraded mid-run
 (its evolution or digital-design step) can still settle as `succeeded` while
 flagging the gap through machine-readable keys —
 `GetTaskStatus` exposes
-`formatted.metadata.degraded` (bool) and
-`formatted.metadata.degraded_reason` (a redacted string, or `null`),
-while `GET /v1/runs/{run_id}` exposes `result.degraded` (true when any
-child degraded; the per-task `degraded_reason` rides
-`result.task_results[]`). Healthy and non-`deep_genome` rows read
-`degraded: false` / `degraded_reason: null`.
+`formatted.metadata.deep_genome.degraded` (bool) and
+`execution.report.degraded` (bool). The bounded snapshot stage, revision,
+progress, and failure count remain under
+`formatted.metadata.deep_genome`; the report state is under
+`execution.report`. Healthy rows read `execution.tracking.degraded: false`.
 
 BriefGene is required before any remote analysis launch. A BriefGene failure
 therefore fails the DeepGenome workflow with the fixed public error
@@ -1457,35 +1640,27 @@ submits zero remote analysis jobs; it is not represented as a degraded
 success or a visible fallback banner.
 
 For terminal remote analyst-class runs (`analyst`, `research`, `design`,
-and `network`), a successful response exposes both a long-form report
-and compact display text:
-
-- `result.final_report` is the primary markdown report for Web and other
-  clients. It is generated from safe text artifacts (`.md`, `.txt`,
-  `.json`, `.csv`, `.tsv`, `.log`) through the terminal report
-  synthesizer.
-- `result.formatted.answer` is compact renderable text for chat/task
-  summaries and remains available as a fallback surface.
-- `result.artifacts[].paths` contains concrete `/obs/<bucket>/<key>`
-  artifact paths for downloads and galleries. Binary artifacts, PDFs,
-  xlsx files, and images are listed here even when they are not read
-  into the first-version report prompt.
-- `result.degraded` is `true` when report synthesis fell back or skipped
-  material because artifact reading, summarization, or persistence
-  degraded. The task-level `degraded_reason` is included in
-  `result.task_results[]`.
+and `network`), a successful response exposes the scientific answer in
+`result.formatted.answer`, `execution.report.state="final"`, and any safe
+artifact descriptors in `result.execution.artifacts`. The report synthesizer
+admits only the three scientific manifest roles and applies the caps in
+*Artifact and report admission* above. Binary artifacts, PDFs, xlsx files,
+and images remain downloadable descriptors when they are not valid report
+context.
 
 Report synthesis degradation does not change a successfully completed
-remote analysis run to `failed`; clients should render the fallback
-report and expose the degraded signal.
+remote analysis run to `failed`; clients should render the non-empty fallback
+answer and expose `execution.tracking.degraded` and
+`execution.report.degraded`.
 
 Assembly is best-effort: an OBS listing failure logs a warning and
-leaves that task's `paths` empty (the run still settles as terminal). The
-single-task `GetTaskStatus` surface does not run this run-level assembly,
-so its descriptors keep empty `paths`. A succeeded run with empty `paths`
-is therefore an accepted terminal shape, not an error signal — a client
-that needs the objects lists the task's `output_dir` directly (the same
-fallback used before paths were globbed).
+leaves `execution.artifacts` without a download reference (the run still
+settles as terminal). The single-task `GetTaskStatus` surface does not run
+run-level assembly, so its descriptors may have `downloadable=false`. A
+succeeded run without downloadable descriptors is therefore an accepted
+terminal shape, not an error signal; clients should use the safe
+`execution.output_dirs` boundary when an operator-approved download is
+needed.
 
 ### Remote agent edge cases: `id: null` / `task_ids: []`
 

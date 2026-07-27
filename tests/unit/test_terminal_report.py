@@ -56,6 +56,21 @@ def test_terminal_report_agent_gate() -> None:
     assert not is_terminal_report_agent("chat")
 
 
+def test_only_scientific_text_roles_are_report_context_eligible() -> None:
+    """Only the three explicit scientific roles may enter synthesis."""
+    eligible = {
+        role.value
+        for role in ArtifactRole
+        if _classified_artifact("fixture.txt", role).report_context_eligible
+    }
+
+    assert eligible == {
+        "scientific_report",
+        "scientific_table",
+        "scientific_text",
+    }
+
+
 def test_select_text_artifact_paths_filters_and_caps() -> None:
     """Text extensions pass; figures and archives are filtered; cap holds."""
     artifacts = [

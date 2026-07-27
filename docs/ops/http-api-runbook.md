@@ -249,6 +249,10 @@ The current ten-row order is `chat`, `knowledge`, `data`, `review`,
 `deep_genome` advertises `report_states: ["intermediate", "final"]`,
 `artifacts: true`, and `degraded_outcomes: true`; `chat` and `review` are
 interactive; `chat`, `knowledge`, `review`, and `brief_gene` are streamable.
+`analyst`, `research`, `design`, and `network` advertise
+`report_states: ["final"]`, `artifacts: true`, and
+`degraded_outcomes: true`; these flags describe the canonical report
+projection, not live upstream acceptance.
 `data` has no chat-completions alias and must not be added to a stream model
 map. Treat unknown capability slugs as unsupported and keep authorization
 separate from this metadata.
@@ -258,7 +262,7 @@ document context; Analyst and Research accept document context plus CSV
 datasets; Data, BriefGene, DeepGenome, Design, and Network accept neither.
 The complete deterministic golden is
 `docs/contracts/agents/capabilities.json` (SHA256
-`cb4e1a6cc9dbd327747dabf74b2ad7dce7fcf24c5a128cd2a1a6afcc87c05d52`). The
+`b13f327b1dd1012ef24936cf3183bd37a19d0e1e8ec3dd7a5115352d0ea492b5`). The
 descriptor is a capability preflight, not an authorization grant.
 
 ### Locale Ingress And Resume
@@ -988,29 +992,82 @@ coordinator owns bounded remote polling and persists monotonic
 `report_revision` snapshots. HTTP, MCP, and the HTTP-backed CLI are readers of
 those snapshots, so a status request never polls the analysis platform.
 
-When the stored run result has a `formatted` mapping, the owner-scoped list and
-single-run reads add `result.formatted.metadata.report` as an additive adapter.
-The adapter carries the sanitized `stage`, `completeness`, `revision`,
-`updated_at`, `progress`, `degraded`, and `failure_count` values. It shares the
-snapshot source of truth, preserves unrelated formatted metadata, and is absent
-for older rows without a formatted block. Consumer smoke tests must verify both
-the adapter shape and the existing top-level fallback.
+Owner-scoped list and single-run reads use the canonical `formatted` plus
+`execution` result. `execution.report` carries `state`, `degraded`, and
+`source_artifact_count`; bounded DeepGenome stage, completeness, revision,
+timestamp, progress, and failure count remain under
+`formatted.metadata.deep_genome`. `formatted.metadata.report` is only an
+additive derived compatibility adapter. Default responses do not expose
+`task_results`, `live_status`, private artifact records, or raw payloads.
 
 BriefGene must complete before any optional remote analysis is submitted. While
 optional work is pending or partially failed, clients may read the latest
-`intermediate_report`; `final_report` is published only after usable analysis
-and synthesis. A service restart does not resume the in-process coordinator.
+`formatted.answer`; `execution.report.state="final"` is published only after
+usable analysis and synthesis. A service restart does not resume the
+in-process coordinator.
 After stopping the service, the read path settles an orphaned umbrella at the
 fixed `workflow interrupted by service restart` boundary and preserves its
 last intermediate report. There is no durable worker or automatic cross-host
 recovery in 0.1.3.
 
 For Web artifact rendering, accept a report revision only when it is newer than
-the last rendered revision for the same umbrella run. Render the latest
-intermediate report while the stage is non-terminal; once a final stage is
-observed, prefer its final report and do not replace it with later intermediate
-text. Show degraded/failure counts as a warning state. Never fetch child task
-ids from the browser or use `debug=true` for normal rendering.
+the last rendered revision for the same umbrella run. Render `formatted.answer`
+while `formatted.metadata.deep_genome.stage` is non-terminal; once a final
+stage is observed, prefer the answer paired with
+`execution.report.state="final"` and do not replace it with later
+intermediate text. Show degraded/failure counts as a warning state. Never
+fetch child task ids from the browser or use `debug=true` for normal rendering.
+
+### Scientific report and artifact inspection
+
+Use the canonical result blocks when triaging a terminal run:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer ptm_..." \
+  "http://127.0.0.1:8080/v1/runs/${RUN_ID}" \
+  | jq '.result | {formatted, execution}'
+```
+
+`formatted.answer` is the scientific display surface. Inspect
+`execution.report`, `execution.artifacts`, `execution.output_dirs`, and
+`execution.warnings` for operational state. Do not use `debug=true` for normal
+rendering and do not copy `execution.tasks`, local paths, provider payloads, or
+raw logs into a ticket intended for a customer.
+
+The producer manifest is `.phytomni-artifacts.json` and must use version `1.0`
+with relative POSIX paths. The exact role set is:
+
+| Role                | Report context | Operator meaning                 |
+| ------------------- | -------------- | -------------------------------- |
+| `scientific_report` | eligible       | Report prose.                    |
+| `scientific_table`  | eligible       | Scientific table.                |
+| `scientific_text`   | eligible       | Scientific notes or text.        |
+| `scientific_figure` | excluded       | Downloadable figure only.        |
+| `input`             | excluded       | Input material.                  |
+| `execution_log`     | excluded       | Operational log.                 |
+| `diagnostic`        | excluded       | Diagnostic or manifest metadata. |
+| `unknown`           | excluded       | Unproven producer meaning.       |
+
+Admission is fail-closed: missing or invalid manifests and undeclared objects
+become `unknown`, while the manifest itself is `diagnostic`. The report reader
+accepts at most 8 eligible text artifacts, rejects any verified object above
+32,768 bytes, reads at most 32,768 UTF-8 bytes per object, and caps the total
+prompt at 120,000 characters. The order matters because an object must first
+pass manifest role admission before any byte budget is spent. Stable warnings
+include `artifact_manifest_missing`, `artifact_manifest_invalid`,
+`artifact_manifest_path_not_listed`, `report_artifact_size_exceeded`,
+`report_artifact_read_failed`, `report_no_scientific_text`, and
+`report_synthesis_failed`.
+
+An empty or failed synthesis is still a terminal, non-empty report response:
+check `execution.tracking.degraded=true`,
+`execution.report.state="degraded"`, and the fixed warning code. Do not treat
+that state as a healthy scientific conclusion. Provider names and payloads,
+hardware tiers, credentials, private source paths, raw logs, and diagnostic
+details must be absent from `formatted.answer`, follow-ups, references, and
+scientific metadata. If any appear, stop customer delivery, preserve the run
+id for internal triage, and open a projection-contract incident.
 
 Before a rollback or migration, stop the API and make a verified SQLite backup
 as shown above. Prepare the DeepGenome tables with the guarded admin command:

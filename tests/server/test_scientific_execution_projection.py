@@ -38,9 +38,20 @@ def _sentinel_payload() -> dict[str, Any]:
     return {
         "answer": "scientific answer",
         "task_id": "task-sentinel",
-        "task_ids": ["task-sentinel", "run-sentinel"],
-        "output_dir": "/path-sentinel",
-        "output_dirs": ["/path-sentinel"],
+        "task_ids": ["task-sentinel"],
+        "output_dir": "/private/path-sentinel",
+        "output_dirs": ["/private/path-sentinel"],
+        "provider": "provider-sentinel",
+        "provider_payload": {"request": "provider-payload-sentinel"},
+        "compute_resource": "hardware-tier-sentinel",
+        "raw_log": "raw-log-sentinel",
+        "diagnostics": [
+            {
+                "code": "diagnostic-code-sentinel",
+                "detail": "diagnostic-detail-sentinel",
+            }
+        ],
+        "authorization": "Bearer credential-sentinel",
         "warnings": [{"code": "warning-sentinel", "stage": "submit"}],
         "artifacts": [
             {
@@ -61,7 +72,7 @@ def _canonical_result(result: dict[str, Any]) -> dict[str, Any]:
     """Run a result through the public polling/lifecycle projector."""
     body = canonicalize_agent_run_body(
         {
-            "id": "run-sentinel",
+            "id": "run-id-sentinel",
             "agent": "research",
             "status": "succeeded",
             "task_ids": [],
@@ -119,12 +130,21 @@ def test_operational_sentinels_only_live_in_execution(
 
     for sentinel in (
         "task-sentinel",
-        "run-sentinel",
         "vendor-sentinel",
-        "path-sentinel",
+        "private/path-sentinel",
     ):
         assert sentinel not in formatted
         assert sentinel in execution
+    for sentinel in (
+        "run-id-sentinel",
+        "provider-sentinel",
+        "provider-payload-sentinel",
+        "hardware-tier-sentinel",
+        "raw-log-sentinel",
+        "diagnostic-detail-sentinel",
+        "credential-sentinel",
+    ):
+        assert sentinel not in json.dumps(result)
     assert set(result) == {"formatted", "execution"}
 
 
@@ -277,3 +297,13 @@ def test_chat_completion_keeps_execution_after_default_redaction() -> None:
     public = strip_chat_completion(completion)
     assert public["execution"] == asdict(envelope.execution)
     assert "raw" not in public
+    public_json = json.dumps(public)
+    for sentinel in (
+        "provider-sentinel",
+        "provider-payload-sentinel",
+        "hardware-tier-sentinel",
+        "raw-log-sentinel",
+        "diagnostic-detail-sentinel",
+        "credential-sentinel",
+    ):
+        assert sentinel not in public_json

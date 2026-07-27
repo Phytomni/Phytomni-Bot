@@ -99,8 +99,31 @@ def test_public_descriptor_omits_private_source_path() -> None:
     ).to_public()
 
     assert "source_path" not in asdict(descriptor)
+    assert set(asdict(descriptor)) == {
+        "role",
+        "name",
+        "media_type",
+        "size_bytes",
+        "downloadable",
+        "report_context_eligible",
+        "download_ref",
+    }
     assert "/home/private" not in json.dumps(asdict(descriptor))
     assert descriptor.report_context_eligible is True
+
+
+def test_invalid_manifest_keeps_objects_unknown() -> None:
+    """Invalid producer declarations fail closed with a stable warning."""
+    artifacts, warnings = classify_artifacts(
+        listed=(listed_object("summary.txt"),),
+        manifest={"version": "broken", "artifacts": []},
+    )
+
+    assert artifacts[0].role is ArtifactRole.UNKNOWN
+    assert artifacts[0].report_context_eligible is False
+    assert [warning.code for warning in warnings] == [
+        "artifact_manifest_invalid"
+    ]
 
 
 def test_valid_manifest_assigns_declared_role_and_actual_size() -> None:
