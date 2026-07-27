@@ -489,6 +489,35 @@ tenant's shared output without holding that tenant's namespace.
 `DataAgent` is a synchronous native run: the HTTP layer returns its result
 inline with status `200`.
 
+### Authorized DataAgent exact-query root-cause replay
+
+The cDNA incident replay is an operator-only evidence action. The probe has
+no query override: it always sends the exact incident query and dialogue ID,
+and it refuses to read the API key or open a socket unless both explicit live
+flags are set. It writes only request/run/task identifiers, HTTP status,
+allowlisted error stage fields, response hash, and optional sequence
+length/hash/alphabet metrics. It never writes the query, SQL, sequence,
+provider body, credentials, or private paths.
+
+Run it once from an operator-controlled host after approving the target Bot
+and output path:
+
+```bash
+PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
+  uv run python scripts/dataagent_root_cause_probe.py \
+  --base-url "$PHYTOMNI_E2E_BASE_URL" \
+  --api-key-env PHYTOMNI_E2E_API_KEY \
+  --output /tmp/dataagent-root-cause-20260724.json
+```
+
+The command returns exit `2` when either guard or an input is invalid, exit
+`1` when the HTTP request or evidence write fails, and exit `0` after one HTTP
+response has been hashed and written, including an HTTP 4xx/5xx response.
+Correlate the generated request ID with all six payload-free Bot stage events
+before selecting a root-cause branch. A successful probe alone does not prove
+the transcript contract, and no DataAgent behavior change is allowed until a
+first failing boundary and same-cause regression test are recorded.
+
 `GET /v1/runs` accepts these query parameters beyond the basic set:
 `user_id=<other>` requires `X-Service-Token` (returns `403` without
 it) and lists any tenant's runs; `dialogue_id=<id>` filters to one

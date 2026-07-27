@@ -12,10 +12,15 @@ free-text-only completions that bypass the SQL backend.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from typing import Any
 
 import pytest
+from scripts.dataagent_root_cause_probe import (
+    INCIDENT_DIALOGUE_ID,
+    build_incident_payload,
+)
 
 from mcp_client_phytomni import PhytomniMcpClient
 
@@ -40,3 +45,27 @@ async def test_data_agent_e2e_returns_nl2sql_response(
     response = await call_tool(mcp_client, "DataAgent", payload)
 
     assert_data_answer(response.formatted.answer)
+
+
+@pytest.mark.skipif(
+    not all(
+        os.environ.get(flag) == "1"
+        for flag in ("PHYTOMNI_RUN_INTEGRATION", "PHYTOMNI_ALLOW_NETWORK")
+    ),
+    reason=(
+        "exact DataAgent replay requires explicit integration and network "
+        "guards"
+    ),
+)
+async def test_data_agent_exact_cdna_query_e2e(
+    mcp_client: PhytomniMcpClient,
+) -> None:
+    """Run the fixed incident query without asserting unverified sequence."""
+    payload = build_incident_payload()
+    assert payload["dialogue_id"] == INCIDENT_DIALOGUE_ID
+    response = await call_tool(
+        mcp_client,
+        "DataAgent",
+        {"user_query": payload["arguments"]["user_query"]},
+    )
+    assert response.formatted.answer.strip()
