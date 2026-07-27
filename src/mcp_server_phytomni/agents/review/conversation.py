@@ -44,7 +44,7 @@ _REVISION_WORDS = re.compile(
     re.IGNORECASE,
 )
 _SCOPE_WORDS = re.compile(
-    r"\b(?:new|different|another|instead|broaden|narrow|focus on|"
+    r"\b(?:different|another|instead|broaden|narrow|focus on|"
     r"change (?:the )?scope|new source(?:s| set)?|source set|"
     r"new research question|start (?:a )?new review|now investigate)\b",
     re.IGNORECASE,
@@ -54,6 +54,7 @@ _SECTION_PATTERN = re.compile(
     r"(?:\d+|[A-Za-z][A-Za-z0-9 _-]{1,80})",
     re.IGNORECASE,
 )
+_REPORT_HEADING_PATTERN = re.compile(r"(?m)^(#{1,6})[ \t]+([^\n]+?)[ \t]*$")
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n+")
 
 
@@ -86,6 +87,44 @@ class RevisedSection:
     section_id: str
     text: str
     heading: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewReportSectionSpan:
+    """Private offsets for one section in the original report text."""
+
+    section_id: str
+    heading: str
+    body_start: int
+    body_end: int
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewReportDocument:
+    """Original Review text plus spans used for byte-preserving edits."""
+
+    text: str
+    sections: tuple[ReviewReportSectionSpan, ...]
+
+    def replace(self, revised: RevisedSection) -> str:
+        """Replace one section body without rendering any other report bytes."""
+        target = _slug(revised.heading or revised.section_id)
+        for section in self.sections:
+            if section.section_id != target:
+                continue
+            body = self.text[section.body_start : section.body_end]
+            leading = body[: len(body) - len(body.lstrip())]
+            trailing = body[len(body.rstrip()) :]
+            return (
+                self.text[: section.body_start]
+                + leading
+                + revised.text
+                + trailing
+                + self.text[section.body_end :]
+            )
+        raise ReviewClarificationError(
+            f"The requested Review section {target!r} is unavailable."
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,6 +246,78 @@ def _source_ids(state: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(values)
 
 
+def _report_document_from_text(report: str) -> ReviewReportDocument:
+    """Index Markdown headings while retaining the source text verbatim."""
+    headings = list(_REPORT_HEADING_PATTERN.finditer(report))
+    spans: list[ReviewReportSectionSpan] = []
+    used_ids: set[str] = set()
+    for index, heading in enumerate(headings):
+        heading_text = heading.group(2).strip()
+        section_id = _slug(heading_text) or f"section-{index + 1}"
+        if section_id in used_ids:
+            section_id = f"{section_id}-{index + 1}"
+        used_ids.add(section_id)
+        spans.append(
+            ReviewReportSectionSpan(
+                section_id=section_id,
+                heading=heading_text,
+                body_start=heading.end(),
+                body_end=(
+                    headings[index + 1].start()
+                    if index + 1 < len(headings)
+                    else len(report)
+                ),
+            )
+        )
+    return ReviewReportDocument(text=report, sections=tuple(spans))
+
+
+def extract_review_report_document(
+    state: object,
+) -> ReviewReportDocument | None:
+    """Extract the private report source without admitting it to projections."""
+    values = _state_values(state)
+    candidate: object = values.get("summary_content")
+    if not isinstance(candidate, str) or not candidate:
+        candidate = values.get("report_text")
+    if not isinstance(candidate, str) or not candidate:
+        final_response = values.get("final_response")
+        if isinstance(final_response, Mapping):
+            candidate = message_content(final_response)
+    if not isinstance(candidate, str) or not candidate:
+        return None
+    return _report_document_from_text(candidate)
+
+
+def _sections_from_report_document(
+    document: ReviewReportDocument,
+    dimensions: Sequence[str],
+) -> tuple[ReviewSection, ...]:
+    """Project bounded section text from the private report source."""
+    spans = list(document.sections)
+    if dimensions:
+        by_id = {span.section_id: span for span in spans}
+        selected = [
+            by_id[_slug(dimension)]
+            for dimension in dimensions
+            if _slug(dimension) in by_id
+        ]
+        if selected:
+            spans = selected
+    sections = [
+        ReviewSection(
+            section_id=span.section_id,
+            heading=span.heading,
+            text=_bounded_text(
+                document.text[span.body_start : span.body_end],
+                _MAX_SECTION_CHARS,
+            ),
+        )
+        for span in spans[:_MAX_HEADINGS]
+    ]
+    return tuple(item for item in sections if item.text or item.heading)
+
+
 def _section_values(state: Mapping[str, Any]) -> tuple[ReviewSection, ...]:
     """Extract section text from revised reports without the full summary."""
     dimensions = _bounded_items(
@@ -214,6 +325,13 @@ def _section_values(state: Mapping[str, Any]) -> tuple[ReviewSection, ...]:
         limit=_MAX_HEADINGS,
         item_limit=256,
     )
+    document = extract_review_report_document(state)
+    if document is not None and document.sections:
+        document_sections = _sections_from_report_document(
+            document, dimensions
+        )
+        if document_sections:
+            return document_sections
     raw_reports = state.get("revised_reports")
     report_rows = (
         []
@@ -436,6 +554,15 @@ async def load_review_checkpoint(
     thread_id: str,
 ) -> ReviewCheckpointSnapshot | None:
     """Load Review's private checkpoint through its derived thread ID."""
+    state = await _load_review_checkpoint_state(agent, thread_id)
+    return extract_review_checkpoint(state)
+
+
+async def _load_review_checkpoint_state(
+    agent: Any,
+    thread_id: str,
+) -> object:
+    """Read one checkpoint object for both metadata and private report bytes."""
     config = build_runnable_config(thread_id)
     app = getattr(agent, "app", None)
     getter = cast(
@@ -444,9 +571,8 @@ async def load_review_checkpoint(
     )
     if callable(getter):
         snapshot = await getter(config)
-        extracted = extract_review_checkpoint(snapshot)
-        if extracted is not None:
-            return extracted
+        if extract_review_checkpoint(snapshot) is not None:
+            return snapshot
     checkpointer = getattr(agent, "checkpointer", None)
     getter = cast(
         Callable[[Any], Awaitable[Any]] | None,
@@ -454,8 +580,8 @@ async def load_review_checkpoint(
     )
     if callable(getter):
         checkpoint = await getter(config)
-        return extract_review_checkpoint(checkpoint)
-    return None
+        return checkpoint
+    return {}
 
 
 def _section_reference(
@@ -699,6 +825,11 @@ class ReviewConversationAdapter:
         self._captured_result: dict[str, Any] = {}
         self._report_revision = 0
         self._settled = False
+        self._operation_successful = False
+        self._report_document: ReviewReportDocument | None = None
+        self._agent: Any | None = None
+        self._thread_id: str | None = None
+        self._pending_report_text: str | None = None
 
     def prepare(
         self,
@@ -706,12 +837,18 @@ class ReviewConversationAdapter:
         *,
         snapshot: ReviewCheckpointSnapshot | Mapping[str, Any] | None = None,
         allow_unresolved_section: bool = False,
+        report_document: ReviewReportDocument | None = None,
     ) -> dict[str, Any]:
         """Classify and project one Review turn."""
         if snapshot is not None and not isinstance(
             snapshot, ReviewCheckpointSnapshot
         ):
+            report_document = extract_review_report_document(snapshot)
             snapshot = extract_review_checkpoint(snapshot)
+        elif report_document is None and self._agent is None:
+            self._report_document = None
+        if report_document is not None:
+            self._report_document = report_document
         operation = classify_review_operation(
             projection.current_query,
             projection=projection,
@@ -746,6 +883,10 @@ class ReviewConversationAdapter:
         self._captured_result = {}
         self._report_revision = snapshot.report_revision if snapshot else 0
         self._settled = False
+        self._operation_successful = (
+            operation is not ReviewConversationOperation.LOCAL_REVISION
+        )
+        self._pending_report_text = None
         prompt_context = _prompt_context(snapshot, section=section)
         return {
             "user_query": projection.current_query,
@@ -770,8 +911,16 @@ class ReviewConversationAdapter:
         thread_id: str,
     ) -> dict[str, Any]:
         """Load the private checkpoint, then prepare against its snapshot."""
-        snapshot = await load_review_checkpoint(agent, thread_id)
-        return self.prepare(projection, snapshot=snapshot)
+        state = await _load_review_checkpoint_state(agent, thread_id)
+        snapshot = extract_review_checkpoint(state)
+        self._agent = agent
+        self._thread_id = thread_id
+        document = extract_review_report_document(state)
+        return self.prepare(
+            projection,
+            snapshot=snapshot,
+            report_document=document,
+        )
 
     @property
     def operation(self) -> ReviewConversationOperation | None:
@@ -798,6 +947,17 @@ class ReviewConversationAdapter:
         """Return the last settled report artifact revision."""
         return self._report_revision
 
+    @property
+    def settlement_ready(self) -> bool:
+        """Return whether this turn produced a valid candidate for settlement."""
+        return self._operation_successful
+
+    def mark_failed(self) -> None:
+        """Discard any candidate produced by a failed or incomplete turn."""
+        self._operation_successful = False
+        self._staged_snapshot = None
+        self._pending_report_text = None
+
     def capture_result(self, result: Mapping[str, Any]) -> None:
         """Capture only bounded metadata from a completed Review result."""
         if self._prepared is None:
@@ -816,6 +976,10 @@ class ReviewConversationAdapter:
                 }
             }
         }
+        document = extract_review_report_document(result.get("phytomni_state"))
+        if document is not None and document.text:
+            self._report_document = document
+            self._pending_report_text = document.text
         checkpoint = extract_review_checkpoint(result.get("phytomni_state"))
         if checkpoint is not None:
             self._staged_snapshot = checkpoint
@@ -825,10 +989,22 @@ class ReviewConversationAdapter:
                 self._staged_snapshot = _replace_section(
                     base, self._last_revised_section
                 )
+        if (
+            self._prepared.operation
+            is ReviewConversationOperation.LOCAL_REVISION
+        ):
+            if not _answer_from_result(result):
+                self.mark_failed()
+            elif self._report_document is not None:
+                self._pending_report_text = (
+                    self._report_document.replace(self._last_revised_section)
+                    if self._last_revised_section is not None
+                    else None
+                )
 
     def settle(self, success: bool) -> int:
         """Advance the report revision only after successful settlement."""
-        if not success:
+        if not success or not self._operation_successful:
             self._staged_snapshot = None
             return self._report_revision
         if not self._settled:
@@ -840,6 +1016,28 @@ class ReviewConversationAdapter:
                 )
             self._settled = True
         return self._report_revision
+
+    async def settle_async(self, success: bool) -> int:
+        """Settle the candidate and persist private report state when available."""
+        if not success or not self._operation_successful:
+            return self.settle(False)
+        if self._settled:
+            return self._report_revision
+        app = getattr(self._agent, "app", None)
+        updater = cast(
+            Callable[..., Awaitable[Any]] | None,
+            getattr(app, "aupdate_state", None),
+        )
+        if callable(updater) and self._thread_id is not None:
+            values: dict[str, Any] = {
+                "report_revision": self._report_revision + 1
+            }
+            if self._pending_report_text is not None:
+                values["summary_content"] = self._pending_report_text
+            await updater(
+                build_runnable_config(self._thread_id), values=values
+            )
+        return self.settle(True)
 
     def follow_up_prompt(self) -> str:
         """Build the bounded prompt for an existing-claim follow-up."""
@@ -862,6 +1060,7 @@ class ReviewConversationAdapter:
             raise RuntimeError("prepare must run before follow_up")
         response = await chat(self.follow_up_prompt())
         answer = _response_text(response) or "No answer generated."
+        self._operation_successful = bool(answer.strip())
         return self._answer_result(
             answer, ReviewConversationOperation.FOLLOW_UP
         )
@@ -884,14 +1083,18 @@ class ReviewConversationAdapter:
             chat=chat,
         )
         self._last_revised_section = revised
-        report = reassemble_report(
-            (
+        report_source: ReviewReportDocument | Sequence[ReviewSection] = (
+            self._report_document
+            if self._report_document is not None
+            else (
                 self._prepared.snapshot.sections
                 if self._prepared.snapshot is not None
                 else (section,)
-            ),
-            revised,
+            )
         )
+        report = reassemble_report(report_source, revised)
+        self._pending_report_text = report
+        self._operation_successful = bool(report.strip())
         return self._answer_result(
             report, ReviewConversationOperation.LOCAL_REVISION
         )
@@ -987,13 +1190,17 @@ async def revise_section(
         f"[bounded evidence summary]\n{_bounded_text(evidence_summary)}"
     )[:_MAX_PROMPT_CHARS]
     if chat is None:
-        return RevisedSection(
-            section_id=section_id, text=_bounded_text(section_text)
+        raise ReviewClarificationError(
+            "Review section revision could not produce content."
         )
     response: object = chat(prompt)
     if inspect.isawaitable(response):
         response = await response
-    text = _response_text(response) or _bounded_text(section_text)
+    text = _response_text(response)
+    if not text:
+        raise ReviewClarificationError(
+            "Review section revision returned empty content."
+        )
     return RevisedSection(
         section_id=section_id,
         text=_bounded_text(text),
@@ -1080,11 +1287,17 @@ def _replace_markdown_section(
 
 
 def reassemble_report(
-    sections: Sequence[ReviewSection | Mapping[str, str]] | str,
+    sections: (
+        Sequence[ReviewSection | Mapping[str, str]]
+        | ReviewReportDocument
+        | str
+    ),
     revised_section: RevisedSection | Mapping[str, str],
 ) -> str:
     """Reassemble a report while replacing only one section's text."""
     revised = _coerce_revised_section(revised_section)
+    if isinstance(sections, ReviewReportDocument):
+        return sections.replace(revised)
     if isinstance(sections, str):
         return _replace_markdown_section(sections, revised)
     parts = _section_parts(sections)
@@ -1105,10 +1318,13 @@ __all__ = [
     "ReviewClarificationError",
     "ReviewConversationAdapter",
     "ReviewConversationOperation",
+    "ReviewReportDocument",
+    "ReviewReportSectionSpan",
     "ReviewSection",
     "RevisedSection",
     "classify_review_operation",
     "extract_review_checkpoint",
+    "extract_review_report_document",
     "load_review_checkpoint",
     "reassemble_report",
     "review_clarification_result",

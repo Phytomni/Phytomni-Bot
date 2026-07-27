@@ -35,6 +35,7 @@ from mcp_server_phytomni.agents.expert import (
 )
 from mcp_server_phytomni.agents.expert import router as expert_router
 from mcp_server_phytomni.agents.knowledge import agent as knowledge_agent
+from mcp_server_phytomni.agents.review import agent as review_agent
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.api.schemas import ExpertQueryRequest
@@ -115,6 +116,85 @@ def _patch_select(
 def _auth(key: str) -> dict[str, str]:
     """Return the bearer auth header for a key."""
     return {"Authorization": f"Bearer {key}"}
+
+
+_REVIEW_REPORT = (
+    "# Review summary\n\n"
+    "Intro framing with [document:7].\n\n"
+    "## Background\nBackground claim [document:1].\n\n"
+    "## Evidence\nEvidence claim [document:2].\n\n"
+    "## Limitations\nLimitations remain open [document:3].\n"
+)
+
+
+def _review_checkpoint_state() -> dict[str, Any]:
+    """Return a private Review checkpoint with a byte-sensitive report."""
+    return {
+        "original_user_query": "Review drought tolerance in rice",
+        "summary_content": _REVIEW_REPORT,
+        "research_dimensions": ["Background", "Evidence", "Limitations"],
+        "evidence_gaps": ["replication study"],
+        "all_raw_doc_list": [{"doc_id": "source-1"}],
+        "report_artifact_id": "report-1",
+        "report_revision": 4,
+    }
+
+
+def _review_context_envelope(
+    query: str,
+    *,
+    turn_id: str = "3",
+) -> dict[str, Any]:
+    """Build an active Review context envelope for a real route call."""
+    envelope = _conversation_envelope(
+        turn_id=turn_id,
+        requested_agent_id="ReviewAgent",
+        allowed_agent_ids=["ReviewAgent"],
+    )
+    envelope["current_message"]["content"] = query
+    envelope["history_delta"] = [
+        {
+            "turn_id": "1",
+            "role": "user",
+            "content": "Review drought tolerance in rice",
+        },
+        {
+            "turn_id": "2",
+            "role": "assistant",
+            "content": "Review completed for drought tolerance in rice.",
+            "summary": "Review completed for drought tolerance in rice.",
+        },
+        {"turn_id": turn_id, "role": "user", "content": query},
+    ]
+    return envelope
+
+
+def _patch_review_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_agent: Any,
+) -> None:
+    """Route Review through the offline handler and a fake graph agent."""
+    monkeypatch.setattr(mcp_handlers, "ReviewConfig", lambda: object())
+    monkeypatch.setattr(
+        mcp_handlers,
+        "load_handler_runtime",
+        lambda: SimpleNamespace(
+            sensitive=object(), obs_credentials=("a", "b")
+        ),
+    )
+    monkeypatch.setattr(
+        mcp_handlers, "scratch_server_dir", lambda *_args: "/tmp/review"
+    )
+    monkeypatch.setattr(
+        mcp_handlers, "chat_kwargs", lambda *_args, **_kwargs: {}
+    )
+    monkeypatch.setattr(mcp_handlers, "retrieve_kwargs", lambda _config: {})
+    monkeypatch.setattr(mcp_handlers, "obs_kwargs", lambda *_args: {})
+    monkeypatch.setattr(
+        review_agent,
+        "get_cached_agent",
+        lambda *_args, **_kwargs: fake_agent,
+    )
 
 
 def _router_completion(
@@ -357,6 +437,185 @@ async def test_context_expert_explicit_selection_stages_without_router(
             },
         ),
     }
+
+
+@pytest.mark.parametrize(
+    ("query", "answer"),
+    [
+        ("What new evidence supports that claim?", "Bounded evidence answer."),
+        (
+            "Rewrite the Evidence section to state the limitation.",
+            _REVIEW_REPORT.replace(
+                "Evidence claim [document:2].",
+                "Evidence claim is qualified.",
+            ),
+        ),
+    ],
+)
+async def test_context_expert_review_follow_up_and_local_revision_use_native_adapter(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    query: str,
+    answer: str,
+) -> None:
+    """V1 Review follow-ups and edits bypass the A2UI full graph."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    db_path = tmp_path / "context.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+    checkpoint = _review_checkpoint_state()
+
+    class FakeApp:
+        def __init__(self) -> None:
+            self.state_reads: list[dict[str, Any]] = []
+            self.updates: list[tuple[dict[str, Any], dict[str, Any]]] = []
+
+        async def aget_state(self, config: dict[str, Any]) -> dict[str, Any]:
+            self.state_reads.append(config)
+            return checkpoint
+
+        async def aupdate_state(
+            self, config: dict[str, Any], *, values: dict[str, Any]
+        ) -> None:
+            self.updates.append((config, values))
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.app = FakeApp()
+            self.chat_prompts: list[str] = []
+            self.graph_calls = 0
+
+        async def _chat(self, prompt: str) -> dict[str, Any]:
+            self.chat_prompts.append(prompt)
+            content = (
+                "Bounded evidence answer."
+                if "new evidence" in query
+                else "Evidence claim is qualified."
+            )
+            return {"choices": [{"message": {"content": content}}]}
+
+        async def arun(self, **_kwargs: Any) -> dict[str, Any]:
+            self.graph_calls += 1
+            raise AssertionError(
+                "Review follow-up and local revision reran graph"
+            )
+
+    fake_agent = FakeAgent()
+    _patch_review_runtime(monkeypatch, fake_agent)
+
+    async def forbidden_review_graph(**_kwargs: Any) -> Any:
+        raise AssertionError("V1 Review must not enter the A2UI graph")
+
+    monkeypatch.setattr(
+        api_app, "_run_review_with_interrupt", forbidden_review_graph
+    )
+    envelope = _review_context_envelope(query)
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["ReviewAgent"],
+            "conversation": envelope,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["conversation_context"]["selected_agent_id"] == "ReviewAgent"
+    assert body["result"]["formatted"]["answer"] == answer
+    assert fake_agent.graph_calls == 0
+    assert fake_agent.chat_prompts
+    assert _REVIEW_REPORT not in fake_agent.chat_prompts[0]
+    expected_thread = context_agent_thread_id(
+        UUID(envelope["conversation_key"]), "ReviewAgent"
+    )
+    assert fake_agent.app.state_reads == [
+        {"configurable": {"thread_id": expected_thread}}
+    ]
+    assert fake_agent.app.updates
+    update_config, update_values = fake_agent.app.updates[-1]
+    assert update_config == {"configurable": {"thread_id": expected_thread}}
+    assert update_values["report_revision"] == 5
+    if "Evidence section" in query:
+        assert update_values["summary_content"] == answer
+    staged = ConversationContextStore(str(db_path)).load_turn(
+        envelope["conversation_key"], envelope["turn_id"]
+    )
+    assert staged is not None
+    assert staged.delta is not None
+    assert _REVIEW_REPORT not in json.dumps(staged.delta)
+
+
+@pytest.mark.asyncio
+async def test_context_expert_review_empty_local_revision_does_not_settle(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An empty section response leaves the private Review revision unchanged."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    db_path = tmp_path / "context.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+
+    class FakeApp:
+        def __init__(self) -> None:
+            self.updates: list[dict[str, Any]] = []
+
+        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
+            return _review_checkpoint_state()
+
+        async def aupdate_state(
+            self, _config: dict[str, Any], *, values: dict[str, Any]
+        ) -> None:
+            self.updates.append(values)
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.app = FakeApp()
+            self.graph_calls = 0
+
+        async def _chat(self, _prompt: str) -> dict[str, Any]:
+            return {"choices": [{"message": {"content": ""}}]}
+
+        async def arun(self, **_kwargs: Any) -> dict[str, Any]:
+            self.graph_calls += 1
+            raise AssertionError("empty local revision must not rerun graph")
+
+    fake_agent = FakeAgent()
+    _patch_review_runtime(monkeypatch, fake_agent)
+
+    async def forbidden_review_graph(**_kwargs: Any) -> Any:
+        raise AssertionError("V1 Review must not enter the A2UI graph")
+
+    monkeypatch.setattr(
+        api_app, "_run_review_with_interrupt", forbidden_review_graph
+    )
+    envelope = _review_context_envelope(
+        "Rewrite the Evidence section to state the limitation."
+    )
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["ReviewAgent"],
+            "conversation": envelope,
+        },
+    )
+
+    assert response.status_code == 200
+    assert fake_agent.graph_calls == 0
+    assert fake_agent.app.updates == []
+    staged = ConversationContextStore(str(db_path)).load_turn(
+        envelope["conversation_key"], envelope["turn_id"]
+    )
+    assert staged is not None
+    assert staged.delta is not None
+    assert "Review section revision completed." not in json.dumps(staged.delta)
 
 
 async def test_context_expert_data_reuses_private_ids_and_stages_bounded_intent(

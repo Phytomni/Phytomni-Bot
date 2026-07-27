@@ -993,6 +993,7 @@ async def review_agent_function(
                     thread_id or review_projection.agent_thread_id,
                 )
             except ReviewClarificationError as exc:
+                review_adapter.mark_failed()
                 return review_clarification_result(str(exc))
         if review_adapter.operation == "follow_up":
             result = await review_adapter.follow_up(agent._chat)
@@ -1002,6 +1003,7 @@ async def review_agent_function(
             try:
                 result = await review_adapter.local_revision(agent._chat)
             except ReviewClarificationError as exc:
+                review_adapter.mark_failed()
                 return review_clarification_result(str(exc))
             review_adapter.capture_result(result)
             return result

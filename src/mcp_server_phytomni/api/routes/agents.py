@@ -639,7 +639,7 @@ async def _execute_context_expert(
         dispatch: ContextAgentInvocation,
     ) -> AgentOutcome:
         slug = _slug_for_tool(selected_agent_id, dependencies)
-        if selected_agent_id == "KnowledgeAgent":
+        if selected_agent_id in {"KnowledgeAgent", "ReviewAgent"}:
             clarification = dispatch.private_agent_state.get(
                 "clarification_message"
             )
@@ -658,6 +658,8 @@ async def _execute_context_expert(
             adapter = private_agent_state.pop("knowledge_adapter", None)
         elif selected_agent_id == "DataAgent":
             adapter = private_agent_state.get("data_adapter")
+        elif selected_agent_id == "ReviewAgent":
+            adapter = private_agent_state.get("review_adapter")
         body, status_code = await dependencies.native.invoke_agent_run(
             agent=slug,
             arguments=arguments,
@@ -665,7 +667,7 @@ async def _execute_context_expert(
             agent_thread_id=(
                 dispatch.agent_thread_id
                 if selected_agent_id
-                in {"ChatAgent", "KnowledgeAgent", "DataAgent"}
+                in {"ChatAgent", "KnowledgeAgent", "DataAgent", "ReviewAgent"}
                 else None
             ),
             private_agent_state=private_agent_state or None,
@@ -686,6 +688,18 @@ async def _execute_context_expert(
                 context_delta=adapter.delta(body),
             )
         if selected_agent_id == "DataAgent" and adapter is not None:
+            return AgentOutcome(
+                result=body,
+                assistant_summary=_agent_response_summary(body),
+                context_delta=adapter.delta(body),
+            )
+        if selected_agent_id == "ReviewAgent" and adapter is not None:
+            if not getattr(adapter, "settlement_ready", False):
+                return AgentOutcome(
+                    result=body,
+                    assistant_summary=_agent_response_summary(body),
+                    context_delta=ContextDelta(),
+                )
             return AgentOutcome(
                 result=body,
                 assistant_summary=_agent_response_summary(body),

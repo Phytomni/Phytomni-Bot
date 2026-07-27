@@ -489,7 +489,11 @@ async def _invoke_agent_run(
         owner=prepared.owner,
         db_path=resolve_tasks_db_path(),
     )
-    if agent == "review":
+    context_review = (
+        isinstance(private_agent_state, Mapping)
+        and private_agent_state.get("review_adapter") is not None
+    )
+    if agent == "review" and not context_review:
         execution = await _run_review_with_interrupt(
             arguments=arguments,
             request_info=prepared.request_info,

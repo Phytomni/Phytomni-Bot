@@ -26,6 +26,7 @@ from .service import (
     AgentSelection,
     ConversationContextService,
     PreparedTurn,
+    PrepareStatus,
 )
 from .store import ConversationContextStore
 
@@ -212,6 +213,9 @@ class ConversationContextExecutor:
         self._selected_arguments: ContextVar[dict[str, Any] | None] = (
             ContextVar("conversation_context_selected_arguments", default=None)
         )
+        self._review_adapter: ContextVar[ReviewConversationAdapter | None] = (
+            ContextVar("conversation_context_review_adapter", default=None)
+        )
 
     def _service_for_request(self) -> ConversationContextService:
         if self._service is None:
@@ -235,9 +239,26 @@ class ConversationContextExecutor:
         sync_token = self._sync_invoker.set(invoke)
         async_token = self._async_invoker.set(delegate_async)
         arguments_token = self._selected_arguments.set({})
+        review_token = self._review_adapter.set(None)
         try:
-            return await self._service_for_request().execute_turn(envelope)
+            prepared = await self._service_for_request().execute_turn(envelope)
+            adapter = self._review_adapter.get()
+            if adapter is not None:
+                settled = (
+                    prepared.status is PrepareStatus.RETURN_STAGED
+                    and prepared.stage is not None
+                    and not prepared.stage.context_degraded
+                    and adapter.settlement_ready
+                )
+                await adapter.settle_async(settled)
+            return prepared
+        except BaseException:
+            adapter = self._review_adapter.get()
+            if adapter is not None:
+                await adapter.settle_async(False)
+            raise
         finally:
+            self._review_adapter.reset(review_token)
             self._selected_arguments.reset(arguments_token)
             self._async_invoker.reset(async_token)
             self._sync_invoker.reset(sync_token)
@@ -288,6 +309,13 @@ class ConversationContextExecutor:
             dispatch = canonical_agent_invocation(
                 projection,
                 selected_arguments=selected_arguments,
+            )
+        if selected_agent_id == "ReviewAgent":
+            adapter = dispatch.private_agent_state.get("review_adapter")
+            self._review_adapter.set(
+                adapter
+                if isinstance(adapter, ReviewConversationAdapter)
+                else None
             )
         return await invoke(
             selected_agent_id,

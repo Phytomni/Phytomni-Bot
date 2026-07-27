@@ -129,6 +129,21 @@ def test_classify_review_operation_covers_all_four_intents() -> None:
     )
 
 
+def test_new_evidence_question_remains_a_follow_up() -> None:
+    """A new evidence request does not implicitly replace the active review."""
+    snapshot = extract_review_checkpoint(_checkpoint_state())
+    assert snapshot is not None
+
+    assert (
+        classify_review_operation(
+            "What new evidence supports that claim?",
+            active_review=True,
+            snapshot=snapshot,
+        )
+        is ReviewConversationOperation.FOLLOW_UP
+    )
+
+
 def test_extract_review_checkpoint_admits_only_bounded_review_snapshot() -> (
     None
 ):
@@ -217,6 +232,68 @@ def test_reassemble_markdown_preserves_unrelated_bytes() -> None:
         "## Evidence\nEvidence claim is now explicitly qualified.\n\n"
         "## Limitations\nLimitations remain open.\n"
     )
+
+
+@pytest.mark.asyncio
+async def test_local_revision_reassembles_the_original_report_bytes() -> None:
+    """A focused edit keeps framing, citations, and unrelated bytes intact."""
+    report = (
+        "# Review summary\n\n"
+        "Intro framing with [document:7].\n\n"
+        "## Background\nBackground claim [document:1].\n\n"
+        "## Evidence\nEvidence claim [document:2].\n\n"
+        "## Limitations\nLimitations remain open [document:3].\n"
+    )
+    checkpoint = {
+        "original_user_query": "Review drought tolerance in rice",
+        "summary_content": report,
+        "research_dimensions": ["Background", "Evidence", "Limitations"],
+        "report_artifact_id": "report-1",
+        "report_revision": 4,
+    }
+    snapshot = extract_review_checkpoint(checkpoint)
+    assert snapshot is not None
+    adapter = ReviewConversationAdapter()
+    adapter.prepare(
+        _projection("Rewrite the Evidence section to state the limitation."),
+        snapshot=checkpoint,
+    )
+
+    async def fake_chat(_prompt: str) -> dict[str, Any]:
+        return {
+            "choices": [
+                {"message": {"content": "Evidence claim is qualified."}}
+            ]
+        }
+
+    result = await adapter.local_revision(fake_chat)
+    assert result["choices"][0]["message"]["content"] == (
+        "# Review summary\n\n"
+        "Intro framing with [document:7].\n\n"
+        "## Background\nBackground claim [document:1].\n\n"
+        "## Evidence\nEvidence claim is qualified.\n\n"
+        "## Limitations\nLimitations remain open [document:3].\n"
+    )
+
+
+@pytest.mark.asyncio
+async def test_empty_local_revision_does_not_advance_revision() -> None:
+    """An empty focused response is a failed revision, not an unchanged one."""
+    snapshot = extract_review_checkpoint(_checkpoint_state())
+    assert snapshot is not None
+    adapter = ReviewConversationAdapter()
+    adapter.prepare(
+        _projection("Rewrite the Evidence section to state the limitation."),
+        snapshot=snapshot,
+    )
+
+    async def empty_chat(_prompt: str) -> dict[str, Any]:
+        return {"choices": [{"message": {"content": ""}}]}
+
+    with pytest.raises(ReviewClarificationError, match="revision"):
+        await adapter.local_revision(empty_chat)
+    assert adapter.settle(False) == 4
+    assert adapter.report_revision == 4
 
 
 def test_review_invocation_keeps_operation_and_checkpoint_private() -> None:
