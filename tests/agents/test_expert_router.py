@@ -83,11 +83,12 @@ async def test_strict_router_offers_allowed_tools_in_request_order(
         captured,
     )
 
-    await select_agent_tool(
+    result = await select_agent_tool(
         "route this",
         allowed_tools=["KnowledgeAgent", "ChatAgent"],
     )
 
+    assert result == ToolSelection("ChatAgent", {})
     assert [tool["function"]["name"] for tool in captured["tools"]] == [
         "KnowledgeAgent",
         "ChatAgent",

@@ -21,6 +21,7 @@ from typing import Any
 import httpx
 import pytest
 from pydantic import ValidationError
+from tests.support.chat_fakes import install_chat_handler
 from tests.support.expert_router_fakes import patch_expert_router
 
 import mcp_server_phytomni.api.app as api_app
@@ -47,7 +48,9 @@ pytestmark = pytest.mark.server
 
 
 def _patch_select(
-    monkeypatch: pytest.MonkeyPatch, selection: ToolSelection | None
+    monkeypatch: pytest.MonkeyPatch,
+    selection: ToolSelection | None,
+    captured: dict[str, Any] | None = None,
 ) -> None:
     """Patch the in-process router to return a fixed selection."""
 
@@ -58,7 +61,15 @@ def _patch_select(
         allowed_tools: Any = None,
         forced_tool: Any = None,
     ) -> ToolSelection | None:
-        _ = (user_query, history, allowed_tools, forced_tool)
+        if captured is not None:
+            captured.update(
+                {
+                    "user_query": user_query,
+                    "history": list(history),
+                    "allowed_tools": list(allowed_tools or ()),
+                    "forced_tool": forced_tool,
+                }
+            )
         return selection
 
     monkeypatch.setattr(api_app, "select_agent_tool", fake_select)
@@ -184,6 +195,12 @@ def test_expert_query_request_accepts_member_forced_tool() -> None:
     )
 
     assert request.forced_tool == "ChatAgent"
+
+
+def test_expert_activation_stays_outside_bot_config() -> None:
+    """Expert activation remains owned by the Web gateway boundary."""
+    fields = vars(ApiConfig).get("model_fields", {})
+    assert "EXPERT_ENABLED" not in fields
 
 
 def _stub_tool_handler(
@@ -438,6 +455,7 @@ async def test_route_forces_every_canonical_tool_to_its_native_slug(
     assert tuple(
         name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
     ) == tuple(case[0] for case in _FORCED_ROUTE_CASES)
+    selector_call: dict[str, Any] = {}
     invoked: list[dict[str, Any]] = []
 
     async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
@@ -455,7 +473,11 @@ async def test_route_forces_every_canonical_tool_to_its_native_slug(
         )
 
     monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
-    _patch_select(monkeypatch, ToolSelection(tool_name, arguments))
+    _patch_select(
+        monkeypatch,
+        ToolSelection(tool_name, arguments),
+        selector_call,
+    )
 
     response = await api_client.post(
         "/v1/query/route",
@@ -468,7 +490,96 @@ async def test_route_forces_every_canonical_tool_to_its_native_slug(
     )
 
     assert response.status_code == 200
+    assert len(invoked) == 1
     assert invoked[0]["agent"] == slug
+    assert selector_call == {
+        "user_query": "q",
+        "history": [],
+        "allowed_tools": [tool_name],
+        "forced_tool": tool_name,
+    }
+
+
+async def test_route_autonomous_dispatches_one_allowed_tool(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Autonomous routing makes one constrained selection and dispatch."""
+    captured: dict[str, Any] = {}
+    invoked: list[dict[str, Any]] = []
+
+    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        invoked.append(kwargs)
+        return (
+            {
+                "id": "route-chat",
+                "object": "agent.run",
+                "agent": kwargs["agent"],
+                "status": "succeeded",
+                "task_ids": [],
+                "result": empty_agent_result(),
+            },
+            200,
+        )
+
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _router_completion(("ChatAgent", '{"user_query":"q"}')),
+        captured,
+    )
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "q",
+            "allowed_tools": ["ReviewAgent", "ChatAgent"],
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(invoked) == 1
+    assert invoked[0]["agent"] == "chat"
+    assert captured["tool_choice"] == "required"
+    assert [tool["function"]["name"] for tool in captured["tools"]] == [
+        "ReviewAgent",
+        "ChatAgent",
+    ]
+
+
+async def test_literal_agent_mention_stays_on_chat_surface(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Literal ``@DataAgent`` text does not invoke Expert routing."""
+    captured: dict[str, Any] = {}
+    install_chat_handler(monkeypatch, captured)
+
+    async def forbidden_select(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("literal mentions must not enter Expert routing")
+
+    monkeypatch.setattr(api_app, "select_agent_tool", forbidden_select)
+    response = await api_client.post(
+        "/v1/chat/completions",
+        headers=_auth(issued_api_key),
+        json={
+            "model": "phyto-chat",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "Explain literal @DataAgent text",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["model"] == "phyto-chat"
+    assert captured["user_query"] == "Explain literal @DataAgent text"
 
 
 @pytest.mark.parametrize(
