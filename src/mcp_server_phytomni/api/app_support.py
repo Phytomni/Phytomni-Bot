@@ -57,6 +57,7 @@ from ..runtime.request_context import (
     current_request_id,
     reset_request_var,
 )
+from ..runtime.stage_trace import bind_stage_trace
 from ..storage.path_policy import IdFactory
 from . import run_lifecycle
 from .lifecycle_contract import SafeApiError
@@ -244,6 +245,7 @@ def request_context_middleware(app: ASGIApp) -> ASGIApp:
         accepted_task_ids_token = bind_accepted_task_ids(())
         degraded_token = bind_recorder_degraded(False)
         locale_token = bind_effective_locale("en-US")
+        stage_trace_token = bind_stage_trace()
 
         async def send_with_header(message: Message) -> None:
             """Attach X-Request-Id on the response start event."""
@@ -255,6 +257,7 @@ def request_context_middleware(app: ASGIApp) -> ASGIApp:
         try:
             await app(scope, receive, send_with_header)
         finally:
+            reset_request_var(stage_trace_token)
             reset_request_var(degraded_token)
             reset_request_var(accepted_task_ids_token)
             reset_request_var(pre_recorded_token)

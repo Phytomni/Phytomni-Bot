@@ -56,6 +56,9 @@ _recorder_degraded: ContextVar[bool] = ContextVar(
 _accepted_task_ids: ContextVar[tuple[str, ...]] = ContextVar(
     "phytomni_accepted_task_ids", default=()
 )
+_request_stage_trace: ContextVar[tuple[Any, ...]] = ContextVar(
+    "phytomni_stage_trace", default=()
+)
 
 
 def current_request_user() -> str | None:
@@ -120,6 +123,21 @@ def bind_accepted_task_ids(
     """Bind de-duplicated accepted task ids and return a reset token."""
     clean = tuple(dict.fromkeys(value for value in task_ids if value.strip()))
     return _accepted_task_ids.set(clean)
+
+
+def _bind_stage_trace(events: tuple[Any, ...] = ()) -> Token[tuple[Any, ...]]:
+    """Bind the untyped backing tuple used by the stage-trace module."""
+    return _request_stage_trace.set(events)
+
+
+def _current_stage_trace() -> tuple[Any, ...]:
+    """Return the backing stage-trace tuple without a runtime import cycle."""
+    return _request_stage_trace.get()
+
+
+def _append_request_stage_event(event: Any) -> None:
+    """Append one immutable stage event to the current request context."""
+    _request_stage_trace.set((*_request_stage_trace.get(), event))
 
 
 def current_recorder_degraded() -> bool:
@@ -192,9 +210,11 @@ def request_context(
     pre_recorded_token = bind_pre_recorded_task_id(None)
     degraded_token = bind_recorder_degraded(False)
     accepted_task_ids_token = bind_accepted_task_ids(())
+    stage_trace_token = _bind_stage_trace()
     try:
         yield
     finally:
+        reset_request_var(stage_trace_token)
         reset_request_var(accepted_task_ids_token)
         reset_request_var(degraded_token)
         reset_request_var(pre_recorded_token)
