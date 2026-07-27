@@ -43,6 +43,7 @@ from ...runtime.locale import (
     locale_instruction,
 )
 from ...storage.downloads import download_list_convert
+from ..shared.conversation_messages import normalize_conversation_messages
 
 logger = logging.getLogger(__name__)
 
@@ -325,6 +326,11 @@ async def phyto_chat(
         "with_follow_up": False,
         "locale": effective_locale,
     }
+    conversation_messages = normalize_conversation_messages(
+        kwargs.get("conversation_messages")
+    )
+    if conversation_messages:
+        chat_kwargs["conversation_messages"] = conversation_messages
     if semaphore is not None:
         chat_kwargs["semaphore"] = semaphore
     initial_state: dict[str, Any] = {

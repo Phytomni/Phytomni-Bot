@@ -24,6 +24,7 @@ from ...common.responses import (
     parse_follow_up_questions,
 )
 from ...runtime.memory import MemoryGraphContext
+from ..shared.conversation_messages import build_model_messages
 from ..shared.memory_context import memory_context_for_graph
 from . import service
 from .service import (
@@ -84,13 +85,11 @@ async def generate_node(
     )
     if memory_context:
         system_prompt = f"{system_prompt}\n\n{memory_context}"
-    messages = [
-        {
-            "role": "system",
-            "content": system_prompt,
-        },
-        {"role": "user", "content": state["user_query"]},
-    ]
+    messages = build_model_messages(
+        system_prompt=system_prompt,
+        user_query=state["user_query"],
+        conversation_messages=chat_kwargs.get("conversation_messages"),
+    )
     semaphore = chat_kwargs.get("semaphore")
     if semaphore is not None:
         async with semaphore:

@@ -18,6 +18,9 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..agents.chat.state import ChatInput
+from ..agents.shared.conversation_messages import (
+    normalize_conversation_messages,
+)
 from ..agents.shared.options import build_chat_kwargs
 from ..runtime.locale import SupportedLocale, current_effective_locale
 
@@ -88,6 +91,7 @@ def build_chat_input(
     chat_kwargs: Mapping[str, Any],
     *,
     obs_file_list: list[str] | None = None,
+    conversation_messages: list[dict[str, str]] | None = None,
     locale: SupportedLocale | None = None,
 ) -> ChatInput:
     """Wrap a consumer chat call's inputs into a ``ChatInput`` dict.
@@ -117,9 +121,13 @@ def build_chat_input(
         ``ChatInput`` containing the required ``user_query`` plus
         ``chat_kwargs``, and ``obs_file_list`` only when non-empty.
     """
+    chat_kwargs_copy = dict(chat_kwargs)
+    normalized_history = normalize_conversation_messages(conversation_messages)
+    if normalized_history:
+        chat_kwargs_copy["conversation_messages"] = normalized_history
     result: ChatInput = {
         "user_query": user_query,
-        "chat_kwargs": dict(chat_kwargs),
+        "chat_kwargs": chat_kwargs_copy,
         "locale": locale
         or chat_kwargs.get("locale")
         or current_effective_locale(),
