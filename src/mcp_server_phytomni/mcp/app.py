@@ -235,7 +235,10 @@ async def invoke_tool_formatted(
 
 
 async def invoke_tool_enveloped(
-    name: Any, arguments: dict[str, Any]
+    name: Any,
+    arguments: dict[str, Any],
+    *,
+    conversation_messages: Sequence[Mapping[str, str]] = (),
 ) -> ToolResultEnvelope:
     """Validate arguments, call a handler, and preserve raw payload.
 
@@ -247,6 +250,8 @@ async def invoke_tool_enveloped(
     Args:
         name: Raw tool name supplied by the caller.
         arguments: JSON object passed to the selected tool.
+        conversation_messages: Private native-role history for in-process
+            invocation adapters; it is excluded from public MCP schemas.
 
     Returns:
         Full result envelope for the selected tool.
@@ -254,6 +259,8 @@ async def invoke_tool_enveloped(
     Raises:
         McpError: If the tool is unknown or arguments fail validation.
     """
+    # MCP tool schemas remain the public argument boundary.
+    del conversation_messages
     raw = await invoke_tool_raw(name, arguments)
     await _maybe_enrich_cited(_tool_name(name), raw)
     return build_tool_result_envelope(

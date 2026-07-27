@@ -435,6 +435,7 @@ async def _invoke_agent_run(
     *,
     agent: str,
     arguments: dict[str, Any],
+    conversation_messages: tuple[dict[str, str], ...] = (),
     dialogue_id: str | None = None,
     request_json: str | None = None,
     debug: bool = False,
@@ -492,7 +493,11 @@ async def _invoke_agent_run(
             request_info=prepared.request_info,
         )
         return _review_run_body(execution, debug=debug), 200
-    envelope = await invoke_tool_enveloped(prepared.tool_name, arguments)
+    envelope = await invoke_tool_enveloped(
+        prepared.tool_name,
+        arguments,
+        conversation_messages=conversation_messages,
+    )
     result, response_result = _format_agent_run_result(
         envelope,
         resolve_meta=prepared.resolve_meta,

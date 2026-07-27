@@ -341,11 +341,26 @@ class _RouteAdapters:
         """Read the configured A2UI response-size cap."""
         return _api_config().A2UI_MAX_RESPONSE_BYTES
 
+    async def invoke_tool_enveloped(
+        self,
+        name: Any,
+        arguments: dict[str, Any],
+        *,
+        conversation_messages: tuple[dict[str, str], ...] = (),
+    ) -> Any:
+        """Invoke one tool through the request-time app compatibility seam."""
+        return await _app_attr("invoke_tool_enveloped")(
+            name,
+            arguments,
+            conversation_messages=conversation_messages,
+        )
+
     async def invoke_agent_run(
         self,
         *,
         agent: str,
         arguments: dict[str, Any],
+        conversation_messages: tuple[dict[str, str], ...] = (),
         dialogue_id: str | None = None,
         request_json: str | None = None,
         debug: bool = False,
@@ -354,6 +369,7 @@ class _RouteAdapters:
         response_body, status_code = await _app_attr("_invoke_agent_run")(
             agent=agent,
             arguments=arguments,
+            conversation_messages=conversation_messages,
             dialogue_id=dialogue_id,
             request_json=request_json,
             debug=debug,
@@ -501,7 +517,7 @@ def _build_agent_dependencies(
                 brief_gene_resolver=adapters.brief_gene_resolver,
             ),
             execution=agent_routes.AgentChatExecutionDependencies(
-                invoke_tool_enveloped=_app_attr("invoke_tool_enveloped"),
+                invoke_tool_enveloped=adapters.invoke_tool_enveloped,
                 stream_chat_completion=adapters.stream_chat_completion,
                 review_chat_completion=adapters.review_chat_completion,
             ),

@@ -23,7 +23,11 @@ from tests.support.chat_fakes import (
     misplaced_reasoning_message,
 )
 
+import mcp_server_phytomni.api.app as api_app
 from mcp_server_phytomni import server
+from mcp_server_phytomni.mcp.result_formatting import (
+    build_tool_result_envelope,
+)
 from mcp_server_phytomni.runtime.conversation_context.adapters import (
     canonical_agent_invocation,
 )
@@ -171,21 +175,49 @@ async def test_chat_context_v1_stages_native_history_and_replays_turn(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Any,
 ) -> None:
-    """Instant V1 uses ChatAgent once and returns its staged response on retry."""
+    """Instant V1 passes bounded native history to the Chat invoker once."""
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
-    calls = 0
+    captured: dict[str, Any] = {}
 
-    async def fake(args: Any) -> dict[str, Any]:
-        nonlocal calls
-        calls += 1
-        assert args.user_query == "What is photosynthesis?"
-        return chat_completion_payload("chatcmpl-context", "A staged answer.")
+    async def fake_invoke(
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        conversation_messages: tuple[dict[str, str], ...] = (),
+    ) -> Any:
+        captured["tool_name"] = tool_name
+        captured["arguments"] = arguments
+        captured["conversation_messages"] = conversation_messages
+        return build_tool_result_envelope(
+            tool_name,
+            chat_completion_payload("chatcmpl-context", "A staged answer."),
+            arguments=arguments,
+        )
 
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS, server.PhytomniAgents.CHAT_AGENT.value, fake
-    )
     envelope = _conversation_envelope()
+    envelope["turn_id"] = "3"
+    envelope["request_id"] = "request-3"
+    envelope["ledger_cursor"] = 3
+    envelope["history_delta"] = [
+        {
+            "turn_id": "1",
+            "role": "user",
+            "content": "Explain photosynthesis.",
+        },
+        {
+            "turn_id": "2",
+            "role": "assistant",
+            "content": "Light capture starts the process.",
+            "summary": "Light capture starts the process.",
+        },
+        {
+            "turn_id": "3",
+            "role": "user",
+            "content": "What is photosynthesis?",
+        },
+    ]
+    monkeypatch.setattr(api_app, "invoke_tool_enveloped", fake_invoke)
     first = await chat_completion(
         api_client,
         issued_api_key,
@@ -203,7 +235,21 @@ async def test_chat_context_v1_stages_native_history_and_replays_turn(
     assert first.status_code == 200
     assert second.status_code == 200
     assert first.json() == second.json()
-    assert calls == 1
+    assert captured == {
+        "tool_name": "ChatAgent",
+        "arguments": {
+            "user_query": "What is photosynthesis?",
+            "locale": "en-US",
+            "obs_file_list": [],
+        },
+        "conversation_messages": (
+            {"role": "user", "content": "Explain photosynthesis."},
+            {
+                "role": "assistant",
+                "content": "Light capture starts the process.",
+            },
+        ),
+    }
     stage = first.json()["conversation_context"]
     assert stage["selected_agent_id"] == "ChatAgent"
     assert stage["route_source"] == "instant_lock"

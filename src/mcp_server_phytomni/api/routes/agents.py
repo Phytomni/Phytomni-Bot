@@ -349,7 +349,9 @@ async def _execute_context_chat(
         arguments["user_query"] = user_query
         tool_envelope = (
             await dependencies.chat.execution.invoke_tool_enveloped(
-                "ChatAgent", arguments
+                "ChatAgent",
+                arguments,
+                conversation_messages=dispatch.conversation_messages,
             )
         )
         formatted_dict = _formatted_with_metadata(tool_envelope, resolve_meta)
@@ -631,6 +633,7 @@ async def _execute_context_expert(
         body, status_code = await dependencies.native.invoke_agent_run(
             agent=slug,
             arguments=dispatch.arguments,
+            conversation_messages=dispatch.conversation_messages,
             dialogue_id=payload.dialogue_id,
             request_json=payload.model_dump_json(),
             debug=dependencies.chat.projection.resolve_debug(None),

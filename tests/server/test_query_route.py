@@ -207,27 +207,63 @@ async def test_context_expert_explicit_selection_stages_without_router(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """An explicit V1 Expert agent is exact and returns stage metadata."""
+    """An explicit V1 Expert invoker receives bounded native history."""
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
 
     async def forbidden_router(*_args: Any, **_kwargs: Any) -> ToolSelection:
         raise AssertionError("explicit Expert selection must not route")
 
-    calls = 0
+    captured: dict[str, Any] = {}
 
-    async def handler(_args: Any) -> dict[str, Any]:
-        nonlocal calls
-        calls += 1
-        return {"answer": "drought result", "doc_list": []}
+    async def fake_invoke(
+        *,
+        agent: str,
+        arguments: dict[str, Any],
+        conversation_messages: tuple[dict[str, str], ...] = (),
+        **_kwargs: Any,
+    ) -> tuple[dict[str, Any], int]:
+        captured["agent"] = agent
+        captured["arguments"] = arguments
+        captured["conversation_messages"] = conversation_messages
+        return (
+            {
+                "id": "context-data",
+                "object": "agent.run",
+                "agent": agent,
+                "status": "succeeded",
+                "task_ids": [],
+                "result": {"formatted": {"answer": "drought result"}},
+            },
+            200,
+        )
 
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS, server.PhytomniAgents.DATA_AGENT.value, handler
-    )
     monkeypatch.setattr(api_app, "select_agent_tool", forbidden_router)
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
     envelope = _conversation_envelope(
         requested_agent_id="DataAgent", allowed_agent_ids=["DataAgent"]
     )
+    envelope["turn_id"] = "3"
+    envelope["request_id"] = "request-3"
+    envelope["ledger_cursor"] = 3
+    envelope["history_delta"] = [
+        {
+            "turn_id": "1",
+            "role": "user",
+            "content": "Compare drought candidates by yield.",
+        },
+        {
+            "turn_id": "2",
+            "role": "assistant",
+            "content": "Yield is one comparison criterion.",
+            "summary": "Yield is one comparison criterion.",
+        },
+        {
+            "turn_id": "3",
+            "role": "user",
+            "content": "Compare drought candidates",
+        },
+    ]
 
     response = await api_client.post(
         "/v1/query/route",
@@ -254,7 +290,23 @@ async def test_context_expert_explicit_selection_stages_without_router(
     )
     assert duplicate.status_code == 200
     assert duplicate.json() == response.json()
-    assert calls == 1
+    assert captured == {
+        "agent": "data",
+        "arguments": {
+            "user_query": "Compare drought candidates",
+            "locale": "en-US",
+        },
+        "conversation_messages": (
+            {
+                "role": "user",
+                "content": "Compare drought candidates by yield.",
+            },
+            {
+                "role": "assistant",
+                "content": "Yield is one comparison criterion.",
+            },
+        ),
+    }
 
 
 async def test_context_expert_router_keeps_full_allowlist_and_async_202(
