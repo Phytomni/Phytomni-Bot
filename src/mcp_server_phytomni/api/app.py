@@ -436,6 +436,7 @@ async def _invoke_agent_run(
     agent: str,
     arguments: dict[str, Any],
     conversation_messages: tuple[dict[str, str], ...] = (),
+    agent_thread_id: str | None = None,
     dialogue_id: str | None = None,
     request_json: str | None = None,
     debug: bool = False,
@@ -497,6 +498,7 @@ async def _invoke_agent_run(
         prepared.tool_name,
         arguments,
         conversation_messages=conversation_messages,
+        agent_thread_id=agent_thread_id,
     )
     result, response_result = _format_agent_run_result(
         envelope,

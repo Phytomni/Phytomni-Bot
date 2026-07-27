@@ -26,6 +26,7 @@ from tests.support.expert_router_fakes import patch_expert_router
 
 import mcp_server_phytomni.api.app as api_app
 from mcp_server_phytomni import server
+from mcp_server_phytomni.agents.chat import service as chat_service
 from mcp_server_phytomni.agents.expert import (
     ToolSelection,
     ToolSelectionError,
@@ -35,7 +36,11 @@ from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.api.schemas import ExpertQueryRequest
 from mcp_server_phytomni.config.defaults import ApiConfig, ServerConfig
+from mcp_server_phytomni.mcp import handlers as mcp_handlers
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
+from mcp_server_phytomni.runtime.conversation_context.projection import (
+    agent_thread_id as context_agent_thread_id,
+)
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 from mcp_server_phytomni.runtime.upload_registry import (
@@ -346,6 +351,137 @@ async def test_context_expert_explicit_selection_stages_without_router(
             },
         ),
     }
+
+
+async def test_context_expert_explicit_chat_preserves_private_thread_only_for_primary_call(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Explicit Expert Chat keeps the stable thread private to the first call."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
+    captured: list[dict[str, Any]] = []
+
+    async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
+        captured.append(dict(kwargs))
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "content": "Chat answer"
+                        if len(captured) == 1
+                        else "[]"
+                    }
+                }
+            ]
+        }
+
+    monkeypatch.setattr(
+        mcp_handlers,
+        "load_chat_runtime",
+        lambda: (object(), object()),
+    )
+    monkeypatch.setattr(
+        mcp_handlers,
+        "scratch_server_dir",
+        lambda *_args: "/tmp/chat",
+    )
+    monkeypatch.setattr(
+        mcp_handlers,
+        "chat_call_kwargs",
+        lambda **kwargs: {
+            "user_query": kwargs["request"].user_query,
+            "locale": kwargs["request"].locale,
+            "obs_file_list": kwargs["request"].obs_file_list,
+        },
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.service.phyto_chat",
+        fake_phyto_chat,
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.service.get_prompt",
+        lambda *_args, **_kwargs: "follow-up",
+    )
+    envelope = _conversation_envelope(
+        requested_agent_id="ChatAgent",
+        allowed_agent_ids=["ChatAgent"],
+    )
+    envelope["turn_id"] = "7"
+    envelope["request_id"] = "request-7"
+    envelope["ledger_cursor"] = 7
+    envelope["current_message"]["content"] = "What about its drought response?"
+    envelope["history_delta"] = [
+        {
+            "turn_id": "1",
+            "role": "user",
+            "content": "Tell me about rice gene OsDREB1A.",
+        },
+        {
+            "turn_id": "2",
+            "role": "assistant",
+            "content": "OsDREB1A is a rice stress-response transcription factor.",
+            "summary": "OsDREB1A is a rice stress-response transcription factor.",
+        },
+        {
+            "turn_id": "7",
+            "role": "user",
+            "content": "What about its drought response?",
+        },
+    ]
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["ChatAgent"],
+            "conversation": envelope,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["conversation_context"]["selected_agent_id"] == (
+        "ChatAgent"
+    )
+    expected_thread_id = context_agent_thread_id(
+        UUID(envelope["conversation_key"]),
+        "ChatAgent",
+    )
+    assert captured[0] == {
+        "user_query": "What about its drought response?",
+        "locale": "en-US",
+        "obs_file_list": [],
+        "semaphore": None,
+        "conversation_messages": (
+            {"role": "user", "content": "Tell me about rice gene OsDREB1A."},
+            {
+                "role": "assistant",
+                "content": (
+                    "OsDREB1A is a rice stress-response transcription factor."
+                ),
+            },
+        ),
+        "thread_id": expected_thread_id,
+    }
+    assert captured[1] == {
+        "user_query": "follow-up",
+        "locale": "en-US",
+        "semaphore": None,
+        "prompt_file": chat_service.CHAT_CONFIG.PROMPT_FILE,
+        "conversation_messages": (
+            {"role": "user", "content": "Tell me about rice gene OsDREB1A."},
+            {
+                "role": "assistant",
+                "content": (
+                    "OsDREB1A is a rice stress-response transcription factor."
+                ),
+            },
+        ),
+    }
+    assert "thread_id" not in captured[1]
 
 
 async def test_context_expert_router_keeps_full_allowlist_and_async_202(

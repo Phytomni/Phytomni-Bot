@@ -636,10 +636,18 @@ async def _execute_context_expert(
         dispatch: ContextAgentInvocation,
     ) -> AgentOutcome:
         slug = _slug_for_tool(selected_agent_id, dependencies)
+        arguments = dict(dispatch.arguments)
+        if dependencies.chat.input.tool_accepts_obs(selected_agent_id):
+            arguments["obs_file_list"] = list(payload.obs_file_list)
         body, status_code = await dependencies.native.invoke_agent_run(
             agent=slug,
-            arguments=dispatch.arguments,
+            arguments=arguments,
             conversation_messages=dispatch.conversation_messages,
+            agent_thread_id=(
+                dispatch.agent_thread_id
+                if selected_agent_id == "ChatAgent"
+                else None
+            ),
             dialogue_id=payload.dialogue_id,
             request_json=payload.model_dump_json(),
             debug=dependencies.chat.projection.resolve_debug(None),
@@ -657,6 +665,11 @@ async def _execute_context_expert(
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
         slug = _slug_for_tool(selected_agent_id, dependencies)
+        if dependencies.chat.input.tool_accepts_obs(selected_agent_id):
+            arguments = {
+                **arguments,
+                "obs_file_list": list(payload.obs_file_list),
+            }
         body, _status_code = await dependencies.native.invoke_agent_run(
             agent=slug,
             arguments=arguments,
