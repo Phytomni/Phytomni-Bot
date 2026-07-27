@@ -48,6 +48,25 @@ _SUMMARY_ROW_RE = re.compile(
     r"(?:\[[^\]]+,\s*[^\]]+\]|\{[^{}:]+:\s*[^{}]+\}|\|[^\n]+\|)",
     re.IGNORECASE,
 )
+_SUMMARY_SECRET_RE = re.compile(
+    r"""
+    (?:
+        \bpassword\b
+        |\bpasswd\b
+        |\bsecret\b
+        |\btoken\b
+        |\bcredential(?:s)?\b
+        |\bauthorization\b
+        |\bbearer\b
+        |\bapi(?:[ _-]?key|[ _-]?token)\b
+        |\baccess[ _-]?key(?:[ _-]?id)?\b
+        |\bsecret[ _-]?access[ _-]?key\b
+        |\bprivate[ _-]?key\b
+        |\bx[ _-]?auth[ _-]?token\b
+    )
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
 
 
 class _StructuredIntent(BaseModel):
@@ -167,6 +186,8 @@ def _validated_aggregate_summary(value: object) -> str | None:
     if _SUMMARY_DSN_RE.search(summary):
         return None
     if _SUMMARY_ROW_RE.search(summary):
+        return None
+    if _SUMMARY_SECRET_RE.search(summary):
         return None
     return summary
 

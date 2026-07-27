@@ -222,6 +222,14 @@ def test_delta_uses_only_canonical_valid_aggregate_summary() -> None:
         "SELECT gene_id, secret FROM credentials",
         "postgresql://user:pass@example/db",
         "['leaf', 10], ['root', 5]",
+        "password: hunter2",
+        "passwd = hunter2",
+        "secret token for expression export",
+        "authorization: Bearer ptm_secret_value",
+        "api_key=sk-test",
+        "credential_ref = peer-token",
+        "access_key_id = AKIAIOSFODNN7EXAMPLE",
+        "private_key = hidden-key-material",
     ],
 )
 def test_delta_rejects_unsafe_aggregate_summary(
