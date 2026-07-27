@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import (
     BaseModel,
@@ -53,6 +54,9 @@ __all__ = [
     "ApiKeyRecordResponse",
     "ChatCompletionRequest",
     "ChatMessage",
+    "ContextMutationResponse",
+    "ContextSettlementRequest",
+    "ContextTombstoneRequest",
     "FileUploadResponse",
     "MemoryCreateRequest",
     "MemoryDeleteResponse",
@@ -99,6 +103,34 @@ class ChatMessage(BaseModel):
 
     role: str
     content: str
+
+
+class ContextSettlementRequest(BaseModel):
+    """Acknowledge one staged conversation-context delta."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    conversation_key: UUID
+    turn_id: str = Field(pattern=r"^[1-9][0-9]{0,18}$")
+    ledger_version: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class ContextTombstoneRequest(BaseModel):
+    """Delete durable context and its derived checkpoint threads."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    conversation_key: UUID
+
+
+class ContextMutationResponse(BaseModel):
+    """Public-safe result for a conversation-context mutation."""
+
+    schema_version: Literal[1] = 1
+    state: Literal["committed", "tombstoned", "already_applied"]
+    context_version: int = Field(ge=0)
 
 
 class ChatCompletionRequest(BaseModel):

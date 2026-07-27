@@ -58,6 +58,7 @@ class AgentCatalogDependencies:
     remote_agent_slugs: frozenset[str]
     legacy_aliases: Mapping[str, list[str]]
     serialize_capability: Callable[[str], Any]
+    conversation_context_enabled: Callable[[], bool]
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,31 +332,32 @@ def _register_native_routes(
     ) -> JSONResponse:
         """List the agents reachable via ``/v1/agents/{slug}/runs``."""
         del principal
-        return JSONResponse(
-            {
-                "object": "list",
-                "data": [
-                    {
-                        "slug": slug,
-                        "tool": tool,
-                        "origin": (
-                            "remote"
-                            if slug in dependencies.catalog.remote_agent_slugs
-                            else "local"
-                        ),
-                        "legacy_aliases": (
-                            dependencies.catalog.legacy_aliases.get(tool, [])
-                        ),
-                        "capabilities": (
-                            dependencies.catalog.serialize_capability(slug)
-                        ),
-                    }
-                    for slug, tool in (
-                        dependencies.catalog.agent_slug_to_tool.items()
-                    )
-                ],
-            }
-        )
+        payload: dict[str, Any] = {
+            "object": "list",
+            "data": [
+                {
+                    "slug": slug,
+                    "tool": tool,
+                    "origin": (
+                        "remote"
+                        if slug in dependencies.catalog.remote_agent_slugs
+                        else "local"
+                    ),
+                    "legacy_aliases": (
+                        dependencies.catalog.legacy_aliases.get(tool, [])
+                    ),
+                    "capabilities": (
+                        dependencies.catalog.serialize_capability(slug)
+                    ),
+                }
+                for slug, tool in (
+                    dependencies.catalog.agent_slug_to_tool.items()
+                )
+            ],
+        }
+        if dependencies.catalog.conversation_context_enabled():
+            payload["protocols"] = {"conversation_context": [1]}
+        return JSONResponse(payload)
 
     @app.post(
         "/v1/agents/{agent}/runs",

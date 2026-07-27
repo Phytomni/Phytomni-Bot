@@ -256,6 +256,19 @@ class ConversationContextStore:
             ).fetchone()
         return None if row is None else self._context(row)
 
+    def load_turn(self, key: str, turn_id: str) -> StoredTurn | None:
+        """Load one turn without creating a new pending proposal."""
+        with sqlite_connection(self.db_path) as connection:
+            row = connection.execute(
+                "SELECT conversation_key, turn_id, operation, "
+                "base_context_version, state, selected_agent_id, "
+                "route_source, result_json, delta_json, ledger_version, "
+                "created_at, updated_at, expires_at FROM conversation_turns "
+                "WHERE conversation_key = ? AND turn_id = ?",
+                (key, turn_id),
+            ).fetchone()
+        return None if row is None else self._turn(row)
+
     def begin_turn(
         self, key: str, turn_id: str, operation: str, base_version: int
     ) -> BeginTurnResult:

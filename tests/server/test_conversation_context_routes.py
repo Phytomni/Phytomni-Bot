@@ -1,0 +1,353 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+"""HTTP contracts for the feature-gated conversation-context protocol."""
+
+from __future__ import annotations
+
+import sqlite3
+from collections.abc import AsyncIterator
+from pathlib import Path
+from uuid import UUID
+
+import httpx
+import pytest
+from tests.support.http_fakes import open_asgi_client
+
+from mcp_server_phytomni.api.app import create_app
+from mcp_server_phytomni.api.auth import ApiKeyStore
+from mcp_server_phytomni.runtime.conversation_context.projection import (
+    agent_thread_id,
+)
+from mcp_server_phytomni.runtime.conversation_context.store import (
+    ConversationContextStore,
+    ConversationTombstonedError,
+    StagedTurn,
+)
+
+pytestmark = pytest.mark.server
+
+_CONVERSATION_KEY = UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")
+_LEDGER_VERSION = "a" * 64
+
+
+@pytest.fixture
+async def context_client(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> AsyncIterator[tuple[httpx.AsyncClient, str, ConversationContextStore]]:
+    """Yield an enabled API client with isolated context and key stores."""
+    tasks_db = tmp_path / "server_tasks.db"
+    keys_db = tmp_path / "keys.sqlite"
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "true")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tasks_db))
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(keys_db))
+    key = ApiKeyStore(str(keys_db)).create(user_id="u1").api_key
+    store = ConversationContextStore(str(tasks_db))
+    async with open_asgi_client(
+        monkeypatch, create_app(), base_url="http://api.context.test"
+    ) as client:
+        yield client, key, store
+
+
+def _headers(key: str) -> dict[str, str]:
+    """Build the existing bearer-key authorization header."""
+    return {"Authorization": f"Bearer {key}"}
+
+
+def _settlement_payload(
+    *,
+    turn_id: str = "1",
+    ledger_version: str = _LEDGER_VERSION,
+) -> dict[str, str | int]:
+    """Build one bounded V1 settlement request."""
+    return {
+        "schema_version": 1,
+        "conversation_key": str(_CONVERSATION_KEY),
+        "turn_id": turn_id,
+        "ledger_version": ledger_version,
+    }
+
+
+def _tombstone_payload() -> dict[str, str | int]:
+    """Build one bounded V1 tombstone request."""
+    return {
+        "schema_version": 1,
+        "conversation_key": str(_CONVERSATION_KEY),
+    }
+
+
+def _stage_turn(
+    store: ConversationContextStore,
+    *,
+    turn_id: str = "1",
+    base_version: int = 0,
+) -> None:
+    """Seed one staged terminal result without exposing it to HTTP."""
+    store.begin_turn(str(_CONVERSATION_KEY), turn_id, "append", base_version)
+    store.stage_turn(
+        str(_CONVERSATION_KEY),
+        turn_id,
+        StagedTurn(
+            operation="append",
+            base_context_version=base_version,
+            selected_agent_id="ChatAgent",
+            route_source="instant_lock",
+            result={"raw_result": "RAW_RESULT_MUST_NOT_LEAK"},
+            delta={
+                "schema_version": 1,
+                "version": base_version + 1,
+                "last_applied_ledger_cursor": base_version + 1,
+                "last_applied_ledger_version": _LEDGER_VERSION,
+                "observed_mode": "instant",
+                "task_summary": "PRIVATE_SUMMARY_MUST_NOT_LEAK",
+                "active_entities": [
+                    {
+                        "entity_id": "gene-1",
+                        "entity_type": "gene",
+                        "label": "PRIVATE_ENTITY_MUST_NOT_LEAK",
+                    }
+                ],
+                "open_questions": [],
+                "recent_user_turns": [],
+                "assistant_summaries": ["PRIVATE_ASSISTANT_MUST_NOT_LEAK"],
+                "artifact_index": [
+                    {
+                        "artifact_id": "artifact-1",
+                        "display_name": "PRIVATE_ARTIFACT_MUST_NOT_LEAK",
+                    }
+                ],
+                "per_agent_memory": {},
+            },
+            ledger_version=_LEDGER_VERSION,
+            schema_version=1,
+            ledger_cursor=base_version + 1,
+            observed_mode="instant",
+            stage_metadata={},
+        ),
+    )
+
+
+async def test_enabled_catalog_advertises_context_protocol(
+    context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
+) -> None:
+    """Enabled deployments publish only the top-level V1 protocol marker."""
+    client, key, _store = context_client
+
+    response = await client.get("/v1/agents", headers=_headers(key))
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["protocols"] == {"conversation_context": [1]}
+    assert all("conversation_context" not in row for row in body["data"])
+
+
+@pytest.mark.parametrize(
+    "path,payload",
+    [
+        ("/v1/conversation-context/settle", _settlement_payload()),
+        ("/v1/conversation-context/tombstone", _tombstone_payload()),
+    ],
+)
+async def test_context_mutations_require_existing_agents_auth(
+    context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
+    path: str,
+    payload: dict[str, str | int],
+) -> None:
+    """Settlement and tombstone retain the normal agents authentication gate."""
+    client, _key, _store = context_client
+
+    response = await client.post(path, json=payload)
+
+    assert response.status_code == 401
+
+
+async def test_disabled_context_mutations_return_not_found(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+) -> None:
+    """A default-off deployment does not expose a half-active protocol."""
+    for path, payload in (
+        ("/v1/conversation-context/settle", _settlement_payload()),
+        ("/v1/conversation-context/tombstone", _tombstone_payload()),
+    ):
+        response = await api_client.post(
+            path, headers=_headers(issued_api_key), json=payload
+        )
+        assert response.status_code == 404
+    schema = (await api_client.get("/openapi.json")).json()
+    assert "/v1/conversation-context/settle" not in schema["paths"]
+    assert "/v1/conversation-context/tombstone" not in schema["paths"]
+
+
+async def test_settlement_commits_once_and_redacts_context_contents(
+    context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
+) -> None:
+    """A staged delta commits once and repeats without returning private data."""
+    client, key, store = context_client
+    _stage_turn(store)
+
+    committed = await client.post(
+        "/v1/conversation-context/settle",
+        headers=_headers(key),
+        json=_settlement_payload(),
+    )
+    repeated = await client.post(
+        "/v1/conversation-context/settle",
+        headers=_headers(key),
+        json=_settlement_payload(),
+    )
+
+    assert committed.status_code == 200
+    assert committed.json() == {
+        "schema_version": 1,
+        "state": "committed",
+        "context_version": 1,
+    }
+    assert repeated.status_code == 200
+    assert repeated.json() == {
+        "schema_version": 1,
+        "state": "already_applied",
+        "context_version": 1,
+    }
+    for marker in (
+        "PRIVATE_SUMMARY_MUST_NOT_LEAK",
+        "PRIVATE_ENTITY_MUST_NOT_LEAK",
+        "PRIVATE_ARTIFACT_MUST_NOT_LEAK",
+        "PRIVATE_ASSISTANT_MUST_NOT_LEAK",
+        "RAW_RESULT_MUST_NOT_LEAK",
+    ):
+        assert marker not in committed.text
+        assert marker not in repeated.text
+
+
+async def test_settlement_rejects_unknown_or_mismatched_turns(
+    context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
+) -> None:
+    """Settlement fails closed when the staged proposal cannot be matched."""
+    client, key, store = context_client
+    _stage_turn(store)
+
+    mismatch = await client.post(
+        "/v1/conversation-context/settle",
+        headers=_headers(key),
+        json=_settlement_payload(ledger_version="b" * 64),
+    )
+    unknown = await client.post(
+        "/v1/conversation-context/settle",
+        headers=_headers(key),
+        json=_settlement_payload(turn_id="2"),
+    )
+
+    assert mismatch.status_code == 409
+    assert unknown.status_code == 404
+
+
+async def test_tombstone_clears_state_and_deletes_sync_threads(
+    context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tombstone removes staged context and all synchronous checkpoint threads."""
+    from mcp_server_phytomni.api.routes import conversation_context
+
+    class _Checkpointer:
+        def __init__(self) -> None:
+            self.deleted: list[str] = []
+
+        async def adelete_thread(self, thread_id: str) -> None:
+            self.deleted.append(thread_id)
+
+    client, key, store = context_client
+    _stage_turn(store)
+    first = await client.post(
+        "/v1/conversation-context/settle",
+        headers=_headers(key),
+        json=_settlement_payload(),
+    )
+    assert first.status_code == 200
+    _stage_turn(store, turn_id="2", base_version=1)
+    checkpointer = _Checkpointer()
+    monkeypatch.setattr(
+        conversation_context, "ensure_checkpointer", lambda: checkpointer
+    )
+
+    response = await client.post(
+        "/v1/conversation-context/tombstone",
+        headers=_headers(key),
+        json=_tombstone_payload(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "schema_version": 1,
+        "state": "tombstoned",
+        "context_version": 1,
+    }
+    context = store.load_context(str(_CONVERSATION_KEY))
+    assert context is not None
+    assert context.context == {}
+    assert context.checkpoint_cleanup_state == "complete"
+    with sqlite3.connect(store.db_path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM conversation_turns WHERE conversation_key = ?",
+            (str(_CONVERSATION_KEY),),
+        ).fetchone() == (0,)
+    assert set(checkpointer.deleted) == {
+        agent_thread_id(_CONVERSATION_KEY, agent_id)
+        for agent_id in (
+            "ChatAgent",
+            "KnowledgeAgent",
+            "DataAgent",
+            "ReviewAgent",
+            "BriefGeneAgent",
+        )
+    }
+    with pytest.raises(ConversationTombstonedError):
+        store.begin_turn(str(_CONVERSATION_KEY), "3", "append", 1)
+
+
+async def test_tombstone_is_idempotent_and_retries_pending_cleanup(
+    context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cleanup failure retains retryable state while public deletion stays safe."""
+    from mcp_server_phytomni.api.routes import conversation_context
+
+    class _Checkpointer:
+        fail = True
+
+        async def adelete_thread(self, _thread_id: str) -> None:
+            if self.fail:
+                raise RuntimeError("private checkpoint failure")
+
+    client, key, store = context_client
+    checkpointer = _Checkpointer()
+    monkeypatch.setattr(
+        conversation_context, "ensure_checkpointer", lambda: checkpointer
+    )
+
+    failed_cleanup = await client.post(
+        "/v1/conversation-context/tombstone",
+        headers=_headers(key),
+        json=_tombstone_payload(),
+    )
+    pending = store.load_context(str(_CONVERSATION_KEY))
+    checkpointer.fail = False
+    retried = await client.post(
+        "/v1/conversation-context/tombstone",
+        headers=_headers(key),
+        json=_tombstone_payload(),
+    )
+
+    assert failed_cleanup.status_code == 200
+    assert failed_cleanup.json()["state"] == "tombstoned"
+    assert pending is not None
+    assert pending.checkpoint_cleanup_state == "pending"
+    assert retried.status_code == 200
+    assert retried.json() == {
+        "schema_version": 1,
+        "state": "already_applied",
+        "context_version": 0,
+    }
+    complete = store.load_context(str(_CONVERSATION_KEY))
+    assert complete is not None
+    assert complete.checkpoint_cleanup_state == "complete"

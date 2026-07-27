@@ -33,6 +33,7 @@ from ..config.settings import SensitiveConfig
 from ..interop.cache import DiscoveryCache
 from ..interop.capabilities import DiscoveryResult
 from ..interop.registry import InteropRegistry, InteropRegistryError
+from ..runtime.conversation_context.store import ConversationContextStore
 from ..runtime.locale import message_for
 from ..runtime.memory import (
     MemorySchemaError,
@@ -63,6 +64,7 @@ from .openai_mapping import (
 )
 from .routes import admin as admin_routes
 from .routes import agents as agent_routes
+from .routes import conversation_context as conversation_context_routes
 from .routes import memory as memory_routes
 from .routes import runs as run_routes
 from .schemas import (
@@ -127,6 +129,7 @@ class _RuntimeState:
 
     rate_limit: Callable[[str, int], int | None]
     memory_store: MemoryStore | None = None
+    conversation_context_store: ConversationContextStore | None = None
     interop_registry: InteropRegistry | None = None
     interop_sensitive_config: SensitiveConfig | None = None
     interop_caches: dict[str, DiscoveryCache] | None = None
@@ -155,6 +158,14 @@ class _RuntimeState:
                     status_code=503, detail="memory store unavailable"
                 ) from None
         return self.memory_store
+
+    def get_conversation_context_store(self) -> ConversationContextStore:
+        """Open the Bot-owned context store only for an enabled mutation."""
+        if self.conversation_context_store is None:
+            self.conversation_context_store = ConversationContextStore(
+                _api_config().API_TASKS_DB_PATH
+            )
+        return self.conversation_context_store
 
     async def authorized(
         self,
@@ -319,6 +330,10 @@ class _RouteAdapters:
         """Read the current A2UI feature flag."""
         return _api_config().A2UI_ENABLED
 
+    def conversation_context_enabled(self) -> bool:
+        """Read the current conversation-context protocol flag."""
+        return _api_config().CONVERSATION_CONTEXT_V1_ENABLED
+
     def a2ui_max_response_bytes(self) -> int:
         """Read the configured A2UI response-size cap."""
         return _api_config().A2UI_MAX_RESPONSE_BYTES
@@ -471,6 +486,7 @@ def _build_agent_dependencies(
             remote_agent_slugs=_app_attr("_REMOTE_AGENT_SLUGS"),
             legacy_aliases=_app_attr("_LEGACY_ALIASES"),
             serialize_capability=_app_attr("serialize_agent_capability"),
+            conversation_context_enabled=adapters.conversation_context_enabled,
         ),
         chat=agent_routes.AgentChatDependencies(
             input=agent_routes.AgentChatInputDependencies(
@@ -663,6 +679,24 @@ def _register_run_routes(
     )
 
 
+def _register_conversation_context_routes(
+    app: FastAPI,
+    runtime: _RuntimeState,
+    adapters: _RouteAdapters,
+) -> None:
+    """Register authenticated V1 context mutation routes."""
+    if not adapters.conversation_context_enabled():
+        return
+    conversation_context_routes.register_conversation_context_routes(
+        app,
+        conversation_context_routes.ContextRouteDependencies(
+            enabled=adapters.conversation_context_enabled,
+            require_agents=runtime.require_scope("agents"),
+            get_store=runtime.get_conversation_context_store,
+        ),
+    )
+
+
 def _register_a2a_routes(
     app: FastAPI,
     require_scope: Callable[..., Any],
@@ -803,6 +837,7 @@ def build_app() -> FastAPI:
     agent_routes.register_model_route(app, agent_dependencies)
     _register_memory_and_admin_routes(app, runtime, adapters)
     agent_routes.register_agent_routes(app, agent_dependencies)
+    _register_conversation_context_routes(app, runtime, adapters)
     _register_run_routes(app, runtime, adapters)
     _register_a2a_routes(app, runtime.require_scope)
     app.include_router(_app_attr("create_relay_router")())
