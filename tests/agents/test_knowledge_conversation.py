@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -13,6 +13,7 @@ from mcp_server_phytomni.agents.knowledge.conversation import (
     KnowledgeClarificationError,
     KnowledgeConversationAdapter,
 )
+from mcp_server_phytomni.agents.knowledge.state import KnowledgeState
 from mcp_server_phytomni.config.defaults import KnowledgeConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.runtime.conversation_context.models import (
@@ -102,7 +103,9 @@ async def test_retrieve_node_uses_retrieval_query_only(
     )
 
     await agent.retrieve_node(
-        agent.initial_state(
+        cast(
+            KnowledgeState,
+            agent.initial_state(
             "What evidence supports that?",
             retrieval_query="What evidence supports OsDREB1?",
             conversation_messages=[
@@ -112,6 +115,7 @@ async def test_retrieve_node_uses_retrieval_query_only(
                     "content": "OsDREB1 improves drought tolerance.",
                 },
             ],
+            ),
         )
     )
 
@@ -162,11 +166,14 @@ async def test_generate_prep_uses_answer_context_without_transcript(
         sensitive_config=_sensitive_config(),
     )
 
-    state = agent.initial_state(
-        "What evidence supports that?",
-        retrieval_query="What evidence supports OsDREB1?",
-        answer_context=(
-            "Prior answer summary: OsDREB1 improves drought tolerance [1]."
+    state = cast(
+        KnowledgeState,
+        agent.initial_state(
+            "What evidence supports that?",
+            retrieval_query="What evidence supports OsDREB1?",
+            answer_context=(
+                "Prior answer summary: OsDREB1 improves drought tolerance [1]."
+            ),
         ),
     )
     state["retrieve_context"] = "[document 1 begin] Evidence [document 1 end]"
@@ -228,3 +235,40 @@ def test_delta_promotes_bounded_summary_and_topic_without_raw_docs() -> None:
         "OsDREB1 improves drought tolerance [1]."
     )
     assert "full report body" not in json.dumps(delta.model_dump(mode="json"))
+
+
+def test_delta_replaces_prior_active_topic_after_explicit_switch() -> None:
+    """A successful explicit topic switch removes the previous active gene."""
+    adapter = KnowledgeConversationAdapter()
+    adapter.prepare(
+        _projection(
+            current_query="Tell me about OsNAC6 drought evidence.",
+            active_entities=[
+                ContextEntity(
+                    entity_id="knowledge:osdreb1",
+                    entity_type="gene",
+                    label="OsDREB1",
+                )
+            ],
+            relevant_recent_turns=[
+                RoleTaggedTurn(
+                    role="assistant",
+                    content="OsDREB1 improves drought tolerance [1].",
+                )
+            ],
+        )
+    )
+
+    delta = adapter.delta(
+        {
+            "result": {
+                "formatted": {
+                    "answer": "OsNAC6 improves drought tolerance [2].",
+                    "follow_up_questions": [],
+                }
+            }
+        }
+    )
+
+    assert [item.label for item in delta.entity_upserts] == ["OsNAC6"]
+    assert delta.entity_removals == ["knowledge:osdreb1"]

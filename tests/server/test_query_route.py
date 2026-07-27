@@ -725,6 +725,7 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
     store = ConversationContextStore(str(db_path))
     staged = store.load_turn(str(UUID(envelope["conversation_key"])), "3")
     assert staged is not None
+    assert staged.delta is not None
     assert [
         item["label"] for item in staged.delta["active_entities"]
     ] == ["OsDREB1"]
@@ -817,7 +818,285 @@ async def test_context_expert_knowledge_follow_up_returns_clarification(
     store = ConversationContextStore(str(db_path))
     staged = store.load_turn(str(UUID(envelope["conversation_key"])), "4")
     assert staged is not None
+    assert staged.delta is not None
     assert staged.delta["active_entities"] == []
+
+
+async def test_context_expert_knowledge_explicit_switch_replaces_topic_after_success(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A successful explicit topic switch commits only the new Knowledge topic."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    db_path = tmp_path / "context.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+
+    async def forbidden_router(*_args: Any, **_kwargs: Any) -> ToolSelection:
+        raise AssertionError("explicit Knowledge selection must not route")
+
+    def _success_body(agent: str, answer: str) -> dict[str, Any]:
+        return {
+            "id": f"{agent}-run",
+            "object": "agent.run",
+            "agent": agent,
+            "status": "succeeded",
+            "task_ids": [],
+            "result": {"formatted": {"answer": answer}},
+        }
+
+    captured: list[dict[str, Any]] = []
+
+    async def fake_invoke(
+        *,
+        agent: str,
+        arguments: dict[str, Any],
+        private_agent_state: dict[str, Any] | None = None,
+        **_kwargs: Any,
+    ) -> tuple[dict[str, Any], int]:
+        captured.append(
+            {
+                "agent": agent,
+                "arguments": dict(arguments),
+                "private_agent_state": dict(private_agent_state or {}),
+            }
+        )
+        query = arguments["user_query"]
+        if query == "Tell me about OsDREB1 drought evidence.":
+            return (
+                _success_body(
+                    agent,
+                    "OsDREB1 improves drought tolerance [1].",
+                ),
+                200,
+            )
+        if query == "Tell me about OsNAC6 drought evidence.":
+            return (
+                _success_body(
+                    agent,
+                    "OsNAC6 improves drought tolerance [2].",
+                ),
+                200,
+            )
+        raise AssertionError(f"unexpected query: {query}")
+
+    monkeypatch.setattr(api_app, "select_agent_tool", forbidden_router)
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
+    conversation_key = str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7"))
+    store = ConversationContextStore(str(db_path))
+
+    first = _conversation_envelope(
+        turn_id="1",
+        requested_agent_id="KnowledgeAgent",
+        allowed_agent_ids=["KnowledgeAgent"],
+    )
+    first["current_message"]["content"] = "Tell me about OsDREB1 drought evidence."
+    first["history_delta"] = [
+        {
+            "turn_id": "1",
+            "role": "user",
+            "content": "Tell me about OsDREB1 drought evidence.",
+        }
+    ]
+
+    first_response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["KnowledgeAgent"],
+            "conversation": first,
+        },
+    )
+
+    assert first_response.status_code == 200
+    first_staged = store.load_turn(conversation_key, "1")
+    assert first_staged is not None
+    assert first_staged.delta is not None
+    assert [
+        item["label"] for item in first_staged.delta["active_entities"]
+    ] == ["OsDREB1"]
+    store.commit_staged_turn(
+        conversation_key,
+        "1",
+        first["ledger_version"],
+        "b" * 64,
+    )
+
+    second = _conversation_envelope(
+        turn_id="2",
+        requested_agent_id="KnowledgeAgent",
+        allowed_agent_ids=["KnowledgeAgent"],
+        base_business_context_version=1,
+    )
+    second["ledger_cursor"] = 2
+    second["ledger_version"] = "c" * 64
+    second["current_message"]["content"] = "Tell me about OsNAC6 drought evidence."
+    second["history_delta"] = [
+        {
+            "turn_id": "2",
+            "role": "user",
+            "content": "Tell me about OsNAC6 drought evidence.",
+        }
+    ]
+
+    second_response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["KnowledgeAgent"],
+            "conversation": second,
+        },
+    )
+
+    assert second_response.status_code == 200
+    second_staged = store.load_turn(conversation_key, "2")
+    assert second_staged is not None
+    assert second_staged.delta is not None
+    assert [
+        item["label"] for item in second_staged.delta["active_entities"]
+    ] == ["OsNAC6"]
+    committed = store.commit_staged_turn(
+        conversation_key,
+        "2",
+        second["ledger_version"],
+        "d" * 64,
+    )
+    assert [
+        item["label"] for item in committed.context.context["active_entities"]
+    ] == ["OsNAC6"]
+    assert captured[1]["private_agent_state"]["retrieval_query"] == (
+        "Tell me about OsNAC6 drought evidence."
+    )
+
+
+async def test_context_expert_knowledge_failed_switch_keeps_prior_topic(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A failed explicit topic switch leaves the committed topic unchanged."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    db_path = tmp_path / "context.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+
+    async def forbidden_router(*_args: Any, **_kwargs: Any) -> ToolSelection:
+        raise AssertionError("explicit Knowledge selection must not route")
+
+    async def fake_invoke(
+        *,
+        agent: str,
+        arguments: dict[str, Any],
+        **_kwargs: Any,
+    ) -> tuple[dict[str, Any], int]:
+        if arguments["user_query"] == "Tell me about OsDREB1 drought evidence.":
+            return (
+                {
+                    "id": f"{agent}-run",
+                    "object": "agent.run",
+                    "agent": agent,
+                    "status": "succeeded",
+                    "task_ids": [],
+                    "result": {
+                        "formatted": {
+                            "answer": "OsDREB1 improves drought tolerance [1]."
+                        }
+                    },
+                },
+                200,
+            )
+        return (
+            {
+                "id": f"{agent}-run",
+                "object": "agent.run",
+                "agent": agent,
+                "status": "running",
+                "task_ids": [],
+                "result": {"formatted": {}},
+            },
+            200,
+        )
+
+    monkeypatch.setattr(api_app, "select_agent_tool", forbidden_router)
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
+    conversation_key = str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7"))
+    store = ConversationContextStore(str(db_path))
+
+    first = _conversation_envelope(
+        turn_id="1",
+        requested_agent_id="KnowledgeAgent",
+        allowed_agent_ids=["KnowledgeAgent"],
+    )
+    first["current_message"]["content"] = "Tell me about OsDREB1 drought evidence."
+    first["history_delta"] = [
+        {
+            "turn_id": "1",
+            "role": "user",
+            "content": "Tell me about OsDREB1 drought evidence.",
+        }
+    ]
+
+    first_response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["KnowledgeAgent"],
+            "conversation": first,
+        },
+    )
+
+    assert first_response.status_code == 200
+    store.commit_staged_turn(
+        conversation_key,
+        "1",
+        first["ledger_version"],
+        "b" * 64,
+    )
+
+    second = _conversation_envelope(
+        turn_id="2",
+        requested_agent_id="KnowledgeAgent",
+        allowed_agent_ids=["KnowledgeAgent"],
+        base_business_context_version=1,
+    )
+    second["ledger_cursor"] = 2
+    second["ledger_version"] = "c" * 64
+    second["current_message"]["content"] = "Tell me about OsNAC6 drought evidence."
+    second["history_delta"] = [
+        {
+            "turn_id": "2",
+            "role": "user",
+            "content": "Tell me about OsNAC6 drought evidence.",
+        }
+    ]
+
+    second_response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["KnowledgeAgent"],
+            "conversation": second,
+        },
+    )
+
+    assert second_response.status_code == 409
+    assert (
+        second_response.json()["error"]["code"]
+        == "conversation_context_turn_in_progress"
+    )
+    stored_context = store.load_context(conversation_key)
+    assert stored_context is not None
+    assert [
+        item["label"] for item in stored_context.context["active_entities"]
+    ] == ["OsDREB1"]
+    failed_turn = store.load_turn(conversation_key, "2")
+    assert failed_turn is not None
+    assert failed_turn.state == "failed"
 
 
 async def test_context_expert_rebuilds_before_routing_when_state_is_missing(

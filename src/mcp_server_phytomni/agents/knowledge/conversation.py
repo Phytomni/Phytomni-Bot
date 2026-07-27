@@ -38,6 +38,7 @@ class _PreparedKnowledgeTurn:
     answer_context: str
     thread_id: str
     topic_label: str | None
+    topic_entity_removals: tuple[str, ...]
 
 
 def _bounded_text(value: str | None) -> str:
@@ -214,6 +215,26 @@ def _topic_entity(label: str) -> ContextEntity:
     return ContextEntity(entity_id=entity_id, entity_type="gene", label=label)
 
 
+def _topic_entity_removals(
+    projection: ContextProjection,
+    *,
+    topic_label: str | None,
+    is_new_topic: bool,
+) -> tuple[str, ...]:
+    """Return prior Knowledge-topic ids to drop after a successful switch."""
+    if topic_label is None or not is_new_topic:
+        return ()
+    removals: list[str] = []
+    lowered_topic = topic_label.lower()
+    for entity in projection.active_entities:
+        if entity.entity_type != "gene":
+            continue
+        if entity.label.lower() == lowered_topic:
+            continue
+        removals.append(entity.entity_id)
+    return tuple(removals)
+
+
 class KnowledgeConversationAdapter:
     """Prepare Knowledge V1 turns without exposing transcripts to retrieval."""
 
@@ -224,9 +245,7 @@ class KnowledgeConversationAdapter:
         """Resolve one retrieval query and bounded answer context."""
         query = _normalize_space(projection.current_query)
         candidates = _topic_candidates(projection)
-        topic_label, _is_new_topic = _explicit_topic(
-            query, candidates=candidates
-        )
+        topic_label, is_new_topic = _explicit_topic(query, candidates=candidates)
         if topic_label is None and _PRONOUN_PATTERN.search(query):
             if not candidates:
                 raise KnowledgeClarificationError(
@@ -244,6 +263,11 @@ class KnowledgeConversationAdapter:
             answer_context=_answer_context(projection),
             thread_id=projection.agent_thread_id,
             topic_label=topic_label,
+            topic_entity_removals=_topic_entity_removals(
+                projection,
+                topic_label=topic_label,
+                is_new_topic=is_new_topic,
+            ),
         )
         self._prepared = prepared
         return {
@@ -262,6 +286,7 @@ class KnowledgeConversationAdapter:
         return ContextDelta(
             summary_update=answer or None,
             entity_upserts=[] if topic is None else [_topic_entity(topic)],
+            entity_removals=list(self._prepared.topic_entity_removals),
             open_question_updates=_follow_up_questions(result),
             agent_memory_update=PerAgentMemory(
                 agent_id="KnowledgeAgent",
