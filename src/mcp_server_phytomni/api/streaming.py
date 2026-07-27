@@ -14,6 +14,7 @@ bind application-specific registry, graph, and request-context seams through
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from importlib import import_module
 from typing import Any
@@ -489,7 +490,12 @@ def _prepare_contextual_raw_events(
             async for event in raw_events:
                 yield event
         finally:
-            reset_private_conversation_messages(token)
+            with suppress(ValueError):
+                reset_private_conversation_messages(token)
+                # ``aclose()`` during client disconnect can finalize this
+                # generator from a different ``ContextVar`` context. The
+                # original request context is already unwinding in that case,
+                # so skipping the reset preserves the failed-turn cleanup path.
 
     return _wrapped()
 
@@ -713,11 +719,16 @@ async def stream_chat_completion(
             async for line in sse_lines:
                 yield line
         finally:
-            if (
-                prepared.agent_slug is not None
-                and not prepared.lifecycle_state.durably_settled
-            ):
-                durable_settlement_succeeded(_settle_terminal_failure)
+            try:
+                closer = getattr(sse_lines, "aclose", None)
+                if callable(closer):
+                    await closer()
+            finally:
+                if (
+                    prepared.agent_slug is not None
+                    and not prepared.lifecycle_state.durably_settled
+                ):
+                    durable_settlement_succeeded(_settle_terminal_failure)
 
     return StreamingResponse(_wrapped(), media_type="text/event-stream")
 

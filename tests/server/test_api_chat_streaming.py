@@ -25,6 +25,7 @@ import httpx
 import pytest
 
 from mcp_server_phytomni.api import app as api_app
+from mcp_server_phytomni.api import streaming as streaming_runtime
 from mcp_server_phytomni.api.app import _stream_chat_completion
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
 from mcp_server_phytomni.mcp.result_formatting import (
@@ -969,6 +970,104 @@ async def test_context_stream_duplicate_turn_replays_without_reinvocation(
     assert _stream_frames(first) == _stream_frames(second)
     assert first.count("event: RunFinished\n") == 1
     assert '"name": "phyto.context_staged"' in first
+
+
+async def test_context_stream_committed_turn_replays_without_reinvocation(
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A committed V1 turn replays the stored SSE bytes without Chat replay."""
+    invocations = 0
+
+    async def fake_streamed(
+        _tool_name: Any,
+        _arguments: dict[str, Any],
+        *,
+        run_id: str,
+        dialogue_id: str | None,
+    ) -> AsyncIterator[Any]:
+        nonlocal invocations
+        invocations += 1
+        yield run_started(run_id, dialogue_id)
+        yield text_message_start("msg-committed")
+        yield text_message_content("msg-committed", "Replay me")
+        yield text_message_end("msg-committed")
+        yield run_finished(run_id)
+
+    monkeypatch.setattr(api_app, "prepare_tool_stream", fake_streamed)
+    payload = ChatCompletionRequest(
+        model="phyto-chat",
+        messages=[ChatMessage(role="user", content="context")],
+        stream=True,
+        conversation=_conversation_envelope(turn_id="24"),
+    )
+
+    async def drive(request_id: str) -> str:
+        with request_context("u1", request_id):
+            response = await _stream_chat_completion(
+                tool_name="ChatAgent",
+                arguments={
+                    "user_query": "context",
+                    "locale": "en-US",
+                    "obs_file_list": [],
+                },
+                payload=payload,
+                user_query="context",
+            )
+            return "".join(
+                [
+                    line
+                    async for line in cast(
+                        AsyncGenerator[str, None], response.body_iterator
+                    )
+                ]
+            )
+
+    first = await drive("req-context-committed-first")
+    committed = await streaming_runtime._context_service().acknowledge_settlement(
+        payload.conversation,
+        payload.conversation.ledger_version,
+    )
+    second = await drive("req-context-committed-second")
+
+    registry = RunRegistry(db_path=tasks_db_path)
+    runs = [
+        run
+        for run in registry.list_runs(owner="u1")
+        if run.spec.agent == "chat" and run.request_info is not None
+    ]
+    stored_turn = ConversationContextStore(tasks_db_path).load_turn(
+        str(payload.conversation.conversation_key),
+        payload.conversation.turn_id,
+    )
+
+    assert invocations == 1
+    assert committed is not None
+    assert committed.context_version == 1
+    assert committed.ledger_version == payload.conversation.ledger_version
+    assert stored_turn is not None
+    assert stored_turn.state == "committed"
+    assert len(runs) == 1
+    assert _stream_frames(first) == _stream_frames(second)
+    assert [name for name, _payload in _stream_frames(second)] == [
+        "RunStarted",
+        "TextMessageStart",
+        "TextMessageContent",
+        "TextMessageEnd",
+        "Custom",
+        "RunFinished",
+    ]
+    assert second.count("event: RunFinished\n") == 1
+    assert _extract_custom_context(second) == {
+        "schema_version": 1,
+        "turn_id": "24",
+        "selected_agent_id": "ChatAgent",
+        "route_source": "instant_lock",
+        "proposed_business_context_version": 1,
+        "context_truncated": False,
+        "context_rebuilt": True,
+        "context_degraded": False,
+    }
 
 
 async def test_context_stream_failure_emits_no_successful_context_metadata(
