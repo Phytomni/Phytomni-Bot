@@ -9,6 +9,7 @@ Public functions: create_app.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
@@ -301,11 +302,7 @@ async def _prepare_agent_run(
     request_info = RunRequestInfo(
         dialogue_id=dialogue_id,
         request_id=current_request_id(),
-        query=(
-            arguments.get("user_query")
-            if isinstance(arguments.get("user_query"), str)
-            else None
-        ),
+        query=_request_info_query(arguments, request_json),
         tool_name=tool_name,
         model=None,
         request_json=request_json,
@@ -328,6 +325,20 @@ def _routing_contract_error(message: str) -> SafeApiError:
         stage="routing",
         retryable=False,
     )
+
+
+def _request_info_query(
+    arguments: Mapping[str, Any], request_json: str | None
+) -> str | None:
+    """Resolve the original query without trusting selected arguments."""
+    value = arguments.get("user_query")
+    if isinstance(value, str):
+        return value
+    try:
+        value = json.loads(request_json or "{}").get("user_query")
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return value if isinstance(value, str) else None
 
 
 def _format_agent_run_result(
@@ -476,8 +487,6 @@ async def _invoke_agent_run(
         ``task_ids`` / ``result``), ``status_code`` is 202 for remote
         submissions and 200 for synchronous completions.
 
-    Raises:
-        HTTPException: 404 when the slug is unknown.
     """
     prepared = await _prepare_agent_run(
         agent=agent,
@@ -570,11 +579,21 @@ async def _route_expert_query(
         raise _routing_contract_error(
             "router did not resolve one permitted agent"
         )
-    request_json = payload.model_dump_json()
     slug = _TOOL_TO_AGENT_SLUG.get(selection.tool_name)
     if slug is None:
         _LOGGER.warning("Expert routing selected an unavailable tool")
         raise _routing_contract_error("router selected an unavailable tool")
+    request_json = json.dumps(
+        {
+            "agent": slug,
+            "tool_name": selection.tool_name,
+            "user_query": payload.user_query,
+            "dialogue_id": payload.dialogue_id,
+            "locale": current_effective_locale(),
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
     owner = current_request_user() or "anonymous"
     arguments = prepare_expert_arguments(
         slug,
