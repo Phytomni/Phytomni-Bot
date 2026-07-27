@@ -10,6 +10,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from ...runtime.execution_models import ExecutionWarning
+
 
 @dataclass(frozen=True)
 class FormattedToolResult:
@@ -21,15 +23,6 @@ class FormattedToolResult:
     references: tuple[Mapping[str, Any], ...] = ()
     tabular: Mapping[str, Any] | None = None
     output_dirs: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class ExecutionWarning:
-    """Safe warning metadata for an operational execution projection."""
-
-    code: str
-    retryable: bool = False
-    stage: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

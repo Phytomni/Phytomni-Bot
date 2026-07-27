@@ -26,8 +26,8 @@ from pydantic import (
     model_validator,
 )
 
-from ..mcp.formatting.models import ExecutionWarning
 from ..storage.artifact_listing import ListedArtifactObject
+from .execution_models import ExecutionWarning
 
 __all__ = [
     "ARTIFACT_MANIFEST_FILENAME",

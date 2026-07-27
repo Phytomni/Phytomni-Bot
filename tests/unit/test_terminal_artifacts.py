@@ -14,14 +14,18 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 
 from mcp_server_phytomni.runtime import terminal_artifacts
+from mcp_server_phytomni.runtime.artifact_roles import ArtifactRole
 from mcp_server_phytomni.runtime.terminal_artifacts import (
     ArtifactLister,
+    TerminalArtifactSet,
     collect_terminal_artifacts,
 )
+from mcp_server_phytomni.storage.artifact_listing import ListedArtifactObject
 
 pytestmark = pytest.mark.unit
 
@@ -198,3 +202,79 @@ def test_collect_reads_enumerated_paths() -> None:
     ]
     artifacts = collect_terminal_artifacts(live)
     assert artifacts[0]["paths"] == ["/obs/p/r1/fig.png"]
+
+
+def _listed_object(relative_path: str) -> ListedArtifactObject:
+    """Build one listed object with private provenance for structured tests."""
+    return ListedArtifactObject(
+        relative_path=relative_path,
+        source_path=f"/private/obsfs/{relative_path}",
+        size_bytes=1024,
+        download_ref=f"/obs/phytomni/run/{relative_path}",
+    )
+
+
+def _manifest_item(path: str) -> dict[str, str]:
+    """Build one manifest declaration for a negative-path test."""
+    return {
+        "path": path,
+        "role": "scientific_text",
+        "media_type": "text/plain",
+    }
+
+
+@pytest.mark.asyncio
+async def test_unknown_is_listed_but_not_report_eligible() -> None:
+    """Unmanifested files remain visible while staying out of reports."""
+
+    async def fake_objects(_output_dir: str) -> list[ListedArtifactObject]:
+        return [_listed_object("summary.csv"), _listed_object("analysis.log")]
+
+    async def missing_manifest(
+        _output_dir: str,
+    ) -> None:
+        return None
+
+    result = await collect_terminal_artifacts(
+        task_id="task-1",
+        output_dir="owner/out",
+        lister=fake_objects,
+        manifest_loader=missing_manifest,
+    )
+
+    assert isinstance(result, TerminalArtifactSet)
+    assert [item.role for item in result.artifacts] == [
+        ArtifactRole.UNKNOWN,
+        ArtifactRole.UNKNOWN,
+    ]
+    assert not any(item.report_context_eligible for item in result.artifacts)
+    assert result.warnings[0].code == "artifact_manifest_missing"
+
+
+@pytest.mark.parametrize(
+    "bad_path",
+    ["/etc/passwd", "../escape.txt", "a/../../b.txt", "a\\b.txt"],
+)
+@pytest.mark.asyncio
+async def test_manifest_path_escape_fails_closed(bad_path: str) -> None:
+    """Unsafe manifest paths leave every listed object unknown."""
+
+    async def fake_objects(_output_dir: str) -> list[ListedArtifactObject]:
+        return [_listed_object("summary.csv")]
+
+    async def manifest_loader(_output_dir: str) -> dict[str, Any]:
+        return {
+            "version": "1.0",
+            "artifacts": [_manifest_item(bad_path)],
+        }
+
+    result = await collect_terminal_artifacts(
+        task_id="task-1",
+        output_dir="owner/out",
+        lister=fake_objects,
+        manifest_loader=manifest_loader,
+    )
+
+    assert isinstance(result, TerminalArtifactSet)
+    assert all(item.role is ArtifactRole.UNKNOWN for item in result.artifacts)
+    assert result.warnings[0].code == "artifact_manifest_invalid"
