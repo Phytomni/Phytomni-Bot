@@ -15,6 +15,8 @@ from mcp_server_phytomni.api.schemas import (
     ExpertQueryRequest,
 )
 from mcp_server_phytomni.runtime.conversation_context.models import (
+    ArtifactRefV1,
+    LedgerEntryV1,
     MAX_ARTIFACT_METADATA_CHARS,
     MAX_CURRENT_MESSAGE_CHARS,
     MAX_HISTORY_DELTA_ENTRIES,
@@ -71,6 +73,34 @@ def test_envelope_rejects_invalid_core_values(
 
     with pytest.raises(ValidationError, match=field):
         ConversationEnvelopeV1.model_validate(payload)
+
+
+def test_envelope_rejects_malformed_dialogue_id() -> None:
+    """The owner-scoped dialogue identifier must be a UUID."""
+    payload = _valid_envelope()
+    payload["dialogue_id"] = "not-a-uuid"
+
+    with pytest.raises(ValidationError, match="dialogue_id"):
+        ConversationEnvelopeV1.model_validate(payload)
+
+
+@pytest.mark.parametrize("turn_id", ["0", "01", "one", "1" * 20])
+def test_envelope_rejects_invalid_turn_id(turn_id: str) -> None:
+    """Envelope turns are positive, non-padded integers with 19 digits max."""
+    payload = _valid_envelope()
+    payload["turn_id"] = turn_id
+
+    with pytest.raises(ValidationError, match="turn_id"):
+        ConversationEnvelopeV1.model_validate(payload)
+
+
+@pytest.mark.parametrize("turn_id", ["0", "01", "one", "1" * 20])
+def test_ledger_entry_rejects_invalid_turn_id(turn_id: str) -> None:
+    """Ledger turn identifiers retain the same bounded integer contract."""
+    with pytest.raises(ValidationError, match="turn_id"):
+        LedgerEntryV1.model_validate(
+            {"turn_id": turn_id, "role": "user", "content": "hello"}
+        )
 
 
 @pytest.mark.parametrize(
@@ -163,6 +193,62 @@ def test_envelope_rejects_oversized_context_content(
 
     with pytest.raises(ValidationError):
         ConversationEnvelopeV1.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "artifact_id",
+    [
+        "artifact-1",
+        "artifact_1",
+        "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad6",
+    ],
+)
+def test_artifact_ref_accepts_safe_opaque_ids(artifact_id: str) -> None:
+    """Opaque artifact IDs retain ordinary identifier formats."""
+    artifact = ArtifactRefV1(
+        artifact_id=artifact_id,
+        display_name="result.csv",
+    )
+
+    assert artifact.artifact_id == artifact_id
+
+
+@pytest.mark.parametrize(
+    "artifact_id",
+    ["obs://bucket/results.csv", "/srv/results.csv", r"C:\\srv\\results.csv"],
+)
+def test_artifact_ref_rejects_paths_and_uris_in_ids(artifact_id: str) -> None:
+    """Artifact IDs cannot be storage locators disguised as identifiers."""
+    with pytest.raises(ValidationError, match="artifact_id"):
+        ArtifactRefV1(artifact_id=artifact_id, display_name="result.csv")
+
+
+@pytest.mark.parametrize(
+    "display_name",
+    [
+        "obs://bucket/results.csv",
+        "/srv/results.csv",
+        r"C:\\srv\\results.csv",
+        "exports/results.csv",
+    ],
+)
+def test_artifact_ref_rejects_path_bearing_display_names(
+    display_name: str,
+) -> None:
+    """Display labels are names only, never relative or absolute paths."""
+    with pytest.raises(ValidationError, match="display_name"):
+        ArtifactRefV1(artifact_id="artifact-1", display_name=display_name)
+
+
+def test_current_message_can_mention_paths_without_becoming_metadata() -> None:
+    """Path text remains valid conversational content outside artifact refs."""
+    payload = _valid_envelope()
+    payload["current_message"] = {
+        "content": "Compare /srv/results.csv with obs://bucket/results.csv.",
+        "locale": "en-US",
+    }
+
+    assert ConversationEnvelopeV1.model_validate(payload).current_message.content
 
 
 @pytest.mark.parametrize(

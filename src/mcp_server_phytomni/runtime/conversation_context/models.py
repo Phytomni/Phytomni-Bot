@@ -4,10 +4,17 @@
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from ...mcp.schemas import AGENT_TOOL_DEFINITIONS
 from ..locale import SupportedLocale
@@ -19,6 +26,12 @@ MAX_HISTORY_DELTA_ENTRIES = 200
 MAX_ARTIFACT_REFS = 50
 MAX_LEDGER_SUMMARY_CHARS = 4 * 1024
 MAX_ARTIFACT_METADATA_CHARS = 512
+MAX_ARTIFACT_ID_CHARS = 128
+
+_OPAQUE_ARTIFACT_ID_PATTERN = (
+    rf"^[A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_ARTIFACT_ID_CHARS - 1}}}$"
+)
+_URI_SCHEME_PREFIX = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 
 _CANONICAL_AGENT_TOOL_NAMES = frozenset(
     name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
@@ -67,12 +80,21 @@ class ArtifactRefV1(BaseModel):
 
     artifact_id: str = Field(
         min_length=1,
-        max_length=MAX_ARTIFACT_METADATA_CHARS,
+        max_length=MAX_ARTIFACT_ID_CHARS,
+        pattern=_OPAQUE_ARTIFACT_ID_PATTERN,
     )
     display_name: str = Field(
         min_length=1,
         max_length=MAX_ARTIFACT_METADATA_CHARS,
     )
+
+    @field_validator("display_name")
+    @classmethod
+    def _reject_path_like_display_name(cls, value: str) -> str:
+        """Keep metadata labels separate from storage paths and URIs."""
+        if "/" in value or "\\" in value or _URI_SCHEME_PREFIX.match(value):
+            raise ValueError("display_name must not contain a path or URI")
+        return value
 
 
 class ConversationEnvelopeV1(BaseModel):
@@ -138,6 +160,7 @@ __all__ = [
     "CurrentMessageV1",
     "LedgerEntryV1",
     "MAX_ALLOWED_AGENT_IDS",
+    "MAX_ARTIFACT_ID_CHARS",
     "MAX_ARTIFACT_METADATA_CHARS",
     "MAX_ARTIFACT_REFS",
     "MAX_CURRENT_MESSAGE_CHARS",
