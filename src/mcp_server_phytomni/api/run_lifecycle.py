@@ -22,11 +22,8 @@ from typing import Any
 
 from fastapi import BackgroundTasks, HTTPException
 
-from ..runtime.deep_genome_store import (
-    DeepGenomeStore,
-    snapshot_to_formatted_report_metadata,
-    snapshot_to_public_dict,
-)
+from ..runtime.deep_genome_store import DeepGenomeStore
+from ..runtime.deep_genome_store_projection import snapshot_to_canonical_result
 from ..runtime.run_registry import (
     RunFilter,
     RunOutcome,
@@ -261,16 +258,16 @@ def agent_run_response(
 def project_deep_genome_run(
     record: RunRecord, *, debug: bool = False, db_path: str | None = None
 ) -> dict[str, Any]:
-    """Merge the owner-scoped DeepGenome snapshot into one run envelope."""
+    """Project the owner-scoped DeepGenome snapshot into one run envelope."""
     payload = run_record_to_dict(record)
-    result = payload.get("result")
-    merged = dict(result) if isinstance(result, Mapping) else {}
-    if not debug:
-        for private_key in ("task_results", "live_status", "artifacts", "raw"):
-            merged.pop(private_key, None)
-        payload["result"] = merged
+    source_result = payload.get("result")
+    existing_result = (
+        source_result if isinstance(source_result, Mapping) else None
+    )
     if len(record.task_ids) != 1:
-        return payload
+        return _project_deep_genome_fallback(
+            payload, existing_result, debug=debug
+        )
     try:
         snapshot = DeepGenomeStore(_database_path(db_path)).get_snapshot(
             record.task_ids[0]
@@ -279,30 +276,63 @@ def project_deep_genome_run(
         _LOGGER.warning(
             "deep_genome run snapshot unavailable for owner-scoped run"
         )
-        return payload
-    if snapshot is None:
-        return payload
-
-    merged.update(snapshot_to_public_dict(snapshot))
-    formatted = merged.get("formatted")
-    if isinstance(formatted, Mapping):
-        formatted_copy = dict(formatted)
-        existing_metadata = formatted_copy.get("metadata")
-        metadata = (
-            dict(existing_metadata)
-            if isinstance(existing_metadata, Mapping)
-            else {}
+        return _project_deep_genome_fallback(
+            payload, existing_result, debug=debug
         )
-        metadata["report"] = snapshot_to_formatted_report_metadata(snapshot)
-        formatted_copy["metadata"] = metadata
-        merged["formatted"] = formatted_copy
-    payload["status"] = snapshot.status
-    payload["result"] = merged
-    best_report = merged.get("final_report") or merged.get(
-        "intermediate_report"
+    if snapshot is None:
+        return _project_deep_genome_fallback(
+            payload, existing_result, debug=debug
+        )
+
+    result = snapshot_to_canonical_result(
+        snapshot,
+        existing_result=existing_result,
     )
-    if isinstance(best_report, str) and best_report.strip():
-        payload["answer"] = best_report
+    if debug and existing_result is not None:
+        for private_key in (
+            "task_results",
+            "live_status",
+            "artifacts",
+            "raw",
+        ):
+            value = existing_result.get(private_key)
+            if value is not None:
+                result[private_key] = value
+    payload["status"] = snapshot.status
+    payload["result"] = result
+    payload["answer"] = extract_answer(result)
+    if _result_tracking_is_degraded(result):
+        payload["degraded_tracking"] = True
+    else:
+        payload.pop("degraded_tracking", None)
+    return payload
+
+
+def _project_deep_genome_fallback(
+    payload: dict[str, Any],
+    source_result: Mapping[str, Any] | None,
+    *,
+    debug: bool,
+) -> dict[str, Any]:
+    """Keep only canonical blocks when the local snapshot is unavailable."""
+    result: dict[str, Any] = {}
+    if source_result is not None:
+        for key in ("formatted", "execution", "a2ui"):
+            value = source_result.get(key)
+            if value is not None:
+                result[key] = value
+        if debug:
+            for private_key in (
+                "task_results",
+                "live_status",
+                "artifacts",
+                "raw",
+            ):
+                value = source_result.get(private_key)
+                if value is not None:
+                    result[private_key] = value
+    payload["result"] = result
+    payload["answer"] = extract_answer(result)
     return payload
 
 

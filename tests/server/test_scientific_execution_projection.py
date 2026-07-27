@@ -25,6 +25,10 @@ from mcp_server_phytomni.mcp.result_formatting import (
     strip_agent_result,
     strip_chat_completion,
 )
+from mcp_server_phytomni.runtime.deep_genome_store_projection import (
+    DeepGenomeSnapshot,
+    snapshot_to_canonical_result,
+)
 
 pytestmark = pytest.mark.server
 
@@ -181,6 +185,51 @@ def test_terminal_report_metadata_survives_run_projection() -> None:
             "download_ref": "/obs/public/report.md",
         }
     ]
+
+
+def test_deep_genome_snapshot_uses_canonical_split() -> None:
+    """DeepGenome reports use the same scientific/execution result shape."""
+    snapshot = DeepGenomeSnapshot(
+        umbrella_task_id="dg-final",
+        status="succeeded",
+        degraded=False,
+        degraded_reason=None,
+        failures=(),
+        report_revision=4,
+        report_updated_at="2026-07-25T00:00:00Z",
+        progress={
+            "planning_complete": True,
+            "brief_gene_status": "succeeded",
+            "total": 12,
+            "completed": 12,
+        },
+        intermediate_report="# Intermediate report\n",
+        final_report="# Final report\n",
+        report_stage="final",
+        report_completeness="complete",
+    )
+    result = snapshot_to_canonical_result(
+        snapshot,
+        existing_result={
+            "task_results": [
+                {"task_id": "dg-final", "output_dir": "/obs/deep-genome"}
+            ],
+        },
+    )
+
+    assert result["formatted"]["answer"] == "# Final report\n"
+    report = result["execution"]["report"]
+    assert report == {
+        "state": "final",
+        "degraded": False,
+        "source_artifact_count": 0,
+    }
+    assert result["formatted"]["metadata"]["report"] == report
+    assert result["formatted"]["metadata"]["deep_genome"]["revision"] == 4
+    assert result["execution"]["output_dirs"] == ["/obs/deep-genome"]
+    assert "final_report" not in result
+    assert "intermediate_report" not in result
+    assert "artifacts" not in result
 
 
 def test_stream_settlement_keeps_execution_and_strips_raw() -> None:

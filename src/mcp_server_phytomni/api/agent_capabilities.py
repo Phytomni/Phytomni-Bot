@@ -170,6 +170,9 @@ _CAPABILITIES: dict[str, AgentCapability] = {
     ),
     "brief_gene": AgentCapability(streaming=True),
     "analyst": AgentCapability(
+        report_states=("final",),
+        artifacts=True,
+        degraded_outcomes=True,
         attachments=AttachmentCapability(_DOCUMENTS, _DATASETS, False),
     ),
     "deep_genome": AgentCapability(
@@ -178,10 +181,21 @@ _CAPABILITIES: dict[str, AgentCapability] = {
         degraded_outcomes=True,
     ),
     "research": AgentCapability(
+        report_states=("final",),
+        artifacts=True,
+        degraded_outcomes=True,
         attachments=AttachmentCapability(_DOCUMENTS, _DATASETS, False),
     ),
-    "design": AgentCapability(),
-    "network": AgentCapability(),
+    "design": AgentCapability(
+        report_states=("final",),
+        artifacts=True,
+        degraded_outcomes=True,
+    ),
+    "network": AgentCapability(
+        report_states=("final",),
+        artifacts=True,
+        degraded_outcomes=True,
+    ),
 }
 
 _TOOL_TO_AGENT_SLUG: Mapping[str, str] = MappingProxyType(

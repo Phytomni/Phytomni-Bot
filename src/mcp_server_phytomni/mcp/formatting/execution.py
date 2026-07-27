@@ -37,7 +37,20 @@ _OPERATIONAL_METADATA_KEYS = frozenset(
     }
 )
 _TASK_KEYS = frozenset({"accepted", "id", "status"})
-_ARTIFACT_KEYS = frozenset({"id", "name", "role", "size_bytes"})
+PUBLIC_ARTIFACT_KEYS = (
+    "id",
+    "role",
+    "name",
+    "media_type",
+    "downloadable",
+    "report_context_eligible",
+    "mime_type",
+    "size_bytes",
+    "output_dir",
+    "uri",
+    "download_ref",
+)
+_ARTIFACT_KEYS = frozenset(PUBLIC_ARTIFACT_KEYS)
 
 
 def apply_compatibility_projection(
@@ -292,6 +305,7 @@ __all__ = [
     "ExecutionProjection",
     "ExecutionWarning",
     "ReportExecution",
+    "PUBLIC_ARTIFACT_KEYS",
     "apply_compatibility_projection",
     "build_execution_projection",
 ]

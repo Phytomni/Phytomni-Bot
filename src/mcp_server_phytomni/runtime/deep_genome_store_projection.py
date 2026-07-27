@@ -10,24 +10,41 @@ MCP, HTTP, and task-reconciliation consumers.
 
 from __future__ import annotations
 
+import json
 import re
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal, cast
 
+from ..agents.shared.citation_enrichment import CITATION_BIBLIO_FIELDS
 from ..contracts.deep_genome import (
     DEEP_GENOME_FINAL_FAILURE_REASONS,
     DEEP_GENOME_PROGRESS_FIELDS,
     DEEP_GENOME_REPORT_FIELDS,
     sanitize_nonnegative_int,
 )
+from ..mcp.formatting.execution import (
+    PUBLIC_ARTIFACT_KEYS,
+    apply_compatibility_projection,
+    build_execution_projection,
+)
+from ..mcp.formatting.models import (
+    ExecutionProjection,
+    FormattedToolResult,
+    ReportExecution,
+)
+from .execution_models import ExecutionWarning
 
 __all__ = [
     "DeepGenomeRemoteTaskRow",
     "DeepGenomeSectionRow",
     "DeepGenomeSnapshot",
+    "public_snapshot_to_canonical_result",
+    "sanitize_deep_genome_snapshot",
+    "snapshot_to_canonical_result",
     "snapshot_to_formatted_report_metadata",
+    "snapshot_metadata_from_mapping",
     "snapshot_to_public_dict",
 ]
 
@@ -40,6 +57,29 @@ _PUBLIC_GENERATED_REASON = re.compile(
     r"^[0-9]+ of 12 optional analyses unavailable$"
 )
 _PUBLIC_REASON_FALLBACK = "analysis results are partially unavailable"
+_ReportState = Literal["none", "intermediate", "final", "degraded"]
+_PUBLIC_STATUSES = frozenset(
+    {"running", "succeeded", "failed", "cancelled", "timed_out"}
+)
+_SAFE_METADATA_KEYS = frozenset(
+    {
+        "consumer",
+        "gene",
+        "gene_id",
+        "original_query",
+        "query",
+        "resolve_gene_id",
+        "resolved_gene_id",
+        "resolved_species_code",
+        "species",
+        "species_code",
+    }
+)
+_SAFE_REFERENCE_KEYS = (
+    "file_id",
+    "title",
+    *CITATION_BIBLIO_FIELDS,
+)
 
 
 @dataclass(frozen=True)
@@ -111,6 +151,7 @@ def _public_failures(
         if (
             not isinstance(work_item_key, str)
             or not work_item_key.strip()
+            or not isinstance(status, str)
             or status not in terminal_states
         ):
             continue
@@ -149,6 +190,11 @@ def _public_timestamp(value: str | None) -> str | None:
     if parsed.tzinfo is None:
         return None
     return parsed.astimezone(UTC).isoformat().replace("+00:00", "Z")
+
+
+def _optional_string(value: Any) -> str | None:
+    """Keep public text or null; reject non-string persisted values."""
+    return value if isinstance(value, str) else None
 
 
 def snapshot_to_public_dict(
@@ -191,6 +237,54 @@ def snapshot_to_public_dict(
     return {field: public[field] for field in DEEP_GENOME_REPORT_FIELDS}
 
 
+def sanitize_deep_genome_snapshot(
+    source: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Allowlist one legacy persisted snapshot mapping."""
+    stage = source.get("report_stage")
+    completeness = source.get("report_completeness")
+    revision = source.get("report_revision")
+    if not isinstance(stage, str) or stage not in {
+        "waiting_for_brief_gene",
+        "intermediate",
+        "final",
+    }:
+        return None
+    if not isinstance(completeness, str) or completeness not in {
+        "none",
+        "partial",
+        "complete",
+    }:
+        return None
+    if not isinstance(revision, int) or isinstance(revision, bool):
+        return None
+    raw_failures = source.get("failures")
+    failures = (
+        tuple(value for value in raw_failures if isinstance(value, Mapping))
+        if isinstance(raw_failures, list)
+        else ()
+    )
+    public = {
+        "intermediate_report": _optional_string(
+            source.get("intermediate_report")
+        ),
+        "final_report": _optional_string(source.get("final_report")),
+        "report_stage": stage,
+        "report_completeness": completeness,
+        "report_revision": sanitize_nonnegative_int(revision),
+        "report_updated_at": _public_timestamp(
+            source.get("report_updated_at")
+        ),
+        "progress": _public_progress(_mapping(source.get("progress"))),
+        "degraded": source.get("degraded") is True,
+        "degraded_reason": _public_degraded_reason(
+            source.get("degraded_reason")
+        ),
+        "failures": _public_failures(failures),
+    }
+    return {field: public[field] for field in DEEP_GENOME_REPORT_FIELDS}
+
+
 def snapshot_to_formatted_report_metadata(
     snapshot: DeepGenomeSnapshot,
 ) -> dict[str, Any]:
@@ -210,6 +304,351 @@ def snapshot_to_formatted_report_metadata(
         "degraded": public["degraded"],
         "failure_count": len(public["failures"]),
     }
+
+
+def snapshot_metadata_from_mapping(
+    source: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Project bounded progress metadata without report-state internals."""
+    stage = source.get("stage")
+    completeness = source.get("completeness")
+    revision = source.get("revision")
+    failure_count = source.get("failure_count")
+    raw_failures = source.get("failures")
+    if failure_count is None and isinstance(raw_failures, list):
+        failure_count = len(
+            _public_failures(
+                tuple(
+                    value
+                    for value in raw_failures
+                    if isinstance(value, Mapping)
+                )
+            )
+        )
+    return {
+        "stage": (
+            stage
+            if stage in {"waiting_for_brief_gene", "intermediate", "final"}
+            else "waiting_for_brief_gene"
+        ),
+        "completeness": (
+            completeness
+            if completeness in {"none", "partial", "complete"}
+            else "none"
+        ),
+        "revision": sanitize_nonnegative_int(revision),
+        "updated_at": _public_timestamp(source.get("updated_at")),
+        "progress": _public_progress(_mapping(source.get("progress"))),
+        "degraded": source.get("degraded") is True,
+        "failure_count": sanitize_nonnegative_int(failure_count),
+    }
+
+
+def snapshot_to_canonical_result(
+    snapshot: DeepGenomeSnapshot,
+    *,
+    existing_result: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the canonical HTTP result for one owner-scoped snapshot."""
+    return public_snapshot_to_canonical_result(
+        snapshot_to_public_dict(snapshot),
+        task_id=snapshot.umbrella_task_id,
+        status=snapshot.status,
+        existing_result=existing_result,
+    )
+
+
+def public_snapshot_to_canonical_result(
+    snapshot: Mapping[str, Any],
+    *,
+    task_id: str,
+    status: str,
+    existing_result: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a canonical result from an already-sanitized snapshot mapping."""
+    public_status = _public_status(status)
+    existing = build_execution_projection(
+        "DeepGenomeAgent", existing_result or {}
+    )
+    artifacts = _public_artifacts(existing_result)
+    output_dirs = _public_output_dirs(existing_result)
+    warnings = list(existing.warnings)
+    diagnostics = list(existing.diagnostics)
+    degraded = bool(snapshot.get("degraded"))
+    if degraded:
+        _append_warning(
+            warnings,
+            ExecutionWarning(
+                code="deep_genome_report_degraded",
+                stage="deep_genome",
+            ),
+        )
+        _append_diagnostic(
+            diagnostics,
+            {"code": "deep_genome_report_degraded", "stage": "deep_genome"},
+        )
+    if public_status != "succeeded":
+        failure_code = (
+            "task_failed"
+            if _snapshot_has_failures(snapshot)
+            else "run_not_succeeded"
+        )
+        _append_warning(
+            warnings,
+            ExecutionWarning(code=failure_code, stage="reconcile"),
+        )
+        _append_diagnostic(
+            diagnostics,
+            {"code": failure_code, "stage": "reconcile"},
+        )
+
+    execution = ExecutionProjection(
+        tracking={
+            "degraded": degraded
+            or public_status != "succeeded"
+            or bool(existing.tracking.get("degraded")),
+        },
+        warnings=tuple(warnings),
+        tasks=(
+            {
+                "id": task_id,
+                "accepted": True,
+                "status": public_status,
+            },
+        ),
+        artifacts=tuple(artifacts),
+        output_dirs=tuple(output_dirs),
+        report=ReportExecution(
+            state=_report_state(snapshot),
+            degraded=degraded,
+            source_artifact_count=len(artifacts),
+        ),
+        diagnostics=tuple(diagnostics),
+    )
+    metadata = _public_metadata(existing_result)
+    metadata["deep_genome"] = _snapshot_metadata(snapshot)
+    formatted = apply_compatibility_projection(
+        FormattedToolResult(
+            answer=_best_report(snapshot),
+            follow_up_questions=_existing_follow_up_questions(existing_result),
+            metadata=metadata,
+            references=_existing_references(existing_result),
+            tabular=_existing_tabular(existing_result),
+            output_dirs=tuple(output_dirs),
+        ),
+        execution,
+    )
+    return _json_compatible(
+        {"formatted": asdict(formatted), "execution": asdict(execution)}
+    )
+
+
+def _report_state(snapshot: Mapping[str, Any]) -> _ReportState:
+    """Map the bounded snapshot stage to the report state contract."""
+    stage = snapshot.get("report_stage")
+    if stage in {"intermediate", "final"}:
+        return cast(_ReportState, stage)
+    return "none"
+
+
+def _best_report(snapshot: Mapping[str, Any]) -> str:
+    """Return the newest nonblank scientific report text."""
+    for key in ("final_report", "intermediate_report"):
+        value = snapshot.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+
+def _public_status(value: str) -> str:
+    """Keep the status vocabulary used by public task descriptors."""
+    normalized = value.strip().lower() if isinstance(value, str) else ""
+    if normalized in _PUBLIC_STATUSES:
+        return normalized
+    if normalized in {"success", "completed", "done"}:
+        return "succeeded"
+    return "running"
+
+
+def _snapshot_has_failures(snapshot: Mapping[str, Any]) -> bool:
+    """Return whether the sanitized snapshot contains failed work items."""
+    failures = snapshot.get("failures")
+    return isinstance(failures, Sequence) and any(
+        isinstance(item, Mapping)
+        and item.get("status") in {"failed", "cancelled", "timed_out"}
+        for item in failures
+    )
+
+
+def _snapshot_metadata(snapshot: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep bounded DeepGenome progress outside canonical report metadata."""
+    return snapshot_metadata_from_mapping(
+        {
+            "stage": snapshot.get("report_stage"),
+            "completeness": snapshot.get("report_completeness"),
+            "revision": snapshot.get("report_revision"),
+            "updated_at": snapshot.get("report_updated_at"),
+            "progress": snapshot.get("progress", {}),
+            "degraded": snapshot.get("degraded") is True,
+            "failure_count": len(snapshot.get("failures", [])),
+        }
+    )
+
+
+def _public_metadata(
+    existing_result: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Preserve only known scalar metadata from a stored formatted result."""
+    formatted = _mapping(existing_result).get("formatted")
+    source = _mapping(formatted).get("metadata")
+    if not isinstance(source, Mapping):
+        return {}
+    return {
+        key: value
+        for key in _SAFE_METADATA_KEYS
+        if (value := source.get(key)) is not None and _is_safe_scalar(value)
+    }
+
+
+def _existing_follow_up_questions(
+    existing_result: Mapping[str, Any] | None,
+) -> tuple[str, ...]:
+    """Preserve safe follow-up strings from a stored formatted result."""
+    formatted = _mapping(existing_result).get("formatted")
+    values = _mapping(formatted).get("follow_up_questions")
+    if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+        return ()
+    return tuple(value for value in values if isinstance(value, str))
+
+
+def _existing_references(
+    existing_result: Mapping[str, Any] | None,
+) -> tuple[Mapping[str, Any], ...]:
+    """Preserve citation-shaped scalar references without raw payloads."""
+    formatted = _mapping(existing_result).get("formatted")
+    values = _mapping(formatted).get("references")
+    if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+        return ()
+    return tuple(
+        {
+            key: item[key]
+            for key in _SAFE_REFERENCE_KEYS
+            if key in item and _is_safe_scalar(item[key])
+        }
+        for value in values
+        if isinstance(value, Mapping)
+        for item in (value,)
+    )
+
+
+def _existing_tabular(
+    existing_result: Mapping[str, Any] | None,
+) -> Mapping[str, Any] | None:
+    """Preserve scalar table cells from a stored formatted result."""
+    formatted = _mapping(existing_result).get("formatted")
+    table = _mapping(formatted).get("tabular")
+    if not isinstance(table, Mapping):
+        return None
+    headers = table.get("headers")
+    rows = table.get("rows")
+    if not isinstance(headers, list) or not all(
+        _is_safe_scalar(value) for value in headers
+    ):
+        return None
+    if not isinstance(rows, list) or not all(
+        isinstance(row, list) and all(_is_safe_scalar(value) for value in row)
+        for row in rows
+    ):
+        return None
+    return {"headers": list(headers), "rows": [list(row) for row in rows]}
+
+
+def _public_artifacts(
+    existing_result: Mapping[str, Any] | None,
+) -> tuple[Mapping[str, Any], ...]:
+    """Preserve only explicit artifact descriptor fields."""
+    raw = _mapping(existing_result)
+    execution = _mapping(raw.get("execution"))
+    values = execution.get("artifacts", raw.get("artifacts"))
+    if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+        return ()
+    artifacts: list[Mapping[str, Any]] = []
+    for value in values:
+        if not isinstance(value, Mapping):
+            continue
+        item = {
+            key: value[key]
+            for key in PUBLIC_ARTIFACT_KEYS
+            if key in value and _is_safe_scalar(value[key])
+        }
+        if item:
+            artifacts.append(item)
+    return tuple(artifacts)
+
+
+def _public_output_dirs(
+    existing_result: Mapping[str, Any] | None,
+) -> tuple[str, ...]:
+    """Preserve owner-scoped output references from old and new envelopes."""
+    raw = _mapping(existing_result)
+    execution = _mapping(raw.get("execution"))
+    values: list[Any] = []
+    for key in ("output_dirs",):
+        source = execution.get(key, raw.get(key))
+        if isinstance(source, Sequence) and not isinstance(
+            source, (str, bytes)
+        ):
+            values.extend(source)
+        elif source is not None:
+            values.append(source)
+    for key in ("task_results", "live_status"):
+        source = raw.get(key)
+        if isinstance(source, Sequence) and not isinstance(
+            source, (str, bytes)
+        ):
+            values.extend(
+                item.get("output_dir")
+                for item in source
+                if isinstance(item, Mapping)
+            )
+    return tuple(
+        dict.fromkeys(
+            value for value in values if isinstance(value, str) and value
+        )
+    )
+
+
+def _append_warning(
+    warnings: list[ExecutionWarning], warning: ExecutionWarning
+) -> None:
+    """Append one warning code only once."""
+    if not any(item.code == warning.code for item in warnings):
+        warnings.append(warning)
+
+
+def _append_diagnostic(
+    diagnostics: list[Mapping[str, Any]], diagnostic: Mapping[str, Any]
+) -> None:
+    """Append one diagnostic code only once."""
+    if not any(
+        item.get("code") == diagnostic.get("code") for item in diagnostics
+    ):
+        diagnostics.append(diagnostic)
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    """Return a mapping view for optional persisted values."""
+    return value if isinstance(value, Mapping) else {}
+
+
+def _is_safe_scalar(value: Any) -> bool:
+    """Return whether one value can cross the formatted public boundary."""
+    return isinstance(value, (str, int, float, bool)) or value is None
+
+
+def _json_compatible(value: Any) -> Any:
+    """Normalize tuples and immutable mappings to JSON-compatible values."""
+    return json.loads(json.dumps(value))
 
 
 @dataclass(frozen=True)

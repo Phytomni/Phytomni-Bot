@@ -51,7 +51,7 @@ pytestmark = pytest.mark.server
 def test_canonical_owner_read_preserves_sanitized_deep_genome_snapshot() -> (
     None
 ):
-    """Canonical owner reads retain only the documented snapshot fields."""
+    """Canonical owner reads place the snapshot in report/execution fields."""
     canonical = canonicalize_run_record(
         {
             "id": "run-deep-genome-public",
@@ -112,19 +112,37 @@ def test_canonical_owner_read_preserves_sanitized_deep_genome_snapshot() -> (
     )
 
     result = canonical["result"]
-    assert result["intermediate_report"] == "# Intermediate report\n"
-    assert result["report_revision"] == 3
-    assert result["failures"] == [
+    assert result["formatted"]["answer"] == "# Intermediate report\n"
+    assert result["execution"]["report"] == {
+        "state": "intermediate",
+        "degraded": True,
+        "source_artifact_count": 0,
+    }
+    assert result["formatted"]["metadata"]["report"] == (
+        result["execution"]["report"]
+    )
+    assert result["formatted"]["metadata"]["deep_genome"]["revision"] == 3
+    assert result["execution"]["warnings"] == [
         {
-            "work_item_key": "protein_design",
-            "status": "failed",
-            "message": "analysis task failed",
-        }
+            "code": "deep_genome_report_degraded",
+            "retryable": False,
+            "stage": "deep_genome",
+        },
+        {
+            "code": "task_failed",
+            "retryable": False,
+            "stage": "reconcile",
+        },
     ]
+    for field in (
+        "intermediate_report",
+        "final_report",
+        "report_revision",
+        "failures",
+        "provider_payload",
+    ):
+        assert field not in result
     assert "provider_payload" not in result
-    report = result["formatted"]["metadata"]["report"]
-    assert report["revision"] == 3
-    assert "provider_payload" not in report
 
 
 @pytest.mark.parametrize(
@@ -183,10 +201,12 @@ def test_canonical_owner_read_redacts_unhashable_deep_genome_snapshot_fields(
 
     projected = canonical["result"]
     assert "provider_payload" not in str(projected)
-    if field == "failures":
-        assert projected["failures"] == []
-    else:
-        assert "intermediate_report" not in projected
+    assert "intermediate_report" not in projected
+    assert "final_report" not in projected
+    assert "failures" not in projected
+    assert projected["formatted"]["answer"] == (
+        "# Intermediate report\n" if field == "failures" else "stored answer"
+    )
 
 
 def _auth_headers(api_key: str) -> dict[str, str]:

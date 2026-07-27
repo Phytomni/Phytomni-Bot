@@ -58,14 +58,17 @@ async def test_list_deep_genome_projects_intermediate_snapshot(
         item for item in response.json()["data"] if item["run_id"] == run_id
     )
     assert row["status"] == "running"
-    assert row["result"]["intermediate_report"].startswith("#")
-    assert row["result"]["final_report"] is None
-    assert row["result"]["report_revision"] == 3
-    assert row["answer"] == row["result"]["intermediate_report"]
-    assert "task_results" not in row["result"]
-    assert "live_status" not in row["result"]
-    assert "raw" not in row["result"]
-    assert "formatted" not in row["result"]
+    result = row["result"]
+    assert result["formatted"]["answer"].startswith("#")
+    assert result["execution"]["report"]["state"] == "intermediate"
+    assert result["formatted"]["metadata"]["deep_genome"]["revision"] == 3
+    assert row["answer"] == result["formatted"]["answer"]
+    assert "intermediate_report" not in result
+    assert "final_report" not in result
+    assert "task_results" not in result
+    assert "live_status" not in result
+    assert "raw" not in result
+    assert "artifacts" not in result
 
 
 async def test_list_deep_genome_adds_report_metadata_to_formatted_result(
@@ -135,11 +138,16 @@ async def test_list_deep_genome_projects_degraded_final_snapshot(
         item for item in response.json()["data"] if item["run_id"] == run_id
     )
     assert row["status"] == "succeeded"
-    assert row["result"]["final_report"] == "# Final report\n"
-    assert row["result"]["report_completeness"] == "partial"
-    assert row["result"]["degraded"] is True
-    assert_report_metadata(row["result"], stage="final")
-    assert row["answer"] == row["result"]["final_report"]
+    result = row["result"]
+    assert result["formatted"]["answer"] == "# Final report\n"
+    assert result["execution"]["report"]["state"] == "final"
+    assert result["execution"]["report"]["degraded"] is True
+    assert result["formatted"]["metadata"]["deep_genome"]["completeness"] == (
+        "partial"
+    )
+    assert_report_metadata(result, stage="final")
+    assert row["answer"] == result["formatted"]["answer"]
+    assert "final_report" not in result
 
 
 async def test_list_deep_genome_preserves_all_failed_intermediate_snapshot(
@@ -164,11 +172,13 @@ async def test_list_deep_genome_preserves_all_failed_intermediate_snapshot(
         item for item in response.json()["data"] if item["run_id"] == run_id
     )
     assert row["status"] == "failed"
-    assert row["result"]["final_report"] is None
-    assert row["result"]["intermediate_report"].startswith("#")
-    assert row["result"]["degraded"] is True
-    assert_report_metadata(row["result"], stage="intermediate")
-    assert row["answer"] == row["result"]["intermediate_report"]
+    result = row["result"]
+    assert result["formatted"]["answer"].startswith("#")
+    assert result["execution"]["report"]["state"] == "intermediate"
+    assert result["execution"]["report"]["degraded"] is True
+    assert_report_metadata(result, stage="intermediate")
+    assert row["answer"] == result["formatted"]["answer"]
+    assert "intermediate_report" not in result
 
 
 async def test_list_deep_genome_hides_foreign_snapshot(

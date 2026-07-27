@@ -237,17 +237,19 @@ async def test_get_deep_genome_run_refreshes_intermediate_snapshot(
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "running"
-    assert body["result"]["intermediate_report"].startswith("#")
-    assert body["result"]["final_report"] is None
-    assert body["result"]["report_revision"] == 3
-    assert body["result"]["degraded_reason"] == (
-        "1 of 12 optional analyses unavailable"
-    )
-    assert body["answer"] == body["result"]["intermediate_report"]
+    result = body["result"]
+    assert result["formatted"]["answer"].startswith("#")
+    assert result["execution"]["report"]["state"] == "intermediate"
+    assert result["formatted"]["metadata"]["deep_genome"]["revision"] == 3
+    assert result["formatted"]["metadata"]["deep_genome"]["degraded"] is True
+    assert body["answer"] == result["formatted"]["answer"]
+    assert "intermediate_report" not in result
+    assert "final_report" not in result
+    assert "degraded_reason" not in result
     assert "raw" not in body["result"]
     assert "task_results" not in body["result"]
     assert "live_status" not in body["result"]
-    assert "formatted" not in body["result"]
+    assert "artifacts" not in body["result"]
     remote_status_mock.assert_not_awaited()
 
     debug_response = await api_client.get(
@@ -276,7 +278,8 @@ async def test_get_deep_genome_run_adds_report_metadata_to_formatted_result(
     assert response.status_code == 200
     result = response.json()["result"]
     report = assert_report_metadata(result, stage="intermediate", revision=3)
-    assert result["report_revision"] == report["revision"]
+    assert result["formatted"]["metadata"]["deep_genome"]["revision"] == 3
+    assert report == result["execution"]["report"]
 
 
 async def test_foreign_owner_cannot_probe_deep_genome_snapshot(
@@ -325,7 +328,10 @@ async def test_get_deep_genome_run_preserves_failed_intermediate_snapshot(
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "failed"
-    assert body["result"]["intermediate_report"].startswith("#")
-    assert body["result"]["final_report"] is None
-    assert body["result"]["degraded"] is True
+    result = body["result"]
+    assert result["formatted"]["answer"].startswith("#")
+    assert result["execution"]["report"]["state"] == "intermediate"
+    assert result["execution"]["report"]["degraded"] is True
+    assert "intermediate_report" not in result
+    assert "final_report" not in result
     remote_status_mock.assert_not_awaited()

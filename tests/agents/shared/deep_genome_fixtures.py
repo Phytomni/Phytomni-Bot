@@ -193,13 +193,23 @@ def assert_report_metadata(
     stage: str,
     revision: int | None = None,
 ) -> dict[str, Any]:
-    """Assert the common report metadata contract and return its block."""
+    """Assert the canonical report metadata and return its execution block."""
     report = result["formatted"]["metadata"]["report"]
-    assert report["stage"] == stage
-    assert report["completeness"] == "partial"
+    assert report["state"] == stage
+    assert report["source_artifact_count"] == len(
+        result["execution"]["artifacts"]
+    )
     if revision is not None:
-        assert report["revision"] == revision
+        assert result["formatted"]["metadata"]["deep_genome"]["revision"] == (
+            revision
+        )
     assert report["degraded"] is True
-    assert report["failure_count"] == len(result["failures"])
+    assert result["formatted"]["metadata"]["deep_genome"]["completeness"] == (
+        "partial"
+    )
+    assert result["execution"]["tracking"]["degraded"] is True
     assert result["formatted"]["metadata"]["consumer"] == "artifact-ui"
+    assert result["formatted"]["metadata"]["report"] == (
+        result["execution"]["report"]
+    )
     return report

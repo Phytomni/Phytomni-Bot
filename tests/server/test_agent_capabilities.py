@@ -69,6 +69,11 @@ def test_capability_descriptors_are_explicit_and_json_compatible() -> None:
     assert all(
         isinstance(value, (bool, list, dict)) for value in deep_genome.values()
     )
+    for slug in ("analyst", "research", "design", "network"):
+        capability = serialize_agent_capability(slug)
+        assert capability["report_states"] == ["final"]
+        assert capability["artifacts"] is True
+        assert capability["degraded_outcomes"] is True
 
 
 def test_attachment_matrix_is_exact() -> None:
@@ -108,7 +113,7 @@ def test_capability_golden_is_byte_stable() -> None:
     assert json.loads(golden) == actual
     assert golden == json.dumps(actual, ensure_ascii=False, indent=2) + "\n"
     assert hashlib.sha256(golden.encode("utf-8")).hexdigest() == (
-        "cb4e1a6cc9dbd327747dabf74b2ad7dce7fcf24c5a128cd2a1a6afcc87c05d52"
+        "b13f327b1dd1012ef24936cf3183bd37a19d0e1e8ec3dd7a5115352d0ea492b5"
     )
 
 

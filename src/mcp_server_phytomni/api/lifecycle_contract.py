@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Iterable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
@@ -19,10 +18,11 @@ from ..agents.shared.a2ui import (
     validate_a2ui_surface,
 )
 from ..agents.shared.citation_enrichment import CITATION_BIBLIO_FIELDS
-from ..contracts.deep_genome import (
-    DEEP_GENOME_FINAL_FAILURE_REASONS,
-    DEEP_GENOME_PROGRESS_FIELDS,
-    sanitize_nonnegative_int,
+from ..mcp.formatting.execution import PUBLIC_ARTIFACT_KEYS
+from ..runtime.deep_genome_store_projection import (
+    public_snapshot_to_canonical_result,
+    sanitize_deep_genome_snapshot,
+    snapshot_metadata_from_mapping,
 )
 from ..runtime.execution_defaults import empty_execution_projection
 
@@ -142,15 +142,6 @@ _DEEP_GENOME_PRIVATE_DEBUG_FIELDS = (
     "live_status",
     "artifacts",
 )
-_DEEP_GENOME_FAILURE_MESSAGES = {
-    "failed": "analysis task failed",
-    "cancelled": "analysis task cancelled",
-    "timed_out": "analysis task timed out",
-}
-_DEEP_GENOME_GENERATED_REASON = re.compile(
-    r"^[0-9]+ of 12 optional analyses unavailable$"
-)
-_DEEP_GENOME_REASON_FALLBACK = "analysis results are partially unavailable"
 
 
 def empty_agent_result(*, degraded: bool = False) -> dict[str, Any]:
@@ -434,6 +425,8 @@ def canonicalize_run_record(
                 projected,
                 source_result=record.get("result"),
                 debug=debug,
+                status=canonical["status"],
+                task_ids=canonical["task_ids"],
             )
     projected["task_ids"] = canonical["task_ids"]
     if canonical["status"] == "failed":
@@ -450,153 +443,79 @@ def _merge_deep_genome_snapshot(
     *,
     source_result: Any,
     debug: bool,
+    status: str,
+    task_ids: Sequence[str],
 ) -> None:
-    """Restore the already-sanitized DeepGenome read projection safely."""
+    """Normalize legacy DeepGenome snapshots into the canonical result."""
     if not isinstance(source_result, Mapping):
         return
-    snapshot = _project_deep_genome_snapshot(source_result)
+    snapshot = sanitize_deep_genome_snapshot(source_result)
     if snapshot is None:
+        if _has_canonical_deep_genome_result(source_result):
+            _copy_deep_genome_debug_fields(
+                projected.get("result"), source_result, debug=debug
+            )
         return
-    result = projected.get("result")
-    if not isinstance(result, dict):
+    task_id = next((item for item in task_ids if item.strip()), None)
+    if task_id is None:
+        task_id = _legacy_deep_genome_task_id(source_result)
+    if task_id is None:
         return
-    result.update(snapshot)
-    formatted_source = source_result.get("formatted")
+    result = public_snapshot_to_canonical_result(
+        snapshot,
+        task_id=task_id,
+        status=status,
+        existing_result=source_result,
+    )
+    _copy_deep_genome_debug_fields(result, source_result, debug=debug)
+    projected["result"] = result
     formatted = result.get("formatted")
-    if isinstance(formatted_source, Mapping) and isinstance(formatted, dict):
-        metadata = formatted.get("metadata")
-        if isinstance(metadata, dict):
-            metadata["report"] = _deep_genome_report_metadata(snapshot)
-    else:
-        result.pop("formatted", None)
-        result.pop("execution", None)
-    if debug:
-        for field in _DEEP_GENOME_PRIVATE_DEBUG_FIELDS:
-            value = source_result.get(field)
-            if value is not None:
-                result[field] = deepcopy(value)
-    best_report = snapshot["final_report"] or snapshot["intermediate_report"]
-    if isinstance(best_report, str) and best_report.strip():
-        projected["answer"] = best_report
+    if isinstance(formatted, Mapping):
+        answer = formatted.get("answer")
+        if isinstance(answer, str):
+            projected["answer"] = answer
 
 
-def _project_deep_genome_snapshot(
-    source: Mapping[str, Any],
-) -> dict[str, Any] | None:
-    """Allowlist the persisted DeepGenome snapshot after canonicalization."""
-    stage = source.get("report_stage")
-    completeness = source.get("report_completeness")
-    revision = source.get("report_revision")
-    if not isinstance(stage, str) or stage not in {
-        "waiting_for_brief_gene",
-        "intermediate",
-        "final",
-    }:
-        return None
-    if not isinstance(completeness, str) or completeness not in {
-        "none",
-        "partial",
-        "complete",
-    }:
-        return None
-    if not isinstance(revision, int) or isinstance(revision, bool):
-        return None
-    return {
-        "intermediate_report": _optional_string(
-            source.get("intermediate_report")
-        ),
-        "final_report": _optional_string(source.get("final_report")),
-        "report_stage": stage,
-        "report_completeness": completeness,
-        "report_revision": sanitize_nonnegative_int(revision),
-        "report_updated_at": _optional_string(source.get("report_updated_at")),
-        "progress": _project_deep_genome_progress(source.get("progress")),
-        "degraded": source.get("degraded") is True,
-        "degraded_reason": _project_deep_genome_reason(
-            source.get("degraded_reason")
-        ),
-        "failures": _project_deep_genome_failures(source.get("failures")),
-    }
+def _has_canonical_deep_genome_result(source: Mapping[str, Any]) -> bool:
+    """Return whether a result already carries the new report projection."""
+    formatted = source.get("formatted")
+    execution = source.get("execution")
+    report = (
+        execution.get("report") if isinstance(execution, Mapping) else None
+    )
+    return isinstance(formatted, Mapping) and isinstance(report, Mapping)
 
 
-def _optional_string(value: Any) -> str | None:
-    """Keep public text or null; reject non-string persisted values."""
-    return value if isinstance(value, str) else None
-
-
-def _project_deep_genome_progress(value: Any) -> dict[str, int | bool | str]:
-    """Project the stable ordered progress fields without arbitrary keys."""
-    source = value if isinstance(value, Mapping) else {}
-    planning_complete = source.get("planning_complete") is True
-    brief_gene_status = source.get("brief_gene_status")
-    progress: dict[str, int | bool | str] = {
-        "planning_complete": planning_complete,
-        "brief_gene_status": (
-            brief_gene_status.strip().lower()
-            if isinstance(brief_gene_status, str) and brief_gene_status.strip()
-            else "unknown"
-        ),
-    }
-    for key in DEEP_GENOME_PROGRESS_FIELDS[2:]:
-        progress[key] = sanitize_nonnegative_int(source.get(key))
-    return progress
-
-
-def _project_deep_genome_reason(value: Any) -> str | None:
-    """Keep only fixed public degraded reasons from the snapshot contract."""
-    if not isinstance(value, str) or not value.strip():
-        return None
-    normalized = value.strip()
-    if _DEEP_GENOME_GENERATED_REASON.fullmatch(normalized):
-        return normalized
-    if normalized in DEEP_GENOME_FINAL_FAILURE_REASONS:
-        return normalized
-    return _DEEP_GENOME_REASON_FALLBACK
-
-
-def _project_deep_genome_failures(value: Any) -> list[dict[str, str]]:
-    """Project fixed failure text rather than persisted provider details."""
-    if not isinstance(value, list):
-        return []
-    projected: list[dict[str, str]] = []
-    valid_statuses = {"succeeded", "failed", "cancelled", "timed_out"}
-    for item in value:
-        if not isinstance(item, Mapping):
-            continue
-        work_item_key = item.get("work_item_key")
-        status = item.get("status")
-        if (
-            not isinstance(work_item_key, str)
-            or not work_item_key.strip()
-            or not isinstance(status, str)
-            or status not in valid_statuses
+def _legacy_deep_genome_task_id(source: Mapping[str, Any]) -> str | None:
+    """Recover the umbrella identity from the historical task result list."""
+    for field in ("task_results", "live_status"):
+        values = source.get(field)
+        if not isinstance(values, Sequence) or isinstance(
+            values, (str, bytes)
         ):
             continue
-        projected.append(
-            {
-                "work_item_key": work_item_key.strip(),
-                "status": status,
-                "message": _DEEP_GENOME_FAILURE_MESSAGES.get(
-                    status, "analysis task unavailable"
-                ),
-            }
-        )
-    return projected
+        for item in values:
+            if not isinstance(item, Mapping):
+                continue
+            task_id = item.get("task_id", item.get("id"))
+            if isinstance(task_id, str) and task_id.strip():
+                return task_id
+    return None
 
 
-def _deep_genome_report_metadata(
-    snapshot: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Build the documented additive metadata from the public snapshot."""
-    return {
-        "stage": snapshot["report_stage"],
-        "completeness": snapshot["report_completeness"],
-        "revision": snapshot["report_revision"],
-        "updated_at": snapshot["report_updated_at"],
-        "progress": snapshot["progress"],
-        "degraded": snapshot["degraded"],
-        "failure_count": len(snapshot["failures"]),
-    }
+def _copy_deep_genome_debug_fields(
+    result: Any,
+    source: Mapping[str, Any],
+    *,
+    debug: bool,
+) -> None:
+    """Copy private registry fields only for explicit debug reads."""
+    if not debug or not isinstance(result, dict):
+        return
+    for field in _DEEP_GENOME_PRIVATE_DEBUG_FIELDS:
+        value = source.get(field)
+        if value is not None:
+            result[field] = deepcopy(value)
 
 
 def _normalize_run_identity(
@@ -888,6 +807,13 @@ def _project_formatted(
             report,
             ("state", "degraded", "source_artifact_count"),
         )
+    deep_genome = (
+        metadata.get("deep_genome") if isinstance(metadata, Mapping) else None
+    )
+    if isinstance(deep_genome, Mapping):
+        projected_metadata["deep_genome"] = snapshot_metadata_from_mapping(
+            deep_genome
+        )
     return {
         "answer": answer if isinstance(answer, str) else defaults["answer"],
         "follow_up_questions": _project_string_list(follow_up),
@@ -923,19 +849,7 @@ def _project_execution(
         ),
         "artifacts": _project_record_list(
             execution.get("artifacts"),
-            (
-                "id",
-                "role",
-                "name",
-                "media_type",
-                "downloadable",
-                "report_context_eligible",
-                "mime_type",
-                "size_bytes",
-                "output_dir",
-                "uri",
-                "download_ref",
-            ),
+            PUBLIC_ARTIFACT_KEYS,
         ),
         "output_dirs": _project_string_list(execution.get("output_dirs")),
         "report": (

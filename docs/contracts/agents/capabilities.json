@@ -101,9 +101,11 @@
   "analyst": {
     "streaming": false,
     "interactive": false,
-    "report_states": [],
-    "artifacts": false,
-    "degraded_outcomes": false,
+    "report_states": [
+      "final"
+    ],
+    "artifacts": true,
+    "degraded_outcomes": true,
     "attachments": {
       "document_context": {
         "argument": "obs_file_list",
@@ -156,9 +158,11 @@
   "research": {
     "streaming": false,
     "interactive": false,
-    "report_states": [],
-    "artifacts": false,
-    "degraded_outcomes": false,
+    "report_states": [
+      "final"
+    ],
+    "artifacts": true,
+    "degraded_outcomes": true,
     "attachments": {
       "document_context": {
         "argument": "obs_file_list",
@@ -196,9 +200,11 @@
   "design": {
     "streaming": false,
     "interactive": false,
-    "report_states": [],
-    "artifacts": false,
-    "degraded_outcomes": false,
+    "report_states": [
+      "final"
+    ],
+    "artifacts": true,
+    "degraded_outcomes": true,
     "attachments": {
       "document_context": null,
       "datasets": null,
@@ -208,9 +214,11 @@
   "network": {
     "streaming": false,
     "interactive": false,
-    "report_states": [],
-    "artifacts": false,
-    "degraded_outcomes": false,
+    "report_states": [
+      "final"
+    ],
+    "artifacts": true,
+    "degraded_outcomes": true,
     "attachments": {
       "document_context": null,
       "datasets": null,
