@@ -679,6 +679,11 @@ gateway consumers: `chat_confirm`, `review_confirm`, `chat_form`,
 lock shapes only; this section and the offline HTTP tests remain authoritative
 for runtime behavior.
 
+For the reproducible current-SHA focused packet, HTTP body hashes, and the
+Bot Ready versus external acceptance boundary, see the [Bot contract
+acceptance runbook](../ops/bot-contract-acceptance-runbook.md). Synthetic
+HTTP goldens do not close Web, Go, staging, or production acceptance.
+
 | Condition                    | HTTP  | Detail                             |
 | ---------------------------- | ----- | ---------------------------------- |
 | `A2UI_ENABLED` off           | `403` | `forbidden`, `a2ui disabled`       |

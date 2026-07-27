@@ -7,6 +7,15 @@ can vendor these files to lock request/response shapes without a live Bot.
 
 `POST /v1/runs/{run_id}/a2ui-actions`
 
+## Current-SHA acceptance
+
+The [Bot contract acceptance runbook](../../ops/bot-contract-acceptance-runbook.md)
+defines the current-SHA focused packet, the nine A2UI fixture hashes, and the
+boundary between Bot-local readiness and external acceptance. HTTP response
+goldens for the same packet live under [`../http/`](../http/). These files are
+synthetic and redacted; gateway forwarding, live streams, Web/Go behavior,
+and staging acceptance remain owner evidence.
+
 ## Web provisional
 
 `POST /api/v1/conversations/:id/a2ui-actions` — request body must match the

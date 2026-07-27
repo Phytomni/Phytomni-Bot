@@ -26,6 +26,17 @@ Out of scope:
 - Building encrypted customer envelopes. Use
   [Deployment and Storage](../guides/deployment.md) for that workflow.
 
+## Current-SHA contract acceptance
+
+Use the [Bot contract acceptance runbook](bot-contract-acceptance-runbook.md)
+for the exact focused test packet, full-gate and Python-matrix evidence,
+fixture hashes, and twelve deployment smokes. A green local Bot packet means
+`Bot Ready`; it does not mean `Accepted`. Web/Go forwarding, staging, live
+backend, and production evidence remain `External Pending` until the owner
+returns a redacted artifact for the same Bot SHA. Keep feature flags dark
+while those paired checks are absent. DataAgent root-cause replay and Analyst
+historical repair remain separately authorized operations.
+
 ## Service Model
 
 `phytomni-api` and the stdio MCP server are separate processes. They share

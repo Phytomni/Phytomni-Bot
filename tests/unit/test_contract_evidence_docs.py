@@ -8,12 +8,14 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from scripts.capture_contract_evidence import A2UI_FIXTURES, HTTP_GOLDENS
 
 pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
 LEDGER = ROOT / "docs/ops/bot-contract-convergence-ledger.md"
 REGISTER = ROOT / "docs/ops/bot-compatibility-register.md"
+ACCEPTANCE_RUNBOOK = ROOT / "docs/ops/bot-contract-acceptance-runbook.md"
 ALLOWED_STATUSES = {
     "Unknown",
     "Needs Verification",
@@ -67,6 +69,47 @@ EXPECTED_BRIDGES = {
     "legacy A2A Expert optional selection",
     "MCP stdio legacy response",
 }
+FOCUSED_FILES = (
+    "tests/unit/test_lifecycle_contract.py",
+    "tests/server/test_lifecycle_invariants_http.py",
+    "tests/server/test_agent_capabilities.py",
+    "tests/server/test_a2ui_actions_http.py",
+    "tests/server/test_a2ui_review_http.py",
+    "tests/server/test_a2ui_contract_fixtures.py",
+    "tests/server/test_a2ui_limits.py",
+    "tests/server/test_api_chat_streaming.py",
+    "tests/server/test_api_runs_status.py",
+    "tests/server/test_api_runs_list.py",
+    "tests/server/test_locale_http.py",
+    "tests/agents/test_locale_propagation.py",
+    "tests/unit/test_csv_upload_validation.py",
+    "tests/server/test_attachment_validation_http.py",
+    "tests/unit/test_artifact_roles.py",
+    "tests/unit/test_terminal_report.py",
+    "tests/server/test_scientific_execution_projection.py",
+    "tests/agents/test_expert_router.py",
+    "tests/server/test_query_route.py",
+    "tests/server/test_expert_contract_http.py",
+    "tests/unit/test_stage_trace.py",
+    "tests/server/test_data_agent_native_http.py",
+    "tests/agents/test_chat_a2ui_graph.py",
+    "tests/unit/test_contract_evidence_docs.py",
+    "tests/unit/scripts/test_capture_contract_evidence.py",
+)
+STAGING_SMOKES = (
+    "Exact DataAgent cDNA question",
+    "Review pause, classic resume, and A2UI action",
+    "Expert autonomous and forced",
+    "Expert attachment whitelist",
+    "Forced ungranted tool rejected before upload/dispatch",
+    "Strict router outside allowlist returns 502 and zero dispatch",
+    "Instant makes no /v1/query/route call",
+    "Literal @Agent in Instant has no routing side effect",
+    "Remote partial acceptance",
+    "Registry-degraded accepted-task response",
+    "Final reports for Analyst, Research, Design, Network, and DeepGenome",
+    "Request-to-run-to-task-to-stage correlation",
+)
 
 
 def _table_rows(path: Path, heading: str) -> list[dict[str, str]]:
@@ -179,3 +222,16 @@ def test_legacy_a2a_bridge_keeps_strict_route_external_pending() -> None:
     assert row["Rollback"].replace("`", "") == (
         "keep Web bot.expert_enabled=false"
     )
+
+
+def test_acceptance_runbook_locks_current_sha_packet() -> None:
+    """The runbook names every asset and smoke in the acceptance packet."""
+    text = ACCEPTANCE_RUNBOOK.read_text(encoding="utf-8")
+
+    for status in ALLOWED_STATUSES:
+        assert f"`{status}`" in text
+    for path in FOCUSED_FILES + A2UI_FIXTURES + HTTP_GOLDENS:
+        assert path in text
+    for smoke in STAGING_SMOKES:
+        assert smoke in text
+    assert "Bot Ready != Accepted" in text

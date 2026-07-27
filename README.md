@@ -105,6 +105,13 @@ A2UI goldens for Web/Go consumers (`chat_confirm`, `review_confirm`,
 `multi_turn`) live under
 [docs/contracts/a2ui/](docs/contracts/a2ui/README.md).
 
+The current-SHA Bot acceptance procedure, focused packet, gate
+interpretation, and external-acceptance boundary live in the [Bot contract
+acceptance runbook](docs/ops/bot-contract-acceptance-runbook.md). The
+[convergence ledger](docs/ops/bot-contract-convergence-ledger.md) and
+[compatibility register](docs/ops/bot-compatibility-register.md) record
+dispositions; local Bot evidence does not claim Web/Go or staging acceptance.
+
 ### Locale And File Attachments
 
 HTTP agent requests accept `locale` at the top level. The precedence is
@@ -379,6 +386,13 @@ for the approval and remediation contract.
   sync/async behavior, status polling, and demo payload links.
 - [HTTP API](docs/reference/http-api.md): service startup, per-user keys,
   endpoints, polling, retention, and response shape.
+- [Bot contract acceptance](docs/ops/bot-contract-acceptance-runbook.md):
+  current-SHA focused packet, evidence hashes, gate interpretation, and
+  external acceptance boundary.
+- [Bot convergence ledger](docs/ops/bot-contract-convergence-ledger.md):
+  requirement evidence, five handoff dispositions, and rollback ownership.
+- [Bot compatibility register](docs/ops/bot-compatibility-register.md):
+  migration bridges that remain gated until paired consumer evidence exists.
 - [CLI Reference](docs/reference/cli.md): `phytomni`, `phytomni-api`,
   `phytomni-api-key`, and `phytomni-cache`.
 - [Configuration](docs/reference/configuration.md): local `.env`, encrypted
