@@ -193,19 +193,26 @@ async def phyto_chat_with_follow(
     """
     effective_locale = locale or current_effective_locale()
     prompt_file = kwargs.get("prompt_file", CHAT_CONFIG.PROMPT_FILE)
+    graph_thread_id = kwargs.get("thread_id")
+    base_kwargs = {
+        key: value
+        for key, value in kwargs.items()
+        if key != "thread_id"
+    }
 
     phyto_response = await phyto_chat(
         user_query=user_query,
         obs_file_list=obs_file_list,
         semaphore=semaphore,
         locale=effective_locale,
-        **kwargs,
+        thread_id=graph_thread_id,
+        **base_kwargs,
     )
 
     system_response_content = message_content(phyto_response)
 
     follow_kwargs = {
-        **kwargs,
+        **base_kwargs,
         "prompt_file": prompt_file,
         "locale": effective_locale,
     }
@@ -321,16 +328,20 @@ async def phyto_chat(
             ... )
     """
     effective_locale = locale or current_effective_locale()
-    chat_kwargs: dict[str, Any] = {
-        **kwargs,
-        "with_follow_up": False,
-        "locale": effective_locale,
-    }
     conversation_messages = normalize_conversation_messages(
         kwargs.get("conversation_messages")
     )
-    if conversation_messages:
-        chat_kwargs["conversation_messages"] = conversation_messages
+    graph_thread_id = kwargs.get("thread_id")
+    graph_kwargs = {
+        key: value
+        for key, value in kwargs.items()
+        if key not in {"conversation_messages", "thread_id"}
+    }
+    chat_kwargs: dict[str, Any] = {
+        **graph_kwargs,
+        "with_follow_up": False,
+        "locale": effective_locale,
+    }
     if semaphore is not None:
         chat_kwargs["semaphore"] = semaphore
     initial_state: dict[str, Any] = {
@@ -339,7 +350,13 @@ async def phyto_chat(
         "chat_kwargs": chat_kwargs,
         "locale": effective_locale,
     }
-    final_state = await ainvoke_graph(_cached_chat_app(), initial_state)
+    if conversation_messages:
+        initial_state["conversation_messages"] = conversation_messages
+    final_state = await ainvoke_graph(
+        _cached_chat_app(),
+        initial_state,
+        thread_id=graph_thread_id,
+    )
     return final_state.get("response")
 
 
