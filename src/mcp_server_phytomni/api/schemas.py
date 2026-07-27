@@ -208,13 +208,15 @@ class ExpertQueryRequest(BaseModel):
         user_query: The natural-language user turn to route and answer.
         history: Prior ``{"role", "content"}`` turns used as routing
             context only; not forwarded to the dispatched agent.
-        obs_file_list: OBS paths for uploaded attachments, injected into
-            the selected tool's arguments only when its schema accepts
-            them (``tool_accepts_obs``).
+        obs_file_list: OBS paths for uploaded attachments. Expert forwards
+            them only when the selected capability explicitly enables Expert
+            forwarding.
         dialogue_id: Optional chat-ai conversation id recorded on the run.
         allowed_tools: Ordered canonical agent tools available to the router.
         forced_tool: Optional canonical agent tool pinned by the caller.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     user_query: str
     history: list[dict[str, Any]] = Field(default_factory=list)

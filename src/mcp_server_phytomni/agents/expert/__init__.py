@@ -9,6 +9,26 @@ Re-exports the in-process tool selector used by the HTTP
 natural-language query.
 """
 
-from .router import ToolSelection, ToolSelectionError, select_agent_tool
+from .router import (
+    ExpertProviderError,
+    ExpertProviderTimeoutError,
+    ExpertRoutingContractError,
+    ExpertRoutingOptions,
+    ToolSelection,
+    ToolSelectionError,
+    complete_expert_routing,
+    select_agent_tool,
+    select_expert_tool,
+)
 
-__all__ = ["ToolSelection", "ToolSelectionError", "select_agent_tool"]
+__all__ = (
+    "select_expert_tool",
+    "select_agent_tool",
+    "complete_expert_routing",
+    "ToolSelectionError",
+    "ToolSelection",
+    "ExpertRoutingOptions",
+    "ExpertRoutingContractError",
+    "ExpertProviderTimeoutError",
+    "ExpertProviderError",
+)

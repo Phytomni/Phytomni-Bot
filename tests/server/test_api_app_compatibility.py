@@ -48,11 +48,11 @@ pytestmark = pytest.mark.server
 
 _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 # Generated from ``_openapi_hash(create_app())`` after the intentional public
-# schema additions in 7321656 (locale), dd99f82 (dataset uploads), and bcf20b6
-# (attachment capabilities).  ``_normalized_openapi`` removes only the
-# unstable version and server fields before hashing.
+# schema additions in 7321656 (locale), dd99f82 (dataset uploads), bcf20b6
+# (attachment capabilities), and the strict Expert request boundary. The
+# ``_normalized_openapi`` helper removes only unstable version/server fields.
 _OPENAPI_HASH = (
-    "b4e3a3daed722d79b2adb792041a307d0916a92663de0f433c3e3e0d08c0c53d"
+    "7c881bf9987f7c117c96fe703a79487ebc3af63c3fe2fcbc096d0c91f81116bf"
 )
 
 

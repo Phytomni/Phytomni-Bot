@@ -16,21 +16,38 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
 
-from openai import AsyncOpenAI
+import httpx
+from openai import APIError, APITimeoutError, AsyncOpenAI
 
 from ...config.settings import get_sensitive_config
 from ...mcp.schemas import agent_openai_tool_specs
+from ...runtime.locale import (
+    SupportedLocale,
+    current_effective_locale,
+    locale_instruction,
+)
 
-__all__ = ["ToolSelection", "ToolSelectionError", "select_agent_tool"]
+__all__ = [
+    "ExpertCompletion",
+    "ExpertProviderError",
+    "ExpertProviderTimeoutError",
+    "ExpertRoutingOptions",
+    "ExpertRoutingContractError",
+    "ToolSelection",
+    "ToolSelectionError",
+    "complete_expert_routing",
+    "select_agent_tool",
+    "select_expert_tool",
+]
 
 _LOGGER = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class ToolSelection:
     """One agent tool the router chose plus its LLM-extracted arguments.
 
@@ -47,8 +64,33 @@ class ToolSelection:
     arguments: dict[str, Any]
 
 
-class ToolSelectionError(RuntimeError):
+class ExpertRoutingContractError(RuntimeError):
     """The routing model violated the constrained one-tool contract."""
+
+
+class ToolSelectionError(ExpertRoutingContractError):
+    """Backward-compatible name for selector contract violations."""
+
+
+class ExpertProviderError(RuntimeError):
+    """A non-timeout failure occurred while calling the routing provider."""
+
+
+class ExpertProviderTimeoutError(ExpertProviderError):
+    """The routing provider did not answer within its configured timeout."""
+
+
+ExpertCompletion = Callable[..., Awaitable[Any]]
+
+
+@dataclass(frozen=True, slots=True)
+class ExpertRoutingOptions:
+    """Strict selector constraints and its injectable completion seam."""
+
+    allowed_tools: tuple[str, ...]
+    forced_tool: str | None
+    locale: SupportedLocale
+    completion: ExpertCompletion | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +109,7 @@ async def select_agent_tool(
     *,
     allowed_tools: Sequence[str] | None = None,
     forced_tool: str | None = None,
+    completion: ExpertCompletion | None = None,
 ) -> ToolSelection | None:
     """Pick one MCP agent tool for a query with the main conversation model.
 
@@ -89,33 +132,111 @@ async def select_agent_tool(
 
     Raises:
         ToolSelectionError: The strict routing contract is violated.
-        Exception: OpenAI client / transport errors propagate so the HTTP
-            layer can surface a 502; the router does not swallow them.
+        ExpertProviderTimeoutError: The routing provider timed out.
+        ExpertProviderError: The routing provider failed without timing out.
+    """
+    if allowed_tools is not None:
+        return await select_expert_tool(
+            user_query=user_query,
+            history=history,
+            options=ExpertRoutingOptions(
+                allowed_tools=tuple(allowed_tools),
+                forced_tool=forced_tool,
+                locale=current_effective_locale(),
+                completion=completion,
+            ),
+        )
+
+    request = _build_routing_request(
+        agent_openai_tool_specs(), allowed_tools, forced_tool
+    )
+    messages = [
+        *(dict(turn) for turn in history),
+        {"role": "user", "content": user_query},
+    ]
+    result = await _run_completion(
+        messages=messages,
+        request=request,
+        completion=completion,
+    )
+    return _selection_from_completion(result, request, forced_tool)
+
+
+async def select_expert_tool(
+    *,
+    user_query: str,
+    history: Sequence[Mapping[str, Any]],
+    options: ExpertRoutingOptions,
+) -> ToolSelection:
+    """Select exactly one caller-authorized canonical agent tool.
+
+    This is the strict HTTP Expert seam. The legacy ``select_agent_tool``
+    wrapper deliberately keeps its optional-selection behavior only when no
+    allowlist is supplied, which is the compatibility path used by A2A.
+    """
+    request = _build_routing_request(
+        agent_openai_tool_specs(), options.allowed_tools, options.forced_tool
+    )
+    messages = [
+        {"role": "system", "content": locale_instruction(options.locale)},
+        *(dict(turn) for turn in history),
+        {"role": "user", "content": user_query},
+    ]
+    result = await _run_completion(
+        messages=messages,
+        request=request,
+        completion=options.completion,
+    )
+    selection = _selection_from_completion(
+        result, request, options.forced_tool
+    )
+    if selection is None:
+        raise ToolSelectionError("strict routing returned no selection")
+    return selection
+
+
+async def complete_expert_routing(
+    *,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+    tool_choice: Any,
+) -> Any:
+    """Run one provider completion for Expert selection.
+
+    Provider exception details are intentionally discarded at this boundary;
+    the HTTP layer maps the typed outcome to the public safe error envelope.
     """
     sensitive = get_sensitive_config()
-    # Expert mode runs on the operator Bot, where relay mode is disabled,
-    # so the routing call uses the operator's main-model credentials
-    # directly (mirrors agents/chat/service.py's AsyncOpenAI construction).
-    # A relay-child Expert deployment would need the _relay_llm_endpoint
-    # rewrite from agents/chat/service.py.
     client = AsyncOpenAI(
         api_key=sensitive.API_KEY.get_secret_value(),
         base_url=sensitive.BASE_URL or None,
     )
-    messages: list[dict[str, Any]] = [
-        *(dict(turn) for turn in history),
-        {"role": "user", "content": user_query},
-    ]
-    request = _build_routing_request(
-        agent_openai_tool_specs(), allowed_tools, forced_tool
-    )
-    completion = await client.chat.completions.create(
-        model=sensitive.MODEL_ID,
-        messages=cast(Any, messages),
-        tools=cast(Any, request.tools),
+    try:
+        return await client.chat.completions.create(
+            model=sensitive.MODEL_ID,
+            messages=cast(Any, messages),
+            tools=cast(Any, tools),
+            tool_choice=tool_choice,
+        )
+    except (APITimeoutError, httpx.TimeoutException, TimeoutError) as exc:
+        raise ExpertProviderTimeoutError() from exc
+    except APIError as exc:
+        raise ExpertProviderError() from exc
+
+
+async def _run_completion(
+    *,
+    messages: list[dict[str, Any]],
+    request: _RoutingRequest,
+    completion: ExpertCompletion | None,
+) -> Any:
+    """Invoke the injectable completion seam with no provider data leakage."""
+    provider = completion or complete_expert_routing
+    return await provider(
+        messages=messages,
+        tools=request.tools,
         tool_choice=request.tool_choice,
     )
-    return _selection_from_completion(completion, request, forced_tool)
 
 
 def _build_routing_request(
@@ -128,8 +249,16 @@ def _build_routing_request(
         return _RoutingRequest((), all_specs, "auto", False)
     allowed_order = tuple(allowed_tools)
     specs_by_name = {str(spec["function"]["name"]): spec for spec in all_specs}
-    if not allowed_order:
+    if (
+        not allowed_order
+        or len(allowed_order) > 10
+        or len(set(allowed_order)) != len(allowed_order)
+    ):
         raise ToolSelectionError("strict routing requires an allowed tool")
+    if any(name not in specs_by_name for name in allowed_order):
+        raise ToolSelectionError("strict routing received an unknown tool")
+    if forced_tool is not None and forced_tool not in allowed_order:
+        raise ToolSelectionError("strict routing forced tool is not allowed")
     try:
         tools = [specs_by_name[name] for name in allowed_order]
     except KeyError as exc:
@@ -153,11 +282,13 @@ def _selection_from_completion(
     forced_tool: str | None,
 ) -> ToolSelection | None:
     """Validate one model completion against the prepared routing contract."""
-    if not completion.choices:
+    choices = getattr(completion, "choices", None)
+    if not choices:
         if request.strict:
             raise ToolSelectionError("routing model returned no choice")
         return None
-    tool_calls = completion.choices[0].message.tool_calls or []
+    message = _field(choices[0], "message")
+    tool_calls = _field(message, "tool_calls") or []
     if not tool_calls:
         if request.strict:
             raise ToolSelectionError("routing model returned no tool call")
@@ -166,14 +297,20 @@ def _selection_from_completion(
         raise ToolSelectionError(
             "routing model must return exactly one tool call"
         )
-    function = getattr(tool_calls[0], "function", None)
-    if function is None:
+    function = _field(tool_calls[0], "function")
+    selected_name = _field(function, "name")
+    raw_arguments = _field(function, "arguments")
+    if (
+        function is None
+        or not isinstance(selected_name, str)
+        or not selected_name
+        or not isinstance(raw_arguments, str)
+    ):
         if request.strict:
             raise ToolSelectionError(
                 "routing model returned a malformed tool call"
             )
         return None
-    selected_name = str(function.name)
     if request.strict and selected_name not in request.allowed_order:
         raise ToolSelectionError(
             "routing model selected a tool outside the allowlist"
@@ -182,11 +319,18 @@ def _selection_from_completion(
         raise ToolSelectionError("routing model did not honor the forced tool")
     return ToolSelection(
         tool_name=selected_name,
-        arguments=_parse_tool_arguments(str(function.arguments)),
+        arguments=_parse_tool_arguments(raw_arguments, strict=request.strict),
     )
 
 
-def _parse_tool_arguments(raw: str) -> dict[str, Any]:
+def _field(value: Any, name: str) -> Any:
+    """Read one SDK object or mapping field without exposing its contents."""
+    if isinstance(value, Mapping):
+        return value.get(name)
+    return getattr(value, name, None)
+
+
+def _parse_tool_arguments(raw: str, *, strict: bool = False) -> dict[str, Any]:
     """Parse the model's JSON tool arguments, defaulting to empty on junk.
 
     Args:
@@ -199,7 +343,17 @@ def _parse_tool_arguments(raw: str) -> dict[str, Any]:
     """
     try:
         parsed = json.loads(raw or "{}")
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, TypeError):
+        if strict:
+            raise ToolSelectionError(
+                "routing model returned invalid tool arguments"
+            ) from None
         _LOGGER.warning("Routing model returned non-JSON tool arguments")
         return {}
-    return parsed if isinstance(parsed, dict) else {}
+    if not isinstance(parsed, dict):
+        if strict:
+            raise ToolSelectionError(
+                "routing model returned non-object tool arguments"
+            )
+        return {}
+    return parsed

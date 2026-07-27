@@ -18,9 +18,12 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.agents.expert import (
+    ExpertRoutingContractError,
+    ExpertRoutingOptions,
     ToolSelection,
     ToolSelectionError,
     select_agent_tool,
+    select_expert_tool,
 )
 from mcp_server_phytomni.agents.expert import router as expert_router
 from mcp_server_phytomni.mcp.schemas import agent_openai_tool_specs
@@ -114,6 +117,68 @@ async def test_strict_router_forces_requested_tool(
         "type": "function",
         "function": {"name": "ChatAgent"},
     }
+
+
+async def test_select_expert_tool_scopes_prompt_and_order() -> None:
+    """The strict seam scopes the prompt and preserves caller tool order."""
+    captured: dict[str, Any] = {}
+
+    async def fake_completion(**kwargs: Any) -> object:
+        captured.update(kwargs)
+        return _completion(tool_calls=[_tool_call("ChatAgent", "{}")])
+
+    result = await select_expert_tool(
+        user_query="route this",
+        history=[{"role": "user", "content": "earlier"}],
+        options=ExpertRoutingOptions(
+            allowed_tools=("KnowledgeAgent", "ChatAgent"),
+            forced_tool=None,
+            locale="zh-CN",
+            completion=fake_completion,
+        ),
+    )
+
+    assert result == ToolSelection("ChatAgent", {})
+    assert [tool["function"]["name"] for tool in captured["tools"]] == [
+        "KnowledgeAgent",
+        "ChatAgent",
+    ]
+    assert captured["tool_choice"] == "required"
+    assert captured["messages"][0]["role"] == "system"
+    assert "Simplified Chinese" in captured["messages"][0]["content"]
+    assert captured["messages"][1] == {
+        "role": "user",
+        "content": "earlier",
+    }
+
+
+@pytest.mark.parametrize(
+    "completion",
+    [
+        _completion(tool_calls=[SimpleNamespace(function=SimpleNamespace())]),
+        _completion(tool_calls=[_tool_call("ChatAgent", "not-json")]),
+        _completion(tool_calls=[_tool_call("ChatAgent", "[]")]),
+    ],
+)
+async def test_select_expert_tool_rejects_malformed_arguments(
+    completion: object,
+) -> None:
+    """Strict selection rejects malformed arguments as contract errors."""
+
+    async def fake_completion(**_kwargs: Any) -> object:
+        return completion
+
+    with pytest.raises(ExpertRoutingContractError):
+        await select_expert_tool(
+            user_query="route this",
+            history=[],
+            options=ExpertRoutingOptions(
+                allowed_tools=("ChatAgent",),
+                forced_tool=None,
+                locale="en-US",
+                completion=fake_completion,
+            ),
+        )
 
 
 _FORCED_TOOL_ARGUMENTS = (
