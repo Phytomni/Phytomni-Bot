@@ -316,6 +316,11 @@ async def _execute_context_chat(
         raise HTTPException(
             status_code=422, detail="chat context requires instant mode"
         )
+    if dependencies.catalog.model_to_tool[payload.model] != "ChatAgent":
+        raise HTTPException(
+            status_code=422,
+            detail="instant context requires a ChatAgent model",
+        )
     if payload.stream:
         raise HTTPException(
             status_code=400,
@@ -361,7 +366,7 @@ async def _execute_context_chat(
             "raw": tool_envelope.raw,
         }
         chat_run_id = dependencies.chat.projection.record_sync_run(
-            agent=dependencies.catalog.model_to_agent_slug[payload.model],
+            agent="chat",
             owner=dependencies.chat.projection.current_user() or "anonymous",
             result=envelope_dict,
             request_info=_chat_run_request_info(

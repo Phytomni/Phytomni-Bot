@@ -11,6 +11,8 @@ Public functions: handle_chat_agent, handle_knowledge_agent, handle_data_agent,
     handle_get_task_status.
 """
 
+from collections.abc import Mapping, Sequence
+from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +75,32 @@ from .schemas import (
 # branches return None.
 HandlerResult = dict[str, Any]
 
+PrivateConversationMessages = tuple[dict[str, str], ...]
+_private_conversation_messages: ContextVar[PrivateConversationMessages] = (
+    ContextVar("private_conversation_messages", default=())
+)
+
+
+def set_private_conversation_messages(
+    messages: Sequence[Mapping[str, str]],
+) -> Token[PrivateConversationMessages]:
+    """Set bounded V1 history for one in-process handler dispatch."""
+    return _private_conversation_messages.set(
+        tuple(dict(message) for message in messages)
+    )
+
+
+def reset_private_conversation_messages(
+    token: Token[PrivateConversationMessages],
+) -> None:
+    """Restore the private handler context after one raw dispatch."""
+    _private_conversation_messages.reset(token)
+
+
+def private_conversation_messages() -> PrivateConversationMessages:
+    """Return V1 history available only to the active handler invocation."""
+    return _private_conversation_messages.get()
+
 
 def scratch_server_dir(config: ServerConfig, scope: str) -> str:
     """Return an obsfs-or-local scratch dir for handler ``server_dir`` use.
@@ -112,7 +140,8 @@ async def handle_chat_agent(args: ChatAgent) -> HandlerResult:
             server_dir=scratch_server_dir(chat_config, "chat"),
             config=chat_config,
             runtime=runtime,
-        )
+        ),
+        conversation_messages=private_conversation_messages(),
     )
 
 
@@ -131,6 +160,7 @@ async def handle_knowledge_agent(args: KnowledgeAgent) -> HandlerResult:
         user_query=args.user_query,
         obs_file_list=args.obs_file_list,
         server_dir=scratch_server_dir(knowledge_config, "knowledge"),
+        conversation_messages=private_conversation_messages(),
         **chat_kwargs(knowledge_config, runtime.sensitive, locale=args.locale),
         **retrieve_kwargs(knowledge_config),
         **obs_kwargs(knowledge_config, runtime.obs_credentials),

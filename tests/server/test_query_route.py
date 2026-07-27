@@ -201,6 +201,45 @@ async def test_route_rejects_more_than_ten_allowed_tools(
         )
 
 
+async def test_context_expert_is_disabled_before_routing_or_invocation(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A disabled V1 Expert envelope returns 404 without dispatching."""
+    routed = False
+    invoked = False
+
+    async def forbidden_router(*_args: Any, **_kwargs: Any) -> ToolSelection:
+        nonlocal routed
+        routed = True
+        raise AssertionError("disabled V1 Expert must not route")
+
+    async def forbidden_invoke(**_kwargs: Any) -> tuple[dict[str, Any], int]:
+        nonlocal invoked
+        invoked = True
+        raise AssertionError("disabled V1 Expert must not invoke an agent")
+
+    monkeypatch.setattr(api_app, "select_agent_tool", forbidden_router)
+    monkeypatch.setattr(api_app, "_invoke_agent_run", forbidden_invoke)
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["KnowledgeAgent"],
+            "conversation": _conversation_envelope(
+                requested_agent_id="KnowledgeAgent",
+                allowed_agent_ids=["KnowledgeAgent"],
+            ),
+        },
+    )
+
+    assert response.status_code == 404
+    assert not routed
+    assert not invoked
+
+
 async def test_context_expert_explicit_selection_stages_without_router(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

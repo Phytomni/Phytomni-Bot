@@ -66,7 +66,9 @@ from .handlers import (
     handle_in_silico_research_agent,
     handle_knowledge_agent,
     handle_review_agent,
+    reset_private_conversation_messages,
     scratch_server_dir,
+    set_private_conversation_messages,
 )
 from .progress_events import PROGRESS_KIND
 from .result_formatting import (
@@ -171,7 +173,12 @@ def _text_response(response: Any) -> list[TextContent]:
     return [TextContent(type="text", text=dumps(response))]
 
 
-async def invoke_tool_raw(name: Any, arguments: dict[str, Any]) -> Any:
+async def invoke_tool_raw(
+    name: Any,
+    arguments: dict[str, Any],
+    *,
+    conversation_messages: Sequence[Mapping[str, str]] = (),
+) -> Any:
     """Validate arguments and call a tool handler, returning its payload.
 
     This is the single shared invocation seam: the MCP dispatcher and the
@@ -182,6 +189,8 @@ async def invoke_tool_raw(name: Any, arguments: dict[str, Any]) -> Any:
     Args:
         name: Raw tool name supplied by the caller.
         arguments: JSON object passed to the selected tool.
+        conversation_messages: Private native-role history held in a
+            task-local handler context, never in public tool arguments.
 
     Returns:
         The unwrapped handler response payload.
@@ -202,7 +211,11 @@ async def invoke_tool_raw(name: Any, arguments: dict[str, Any]) -> Any:
             _format_validation_error(tool_name, exc)
         ) from exc
 
-    return await handler(args)
+    token = set_private_conversation_messages(conversation_messages)
+    try:
+        return await handler(args)
+    finally:
+        reset_private_conversation_messages(token)
 
 
 async def invoke_tool_formatted(
@@ -259,9 +272,11 @@ async def invoke_tool_enveloped(
     Raises:
         McpError: If the tool is unknown or arguments fail validation.
     """
-    # MCP tool schemas remain the public argument boundary.
-    del conversation_messages
-    raw = await invoke_tool_raw(name, arguments)
+    raw = await invoke_tool_raw(
+        name,
+        arguments,
+        conversation_messages=conversation_messages,
+    )
     await _maybe_enrich_cited(_tool_name(name), raw)
     return build_tool_result_envelope(
         _tool_name(name), raw, arguments=arguments

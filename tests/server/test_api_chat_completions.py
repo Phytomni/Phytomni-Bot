@@ -143,6 +143,37 @@ async def test_chat_context_envelope_is_rejected_while_v1_is_disabled(
     assert invoked == 0
 
 
+async def test_instant_context_rejects_non_chat_model_before_dispatch(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Instant cannot persist a non-Chat model for a ChatAgent run."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    invoked = 0
+
+    async def forbidden(_args: Any) -> dict[str, Any]:
+        nonlocal invoked
+        invoked += 1
+        raise AssertionError(
+            "non-Chat Instant model must not invoke ChatAgent"
+        )
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS, server.PhytomniAgents.CHAT_AGENT.value, forbidden
+    )
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        model="phyto-knowledge",
+        conversation=_conversation_envelope(),
+    )
+
+    assert response.status_code == 422
+    assert invoked == 0
+
+
 def test_chat_context_adapter_keeps_native_role_history_separate_from_query() -> (
     None
 ):
@@ -235,6 +266,7 @@ async def test_chat_context_v1_stages_native_history_and_replays_turn(
     assert first.status_code == 200
     assert second.status_code == 200
     assert first.json() == second.json()
+    assert first.json()["model"] == "phyto-chat"
     assert captured == {
         "tool_name": "ChatAgent",
         "arguments": {
