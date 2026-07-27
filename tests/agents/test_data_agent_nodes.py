@@ -108,3 +108,80 @@ def test_route_start_routes_through_retrieve_when_rewrite_enabled() -> None:
 def test_route_start_routes_directly_to_search_when_rewrite_off() -> None:
     """route_start skips retrieve and rewrite when is_rewrite is False."""
     assert _agent().route_start(_state(is_rewrite=False)) == "search_node"
+
+
+def test_result_helpers_keep_only_bounded_shape_metadata() -> None:
+    """Result telemetry classifies shapes without retaining payload data."""
+    result_kind = getattr(data_agent, "_result_kind")
+    result_row_count = getattr(data_agent, "_result_row_count")
+
+    assert result_kind({"data": []}) == "mapping"
+    assert result_kind(["row"]) == "list"
+    assert result_kind(None) == "none"
+    assert result_kind("scalar") == "scalar"
+
+    assert result_row_count(["row"]) == 1
+    assert result_row_count("scalar") is None
+    assert result_row_count({}) is None
+
+
+def test_missing_knowledge_app_is_rejected_before_graph_compile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The retrieve graph cannot compile without its knowledge subgraph."""
+
+    def fake_build_knowledge_app(**_kwargs: Any) -> None:
+        """Simulate a missing knowledge subgraph during construction."""
+        return None
+
+    monkeypatch.setattr(
+        data_agent,
+        "build_knowledge_app",
+        fake_build_knowledge_app,
+    )
+
+    with pytest.raises(RuntimeError, match="_knowledge_app"):
+        DataAgent()
+
+
+async def test_retrieve_post_node_stops_at_token_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Oversized scenario fragments are excluded from the rewrite prompt."""
+    oversized_fragment = "x" * (data_agent.DATA_CONFIG.MAX_TOKENS + 1)
+    captured: dict[str, Any] = {}
+
+    def fake_format_fragment(*_args: Any, **_kwargs: Any) -> str:
+        """Return one fragment that exceeds the configured budget."""
+        return oversized_fragment
+
+    def fake_get_prompt(
+        _prompt_file: str,
+        _prompt_name: str,
+        values: dict[str, str],
+    ) -> str:
+        """Capture the bounded scenario context without rendering it."""
+        captured.update(values)
+        return "prompt"
+
+    monkeypatch.setattr(
+        data_agent,
+        "format_retrieved_doc_fragment",
+        fake_format_fragment,
+    )
+    monkeypatch.setattr(data_agent, "get_prompt", fake_get_prompt)
+
+    result = await _agent().retrieve_post_node(
+        cast(
+            DataAgentState,
+            {
+                "user_query": "list every transcript per sample",
+                "knowledge_response": {
+                    "retrieved_docs": [{"title": "oversized"}],
+                },
+            },
+        )
+    )
+
+    assert result == {"retrieve_prompt": "prompt"}
+    assert captured["scenario_prompts"] == ""
