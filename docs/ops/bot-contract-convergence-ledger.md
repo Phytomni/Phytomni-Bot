@@ -41,20 +41,6 @@ Focused result: `235 passed in 1.43s`. The Task 9 packet also passed
 `UV_CACHE_DIR=/tmp/phytomni-uv-cache make scoped` gate passed with `2173 passed`; the secret scan and static-analysis exemption reconciliation were
 clean. The public-document sentinel scan returned no matches.
 
-### Task 6 context-history follow-up
-
-- Status: `Bot Ready` for the remaining projection-budget review gap.
-- Scope: final context-projection budget validation now counts the exact
-  private bounded `relevant_recent_turns` role-tagged payload that adapters
-  later convert into `conversation_messages`, while the public projection dump
-  and redaction boundary remain unchanged.
-- Focused evidence: `143 passed in 7.42s` from the context packet
-  (`tests/unit/runtime/conversation_context/test_projection.py`,
-  `test_models.py`, `test_service.py`,
-  `tests/server/test_api_chat_completions.py`,
-  `tests/server/test_query_route.py`), plus scoped `black --check`,
-  `ruff check`, `git diff --check`, and staged secret scan.
-
 ### Scientific report capability rows
 
 | Bot row                         | Report states           | Artifacts           | Degraded outcomes   | Status           |
