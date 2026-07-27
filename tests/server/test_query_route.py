@@ -327,10 +327,12 @@ async def test_route_remote_agent_returns_running_task_ids(
     assert body["status"] == "running"
     assert set(body["task_ids"]) == {"T-A"}
     assert body["id"]
+    request_id = response.headers["X-Request-Id"]
 
     record = RunRegistry(tasks_db_path).list_runs(owner="u1")[0]
     assert record.spec.agent == "analyst"
     assert record.spec.origin == "remote"
+    assert record.request_info.request_id == request_id
 
 
 async def test_route_passes_constraints_to_selector_and_forces_agent(

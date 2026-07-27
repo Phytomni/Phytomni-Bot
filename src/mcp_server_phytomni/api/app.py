@@ -295,6 +295,7 @@ async def _prepare_agent_run(
     )
     request_info = RunRequestInfo(
         dialogue_id=dialogue_id,
+        request_id=current_request_id(),
         query=(
             arguments.get("user_query")
             if isinstance(arguments.get("user_query"), str)

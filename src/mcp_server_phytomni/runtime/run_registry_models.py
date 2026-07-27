@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS runs (
     updated_at TEXT NOT NULL,
     expires_at TEXT,
     dialogue_id TEXT,
+    request_id TEXT,
     query TEXT,
     tool_name TEXT,
     model TEXT,
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS runs (
 
 _REQUEST_INFO_COLUMNS = (
     ("dialogue_id", "TEXT"),
+    ("request_id", "TEXT"),
     ("query", "TEXT"),
     ("tool_name", "TEXT"),
     ("model", "TEXT"),
@@ -236,17 +238,83 @@ class RunOutcome:
     error: str | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
+class _RequestIdentity:
+    """Correlate the request with an optional dialogue identifier."""
+
+    dialogue_id: str | None = None
+    request_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class RunRequestInfo:
     """Per-request metadata persisted alongside the run row."""
 
-    dialogue_id: str | None = None
+    _identity: _RequestIdentity = field(init=False, repr=False)
     query: str | None = None
     tool_name: str | None = None
     model: str | None = None
     request_json: str | None = None
     locale: SupportedLocale | None = None
     a2a: A2ACorrelation = A2ACorrelation()
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Build metadata while retaining the legacy constructor contract."""
+        names = (
+            "dialogue_id",
+            "request_id",
+            "query",
+            "tool_name",
+            "model",
+            "request_json",
+            "locale",
+            "a2a",
+        )
+        if len(args) > len(names):
+            raise TypeError(
+                f"RunRequestInfo expected at most {len(names)} arguments"
+            )
+        values: dict[str, Any] = dict(zip(names, args))
+        identity = kwargs.pop("_identity", None)
+        for name, value in kwargs.items():
+            if name not in names:
+                raise TypeError(
+                    f"RunRequestInfo got an unexpected keyword argument "
+                    f"{name!r}"
+                )
+            if name in values:
+                raise TypeError(
+                    f"RunRequestInfo got multiple values for argument "
+                    f"{name!r}"
+                )
+            values[name] = value
+        if identity is None:
+            identity = _RequestIdentity(
+                values.get("dialogue_id"),
+                values.get("request_id"),
+            )
+        object.__setattr__(self, "_identity", identity)
+        object.__setattr__(self, "query", values.get("query"))
+        object.__setattr__(self, "tool_name", values.get("tool_name"))
+        object.__setattr__(self, "model", values.get("model"))
+        object.__setattr__(self, "request_json", values.get("request_json"))
+        object.__setattr__(self, "locale", values.get("locale"))
+        object.__setattr__(
+            self,
+            "a2a",
+            values.get("a2a", A2ACorrelation()),
+        )
+        self.__post_init__()
+
+    @property
+    def dialogue_id(self) -> str | None:
+        """Return the legacy dialogue correlation field."""
+        return self._identity.dialogue_id
+
+    @property
+    def request_id(self) -> str | None:
+        """Return the HTTP request correlation field."""
+        return self._identity.request_id
 
     def __post_init__(self) -> None:
         """Reject unsupported values when hydrating persisted metadata."""

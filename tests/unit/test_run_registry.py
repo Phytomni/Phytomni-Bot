@@ -493,6 +493,7 @@ def test_create_run_persists_request_info(tmp_path: Path) -> None:
     spec = RunSpec("run-ri-1", "alice", "knowledge", "local")
     info = RunRequestInfo(
         dialogue_id="dlg-1",
+        request_id="req-1",
         query="What does AT1G01010 do?",
         tool_name="KnowledgeAgent",
         model="phyto-knowledge",
@@ -536,6 +537,7 @@ def test_update_request_info_overwrites_existing(tmp_path: Path) -> None:
 
     new_info = RunRequestInfo(
         dialogue_id="dlg-7",
+        request_id="req-7",
         query="hello world",
         tool_name="ChatAgent",
         model="phyto-chat",
@@ -694,6 +696,7 @@ def test_init_db_migrates_legacy_table_in_place(tmp_path: Path) -> None:
     with sqlite3.connect(db) as conn:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
     assert "locale" in columns
+    assert "request_id" in columns
     # The migration is rerun-safe; opening again does not raise.
     RunRegistry(db)
 

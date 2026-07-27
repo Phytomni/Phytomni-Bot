@@ -213,11 +213,12 @@ class RunRegistry:
                     run_id, user_id, agent, origin, status,
                     result_json, error, created_at, updated_at,
                     expires_at,
-                    dialogue_id, query, tool_name, model, request_json,
+                    dialogue_id, request_id, query, tool_name, model,
+                    request_json,
                     locale,
                     a2a_task_id, a2a_context_id, a2a_message_id
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -232,6 +233,7 @@ class RunRegistry:
                     now,
                     expires_at,
                     info.dialogue_id,
+                    info.request_id,
                     info.query,
                     info.tool_name,
                     info.model,
@@ -271,6 +273,7 @@ class RunRegistry:
                 """
                 UPDATE runs SET
                     dialogue_id = ?,
+                    request_id = ?,
                     query = ?,
                     tool_name = ?,
                     model = ?,
@@ -281,6 +284,7 @@ class RunRegistry:
                 """,
                 (
                     request_info.dialogue_id,
+                    request_info.request_id,
                     request_info.query,
                     request_info.tool_name,
                     request_info.model,
@@ -523,7 +527,8 @@ class RunRegistry:
                 """
                 SELECT run_id, user_id, agent, origin, status, result_json,
                        error, created_at, updated_at, expires_at,
-                       dialogue_id, query, tool_name, model, request_json,
+                       dialogue_id, request_id, query, tool_name, model,
+                       request_json,
                        locale,
                        a2a_task_id, a2a_context_id, a2a_message_id
                 FROM runs WHERE run_id = ? AND user_id = ?
@@ -587,7 +592,8 @@ class RunRegistry:
                 """
                 SELECT run_id, user_id, agent, origin, status, result_json,
                        error, created_at, updated_at, expires_at,
-                       dialogue_id, query, tool_name, model, request_json,
+                       dialogue_id, request_id, query, tool_name, model,
+                       request_json,
                        locale,
                        a2a_task_id, a2a_context_id, a2a_message_id
                 FROM runs WHERE a2a_task_id = ? AND user_id = ?
@@ -638,7 +644,8 @@ class RunRegistry:
                 SELECT run_id, user_id, agent, origin, status,
                        result_json, error, created_at, updated_at,
                        expires_at,
-                       dialogue_id, query, tool_name, model, request_json,
+                       dialogue_id, request_id, query, tool_name, model,
+                       request_json,
                        locale,
                        a2a_task_id, a2a_context_id, a2a_message_id
                 FROM runs WHERE {where}
@@ -970,6 +977,7 @@ def _row_to_record(
         task_ids=tuple(t[0] for t in task_rows),
         request_info=RunRequestInfo(
             dialogue_id=row["dialogue_id"],
+            request_id=row["request_id"],
             query=row["query"],
             tool_name=row["tool_name"],
             model=row["model"],

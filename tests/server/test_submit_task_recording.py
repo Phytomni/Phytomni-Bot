@@ -21,6 +21,7 @@ from unittest.mock import Mock
 import pytest
 from tests.support.sqlite import closed_sqlite_connection
 
+from mcp_server_phytomni.api.run_lifecycle import stamp_remote_request_info
 from mcp_server_phytomni.mcp.handlers import (
     handle_analyst_agent,
     handle_deep_genome_agent,
@@ -37,10 +38,14 @@ from mcp_server_phytomni.runtime.execution_defaults import (
 from mcp_server_phytomni.runtime.request_context import (
     current_accepted_task_ids,
     current_recorder_degraded,
+    current_request_id,
     current_run_id,
     request_context,
 )
-from mcp_server_phytomni.runtime.run_registry import RunRegistry
+from mcp_server_phytomni.runtime.run_registry import (
+    RunRegistry,
+    RunRequestInfo,
+)
 from mcp_server_phytomni.runtime.submit_recorder import (
     record_submitted_task,
     records_submission,
@@ -223,6 +228,33 @@ def test_record_binds_run_id_contextvar(tasks_db_path: str) -> None:
     runs = RunRegistry(tasks_db_path).list_runs(owner="anonymous")
     assert len(runs) == 1
     assert runs[0].spec.run_id == bound
+
+
+def test_record_persists_request_id_across_run_reads(
+    tasks_db_path: str,
+) -> None:
+    """Remote Analyst identity keeps the request id beside run and task ids."""
+    with request_context("analyst-owner", "request-analyst-1"):
+        record_submitted_task(
+            {"task_id": "T-request", "output_dir": "/obs/run"},
+            agent="analyst",
+        )
+        stamp_remote_request_info(
+            run_id=current_run_id(),
+            owner="analyst-owner",
+            request_info=RunRequestInfo(request_id=current_request_id()),
+            db_path=tasks_db_path,
+        )
+
+    registry = RunRegistry(tasks_db_path)
+    listed = registry.list_runs(owner="analyst-owner")
+    assert len(listed) == 1
+    run_id = listed[0].spec.run_id
+    assert listed[0].request_info.request_id == "request-analyst-1"
+    fetched = registry.get_run(run_id, owner="analyst-owner")
+    assert fetched is not None
+    assert fetched.task_ids == ("T-request",)
+    assert fetched.request_info.request_id == "request-analyst-1"
 
 
 def test_record_handles_research_task_ids_map(tasks_db_path: str) -> None:
