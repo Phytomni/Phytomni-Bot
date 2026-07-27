@@ -72,6 +72,58 @@ class ApiConfig(ApiLimitsConfig):
             "PHYTOMNI_STREAM_ANSWER_MAX_BYTES",
         ),
     )
+    CONVERSATION_CONTEXT_V1_ENABLED: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "CONVERSATION_CONTEXT_V1_ENABLED",
+            "PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED",
+        ),
+    )
+    CONVERSATION_CONTEXT_CHAT_TOKEN_BUDGET: int = Field(
+        default=6_000,
+        ge=512,
+        le=16_000,
+        validation_alias=AliasChoices(
+            "CONVERSATION_CONTEXT_CHAT_TOKEN_BUDGET",
+            "PHYTOMNI_CONVERSATION_CONTEXT_CHAT_TOKEN_BUDGET",
+        ),
+    )
+    CONVERSATION_CONTEXT_KNOWLEDGE_TOKEN_BUDGET: int = Field(
+        default=4_000,
+        ge=512,
+        le=16_000,
+        validation_alias=AliasChoices(
+            "CONVERSATION_CONTEXT_KNOWLEDGE_TOKEN_BUDGET",
+            "PHYTOMNI_CONVERSATION_CONTEXT_KNOWLEDGE_TOKEN_BUDGET",
+        ),
+    )
+    CONVERSATION_CONTEXT_DATA_TOKEN_BUDGET: int = Field(
+        default=3_000,
+        ge=512,
+        le=16_000,
+        validation_alias=AliasChoices(
+            "CONVERSATION_CONTEXT_DATA_TOKEN_BUDGET",
+            "PHYTOMNI_CONVERSATION_CONTEXT_DATA_TOKEN_BUDGET",
+        ),
+    )
+    CONVERSATION_CONTEXT_REVIEW_TOKEN_BUDGET: int = Field(
+        default=6_000,
+        ge=512,
+        le=16_000,
+        validation_alias=AliasChoices(
+            "CONVERSATION_CONTEXT_REVIEW_TOKEN_BUDGET",
+            "PHYTOMNI_CONVERSATION_CONTEXT_REVIEW_TOKEN_BUDGET",
+        ),
+    )
+    CONVERSATION_CONTEXT_BRIEF_GENE_TOKEN_BUDGET: int = Field(
+        default=4_000,
+        ge=512,
+        le=16_000,
+        validation_alias=AliasChoices(
+            "CONVERSATION_CONTEXT_BRIEF_GENE_TOKEN_BUDGET",
+            "PHYTOMNI_CONVERSATION_CONTEXT_BRIEF_GENE_TOKEN_BUDGET",
+        ),
+    )
     A2UI_ENABLED: bool = Field(
         default=False,
         validation_alias=AliasChoices("A2UI_ENABLED", "PHYTOMNI_A2UI_ENABLED"),

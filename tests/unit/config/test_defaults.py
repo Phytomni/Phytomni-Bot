@@ -254,6 +254,14 @@ def test_split_config_models_preserve_legacy_identity_and_shape() -> None:
     assert ApiConfig().model_dump() == LeafApiConfig().model_dump()
 
 
+def test_defaults_reexport_conversation_context_configuration() -> None:
+    """Legacy defaults imports retain the default-off context settings."""
+    config = ApiConfig()
+
+    assert config.CONVERSATION_CONTEXT_V1_ENABLED is False
+    assert config.CONVERSATION_CONTEXT_CHAT_TOKEN_BUDGET == 6_000
+
+
 @pytest.mark.parametrize(
     ("name", "legacy", "leaf", "package"),
     _AGENT_MODEL_MANIFEST,
