@@ -79,46 +79,28 @@ def register_conversation_context_routes(
         _require_enabled(dependencies)
         store = dependencies.get_store()
         key = str(payload.conversation_key)
-        turn = store.load_turn(key, payload.turn_id)
-        if turn is None:
-            raise HTTPException(
-                status_code=404, detail="context turn not found"
-            )
-        if turn.ledger_version != payload.ledger_version:
-            raise HTTPException(
-                status_code=409, detail="context settlement conflict"
-            )
-        if turn.state == "committed":
-            context = store.load_context(key)
-            if context is None:
-                raise HTTPException(
-                    status_code=409, detail="context settlement conflict"
-                )
-            return ContextMutationResponse(
-                state="already_applied",
-                context_version=context.context_version,
-            )
-        if turn.state != "staged":
-            raise HTTPException(
-                status_code=409, detail="context settlement conflict"
-            )
         try:
-            context = store.commit_staged_turn(
+            settlement = store.commit_staged_turn(
                 key,
                 payload.turn_id,
-                turn.base_context_version,
+                payload.ledger_version,
                 payload.ledger_version,
             )
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404, detail="context turn not found"
+            ) from exc
         except ConversationTombstonedError as exc:
             raise HTTPException(
                 status_code=409, detail="context settlement conflict"
             ) from exc
-        except (ContextVersionConflictError, KeyError) as exc:
+        except ContextVersionConflictError as exc:
             raise HTTPException(
                 status_code=409, detail="context settlement conflict"
             ) from exc
         return ContextMutationResponse(
-            state="committed", context_version=context.context_version
+            state=settlement.state,
+            context_version=settlement.context.context_version,
         )
 
     @app.post(

@@ -7,9 +7,11 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 
@@ -142,13 +144,15 @@ def test_commit_staged_turn_compare_and_swaps_from_zero_to_one(
     store.begin_turn("conversation-1", "1", "append", 0)
     store.stage_turn("conversation-1", "1", _staged())
 
-    context = store.commit_staged_turn(
+    settlement = store.commit_staged_turn(
         "conversation-1",
         "1",
-        expected_version=0,
+        expected_ledger_version="a" * 64,
         ledger_version="a" * 64,
     )
+    context = settlement.context
 
+    assert settlement.state == "committed"
     assert context.context_version == 1
     assert context.ledger_cursor == 9
     assert context.ledger_version == "a" * 64
@@ -171,7 +175,9 @@ def test_commit_updates_serialized_context_to_acknowledged_ledger_version(
         ),
     )
 
-    context = store.commit_staged_turn("conversation-1", "1", 0, "b" * 64)
+    context = store.commit_staged_turn(
+        "conversation-1", "1", "a" * 64, "b" * 64
+    ).context
 
     assert context.ledger_version == "b" * 64
     assert context.context["last_applied_ledger_version"] == "b" * 64
@@ -183,12 +189,36 @@ def test_commit_rejects_a_stale_compare_and_swap(
     """A stale turn cannot overwrite already-advanced business context."""
     store.begin_turn("conversation-1", "1", "append", 0)
     store.stage_turn("conversation-1", "1", _staged())
-    store.commit_staged_turn("conversation-1", "1", 0, "a" * 64)
+    store.commit_staged_turn("conversation-1", "1", "a" * 64, "a" * 64)
     store.begin_turn("conversation-1", "2", "append", 0)
     store.stage_turn("conversation-1", "2", _staged())
 
     with pytest.raises(ContextVersionConflictError):
-        store.commit_staged_turn("conversation-1", "2", 0, "b" * 64)
+        store.commit_staged_turn("conversation-1", "2", "a" * 64, "b" * 64)
+
+
+def test_concurrent_settlement_returns_one_commit_and_one_retry(
+    store: ConversationContextStore,
+) -> None:
+    """Concurrent duplicate settlement derives a distinct atomic outcome."""
+    store.begin_turn("conversation-1", "1", "append", 0)
+    store.stage_turn("conversation-1", "1", _staged())
+    barrier = Barrier(2)
+
+    def settle(contender: ConversationContextStore) -> str:
+        barrier.wait()
+        return contender.commit_staged_turn(
+            "conversation-1", "1", "a" * 64, "a" * 64
+        ).state
+
+    duplicate = ConversationContextStore(store.db_path)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        states = list(executor.map(settle, (store, duplicate)))
+
+    assert sorted(states) == ["already_applied", "committed"]
+    context = store.load_context("conversation-1")
+    assert context is not None
+    assert context.context_version == 1
 
 
 def test_duplicate_staging_returns_the_byte_equivalent_terminal_result(
@@ -301,7 +331,7 @@ def test_tombstone_clears_context_and_turns_then_refuses_new_work(
     """Deletion prevents a later append or rebuild from reviving context."""
     store.begin_turn("conversation-1", "1", "append", 0)
     store.stage_turn("conversation-1", "1", _staged())
-    store.commit_staged_turn("conversation-1", "1", 0, "a" * 64)
+    store.commit_staged_turn("conversation-1", "1", "a" * 64, "a" * 64)
 
     store.tombstone("conversation-1")
 

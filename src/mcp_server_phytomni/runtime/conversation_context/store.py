@@ -125,6 +125,14 @@ class BeginTurnResult:
     turn: StoredTurn
 
 
+@dataclass(frozen=True)
+class SettlementResult:
+    """Atomic outcome of applying one staged conversation turn."""
+
+    state: Literal["committed", "already_applied"]
+    context: StoredBusinessContext
+
+
 def _json(value: dict[str, Any]) -> str:
     return json.dumps(
         value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
@@ -369,17 +377,22 @@ class ConversationContextStore:
         self,
         key: str,
         turn_id: str,
-        expected_version: int,
+        expected_ledger_version: str,
         ledger_version: str,
-    ) -> StoredBusinessContext:
+    ) -> SettlementResult:
+        """Atomically apply a staged turn or return its existing commit."""
         now = _now()
         with self._write() as connection:
             turn = connection.execute(
                 "SELECT conversation_key, turn_id, operation, base_context_version, state, selected_agent_id, route_source, result_json, delta_json, ledger_version, created_at, updated_at, expires_at FROM conversation_turns WHERE conversation_key=? AND turn_id=?",
                 (key, turn_id),
             ).fetchone()
-            if turn is None or turn[4] not in {"staged", "committed"}:
+            if turn is None:
                 raise KeyError((key, turn_id))
+            if turn[4] not in {"staged", "committed"}:
+                raise ContextVersionConflictError(key)
+            if turn[9] != expected_ledger_version:
+                raise ContextVersionConflictError(key)
             context = connection.execute(
                 "SELECT conversation_key, schema_version, context_version, ledger_cursor, ledger_version, observed_mode, context_json, state, checkpoint_cleanup_state, updated_at, tombstoned_at FROM conversation_contexts WHERE conversation_key=?",
                 (key,),
@@ -387,9 +400,13 @@ class ConversationContextStore:
             if context is not None and context[7] == "tombstoned":
                 raise ConversationTombstonedError(key)
             if turn[4] == "committed":
-                return self._context(context)
+                if context is None:
+                    raise ContextVersionConflictError(key)
+                return SettlementResult(
+                    "already_applied", self._context(context)
+                )
             current = 0 if context is None else context[2]
-            if current != expected_version or turn[3] != expected_version:
+            if current != turn[3]:
                 raise ContextVersionConflictError(key)
             data, metadata, _stage_metadata = _unpack_delta(turn[8])
             assert data is not None
@@ -426,7 +443,7 @@ class ConversationContextStore:
                         context_json,
                         now,
                         key,
-                        expected_version,
+                        turn[3],
                     ),
                 )
             connection.execute(
@@ -438,7 +455,7 @@ class ConversationContextStore:
                 (key,),
             ).fetchone()
         logger.debug("conversation turn committed")
-        return self._context(row)
+        return SettlementResult("committed", self._context(row))
 
     def mark_turn_failed(self, key: str, turn_id: str) -> None:
         with self._write() as connection:
@@ -491,6 +508,7 @@ __all__ = [
     "ConversationContextStore",
     "ConversationTombstonedError",
     "ContextVersionConflictError",
+    "SettlementResult",
     "StagedTurn",
     "StagedTurnConflictError",
     "StoredBusinessContext",

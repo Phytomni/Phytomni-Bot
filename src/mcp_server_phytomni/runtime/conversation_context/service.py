@@ -526,9 +526,9 @@ class ConversationContextService:
                 return self.store.commit_staged_turn(
                     key,
                     envelope.turn_id,
-                    envelope.base_business_context_version,
+                    envelope.ledger_version,
                     ledger_version,
-                )
+                ).context
             except (ContextVersionConflictError, KeyError) as exc:
                 raise SettlementMismatchError(
                     "settlement compare-and-swap failed"

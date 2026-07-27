@@ -161,6 +161,68 @@ async def test_context_mutations_require_existing_agents_auth(
     assert response.status_code == 401
 
 
+@pytest.mark.parametrize(
+    "path,payload",
+    [
+        ("/v1/conversation-context/settle", _settlement_payload()),
+        ("/v1/conversation-context/tombstone", _tombstone_payload()),
+    ],
+)
+async def test_context_mutations_require_agents_scope(
+    context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
+    tmp_path: Path,
+    path: str,
+    payload: dict[str, str | int],
+) -> None:
+    """Authenticated keys without agents scope cannot mutate context."""
+    client, _key, _store = context_client
+    restricted_key = (
+        ApiKeyStore(str(tmp_path / "keys.sqlite"))
+        .create(user_id="restricted", scopes=["service"])
+        .api_key
+    )
+
+    response = await client.post(
+        path, headers=_headers(restricted_key), json=payload
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "path,payload",
+    [
+        (
+            "/v1/conversation-context/settle",
+            {**_settlement_payload(), "unexpected": "field"},
+        ),
+        (
+            "/v1/conversation-context/settle",
+            {**_settlement_payload(), "turn_id": "invalid"},
+        ),
+        (
+            "/v1/conversation-context/tombstone",
+            {**_tombstone_payload(), "unexpected": "field"},
+        ),
+        (
+            "/v1/conversation-context/tombstone",
+            {**_tombstone_payload(), "conversation_key": "invalid"},
+        ),
+    ],
+)
+async def test_context_mutations_reject_malformed_or_extra_fields(
+    context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
+    path: str,
+    payload: dict[str, object],
+) -> None:
+    """Strict V1 request models fail malformed and unknown fields."""
+    client, key, _store = context_client
+
+    response = await client.post(path, headers=_headers(key), json=payload)
+
+    assert response.status_code == 422
+
+
 async def test_disabled_context_mutations_return_not_found(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
