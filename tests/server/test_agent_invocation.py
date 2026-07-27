@@ -113,6 +113,7 @@ async def test_dispatch_tool_formats_invoke_tool_raw(
         dumps(
             {
                 "formatted": asdict(envelope.formatted),
+                "execution": asdict(envelope.execution),
                 "raw": envelope.raw,
             }
         )

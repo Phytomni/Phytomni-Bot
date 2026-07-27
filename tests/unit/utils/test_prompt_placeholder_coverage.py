@@ -34,6 +34,7 @@ _RENDER_FUNCS = frozenset({"get_prompt", "render_template"})
 # helper call), so the keys are not visible at the call expression and are
 # harvested as module-level string constants instead.
 _INDIRECT_SUPPLIER_MODULES = (
+    "agents/research/goal_extraction.py",
     "agents/review/summary.py",
     "agents/review/agent.py",
     "agents/deep_genome/report.py",

@@ -19,6 +19,9 @@ from mcp.types import INVALID_PARAMS
 from pydantic import BaseModel
 
 from mcp_server_phytomni import server
+from mcp_server_phytomni.runtime.execution_defaults import (
+    empty_execution_projection,
+)
 
 pytestmark = pytest.mark.server
 
@@ -107,6 +110,7 @@ async def test_dispatch_tool_validates_calls_handler_and_wraps_json(
             "tabular": None,
             "output_dirs": [],
         },
+        "execution": empty_execution_projection()["execution"],
         "raw": {
             "answer": "hello",
             "files": [],
