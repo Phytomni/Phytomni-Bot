@@ -24,6 +24,7 @@ from pydantic import ValidationError
 from tests.support.chat_fakes import install_chat_handler
 from tests.support.expert_router_fakes import patch_expert_router
 
+import mcp_server_phytomni.api.a2a.messages as a2a_messages
 import mcp_server_phytomni.api.app as api_app
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.expert import (
@@ -818,6 +819,70 @@ async def test_route_no_selection_returns_sanitized_502(
     )
     assert "ChatAgent" not in response.text
     assert "DataAgent" not in response.text
+
+
+async def test_legacy_a2a_no_selection_cannot_relax_strict_route(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """Legacy A2A optional selection cannot become strict-route fallback."""
+    legacy_calls: list[str] = []
+
+    async def legacy_no_selection(text: str) -> None:
+        legacy_calls.append(text)
+        return None
+
+    monkeypatch.setattr(a2a_messages, "select_agent_tool", legacy_no_selection)
+    assert await a2a_messages.select_agent_tool("legacy question") is None
+
+    captured: dict[str, Any] = {}
+
+    async def strict_no_selection(
+        *,
+        messages: list[dict[str, Any]],
+        request: Any,
+        completion: Any,
+    ) -> SimpleNamespace:
+        _ = messages, completion
+        captured.update(
+            {
+                "tool_choice": request.tool_choice,
+                "allowed_order": request.allowed_order,
+            }
+        )
+        return _router_completion(empty_choices=True)
+
+    monkeypatch.setattr(expert_router, "_run_completion", strict_no_selection)
+    invoked = 0
+
+    async def forbidden_invoke(
+        **_kwargs: object,
+    ) -> tuple[dict[str, Any], int]:
+        nonlocal invoked
+        invoked += 1
+        raise AssertionError("strict route must stop before dispatch")
+
+    monkeypatch.setattr(api_app, "_invoke_agent_run", forbidden_invoke)
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "strict question",
+            "allowed_tools": ["ChatAgent", "DataAgent"],
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json()["error"]["code"] == ("routing_contract_violation")
+    assert captured == {
+        "tool_choice": "required",
+        "allowed_order": ("ChatAgent", "DataAgent"),
+    }
+    assert legacy_calls == ["legacy question"]
+    assert invoked == 0
+    assert not RunRegistry(tasks_db_path).list_runs(owner="u1")
 
 
 async def test_route_unknown_tool_returns_502(

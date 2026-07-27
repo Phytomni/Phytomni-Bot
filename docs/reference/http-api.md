@@ -317,7 +317,11 @@ HTTP 401/403/429. Supported message parts are:
 `raw` and URL parts, scalar/list data values, unknown `metadata.skill_id` values,
 and conflicting structured values are rejected. `metadata.skill_id` is read
 from the JSON-RPC request metadata, not from nested message metadata. When it
-is absent, the existing Expert router selects a tool from the text.
+is absent, the legacy Expert router selects a tool from the text with all
+schemas and `tool_choice=auto`; returning no tool preserves the ChatAgent
+fallback. This optional A2A bridge is recorded in the
+[compatibility register](../ops/bot-compatibility-register.md) and is not
+allowed to call the strict `/v1/query/route` contract.
 
 For a synchronous local agent the response task reaches `COMPLETED`; remote
 submission agents remain `WORKING` and expose their child `task_ids` in task
@@ -1761,18 +1765,25 @@ Request body:
   "history": [{"role": "user|assistant", "content": "string"}],
   "obs_file_list": ["/obs/phytomni/..."],
   "dialogue_id": "string | null",
+  "locale": "en-US | zh-CN | null",
   "allowed_tools": ["ChatAgent", "DataAgent", "AnalystAgent"],
   "forced_tool": "DataAgent"
 }
 ```
 
 - `allowed_tools` is required, ordered, non-empty, and contains at most ten
-  unique canonical agent tool names. The router receives and offers tools in
-  that exact order. This allowlist is trusted only when it originates at the
-  authenticated Web-service boundary; do not accept it directly from a
-  browser as an authorization decision.
+  unique canonical agent tool names. The complete canonical set is
+  `ChatAgent`, `KnowledgeAgent`, `DataAgent`, `AnalystAgent`, `ReviewAgent`,
+  `BriefGeneAgent`, `DeepGenomeAgent`, `InSilicoResearchAgent`,
+  `DigitalDesignAgent`, and `GeneNetworkAgent`; `GetTaskStatus` is excluded.
+  The router receives and offers tools in the caller's exact order. This
+  allowlist is trusted only when it originates at the authenticated
+  Web-service boundary; do not accept it directly from a browser as an
+  authorization decision.
 - `forced_tool` is nullable. When present, it must be a member of
   `allowed_tools`; it pins the routing model to that canonical tool.
+- The request model uses `extra="forbid"`; unknown body keys are rejected with
+  `422` rather than forwarded to the selector or selected agent.
 - `history` is routing context only; it is never forwarded to the
   dispatched agent.
 - `obs_file_list` is injected into the selected tool's arguments only when
@@ -1783,14 +1794,38 @@ Request body:
   native runs path (poll `GET /v1/runs/{id}`).
 
 Invalid allowlists (missing, empty, over ten entries, duplicate, or unknown
-canonical names) and a non-member `forced_tool` are rejected with `422`.
-Routing is strict: no model choice, no tool call, multiple calls, a malformed
-call structure (for example, no function), a tool outside the allowlist, or
-failure to honor `forced_tool` fails with `502` and dispatches no agent; there
-is no ChatAgent fallback. Separately, malformed or non-object function
-arguments are treated as extracted arguments and then validated against the
-selected agent schema; that validation failure returns `400`.
-Missing or insufficient scope returns `401` / `403`.
+canonical names), a non-member `forced_tool`, and unknown body keys are
+rejected with `422`. Routing is strict: no model choice, no tool call,
+multiple calls, a malformed call structure (for example, no function), a
+tool outside the allowlist, or failure to honor `forced_tool` fails with
+`502` and dispatches no agent; there is no ChatAgent fallback. Separately,
+malformed or non-object function arguments are treated as extracted
+arguments and then validated against the selected agent schema; that
+validation failure returns `400`. Missing or insufficient scope returns
+`401` / `403`.
+
+The stable public error mappings for a validly authenticated request are:
+
+| Condition                                  | HTTP  | `error.code`                      | `error.stage`           | `retryable` |
+| ------------------------------------------ | ----- | --------------------------------- | ----------------------- | ----------- |
+| Invalid request body or allowlist          | `422` | `invalid_request`                 | -                       | `false`     |
+| Unsupported Expert attachment              | `422` | `attachment_not_supported`        | `attachment_validation` | `false`     |
+| Strict selector contract violation         | `502` | `routing_contract_violation`      | `routing`               | `false`     |
+| Routing provider timeout                   | `504` | `upstream_timeout`                | `routing`               | `true`      |
+| Routing provider failure                   | `502` | `routing_upstream_failed`         | `routing`               | `true`      |
+| Selected-agent argument validation failure | `400` | `selected_agent_invalid_argument` | `dispatch_validation`   | `false`     |
+
+Public messages are fixed and localized by `locale` / `Accept-Language`; they
+never echo the query, allowlist, extracted arguments, provider payload, or
+credentials. Strict failures have no dispatch and no run row. A successful
+response keeps the native shape: `object="agent.run"`, the resolved agent
+slug, `status`, `task_ids`, and `result.formatted` plus `result.execution`;
+`result.raw` is debug-only.
+
+Instant is Chat-only and does not call `/v1/query/route`. A literal `@Agent`
+mention remains message content. Expert activation is owned outside Bot;
+keep Web `bot.expert_enabled=false` until the external paired acceptance
+gate is complete.
 
 Known limitations (v1): the four structured-input agents (`analyst`,
 `deep_genome`, `design`, `network`) receive best-effort arguments

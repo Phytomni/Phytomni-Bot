@@ -661,6 +661,44 @@ allowlist, or treat a browser-supplied list as a permission grant. Inspect the
 Web-authenticated allowlist and the Bot's sanitized router warning, correct the
 upstream permission or model contract, then repeat the smoke test.
 
+The stable error mapping used by incident triage is:
+
+| Condition                                  | HTTP  | `error.code`                      | `error.stage`           | `retryable` |
+| ------------------------------------------ | ----- | --------------------------------- | ----------------------- | ----------- |
+| Invalid request body or allowlist          | `422` | `invalid_request`                 | -                       | `false`     |
+| Unsupported Expert attachment              | `422` | `attachment_not_supported`        | `attachment_validation` | `false`     |
+| Strict selector contract violation         | `502` | `routing_contract_violation`      | `routing`               | `false`     |
+| Routing provider timeout                   | `504` | `upstream_timeout`                | `routing`               | `true`      |
+| Routing provider failure                   | `502` | `routing_upstream_failed`         | `routing`               | `true`      |
+| Selected-agent argument validation failure | `400` | `selected_agent_invalid_argument` | `dispatch_validation`   | `false`     |
+
+The `422` attachment case is evaluated before dispatch. Attachments can be
+forwarded only to `chat`, `knowledge`, and `review`; do not put
+`history`, `allowed_tools`, or `forced_tool` into selected-agent arguments.
+The response must retain the normal `agent.run` shape with the resolved slug,
+`task_ids`, `result.formatted`, and `result.execution`; `result.raw` is
+debug-only. Logs may include the exception class and request id, but never
+the query, allowlist, extracted arguments, provider payload, credentials, or
+raw exception text.
+
+### Expert dark rollout and rollback
+
+Instant is Chat-only and never uses `/v1/query/route`; a literal `@Agent`
+mention remains content. Bot has no `EXPERT_ENABLED` switch. Use this
+activation sequence:
+
+1. Bot focused, full, and matrix evidence.
+1. Web/Go paired evidence.
+1. Staging strict-route evidence.
+1. Owner decision.
+1. Enable the Web `bot.expert_enabled` flag.
+1. Monitor response codes, no-dispatch failures, run rows, and resolved-agent
+   slugs.
+
+Rollback is to disable `bot.expert_enabled` at Web, then inspect affected
+runs and logs by request id. Do not broaden the allowlist, enable a Bot-side
+Expert flag, or route legacy A2A optional selection through the strict route.
+
 ## Outbound Interop Operations
 
 The outbound MCP/A2A boundary is disabled by default. It is mounted when

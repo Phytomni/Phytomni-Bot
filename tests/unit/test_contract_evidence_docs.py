@@ -64,7 +64,7 @@ EXPECTED_BRIDGES = {
     "formatted execution fields",
     "DeepGenome formatted report metadata",
     "top-level degraded_tracking",
-    "A2A omitted constraints",
+    "legacy A2A Expert optional selection",
     "MCP stdio legacy response",
 }
 
@@ -156,3 +156,26 @@ def test_compatibility_register_has_exact_initial_bridges() -> None:
     assert {row["Bridge"] for row in rows} == EXPECTED_BRIDGES
     assert {row["Status"] for row in rows} <= ALLOWED_STATUSES
     assert all(row["Review date"] and row["Exit condition"] for row in rows)
+
+
+def test_legacy_a2a_bridge_keeps_strict_route_external_pending() -> None:
+    """The legacy A2A optional bridge cannot activate strict routing."""
+    row = next(
+        row
+        for row in parse_compatibility_register()
+        if row["Bridge"] == "legacy A2A Expert optional selection"
+    )
+
+    assert row["External owner"] == "A2A consumer owner"
+    assert row["Known consumers"] == "Unknown"
+    assert row["Status"] == "External Pending"
+    assert row["Blocker evidence"] == (
+        "caller lacks `allowed_tools`/`forced_tool` contract"
+    )
+    assert row["Review date"] == "2026-08-01"
+    assert row["Exit condition"] == (
+        "consumer sends constraints and paired compatibility tests pass"
+    )
+    assert row["Rollback"].replace("`", "") == (
+        "keep Web bot.expert_enabled=false"
+    )
