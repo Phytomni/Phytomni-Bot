@@ -27,6 +27,9 @@ MAX_ARTIFACT_REFS = 50
 MAX_LEDGER_SUMMARY_CHARS = 4 * 1024
 MAX_ARTIFACT_METADATA_CHARS = 512
 MAX_ARTIFACT_ID_CHARS = 128
+MAX_CONTEXT_TEXT_CHARS = 4 * 1024
+MAX_CONTEXT_ITEMS = 50
+MAX_AGENT_THREAD_ID_CHARS = 68
 
 _OPAQUE_ARTIFACT_ID_PATTERN = (
     rf"^[A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_ARTIFACT_ID_CHARS - 1}}}$"
@@ -35,6 +38,9 @@ _URI_SCHEME_PREFIX = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 
 _CANONICAL_AGENT_TOOL_NAMES = frozenset(
     name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
+)
+_CONTEXT_ENTITY_TYPES = frozenset(
+    {"gene", "transcript", "species", "dataset", "table", "task", "file"}
 )
 
 
@@ -154,6 +160,147 @@ class ConversationEnvelopeV1(BaseModel):
         return self
 
 
+class ContextEntity(BaseModel):
+    """A small semantic entity retained by the Bot context manager."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    entity_id: str = Field(min_length=1, max_length=MAX_ARTIFACT_ID_CHARS)
+    entity_type: str = Field(min_length=1, max_length=32)
+    label: str = Field(min_length=1, max_length=MAX_ARTIFACT_METADATA_CHARS)
+
+    @field_validator("entity_type")
+    @classmethod
+    def _validate_entity_type(cls, value: str) -> str:
+        if value not in _CONTEXT_ENTITY_TYPES:
+            raise ValueError("entity_type is unknown")
+        return value
+
+
+class PerAgentMemory(BaseModel):
+    """Bounded state owned by one agent namespace."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    agent_id: str = Field(min_length=1, max_length=MAX_ARTIFACT_ID_CHARS)
+    thread_id: str = Field(
+        min_length=MAX_AGENT_THREAD_ID_CHARS,
+        max_length=MAX_AGENT_THREAD_ID_CHARS,
+        pattern=r"^ctx-[0-9a-f]{64}$",
+    )
+    summary: str = Field(default="", max_length=MAX_CONTEXT_TEXT_CHARS)
+    checkpoint_ref: str | None = Field(
+        default=None, max_length=MAX_ARTIFACT_METADATA_CHARS
+    )
+
+
+class BusinessContext(BaseModel):
+    """Bot-owned semantic context recovered from accepted ledger turns."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    version: int = Field(ge=0)
+    last_applied_ledger_cursor: int = Field(ge=0)
+    last_applied_ledger_version: str = Field(pattern=r"^[a-f0-9]{64}$")
+    observed_mode: Literal["instant", "expert"]
+    task_summary: str = Field(default="", max_length=MAX_CONTEXT_TEXT_CHARS)
+    active_entities: list[ContextEntity] = Field(
+        default_factory=list, max_length=MAX_CONTEXT_ITEMS
+    )
+    open_questions: list[str] = Field(
+        default_factory=list, max_length=MAX_CONTEXT_ITEMS
+    )
+    recent_user_turns: list[str] = Field(
+        default_factory=list, max_length=MAX_CONTEXT_ITEMS
+    )
+    assistant_summaries: list[str] = Field(
+        default_factory=list, max_length=MAX_CONTEXT_ITEMS
+    )
+    artifact_index: list[ArtifactRefV1] = Field(
+        default_factory=list, max_length=MAX_ARTIFACT_REFS
+    )
+    per_agent_memory: dict[str, PerAgentMemory] = Field(default_factory=dict)
+
+
+class ContextProjection(BaseModel):
+    """Bounded conversational data passed to one selected agent."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    current_query: str = Field(min_length=1, max_length=MAX_CURRENT_MESSAGE_CHARS)
+    intent_kind: str = Field(default="follow_up", max_length=64)
+    task_summary: str = Field(default="", max_length=MAX_CONTEXT_TEXT_CHARS)
+    relevant_user_turns: list[str] = Field(
+        default_factory=list, max_length=MAX_CONTEXT_ITEMS
+    )
+    relevant_assistant_summaries: list[str] = Field(
+        default_factory=list, max_length=MAX_CONTEXT_ITEMS
+    )
+    active_entities: list[ContextEntity] = Field(
+        default_factory=list, max_length=MAX_CONTEXT_ITEMS
+    )
+    open_questions: list[str] = Field(
+        default_factory=list, max_length=MAX_CONTEXT_ITEMS
+    )
+    artifact_refs: list[ArtifactRefV1] = Field(
+        default_factory=list, max_length=MAX_ARTIFACT_REFS
+    )
+    agent_thread_id: str = Field(
+        min_length=MAX_AGENT_THREAD_ID_CHARS,
+        max_length=MAX_AGENT_THREAD_ID_CHARS,
+        pattern=r"^ctx-[0-9a-f]{64}$",
+    )
+    locale: SupportedLocale
+    token_budget: int = Field(ge=1)
+    context_truncated: bool = False
+
+
+class ContextDelta(BaseModel):
+    """Candidate changes an agent may make to Bot-owned context."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    summary_update: str | None = Field(
+        default=None, max_length=MAX_CONTEXT_TEXT_CHARS
+    )
+    entity_upserts: list[ContextEntity] = Field(
+        default_factory=list, max_length=MAX_CONTEXT_ITEMS
+    )
+    entity_removals: list[str] = Field(
+        default_factory=list, max_length=MAX_CONTEXT_ITEMS
+    )
+    open_question_updates: list[str] = Field(
+        default_factory=list, max_length=MAX_CONTEXT_ITEMS
+    )
+    artifact_upserts: list[ArtifactRefV1] = Field(
+        default_factory=list, max_length=MAX_ARTIFACT_REFS
+    )
+    agent_memory_update: PerAgentMemory | None = None
+
+
+RouteSource = Literal["instant_lock", "explicit_selection", "router"]
+
+
+class ContextStageMetadata(BaseModel):
+    """Safe routing and projection metadata for settlement."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    selected_agent_id: str = Field(min_length=1, max_length=MAX_ARTIFACT_ID_CHARS)
+    route_source: RouteSource
+    route_reason_code: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[A-Z][A-Z0-9_]*$",
+    )
+    base_business_context_version: int = Field(ge=0)
+    proposed_business_context_version: int = Field(ge=0)
+    last_applied_ledger_cursor: int = Field(ge=0)
+    context_truncated: bool
+    context_rebuilt: bool
+
+
 __all__ = [
     "ArtifactRefV1",
     "ConversationEnvelopeV1",
@@ -164,7 +311,15 @@ __all__ = [
     "MAX_ARTIFACT_METADATA_CHARS",
     "MAX_ARTIFACT_REFS",
     "MAX_CURRENT_MESSAGE_CHARS",
+    "MAX_CONTEXT_TEXT_CHARS",
+    "BusinessContext",
+    "ContextDelta",
+    "ContextEntity",
+    "ContextProjection",
+    "ContextStageMetadata",
     "MAX_HISTORY_DELTA_ENTRIES",
     "MAX_LEDGER_SUMMARY_CHARS",
     "MAX_REQUEST_ID_CHARS",
+    "PerAgentMemory",
+    "RouteSource",
 ]
