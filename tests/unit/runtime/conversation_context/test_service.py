@@ -344,6 +344,7 @@ async def test_delta_failure_stages_degraded_but_failed_or_canceled_does_not(
             AgentOutcome(
                 result={"answer": "visible"},
                 assistant_summary="not retained",
+                context_delta=ContextDelta(summary_update="not retained"),
                 context_delta_error=True,
             ),
             AgentOutcome(result={"answer": "failed"}, status="failed"),
@@ -361,6 +362,8 @@ async def test_delta_failure_stages_degraded_but_failed_or_canceled_does_not(
 
     assert degraded.stage is not None
     assert degraded.stage.context_degraded is True
+    assert degraded.context is not None
+    assert degraded.context.task_summary == ""
     assert failed.status is PrepareStatus.IN_PROGRESS
     assert canceled.status is PrepareStatus.IN_PROGRESS
     assert (
