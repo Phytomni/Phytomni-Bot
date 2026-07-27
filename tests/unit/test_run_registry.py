@@ -239,7 +239,7 @@ def test_a2ui_action_completion_and_audit_are_owner_scoped(
     assert audit[0].claimed_at
     assert audit[0].completed_at
 
-    with sqlite3.connect(db_path) as conn:
+    with closed_sqlite_connection(db_path) as conn:
         columns = {
             row[1]
             for row in conn.execute("PRAGMA table_info(run_a2ui_actions)")
@@ -693,7 +693,7 @@ def test_init_db_migrates_legacy_table_in_place(tmp_path: Path) -> None:
     assert record.spec.user_id == "alice"
     assert record.status == "succeeded"
     assert record.request_info == RunRequestInfo()
-    with sqlite3.connect(db) as conn:
+    with closed_sqlite_connection(db) as conn:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
     assert "locale" in columns
     assert "request_id" in columns

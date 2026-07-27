@@ -23,7 +23,7 @@ from mcp_server_phytomni.mcp.schemas import PhytomniAgents
 pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
-ARCHITECTURE_DOCS = (
+_ARCHITECTURE_DOC_PATHS = (
     ROOT / "AGENTS.md",
     ROOT / "README.md",
     ROOT / "docs/reference/http-api.md",
@@ -31,6 +31,11 @@ ARCHITECTURE_DOCS = (
     ROOT / "docs/reference/mcp-tools.md",
     ROOT / "docs/ops/http-api-runbook.md",
     ROOT / "docs/explanation/architecture.md",
+)
+# AGENTS.md is local-only and ignored by Git; clean checkouts must still
+# validate every durable, tracked documentation surface.
+ARCHITECTURE_DOCS = tuple(
+    path for path in _ARCHITECTURE_DOC_PATHS if path.is_file()
 )
 INLINE_LINK_PATTERN = re.compile(r"!?\[[^\]]+\]\(([^)]+)\)")
 FENCED_BLOCK_PATTERN = re.compile(r"```.*?```", re.DOTALL)

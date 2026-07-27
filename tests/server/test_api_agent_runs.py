@@ -31,6 +31,7 @@ from tests.support.resolver_fakes import (
     post_native_run,
     post_recorded_analyst_run,
 )
+from tests.support.sqlite import closed_sqlite_connection
 from tests.support.terminal_results import (
     SensitiveTerminalResultSpec,
     public_partial_warning,
@@ -718,7 +719,7 @@ async def test_invalid_persisted_succeeded_state_maps_to_safe_error(
             result={},
         ),
     )
-    with sqlite3.connect(tasks_db_path) as connection:
+    with closed_sqlite_connection(tasks_db_path) as connection:
         connection.execute(
             "UPDATE runs SET result_json = ? WHERE run_id = ?",
             ('"invalid"', run_id),

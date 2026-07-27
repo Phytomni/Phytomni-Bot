@@ -54,7 +54,11 @@ jobs:
           EMBED_MODEL: pytest-embed-model
           EMBED_API_KEY: pytest-embed-api-key
           GAUSS_DSN: postgresql://pytest:pytest@localhost:5432/pytest
-        run: pytest
+        # The lowest direct MarkItDown dependency currently imports an
+        # openpyxl path that emits this upstream deprecation warning.
+        run: >-
+          pytest
+          -W 'ignore:datetime.datetime.utcnow:DeprecationWarning'
 
   black:
     runs-on: ubuntu-latest
@@ -86,7 +90,7 @@ jobs:
           pip install uv
           uv pip install --system -e ".[dev]"
       - name: Lint with ruff
-        run: uv run --locked --extra dev ruff check .
+        run: uv run --extra dev ruff check .
 
   flake8:
     runs-on: ubuntu-latest
@@ -165,7 +169,7 @@ jobs:
           uv pip install --system -e ".[dev,demo]"
       - name: Analyse code and exact exemptions with pylint
         run: >-
-          uv run --locked --extra dev python
+          uv run --extra dev python
           scripts/check_static_analysis_exemptions.py
           check-pylint
           --python-version "${{ matrix.python-version }}"
@@ -186,12 +190,12 @@ jobs:
           uv pip install --system -e ".[dev,demo]"
       - name: Check static-analysis registry
         run: >-
-          uv run --locked --extra dev python
+          uv run --extra dev python
           scripts/check_static_analysis_exemptions.py
           check --scope full
       - name: Check generated static-analysis ledger
         run: >-
-          uv run --locked --extra dev python
+          uv run --extra dev python
           scripts/check_static_analysis_exemptions.py
           render-docs --check
 
