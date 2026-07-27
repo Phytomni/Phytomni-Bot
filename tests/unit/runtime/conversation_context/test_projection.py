@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from mcp_server_phytomni.config.defaults import ApiConfig
 from mcp_server_phytomni.runtime.conversation_context.models import (
+    MAX_CONTEXT_TEXT_CHARS,
     ArtifactRefV1,
     BusinessContext,
     ContextDelta,
@@ -50,7 +51,9 @@ def _context() -> BusinessContext:
         observed_mode="expert",
         task_summary="s" * 200,
         active_entities=[
-            ContextEntity(entity_id="gene-1", entity_type="gene", label="g" * 50)
+            ContextEntity(
+                entity_id="gene-1", entity_type="gene", label="g" * 50
+            )
         ],
         open_questions=["q" * 50],
         recent_user_turns=["u" * 300],
@@ -67,7 +70,8 @@ def _context() -> BusinessContext:
 
 
 def test_projection_trims_in_documented_priority_order() -> None:
-    """Current input, entities, and questions survive before older context."""
+    """Query truncates before context admission under a tight budget."""
+
     class CharacterEstimator:
         def estimate(self, text: str) -> int:
             return len(text)
@@ -83,17 +87,25 @@ def test_projection_trims_in_documented_priority_order() -> None:
         estimator=CharacterEstimator(),
     )
 
-    assert projection.current_query == "c" * 200
-    assert [entity.entity_id for entity in projection.active_entities] == ["gene-1"]
+    assert projection.current_query != "c" * 200
+    assert projection.current_query == "c" * len(projection.current_query)
+    assert len(projection.current_query) < 200
+    assert projection.active_entities == []
     assert projection.open_questions == ["q" * 50]
     assert projection.relevant_user_turns == []
     assert projection.relevant_assistant_summaries == []
     assert projection.artifact_refs == []
     assert projection.task_summary == ""
     assert projection.context_truncated is True
+    assert (
+        CharacterEstimator().estimate(projection.model_dump_json())
+        <= projection.token_budget
+    )
 
 
-def test_projection_is_deterministic_and_uses_configured_agent_budget() -> None:
+def test_projection_is_deterministic_and_uses_configured_agent_budget() -> (
+    None
+):
     """The same ordered source data rebuilds to byte-equivalent projection data."""
     context = _context()
     kwargs = {
@@ -111,7 +123,9 @@ def test_projection_is_deterministic_and_uses_configured_agent_budget() -> None:
 
     assert first.model_dump(mode="json") == second.model_dump(mode="json")
     assert first.token_budget == 512
-    assert first.agent_thread_id == agent_thread_id(_CONVERSATION_KEY, "DataAgent")
+    assert first.agent_thread_id == agent_thread_id(
+        _CONVERSATION_KEY, "DataAgent"
+    )
 
 
 def test_rebuild_is_deterministic_and_keeps_only_assistant_summaries() -> None:
@@ -163,7 +177,10 @@ def test_agent_thread_id_is_opaque_and_stable() -> None:
 @pytest.mark.parametrize(
     "artifact",
     [
-        {"artifact_id": "obs://bucket/report.csv", "display_name": "report.csv"},
+        {
+            "artifact_id": "obs://bucket/report.csv",
+            "display_name": "report.csv",
+        },
         {"artifact_id": "artifact-1", "display_name": "/srv/report.csv"},
     ],
 )
@@ -186,6 +203,7 @@ def test_delta_rejects_artifact_outside_current_envelope_allowlist() -> None:
     with pytest.raises(ValueError, match="authorized"):
         validate_context_delta(
             delta,
+            conversation_key=_CONVERSATION_KEY,
             selected_agent_id="DataAgent",
             authorized_artifact_ids={"artifact-1"},
         )
@@ -204,6 +222,62 @@ def test_delta_rejects_other_agent_memory_namespace() -> None:
     with pytest.raises(ValueError, match="selected agent"):
         validate_context_delta(
             delta,
+            conversation_key=_CONVERSATION_KEY,
+            selected_agent_id="DataAgent",
+            authorized_artifact_ids=set(),
+        )
+
+
+@pytest.mark.parametrize(
+    "checkpoint_ref",
+    ["/srv/checkpoint", "s3://bucket/checkpoint", "file:checkpoint"],
+)
+def test_memory_rejects_path_or_uri_checkpoint_ref(
+    checkpoint_ref: str,
+) -> None:
+    """Checkpoint references cannot smuggle storage locations into context."""
+    with pytest.raises(ValidationError, match="checkpoint_ref"):
+        PerAgentMemory(
+            agent_id="DataAgent",
+            thread_id=agent_thread_id(_CONVERSATION_KEY, "DataAgent"),
+            checkpoint_ref=checkpoint_ref,
+        )
+
+
+def test_delta_rejects_checkpoint_outside_current_envelope_allowlist() -> None:
+    """Checkpoint references use the same artifact authorization boundary."""
+    delta = ContextDelta(
+        agent_memory_update=PerAgentMemory(
+            agent_id="DataAgent",
+            thread_id=agent_thread_id(_CONVERSATION_KEY, "DataAgent"),
+            checkpoint_ref="artifact-2",
+        )
+    )
+
+    with pytest.raises(ValueError, match="checkpoint"):
+        validate_context_delta(
+            delta,
+            conversation_key=_CONVERSATION_KEY,
+            selected_agent_id="DataAgent",
+            authorized_artifact_ids={"artifact-1"},
+        )
+
+
+def test_delta_rejects_memory_thread_from_another_conversation() -> None:
+    """A selected agent thread is scoped to both conversation and agent."""
+    delta = ContextDelta(
+        agent_memory_update=PerAgentMemory(
+            agent_id="DataAgent",
+            thread_id=agent_thread_id(
+                UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7"), "DataAgent"
+            ),
+        )
+    )
+
+    with pytest.raises(ValueError, match="conversation"):
+        validate_context_delta(
+            delta,
+            conversation_key=_CONVERSATION_KEY,
             selected_agent_id="DataAgent",
             authorized_artifact_ids=set(),
         )
@@ -230,17 +304,92 @@ def test_delta_rejects_full_report_or_table_sized_fields(
         ContextDelta.model_validate(payload)
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"entity_removals": ["x" * 129]},
+        {"open_question_updates": ["x" * (MAX_CONTEXT_TEXT_CHARS + 1)]},
+    ],
+)
+def test_delta_rejects_oversized_list_items(
+    payload: dict[str, object],
+) -> None:
+    """Delta items remain semantic snippets rather than report payloads."""
+    with pytest.raises(ValidationError):
+        ContextDelta.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "field", ["open_questions", "recent_user_turns", "assistant_summaries"]
+)
+def test_business_context_rejects_oversized_list_items(field: str) -> None:
+    """Recovered context lists reject individual report-sized strings."""
+    payload: dict[str, object] = {
+        "schema_version": 1,
+        "version": 0,
+        "last_applied_ledger_cursor": 0,
+        "last_applied_ledger_version": "a" * 64,
+        "observed_mode": "expert",
+        field: ["x" * (MAX_CONTEXT_TEXT_CHARS + 1)],
+    }
+
+    with pytest.raises(ValidationError):
+        BusinessContext.model_validate(payload)
+
+
+def test_rebuild_bounds_large_ledgers_and_preserves_recent_summaries() -> None:
+    """Recovery accepts long ledgers and retains bounded recent data."""
+    entries = [
+        {"turn_id": str(index + 1), "role": "user", "content": f"user-{index}"}
+        for index in range(100)
+    ]
+    entries.extend(
+        {
+            "turn_id": str(index + 101),
+            "role": "assistant",
+            "content": "full report must not be retained",
+            "summary": f"summary-{index}",
+        }
+        for index in range(100)
+    )
+
+    context = rebuild_business_context(
+        conversation_key=_CONVERSATION_KEY,
+        ledger_entries=entries,
+        artifact_refs=[],
+        ledger_cursor=200,
+        ledger_version="b" * 64,
+        observed_mode="expert",
+    )
+
+    assert len(context.recent_user_turns) == 50
+    assert context.recent_user_turns[0] == "user-50"
+    assert context.recent_user_turns[-1] == "user-99"
+    assert len(context.assistant_summaries) == 50
+    assert context.assistant_summaries[0] == "summary-50"
+    assert context.assistant_summaries[-1] == "summary-99"
+    assert all(
+        len(item) <= MAX_CONTEXT_TEXT_CHARS
+        for item in context.recent_user_turns
+    )
+    assert "full report" not in context.model_dump_json()
+
+
 def test_context_rejects_unknown_entity_type() -> None:
     """Entities use a constrained semantic vocabulary."""
     with pytest.raises(ValidationError, match="entity_type"):
-        ContextEntity(entity_id="unknown-1", entity_type="unknown", label="bad")
+        ContextEntity(
+            entity_id="unknown-1", entity_type="unknown", label="bad"
+        )
 
 
 @pytest.mark.parametrize(
     "field",
     ["raw_reasoning", "permission_list", "allowed_agent_ids"],
 )
-def test_stage_metadata_rejects_reasoning_and_permission_lists(field: str) -> None:
+def test_stage_metadata_rejects_reasoning_and_permission_lists(
+    field: str,
+) -> None:
     """Routing results expose only stable, non-sensitive reason codes."""
     payload: dict[str, object] = {
         "selected_agent_id": "DataAgent",
@@ -254,5 +403,7 @@ def test_stage_metadata_rejects_reasoning_and_permission_lists(field: str) -> No
         field: "sensitive metadata",
     }
 
-    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+    with pytest.raises(
+        ValidationError, match="Extra inputs are not permitted"
+    ):
         ContextStageMetadata.model_validate(payload)

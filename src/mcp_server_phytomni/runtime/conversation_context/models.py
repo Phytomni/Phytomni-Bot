@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import re
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import (
@@ -30,6 +30,16 @@ MAX_ARTIFACT_ID_CHARS = 128
 MAX_CONTEXT_TEXT_CHARS = 4 * 1024
 MAX_CONTEXT_ITEMS = 50
 MAX_AGENT_THREAD_ID_CHARS = 68
+MAX_CONTEXT_ITEM_TEXT_CHARS = MAX_CONTEXT_TEXT_CHARS
+
+BoundedContextText = Annotated[
+    str,
+    Field(min_length=1, max_length=MAX_CONTEXT_ITEM_TEXT_CHARS),
+]
+BoundedArtifactId = Annotated[
+    str,
+    Field(min_length=1, max_length=MAX_ARTIFACT_ID_CHARS),
+]
 
 _OPAQUE_ARTIFACT_ID_PATTERN = (
     rf"^[A-Za-z0-9][A-Za-z0-9._-]{{0,{MAX_ARTIFACT_ID_CHARS - 1}}}$"
@@ -193,6 +203,16 @@ class PerAgentMemory(BaseModel):
         default=None, max_length=MAX_ARTIFACT_METADATA_CHARS
     )
 
+    @field_validator("checkpoint_ref")
+    @classmethod
+    def _reject_path_like_checkpoint_ref(cls, value: str | None) -> str | None:
+        """Keep checkpoint references opaque and free of storage locations."""
+        if value is not None and (
+            "/" in value or "\\" in value or _URI_SCHEME_PREFIX.match(value)
+        ):
+            raise ValueError("checkpoint_ref must not contain a path or URI")
+        return value
+
 
 class BusinessContext(BaseModel):
     """Bot-owned semantic context recovered from accepted ledger turns."""
@@ -208,13 +228,13 @@ class BusinessContext(BaseModel):
     active_entities: list[ContextEntity] = Field(
         default_factory=list, max_length=MAX_CONTEXT_ITEMS
     )
-    open_questions: list[str] = Field(
+    open_questions: list[BoundedContextText] = Field(
         default_factory=list, max_length=MAX_CONTEXT_ITEMS
     )
-    recent_user_turns: list[str] = Field(
+    recent_user_turns: list[BoundedContextText] = Field(
         default_factory=list, max_length=MAX_CONTEXT_ITEMS
     )
-    assistant_summaries: list[str] = Field(
+    assistant_summaries: list[BoundedContextText] = Field(
         default_factory=list, max_length=MAX_CONTEXT_ITEMS
     )
     artifact_index: list[ArtifactRefV1] = Field(
@@ -228,19 +248,21 @@ class ContextProjection(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    current_query: str = Field(min_length=1, max_length=MAX_CURRENT_MESSAGE_CHARS)
+    current_query: str = Field(
+        min_length=1, max_length=MAX_CURRENT_MESSAGE_CHARS
+    )
     intent_kind: str = Field(default="follow_up", max_length=64)
     task_summary: str = Field(default="", max_length=MAX_CONTEXT_TEXT_CHARS)
-    relevant_user_turns: list[str] = Field(
+    relevant_user_turns: list[BoundedContextText] = Field(
         default_factory=list, max_length=MAX_CONTEXT_ITEMS
     )
-    relevant_assistant_summaries: list[str] = Field(
+    relevant_assistant_summaries: list[BoundedContextText] = Field(
         default_factory=list, max_length=MAX_CONTEXT_ITEMS
     )
     active_entities: list[ContextEntity] = Field(
         default_factory=list, max_length=MAX_CONTEXT_ITEMS
     )
-    open_questions: list[str] = Field(
+    open_questions: list[BoundedContextText] = Field(
         default_factory=list, max_length=MAX_CONTEXT_ITEMS
     )
     artifact_refs: list[ArtifactRefV1] = Field(
@@ -267,10 +289,10 @@ class ContextDelta(BaseModel):
     entity_upserts: list[ContextEntity] = Field(
         default_factory=list, max_length=MAX_CONTEXT_ITEMS
     )
-    entity_removals: list[str] = Field(
+    entity_removals: list[BoundedArtifactId] = Field(
         default_factory=list, max_length=MAX_CONTEXT_ITEMS
     )
-    open_question_updates: list[str] = Field(
+    open_question_updates: list[BoundedContextText] = Field(
         default_factory=list, max_length=MAX_CONTEXT_ITEMS
     )
     artifact_upserts: list[ArtifactRefV1] = Field(
@@ -287,7 +309,9 @@ class ContextStageMetadata(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    selected_agent_id: str = Field(min_length=1, max_length=MAX_ARTIFACT_ID_CHARS)
+    selected_agent_id: str = Field(
+        min_length=1, max_length=MAX_ARTIFACT_ID_CHARS
+    )
     route_source: RouteSource
     route_reason_code: str = Field(
         min_length=1,
@@ -312,6 +336,7 @@ __all__ = [
     "MAX_ARTIFACT_REFS",
     "MAX_CURRENT_MESSAGE_CHARS",
     "MAX_CONTEXT_TEXT_CHARS",
+    "MAX_CONTEXT_ITEM_TEXT_CHARS",
     "BusinessContext",
     "ContextDelta",
     "ContextEntity",

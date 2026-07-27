@@ -12,6 +12,7 @@ from uuid import UUID
 
 from ...config.defaults import ApiConfig
 from .models import (
+    MAX_CONTEXT_TEXT_CHARS,
     ArtifactRefV1,
     BusinessContext,
     ContextDelta,
@@ -34,7 +35,9 @@ class ConservativeTokenEstimator:
 def agent_thread_id(conversation_key: UUID, agent_id: str) -> str:
     """Derive an opaque, stable thread identifier for one agent namespace."""
     digest = hashlib.sha256(
-        f"conversation-context-v1:{conversation_key}:{agent_id}".encode("ascii")
+        f"conversation-context-v1:{conversation_key}:{agent_id}".encode(
+            "ascii"
+        )
     ).hexdigest()
     return f"ctx-{digest}"
 
@@ -67,8 +70,51 @@ def build_context_projection(
     """Admit context sections in the documented priority order."""
     estimator = estimator or ConservativeTokenEstimator()
     budget = _budget(api_config, selected_agent_id)
-    result: dict[str, object] = {"current_query": current_query}
+    result: dict[str, object] = {}
     truncated = False
+
+    def payload() -> dict[str, object]:
+        """Build the complete serialized wrapper used for every estimate."""
+        return {
+            "current_query": result.get("current_query", ""),
+            "intent_kind": result.get("intent_kind", "follow_up"),
+            "task_summary": result.get("task_summary", ""),
+            "relevant_user_turns": result.get("relevant_user_turns", []),
+            "relevant_assistant_summaries": result.get(
+                "relevant_assistant_summaries", []
+            ),
+            "active_entities": result.get("active_entities", []),
+            "open_questions": result.get("open_questions", []),
+            "artifact_refs": result.get("artifact_refs", []),
+            "agent_thread_id": agent_thread_id(
+                conversation_key, selected_agent_id
+            ),
+            "locale": locale,
+            "token_budget": budget,
+            # False is one byte larger than true in JSON, so this reserves the
+            # maximum size for the final boolean metadata field.
+            "context_truncated": False,
+        }
+
+    def fits() -> bool:
+        return (
+            estimator.estimate(
+                json.dumps(payload(), ensure_ascii=False, sort_keys=True)
+            )
+            <= budget
+        )
+
+    # Fit the highest-priority query before admitting recovered context and
+    # account for the final wrapper on every attempt.
+    query_limit = min(len(current_query), MAX_CONTEXT_TEXT_CHARS * 8)
+    while query_limit > 1:
+        result["current_query"] = current_query[:query_limit]
+        if fits():
+            break
+        query_limit = max(1, query_limit // 2)
+    result["current_query"] = current_query[:query_limit]
+    if query_limit < len(current_query):
+        truncated = True
 
     def admit(name: str, value: object) -> None:
         """Admit a whole scalar or the longest ordered prefix of a list."""
@@ -76,28 +122,27 @@ def build_context_projection(
         if not value:
             return
         if not isinstance(value, list):
-            candidate = {**result, name: value}
-            if estimator.estimate(
-                json.dumps(candidate, ensure_ascii=False, sort_keys=True)
-            ) <= budget:
-                result[name] = value
-            else:
-                truncated = True
+            result[name] = value
+            if fits():
+                return
+            result.pop(name)
+            truncated = True
             return
 
         admitted: list[object] = []
         for item in value:
-            candidate = {**result, name: [*admitted, item]}
-            if estimator.estimate(
-                json.dumps(candidate, ensure_ascii=False, sort_keys=True)
-            ) > budget:
+            result[name] = [*admitted, item]
+            if fits():
+                admitted.append(item)
+            else:
                 truncated = True
                 break
-            admitted.append(item)
         if len(admitted) < len(value):
             truncated = True
         if admitted:
             result[name] = admitted
+        else:
+            result.pop(name, None)
 
     admit(
         "active_entities",
@@ -115,11 +160,13 @@ def build_context_projection(
     admit("artifact_refs", artifacts)
     admit("task_summary", context.task_summary)
 
-    return ContextProjection(
-        current_query=current_query,
+    projection = ContextProjection(
+        current_query=result["current_query"],
         task_summary=result.get("task_summary", ""),
         relevant_user_turns=result.get("relevant_user_turns", []),
-        relevant_assistant_summaries=result.get("relevant_assistant_summaries", []),
+        relevant_assistant_summaries=result.get(
+            "relevant_assistant_summaries", []
+        ),
         active_entities=result.get("active_entities", []),
         open_questions=result.get("open_questions", []),
         artifact_refs=result.get("artifact_refs", []),
@@ -128,6 +175,18 @@ def build_context_projection(
         token_budget=budget,
         context_truncated=truncated,
     )
+    if (
+        estimator.estimate(
+            json.dumps(
+                projection.model_dump(mode="json"),
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+        > budget
+    ):
+        raise ValueError("context projection metadata exceeds token budget")
+    return projection
 
 
 def rebuild_business_context(
@@ -142,20 +201,28 @@ def rebuild_business_context(
     """Rebuild semantic context from bounded, ordered ledger input."""
     users: list[str] = []
     summaries: list[str] = []
+
+    def bound_text(value: str) -> str:
+        """Keep both ends of oversized text while preserving a fixed bound."""
+        if len(value) <= MAX_CONTEXT_TEXT_CHARS:
+            return value
+        prefix = MAX_CONTEXT_TEXT_CHARS // 2
+        return value[:prefix] + value[-(MAX_CONTEXT_TEXT_CHARS - prefix) :]
+
     for raw in ledger_entries:
         role = raw.get("role")
         if role == "user" and isinstance(raw.get("content"), str):
-            users.append(raw["content"])
+            users.append(bound_text(raw["content"]))
         elif role == "assistant" and isinstance(raw.get("summary"), str):
-            summaries.append(raw["summary"])
+            summaries.append(bound_text(raw["summary"]))
     return BusinessContext(
         schema_version=1,
         version=0,
         last_applied_ledger_cursor=ledger_cursor,
         last_applied_ledger_version=ledger_version,
         observed_mode=observed_mode,
-        recent_user_turns=users,
-        assistant_summaries=summaries,
+        recent_user_turns=users[-50:],
+        assistant_summaries=summaries[-50:],
         artifact_index=list(artifact_refs),
         per_agent_memory={
             agent: PerAgentMemory(
@@ -176,6 +243,7 @@ def rebuild_business_context(
 def validate_context_delta(
     delta: ContextDelta,
     *,
+    conversation_key: UUID,
     selected_agent_id: str,
     authorized_artifact_ids: set[str],
 ) -> None:
@@ -188,8 +256,20 @@ def validate_context_delta(
     if unknown:
         raise ValueError("artifact reference is not authorized")
     memory = delta.agent_memory_update
-    if memory is not None and memory.agent_id != selected_agent_id:
-        raise ValueError("agent memory must belong to the selected agent")
+    if memory is not None:
+        if memory.agent_id != selected_agent_id:
+            raise ValueError("agent memory must belong to the selected agent")
+        if (
+            memory.checkpoint_ref is not None
+            and memory.checkpoint_ref not in authorized_artifact_ids
+        ):
+            raise ValueError("checkpoint reference is not authorized")
+        if memory.thread_id != agent_thread_id(
+            conversation_key, selected_agent_id
+        ):
+            raise ValueError(
+                "agent memory thread does not belong to the conversation"
+            )
 
 
 __all__ = [
