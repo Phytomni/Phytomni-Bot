@@ -1289,6 +1289,38 @@ Duplicate submissions are now handled transparently: a fingerprint match mints
 a fresh caller-owned task id and returns a normal `202` body with a valid `id`
 and `task_ids`. Clients no longer need to handle a `dedup_hit` field.
 
+### Historical Analyst Correlation Requires an L2 Packet
+
+For an incident that may require historical Analyst repair, first produce a
+read-only packet. The probe is fixed to the captured Web request id, scopes
+every candidate to the supplied owner and `agent == "analyst"`, and matches
+only an exact request, dialogue, or run identifier. It never uses query text,
+titles, output paths, or fuzzy task metadata. It has no `--apply`, `--write`,
+or SQL argument, and every packet sets `write_authorized: false`.
+
+```bash
+uv run python scripts/analyst_history_repair_probe.py \
+  --db "$API_TASKS_DB_PATH" \
+  --owner "$PHYTOMNI_REPAIR_OWNER" \
+  --web-request-id bdda4801-3ba9-4692-8d16-ad9807a6674d \
+  --output /tmp/analyst-history-repair-packet.json \
+  --snapshot-output /tmp/analyst-history-private-snapshot.json
+```
+
+Use `--bot-request-id`, `--dialogue-id`, or `--run-id` only when the value is
+backed by an independent operator record. The packet status is
+`zero_matches`, `unique_match`, or `multiple_matches`; only `unique_match`
+contains exact run/task ids and a public-field proposal. The optional private
+snapshot is written with mode `0600` outside the repository. Review the hash,
+snapshot, reversal proposal, and all three L2 approvals before opening a
+separate mutation work order. This probe itself never writes the registry.
+
+The current cDNA incident remains `External Pending`: the Bot request id is
+unknown and no owner-approved historical execution has been provided. Do not
+infer a correlation from the screenshot query, output directory, or task
+title, and do not synthesize a sequence or report while the root-cause gate is
+stopped.
+
 ### Chat Completion Carries `run_id: null` or `degraded_tracking: true`
 
 A `/v1/chat/completions` response with HTTP 200 can still carry

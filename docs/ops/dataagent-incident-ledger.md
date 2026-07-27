@@ -74,3 +74,30 @@ ledger authorizes no database mutation, automatic cleanup, or inferred
 correlation. A future repair requires owner-scoped exact identity, a
 pre-write snapshot, an audit record, an executable reversal, and explicit
 human approval.
+
+## Read-Only Historical Repair Packet
+
+The Bot now ships `scripts/analyst_history_repair_probe.py` as a dry-run
+correlation tool. It opens the registry with SQLite URI `mode=ro` and a
+mutation-denying authorizer. It accepts only the fixed Web request identity
+above, the owner, and optional evidence-backed Bot request / dialogue / run
+identifiers. It never treats query text, titles, output paths, or a foreign
+owner row as correlation evidence.
+
+The packet reports `zero_matches`, `unique_match`, or `multiple_matches` and
+always carries `write_authorized: false`. A unique result includes exact run
+and task ids, a hash of the complete private pre-write snapshot, public-field
+mutation and reversal proposals, and the required L2 approval roles. The
+private snapshot is optional and must be written to an operator-selected
+protected path outside this repository; the tracked ledger stores only its
+hash and location class.
+
+Offline implementation evidence:
+
+- Script: `scripts/analyst_history_repair_probe.py`
+- Tests: `tests/unit/scripts/test_analyst_history_repair_probe.py`
+- Historical execution: `External Pending` because the Bot request id is
+  still `Unknown` and no owner-approved read-only historical execution has
+  been supplied.
+
+No historical row was read or changed while this implementation was added.
