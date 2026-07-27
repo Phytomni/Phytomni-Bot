@@ -26,10 +26,11 @@ from .request_context import (
     bind_recorder_degraded,
     bind_run_id,
     current_pre_recorded_task_id,
+    current_request_id,
     current_request_user,
     current_run_id,
 )
-from .run_registry import RunOutcome, RunRegistry, RunSpec
+from .run_registry import RunOutcome, RunRegistry, RunRequestInfo, RunSpec
 from .submission_outcome import project_submission_warnings
 from .task_manager import (
     RunContext,
@@ -271,6 +272,7 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
                 origin="remote",
             ),
             outcome=RunOutcome(result=initial_result),
+            request_info=RunRequestInfo(request_id=current_request_id()),
         )
         manager = TaskManager(db_path)
         for (
@@ -297,6 +299,15 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
                 )
             )
         bind_run_id(run_id)
+        logger.info(
+            "Analyst run correlated",
+            extra={
+                "request_id": current_request_id(),
+                "run_id": run_id,
+                "task_count": len(submissions),
+                "agent": agent,
+            },
+        )
     except (sqlite3.Error, OSError):
         logger.exception(
             "Failed to persist remote submission to local registry "

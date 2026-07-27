@@ -25,7 +25,9 @@ from tests.agents.shared.deep_genome_fixtures import (
 from tests.support.run_registry_fakes import (
     assert_not_found_response,
     foreign_run_spec,
+    remote_analyst_seed,
     seed_foreign_run,
+    seed_remote_run_with_task,
 )
 
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
@@ -37,6 +39,7 @@ from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
+    RunRequestInfo,
     RunSpec,
 )
 from mcp_server_phytomni.runtime.task_manager import (
@@ -107,6 +110,70 @@ async def test_get_run_unknown_id_is_404(
         headers={"Authorization": f"Bearer {issued_api_key}"},
     )
     assert_not_found_response(response)
+
+
+async def test_get_run_preserves_request_and_task_identity(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Polling keeps the exact request, run, and task correlation."""
+    run_id = "run-analyst-correlation"
+    task_id = "task-analyst-correlation"
+    seed_remote_run_with_task(
+        tasks_db_path,
+        remote_analyst_seed(run_id, task_id, "running"),
+    )
+
+    async def fake_reconcile(task: str) -> dict[str, Any]:
+        """Keep the child in flight without contacting the platform."""
+        return {"task_id": task, "status": "submitted"}
+
+    monkeypatch.setattr(run_registry_module, "reconcile_task", fake_reconcile)
+
+    response = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["run_id"] == run_id
+    assert body["request_id"] == "request-analyst-1"
+    assert body["dialogue_id"] == "dialogue-analyst-1"
+    assert body["task_ids"] == [task_id]
+
+
+async def test_get_run_does_not_fuzzy_match_task_metadata(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """An orphan task is never correlated by title or output directory."""
+    run_id = "run-exact-correlation"
+    registry = RunRegistry(tasks_db_path)
+    registry.create_run(
+        RunSpec(run_id, "u1", "analyst", "remote"),
+        outcome=RunOutcome(status="succeeded", result={"ok": True}),
+        request_info=RunRequestInfo(query="same title"),
+    )
+    TaskManager(tasks_db_path).record(
+        Submission(
+            task_id="orphan-task",
+            status="succeeded",
+            analysis_id="same title",
+            output_dir="/obs/analyst",
+        )
+    )
+
+    response = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["task_ids"] == []
 
 
 async def test_get_run_foreign_owner_is_404(

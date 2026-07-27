@@ -209,6 +209,7 @@ def run_record_to_dict(record: Any) -> dict[str, Any]:
         "expires_at": record.timestamps.expires_at,
         "task_ids": list(record.task_ids),
         "dialogue_id": info.dialogue_id,
+        "request_id": info.request_id,
         "query": info.query,
         "tool_name": info.tool_name,
         "model": info.model,

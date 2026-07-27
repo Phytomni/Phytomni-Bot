@@ -525,7 +525,7 @@ chat-ai conversation thread server-side so a paginated history
 loads only the target conversation; `created_after=<iso-8601>` /
 `created_before=<iso-8601>` apply inclusive ISO-8601 date bounds;
 `debug=true` keeps the full `result.raw` payload on each row. Each
-row carries `dialogue_id` / `query` / `tool_name` / `model` /
+row carries `request_id` / `dialogue_id` / `query` / `tool_name` / `model` /
 `answer` alongside the standard fields, sourced from
 `result.formatted.answer`.
 

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -12,9 +13,14 @@ import httpx
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
+    RunRequestInfo,
     RunSpec,
 )
-from mcp_server_phytomni.runtime.task_manager import RunContext
+from mcp_server_phytomni.runtime.task_manager import (
+    RunContext,
+    Submission,
+    TaskManager,
+)
 from tests.support.sqlite import closed_sqlite_connection
 
 __all__ = [
@@ -22,9 +28,21 @@ __all__ = [
     "assert_run_not_found",
     "foreign_run_spec",
     "fixed_run_context",
+    "remote_analyst_seed",
     "seed_foreign_run",
+    "seed_remote_run_with_task",
     "stamp_run_created_at",
 ]
+
+
+@dataclass(frozen=True)
+class _RemoteRunTaskSeed:
+    """Inputs shared by a remote run and its exact child-task row."""
+
+    spec: RunSpec
+    task_id: str
+    outcome: RunOutcome
+    request_info: RunRequestInfo
 
 
 def assert_not_found_response(response: httpx.Response) -> None:
@@ -80,6 +98,48 @@ def seed_foreign_run(
     RunRegistry(db_path).create_run(
         spec,
         outcome=RunOutcome(status="succeeded", result=result),
+    )
+
+
+def remote_analyst_seed(
+    run_id: str,
+    task_id: str,
+    status: str,
+) -> _RemoteRunTaskSeed:
+    """Build the fixed owner and request identity used by API tests."""
+    return _RemoteRunTaskSeed(
+        spec=RunSpec(run_id, "u1", "analyst", "remote"),
+        task_id=task_id,
+        outcome=RunOutcome(status=status, result={"ok": True}),
+        request_info=RunRequestInfo(
+            dialogue_id="dialogue-analyst-1",
+            request_id="request-analyst-1",
+        ),
+    )
+
+
+def seed_remote_run_with_task(
+    db_path: str,
+    seed: _RemoteRunTaskSeed,
+) -> None:
+    """Insert one remote run and its exact child-task identity."""
+    TaskManager(db_path).record(
+        Submission(
+            task_id=seed.task_id,
+            status="submitted",
+            output_dir="/obs/analyst",
+            run_context=RunContext(
+                run_id=seed.spec.run_id,
+                user_id=seed.spec.user_id,
+                agent=seed.spec.agent,
+                origin=seed.spec.origin,
+            ),
+        )
+    )
+    RunRegistry(db_path).create_run(
+        seed.spec,
+        outcome=seed.outcome,
+        request_info=seed.request_info,
     )
 
 

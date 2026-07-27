@@ -25,7 +25,11 @@ from tests.agents.shared.deep_genome_fixtures import (
     seed_terminal_deep_genome_run,
 )
 from tests.support.chat_fakes import install_chat_handler
-from tests.support.run_registry_fakes import stamp_run_created_at
+from tests.support.run_registry_fakes import (
+    remote_analyst_seed,
+    seed_remote_run_with_task,
+    stamp_run_created_at,
+)
 from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni import server
@@ -247,6 +251,33 @@ def _seed(registry: RunRegistry, **kwargs: str) -> str:
         request_info=request_info,
     )
     return spec.run_id
+
+
+async def test_list_runs_preserves_request_and_task_identity(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """List reads return the same exact identity as the status route."""
+    run_id = "run-list-correlation"
+    task_id = "task-list-correlation"
+    seed_remote_run_with_task(
+        tasks_db_path,
+        remote_analyst_seed(run_id, task_id, "succeeded"),
+    )
+
+    response = await api_client.get(
+        "/v1/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    row = next(
+        item for item in response.json()["data"] if item["run_id"] == run_id
+    )
+    assert row["request_id"] == "request-analyst-1"
+    assert row["dialogue_id"] == "dialogue-analyst-1"
+    assert row["task_ids"] == [task_id]
 
 
 async def test_list_runs_returns_only_owner_rows(

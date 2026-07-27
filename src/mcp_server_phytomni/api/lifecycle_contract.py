@@ -155,6 +155,7 @@ _PUBLIC_RUN_HISTORY_FIELDS = (
     "query",
     "tool_name",
     "model",
+    "request_id",
     "a2a_task_id",
     "a2a_context_id",
     "a2a_message_id",

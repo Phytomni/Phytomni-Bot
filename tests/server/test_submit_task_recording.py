@@ -21,7 +21,6 @@ from unittest.mock import Mock
 import pytest
 from tests.support.sqlite import closed_sqlite_connection
 
-from mcp_server_phytomni.api.run_lifecycle import stamp_remote_request_info
 from mcp_server_phytomni.mcp.handlers import (
     handle_analyst_agent,
     handle_deep_genome_agent,
@@ -38,14 +37,10 @@ from mcp_server_phytomni.runtime.execution_defaults import (
 from mcp_server_phytomni.runtime.request_context import (
     current_accepted_task_ids,
     current_recorder_degraded,
-    current_request_id,
     current_run_id,
     request_context,
 )
-from mcp_server_phytomni.runtime.run_registry import (
-    RunRegistry,
-    RunRequestInfo,
-)
+from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import (
     record_submitted_task,
     records_submission,
@@ -238,12 +233,6 @@ def test_record_persists_request_id_across_run_reads(
         record_submitted_task(
             {"task_id": "T-request", "output_dir": "/obs/run"},
             agent="analyst",
-        )
-        stamp_remote_request_info(
-            run_id=current_run_id(),
-            owner="analyst-owner",
-            request_info=RunRequestInfo(request_id=current_request_id()),
-            db_path=tasks_db_path,
         )
 
     registry = RunRegistry(tasks_db_path)

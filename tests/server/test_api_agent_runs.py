@@ -552,6 +552,10 @@ async def test_agent_run_remote_returns_chokepoint_run_id(
     assert record.spec.agent == case.slug
     assert record.spec.origin == "remote"
     assert set(record.task_ids) == case.expected_task_ids
+    if case.slug == "analyst":
+        assert (
+            record.request_info.request_id == response.headers["x-request-id"]
+        )
     # No degraded_tracking flag on a healthy submission — pin the
     # absence so a future regression that always-sets the flag does
     # not silently degrade every 202 response.

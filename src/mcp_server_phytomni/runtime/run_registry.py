@@ -816,6 +816,7 @@ class RunRegistry:
                 expires_at=current.timestamps.expires_at,
             ),
             task_ids=current.task_ids,
+            request_info=current.request_info,
         )
 
     def _settle_terminal(
@@ -859,6 +860,7 @@ class RunRegistry:
                 expires_at=expires_at,
             ),
             task_ids=current.task_ids,
+            request_info=current.request_info,
         )
 
 
