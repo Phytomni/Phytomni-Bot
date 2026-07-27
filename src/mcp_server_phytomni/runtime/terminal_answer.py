@@ -3,19 +3,19 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Synthesize a thin, renderable answer for a terminal remote run.
 
-Fire-and-forget agents (research / design / network / analyst) have no
-in-process completion stage, so their answer is assembled at the
-run-level reconcile-settle transition from the reconciled task rows and
-the globbed artifact index. The default is pure assembly (no I/O); a
-future ``AnswerSynthesizer`` can download results and run an LLM summary
-without changing the call site (inputs ride a ``TerminalAnswerContext``).
+The answer surface is deliberately outcome-only. Artifact paths, filenames,
+logs, and provider details belong to the execution projection and must not be
+assembled into user-visible terminal prose. Rich scientific synthesis lives
+in :mod:`terminal_report` and uses an explicit producer role manifest.
 """
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
+
+from .locale import SupportedLocale
 
 __all__ = [
     "AnswerSynthesizer",
@@ -24,7 +24,6 @@ __all__ = [
 ]
 
 _SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
-_FIGURE_EXTS = (".png", ".svg", ".jpg", ".jpeg", ".gif", ".webp", ".pdf")
 
 
 @dataclass(frozen=True)
@@ -36,15 +35,18 @@ class TerminalAnswerContext:
             per-agent phrasing in a future synthesizer.
         status: Aggregated run status (``succeeded`` / ``failed``).
         live: Reconciled child task rows.
-        artifacts: ``collect_terminal_artifacts`` output (paths filled).
+        artifacts: Terminal artifact descriptors. The default assembler uses
+            only their count and never reads their content.
         query: Verbatim user query, if captured.
+        locale: Effective locale persisted with the run.
     """
 
     agent: str
     status: str
     live: list[dict[str, Any]]
-    artifacts: list[dict[str, Any]]
+    artifacts: Sequence[Any]
     query: str | None
+    locale: SupportedLocale = "en-US"
 
 
 AnswerSynthesizer = Callable[[TerminalAnswerContext], Awaitable[str]]
@@ -71,37 +73,29 @@ async def synthesize_terminal_answer(
 
 
 def _thin_answer(context: TerminalAnswerContext) -> str:
-    """Build the default structural answer (no I/O)."""
+    """Build the default structural answer without artifact ingestion."""
     live = context.live
-    artifacts = context.artifacts
     total = len(live)
     succeeded = sum(
         1 for r in live if (r.get("status") or "").lower() in _SUCCESS_STATUSES
     )
-    output_dirs = [a["output_dir"] for a in artifacts if a.get("output_dir")]
-    all_paths = [p for a in artifacts for p in a.get("paths", [])]
-    figures = [p for p in all_paths if p.lower().endswith(_FIGURE_EXTS)]
-
-    lines: list[str] = []
-    if context.status == "succeeded":
-        lines.append(
+    if context.locale == "zh-CN":
+        if context.status == "succeeded":
+            lines = [f"分析完成：{succeeded}/{total} 个任务成功。"]
+        else:
+            failed = total - succeeded
+            lines = [f"分析失败：{failed}/{total} 个任务失败。"]
+        query_label = "查询"
+    elif context.status == "succeeded":
+        lines = [
             f"**Analysis complete** — {succeeded}/{total} tasks succeeded."
-        )
+        ]
+        query_label = "Query"
     else:
         failed = total - succeeded
-        lines.append(f"**Analysis failed** — {failed}/{total} tasks failed.")
+        lines = [f"**Analysis failed** — {failed}/{total} tasks failed."]
+        query_label = "Query"
     if context.query:
         lines.append("")
-        lines.append(f"Query: {context.query}")
-    if output_dirs:
-        lines.append("")
-        lines.append(
-            f"Outputs — {len(output_dirs)} directories, "
-            f"{len(all_paths)} files, {len(figures)} figures:"
-        )
-        lines.extend(f"- `{d}`" for d in output_dirs)
-    if figures:
-        names = ", ".join(f"`{p.rsplit('/', 1)[-1]}`" for p in figures)
-        lines.append("")
-        lines.append(f"Figures: {names}")
+        lines.append(f"{query_label}: {context.query}")
     return "\n".join(lines)

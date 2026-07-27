@@ -7,10 +7,17 @@ from __future__ import annotations
 
 import pytest
 
+from mcp_server_phytomni.runtime.artifact_roles import (
+    ArtifactRole,
+    ClassifiedArtifact,
+)
+from mcp_server_phytomni.runtime.locale import SupportedLocale
 from mcp_server_phytomni.runtime.terminal_report import (
+    TerminalReportAssembly,
     TerminalReportContext,
     TerminalReportResult,
     TextArtifactSnippet,
+    assemble_terminal_report,
     build_fallback_report,
     is_terminal_report_agent,
     persist_terminal_report,
@@ -20,6 +27,23 @@ from mcp_server_phytomni.runtime.terminal_report import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def _classified_artifact(
+    name: str,
+    role: ArtifactRole | str,
+    *,
+    size_bytes: int | None = None,
+) -> ClassifiedArtifact:
+    """Build a manifest-backed artifact with a fixture-only source ref."""
+    return ClassifiedArtifact(
+        source_path=f"fixture://{name}",
+        relative_path=name,
+        role=ArtifactRole(role),
+        media_type="text/plain",
+        size_bytes=size_bytes if size_bytes is not None else 32,
+        download_ref=f"download://{name}",
+    )
 
 
 def test_terminal_report_agent_gate() -> None:
@@ -90,8 +114,8 @@ def test_report_context_and_snippet_shapes() -> None:
     assert not snippet.truncated
 
 
-def test_build_fallback_report_includes_metadata_and_artifacts() -> None:
-    """Fallback renders metadata, query, paths, and degraded reason."""
+def test_build_fallback_report_excludes_operational_artifacts() -> None:
+    """Fallback renders outcome metadata without paths or artifact content."""
     context = TerminalReportContext(
         agent="network",
         status="succeeded",
@@ -125,13 +149,14 @@ def test_build_fallback_report_includes_metadata_and_artifacts() -> None:
     assert "# Network Analysis Final Report" in result.final_report
     assert "build a co-expression network" in result.final_report
     assert "2/2 tasks succeeded" in result.final_report
-    assert "/obs/bucket/run-a/report.md" in result.final_report
-    assert "/obs/bucket/run-a/network.svg" in result.final_report
+    assert "/obs/bucket/run-a" not in result.final_report
+    assert "report.md" not in result.final_report
+    assert "network.svg" not in result.final_report
     assert result.answer == "Analysis complete: 2/2 tasks succeeded."
 
 
 def test_build_fallback_report_handles_empty_artifacts() -> None:
-    """Empty artifact list yields a healthy report with no-output notice."""
+    """Empty artifact list yields a healthy outcome report."""
     context = TerminalReportContext(
         agent="analyst",
         status="succeeded",
@@ -145,12 +170,12 @@ def test_build_fallback_report_handles_empty_artifacts() -> None:
 
     assert not result.degraded
     assert "# Analyst Final Report" in result.final_report
-    assert "No output directories were reported." in result.final_report
+    assert "output directories" not in result.final_report
     assert result.answer == "Analysis complete: 1/1 tasks succeeded."
 
 
 def test_build_fallback_report_uses_context_locale_for_bot_prose() -> None:
-    """Chinese fallback prose changes while paths and query stay exact."""
+    """Chinese fallback prose changes while paths stay out of the report."""
     context = TerminalReportContext(
         agent="analyst",
         status="succeeded",
@@ -171,7 +196,7 @@ def test_build_fallback_report_uses_context_locale_for_bot_prose() -> None:
     assert "# 分析智能体最终报告" in result.final_report
     assert "分析完成：1/1 个任务成功。" in result.final_report
     assert "分析 Os01g0177400" in result.final_report
-    assert "/obs/bucket/zh-run/report.md" in result.final_report
+    assert "/obs/bucket/zh-run" not in result.final_report
     assert result.answer == "分析完成：1/1 个任务成功。"
 
 
@@ -182,6 +207,7 @@ async def _fake_reader(path: str) -> str:
         "/obs/bucket/b.csv": "bravo text",
         "/obs/bucket/large.txt": "x" * 20,
         "/obs/bucket/report.md": "report content",
+        "fixture://report.md": "report content",
     }
     return values[path]
 
@@ -226,7 +252,8 @@ async def test_read_text_artifact_snippets_records_failed_reads() -> None:
 
 async def _good_summarizer(prompt: str) -> str:
     """Return canned markdown when the prompt names the test artifact."""
-    assert "Artifact: /obs/bucket/report.md" in prompt
+    assert "Scientific artifact: report.md" in prompt
+    assert "/obs/bucket/report.md" not in prompt
     return "# LLM Report\n\nGrounded summary."
 
 
@@ -249,11 +276,7 @@ async def test_synthesize_terminal_report_uses_llm_report() -> None:
         status="succeeded",
         live=[{"task_id": "task-1", "status": "succeeded"}],
         artifacts=[
-            {
-                "task_id": "task-1",
-                "output_dir": "/obs/bucket/out",
-                "paths": ["/obs/bucket/report.md"],
-            }
+            _classified_artifact("report.md", ArtifactRole.SCIENTIFIC_REPORT)
         ],
         query="find candidate genes",
         locale="en-US",
@@ -268,7 +291,7 @@ async def test_synthesize_terminal_report_uses_llm_report() -> None:
     assert result.final_report == "# LLM Report\n\nGrounded summary."
     assert result.answer == "Analysis complete: 1/1 tasks succeeded."
     assert not result.degraded
-    assert result.selected_paths == ("/obs/bucket/report.md",)
+    assert result.selected_paths == ()
 
 
 async def test_synthesize_terminal_report_falls_back_on_empty_summary() -> (
@@ -280,11 +303,7 @@ async def test_synthesize_terminal_report_falls_back_on_empty_summary() -> (
         status="succeeded",
         live=[{"task_id": "task-1", "status": "succeeded"}],
         artifacts=[
-            {
-                "task_id": "task-1",
-                "output_dir": "/obs/bucket/out",
-                "paths": ["/obs/bucket/report.md"],
-            }
+            _classified_artifact("report.md", ArtifactRole.SCIENTIFIC_REPORT)
         ],
         query="design primers",
         locale="en-US",
@@ -297,8 +316,9 @@ async def test_synthesize_terminal_report_falls_back_on_empty_summary() -> (
     )
 
     assert result.degraded
-    assert result.degraded_reason == "LLM summary returned empty content"
-    assert "# Digital Design Final Report" in result.final_report
+    assert result.degraded_reason == "report_synthesis_failed"
+    assert "scientific report synthesis was unavailable" in result.final_report
+    assert "/obs/" not in result.final_report
 
 
 async def test_synthesize_report_falls_back_on_summary_exception() -> None:
@@ -308,11 +328,7 @@ async def test_synthesize_report_falls_back_on_summary_exception() -> None:
         status="succeeded",
         live=[{"task_id": "task-1", "status": "succeeded"}],
         artifacts=[
-            {
-                "task_id": "task-1",
-                "output_dir": "/obs/bucket/out",
-                "paths": ["/obs/bucket/report.md"],
-            }
+            _classified_artifact("report.md", ArtifactRole.SCIENTIFIC_REPORT)
         ],
         query="analyze dataset",
         locale="en-US",
@@ -325,8 +341,147 @@ async def test_synthesize_report_falls_back_on_summary_exception() -> None:
     )
 
     assert result.degraded
-    assert result.degraded_reason == "LLM summary failed: OSError"
-    assert "# Analyst Final Report" in result.final_report
+    assert result.degraded_reason == "report_synthesis_failed"
+    assert "scientific report synthesis was unavailable" in result.final_report
+    assert "/obs/" not in result.final_report
+
+
+def _report_context(
+    locale: SupportedLocale = "en-US",
+) -> TerminalReportContext:
+    """Build a minimal context for canonical assembly tests."""
+    return TerminalReportContext(
+        agent="research",
+        status="succeeded",
+        live=[{"task_id": "task-sentinel", "status": "succeeded"}],
+        artifacts=[],
+        query="compare candidate genes",
+        locale=locale,
+    )
+
+
+@pytest.mark.asyncio
+async def test_only_explicit_scientific_text_enters_prompt() -> None:
+    """Only producer-declared scientific text roles reach the summarizer."""
+    artifacts = (
+        _classified_artifact("report.md", ArtifactRole.SCIENTIFIC_REPORT),
+        _classified_artifact("table.csv", ArtifactRole.SCIENTIFIC_TABLE),
+        _classified_artifact("notes.txt", ArtifactRole.SCIENTIFIC_TEXT),
+        _classified_artifact("figure.png", ArtifactRole.SCIENTIFIC_FIGURE),
+        _classified_artifact("analysis.log", ArtifactRole.EXECUTION_LOG),
+        _classified_artifact("diag.json", ArtifactRole.DIAGNOSTIC),
+        _classified_artifact("input.csv", ArtifactRole.INPUT),
+        _classified_artifact("unknown.txt", ArtifactRole.UNKNOWN),
+    )
+    content = {
+        "fixture://report.md": "RESULT-SENTINEL",
+        "fixture://table.csv": "TABLE-SENTINEL",
+        "fixture://notes.txt": "TEXT-SENTINEL",
+        "fixture://figure.png": "FIGURE-SENTINEL",
+        "fixture://analysis.log": "LOG-SENTINEL",
+        "fixture://diag.json": "DIAG-SENTINEL",
+        "fixture://input.csv": "INPUT-SENTINEL",
+        "fixture://unknown.txt": "UNKNOWN-SENTINEL",
+    }
+    captured: dict[str, str] = {}
+
+    async def reader(reference: str) -> str:
+        """Return fixture content for whichever role is admitted."""
+        return content[reference]
+
+    async def summarizer(prompt: str) -> str:
+        """Capture the path-free prompt and return a report."""
+        captured["prompt"] = prompt
+        return "Results\n\nMethods\n\nLimitations\n\nScientific context"
+
+    result = await assemble_terminal_report(
+        context=_report_context(),
+        artifacts=artifacts,
+        reader=reader,
+        summarizer=summarizer,
+    )
+
+    assert isinstance(result, TerminalReportAssembly)
+    prompt = captured["prompt"]
+    for included in ("RESULT-SENTINEL", "TABLE-SENTINEL", "TEXT-SENTINEL"):
+        assert included in prompt
+    for excluded in (
+        "FIGURE-SENTINEL",
+        "LOG-SENTINEL",
+        "DIAG-SENTINEL",
+        "INPUT-SENTINEL",
+        "UNKNOWN-SENTINEL",
+        "analysis.log",
+    ):
+        assert excluded not in prompt
+    assert result.report.state == "final"
+    assert result.report.source_artifact_count == 3
+
+
+@pytest.mark.asyncio
+async def test_no_scientific_text_returns_safe_degraded_report() -> None:
+    """Execution logs cannot be promoted when no scientific role exists."""
+
+    async def reader(_reference: str) -> str:
+        """Fail if an excluded artifact is ever read."""
+        raise AssertionError("excluded artifact was read")
+
+    result = await assemble_terminal_report(
+        context=_report_context("zh-CN"),
+        artifacts=(
+            _classified_artifact("analysis.log", ArtifactRole.EXECUTION_LOG),
+        ),
+        reader=reader,
+    )
+
+    assert result.answer.strip()
+    assert "analysis.log" not in result.answer
+    assert "secret" not in result.answer
+    assert result.report.state == "degraded"
+    assert result.report.source_artifact_count == 0
+    assert result.warnings[0].code == "report_no_scientific_text"
+
+
+@pytest.mark.parametrize(
+    ("locale", "expected"),
+    [
+        ("en-US", "scientific report synthesis was unavailable"),
+        ("zh-CN", "科学报告综合不可用"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_report_synthesis_failure_is_locale_consistent(
+    locale: SupportedLocale,
+    expected: str,
+) -> None:
+    """Timeouts degrade without copying private paths or task identifiers."""
+
+    async def reader(_reference: str) -> str:
+        """Return one admitted scientific section."""
+        return "validated scientific result"
+
+    async def summarizer(_prompt: str) -> str:
+        """Simulate an unavailable report model."""
+        raise TimeoutError("provider-private-path run-sentinel")
+
+    result = await assemble_terminal_report(
+        context=_report_context(locale),
+        artifacts=(
+            _classified_artifact("report.md", ArtifactRole.SCIENTIFIC_REPORT),
+        ),
+        reader=reader,
+        summarizer=summarizer,
+    )
+
+    assert expected in result.answer
+    assert "provider-private-path" not in result.answer
+    assert "run-sentinel" not in result.answer
+    assert result.report.state == "degraded"
+    assert result.report.source_artifact_count == 1
+    assert any(
+        warning.code == "report_synthesis_failed"
+        for warning in result.warnings
+    )
 
 
 class _FakeTaskManager:

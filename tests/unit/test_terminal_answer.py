@@ -45,7 +45,7 @@ def _ctx(agent, status, live, artifacts, query):
 
 @pytest.mark.asyncio
 async def test_succeeded_answer_lists_counts_dirs_and_figures():
-    """A succeeded run names counts, output dirs, and figure files."""
+    """A succeeded answer names the outcome without artifact paths."""
     answer = await terminal_answer.synthesize_terminal_answer(
         _ctx(
             "research",
@@ -63,14 +63,14 @@ async def test_succeeded_answer_lists_counts_dirs_and_figures():
     assert "complete" in answer.lower()
     assert "2/2" in answer
     assert "study FT in rice" in answer
-    assert "/obs/p/r0" in answer and "/obs/p/r1" in answer
-    assert "fig1.png" in answer and "fig2.svg" in answer
-    assert "t.csv" not in answer  # non-figure excluded from the figures line
+    assert "/obs/p/" not in answer
+    assert "fig1.png" not in answer and "fig2.svg" not in answer
+    assert "t.csv" not in answer
 
 
 @pytest.mark.asyncio
 async def test_failed_answer_names_failure_and_keeps_succeeded_outputs():
-    """A failed run reports the failure count and still lists products."""
+    """A failed run reports the failure count without product paths."""
     answer = await terminal_answer.synthesize_terminal_answer(
         _ctx(
             "network",
@@ -82,7 +82,7 @@ async def test_failed_answer_names_failure_and_keeps_succeeded_outputs():
     )
     assert "failed" in answer.lower()
     assert "1/2" in answer  # 1 of 2 failed
-    assert "/obs/p/r0" in answer  # succeeded output still listed
+    assert "/obs/p/" not in answer
 
 
 @pytest.mark.asyncio
@@ -98,6 +98,23 @@ async def test_none_query_omits_query_line():
         )
     )
     assert "Query:" not in answer
+
+
+@pytest.mark.asyncio
+async def test_chinese_answer_uses_persisted_locale():
+    """The thin outcome answer follows the effective run locale."""
+    answer = await terminal_answer.synthesize_terminal_answer(
+        terminal_answer.TerminalAnswerContext(
+            agent="research",
+            status="succeeded",
+            live=_live("succeeded"),
+            artifacts=[],
+            query=None,
+            locale="zh-CN",
+        )
+    )
+
+    assert answer == "分析完成：1/1 个任务成功。"
 
 
 @pytest.mark.asyncio
