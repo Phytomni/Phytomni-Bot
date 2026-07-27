@@ -10,6 +10,48 @@ Baseline SHA: `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac`
 
 Allowed statuses: `Unknown`, `Needs Verification`, `Bot Ready`, `External Pending`, `Accepted`, `Blocked`, `Rejected`.
 
+## Current Bot evidence packet
+
+Evidence base SHA: `066ee812effe233911a9b3123b944763a04def49`\
+Capability golden SHA256: `b13f327b1dd1012ef24936cf3183bd37a19d0e1e8ec3dd7a5115352d0ea492b5`
+
+Focused completion command:
+
+```bash
+UV_CACHE_DIR=/tmp/phytomni-uv-cache uv run pytest \
+  tests/unit/test_result_formatting_projection.py \
+  tests/server/test_result_formatting.py \
+  tests/server/test_result_formatting_metadata_contract.py \
+  tests/server/test_scientific_execution_projection.py \
+  tests/unit/test_artifact_roles.py \
+  tests/unit/test_terminal_artifacts.py \
+  tests/unit/test_terminal_report.py \
+  tests/unit/test_terminal_answer.py \
+  tests/unit/test_run_registry_reconcile.py \
+  tests/agents/test_analyst_submission_helpers.py \
+  tests/agents/test_deep_genome_dispatch_contract.py \
+  tests/agents/test_deep_genome_report.py \
+  tests/agents/test_deep_genome_report_async.py \
+  tests/unit/test_deep_genome_report_snapshot.py \
+  tests/server/test_agent_capabilities.py -q
+```
+
+Focused result: `235 passed in 1.43s`. The Task 9 packet also passed
+`mdformat --check`, `pymarkdown scan`, and `git diff --check`. The full
+`UV_CACHE_DIR=/tmp/phytomni-uv-cache make scoped` gate passed with `2173 passed`; the secret scan and static-analysis exemption reconciliation were
+clean. The public-document sentinel scan returned no matches.
+
+### Scientific report capability rows
+
+| Bot row                         | Report states           | Artifacts           | Degraded outcomes   | Status           |
+| ------------------------------- | ----------------------- | ------------------- | ------------------- | ---------------- |
+| `analyst`                       | `final`                 | `true`              | `true`              | Bot Ready        |
+| `research`                      | `final`                 | `true`              | `true`              | Bot Ready        |
+| `design`                        | `final`                 | `true`              | `true`              | Bot Ready        |
+| `network`                       | `final`                 | `true`              | `true`              | Bot Ready        |
+| `deep_genome`                   | `intermediate`, `final` | `true`              | `true`              | Bot Ready        |
+| Web/Go/report-history migration | external acceptance     | external acceptance | external acceptance | External Pending |
+
 ## Requirement ledger
 
 | Requirement                        | Source                              | SHA                                        | Environment | Command                    | Exit/result                | Sample                   | Owner           | Status             | Blocker                      | Rollback                   |
