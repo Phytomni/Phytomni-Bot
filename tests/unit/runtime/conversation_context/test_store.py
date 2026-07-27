@@ -38,15 +38,23 @@ def store(
 
 def _staged(
     *,
+    operation: str = "append",
+    base_context_version: int = 0,
+    selected_agent_id: str = "ChatAgent",
+    route_source: str = "instant_lock",
     result: dict[str, object] | None = None,
     delta: dict[str, object] | None = None,
+    ledger_version: str = "a" * 64,
 ) -> StagedTurn:
     """Return one valid, intentionally unordered terminal proposal."""
     return StagedTurn(
-        selected_agent_id="ChatAgent",
-        route_source="instant_lock",
+        operation=operation,
+        base_context_version=base_context_version,
+        selected_agent_id=selected_agent_id,
+        route_source=route_source,
         result=result or {"answer": "terminal"},
         delta=delta or {"summary": "bounded context"},
+        ledger_version=ledger_version,
         schema_version=1,
         ledger_cursor=9,
         observed_mode="instant",
@@ -196,6 +204,24 @@ def test_conflicting_duplicate_staging_fails_closed(
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (("selected_agent_id", "DeepGenomeAgent"), ("route_source", "fallback")),
+)
+def test_conflicting_duplicate_routing_proposal_fails_closed(
+    store: ConversationContextStore,
+    field: str,
+    value: str,
+) -> None:
+    """A changed routing proposal never silently reuses a staged response."""
+    store.begin_turn("conversation-1", "1", "append", 0)
+    store.stage_turn("conversation-1", "1", _staged())
+
+    proposal = {field: value}
+    with pytest.raises(StagedTurnConflictError):
+        store.stage_turn("conversation-1", "1", _staged(**proposal))
+
+
 def test_tombstone_clears_context_and_turns_then_refuses_new_work(
     store: ConversationContextStore,
 ) -> None:
@@ -219,6 +245,24 @@ def test_tombstone_clears_context_and_turns_then_refuses_new_work(
     for operation in ("append", "rebuild"):
         with pytest.raises(ConversationTombstonedError):
             store.begin_turn("conversation-1", "2", operation, 1)
+
+
+def test_repeated_tombstone_is_idempotent(
+    store: ConversationContextStore,
+) -> None:
+    """Repeated deletion keeps the conversation tombstoned without turns."""
+    store.tombstone("conversation-1")
+    store.tombstone("conversation-1")
+
+    context = store.load_context("conversation-1")
+    assert context is not None
+    assert context.state == "tombstoned"
+    assert context.checkpoint_cleanup_state == "pending"
+    with sqlite3.connect(store.db_path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM conversation_turns WHERE conversation_key = ?",
+            ("conversation-1",),
+        ).fetchone() == (0,)
 
 
 def test_staged_rows_expire_using_the_success_ttl(
@@ -254,6 +298,8 @@ def test_store_logs_do_not_expose_conversation_payloads(
     summary = "private summary"
     artifact_path = "/private/artifacts/report.xlsx"
     raw_result = "raw terminal result"
+    permission_list = "permission-list: admin,super_admin"
+    secret_marker = "SECRET_MARKER_DO_NOT_LOG"
     caplog.set_level(logging.DEBUG)
 
     store.begin_turn("conversation-1", "1", "append", 0)
@@ -261,11 +307,26 @@ def test_store_logs_do_not_expose_conversation_payloads(
         "conversation-1",
         "1",
         _staged(
-            result={"answer": raw_result, "query": user_query},
-            delta={"summary": summary, "artifact": artifact_path},
+            result={
+                "answer": raw_result,
+                "query": user_query,
+                "permissions": permission_list,
+            },
+            delta={
+                "summary": summary,
+                "artifact": artifact_path,
+                "secret": secret_marker,
+            },
         ),
     )
 
     logged = "\n".join(record.getMessage() for record in caplog.records)
-    for forbidden in (user_query, summary, artifact_path, raw_result):
+    for forbidden in (
+        user_query,
+        summary,
+        artifact_path,
+        raw_result,
+        permission_list,
+        secret_marker,
+    ):
         assert forbidden not in logged

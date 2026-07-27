@@ -87,10 +87,13 @@ class StoredBusinessContext:
 
 @dataclass(frozen=True)
 class StagedTurn:
+    operation: str
+    base_context_version: int
     selected_agent_id: str
     route_source: str
     result: dict[str, Any]
     delta: dict[str, Any]
+    ledger_version: str
     schema_version: int
     ledger_cursor: int
     observed_mode: str
@@ -300,20 +303,29 @@ class ConversationContextStore:
             if row is None:
                 raise KeyError((key, turn_id))
             if row[4] in {"staged", "committed"}:
-                if row[7] != result_json or row[8] != delta_json:
+                if (
+                    row[2] != staged.operation
+                    or row[3] != staged.base_context_version
+                    or row[5] != staged.selected_agent_id
+                    or row[6] != staged.route_source
+                    or row[7] != result_json
+                    or row[8] != delta_json
+                    or row[9] != staged.ledger_version
+                ):
                     raise StagedTurnConflictError((key, turn_id))
                 return self._turn(row)
             if row[4] != "in_progress":
                 raise StagedTurnConflictError((key, turn_id))
             connection.execute(
                 "UPDATE conversation_turns SET state='staged', selected_agent_id=?, route_source=?, "
-                "result_json=?, delta_json=?, updated_at=?, expires_at=? "
+                "result_json=?, delta_json=?, ledger_version=?, updated_at=?, expires_at=? "
                 "WHERE conversation_key=? AND turn_id=?",
                 (
                     staged.selected_agent_id,
                     staged.route_source,
                     result_json,
                     delta_json,
+                    staged.ledger_version,
                     now,
                     expires,
                     key,
