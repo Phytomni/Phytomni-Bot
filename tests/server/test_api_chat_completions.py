@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+from uuid import UUID
 
 import httpx
 import pytest
@@ -23,9 +24,45 @@ from tests.support.chat_fakes import (
 )
 
 from mcp_server_phytomni import server
+from mcp_server_phytomni.runtime.conversation_context.adapters import (
+    canonical_agent_invocation,
+)
+from mcp_server_phytomni.runtime.conversation_context.models import (
+    ContextProjection,
+)
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
+
+
+def _conversation_envelope(*, turn_id: str = "1") -> dict[str, Any]:
+    """Build one Instant V1 envelope for a chat completion test."""
+    return {
+        "schema_version": 1,
+        "conversation_key": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")),
+        "dialogue_id": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8")),
+        "turn_id": turn_id,
+        "request_id": f"request-{turn_id}",
+        "operation": "append",
+        "mode": "instant",
+        "current_message": {
+            "content": "What is photosynthesis?",
+            "locale": "en-US",
+        },
+        "requested_agent_id": None,
+        "allowed_agent_ids": ["ChatAgent"],
+        "ledger_cursor": 1,
+        "ledger_version": "a" * 64,
+        "base_business_context_version": 0,
+        "history_delta": [
+            {
+                "turn_id": turn_id,
+                "role": "user",
+                "content": "What is photosynthesis?",
+            }
+        ],
+        "artifact_refs": [],
+    }
 
 
 async def test_chat_completions_passthrough(
@@ -73,6 +110,103 @@ async def test_chat_completions_requires_auth(
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "unauthenticated"
+
+
+async def test_chat_context_envelope_is_rejected_while_v1_is_disabled(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A disabled deployment rejects V1 before it invokes ChatAgent."""
+    invoked = 0
+
+    async def forbidden(_args: Any) -> dict[str, Any]:
+        nonlocal invoked
+        invoked += 1
+        raise AssertionError("disabled V1 must not invoke ChatAgent")
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS, server.PhytomniAgents.CHAT_AGENT.value, forbidden
+    )
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        conversation=_conversation_envelope(),
+    )
+
+    assert response.status_code == 404
+    assert invoked == 0
+
+
+def test_chat_context_adapter_keeps_native_role_history_separate_from_query() -> (
+    None
+):
+    """Chat receives native prior roles while dispatch sees only the latest turn."""
+    dispatch = canonical_agent_invocation(
+        ContextProjection(
+            current_query="What about that mechanism?",
+            relevant_user_turns=[
+                "Explain photosynthesis.",
+                "What about that mechanism?",
+            ],
+            relevant_assistant_summaries=["Explained light capture."],
+            agent_thread_id="ctx-" + "a" * 64,
+            locale="en-US",
+            token_budget=100,
+        )
+    )
+
+    assert dispatch.arguments["user_query"] == "What about that mechanism?"
+    assert dispatch.conversation_messages == (
+        {"role": "user", "content": "Explain photosynthesis."},
+        {"role": "assistant", "content": "Explained light capture."},
+    )
+
+
+async def test_chat_context_v1_stages_native_history_and_replays_turn(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+) -> None:
+    """Instant V1 uses ChatAgent once and returns its staged response on retry."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
+    calls = 0
+
+    async def fake(args: Any) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        assert args.user_query == "What is photosynthesis?"
+        return chat_completion_payload("chatcmpl-context", "A staged answer.")
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS, server.PhytomniAgents.CHAT_AGENT.value, fake
+    )
+    envelope = _conversation_envelope()
+    first = await chat_completion(
+        api_client,
+        issued_api_key,
+        messages=[
+            {"role": "system", "content": "Use evidence."},
+            {"role": "assistant", "content": "Earlier summary."},
+            {"role": "user", "content": "Ignored legacy history."},
+        ],
+        conversation=envelope,
+    )
+    second = await chat_completion(
+        api_client, issued_api_key, conversation=envelope
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json() == second.json()
+    assert calls == 1
+    stage = first.json()["conversation_context"]
+    assert stage["selected_agent_id"] == "ChatAgent"
+    assert stage["route_source"] == "instant_lock"
 
 
 async def test_chat_completions_unknown_model(

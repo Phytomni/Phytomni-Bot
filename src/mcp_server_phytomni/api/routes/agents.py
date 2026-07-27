@@ -21,10 +21,22 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse, Response
 
+from ...agents.expert import ToolSelectionError
+from ...runtime.conversation_context.adapters import (
+    ContextAgentInvocation,
+    ConversationContextExecutor,
+)
+from ...runtime.conversation_context.models import ConversationEnvelopeV1
+from ...runtime.conversation_context.service import (
+    AgentOutcome,
+    PreparedTurn,
+    PrepareStatus,
+)
 from ...runtime.locale import SupportedLocale, current_effective_locale
 from ...runtime.run_registry import RunRequestInfo
 from ..app_support import resolve_http_locale
 from ..auth import ApiPrincipal
+from ..lifecycle_contract import SafeApiError
 from ..schemas import (
     AgentRunRequest,
     ChatCompletionRequest,
@@ -110,6 +122,14 @@ class AgentNativeDependencies:
 
 
 @dataclass(frozen=True, slots=True)
+class AgentContextDependencies:
+    """Conversation-context protocol gate and shared executor."""
+
+    enabled: Callable[[], bool]
+    executor: ConversationContextExecutor
+
+
+@dataclass(frozen=True, slots=True)
 class AgentUploadDependencies:
     """Multipart upload and error projection seams."""
 
@@ -127,6 +147,7 @@ class AgentRouteDependencies:
     catalog: AgentCatalogDependencies
     chat: AgentChatDependencies
     native: AgentNativeDependencies
+    context: AgentContextDependencies
     upload: AgentUploadDependencies
 
 
@@ -186,6 +207,12 @@ def _register_chat_route(
                 status_code=404,
                 detail=f"model not found: {payload.model}",
             )
+        if payload.conversation is not None:
+            if not dependencies.context.enabled():
+                raise HTTPException(
+                    status_code=404, detail="conversation context disabled"
+                )
+            return await _execute_context_chat(payload, dependencies)
         accepts_obs = dependencies.chat.input.tool_accepts_obs(tool_name)
         if payload.obs_file_list and not accepts_obs:
             raise HTTPException(
@@ -276,6 +303,144 @@ def _register_chat_route(
                 completion
             )
         return JSONResponse(completion)
+
+
+async def _execute_context_chat(
+    payload: ChatCompletionRequest,
+    dependencies: AgentRouteDependencies,
+) -> JSONResponse:
+    """Execute an Instant V1 completion without flattening legacy messages."""
+    envelope = payload.conversation
+    assert envelope is not None
+    if envelope.mode != "instant":
+        raise HTTPException(
+            status_code=422, detail="chat context requires instant mode"
+        )
+    if payload.stream:
+        raise HTTPException(
+            status_code=400,
+            detail="conversation context streaming is not available",
+        )
+    if payload.obs_file_list and not dependencies.chat.input.tool_accepts_obs(
+        "ChatAgent"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"model {payload.model} does not accept obs_file_list",
+        )
+
+    async def invoke(
+        selected_agent_id: str,
+        _envelope: ConversationEnvelopeV1,
+        dispatch: ContextAgentInvocation,
+    ) -> AgentOutcome:
+        if selected_agent_id != "ChatAgent":
+            raise ValueError("instant context selected a non-chat agent")
+        arguments = dict(dispatch.arguments)
+        arguments["obs_file_list"] = list(payload.obs_file_list or [])
+        user_query, resolve_meta = (
+            await dependencies.chat.input.resolve_chat_query(
+                raw_query=arguments["user_query"],
+                resolve_flag=bool(payload.resolve_gene_id),
+                tool_name="ChatAgent",
+                brief_gene_resolver=dependencies.chat.input.brief_gene_resolver,
+            )
+        )
+        arguments["user_query"] = user_query
+        tool_envelope = (
+            await dependencies.chat.execution.invoke_tool_enveloped(
+                "ChatAgent", arguments
+            )
+        )
+        formatted_dict = _formatted_with_metadata(tool_envelope, resolve_meta)
+        envelope_dict = {
+            "formatted": formatted_dict,
+            "execution": asdict(tool_envelope.execution),
+            "raw": tool_envelope.raw,
+        }
+        chat_run_id = dependencies.chat.projection.record_sync_run(
+            agent=dependencies.catalog.model_to_agent_slug[payload.model],
+            owner=dependencies.chat.projection.current_user() or "anonymous",
+            result=envelope_dict,
+            request_info=_chat_run_request_info(
+                payload,
+                user_query,
+                "ChatAgent",
+                current_effective_locale(),
+            ),
+        )
+        if chat_run_id is None:
+            envelope_dict["execution"]["tracking"] = {"degraded": True}
+        completion = dependencies.chat.projection.to_chat_completion(
+            formatted_dict,
+            tool_envelope.raw,
+            payload.model,
+            envelope_dict["execution"],
+        )
+        completion["run_id"] = chat_run_id
+        if envelope_dict["execution"]["tracking"].get("degraded") is True:
+            completion["degraded_tracking"] = True
+        if not dependencies.chat.projection.resolve_debug(payload.debug):
+            completion = dependencies.chat.projection.strip_chat_completion(
+                completion
+            )
+        answer = formatted_dict.get("answer")
+        return AgentOutcome(
+            result=completion,
+            assistant_summary=answer if isinstance(answer, str) else None,
+        )
+
+    async def delegate_async(
+        _selected_agent_id: str,
+        _envelope: ConversationEnvelopeV1,
+        _arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        raise AssertionError(
+            "Instant context must not delegate asynchronously"
+        )
+
+    prepared = await dependencies.context.executor.execute(
+        envelope=envelope,
+        invoke=invoke,
+        delegate_async=delegate_async,
+    )
+    return _context_response(prepared, envelope)
+
+
+def _context_response(
+    prepared: PreparedTurn,
+    envelope: ConversationEnvelopeV1,
+) -> JSONResponse:
+    """Return a staged terminal payload or a bounded context retry signal."""
+    if prepared.status is PrepareStatus.REBUILD_REQUIRED:
+        raise SafeApiError(
+            status_code=409,
+            code="conversation_context_rebuild_required",
+            message="conversation context rebuild required",
+            stage="context",
+            retryable=True,
+        )
+    if prepared.status is PrepareStatus.IN_PROGRESS:
+        raise SafeApiError(
+            status_code=409,
+            code="conversation_context_turn_in_progress",
+            message="conversation context turn in progress",
+            stage="context",
+            retryable=True,
+        )
+    if prepared.result is None:
+        raise HTTPException(
+            status_code=500, detail="conversation context failed"
+        )
+    response = dict(prepared.result)
+    if prepared.stage is not None:
+        response["conversation_context"] = {
+            "schema_version": 1,
+            "turn_id": envelope.turn_id,
+            **asdict(prepared.stage),
+        }
+    status_code = 202 if response.get("status") == "running" else 200
+    return JSONResponse(response, status_code=status_code)
 
 
 def _formatted_with_metadata(
@@ -398,6 +563,12 @@ def _register_native_routes(
     ) -> JSONResponse:
         """Autonomously route a query to an agent and return its run."""
         del principal
+        if payload.conversation is not None:
+            if not dependencies.context.enabled():
+                raise HTTPException(
+                    status_code=404, detail="conversation context disabled"
+                )
+            return await _execute_context_expert(payload, dependencies)
         resolve_http_locale(
             explicit=payload.locale,
             accept_language=request.headers.get("accept-language"),
@@ -439,6 +610,90 @@ def _register_native_routes(
         )
 
 
+async def _execute_context_expert(
+    payload: ExpertQueryRequest,
+    dependencies: AgentRouteDependencies,
+) -> JSONResponse:
+    """Run constrained Expert V1 selection through the shared lifecycle."""
+    envelope = payload.conversation
+    assert envelope is not None
+    if envelope.mode != "expert":
+        raise HTTPException(
+            status_code=422, detail="expert context requires expert mode"
+        )
+
+    async def invoke(
+        selected_agent_id: str,
+        _envelope: ConversationEnvelopeV1,
+        dispatch: ContextAgentInvocation,
+    ) -> AgentOutcome:
+        slug = _slug_for_tool(selected_agent_id, dependencies)
+        body, status_code = await dependencies.native.invoke_agent_run(
+            agent=slug,
+            arguments=dispatch.arguments,
+            dialogue_id=payload.dialogue_id,
+            request_json=payload.model_dump_json(),
+            debug=dependencies.chat.projection.resolve_debug(None),
+        )
+        if status_code != 200 or body.get("status") != "succeeded":
+            return AgentOutcome(result=body, status="running")
+        return AgentOutcome(
+            result=body,
+            assistant_summary=_agent_response_summary(body),
+        )
+
+    async def delegate_async(
+        selected_agent_id: str,
+        _envelope: ConversationEnvelopeV1,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        slug = _slug_for_tool(selected_agent_id, dependencies)
+        body, _status_code = await dependencies.native.invoke_agent_run(
+            agent=slug,
+            arguments=arguments,
+            dialogue_id=payload.dialogue_id,
+            request_json=payload.model_dump_json(),
+            debug=dependencies.chat.projection.resolve_debug(None),
+        )
+        return body
+
+    try:
+        prepared = await dependencies.context.executor.execute(
+            envelope=envelope,
+            invoke=invoke,
+            delegate_async=delegate_async,
+        )
+    except (ToolSelectionError, ValueError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="router did not resolve one permitted agent",
+        ) from exc
+    return _context_response(prepared, envelope)
+
+
+def _slug_for_tool(
+    tool_name: str,
+    dependencies: AgentRouteDependencies,
+) -> str:
+    """Map a canonical selected tool back to the public native slug."""
+    for slug, candidate in dependencies.catalog.agent_slug_to_tool.items():
+        if candidate == tool_name:
+            return slug
+    raise ValueError("selected agent is unavailable")
+
+
+def _agent_response_summary(body: Mapping[str, Any]) -> str | None:
+    """Extract a bounded terminal answer summary without exposing raw state."""
+    result = body.get("result")
+    if not isinstance(result, Mapping):
+        return None
+    formatted = result.get("formatted")
+    if not isinstance(formatted, Mapping):
+        return None
+    answer = formatted.get("answer")
+    return answer if isinstance(answer, str) else None
+
+
 def register_agent_routes(
     app: FastAPI,
     dependencies: AgentRouteDependencies,
@@ -451,6 +706,7 @@ def register_agent_routes(
 __all__ = [
     "AgentAuthDependencies",
     "AgentCatalogDependencies",
+    "AgentContextDependencies",
     "AgentChatDependencies",
     "AgentChatExecutionDependencies",
     "AgentChatInputDependencies",

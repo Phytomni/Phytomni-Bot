@@ -33,6 +33,9 @@ from ..config.settings import SensitiveConfig
 from ..interop.cache import DiscoveryCache
 from ..interop.capabilities import DiscoveryResult
 from ..interop.registry import InteropRegistry, InteropRegistryError
+from ..runtime.conversation_context.adapters import (
+    ConversationContextExecutor,
+)
 from ..runtime.conversation_context.store import ConversationContextStore
 from ..runtime.locale import message_for
 from ..runtime.memory import (
@@ -472,6 +475,7 @@ def _build_base_app() -> FastAPI:
 def _build_agent_dependencies(
     runtime: _RuntimeState,
     adapters: _RouteAdapters,
+    context_executor: ConversationContextExecutor,
 ) -> agent_routes.AgentRouteDependencies:
     """Assemble the typed dependency graph for primary agent routes."""
     return agent_routes.AgentRouteDependencies(
@@ -512,6 +516,10 @@ def _build_agent_dependencies(
         native=agent_routes.AgentNativeDependencies(
             invoke_agent_run=adapters.invoke_agent_run,
             route_expert_query=adapters.expert_query,
+        ),
+        context=agent_routes.AgentContextDependencies(
+            enabled=adapters.conversation_context_enabled,
+            executor=context_executor,
         ),
         upload=agent_routes.AgentUploadDependencies(
             handle_file_upload=_app_attr("handle_file_upload"),
@@ -825,12 +833,38 @@ def _register_error_handlers(app: FastAPI) -> None:
         return _app_attr("_error_response")(500, "internal server error")
 
 
-def build_app() -> FastAPI:
+def _build_context_executor(
+    runtime: _RuntimeState,
+) -> ConversationContextExecutor:
+    """Build the lazy, Bot-owned conversation context executor."""
+
+    async def select_agent(*args: Any, **kwargs: Any) -> Any:
+        """Resolve the selector lazily so established test seams remain live."""
+        return await _app_attr("select_agent_tool")(*args, **kwargs)
+
+    return ConversationContextExecutor(
+        store_factory=runtime.get_conversation_context_store,
+        select_agent=select_agent,
+        api_config_factory=_api_config,
+    )
+
+
+def build_app(
+    *, context_executor: ConversationContextExecutor | None = None
+) -> FastAPI:
     """Build the complete FastAPI application from typed route seams."""
     app = _build_base_app()
     runtime = _RuntimeState(rate_limit=_app_attr("make_rate_limiter")())
     adapters = _RouteAdapters(runtime)
-    agent_dependencies = _build_agent_dependencies(runtime, adapters)
+    agent_dependencies = _build_agent_dependencies(
+        runtime,
+        adapters,
+        (
+            context_executor
+            if context_executor is not None
+            else _build_context_executor(runtime)
+        ),
+    )
 
     _register_interop_route(app, runtime, runtime.require_scope)
     _register_health_routes(app)

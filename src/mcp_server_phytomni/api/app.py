@@ -967,7 +967,7 @@ def _stamp_remote_request_info(
     )
 
 
-def create_app() -> FastAPI:
+def create_app(*, context_executor: Any | None = None) -> FastAPI:
     """Build the FastAPI application.
 
     Returns:
@@ -981,4 +981,4 @@ def create_app() -> FastAPI:
     ``_route_expert_query``, and ``resolve_chat_query`` through this module so
     existing integrations and tests can patch those names.
     """
-    return _factory.build_app()
+    return _factory.build_app(context_executor=context_executor)

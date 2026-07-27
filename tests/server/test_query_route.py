@@ -17,6 +17,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from uuid import UUID
 
 import httpx
 import pytest
@@ -44,6 +45,42 @@ from mcp_server_phytomni.runtime.upload_registry import (
 from mcp_server_phytomni.storage.obs_storage import obs_path_from_key
 
 pytestmark = pytest.mark.server
+
+
+def _conversation_envelope(
+    *,
+    turn_id: str = "1",
+    requested_agent_id: str | None = None,
+    allowed_agent_ids: list[str] | None = None,
+    base_business_context_version: int = 0,
+) -> dict[str, Any]:
+    """Build one Expert V1 envelope for routing tests."""
+    return {
+        "schema_version": 1,
+        "conversation_key": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")),
+        "dialogue_id": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8")),
+        "turn_id": turn_id,
+        "request_id": f"request-{turn_id}",
+        "operation": "append",
+        "mode": "expert",
+        "current_message": {
+            "content": "Compare drought candidates",
+            "locale": "en-US",
+        },
+        "requested_agent_id": requested_agent_id,
+        "allowed_agent_ids": allowed_agent_ids or ["ChatAgent", "DataAgent"],
+        "ledger_cursor": 1,
+        "ledger_version": "a" * 64,
+        "base_business_context_version": base_business_context_version,
+        "history_delta": [
+            {
+                "turn_id": turn_id,
+                "role": "user",
+                "content": "Compare drought candidates",
+            }
+        ],
+        "artifact_refs": [],
+    }
 
 
 def _patch_select(
@@ -162,6 +199,197 @@ async def test_route_rejects_more_than_ten_allowed_tools(
                 "allowed_tools": [f"Tool{index}" for index in range(11)],
             }
         )
+
+
+async def test_context_expert_explicit_selection_stages_without_router(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An explicit V1 Expert agent is exact and returns stage metadata."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
+
+    async def forbidden_router(*_args: Any, **_kwargs: Any) -> ToolSelection:
+        raise AssertionError("explicit Expert selection must not route")
+
+    calls = 0
+
+    async def handler(_args: Any) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"answer": "drought result", "doc_list": []}
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS, server.PhytomniAgents.DATA_AGENT.value, handler
+    )
+    monkeypatch.setattr(api_app, "select_agent_tool", forbidden_router)
+    envelope = _conversation_envelope(
+        requested_agent_id="DataAgent", allowed_agent_ids=["DataAgent"]
+    )
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["DataAgent"],
+            "conversation": envelope,
+        },
+    )
+
+    assert response.status_code == 200
+    stage = response.json()["conversation_context"]
+    assert stage["selected_agent_id"] == "DataAgent"
+    assert stage["route_source"] == "explicit_selection"
+    duplicate = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["DataAgent"],
+            "conversation": envelope,
+        },
+    )
+    assert duplicate.status_code == 200
+    assert duplicate.json() == response.json()
+    assert calls == 1
+
+
+async def test_context_expert_router_keeps_full_allowlist_and_async_202(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Automatic V1 routing preserves async candidates without staging them."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
+    received: list[str] = []
+    allowed = [
+        "ChatAgent",
+        "DataAgent",
+        "AnalystAgent",
+        "DeepGenomeAgent",
+        "InSilicoResearchAgent",
+        "DigitalDesignAgent",
+        "GeneNetworkAgent",
+    ]
+
+    async def select(
+        _query: str, _history: Any, *, allowed_tools: Any, forced_tool: Any
+    ) -> ToolSelection:
+        received.extend(allowed_tools)
+        assert forced_tool is None
+        return ToolSelection(
+            "AnalystAgent",
+            {
+                "goal_description": "assemble",
+                "data_list": {},
+                "obs_file_list": [],
+            },
+        )
+
+    async def submit(_args: Any) -> dict[str, Any]:
+        return {"task_id": "T-context", "output_dir": "/obs/context"}
+
+    monkeypatch.setattr(api_app, "select_agent_tool", select)
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.ANALYST_AGENT.value,
+        records_submission("analyst")(submit),
+    )
+    envelope = _conversation_envelope(allowed_agent_ids=allowed)
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query",
+            "allowed_tools": allowed,
+            "conversation": envelope,
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "running"
+    assert "conversation_context" not in response.json()
+    assert received == allowed
+
+
+async def test_context_expert_rebuilds_before_routing_when_state_is_missing(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A stale V1 base returns rebuild-required before selecting an agent."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
+
+    async def forbidden_router(*_args: Any, **_kwargs: Any) -> ToolSelection:
+        raise AssertionError(
+            "missing context must request rebuild before routing"
+        )
+
+    monkeypatch.setattr(api_app, "select_agent_tool", forbidden_router)
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query",
+            "allowed_tools": ["DataAgent"],
+            "conversation": _conversation_envelope(
+                allowed_agent_ids=["DataAgent"],
+                base_business_context_version=1,
+            ),
+        },
+    )
+
+    assert response.status_code == 409
+    assert (
+        response.json()["error"]["code"]
+        == "conversation_context_rebuild_required"
+    )
+
+
+async def test_context_expert_rejects_selected_agent_outside_allowlist(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A V1 selector cannot dispatch a tool outside Go's ordered allowlist."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
+    invoked = 0
+
+    async def select(*_args: Any, **_kwargs: Any) -> ToolSelection:
+        return ToolSelection("DataAgent", {"user_query": "forbidden"})
+
+    async def forbidden(_args: Any) -> dict[str, Any]:
+        nonlocal invoked
+        invoked += 1
+        raise AssertionError("outside selection must not dispatch")
+
+    monkeypatch.setattr(api_app, "select_agent_tool", select)
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS, server.PhytomniAgents.DATA_AGENT.value, forbidden
+    )
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query",
+            "allowed_tools": ["ChatAgent"],
+            "conversation": _conversation_envelope(
+                allowed_agent_ids=["ChatAgent"]
+            ),
+        },
+    )
+
+    assert response.status_code == 502
+    assert invoked == 0
 
 
 def test_expert_query_request_accepts_ordered_autonomous_constraints() -> None:
