@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 import pytest
@@ -21,6 +22,7 @@ from mcp_server_phytomni.runtime.conversation_context.models import (
     RoleTaggedTurn,
 )
 from mcp_server_phytomni.runtime.conversation_context.projection import (
+    _projection_budget_payload,
     agent_thread_id,
     build_context_projection,
     rebuild_business_context,
@@ -86,7 +88,7 @@ def test_projection_trims_in_documented_priority_order() -> None:
         selected_agent_id="DataAgent",
         context=_context(),
         authorized_artifacts=[_envelope_artifact()],
-        api_config=_config(),
+        api_config=ApiConfig(CONVERSATION_CONTEXT_DATA_TOKEN_BUDGET=538),
         estimator=CharacterEstimator(),
     )
 
@@ -129,6 +131,52 @@ def test_projection_is_deterministic_and_uses_configured_agent_budget() -> (
     assert first.agent_thread_id == agent_thread_id(
         _CONVERSATION_KEY, "DataAgent"
     )
+
+
+def test_projection_budget_validation_counts_private_recent_turns() -> None:
+    """Final validation budgets the private turn payload, not public dumps."""
+
+    class CharacterEstimator:
+        def estimate(self, text: str) -> int:
+            return len(text)
+
+    projection = build_context_projection(
+        conversation_key=_CONVERSATION_KEY,
+        current_query="follow up",
+        locale="en-US",
+        selected_agent_id="DataAgent",
+        context=_context(),
+        authorized_artifacts=[],
+        api_config=_config(),
+        estimator=CharacterEstimator(),
+    )
+
+    public_size = CharacterEstimator().estimate(
+        projection.model_dump_json(exclude_none=True)
+    )
+    private_size = CharacterEstimator().estimate(
+        json.dumps(
+            _projection_budget_payload(
+                current_query=projection.current_query,
+                intent_kind=projection.intent_kind,
+                task_summary=projection.task_summary,
+                relevant_recent_turns=projection.relevant_recent_turns,
+                active_entities=projection.active_entities,
+                open_questions=projection.open_questions,
+                artifact_refs=projection.artifact_refs,
+                conversation_key=_CONVERSATION_KEY,
+                selected_agent_id="DataAgent",
+                locale=projection.locale,
+                token_budget=projection.token_budget,
+                context_truncated=projection.context_truncated,
+            ),
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    )
+
+    assert public_size < private_size
+    assert private_size <= projection.token_budget
 
 
 def test_rebuild_is_deterministic_and_keeps_only_assistant_summaries() -> None:

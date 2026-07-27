@@ -16,6 +16,7 @@ from .models import (
     ArtifactRefV1,
     BusinessContext,
     ContextDelta,
+    ContextEntity,
     ContextProjection,
     PerAgentMemory,
     RoleTaggedTurn,
@@ -31,6 +32,72 @@ class ConservativeTokenEstimator:
 
     def estimate(self, text: str) -> int:
         return max(1, (len(text.encode("utf-8")) + 2) // 3)
+
+
+def _projection_budget_payload(
+    *,
+    current_query: str,
+    intent_kind: str,
+    task_summary: str,
+    relevant_recent_turns: Sequence[RoleTaggedTurn | Mapping[str, str]],
+    active_entities: Sequence[ContextEntity | Mapping[str, object]],
+    open_questions: Sequence[str],
+    artifact_refs: Sequence[ArtifactRefV1 | Mapping[str, object]],
+    conversation_key: UUID,
+    selected_agent_id: str,
+    locale: str,
+    token_budget: int,
+    context_truncated: bool,
+) -> dict[str, object]:
+    """Serialize the exact bounded payload used for projection budgeting."""
+    serialized_turns = [
+        (
+            turn.model_dump(mode="json")
+            if isinstance(turn, RoleTaggedTurn)
+            else dict(turn)
+        )
+        for turn in relevant_recent_turns
+    ]
+    user_turns: list[str] = []
+    assistant_summaries: list[str] = []
+    for turn in serialized_turns:
+        role = turn["role"]
+        content = turn["content"]
+        if role == "user":
+            user_turns.append(content)
+        else:
+            assistant_summaries.append(content)
+    return {
+        "current_query": current_query,
+        "intent_kind": intent_kind,
+        "task_summary": task_summary,
+        "relevant_recent_turns": serialized_turns,
+        "relevant_user_turns": user_turns,
+        "relevant_assistant_summaries": assistant_summaries,
+        "active_entities": [
+            (
+                item.model_dump(mode="json")
+                if isinstance(item, ContextEntity)
+                else dict(item)
+            )
+            for item in active_entities
+        ],
+        "open_questions": list(open_questions),
+        "artifact_refs": [
+            (
+                item.model_dump(mode="json")
+                if isinstance(item, ArtifactRefV1)
+                else dict(item)
+            )
+            for item in artifact_refs
+        ],
+        "agent_thread_id": agent_thread_id(
+            conversation_key, selected_agent_id
+        ),
+        "locale": locale,
+        "token_budget": token_budget,
+        "context_truncated": context_truncated,
+    }
 
 
 def agent_thread_id(conversation_key: UUID, agent_id: str) -> str:
@@ -77,26 +144,22 @@ def build_context_projection(
 
     def payload() -> dict[str, object]:
         """Build the complete serialized wrapper used for every estimate."""
-        return {
-            "current_query": result.get("current_query", ""),
-            "intent_kind": result.get("intent_kind", "follow_up"),
-            "task_summary": result.get("task_summary", ""),
-            "relevant_user_turns": result.get("relevant_user_turns", []),
-            "relevant_assistant_summaries": result.get(
-                "relevant_assistant_summaries", []
-            ),
-            "active_entities": result.get("active_entities", []),
-            "open_questions": result.get("open_questions", []),
-            "artifact_refs": result.get("artifact_refs", []),
-            "agent_thread_id": agent_thread_id(
-                conversation_key, selected_agent_id
-            ),
-            "locale": locale,
-            "token_budget": budget,
+        return _projection_budget_payload(
+            current_query=str(result.get("current_query", "")),
+            intent_kind=str(result.get("intent_kind", "follow_up")),
+            task_summary=str(result.get("task_summary", "")),
+            relevant_recent_turns=result.get("relevant_recent_turns", []),
+            active_entities=result.get("active_entities", []),
+            open_questions=result.get("open_questions", []),
+            artifact_refs=result.get("artifact_refs", []),
+            conversation_key=conversation_key,
+            selected_agent_id=selected_agent_id,
+            locale=locale,
+            token_budget=budget,
             # False is one byte larger than true in JSON, so this reserves the
             # maximum size for the final boolean metadata field.
-            "context_truncated": False,
-        }
+            context_truncated=False,
+        )
 
     def fits() -> bool:
         return (
@@ -146,20 +209,6 @@ def build_context_projection(
         else:
             result.pop(name, None)
 
-    def sync_recent_turn_compatibility() -> None:
-        turns = result.get("relevant_recent_turns", [])
-        user_turns: list[str] = []
-        assistant_summaries: list[str] = []
-        for turn in turns:
-            role = turn["role"]
-            content = turn["content"]
-            if role == "user":
-                user_turns.append(content)
-            else:
-                assistant_summaries.append(content)
-        result["relevant_user_turns"] = user_turns
-        result["relevant_assistant_summaries"] = assistant_summaries
-
     admit(
         "active_entities",
         [item.model_dump(mode="json") for item in context.active_entities],
@@ -177,7 +226,6 @@ def build_context_projection(
     admitted_turns: list[dict[str, str]] = []
     for turn in [item.model_dump(mode="json") for item in recent_turns]:
         result["relevant_recent_turns"] = [*admitted_turns, turn]
-        sync_recent_turn_compatibility()
         if fits():
             admitted_turns.append(turn)
         else:
@@ -187,11 +235,8 @@ def build_context_projection(
         truncated = True
     if admitted_turns:
         result["relevant_recent_turns"] = admitted_turns
-        sync_recent_turn_compatibility()
     else:
         result.pop("relevant_recent_turns", None)
-        result.pop("relevant_user_turns", None)
-        result.pop("relevant_assistant_summaries", None)
     envelope_ids = {item.artifact_id for item in authorized_artifacts}
     artifacts = [
         item.model_dump(mode="json")
@@ -216,7 +261,20 @@ def build_context_projection(
     if (
         estimator.estimate(
             json.dumps(
-                projection.model_dump(mode="json"),
+                _projection_budget_payload(
+                    current_query=projection.current_query,
+                    intent_kind=projection.intent_kind,
+                    task_summary=projection.task_summary,
+                    relevant_recent_turns=projection.relevant_recent_turns,
+                    active_entities=projection.active_entities,
+                    open_questions=projection.open_questions,
+                    artifact_refs=projection.artifact_refs,
+                    conversation_key=conversation_key,
+                    selected_agent_id=selected_agent_id,
+                    locale=projection.locale,
+                    token_budget=projection.token_budget,
+                    context_truncated=projection.context_truncated,
+                ),
                 ensure_ascii=False,
                 sort_keys=True,
             )
