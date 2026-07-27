@@ -29,6 +29,8 @@ jobs:
           python-version: "3.12"
       - name: Install minimum direct dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg libcairo2-dev
           python -m pip install --upgrade pip
           pip install uv
           uv pip install --system --resolution lowest-direct -e ".[dev,demo]"
@@ -84,7 +86,7 @@ jobs:
           pip install uv
           uv pip install --system -e ".[dev]"
       - name: Lint with ruff
-        run: ruff check .
+        run: uv run --locked --extra dev ruff check .
 
   flake8:
     runs-on: ubuntu-latest
@@ -163,7 +165,8 @@ jobs:
           uv pip install --system -e ".[dev,demo]"
       - name: Analyse code and exact exemptions with pylint
         run: >-
-          uv run python scripts/check_static_analysis_exemptions.py
+          uv run --locked --extra dev python
+          scripts/check_static_analysis_exemptions.py
           check-pylint
           --python-version "${{ matrix.python-version }}"
           --files-from-git
@@ -183,11 +186,13 @@ jobs:
           uv pip install --system -e ".[dev,demo]"
       - name: Check static-analysis registry
         run: >-
-          uv run python scripts/check_static_analysis_exemptions.py
+          uv run --locked --extra dev python
+          scripts/check_static_analysis_exemptions.py
           check --scope full
       - name: Check generated static-analysis ledger
         run: >-
-          uv run python scripts/check_static_analysis_exemptions.py
+          uv run --locked --extra dev python
+          scripts/check_static_analysis_exemptions.py
           render-docs --check
 
   pytest:
@@ -204,6 +209,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
           python -m pip install --upgrade pip
           pip install uv
           uv pip install --system -e ".[dev]"
