@@ -1,0 +1,27 @@
+{
+  "agent": "deep_genome",
+  "contract": "deep_genome_bounded_reports",
+  "id": "run-fixture-deep-genome-1",
+  "result": {
+    "execution": {
+      "artifacts": [
+        {"role": "scientific_report", "state": "intermediate"},
+        {"role": "scientific_report", "state": "final"}
+      ],
+      "report": {
+        "final": {"sections": ["summary"]},
+        "intermediate": {"sections": ["progress"]},
+        "max_sections": 8
+      }
+    },
+    "formatted": {
+      "answer": "Synthetic bounded report.",
+      "follow_up_questions": [],
+      "metadata": {},
+      "references": [],
+      "tabular": {}
+    }
+  },
+  "status": "succeeded",
+  "task_ids": ["task-fixture-deep-genome-1"]
+}

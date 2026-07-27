@@ -29,6 +29,35 @@ pytestmark = pytest.mark.server
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _A2UI_ROOT = _REPO_ROOT / "docs" / "contracts" / "a2ui"
+_HTTP_ROOT = _REPO_ROOT / "docs" / "contracts" / "http"
+
+_EXPECTED_HTTP_GOLDENS = frozenset(
+    {
+        "chat_terminal_succeeded.json",
+        "review_terminal_succeeded.json",
+        "review_round2_input_required.json",
+        "error_400_run_widget_payload_mismatch.json",
+        "error_403_action_flag_off.json",
+        "error_404_owner_safe_not_found.json",
+        "error_409_already_handled.json",
+        "error_422_capability_validation.json",
+        "a2ui_request_64k_exact.json",
+        "a2ui_request_64k_plus_one.json",
+        "a2ui_response_1m_exact.json",
+        "a2ui_response_1m_plus_one.json",
+        "streamed_run_accumulated_answer.json",
+        "deep_genome_bounded_reports.json",
+        "remote_partial_acceptance.json",
+        "remote_registry_degraded.json",
+    }
+)
+
+_FORBIDDEN_HTTP_GOLDEN_TEXT = (
+    "Bearer ",
+    "/home/",
+    "SELECT ",
+    "PROVIDER-PAYLOAD",
+)
 
 _EXPECTED_ERRORS: dict[str, tuple[int, str]] = {
     "flag_off_403.json": (403, "a2ui disabled"),
@@ -442,3 +471,16 @@ def test_multi_turn_input_required_uses_fresh_surface_id() -> None:
     first_id = round_one["result"]["interrupt"]["draft"]["a2ui"]["surface_id"]
     second_id = round_two["result"]["interrupt"]["draft"]["a2ui"]["surface_id"]
     assert first_id != second_id
+
+
+def test_http_golden_set_is_complete_and_redacted() -> None:
+    """HTTP evidence goldens are complete JSON bodies without secrets."""
+    files = {item.name for item in _HTTP_ROOT.glob("*.json")}
+    assert files == _EXPECTED_HTTP_GOLDENS
+    for path in sorted(_HTTP_ROOT.glob("*.json")):
+        payload = _load(path)
+        assert isinstance(payload, dict)
+        assert payload["contract"] == path.stem
+        serialized = json.dumps(payload, ensure_ascii=False)
+        for forbidden in _FORBIDDEN_HTTP_GOLDEN_TEXT:
+            assert forbidden not in serialized

@@ -1,0 +1,9 @@
+{
+  "contract": "a2ui_request_64k_plus_one",
+  "request": {
+    "body_bytes": 65537,
+    "limit_bytes": 65536,
+    "result": "rejected"
+  },
+  "status_code": 413
+}

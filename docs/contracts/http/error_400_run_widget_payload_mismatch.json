@@ -1,0 +1,11 @@
+{
+  "contract": "error_400_run_widget_payload_mismatch",
+  "error": {
+    "code": "invalid_argument",
+    "message": "A2UI widget payload does not match the run surface.",
+    "request_id": "request-fixture-400",
+    "retryable": false,
+    "stage": "a2ui_validation"
+  },
+  "status_code": 400
+}

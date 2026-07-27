@@ -1,0 +1,11 @@
+{
+  "contract": "error_409_already_handled",
+  "error": {
+    "code": "run_state_conflict",
+    "message": "run input has already been handled",
+    "request_id": "request-fixture-409",
+    "retryable": false,
+    "stage": "a2ui_action"
+  },
+  "status_code": 409
+}

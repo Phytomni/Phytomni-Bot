@@ -1,0 +1,26 @@
+{
+  "agent": "chat",
+  "contract": "chat_terminal_succeeded",
+  "id": "run-fixture-1",
+  "object": "agent.run",
+  "result": {
+    "execution": {
+      "artifacts": [],
+      "diagnostics": [],
+      "output_dirs": [],
+      "report": null,
+      "tasks": [],
+      "tracking": {"degraded": false},
+      "warnings": []
+    },
+    "formatted": {
+      "answer": "Synthetic terminal answer.",
+      "follow_up_questions": [],
+      "metadata": {},
+      "references": [],
+      "tabular": {}
+    }
+  },
+  "status": "succeeded",
+  "task_ids": []
+}

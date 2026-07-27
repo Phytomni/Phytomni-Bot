@@ -1,0 +1,11 @@
+{
+  "contract": "error_404_owner_safe_not_found",
+  "error": {
+    "code": "not_found",
+    "message": "run not found",
+    "request_id": "request-fixture-404",
+    "retryable": false,
+    "stage": "run_lookup"
+  },
+  "status_code": 404
+}

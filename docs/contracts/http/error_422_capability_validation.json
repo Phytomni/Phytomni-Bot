@@ -1,0 +1,11 @@
+{
+  "contract": "error_422_capability_validation",
+  "error": {
+    "code": "invalid_request",
+    "message": "agent capability validation failed",
+    "request_id": "request-fixture-422",
+    "retryable": false,
+    "stage": "capability_validation"
+  },
+  "status_code": 422
+}

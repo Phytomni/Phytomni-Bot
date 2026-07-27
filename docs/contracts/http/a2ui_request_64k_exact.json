@@ -1,0 +1,9 @@
+{
+  "contract": "a2ui_request_64k_exact",
+  "request": {
+    "body_bytes": 65536,
+    "limit_bytes": 65536,
+    "result": "accepted"
+  },
+  "status_code": 202
+}

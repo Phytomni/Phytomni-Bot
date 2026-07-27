@@ -1,0 +1,26 @@
+{
+  "agent": "review",
+  "contract": "review_terminal_succeeded",
+  "id": "run-fixture-review-1",
+  "object": "agent.run",
+  "result": {
+    "execution": {
+      "artifacts": [],
+      "diagnostics": [],
+      "output_dirs": [],
+      "report": null,
+      "tasks": [],
+      "tracking": {"degraded": false},
+      "warnings": []
+    },
+    "formatted": {
+      "answer": "Synthetic review answer.",
+      "follow_up_questions": [],
+      "metadata": {},
+      "references": [],
+      "tabular": {}
+    }
+  },
+  "status": "succeeded",
+  "task_ids": []
+}

@@ -1,0 +1,26 @@
+{
+  "contract": "streamed_run_accumulated_answer",
+  "id": "run-fixture-stream-1",
+  "object": "agent.run",
+  "result": {
+    "execution": {
+      "artifacts": [],
+      "diagnostics": [],
+      "output_dirs": [],
+      "report": null,
+      "tasks": [],
+      "tracking": {"degraded": false},
+      "warnings": []
+    },
+    "formatted": {
+      "answer": "Synthetic accumulated answer.",
+      "follow_up_questions": [],
+      "metadata": {},
+      "references": [],
+      "tabular": {}
+    }
+  },
+  "status": "succeeded",
+  "stream_events": 3,
+  "task_ids": []
+}

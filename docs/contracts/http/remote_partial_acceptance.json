@@ -1,0 +1,29 @@
+{
+  "agent": "research",
+  "contract": "remote_partial_acceptance",
+  "degraded_tracking": true,
+  "id": null,
+  "object": "agent.run",
+  "result": {
+    "execution": {
+      "artifacts": [],
+      "diagnostics": [],
+      "output_dirs": [],
+      "report": null,
+      "tasks": ["task-fixture-accepted-1"],
+      "tracking": {"degraded": true},
+      "warnings": [
+        {"code": "run_registry_unavailable", "retryable": false}
+      ]
+    },
+    "formatted": {
+      "answer": "",
+      "follow_up_questions": [],
+      "metadata": {},
+      "references": [],
+      "tabular": {}
+    }
+  },
+  "status": "running",
+  "task_ids": ["task-fixture-accepted-1"]
+}

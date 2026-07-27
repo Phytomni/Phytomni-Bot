@@ -1,0 +1,29 @@
+{
+  "agent": "review",
+  "contract": "review_round2_input_required",
+  "id": "run-fixture-review-2",
+  "object": "agent.run",
+  "result": {
+    "interrupt": {
+      "draft": {
+        "a2ui": {
+          "catalog_version": "v1.0",
+          "props": {
+            "options": [
+              {"id": "yes", "label": "Yes"},
+              {"id": "no", "label": "No"}
+            ],
+            "title": "Synthetic choice",
+            "multiple": false
+          },
+          "surface_id": "surface-fixture-2",
+          "widget": "choice"
+        }
+      },
+      "thread_id": "run-fixture-review-2"
+    },
+    "status": "input_required"
+  },
+  "status": "input_required",
+  "task_ids": []
+}

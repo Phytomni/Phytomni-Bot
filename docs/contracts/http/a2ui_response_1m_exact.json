@@ -1,0 +1,9 @@
+{
+  "contract": "a2ui_response_1m_exact",
+  "response": {
+    "body_bytes": 1048576,
+    "limit_bytes": 1048576,
+    "result": "accepted"
+  },
+  "status_code": 200
+}
