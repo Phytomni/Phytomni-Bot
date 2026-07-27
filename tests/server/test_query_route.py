@@ -548,6 +548,203 @@ async def test_context_expert_review_follow_up_and_local_revision_use_native_ada
     assert _REVIEW_REPORT not in json.dumps(staged.delta)
 
 
+@pytest.mark.parametrize("scope_change", [False, True])
+@pytest.mark.asyncio
+async def test_context_expert_review_full_graph_uses_candidate_thread(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    scope_change: bool,
+) -> None:
+    """V1 new and scope Review graphs cannot write the stable checkpoint."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    db_path = tmp_path / "context.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+    query = (
+        "Start a new review of maize heat tolerance."
+        if scope_change
+        else "Review maize heat tolerance."
+    )
+    if scope_change:
+        envelope = _review_context_envelope(query, turn_id="7")
+        stable_checkpoint: dict[str, Any] = _review_checkpoint_state()
+    else:
+        envelope = _conversation_envelope(
+            turn_id="7",
+            requested_agent_id="ReviewAgent",
+            allowed_agent_ids=["ReviewAgent"],
+        )
+        envelope["current_message"]["content"] = query
+        envelope["history_delta"] = [
+            {"turn_id": "7", "role": "user", "content": query}
+        ]
+        stable_checkpoint = {}
+
+    class FakeApp:
+        def __init__(self) -> None:
+            self.state_reads: list[dict[str, Any]] = []
+            self.states: dict[str, dict[str, Any]] = {}
+            self.updates: list[tuple[dict[str, Any], dict[str, Any]]] = []
+
+        async def aget_state(self, config: dict[str, Any]) -> dict[str, Any]:
+            self.state_reads.append(config)
+            thread_id = config["configurable"]["thread_id"]
+            return self.states.get(thread_id, stable_checkpoint)
+
+        async def aupdate_state(
+            self, config: dict[str, Any], *, values: dict[str, Any]
+        ) -> None:
+            self.updates.append((config, values))
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.app = FakeApp()
+            self.graph_threads: list[str | None] = []
+
+        async def arun(self, **kwargs: Any) -> dict[str, Any]:
+            thread_id = kwargs["thread_id"]
+            self.graph_threads.append(thread_id)
+            self.app.states[thread_id] = {
+                "original_user_query": query,
+                "summary_content": "# Candidate report\n\nCandidate evidence.",
+                "research_dimensions": ["Evidence"],
+                "report_artifact_id": "report-1",
+                "report_revision": 0,
+            }
+            return {
+                "choices": [
+                    {"message": {"content": "Candidate public answer."}}
+                ],
+                "phytomni_state": self.app.states[thread_id],
+            }
+
+    fake_agent = FakeAgent()
+    _patch_review_runtime(monkeypatch, fake_agent)
+    monkeypatch.setattr(
+        api_app,
+        "_run_review_with_interrupt",
+        lambda **_kwargs: pytest.fail(
+            "V1 Review full graph must use the native candidate path"
+        ),
+    )
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["ReviewAgent"],
+            "conversation": envelope,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["result"]["formatted"]["answer"] == (
+        "Candidate public answer."
+    )
+    stable_thread = context_agent_thread_id(
+        UUID(envelope["conversation_key"]), "ReviewAgent"
+    )
+    assert len(fake_agent.graph_threads) == 1
+    candidate_thread = fake_agent.graph_threads[0]
+    assert candidate_thread is not None
+    assert candidate_thread != stable_thread
+    assert candidate_thread.startswith(f"{stable_thread}:candidate:")
+    assert fake_agent.app.state_reads == [
+        {"configurable": {"thread_id": stable_thread}}
+    ]
+    assert fake_agent.app.updates == []
+    assert (
+        fake_agent.app.states.get(stable_thread, stable_checkpoint)
+        == stable_checkpoint
+    )
+    staged = ConversationContextStore(str(db_path)).load_turn(
+        envelope["conversation_key"], envelope["turn_id"]
+    )
+    assert staged is not None
+    assert staged.state == "staged"
+    assert staged.delta is not None
+
+
+@pytest.mark.asyncio
+async def test_context_expert_review_graph_clarification_fails_without_staging(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A full-graph Review clarification cannot become a healthy stage."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    db_path = tmp_path / "context.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+    query = "Review maize heat tolerance."
+    envelope = _conversation_envelope(
+        turn_id="8",
+        requested_agent_id="ReviewAgent",
+        allowed_agent_ids=["ReviewAgent"],
+    )
+    envelope["current_message"]["content"] = query
+    envelope["history_delta"] = [
+        {"turn_id": "8", "role": "user", "content": query}
+    ]
+
+    class FakeApp:
+        def __init__(self) -> None:
+            self.updates: list[dict[str, Any]] = []
+            self.deleted: list[str] = []
+
+        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
+            return {}
+
+        async def aupdate_state(
+            self, _config: dict[str, Any], *, values: dict[str, Any]
+        ) -> None:
+            self.updates.append(values)
+
+        async def adelete_thread(self, thread_id: str) -> None:
+            self.deleted.append(thread_id)
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.app = FakeApp()
+            self.graph_calls = 0
+
+        async def arun(self, **_kwargs: Any) -> dict[str, Any]:
+            self.graph_calls += 1
+            raise review_agent.ReviewClarificationError("graph clarification")
+
+    fake_agent = FakeAgent()
+    _patch_review_runtime(monkeypatch, fake_agent)
+    monkeypatch.setattr(
+        api_app,
+        "_run_review_with_interrupt",
+        lambda **_kwargs: pytest.fail(
+            "V1 Review must use the native graph invocation seam"
+        ),
+    )
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["ReviewAgent"],
+            "conversation": envelope,
+        },
+    )
+
+    assert response.status_code == 409
+    assert fake_agent.graph_calls == 1
+    assert fake_agent.app.updates == []
+    staged = ConversationContextStore(str(db_path)).load_turn(
+        envelope["conversation_key"], envelope["turn_id"]
+    )
+    assert staged is not None
+    assert staged.state == "failed"
+    assert staged.delta is None
+
+
 @pytest.mark.asyncio
 async def test_context_expert_review_empty_local_revision_does_not_settle(
     api_client: httpx.AsyncClient,
@@ -941,9 +1138,9 @@ async def test_context_expert_explicit_chat_preserves_private_thread_only_for_pr
             "choices": [
                 {
                     "message": {
-                        "content": "Chat answer"
-                        if len(captured) == 1
-                        else "[]"
+                        "content": (
+                            "Chat answer" if len(captured) == 1 else "[]"
+                        )
                     }
                 }
             ]
@@ -1291,9 +1488,9 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
     staged = store.load_turn(str(UUID(envelope["conversation_key"])), "3")
     assert staged is not None
     assert staged.delta is not None
-    assert [
-        item["label"] for item in staged.delta["active_entities"]
-    ] == ["OsDREB1"]
+    assert [item["label"] for item in staged.delta["active_entities"]] == [
+        "OsDREB1"
+    ]
     assert "full report body" not in json.dumps(staged.delta)
     assert "OsDREB1 improves drought tolerance [1]." in json.dumps(
         staged.delta
@@ -1456,7 +1653,9 @@ async def test_context_expert_knowledge_explicit_switch_replaces_topic_after_suc
         requested_agent_id="KnowledgeAgent",
         allowed_agent_ids=["KnowledgeAgent"],
     )
-    first["current_message"]["content"] = "Tell me about OsDREB1 drought evidence."
+    first["current_message"][
+        "content"
+    ] = "Tell me about OsDREB1 drought evidence."
     first["history_delta"] = [
         {
             "turn_id": "1",
@@ -1497,7 +1696,9 @@ async def test_context_expert_knowledge_explicit_switch_replaces_topic_after_suc
     )
     second["ledger_cursor"] = 2
     second["ledger_version"] = "c" * 64
-    second["current_message"]["content"] = "Tell me about OsNAC6 drought evidence."
+    second["current_message"][
+        "content"
+    ] = "Tell me about OsNAC6 drought evidence."
     second["history_delta"] = [
         {
             "turn_id": "2",
@@ -1557,7 +1758,10 @@ async def test_context_expert_knowledge_failed_switch_keeps_prior_topic(
         arguments: dict[str, Any],
         **_kwargs: Any,
     ) -> tuple[dict[str, Any], int]:
-        if arguments["user_query"] == "Tell me about OsDREB1 drought evidence.":
+        if (
+            arguments["user_query"]
+            == "Tell me about OsDREB1 drought evidence."
+        ):
             return (
                 {
                     "id": f"{agent}-run",
@@ -1595,7 +1799,9 @@ async def test_context_expert_knowledge_failed_switch_keeps_prior_topic(
         requested_agent_id="KnowledgeAgent",
         allowed_agent_ids=["KnowledgeAgent"],
     )
-    first["current_message"]["content"] = "Tell me about OsDREB1 drought evidence."
+    first["current_message"][
+        "content"
+    ] = "Tell me about OsDREB1 drought evidence."
     first["history_delta"] = [
         {
             "turn_id": "1",
@@ -1630,7 +1836,9 @@ async def test_context_expert_knowledge_failed_switch_keeps_prior_topic(
     )
     second["ledger_cursor"] = 2
     second["ledger_version"] = "c" * 64
-    second["current_message"]["content"] = "Tell me about OsNAC6 drought evidence."
+    second["current_message"][
+        "content"
+    ] = "Tell me about OsNAC6 drought evidence."
     second["history_delta"] = [
         {
             "turn_id": "2",

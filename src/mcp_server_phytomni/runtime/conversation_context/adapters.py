@@ -151,6 +151,7 @@ def review_agent_invocation(
     projection: ContextProjection,
     *,
     selected_arguments: Mapping[str, Any] | None = None,
+    turn_id: str | None = None,
 ) -> ContextAgentInvocation:
     """Project Review context into private bounded conversation state."""
     arguments = dict(selected_arguments or {})
@@ -164,6 +165,7 @@ def review_agent_invocation(
             projection,
             snapshot=checkpoint,
             allow_unresolved_section=checkpoint is None,
+            turn_id=turn_id,
         )
     except ReviewClarificationError as exc:
         return ContextAgentInvocation(
@@ -180,6 +182,9 @@ def review_agent_invocation(
             "review_adapter": adapter,
             "review_operation": prepared["operation"].value,
             "review_projection": projection,
+            "review_turn_id": turn_id,
+            "review_stable_thread_id": adapter.stable_thread_id,
+            "review_candidate_thread_id": adapter.candidate_thread_id,
         },
     )
 
@@ -273,11 +278,13 @@ class ConversationContextExecutor:
             return False
         if not accepted:
             adapter.mark_failed()
+            await adapter.discard_pending_candidate()
             return True
         try:
             await adapter.settle_async(True)
         except BaseException:
             adapter.mark_failed()
+            await adapter.discard_pending_candidate()
             raise
         return True
 
@@ -307,11 +314,13 @@ class ConversationContextExecutor:
                     await self.defer_review_settlement(envelope, adapter)
                 else:
                     adapter.mark_failed()
+                    await adapter.discard_pending_candidate()
             return prepared
         except BaseException:
             adapter = self._review_adapter.get()
             if adapter is not None:
                 adapter.mark_failed()
+                await adapter.discard_pending_candidate()
             raise
         finally:
             self._review_adapter.reset(review_token)
@@ -360,6 +369,7 @@ class ConversationContextExecutor:
             dispatch = review_agent_invocation(
                 projection,
                 selected_arguments=selected_arguments,
+                turn_id=envelope.turn_id,
             )
         else:
             dispatch = canonical_agent_invocation(

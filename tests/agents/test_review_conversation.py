@@ -392,6 +392,20 @@ def test_review_invocation_keeps_operation_and_checkpoint_private() -> None:
     assert dispatch.private_agent_state["review_projection"] is projection
 
 
+def test_review_invocation_derives_candidate_thread_from_turn_id() -> None:
+    """A new Review graph turn receives a deterministic private candidate thread."""
+    projection = _projection("Review maize heat tolerance", active=False)
+    dispatch = review_agent_invocation(projection, turn_id="turn-7")
+
+    adapter = dispatch.private_agent_state["review_adapter"]
+    assert adapter.operation is ReviewConversationOperation.NEW_REVIEW
+    assert adapter.stable_thread_id == _THREAD_ID
+    assert adapter.candidate_thread_id is not None
+    assert adapter.execution_thread_id == adapter.candidate_thread_id
+    assert dispatch.agent_thread_id == _THREAD_ID
+    assert dispatch.private_agent_state["review_turn_id"] == "turn-7"
+
+
 def test_scope_change_stages_focus_until_successful_settlement() -> None:
     """A failed scope switch leaves the prior Review checkpoint active."""
     snapshot = extract_review_checkpoint(_checkpoint_state())
@@ -412,6 +426,34 @@ def test_scope_change_stages_focus_until_successful_settlement() -> None:
     assert adapter.settle(True) == 5
     assert adapter.active_snapshot is not None
     assert adapter.active_snapshot.research_question == query
+
+
+@pytest.mark.parametrize("answer", ["", "No answer generated."])
+def test_capture_result_does_not_rescue_invalid_public_answer_with_stale_report(
+    answer: str,
+) -> None:
+    """A stale private report cannot make an invalid current result stageable."""
+    snapshot = extract_review_checkpoint(_checkpoint_state())
+    assert snapshot is not None
+    adapter = ReviewConversationAdapter()
+    adapter.prepare(
+        _projection("What evidence supports that claim?"), snapshot=snapshot
+    )
+
+    adapter.capture_result(
+        {
+            "choices": [{"message": {"content": answer}}],
+            "phytomni_state": {
+                "summary_content": "A stale report from an earlier turn.",
+                "original_user_query": "Review drought tolerance in rice",
+                "report_revision": 4,
+            },
+        }
+    )
+
+    assert adapter.settlement_ready is False
+    assert adapter.delta().summary_update is not None
+    assert adapter.report_revision == 4
 
 
 @pytest.mark.asyncio
@@ -465,6 +507,33 @@ async def test_review_wrapper_answers_follow_up_without_running_the_graph(
 
     assert result["choices"][0]["message"]["content"] == "Bounded answer."
     assert _FULL_REPORT not in captured["prompt"]
+
+
+@pytest.mark.asyncio
+async def test_review_wrapper_marks_failed_when_full_graph_returns_clarification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Full-graph clarification must clear the prepared success flag."""
+    projection = _projection("Review drought tolerance in rice", active=False)
+    adapter = ReviewConversationAdapter()
+    adapter.prepare(projection)
+
+    class FakeAgent:
+        async def arun(self, **_kwargs: Any) -> dict[str, Any]:
+            raise ReviewClarificationError("graph clarification")
+
+    monkeypatch.setattr(
+        review_agent, "get_cached_agent", lambda *_args: FakeAgent()
+    )
+    result = await review_agent.review_agent_function(
+        user_query=projection.current_query,
+        thread_id=adapter.execution_thread_id,
+        review_adapter=adapter,
+        review_projection=projection,
+    )
+
+    assert result["choices"][0]["message"]["content"] == "graph clarification"
+    assert adapter.settlement_ready is False
 
 
 @pytest.mark.asyncio
@@ -687,3 +756,253 @@ async def test_executor_defers_review_checkpoint_until_explicit_ack(
     )
     assert fake_agent.app.updates == [{"report_revision": 1}]
     assert accepted_adapter.report_revision == 1
+
+
+@pytest.mark.asyncio
+async def test_new_review_promotes_candidate_only_after_ack_and_reject_discards_it(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+) -> None:
+    """Full-graph state stays on a candidate thread until durable acceptance."""
+    envelope = ConversationEnvelopeV1.model_validate(
+        {
+            "schema_version": 1,
+            "conversation_key": str(_CONVERSATION_KEY),
+            "dialogue_id": str(_CONVERSATION_KEY),
+            "turn_id": "7",
+            "request_id": "request-7",
+            "operation": "append",
+            "mode": "expert",
+            "current_message": {
+                "content": "Review maize heat tolerance",
+                "locale": "en-US",
+            },
+            "requested_agent_id": "ReviewAgent",
+            "allowed_agent_ids": ["ReviewAgent"],
+            "ledger_cursor": 7,
+            "ledger_version": "b" * 64,
+            "base_business_context_version": 0,
+            "history_delta": [
+                {
+                    "turn_id": "7",
+                    "role": "user",
+                    "content": "Review maize heat tolerance",
+                }
+            ],
+            "artifact_refs": [],
+        }
+    )
+    stable_state = _checkpoint_state()
+    candidate_state = {
+        "original_user_query": "Review maize heat tolerance",
+        "summary_content": "# New report\n\nNew evidence.",
+        "research_dimensions": ["Evidence"],
+        "report_artifact_id": "report-1",
+        "report_revision": 0,
+    }
+
+    class FakeApp:
+        def __init__(self) -> None:
+            self.states: dict[str, dict[str, Any]] = {_THREAD_ID: stable_state}
+            self.updates: list[tuple[str, dict[str, Any]]] = []
+            self.deleted: list[str] = []
+
+        async def aget_state(self, config: dict[str, Any]) -> dict[str, Any]:
+            thread_id = config["configurable"]["thread_id"]
+            return self.states.get(thread_id, {})
+
+        async def aupdate_state(
+            self, config: dict[str, Any], *, values: dict[str, Any]
+        ) -> None:
+            thread_id = config["configurable"]["thread_id"]
+            self.updates.append((thread_id, values))
+            self.states.setdefault(thread_id, {}).update(values)
+
+        async def adelete_thread(self, thread_id: str) -> None:
+            self.deleted.append(thread_id)
+            self.states.pop(thread_id, None)
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self.app = FakeApp()
+            self.graph_threads: list[str | None] = []
+
+        async def arun(self, **kwargs: Any) -> dict[str, Any]:
+            self.graph_threads.append(kwargs["thread_id"])
+            self.app.states[kwargs["thread_id"]] = candidate_state.copy()
+            return {
+                "choices": [
+                    {"message": {"content": "Current public answer."}}
+                ],
+                "phytomni_state": candidate_state,
+            }
+
+    fake_agent = FakeAgent()
+    monkeypatch.setattr(
+        review_agent, "get_cached_agent", lambda *_args: fake_agent
+    )
+    projection = _projection(
+        "Start a new review of maize heat tolerance", active=False
+    )
+    adapter = ReviewConversationAdapter()
+    adapter.prepare(projection, turn_id=envelope.turn_id)
+    result = await review_agent.review_agent_function(
+        user_query=projection.current_query,
+        thread_id=adapter.execution_thread_id,
+        review_adapter=adapter,
+        review_projection=projection,
+    )
+
+    assert result["choices"][0]["message"]["content"] == (
+        "Current public answer."
+    )
+    assert fake_agent.graph_threads == [adapter.candidate_thread_id]
+    assert adapter.candidate_thread_id != adapter.stable_thread_id
+    stable_before_ack = dict(fake_agent.app.states[_THREAD_ID])
+
+    executor = ConversationContextExecutor(
+        store_factory=lambda: ConversationContextStore(
+            str(tmp_path / "context.sqlite")
+        ),
+        select_agent=lambda *_args, **_kwargs: pytest.fail(
+            "the direct settlement test must not route"
+        ),
+    )
+    await executor.defer_review_settlement(envelope, adapter)
+    assert fake_agent.app.updates == []
+    assert fake_agent.app.states[_THREAD_ID] == stable_before_ack
+    assert (
+        await executor.acknowledge_review_settlement(envelope, accepted=True)
+        is True
+    )
+    assert fake_agent.app.updates[0][0] == _THREAD_ID
+    assert fake_agent.app.states[_THREAD_ID]["summary_content"] == (
+        "# New report\n\nNew evidence."
+    )
+    assert fake_agent.app.states[_THREAD_ID]["report_revision"] == 5
+    assert (
+        await executor.acknowledge_review_settlement(envelope, accepted=True)
+        is False
+    )
+
+    rejected_envelope = envelope.model_copy(update={"turn_id": "8"})
+    rejected_projection = _projection(
+        "Start a new review of barley heat tolerance", active=False
+    )
+    rejected_adapter = ReviewConversationAdapter()
+    rejected_adapter.prepare(rejected_projection, turn_id="8")
+    await review_agent.review_agent_function(
+        user_query=rejected_projection.current_query,
+        thread_id=rejected_adapter.execution_thread_id,
+        review_adapter=rejected_adapter,
+        review_projection=rejected_projection,
+    )
+    rejected_candidate = rejected_adapter.candidate_thread_id
+    assert rejected_candidate is not None
+    await executor.defer_review_settlement(rejected_envelope, rejected_adapter)
+    assert (
+        await executor.acknowledge_review_settlement(
+            rejected_envelope, accepted=False
+        )
+        is True
+    )
+    assert fake_agent.app.states[_THREAD_ID]["report_revision"] == 5
+    assert rejected_candidate in fake_agent.app.deleted
+
+
+@pytest.mark.asyncio
+async def test_failed_review_ack_discards_candidate_without_advancing_stable_state(
+    tmp_path: Any,
+) -> None:
+    """A lost promotion acknowledgement cannot advance the active checkpoint."""
+    stable_state = _checkpoint_state()
+    candidate_state = {
+        "original_user_query": "Review maize heat tolerance",
+        "summary_content": "# Candidate report\n\nCandidate evidence.",
+        "research_dimensions": ["Evidence"],
+        "report_artifact_id": "report-1",
+        "report_revision": 4,
+    }
+
+    class FailingApp:
+        def __init__(self) -> None:
+            self.states = {_THREAD_ID: dict(stable_state)}
+            self.updates: list[str] = []
+            self.deleted: list[str] = []
+
+        async def aget_state(self, config: dict[str, Any]) -> dict[str, Any]:
+            thread_id = config["configurable"]["thread_id"]
+            return self.states.get(thread_id, candidate_state)
+
+        async def aupdate_state(
+            self, config: dict[str, Any], *, values: dict[str, Any]
+        ) -> None:
+            self.updates.append(config["configurable"]["thread_id"])
+            raise RuntimeError("ledger acknowledgement lost")
+
+        async def adelete_thread(self, thread_id: str) -> None:
+            self.deleted.append(thread_id)
+
+    class FailingAgent:
+        def __init__(self) -> None:
+            self.app = FailingApp()
+
+    projection = _projection(
+        "Start a new review of maize heat tolerance", active=True
+    )
+    adapter = ReviewConversationAdapter()
+    adapter.prepare(projection, turn_id="9")
+    agent = FailingAgent()
+    await adapter.prepare_from_agent(projection, agent, _THREAD_ID)
+    adapter.capture_result(
+        {
+            "choices": [{"message": {"content": "Candidate answer."}}],
+            "phytomni_state": candidate_state,
+        }
+    )
+    stable_before_ack = dict(agent.app.states[_THREAD_ID])
+
+    executor = ConversationContextExecutor(
+        store_factory=lambda: ConversationContextStore(
+            str(tmp_path / "context.sqlite")
+        ),
+        select_agent=lambda *_args, **_kwargs: pytest.fail(
+            "the direct settlement test must not route"
+        ),
+    )
+    envelope = ConversationEnvelopeV1.model_validate(
+        {
+            "schema_version": 1,
+            "conversation_key": str(_CONVERSATION_KEY),
+            "dialogue_id": str(_CONVERSATION_KEY),
+            "turn_id": "9",
+            "request_id": "request-9",
+            "operation": "append",
+            "mode": "expert",
+            "current_message": {
+                "content": projection.current_query,
+                "locale": "en-US",
+            },
+            "requested_agent_id": "ReviewAgent",
+            "allowed_agent_ids": ["ReviewAgent"],
+            "ledger_cursor": 9,
+            "ledger_version": "c" * 64,
+            "base_business_context_version": 0,
+            "history_delta": [],
+            "artifact_refs": [],
+        }
+    )
+    await executor.defer_review_settlement(envelope, adapter)
+
+    with pytest.raises(RuntimeError, match="acknowledgement lost"):
+        await executor.acknowledge_review_settlement(envelope, accepted=True)
+
+    assert agent.app.states[_THREAD_ID] == stable_before_ack
+    assert agent.app.updates == [_THREAD_ID]
+    assert adapter.report_revision == 4
+    assert adapter.settlement_ready is False
+    assert adapter.candidate_thread_id in agent.app.deleted
+    assert (
+        await executor.acknowledge_review_settlement(envelope, accepted=True)
+        is False
+    )

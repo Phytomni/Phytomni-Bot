@@ -985,12 +985,13 @@ async def review_agent_function(
         ),
     )
     if isinstance(review_adapter, ReviewConversationAdapter):
-        if review_projection is not None and review_adapter.snapshot is None:
+        if review_projection is not None:
             try:
                 await review_adapter.prepare_from_agent(
                     review_projection,
                     agent,
-                    thread_id or review_projection.agent_thread_id,
+                    review_adapter.stable_thread_id
+                    or review_projection.agent_thread_id,
                 )
             except ReviewClarificationError as exc:
                 review_adapter.mark_failed()
@@ -1017,14 +1018,21 @@ async def review_agent_function(
             else review_operation
         )
     try:
+        execution_thread_id = thread_id
+        if isinstance(review_adapter, ReviewConversationAdapter):
+            execution_thread_id = (
+                review_adapter.execution_thread_id or thread_id
+            )
         result = await agent.arun(
             user_query=user_query,
             obs_file_list=obs_file_list or [],
-            thread_id=thread_id,
+            thread_id=execution_thread_id,
             locale=effective_locale,
             review_operation=review_operation,
         )
     except ReviewClarificationError as exc:
+        if isinstance(review_adapter, ReviewConversationAdapter):
+            review_adapter.mark_failed()
         return review_clarification_result(str(exc))
     if isinstance(review_adapter, ReviewConversationAdapter):
         review_adapter.capture_result(result)

@@ -10,6 +10,7 @@ not put the full report back into a prompt or shared conversation context.
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import re
@@ -207,6 +208,14 @@ def _bounded_items(
 def _slug(value: str) -> str:
     """Make a stable, human-readable section identifier."""
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+
+
+def _candidate_thread_id(stable_thread_id: str, turn_id: str) -> str:
+    """Derive a deterministic isolated checkpoint thread for one turn."""
+    digest = hashlib.sha256(
+        f"review-candidate-v1:{stable_thread_id}:{turn_id}".encode()
+    ).hexdigest()[:32]
+    return f"{stable_thread_id}:candidate:{digest}"
 
 
 def _state_values(state: object) -> Mapping[str, Any]:
@@ -920,6 +929,11 @@ class ReviewConversationAdapter:
         self._report_document: ReviewReportDocument | None = None
         self._agent: Any | None = None
         self._thread_id: str | None = None
+        self._stable_thread_id: str | None = None
+        self._execution_thread_id: str | None = None
+        self._candidate_thread_id: str | None = None
+        self._turn_id: str | None = None
+        self._candidate_discarded = False
         self._pending_report_text: str | None = None
         self._ordered_doc_list: list[dict[str, Any]] = []
 
@@ -930,8 +944,13 @@ class ReviewConversationAdapter:
         snapshot: ReviewCheckpointSnapshot | Mapping[str, Any] | None = None,
         allow_unresolved_section: bool = False,
         report_document: ReviewReportDocument | None = None,
+        turn_id: str | None = None,
     ) -> dict[str, Any]:
         """Classify and project one Review turn."""
+        self._stable_thread_id = projection.agent_thread_id
+        self._thread_id = self._stable_thread_id
+        if turn_id is not None:
+            self._turn_id = turn_id
         self._ordered_doc_list = []
         if snapshot is not None and not isinstance(
             snapshot, ReviewCheckpointSnapshot
@@ -980,6 +999,23 @@ class ReviewConversationAdapter:
         self._operation_successful = (
             operation is not ReviewConversationOperation.LOCAL_REVISION
         )
+        if (
+            operation
+            in {
+                ReviewConversationOperation.NEW_REVIEW,
+                ReviewConversationOperation.SCOPE_CHANGE,
+            }
+            and self._stable_thread_id is not None
+            and self._turn_id
+        ):
+            self._candidate_thread_id = _candidate_thread_id(
+                self._stable_thread_id, self._turn_id
+            )
+            self._execution_thread_id = self._candidate_thread_id
+        else:
+            self._candidate_thread_id = None
+            self._execution_thread_id = self._stable_thread_id
+        self._candidate_discarded = False
         self._pending_report_text = None
         prompt_context = _prompt_context(snapshot, section=section)
         return {
@@ -1003,19 +1039,34 @@ class ReviewConversationAdapter:
         projection: ContextProjection,
         agent: Any,
         thread_id: str,
+        *,
+        turn_id: str | None = None,
     ) -> dict[str, Any]:
         """Load the private checkpoint, then prepare against its snapshot."""
-        state = await _load_review_checkpoint_state(agent, thread_id)
-        snapshot = extract_review_checkpoint(state)
+        prepared_snapshot = (
+            self._prepared.snapshot if self._prepared is not None else None
+        )
+        prepared_document = self._report_document
+        stable_thread_id = self._stable_thread_id or projection.agent_thread_id
+        if stable_thread_id is None:
+            stable_thread_id = thread_id
         self._agent = agent
-        self._thread_id = thread_id
-        document = extract_review_report_document(state)
+        self._stable_thread_id = stable_thread_id
+        self._thread_id = stable_thread_id
+        if turn_id is not None:
+            self._turn_id = turn_id
+        state = await _load_review_checkpoint_state(agent, stable_thread_id)
+        snapshot = extract_review_checkpoint(state) or prepared_snapshot
+        document = extract_review_report_document(state) or prepared_document
         prepared = self.prepare(
             projection,
             snapshot=snapshot,
             report_document=document,
+            turn_id=self._turn_id,
         )
-        self._ordered_doc_list = _reference_metadata(state)
+        ordered = _reference_metadata(state)
+        if ordered:
+            self._ordered_doc_list = ordered
         return prepared
 
     @property
@@ -1044,8 +1095,32 @@ class ReviewConversationAdapter:
         return self._report_revision
 
     @property
+    def stable_thread_id(self) -> str | None:
+        """Return the active Review checkpoint thread."""
+        return self._stable_thread_id
+
+    @property
+    def candidate_thread_id(self) -> str | None:
+        """Return the isolated checkpoint thread pending acknowledgement."""
+        return self._candidate_thread_id
+
+    @property
+    def execution_thread_id(self) -> str | None:
+        """Return the thread on which this turn may execute its graph."""
+        return self._execution_thread_id
+
+    @property
     def settlement_ready(self) -> bool:
         """Return whether this turn produced a valid candidate for settlement."""
+        if self._prepared is not None and self._prepared.operation in {
+            ReviewConversationOperation.NEW_REVIEW,
+            ReviewConversationOperation.SCOPE_CHANGE,
+        }:
+            return (
+                self._operation_successful
+                and self.candidate_thread_id is not None
+                and self._agent is not None
+            )
         return self._operation_successful
 
     def mark_failed(self) -> None:
@@ -1072,9 +1147,7 @@ class ReviewConversationAdapter:
         )
         document = extract_review_report_document(result.get("phytomni_state"))
         checkpoint = extract_review_checkpoint(result.get("phytomni_state"))
-        if not _usable_response_text(answer) and (
-            document is None or not _usable_response_text(document.text)
-        ):
+        if not _usable_response_text(answer):
             self.mark_failed()
             return
         self._captured_result = {
@@ -1126,25 +1199,99 @@ class ReviewConversationAdapter:
 
     async def settle_async(self, success: bool) -> int:
         """Settle the candidate and persist private report state when available."""
+        prepared = self._prepared
+        if prepared is None:
+            raise RuntimeError("prepare must run before settle_async")
         if not success or not self._operation_successful:
             return self.settle(False)
         if self._settled:
             return self._report_revision
+        next_revision = self._report_revision + 1
+        if prepared.operation in {
+            ReviewConversationOperation.NEW_REVIEW,
+            ReviewConversationOperation.SCOPE_CHANGE,
+        }:
+            if self.candidate_thread_id is None:
+                raise RuntimeError(
+                    "Review graph settlement requires a turn-scoped candidate"
+                )
+            await self._promote_candidate(next_revision)
+        else:
+            await self._update_stable_checkpoint(next_revision)
+        return self.settle(True)
+
+    async def _update_stable_checkpoint(self, revision: int) -> None:
+        """Persist a bounded follow-up or local revision on the active thread."""
         app = getattr(self._agent, "app", None)
         updater = cast(
             Callable[..., Awaitable[Any]] | None,
             getattr(app, "aupdate_state", None),
         )
-        if callable(updater) and self._thread_id is not None:
-            values: dict[str, Any] = {
-                "report_revision": self._report_revision + 1
-            }
-            if self._pending_report_text is not None:
-                values["summary_content"] = self._pending_report_text
-            await updater(
-                build_runnable_config(self._thread_id), values=values
+        if not callable(updater) or self.stable_thread_id is None:
+            if self._agent is not None:
+                raise RuntimeError(
+                    "Review stable checkpoint cannot be updated"
+                )
+            return
+        values: dict[str, Any] = {"report_revision": revision}
+        if self._pending_report_text is not None:
+            values["summary_content"] = self._pending_report_text
+        await updater(
+            build_runnable_config(self.stable_thread_id), values=values
+        )
+
+    async def _promote_candidate(self, revision: int) -> None:
+        """Copy an isolated graph result to the stable thread after acknowledgement."""
+        if self._agent is None or self.candidate_thread_id is None:
+            raise RuntimeError("Review candidate checkpoint is unavailable")
+        if self.stable_thread_id is None:
+            raise RuntimeError(
+                "Review stable checkpoint thread is unavailable"
             )
-        return self.settle(True)
+        candidate = await _load_review_checkpoint_state(
+            self._agent, self.candidate_thread_id
+        )
+        candidate_values = _state_values(candidate)
+        if (
+            not candidate_values
+            or extract_review_checkpoint(candidate) is None
+        ):
+            raise RuntimeError("Review candidate checkpoint is not promotable")
+        app = getattr(self._agent, "app", None)
+        updater = cast(
+            Callable[..., Awaitable[Any]] | None,
+            getattr(app, "aupdate_state", None),
+        )
+        if not callable(updater):
+            raise ReviewClarificationError(
+                "Review stable checkpoint cannot be promoted."
+            )
+        values = dict(candidate_values)
+        values["report_revision"] = revision
+        if self._pending_report_text is not None:
+            values["summary_content"] = self._pending_report_text
+        await updater(
+            build_runnable_config(self.stable_thread_id), values=values
+        )
+
+    async def discard_pending_candidate(self) -> None:
+        """Delete an unacknowledged candidate without touching active state."""
+        if (
+            self._candidate_discarded
+            or self._agent is None
+            or self.candidate_thread_id is None
+        ):
+            return
+        app = getattr(self._agent, "app", None)
+        deleter = getattr(app, "adelete_thread", None)
+        if not callable(deleter):
+            checkpointer = getattr(self._agent, "checkpointer", None)
+            deleter = getattr(checkpointer, "adelete_thread", None)
+        if callable(deleter):
+            result = deleter(self.candidate_thread_id)
+            if inspect.isawaitable(result):
+                await result
+        self._candidate_discarded = True
 
     def follow_up_prompt(self) -> str:
         """Build the bounded prompt for an existing-claim follow-up."""

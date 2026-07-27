@@ -666,12 +666,17 @@ async def _execute_context_expert(
             adapter = private_agent_state.get("data_adapter")
         elif selected_agent_id == "ReviewAgent":
             adapter = private_agent_state.get("review_adapter")
+        execution_thread_id = dispatch.agent_thread_id
+        if selected_agent_id == "ReviewAgent" and adapter is not None:
+            execution_thread_id = getattr(
+                adapter, "execution_thread_id", execution_thread_id
+            )
         body, status_code = await dependencies.native.invoke_agent_run(
             agent=slug,
             arguments=arguments,
             conversation_messages=dispatch.conversation_messages,
             agent_thread_id=(
-                dispatch.agent_thread_id
+                execution_thread_id
                 if selected_agent_id
                 in {"ChatAgent", "KnowledgeAgent", "DataAgent", "ReviewAgent"}
                 else None
