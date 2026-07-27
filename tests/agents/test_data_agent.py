@@ -234,6 +234,7 @@ async def test_data_agent_arun_invokes_compiled_graph_with_thread_id():
     result = await agent.arun(
         user_query="plant height in rice",
         is_rewrite=False,
+        dialog_id="dialog-stable",
         thread_id="pytest-thread",
     )
 
@@ -244,6 +245,7 @@ async def test_data_agent_arun_invokes_compiled_graph_with_thread_id():
         "user_query": "plant height in rice",
         "is_rewrite": False,
         "locale": "en-US",
+        "dialog_id": "dialog-stable",
         "retrieve_prompt": None,
         "rewrite_query": None,
         "final_response": None,
@@ -283,6 +285,7 @@ async def test_rewrite_nl2sql_uses_dialog_id_as_thread_id(
             self,
             user_query: str,
             is_rewrite: bool = True,
+            dialog_id: str | None = None,
             thread_id: str | None = None,
             locale: str | None = None,
         ) -> dict[str, object]:
@@ -299,6 +302,7 @@ async def test_rewrite_nl2sql_uses_dialog_id_as_thread_id(
             captured["run"] = {
                 "user_query": user_query,
                 "is_rewrite": is_rewrite,
+                "dialog_id": dialog_id,
                 "thread_id": thread_id,
                 "locale": locale,
             }
@@ -340,7 +344,61 @@ async def test_rewrite_nl2sql_uses_dialog_id_as_thread_id(
     assert captured["run"] == {
         "user_query": "plant height in rice",
         "is_rewrite": False,
+        "dialog_id": "dialog-1",
         "thread_id": "dialog-1",
+        "locale": "en-US",
+    }
+
+
+async def test_rewrite_nl2sql_keeps_explicit_thread_and_dialog_ids(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Explicit thread and dialog ids stay distinct when both are provided."""
+    captured: dict[str, Any] = {}
+
+    class FakeDataAgent:
+        def __init__(self, data_config, sensitive_config):
+            del sensitive_config
+            captured["config"] = data_config
+
+        async def arun(
+            self,
+            user_query: str,
+            is_rewrite: bool = True,
+            dialog_id: str | None = None,
+            thread_id: str | None = None,
+            locale: str | None = None,
+        ) -> dict[str, object]:
+            captured["run"] = {
+                "user_query": user_query,
+                "is_rewrite": is_rewrite,
+                "dialog_id": dialog_id,
+                "thread_id": thread_id,
+                "locale": locale,
+            }
+            return {"ok": True}
+
+    def no_cache(name, factory, fingerprint_values=None):
+        del name, fingerprint_values
+        return factory()
+
+    monkeypatch.setattr(data_agent_module, "DataAgent", FakeDataAgent)
+    monkeypatch.setattr(data_agent_module, "get_cached_agent", no_cache)
+
+    result = await data_agent_module.rewrite_nl2sql(
+        "plant height in rice",
+        is_rewrite=False,
+        dialog_id="ctx-thread-nl2sql",
+        thread_id="ctx-thread",
+    )
+
+    assert result == {"ok": True}
+    assert captured["config"].DIALOG_ID == "ctx-thread-nl2sql"
+    assert captured["run"] == {
+        "user_query": "plant height in rice",
+        "is_rewrite": False,
+        "dialog_id": "ctx-thread-nl2sql",
+        "thread_id": "ctx-thread",
         "locale": "en-US",
     }
 
@@ -577,7 +635,79 @@ def test_data_stream_seed_returns_app_and_initial_state(
         "user_query": "gene count in rice",
         "is_rewrite": True,
         "locale": "en-US",
+        "dialog_id": None,
         "retrieve_prompt": None,
         "rewrite_query": None,
         "final_response": None,
     }
+
+
+async def test_search_node_prefers_state_dialog_id_over_config(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Search-node NL2SQL requests honor the state dialog id first."""
+    agent = DataAgent(
+        data_config=DataConfig(),
+        sensitive_config=SensitiveConfig.load(),
+    )
+    monkeypatch.setattr(agent.data_config, "DIALOG_ID", "config-dialog")
+    captured: dict[str, Any] = {}
+
+    async def fake_execute(request: Nl2SqlRequest) -> dict[str, Any]:
+        captured["dialog_id"] = request.payload()["dialog_id"]
+        return {"ok": True}
+
+    monkeypatch.setattr(
+        data_agent_module, "execute_nl2sql_request", fake_execute
+    )
+
+    result = await agent.search_node(
+        cast(
+            DataAgentState,
+            {
+                "user_query": "ignored",
+                "rewrite_query": "Show expression by tissue",
+                "is_rewrite": True,
+                "dialog_id": "state-dialog",
+            },
+        )
+    )
+
+    assert captured["dialog_id"] == "state-dialog"
+    assert result == {"final_response": {"ok": True}}
+
+
+async def test_search_node_falls_back_to_generated_dialog_id_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Missing state and config dialog ids still use the V0 generator."""
+    agent = DataAgent(
+        data_config=DataConfig(),
+        sensitive_config=SensitiveConfig.load(),
+    )
+    monkeypatch.setattr(agent.data_config, "DIALOG_ID", None)
+    monkeypatch.setattr(
+        data_agent_module, "_default_dialog_id", lambda: "generated-dialog"
+    )
+    captured: dict[str, Any] = {}
+
+    async def fake_execute(request: Nl2SqlRequest) -> dict[str, Any]:
+        captured["dialog_id"] = request.payload()["dialog_id"]
+        return {"ok": True}
+
+    monkeypatch.setattr(
+        data_agent_module, "execute_nl2sql_request", fake_execute
+    )
+
+    result = await agent.search_node(
+        cast(
+            DataAgentState,
+            {
+                "user_query": "Show expression",
+                "is_rewrite": False,
+            },
+        )
+    )
+
+    assert captured["dialog_id"] == "generated-dialog"
+    assert result == {"final_response": {"ok": True}}

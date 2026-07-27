@@ -656,13 +656,16 @@ async def _execute_context_expert(
         adapter = None
         if selected_agent_id == "KnowledgeAgent":
             adapter = private_agent_state.pop("knowledge_adapter", None)
+        elif selected_agent_id == "DataAgent":
+            adapter = private_agent_state.get("data_adapter")
         body, status_code = await dependencies.native.invoke_agent_run(
             agent=slug,
             arguments=arguments,
             conversation_messages=dispatch.conversation_messages,
             agent_thread_id=(
                 dispatch.agent_thread_id
-                if selected_agent_id in {"ChatAgent", "KnowledgeAgent"}
+                if selected_agent_id
+                in {"ChatAgent", "KnowledgeAgent", "DataAgent"}
                 else None
             ),
             private_agent_state=private_agent_state or None,
@@ -677,6 +680,12 @@ async def _execute_context_expert(
             assistant_summary=_agent_response_summary(body),
         )
         if selected_agent_id == "KnowledgeAgent" and adapter is not None:
+            return AgentOutcome(
+                result=body,
+                assistant_summary=_agent_response_summary(body),
+                context_delta=adapter.delta(body),
+            )
+        if selected_agent_id == "DataAgent" and adapter is not None:
             return AgentOutcome(
                 result=body,
                 assistant_summary=_agent_response_summary(body),

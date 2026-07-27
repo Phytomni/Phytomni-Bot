@@ -234,7 +234,13 @@ async def handle_data_agent(args: DataAgent) -> HandlerResult:
     """
     data_config = DataConfig()
     runtime = load_handler_runtime()
-    return await rewrite_nl2sql(
+    thread_id = private_agent_thread_id()
+    dialog_id = (
+        f"{thread_id}-nl2sql"
+        if thread_id is not None
+        else data_config.DIALOG_ID
+    )
+    result = await rewrite_nl2sql(
         user_query=args.user_query,
         retrieve_url=data_config.RETRIEVE_URL,
         data_repo_id=data_config.DATA_REPO_ID,
@@ -248,11 +254,17 @@ async def handle_data_agent(args: DataAgent) -> HandlerResult:
         database_url=data_config.DATABASE_URL,
         workspace_id=data_config.WORKSPACE_ID,
         subject_id=data_config.SUBJECT_ID,
-        dialog_id=data_config.DIALOG_ID,
+        dialog_id=dialog_id,
+        thread_id=thread_id,
         need_insight=data_config.NEED_INSIGHT,
         simplify_response=data_config.SIMPLIFY_RESPONSE,
         **chat_kwargs(data_config, runtime.sensitive, locale=args.locale),
     )
+    adapter = private_agent_state().get("data_adapter")
+    capture_result = getattr(adapter, "capture_result", None)
+    if callable(capture_result):
+        capture_result(result)
+    return result
 
 
 @records_submission("analyst")

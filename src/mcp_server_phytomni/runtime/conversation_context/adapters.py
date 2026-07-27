@@ -9,6 +9,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
+from ...agents.data.conversation import DataConversationAdapter
 from ...agents.expert import ToolSelection, ToolSelectionError
 from ...agents.knowledge.conversation import (
     KnowledgeClarificationError,
@@ -117,6 +118,29 @@ def knowledge_agent_invocation(
     )
 
 
+def data_agent_invocation(
+    projection: ContextProjection,
+    *,
+    selected_arguments: Mapping[str, Any] | None = None,
+) -> ContextAgentInvocation:
+    """Project Data V1 context into a standalone follow-up query."""
+    arguments = dict(selected_arguments or {})
+    arguments["locale"] = projection.locale
+    adapter = DataConversationAdapter()
+    prepared = adapter.prepare(projection)
+    arguments["user_query"] = prepared["user_query"]
+    return ContextAgentInvocation(
+        arguments=arguments,
+        conversation_messages=_native_history_from_projection(projection),
+        agent_thread_id=prepared["thread_id"],
+        private_agent_state={
+            "data_adapter": adapter,
+            "dialog_id": prepared["dialog_id"],
+            "rewrite_query": prepared["rewrite_query"],
+        },
+    )
+
+
 def native_history_from_context(
     context: BusinessContext,
 ) -> tuple[dict[str, str], ...]:
@@ -209,9 +233,16 @@ class ConversationContextExecutor:
                 selected_arguments=self._selected_arguments.get() or {},
             )
             if selected_agent_id == "KnowledgeAgent"
-            else canonical_agent_invocation(
-                projection,
-                selected_arguments=self._selected_arguments.get() or {},
+            else (
+                data_agent_invocation(
+                    projection,
+                    selected_arguments=self._selected_arguments.get() or {},
+                )
+                if selected_agent_id == "DataAgent"
+                else canonical_agent_invocation(
+                    projection,
+                    selected_arguments=self._selected_arguments.get() or {},
+                )
             )
         )
         return await invoke(
@@ -238,6 +269,7 @@ __all__ = [
     "ContextAgentInvocation",
     "ConversationContextExecutor",
     "canonical_agent_invocation",
+    "data_agent_invocation",
     "knowledge_agent_invocation",
     "native_history_from_context",
 ]

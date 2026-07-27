@@ -34,6 +34,7 @@ class DataInput(TypedDict, total=False):
     user_query: Required[str]
     locale: SupportedLocale
     is_rewrite: bool
+    dialog_id: str | None
 
 
 class DataOutput(TypedDict):
@@ -69,6 +70,7 @@ class DataState(TypedDict):
     user_query: str
     locale: SupportedLocale
     is_rewrite: bool
+    dialog_id: str | None
     retrieve_prompt: str
     rewrite_query: str
     final_response: dict

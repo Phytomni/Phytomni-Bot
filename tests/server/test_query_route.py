@@ -359,6 +359,178 @@ async def test_context_expert_explicit_selection_stages_without_router(
     }
 
 
+async def test_context_expert_data_reuses_private_ids_and_stages_bounded_intent(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Expert Data continues intent through the real private handler seam."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    db_path = tmp_path / "context.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+
+    async def forbidden_router(*_args: Any, **_kwargs: Any) -> ToolSelection:
+        raise AssertionError("explicit Data selection must not route")
+
+    data_config = SimpleNamespace(
+        RETRIEVE_URL=None,
+        DATA_REPO_ID=None,
+        PAGE_NUM=1,
+        DATA_PAGE_SIZE=10,
+        FILTER_STRING=None,
+        SCOPE=None,
+        RERANK_URL=None,
+        RERANK_BATCH_SIZE=10,
+        SCORE_THRESHOLD=0.0,
+        DATABASE_URL="private-database-url",
+        WORKSPACE_ID="private-workspace",
+        SUBJECT_ID="private-subject",
+        DIALOG_ID=None,
+        NEED_INSIGHT=True,
+        SIMPLIFY_RESPONSE=True,
+    )
+    calls: list[dict[str, Any]] = []
+
+    async def fake_rewrite_nl2sql(
+        user_query: str,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        calls.append({"user_query": user_query, **kwargs})
+        return {
+            "header": [
+                {"caption": "tissue"},
+                {"caption": "expression"},
+            ],
+            "data": [["leaf", 10], ["root", 5]],
+            "dataset_id": "expression",
+            "table_id": "expression_table",
+            "artifact_id": "artifact-expression",
+            "summary": f"Aggregate for {user_query}",
+            "sql": "SELECT * FROM private_table",
+            "database_url": "postgresql://user:pass@example/db",
+        }
+
+    monkeypatch.setattr(api_app, "select_agent_tool", forbidden_router)
+    monkeypatch.setattr(mcp_handlers, "DataConfig", lambda: data_config)
+    monkeypatch.setattr(
+        mcp_handlers,
+        "load_handler_runtime",
+        lambda: SimpleNamespace(sensitive=object()),
+    )
+    monkeypatch.setattr(
+        mcp_handlers, "chat_kwargs", lambda *_args, **_kwargs: {}
+    )
+    monkeypatch.setattr(mcp_handlers, "rewrite_nl2sql", fake_rewrite_nl2sql)
+
+    conversation_key = UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")
+    expected_thread_id = context_agent_thread_id(conversation_key, "DataAgent")
+    expected_dialog_id = f"{expected_thread_id}-nl2sql"
+    store = ConversationContextStore(str(db_path))
+
+    first = _conversation_envelope(
+        requested_agent_id="DataAgent",
+        allowed_agent_ids=["DataAgent"],
+    )
+    first["current_message"]["content"] = "Show expression by tissue"
+    first["history_delta"] = [
+        {
+            "turn_id": "1",
+            "role": "user",
+            "content": "Show expression by tissue",
+        }
+    ]
+    first["artifact_refs"] = [
+        {
+            "artifact_id": "artifact-expression",
+            "display_name": "expression.csv",
+        }
+    ]
+
+    first_response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["DataAgent"],
+            "conversation": first,
+        },
+    )
+
+    assert first_response.status_code == 200
+    first_staged = store.load_turn(str(conversation_key), "1")
+    assert first_staged is not None
+    assert first_staged.delta is not None
+    first_payload = json.dumps(first_staged.delta, sort_keys=True)
+    assert "data:dataset:expression" in first_payload
+    assert "data:table:expression_table" in first_payload
+    assert "dimension:tissue" in first_payload
+    assert "column:expression" in first_payload
+    assert "row_count:2" in first_payload
+    assert "artifact-expression" in first_payload
+    assert "leaf" not in first_payload
+    assert "SELECT * FROM private_table" not in first_payload
+    assert "postgresql://user:pass@example/db" not in first_payload
+    store.commit_staged_turn(
+        str(conversation_key),
+        "1",
+        first["ledger_version"],
+        "b" * 64,
+    )
+
+    second = _conversation_envelope(
+        turn_id="2",
+        requested_agent_id="DataAgent",
+        allowed_agent_ids=["DataAgent"],
+        base_business_context_version=1,
+    )
+    second["ledger_cursor"] = 2
+    second["ledger_version"] = "c" * 64
+    second["current_message"]["content"] = "Only rice"
+    second["history_delta"] = [
+        {
+            "turn_id": "2",
+            "role": "user",
+            "content": "Only rice",
+        }
+    ]
+    second["artifact_refs"] = first["artifact_refs"]
+
+    second_response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["DataAgent"],
+            "conversation": second,
+        },
+    )
+
+    assert second_response.status_code == 200
+    assert [call["user_query"] for call in calls] == [
+        "Show expression by tissue",
+        "Show expression by tissue for rice",
+    ]
+    assert [call["thread_id"] for call in calls] == [
+        expected_thread_id,
+        expected_thread_id,
+    ]
+    assert [call["dialog_id"] for call in calls] == [
+        expected_dialog_id,
+        expected_dialog_id,
+    ]
+    second_staged = store.load_turn(str(conversation_key), "2")
+    assert second_staged is not None
+    assert second_staged.delta is not None
+    second_payload = json.dumps(second_staged.delta, sort_keys=True)
+    assert "data:dataset:expression" in second_payload
+    assert "dimension:tissue" in second_payload
+    assert "filter:species=rice" in second_payload
+    assert "leaf" not in second_payload
+    assert "SELECT * FROM private_table" not in second_payload
+    assert "postgresql://user:pass@example/db" not in second_payload
+
+
 async def test_context_expert_explicit_chat_preserves_private_thread_only_for_primary_call(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

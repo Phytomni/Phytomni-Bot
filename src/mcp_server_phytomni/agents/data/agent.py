@@ -105,6 +105,7 @@ async def rewrite_nl2sql(
     """
     effective_locale = resolve_agent_locale(locale)
     active_dialog_id = kwargs.get("dialog_id") or _default_dialog_id()
+    active_thread_id = kwargs.get("thread_id") or active_dialog_id
     arguments = {**kwargs, "dialog_id": active_dialog_id}
     data_config = copy_config_with_overrides(
         DATA_CONFIG,
@@ -131,7 +132,8 @@ async def rewrite_nl2sql(
     return await agent.arun(
         user_query=user_query,
         is_rewrite=is_rewrite,
-        thread_id=active_dialog_id,
+        dialog_id=active_dialog_id,
+        thread_id=active_thread_id,
         locale=effective_locale,
     )
 
@@ -178,6 +180,7 @@ def data_stream_seed(
         "user_query": args.user_query,
         "locale": resolve_agent_locale(args.locale),
         "is_rewrite": True,
+        "dialog_id": None,
         "retrieve_prompt": None,
         "rewrite_query": None,
         "final_response": None,
@@ -492,7 +495,9 @@ class DataAgent:
                 "workspace_id": self.data_config.WORKSPACE_ID,
                 "subject_id": self.data_config.SUBJECT_ID,
                 "dialog_id": (
-                    self.data_config.DIALOG_ID or _default_dialog_id()
+                    state.get("dialog_id")
+                    or self.data_config.DIALOG_ID
+                    or _default_dialog_id()
                 ),
                 "need_insight": self.data_config.NEED_INSIGHT,
                 "simplify_response": self.data_config.SIMPLIFY_RESPONSE,
@@ -516,6 +521,7 @@ class DataAgent:
         self,
         user_query: str,
         is_rewrite: bool = True,
+        dialog_id: str | None = None,
         thread_id: str | None = None,
         locale: SupportedLocale | None = None,
     ):
@@ -528,6 +534,7 @@ class DataAgent:
 
         Args:
             user_query: The user's natural language query.
+            dialog_id: Optional stable identity for the NL2SQL service.
             thread_id: Optional thread ID for state persistence. If not
                        provided, a new UUID will be generated.
 
@@ -538,6 +545,7 @@ class DataAgent:
             "user_query": user_query,
             "locale": resolve_agent_locale(locale),
             "is_rewrite": is_rewrite,
+            "dialog_id": dialog_id,
             "retrieve_prompt": None,
             "rewrite_query": None,
             "final_response": None,

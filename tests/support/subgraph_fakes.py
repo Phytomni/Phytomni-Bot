@@ -263,7 +263,7 @@ BRIEF_GENE_STATE_PREAMBLE_FIELDS = {
 
 
 DATA_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
-    input_fields={"user_query", "is_rewrite", "locale"},
+    input_fields={"user_query", "is_rewrite", "locale", "dialog_id"},
     required_input_fields={"user_query"},
     output_fields={"final_response"},
     expected_nodes={
