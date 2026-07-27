@@ -26,7 +26,38 @@ project_universal_failure_metadata = (
 redact_failure_message = _universal_failures.redact_failure_message
 
 AguiEvent = _formatting_agui.AguiEvent
+CONTEXT_STAGED_CUSTOM_NAME = "phyto.context_staged"
 custom = _formatting_agui.custom
+
+
+def context_staged(
+    *,
+    turn_id: str,
+    selected_agent_id: str,
+    route_source: str,
+    proposed_business_context_version: int,
+    context_truncated: bool,
+    context_rebuilt: bool,
+    context_degraded: bool,
+) -> AguiEvent:
+    """Return the bounded V1 conversation-context staging custom frame."""
+    return custom(
+        CONTEXT_STAGED_CUSTOM_NAME,
+        {
+            "schema_version": 1,
+            "turn_id": turn_id,
+            "selected_agent_id": selected_agent_id,
+            "route_source": route_source,
+            "proposed_business_context_version": (
+                proposed_business_context_version
+            ),
+            "context_truncated": context_truncated,
+            "context_rebuilt": context_rebuilt,
+            "context_degraded": context_degraded,
+        },
+    )
+
+
 run_error = _formatting_agui.run_error
 run_finished = _formatting_agui.run_finished
 run_started = _formatting_agui.run_started
