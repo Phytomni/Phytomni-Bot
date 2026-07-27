@@ -66,9 +66,11 @@ from .handlers import (
     handle_in_silico_research_agent,
     handle_knowledge_agent,
     handle_review_agent,
+    reset_private_agent_state,
     reset_private_agent_thread_id,
     reset_private_conversation_messages,
     scratch_server_dir,
+    set_private_agent_state,
     set_private_agent_thread_id,
     set_private_conversation_messages,
 )
@@ -181,6 +183,7 @@ async def invoke_tool_raw(
     *,
     conversation_messages: Sequence[Mapping[str, str]] = (),
     agent_thread_id: str | None = None,
+    private_agent_state: Mapping[str, Any] | None = None,
 ) -> Any:
     """Validate arguments and call a tool handler, returning its payload.
 
@@ -196,6 +199,8 @@ async def invoke_tool_raw(
             task-local handler context, never in public tool arguments.
         agent_thread_id: Private stable Chat thread held in a task-local
             handler context, never in public tool arguments.
+        private_agent_state: Private handler-only state excluded from
+            public schemas and result payloads.
 
     Returns:
         The unwrapped handler response payload.
@@ -218,9 +223,11 @@ async def invoke_tool_raw(
 
     messages_token = set_private_conversation_messages(conversation_messages)
     thread_token = set_private_agent_thread_id(agent_thread_id)
+    state_token = set_private_agent_state(private_agent_state)
     try:
         return await handler(args)
     finally:
+        reset_private_agent_state(state_token)
         reset_private_agent_thread_id(thread_token)
         reset_private_conversation_messages(messages_token)
 
@@ -260,6 +267,7 @@ async def invoke_tool_enveloped(
     *,
     conversation_messages: Sequence[Mapping[str, str]] = (),
     agent_thread_id: str | None = None,
+    private_agent_state: Mapping[str, Any] | None = None,
 ) -> ToolResultEnvelope:
     """Validate arguments, call a handler, and preserve raw payload.
 
@@ -275,6 +283,8 @@ async def invoke_tool_enveloped(
             invocation adapters; it is excluded from public MCP schemas.
         agent_thread_id: Private stable Chat thread for in-process V1
             invocation; it is excluded from public MCP schemas.
+        private_agent_state: Private handler-only state for in-process
+            adapters; it is excluded from public schemas.
 
     Returns:
         Full result envelope for the selected tool.
@@ -287,6 +297,7 @@ async def invoke_tool_enveloped(
         arguments,
         conversation_messages=conversation_messages,
         agent_thread_id=agent_thread_id,
+        private_agent_state=private_agent_state,
     )
     await _maybe_enrich_cited(_tool_name(name), raw)
     return build_tool_result_envelope(

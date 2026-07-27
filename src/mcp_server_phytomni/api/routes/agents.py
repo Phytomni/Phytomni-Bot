@@ -26,7 +26,10 @@ from ...runtime.conversation_context.adapters import (
     ContextAgentInvocation,
     ConversationContextExecutor,
 )
-from ...runtime.conversation_context.models import ConversationEnvelopeV1
+from ...runtime.conversation_context.models import (
+    ContextDelta,
+    ConversationEnvelopeV1,
+)
 from ...runtime.conversation_context.service import (
     AgentOutcome,
     PreparedTurn,
@@ -636,28 +639,50 @@ async def _execute_context_expert(
         dispatch: ContextAgentInvocation,
     ) -> AgentOutcome:
         slug = _slug_for_tool(selected_agent_id, dependencies)
+        if selected_agent_id == "KnowledgeAgent":
+            clarification = dispatch.private_agent_state.get(
+                "clarification_message"
+            )
+            if isinstance(clarification, str) and clarification.strip():
+                return AgentOutcome(
+                    result=_clarification_agent_run(slug, clarification),
+                    assistant_summary=clarification,
+                    context_delta=ContextDelta(),
+                )
         arguments = dict(dispatch.arguments)
         if dependencies.chat.input.tool_accepts_obs(selected_agent_id):
             arguments["obs_file_list"] = list(payload.obs_file_list)
+        private_agent_state = dict(dispatch.private_agent_state)
+        adapter = None
+        if selected_agent_id == "KnowledgeAgent":
+            adapter = private_agent_state.pop("knowledge_adapter", None)
         body, status_code = await dependencies.native.invoke_agent_run(
             agent=slug,
             arguments=arguments,
             conversation_messages=dispatch.conversation_messages,
             agent_thread_id=(
                 dispatch.agent_thread_id
-                if selected_agent_id == "ChatAgent"
+                if selected_agent_id in {"ChatAgent", "KnowledgeAgent"}
                 else None
             ),
+            private_agent_state=private_agent_state or None,
             dialogue_id=payload.dialogue_id,
             request_json=payload.model_dump_json(),
             debug=dependencies.chat.projection.resolve_debug(None),
         )
         if status_code != 200 or body.get("status") != "succeeded":
             return AgentOutcome(result=body, status="running")
-        return AgentOutcome(
+        outcome = AgentOutcome(
             result=body,
             assistant_summary=_agent_response_summary(body),
         )
+        if selected_agent_id == "KnowledgeAgent" and adapter is not None:
+            return AgentOutcome(
+                result=body,
+                assistant_summary=_agent_response_summary(body),
+                context_delta=adapter.delta(body),
+            )
+        return outcome
 
     async def delegate_async(
         selected_agent_id: str,
@@ -716,6 +741,24 @@ def _agent_response_summary(body: Mapping[str, Any]) -> str | None:
     return answer if isinstance(answer, str) else None
 
 
+def _clarification_agent_run(agent: str, message: str) -> dict[str, Any]:
+    """Return a sync agent.run envelope for clarification-only Knowledge turns."""
+    return {
+        "id": None,
+        "object": "agent.run",
+        "agent": agent,
+        "status": "succeeded",
+        "task_ids": [],
+        "result": {
+            "formatted": {
+                "answer": message,
+                "follow_up_questions": [],
+                "references": [],
+            }
+        },
+    }
+
+
 def register_agent_routes(
     app: FastAPI,
     dependencies: AgentRouteDependencies,
@@ -728,11 +771,11 @@ def register_agent_routes(
 __all__ = [
     "AgentAuthDependencies",
     "AgentCatalogDependencies",
-    "AgentContextDependencies",
     "AgentChatDependencies",
     "AgentChatExecutionDependencies",
     "AgentChatInputDependencies",
     "AgentChatProjectionDependencies",
+    "AgentContextDependencies",
     "AgentNativeDependencies",
     "AgentRouteDependencies",
     "AgentUploadDependencies",

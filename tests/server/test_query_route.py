@@ -13,10 +13,12 @@ error paths.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import httpx
@@ -32,6 +34,7 @@ from mcp_server_phytomni.agents.expert import (
     ToolSelectionError,
 )
 from mcp_server_phytomni.agents.expert import router as expert_router
+from mcp_server_phytomni.agents.knowledge import agent as knowledge_agent
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.api.schemas import ExpertQueryRequest
@@ -40,6 +43,9 @@ from mcp_server_phytomni.mcp import handlers as mcp_handlers
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 from mcp_server_phytomni.runtime.conversation_context.projection import (
     agent_thread_id as context_agent_thread_id,
+)
+from mcp_server_phytomni.runtime.conversation_context.store import (
+    ConversationContextStore,
 )
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
@@ -572,6 +578,246 @@ async def test_context_expert_router_keeps_full_allowlist_and_async_202(
         {"role": "assistant", "content": "A2"},
         {"role": "user", "content": "U3"},
     )
+
+
+async def test_context_expert_knowledge_turn_separates_retrieval_context(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Knowledge V1 resolves retrieval privately and stages only bounded context."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    db_path = tmp_path / "context.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+
+    class FakeKnowledgeAgent:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def arun(self, **kwargs: Any) -> dict[str, Any]:
+            self.calls.append(kwargs)
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": "OsDREB1 improves drought tolerance [1].",
+                            "doc_list": [
+                                {
+                                    "file_id": "doc-1",
+                                    "title": "Paper 1.pdf",
+                                    "content": (
+                                        "full report body that must not persist"
+                                    ),
+                                }
+                            ],
+                            "follow_up_questions": [
+                                "What promoter evidence exists for OsDREB1?"
+                            ],
+                        }
+                    }
+                ]
+            }
+
+    fake_agent = FakeKnowledgeAgent()
+    monkeypatch.setattr(mcp_handlers, "KnowledgeConfig", lambda: object())
+    monkeypatch.setattr(
+        mcp_handlers,
+        "load_handler_runtime",
+        lambda: SimpleNamespace(
+            sensitive=object(), obs_credentials=("a", "b")
+        ),
+    )
+    monkeypatch.setattr(
+        mcp_handlers,
+        "scratch_server_dir",
+        lambda *_args: "/tmp/knowledge",
+    )
+    monkeypatch.setattr(
+        mcp_handlers, "chat_kwargs", lambda *_args, **_kwargs: {}
+    )
+    monkeypatch.setattr(mcp_handlers, "retrieve_kwargs", lambda _config: {})
+    monkeypatch.setattr(mcp_handlers, "obs_kwargs", lambda *_args: {})
+    monkeypatch.setattr(
+        knowledge_agent,
+        "get_cached_agent",
+        lambda *_args, **_kwargs: fake_agent,
+    )
+    monkeypatch.setattr(
+        knowledge_agent,
+        "_knowledge_config_with_overrides",
+        lambda **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        knowledge_agent,
+        "_knowledge_sensitive_config_with_overrides",
+        lambda **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.shared.citation_enrichment.bi_query",
+        AsyncMock(return_value={"message": "ok", "data": []}),
+    )
+    envelope = _conversation_envelope(
+        requested_agent_id="KnowledgeAgent",
+        allowed_agent_ids=["KnowledgeAgent"],
+    )
+    envelope["turn_id"] = "3"
+    envelope["request_id"] = "request-3"
+    envelope["ledger_cursor"] = 3
+    envelope["current_message"]["content"] = "What evidence supports that?"
+    envelope["history_delta"] = [
+        {
+            "turn_id": "1",
+            "role": "user",
+            "content": "Tell me about rice gene OsDREB1.",
+        },
+        {
+            "turn_id": "2",
+            "role": "assistant",
+            "content": "OsDREB1 improves drought tolerance [1].",
+            "summary": "OsDREB1 improves drought tolerance [1].",
+        },
+        {
+            "turn_id": "3",
+            "role": "user",
+            "content": "What evidence supports that?",
+        },
+    ]
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["KnowledgeAgent"],
+            "conversation": envelope,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["conversation_context"]["selected_agent_id"] == (
+        "KnowledgeAgent"
+    )
+    assert body["result"]["formatted"]["answer"] == (
+        "OsDREB1 improves drought tolerance [1]."
+    )
+    expected_thread_id = context_agent_thread_id(
+        UUID(envelope["conversation_key"]), "KnowledgeAgent"
+    )
+    assert fake_agent.calls == [
+        {
+            "user_query": "What evidence supports that?",
+            "obs_file_list": [],
+            "repo_id_dict": None,
+            "is_generate": True,
+            "is_follow_up": True,
+            "locale": "en-US",
+            "retrieval_query": "What evidence supports OsDREB1?",
+            "answer_context": (
+                "[recent turn 1]\nuser: Tell me about rice gene OsDREB1.\n\n"
+                "[recent turn 2]\nassistant: OsDREB1 improves drought tolerance [1]."
+            ),
+            "thread_id": expected_thread_id,
+            "conversation_messages": (),
+        }
+    ]
+    store = ConversationContextStore(str(db_path))
+    staged = store.load_turn(str(UUID(envelope["conversation_key"])), "3")
+    assert staged is not None
+    assert [
+        item["label"] for item in staged.delta["active_entities"]
+    ] == ["OsDREB1"]
+    assert "full report body" not in json.dumps(staged.delta)
+    assert "OsDREB1 improves drought tolerance [1]." in json.dumps(
+        staged.delta
+    )
+
+
+async def test_context_expert_knowledge_follow_up_returns_clarification(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An unresolved Knowledge pronoun asks for clarification without guessing."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    db_path = tmp_path / "context.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+    calls: list[dict[str, Any]] = []
+
+    class FakeKnowledgeAgent:
+        async def arun(self, **kwargs: Any) -> dict[str, Any]:
+            calls.append(kwargs)
+            return {"choices": [{"message": {"content": "unexpected"}}]}
+
+    monkeypatch.setattr(mcp_handlers, "KnowledgeConfig", lambda: object())
+    monkeypatch.setattr(
+        mcp_handlers,
+        "load_handler_runtime",
+        lambda: SimpleNamespace(
+            sensitive=object(), obs_credentials=("a", "b")
+        ),
+    )
+    monkeypatch.setattr(
+        mcp_handlers,
+        "scratch_server_dir",
+        lambda *_args: "/tmp/knowledge",
+    )
+    monkeypatch.setattr(
+        mcp_handlers, "chat_kwargs", lambda *_args, **_kwargs: {}
+    )
+    monkeypatch.setattr(mcp_handlers, "retrieve_kwargs", lambda _config: {})
+    monkeypatch.setattr(mcp_handlers, "obs_kwargs", lambda *_args: {})
+    monkeypatch.setattr(
+        knowledge_agent,
+        "get_cached_agent",
+        lambda *_args, **_kwargs: FakeKnowledgeAgent(),
+    )
+    monkeypatch.setattr(
+        knowledge_agent,
+        "_knowledge_config_with_overrides",
+        lambda **_kwargs: object(),
+    )
+    monkeypatch.setattr(
+        knowledge_agent,
+        "_knowledge_sensitive_config_with_overrides",
+        lambda **_kwargs: object(),
+    )
+    envelope = _conversation_envelope(
+        requested_agent_id="KnowledgeAgent",
+        allowed_agent_ids=["KnowledgeAgent"],
+    )
+    envelope["turn_id"] = "4"
+    envelope["request_id"] = "request-4"
+    envelope["ledger_cursor"] = 4
+    envelope["current_message"]["content"] = "What evidence supports that?"
+    envelope["history_delta"] = [
+        {
+            "turn_id": "4",
+            "role": "user",
+            "content": "What evidence supports that?",
+        }
+    ]
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["KnowledgeAgent"],
+            "conversation": envelope,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "clarify" in body["result"]["formatted"]["answer"].lower()
+    assert calls == []
+    store = ConversationContextStore(str(db_path))
+    staged = store.load_turn(str(UUID(envelope["conversation_key"])), "4")
+    assert staged is not None
+    assert staged.delta["active_entities"] == []
 
 
 async def test_context_expert_rebuilds_before_routing_when_state_is_missing(

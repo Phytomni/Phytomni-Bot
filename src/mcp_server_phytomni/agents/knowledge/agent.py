@@ -292,14 +292,14 @@ class KnowledgeAgent:
                 - retrieve_context: The formatted context string for the LLM.
         """
         emit_progress("retrieving", 0, detail="querying knowledge base")
-        user_query = state["user_query"]
+        retrieval_query = state.get("retrieval_query") or state["user_query"]
         repo_id_dict = (
             state.get("repo_id_dict") or self.knowledge_config.REPO_ID_DICT
         )
         upload_context = state.get("upload_context", "")
 
         retrieve_response = await multi_retrieve(
-            user_query=user_query,
+            user_query=retrieval_query,
             retrieve_url=self.knowledge_config.RETRIEVE_URL,
             repo_id_dict=repo_id_dict,
             page_num=self.knowledge_config.PAGE_NUM,
@@ -350,6 +350,7 @@ class KnowledgeAgent:
         user_query = state["user_query"]
         retrieve_context = state["retrieve_context"]
         upload_context = state.get("upload_context", "")
+        answer_context = state.get("answer_context", "")
 
         if upload_context:
             chat_query = get_prompt(
@@ -369,6 +370,14 @@ class KnowledgeAgent:
                     "retrieve_results": retrieve_context,
                     "user_query": user_query,
                 },
+            )
+
+        if answer_context:
+            chat_query = (
+                "[conversation answer context]\n"
+                f"{answer_context}\n"
+                "[conversation answer context end]\n\n"
+                f"{chat_query}"
             )
 
         memory_context = memory_context_for_graph(
@@ -629,6 +638,8 @@ class KnowledgeAgent:
             "conversation_messages": normalize_conversation_messages(
                 kwargs.get("conversation_messages")
             ),
+            "retrieval_query": kwargs.get("retrieval_query") or user_query,
+            "answer_context": kwargs.get("answer_context", ""),
             "repo_id_dict": repo_id_dict,
             "upload_context": "",
             "retrieved_docs": [],
@@ -680,6 +691,8 @@ class KnowledgeAgent:
             is_follow_up=is_follow_up,
             locale=kwargs.get("locale"),
             conversation_messages=conversation_messages,
+            retrieval_query=kwargs.get("retrieval_query"),
+            answer_context=kwargs.get("answer_context", ""),
         )
         token = _set_private_conversation_messages(conversation_messages)
         try:
@@ -760,6 +773,12 @@ async def multi_retrieve_generate(
     }
     if "conversation_messages" in kwargs:
         arun_kwargs["conversation_messages"] = kwargs["conversation_messages"]
+    if "retrieval_query" in kwargs:
+        arun_kwargs["retrieval_query"] = kwargs["retrieval_query"]
+    if "answer_context" in kwargs:
+        arun_kwargs["answer_context"] = kwargs["answer_context"]
+    if "thread_id" in kwargs:
+        arun_kwargs["thread_id"] = kwargs["thread_id"]
     return await agent.arun(
         **arun_kwargs,
     )

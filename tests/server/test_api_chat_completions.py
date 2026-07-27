@@ -25,6 +25,9 @@ from tests.support.chat_fakes import (
 
 import mcp_server_phytomni.agents.chat.service as chat_service
 from mcp_server_phytomni import server
+from mcp_server_phytomni.agents.knowledge.conversation import (
+    KnowledgeConversationAdapter,
+)
 from mcp_server_phytomni.mcp import handlers as mcp_handlers
 from mcp_server_phytomni.runtime.conversation_context.adapters import (
     canonical_agent_invocation,
@@ -235,6 +238,42 @@ def test_chat_context_adapter_keeps_unpaired_user_at_degraded_boundary() -> (
         {"role": "user", "content": "U3"},
         {"role": "assistant", "content": "A3"},
     )
+
+
+def test_knowledge_context_adapter_separates_retrieval_query_from_answer_context() -> (
+    None
+):
+    """Knowledge V1 builds one standalone retrieval query plus bounded context."""
+    adapter = KnowledgeConversationAdapter()
+
+    prepared = adapter.prepare(
+        ContextProjection(
+            current_query="What evidence supports that?",
+            relevant_recent_turns=[
+                RoleTaggedTurn(
+                    role="user",
+                    content="Tell me about rice gene OsDREB1.",
+                ),
+                RoleTaggedTurn(
+                    role="assistant",
+                    content="OsDREB1 improves drought tolerance [1].",
+                ),
+            ],
+            agent_thread_id="ctx-" + "2" * 64,
+            locale="en-US",
+            token_budget=1024,
+        )
+    )
+
+    assert prepared == {
+        "user_query": "What evidence supports that?",
+        "retrieval_query": "What evidence supports OsDREB1?",
+        "answer_context": (
+            "[recent turn 1]\nuser: Tell me about rice gene OsDREB1.\n\n"
+            "[recent turn 2]\nassistant: OsDREB1 improves drought tolerance [1]."
+        ),
+        "thread_id": "ctx-" + "2" * 64,
+    }
 
 
 async def test_chat_context_v1_stages_native_history_and_replays_turn(

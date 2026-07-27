@@ -6,10 +6,14 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from ...agents.expert import ToolSelection, ToolSelectionError
+from ...agents.knowledge.conversation import (
+    KnowledgeClarificationError,
+    KnowledgeConversationAdapter,
+)
 from ...config.defaults import ApiConfig
 from .models import BusinessContext, ContextProjection, ConversationEnvelopeV1
 from .service import (
@@ -28,6 +32,7 @@ class ContextAgentInvocation:
     arguments: dict[str, Any]
     conversation_messages: tuple[dict[str, str], ...]
     agent_thread_id: str
+    private_agent_state: dict[str, Any] = field(default_factory=dict)
 
 
 SyncInvoker = Callable[
@@ -78,6 +83,37 @@ def canonical_agent_invocation(
         arguments=arguments,
         conversation_messages=_native_history_from_projection(projection),
         agent_thread_id=projection.agent_thread_id,
+    )
+
+
+def knowledge_agent_invocation(
+    projection: ContextProjection,
+    *,
+    selected_arguments: Mapping[str, Any] | None = None,
+) -> ContextAgentInvocation:
+    """Project Knowledge V1 context into retrieval-safe private dispatch state."""
+    arguments = dict(selected_arguments or {})
+    arguments["user_query"] = projection.current_query
+    arguments["locale"] = projection.locale
+    adapter = KnowledgeConversationAdapter()
+    try:
+        prepared = adapter.prepare(projection)
+    except KnowledgeClarificationError as exc:
+        return ContextAgentInvocation(
+            arguments=arguments,
+            conversation_messages=(),
+            agent_thread_id=projection.agent_thread_id,
+            private_agent_state={"clarification_message": str(exc)},
+        )
+    return ContextAgentInvocation(
+        arguments=arguments,
+        conversation_messages=(),
+        agent_thread_id=prepared["thread_id"],
+        private_agent_state={
+            "retrieval_query": prepared["retrieval_query"],
+            "answer_context": prepared["answer_context"],
+            "knowledge_adapter": adapter,
+        },
     )
 
 
@@ -167,13 +203,21 @@ class ConversationContextExecutor:
         invoke = self._sync_invoker.get()
         if invoke is None:
             raise RuntimeError("context sync invoker is unavailable")
+        dispatch = (
+            knowledge_agent_invocation(
+                projection,
+                selected_arguments=self._selected_arguments.get() or {},
+            )
+            if selected_agent_id == "KnowledgeAgent"
+            else canonical_agent_invocation(
+                projection,
+                selected_arguments=self._selected_arguments.get() or {},
+            )
+        )
         return await invoke(
             selected_agent_id,
             envelope,
-            canonical_agent_invocation(
-                projection,
-                selected_arguments=self._selected_arguments.get() or {},
-            ),
+            dispatch,
         )
 
     async def _delegate_async(
@@ -194,5 +238,6 @@ __all__ = [
     "ContextAgentInvocation",
     "ConversationContextExecutor",
     "canonical_agent_invocation",
+    "knowledge_agent_invocation",
     "native_history_from_context",
 ]

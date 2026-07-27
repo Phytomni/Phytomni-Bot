@@ -83,6 +83,11 @@ PrivateAgentThreadId = str | None
 _private_agent_thread_id: ContextVar[PrivateAgentThreadId] = ContextVar(
     "private_agent_thread_id", default=None
 )
+PrivateAgentState = dict[str, Any]
+PrivateAgentStateContext = PrivateAgentState | None
+_private_agent_state: ContextVar[PrivateAgentStateContext] = ContextVar(
+    "private_agent_state", default=None
+)
 
 
 def set_private_conversation_messages(
@@ -123,6 +128,23 @@ def reset_private_agent_thread_id(
 def private_agent_thread_id() -> str | None:
     """Return the stable V1 Chat thread for the active dispatch."""
     return _private_agent_thread_id.get()
+
+
+def set_private_agent_state(
+    state: Mapping[str, Any] | None,
+) -> Token[PrivateAgentStateContext]:
+    """Set private per-dispatch state that must stay out of public schemas."""
+    return _private_agent_state.set(dict(state or {}))
+
+
+def reset_private_agent_state(token: Token[PrivateAgentStateContext]) -> None:
+    """Restore the previous private agent state after one dispatch."""
+    _private_agent_state.reset(token)
+
+
+def private_agent_state() -> PrivateAgentState:
+    """Return the private per-dispatch state for the active handler."""
+    return dict(_private_agent_state.get() or {})
 
 
 def scratch_server_dir(config: ServerConfig, scope: str) -> str:
@@ -183,14 +205,21 @@ async def handle_knowledge_agent(args: KnowledgeAgent) -> HandlerResult:
     """
     knowledge_config = KnowledgeConfig()
     runtime = load_handler_runtime()
+    private_state = private_agent_state()
+    thread_kwargs = {}
+    if (thread_id := private_agent_thread_id()) is not None:
+        thread_kwargs["thread_id"] = thread_id
     return await multi_retrieve_generate(
         user_query=args.user_query,
         obs_file_list=args.obs_file_list,
         server_dir=scratch_server_dir(knowledge_config, "knowledge"),
         conversation_messages=private_conversation_messages(),
+        retrieval_query=private_state.get("retrieval_query"),
+        answer_context=private_state.get("answer_context", ""),
         **chat_kwargs(knowledge_config, runtime.sensitive, locale=args.locale),
         **retrieve_kwargs(knowledge_config),
         **obs_kwargs(knowledge_config, runtime.obs_credentials),
+        **thread_kwargs,
     )
 
 
