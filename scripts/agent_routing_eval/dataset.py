@@ -266,6 +266,27 @@ def _validate_questions(
         )
 
 
+def _validate_gene_identity(
+    agent: str,
+    expected_core_args: dict[str, JsonValue],
+    source_text: str,
+    split: str,
+) -> None:
+    gene_values = [
+        expected_core_args[key]
+        for key in _GENE_KEYS
+        if key in expected_core_args
+    ]
+    if agent == "BriefGeneAgent":
+        gene_values.append(expected_core_args.get("user_query"))
+    for gene_id in gene_values:
+        if not isinstance(gene_id, str) or gene_id not in source_text:
+            label = "BriefGene ID" if agent == "BriefGeneAgent" else "gene ID"
+            raise DatasetValidationError(
+                f"{split}: {label} absent from retained source text"
+            )
+
+
 def _validate_case_arguments(
     records: tuple[AgentRoutingCase, ...], split: Literal["dev", "test"]
 ) -> None:
@@ -306,13 +327,12 @@ def _validate_case_arguments(
                     raise DatasetValidationError(
                         f"{split}: unknown or deprecated TO ID"
                     )
-                if key in _GENE_KEYS:
-                    source_text = case.transformation.source_text or ""
-                    if not isinstance(value, str) or value not in source_text:
-                        raise DatasetValidationError(
-                            f"{split}: gene ID absent from retained "
-                            "source text"
-                        )
+            _validate_gene_identity(
+                agent,
+                case.expected_core_args,
+                case.transformation.source_text or "",
+                split,
+            )
 
 
 def validate_dataset(
@@ -373,6 +393,7 @@ def verify_workbook_sources(
         ) from exc
 
     workbooks: dict[str, Any] = {}
+    resolved_root = source_root.resolve()
     try:
         for case in cases:
             if not isinstance(case.source, WorkbookSource):
@@ -383,6 +404,13 @@ def verify_workbook_sources(
                     "workbook source must be a basename"
                 )
             workbook_path = source_root / source.workbook
+            resolved_path = workbook_path.resolve()
+            try:
+                resolved_path.relative_to(resolved_root)
+            except ValueError as exc:
+                raise DatasetValidationError(
+                    "workbook source is outside source root"
+                ) from exc
             if not workbook_path.is_file():
                 raise DatasetValidationError("workbook source is missing")
             if source.workbook not in workbooks:
