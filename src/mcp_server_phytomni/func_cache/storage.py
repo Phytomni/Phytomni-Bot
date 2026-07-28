@@ -57,6 +57,14 @@ class Storage:
                 cls._instances[db_path] = cls(db_path)
             return cls._instances[db_path]
 
+    @classmethod
+    def close_all(cls):
+        """Close every registered storage connection for this thread."""
+        with cls._instances_lock:
+            instances = tuple(cls._instances.values())
+        for storage in instances:
+            storage.close()
+
     def __init__(self, db_path):
         """Initialize storage with the given database path."""
         self.db_path = db_path

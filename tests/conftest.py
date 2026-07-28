@@ -157,6 +157,15 @@ def _reset_request_contextvars() -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
+def _close_func_cache_storages() -> Iterator[None]:
+    """Close registered cache connections after every test."""
+    try:
+        yield
+    finally:
+        Storage.close_all()
+
+
+@pytest.fixture(autouse=True)
 def block_external_http(
     monkeypatch: pytest.MonkeyPatch,
     request: pytest.FixtureRequest,

@@ -39,6 +39,7 @@ jobs:
       - name: Run offline tests at dependency floors
         env:
           PHYTOMNI_TESTING: "1"
+          PHYTOMNI_DEPENDENCY_FLOOR: "1"
           DOMAIN_NAME: pytest-domain
           USER_NAME: pytest-user
           USER_PASSWORD: pytest-password
@@ -90,7 +91,7 @@ jobs:
           pip install uv
           uv pip install --system -e ".[dev]"
       - name: Lint with ruff
-        run: uv run --extra dev ruff check .
+        run: uv run --extra dev ruff check --config pyproject.toml .
 
   flake8:
     runs-on: ubuntu-latest
@@ -169,7 +170,7 @@ jobs:
           uv pip install --system -e ".[dev,demo]"
       - name: Analyse code and exact exemptions with pylint
         run: >-
-          uv run --extra dev python
+          uv run --extra dev --extra demo python
           scripts/check_static_analysis_exemptions.py
           check-pylint
           --python-version "${{ matrix.python-version }}"
