@@ -72,6 +72,7 @@ _CREATE_REVIEW_CHECKPOINT_CLEANUP = """
 CREATE TABLE IF NOT EXISTS conversation_review_checkpoint_cleanup (
     conversation_key TEXT NOT NULL,
     candidate_thread_id TEXT NOT NULL,
+    eligible_at TEXT,
     PRIMARY KEY (conversation_key, candidate_thread_id)
 )
 """
@@ -365,6 +366,17 @@ class ConversationContextStore:
             connection.execute(_CREATE_CONTEXTS)
             connection.execute(_CREATE_TURNS)
             connection.execute(_CREATE_REVIEW_CHECKPOINT_CLEANUP)
+            cleanup_columns = {
+                row[1]
+                for row in connection.execute(
+                    "PRAGMA table_info(conversation_review_checkpoint_cleanup)"
+                )
+            }
+            if "eligible_at" not in cleanup_columns:
+                connection.execute(
+                    "ALTER TABLE conversation_review_checkpoint_cleanup "
+                    "ADD COLUMN eligible_at TEXT"
+                )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_conversation_turns_expires_at "
                 "ON conversation_turns(expires_at)"
@@ -1348,6 +1360,12 @@ class ConversationContextStore:
                         "VALUES (?, ?)",
                         (key, candidate),
                     )
+                    connection.execute(
+                        "UPDATE conversation_review_checkpoint_cleanup "
+                        "SET eligible_at = COALESCE(eligible_at, ?) "
+                        "WHERE conversation_key = ? AND candidate_thread_id = ?",
+                        (now_value, key, candidate),
+                    )
             cursor = connection.execute(
                 "DELETE FROM conversation_turns WHERE state='staged' AND expires_at IS NOT NULL AND expires_at <= ?",
                 (now_value,),
@@ -1367,6 +1385,7 @@ class ConversationContextStore:
             rows = connection.execute(
                 "SELECT conversation_key, candidate_thread_id "
                 "FROM conversation_review_checkpoint_cleanup "
+                "WHERE eligible_at IS NOT NULL "
                 "ORDER BY conversation_key, candidate_thread_id"
             ).fetchall()
         return tuple((row[0], row[1]) for row in rows)

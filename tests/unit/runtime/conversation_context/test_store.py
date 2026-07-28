@@ -86,10 +86,17 @@ def test_init_is_idempotent_and_adds_only_context_tables(
                 "SELECT name FROM sqlite_master WHERE type = 'index'"
             )
         }
+        cleanup_columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(conversation_review_checkpoint_cleanup)"
+            )
+        }
 
     assert duplicate.db_path == store.db_path
     assert {"conversation_contexts", "conversation_turns"} <= tables
     assert "idx_conversation_turns_expires_at" in indices
+    assert "eligible_at" in cleanup_columns
 
 
 def test_initialization_uses_shared_wal_and_busy_timeout(
@@ -561,9 +568,13 @@ def test_conflicting_duplicate_routing_proposal_fails_closed(
     store.begin_turn("conversation-1", "1", "append", 0)
     store.stage_turn("conversation-1", "1", _staged())
 
-    proposal = {field: value}
+    proposal = (
+        _staged(selected_agent_id=value)
+        if field == "selected_agent_id"
+        else _staged(route_source=value)
+    )
     with pytest.raises(StagedTurnConflictError):
-        store.stage_turn("conversation-1", "1", _staged(**proposal))
+        store.stage_turn("conversation-1", "1", proposal)
 
 
 def test_tombstone_clears_context_and_turns_then_refuses_new_work(
@@ -662,6 +673,7 @@ def test_expired_review_turn_retains_candidate_for_later_tombstone(
 
     assert store.purge_expired_staged(datetime.fromisoformat(expires_at)) == 1
     assert store.load_turn(key, "1") is None
+    assert store.list_checkpoint_cleanup_candidates() == ((key, candidate),)
     assert store.tombstone(key) == (candidate,)
 
 

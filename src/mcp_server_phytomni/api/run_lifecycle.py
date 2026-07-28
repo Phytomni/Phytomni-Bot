@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import os
 import sqlite3
 import threading
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
@@ -24,10 +25,10 @@ from typing import Any
 
 from fastapi import BackgroundTasks, HTTPException
 
+from ..runtime.checkpoint_backend import build_default_checkpointer
 from ..runtime.conversation_context.store import ConversationContextStore
 from ..runtime.deep_genome_store import DeepGenomeStore
 from ..runtime.deep_genome_store_projection import snapshot_to_canonical_result
-from ..runtime.langgraph_runner import ensure_checkpointer
 from ..runtime.run_registry import (
     RunFilter,
     RunOutcome,
@@ -78,6 +79,7 @@ type StripResult = Callable[[dict[str, Any]], dict[str, Any]]
 type RegistryFactory = Callable[[str], Any]
 type CheckpointerFactory = Callable[[], Any]
 type CleanupCandidate = tuple[str, str]
+_CHECKPOINTS_DATABASE_FILENAME = "checkpoints.db"
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +147,7 @@ async def _delete_review_candidate_checkpoints(
     *,
     checkpointer_factory: CheckpointerFactory,
     logger: logging.Logger,
+    close_checkpointer: bool,
 ) -> tuple[CleanupCandidate, ...]:
     """Delete only durable candidate threads and return completed rows."""
     try:
@@ -179,7 +182,22 @@ async def _delete_review_candidate_checkpoints(
             deleted.append((conversation_key, candidate_thread_id))
         return tuple(deleted)
     finally:
-        await _close_checkpointer(checkpointer, logger)
+        if close_checkpointer:
+            await _close_checkpointer(checkpointer, logger)
+
+
+def _checkpoint_database_path(tasks_db_path: str) -> str:
+    """Return the persistent checkpoint DB beside the tasks DB."""
+    directory = os.path.dirname(tasks_db_path) or "."
+    return os.path.join(directory, _CHECKPOINTS_DATABASE_FILENAME)
+
+
+def _lifecycle_checkpointer_factory(
+    tasks_db_path: str,
+) -> CheckpointerFactory:
+    """Open a fresh persistent saver for one synchronous GC pass."""
+    checkpoint_path = _checkpoint_database_path(tasks_db_path)
+    return lambda: build_default_checkpointer(checkpoint_path)
 
 
 def _run_async_at_sync_boundary(
@@ -212,10 +230,12 @@ def _purge_expired_context_best_effort(
     *,
     path: str,
     now: datetime,
-    checkpointer_factory: CheckpointerFactory,
+    checkpointer_factory: CheckpointerFactory | None,
     logger: logging.Logger,
 ) -> None:
     """Purge staged rows and candidate checkpoints under one durable lock."""
+    owns_checkpointer = checkpointer_factory is None
+    factory = checkpointer_factory or _lifecycle_checkpointer_factory(path)
     store = ConversationContextStore(path)
     mutation_lock = store.acquire_review_mutation_lock()
     try:
@@ -228,8 +248,9 @@ def _purge_expired_context_best_effort(
         deleted = _run_async_at_sync_boundary(
             lambda: _delete_review_candidate_checkpoints(
                 candidates,
-                checkpointer_factory=checkpointer_factory,
+                checkpointer_factory=factory,
                 logger=logger,
+                close_checkpointer=owns_checkpointer,
             )
         )
         if deleted:
@@ -245,7 +266,7 @@ def purge_expired_runs_best_effort(
     db_path: str | None = None,
     registry_factory: RegistryFactory = RunRegistry,
     logger: logging.Logger = _LOGGER,
-    checkpointer_factory: CheckpointerFactory = ensure_checkpointer,
+    checkpointer_factory: CheckpointerFactory | None = None,
 ) -> None:
     """Run registry and staged-context TTL purges, swallowing storage failures."""
     path = _database_path(db_path)
