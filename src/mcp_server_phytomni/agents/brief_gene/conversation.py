@@ -76,6 +76,14 @@ _IDENTIFIER_PREFIXES: tuple[tuple[str, str], ...] = (
     ("mt", "mtr"),
     ("pt", "ptr"),
 )
+_BRIEF_GENE_ENTITY_NAMESPACE = "brief_gene."
+_GENE_ENTITY_PREFIX = f"{_BRIEF_GENE_ENTITY_NAMESPACE}gene."
+_SPECIES_ENTITY_PREFIX = f"{_BRIEF_GENE_ENTITY_NAMESPACE}species."
+_EVIDENCE_ENTITY_PREFIX = f"{_BRIEF_GENE_ENTITY_NAMESPACE}evidence."
+_REPORT_REVISION_ENTITY_PREFIX = (
+    f"{_BRIEF_GENE_ENTITY_NAMESPACE}report_revision."
+)
+_ARTIFACT_ENTITY_PREFIX = f"{_BRIEF_GENE_ENTITY_NAMESPACE}artifact."
 
 
 class BriefGeneConversationOperation(StrEnum):
@@ -219,30 +227,35 @@ def _active_from_projection(
     artifact_id: str | None = None
     report_revision = 0
     for entity in projection.active_entities:
-        if entity.entity_id.startswith("brief_gene:gene:"):
-            candidate = entity.label or entity.entity_id.rsplit(":", 1)[-1]
+        if entity.entity_id.startswith(_GENE_ENTITY_PREFIX):
+            candidate = (
+                entity.label or entity.entity_id[len(_GENE_ENTITY_PREFIX) :]
+            )
             if _looks_like_gene_identifier(candidate):
                 gene_id = candidate[:_MAX_GENE_ID_CHARS]
-        elif entity.entity_id.startswith("brief_gene:species:"):
+        elif entity.entity_id.startswith(_SPECIES_ENTITY_PREFIX):
             species_code = _normalize_species(entity.label)
             if species_code is None:
                 species_code = _normalize_species(
-                    entity.entity_id.rsplit(":", 1)[-1]
+                    entity.entity_id[len(_SPECIES_ENTITY_PREFIX) :]
                 )
-        elif entity.entity_id.startswith("brief_gene:evidence:"):
+        elif entity.entity_id.startswith(_EVIDENCE_ENTITY_PREFIX):
             value = _opaque_text(
-                entity.label or entity.entity_id.rsplit(":", 1)[-1]
+                entity.label
+                or entity.entity_id[len(_EVIDENCE_ENTITY_PREFIX) :]
             )
             if value and value not in evidence:
                 evidence.append(value)
-        elif entity.entity_id.startswith("brief_gene:artifact:"):
+        elif entity.entity_id.startswith(_ARTIFACT_ENTITY_PREFIX):
             value = _opaque_text(
-                entity.label or entity.entity_id.rsplit(":", 1)[-1], 128
+                entity.label
+                or entity.entity_id[len(_ARTIFACT_ENTITY_PREFIX) :],
+                128,
             )
             if value:
                 artifact_id = value
-        elif entity.entity_id.startswith("brief_gene:report-revision:"):
-            suffix = entity.entity_id.rsplit(":", 1)[-1]
+        elif entity.entity_id.startswith(_REPORT_REVISION_ENTITY_PREFIX):
+            suffix = entity.entity_id[len(_REPORT_REVISION_ENTITY_PREFIX) :]
             if suffix.isdigit():
                 report_revision = max(0, int(suffix))
     if artifact_id is None and len(projection.artifact_refs) == 1:
@@ -445,8 +458,8 @@ def _ordered_documents(
 def _document_reference(document: Mapping[str, Any]) -> str:
     """Extract one opaque evidence reference from a document row."""
     for key in (
-        "source_id",
         "file_id",
+        "source_id",
         "doc_id",
         "sourceId",
         "reference_id",
@@ -543,7 +556,7 @@ class BriefGeneConversationAdapter:
             BriefGeneConversationOperation.CLARIFY,
         }
         self._evidence_documents = [
-            {"source_id": reference} for reference in active.evidence_refs
+            {"file_id": reference} for reference in active.evidence_refs
         ]
         return {
             "user_query": projection.current_query,
@@ -739,7 +752,7 @@ class BriefGeneConversationAdapter:
         self._candidate = candidate
         self._active = candidate
         self._evidence_documents = [
-            {"source_id": reference} for reference in refs
+            {"file_id": reference} for reference in refs
         ]
         self._captured_result = dict(result)
         self._operation_successful = True
@@ -756,19 +769,21 @@ class BriefGeneConversationAdapter:
             return ContextDelta()
         entities = [
             ContextEntity(
-                entity_id=_semantic_id("brief_gene:gene:", active.gene_id),
+                entity_id=_semantic_id(_GENE_ENTITY_PREFIX, active.gene_id),
                 entity_type="gene",
                 label=active.gene_id,
             ),
             ContextEntity(
                 entity_id=_semantic_id(
-                    "brief_gene:species:", active.species_code
+                    _SPECIES_ENTITY_PREFIX, active.species_code
                 ),
                 entity_type="species",
                 label=active.species_code,
             ),
             ContextEntity(
-                entity_id=f"brief_gene:report-revision:{active.report_revision}",
+                entity_id=_semantic_id(
+                    _REPORT_REVISION_ENTITY_PREFIX, str(active.report_revision)
+                ),
                 entity_type="task",
                 label=f"report revision {active.report_revision}",
             ),
@@ -776,7 +791,7 @@ class BriefGeneConversationAdapter:
         for reference in active.evidence_refs[:MAX_CONTEXT_ITEMS]:
             entities.append(
                 ContextEntity(
-                    entity_id=_semantic_id("brief_gene:evidence:", reference),
+                    entity_id=_semantic_id(_EVIDENCE_ENTITY_PREFIX, reference),
                     entity_type="task",
                     label=reference[:MAX_CONTEXT_TEXT_CHARS],
                 )
@@ -791,7 +806,7 @@ class BriefGeneConversationAdapter:
             entities.append(
                 ContextEntity(
                     entity_id=_semantic_id(
-                        "brief_gene:artifact:", active.artifact_id
+                        _ARTIFACT_ENTITY_PREFIX, active.artifact_id
                     ),
                     entity_type="file",
                     label=active.artifact_id,
@@ -801,7 +816,7 @@ class BriefGeneConversationAdapter:
         removals = [
             entity.entity_id
             for entity in self._prepared.projection.active_entities
-            if entity.entity_id.startswith("brief_gene:")
+            if entity.entity_id.startswith(_BRIEF_GENE_ENTITY_NAMESPACE)
             and entity.entity_id not in current_ids
         ][:MAX_CONTEXT_ITEMS]
         summary = active.report_summary[:MAX_CONTEXT_TEXT_CHARS]
@@ -825,8 +840,7 @@ class BriefGeneConversationAdapter:
     def _answer_result(self, content: str) -> dict[str, Any]:
         """Shape a bounded follow-up answer with active evidence references."""
         documents = self._evidence_documents or [
-            {"source_id": reference}
-            for reference in self._active.evidence_refs
+            {"file_id": reference} for reference in self._active.evidence_refs
         ]
         return {
             "choices": [

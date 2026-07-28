@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from uuid import UUID
 
@@ -23,11 +24,15 @@ from mcp_server_phytomni.agents.brief_gene.resolve_query import (
 )
 from mcp_server_phytomni.mcp import handlers
 from mcp_server_phytomni.mcp.app import invoke_tool_raw
+from mcp_server_phytomni.mcp.formatting.cited import (
+    format_cited_message_result,
+)
 from mcp_server_phytomni.runtime.conversation_context.adapters import (
     brief_gene_agent_invocation,
 )
 from mcp_server_phytomni.runtime.conversation_context.models import (
     ArtifactRefV1,
+    ContextDelta,
     ContextEntity,
     ContextProjection,
 )
@@ -55,22 +60,22 @@ def _projection(
         entities.extend(
             [
                 ContextEntity(
-                    entity_id="brief_gene:gene:Os01g0177400",
+                    entity_id="brief_gene.gene.os01g0177400",
                     entity_type="gene",
                     label="Os01g0177400",
                 ),
                 ContextEntity(
-                    entity_id=f"brief_gene:species:{species}",
+                    entity_id=f"brief_gene.species.{species}",
                     entity_type="species",
                     label=species,
                 ),
                 ContextEntity(
-                    entity_id="brief_gene:evidence:paper-1",
+                    entity_id="brief_gene.evidence.paper-1",
                     entity_type="task",
                     label="paper-1",
                 ),
                 ContextEntity(
-                    entity_id="brief_gene:report-revision:3",
+                    entity_id="brief_gene.report_revision.3",
                     entity_type="task",
                     label="report revision 3",
                 ),
@@ -79,7 +84,7 @@ def _projection(
     if artifact_id is not None:
         entities.append(
             ContextEntity(
-                entity_id=f"brief_gene:artifact:{artifact_id}",
+                entity_id=f"brief_gene.artifact.{artifact_id}",
                 entity_type="file",
                 label=artifact_id,
             )
@@ -321,7 +326,9 @@ async def test_follow_up_uses_active_context_without_resolver_or_full_graph(
     async def chat(prompt: str, **kwargs: Any) -> dict[str, Any]:
         calls["prompt"] = prompt
         return {
-            "choices": [{"message": {"content": "It is expressed in leaves."}}]
+            "choices": [
+                {"message": {"content": "It is expressed in leaves [1]."}}
+            ]
         }
 
     monkeypatch.setattr(
@@ -341,11 +348,13 @@ async def test_follow_up_uses_active_context_without_resolver_or_full_graph(
     assert calls.get("resolver") is None
     assert calls.get("full") is None
     assert result["choices"][0]["message"]["content"] == (
-        "It is expressed in leaves."
+        "It is expressed in leaves [1]."
     )
     assert result["choices"][0]["message"]["doc_list"] == [
-        {"source_id": "paper-1"}
+        {"file_id": "paper-1"}
     ]
+    formatted = format_cited_message_result(result)
+    assert formatted.references[0]["file_id"] == "paper-1"
 
 
 @pytest.mark.asyncio
@@ -447,10 +456,10 @@ def test_delta_keeps_bounded_report_metadata_and_stable_thread() -> None:
     delta = adapter.delta(result)
     ids = {entity.entity_id for entity in delta.entity_upserts}
     labels = {entity.label for entity in delta.entity_upserts}
-    assert "brief_gene:gene:os01g0177400" in ids
-    assert "brief_gene:species:osa" in ids
-    assert "brief_gene:evidence:paper-1" in ids
-    assert "brief_gene:report-revision:4" in ids
+    assert "brief_gene.gene.os01g0177400" in ids
+    assert "brief_gene.species.osa" in ids
+    assert "brief_gene.evidence.paper-1" in ids
+    assert "brief_gene.report_revision.4" in ids
     assert "brief-report-1" in labels
     assert delta.summary_update is not None
     assert len(delta.summary_update) <= 4096
@@ -459,6 +468,57 @@ def test_delta_keeps_bounded_report_metadata_and_stable_thread() -> None:
     assert [item.artifact_id for item in delta.artifact_upserts] == [
         "brief-report-1"
     ]
+
+
+@pytest.mark.parametrize(
+    ("query", "result_kwargs", "expected_removals"),
+    [
+        (
+            "refresh the report",
+            {"revision": 5},
+            {"brief_gene.report_revision.3"},
+        ),
+        (
+            "AT1G01010",
+            {
+                "gene_id": "AT1G01010",
+                "species_code": "ath",
+                "artifact_id": "new-report",
+                "revision": 1,
+            },
+            {
+                "brief_gene.gene.os01g0177400",
+                "brief_gene.species.osa",
+                "brief_gene.report_revision.3",
+            },
+        ),
+    ],
+)
+def test_delta_validates_successful_replacement_and_refresh(
+    query: str,
+    result_kwargs: dict[str, Any],
+    expected_removals: set[str],
+) -> None:
+    """Successful refreshes and replacements produce valid removals."""
+    projection = _projection(query, active=True, artifact_id=None)
+    adapter = BriefGeneConversationAdapter()
+    adapter.prepare(projection)
+    result = _full_result(**result_kwargs)
+
+    assert adapter.capture_result(result, resolved=_resolved()) is True
+
+    delta = adapter.delta(result)
+    validated = ContextDelta.model_validate(delta.model_dump())
+    assert validated == delta
+    assert expected_removals <= set(delta.entity_removals)
+    assert all(
+        re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", entity.entity_id)
+        for entity in delta.entity_upserts
+    )
+    assert all(
+        re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", entity_id)
+        for entity_id in delta.entity_removals
+    )
 
 
 def test_capture_result_stages_file_id_evidence_reference() -> None:
@@ -470,6 +530,7 @@ def test_capture_result_stages_file_id_evidence_reference() -> None:
     result["choices"][0]["message"]["doc_list"] = [
         {
             "file_id": "paper-file-1",
+            "source_id": "legacy-source-1",
             "title": "Paper",
             "content": "private report body",
         }
@@ -481,7 +542,7 @@ def test_capture_result_stages_file_id_evidence_reference() -> None:
     evidence = [
         entity.label
         for entity in delta.entity_upserts
-        if entity.entity_id.startswith("brief_gene:evidence:")
+        if entity.entity_id.startswith("brief_gene.evidence.")
     ]
     assert evidence == ["paper-file-1"]
     assert "private report body" not in str(delta.model_dump())

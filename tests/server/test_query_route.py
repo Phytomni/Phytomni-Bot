@@ -1818,6 +1818,17 @@ async def test_context_expert_brief_gene_turn_stages_bounded_context_delta(
         "brief-report-1",
         "report revision 4",
     } <= labels
+    entity_ids = {
+        item["entity_id"] for item in staged.delta["active_entities"]
+    }
+    assert {
+        "brief_gene.gene.os01g0177400",
+        "brief_gene.species.osa",
+        "brief_gene.evidence.paper-1",
+        "brief_gene.report_revision.4",
+        "brief_gene.artifact.brief-report-1",
+    } <= entity_ids
+    assert all(":" not in entity_id for entity_id in entity_ids)
     assert staged.delta["task_summary"] == "Bounded rice gene summary."
     assert [
         item["artifact_id"] for item in staged.delta["artifact_index"]
