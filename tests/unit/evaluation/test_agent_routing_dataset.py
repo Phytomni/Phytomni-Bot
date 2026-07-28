@@ -33,6 +33,18 @@ from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 
 pytestmark = pytest.mark.unit
 
+ROOT = Path(__file__).resolve().parents[3]
+DATASET_ROOT = ROOT / "evaluation" / "agent_routing" / "datasets"
+
+
+def test_repository_routing_datasets_pass_all_integrity_rules() -> None:
+    """Validate the versioned repository routing corpus."""
+    dev_cases = load_dataset(DATASET_ROOT / "dev_v1.jsonl")
+    test_cases = load_dataset(DATASET_ROOT / "test_v1.jsonl")
+    validate_dataset(dev_cases, "dev")
+    validate_dataset(test_cases, "test")
+    validate_dataset_pair(dev_cases, test_cases)
+
 
 def valid_case_payload() -> dict[str, object]:
     """Return a minimal valid case payload."""
@@ -202,19 +214,11 @@ def _synthetic_case(
 
 def _synthetic_split(split: str) -> list[AgentRoutingCase]:
     """Build a complete split with the required inventory and language mix."""
+    english_agents = {
+        name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS[:5]
+    }
     english_counts = {
-        agent: (
-            3
-            if agent
-            in {
-                "ChatAgent",
-                "KnowledgeAgent",
-                "DataAgent",
-                "AnalystAgent",
-                "ReviewAgent",
-            }
-            else 2
-        )
+        agent: 3 if agent in english_agents else 2
         for agent in {
             name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
         }
