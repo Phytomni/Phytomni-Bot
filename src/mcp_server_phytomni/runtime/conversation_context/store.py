@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import sqlite3
@@ -56,6 +57,14 @@ CREATE TABLE IF NOT EXISTS conversation_turns (
     updated_at TEXT NOT NULL,
     expires_at TEXT,
     PRIMARY KEY (conversation_key, turn_id)
+)
+"""
+
+_CREATE_REVIEW_CHECKPOINT_CLEANUP = """
+CREATE TABLE IF NOT EXISTS conversation_review_checkpoint_cleanup (
+    conversation_key TEXT NOT NULL,
+    candidate_thread_id TEXT NOT NULL,
+    PRIMARY KEY (conversation_key, candidate_thread_id)
 )
 """
 
@@ -143,6 +152,7 @@ ReviewSettlementClaimStatus = Literal[
     "failed",
     "missing",
     "invalid",
+    "conflict",
 ]
 
 
@@ -213,6 +223,38 @@ def _now() -> str:
 _REVIEW_SETTLEMENT_CLAIM_TTL = timedelta(minutes=5)
 _REVIEW_SETTLEMENT_TOKEN_LIMIT = 64
 _REVIEW_SETTLEMENT_TIMESTAMP_LIMIT = 64
+_REVIEW_THREAD_ID_LIMIT = 512
+
+
+def _review_candidate_thread_id(marker: Mapping[str, Any]) -> str | None:
+    """Return only a deterministic, path-free candidate from a marker."""
+    if marker.get("operation") not in {"new_review", "scope_change"}:
+        return None
+    stable = marker.get("stable_thread_id")
+    turn_id = marker.get("turn_id")
+    candidate = marker.get("candidate_thread_id")
+    if (
+        not isinstance(stable, str)
+        or len(stable) != len("ctx-") + 64
+        or not stable.startswith("ctx-")
+        or not all(char in "0123456789abcdef" for char in stable[4:])
+        or not isinstance(turn_id, str)
+        or not turn_id
+        or len(turn_id) > 64
+        or "/" in turn_id
+        or "\\" in turn_id
+        or not isinstance(candidate, str)
+        or not candidate
+        or len(candidate) > _REVIEW_THREAD_ID_LIMIT
+        or "/" in candidate
+        or "\\" in candidate
+    ):
+        return None
+    digest = hashlib.sha256(
+        f"review-candidate-v1:{stable}:{turn_id}".encode()
+    ).hexdigest()[:32]
+    expected = f"{stable}:candidate:{digest}"
+    return candidate if candidate == expected else None
 
 
 class ConversationContextStore:
@@ -226,6 +268,7 @@ class ConversationContextStore:
         with sqlite_connection(self.db_path) as connection:
             connection.execute(_CREATE_CONTEXTS)
             connection.execute(_CREATE_TURNS)
+            connection.execute(_CREATE_REVIEW_CHECKPOINT_CLEANUP)
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_conversation_turns_expires_at "
                 "ON conversation_turns(expires_at)"
@@ -478,19 +521,43 @@ class ConversationContextStore:
         *,
         now: datetime | str | None = None,
         stale_after: timedelta = _REVIEW_SETTLEMENT_CLAIM_TTL,
+        expected_ledger_version: str | None = None,
     ) -> ReviewSettlementClaim:
-        """Claim a pending Review marker with a durable compare-and-set."""
+        """Claim a staged Review marker with a durable compare-and-set."""
         clock = self._claim_datetime(now)
         now_value = clock.isoformat()
+        # The keyword remains for callers that supplied the old bounded lease.
+        # An active claim is never automatically replaced while its worker may
+        # still be running; explicit reconciliation must fail it first.
+        del stale_after
         with self._write() as connection:
             row = connection.execute(
-                "SELECT delta_json FROM conversation_turns "
+                "SELECT state, ledger_version, base_context_version, delta_json "
+                "FROM conversation_turns "
                 "WHERE conversation_key = ? AND turn_id = ?",
                 (key, turn_id),
             ).fetchone()
             if row is None:
                 return ReviewSettlementClaim("missing")
-            record = self._review_record(row[0])
+            context = connection.execute(
+                "SELECT context_version, state FROM conversation_contexts "
+                "WHERE conversation_key = ?",
+                (key,),
+            ).fetchone()
+            if context is not None and context[1] == "tombstoned":
+                return ReviewSettlementClaim("conflict")
+            if row[0] not in {"staged", "committed"}:
+                return ReviewSettlementClaim("conflict")
+            if (
+                expected_ledger_version is not None
+                and row[1] != expected_ledger_version
+            ):
+                return ReviewSettlementClaim("conflict")
+            if row[0] == "staged":
+                current_version = 0 if context is None else context[0]
+                if current_version != row[2]:
+                    return ReviewSettlementClaim("conflict")
+            record = self._review_record(row[3])
             if record is None:
                 return ReviewSettlementClaim("invalid")
             decoded, marker = record
@@ -518,11 +585,10 @@ class ConversationContextStore:
                 ):
                     return ReviewSettlementClaim("invalid")
                 try:
-                    claimed_clock = self._claim_datetime(claimed_at)
+                    self._claim_datetime(claimed_at)
                 except (TypeError, ValueError):
                     return ReviewSettlementClaim("invalid")
-                if clock - claimed_clock < stale_after:
-                    return ReviewSettlementClaim("settling")
+                return ReviewSettlementClaim("settling")
             elif "settlement_claim_token" in marker or (
                 "settlement_claimed_at" in marker
             ):
@@ -541,6 +607,37 @@ class ConversationContextStore:
             ):
                 return ReviewSettlementClaim("invalid")
             return ReviewSettlementClaim("claimed", claim_token)
+
+    def is_review_settlement_claim_active(
+        self,
+        key: str,
+        turn_id: str,
+        *,
+        claim_token: str,
+    ) -> bool:
+        """Check a Review fencing token immediately before private writes."""
+        if (
+            not isinstance(claim_token, str)
+            or not claim_token
+            or len(claim_token) > _REVIEW_SETTLEMENT_TOKEN_LIMIT
+        ):
+            return False
+        with sqlite_connection(self.db_path) as connection:
+            row = connection.execute(
+                "SELECT delta_json FROM conversation_turns "
+                "WHERE conversation_key = ? AND turn_id = ?",
+                (key, turn_id),
+            ).fetchone()
+        if row is None:
+            return False
+        record = self._review_record(row[0])
+        if record is None:
+            return False
+        _decoded, marker = record
+        return (
+            marker.get("settlement_state") == "settling"
+            and marker.get("settlement_claim_token") == claim_token
+        )
 
     def finalize_review_settlement(
         self,
@@ -579,6 +676,8 @@ class ConversationContextStore:
             current_state = marker.get("settlement_state")
             if current_state == state:
                 return True
+            if current_state in {"promoted", "rejected", "failed"}:
+                return False
             if (
                 current_state != "settling"
                 or marker.get("settlement_claim_token") != claim_token
@@ -608,8 +707,11 @@ class ConversationContextStore:
             if record is None:
                 return False
             decoded, marker = record
-            if marker.get("settlement_state") == "promoted":
+            state = marker.get("settlement_state")
+            if state == "promoted" or state == "rejected":
                 return False
+            if state == "failed":
+                return True
             marker = dict(marker)
             marker["settlement_state"] = "failed"
             marker.pop("settlement_claim_token", None)
@@ -733,9 +835,53 @@ class ConversationContextStore:
                 (_now(), key, turn_id),
             )
 
-    def tombstone(self, key: str) -> None:
+    def tombstone(self, key: str) -> tuple[str, ...]:
         now = _now()
         with self._write() as connection:
+            candidates = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT candidate_thread_id "
+                    "FROM conversation_review_checkpoint_cleanup "
+                    "WHERE conversation_key = ?",
+                    (key,),
+                ).fetchall()
+            }
+            turn_rows = connection.execute(
+                "SELECT turn_id, delta_json FROM conversation_turns "
+                "WHERE conversation_key = ?",
+                (key,),
+            ).fetchall()
+            for turn_id, delta_json in turn_rows:
+                record = self._review_record(delta_json)
+                if record is None:
+                    continue
+                decoded, marker = record
+                candidate = _review_candidate_thread_id(marker)
+                if candidate is not None:
+                    candidates.add(candidate)
+                if marker.get("settlement_state") in {
+                    "pending",
+                    "settling",
+                }:
+                    failed_marker = dict(marker)
+                    failed_marker["settlement_state"] = "failed"
+                    failed_marker.pop("settlement_claim_token", None)
+                    failed_marker.pop("settlement_claimed_at", None)
+                    self._write_review_marker(
+                        connection,
+                        key,
+                        turn_id,
+                        decoded,
+                        failed_marker,
+                        now,
+                    )
+            for candidate in candidates:
+                connection.execute(
+                    "INSERT OR IGNORE INTO conversation_review_checkpoint_cleanup "
+                    "(conversation_key, candidate_thread_id) VALUES (?, ?)",
+                    (key, candidate),
+                )
             connection.execute(
                 "DELETE FROM conversation_turns WHERE conversation_key=?",
                 (key,),
@@ -754,13 +900,20 @@ class ConversationContextStore:
                     "UPDATE conversation_contexts SET context_json='{}', state='tombstoned', checkpoint_cleanup_state='pending', updated_at=?, tombstoned_at=? WHERE conversation_key=?",
                     (now, now, key),
                 )
+        return tuple(sorted(candidates))
 
     def complete_checkpoint_cleanup(self, key: str) -> None:
         with self._write() as connection:
-            connection.execute(
+            updated = connection.execute(
                 "UPDATE conversation_contexts SET checkpoint_cleanup_state='complete', updated_at=? WHERE conversation_key=? AND state='tombstoned'",
                 (_now(), key),
             )
+            if updated.rowcount:
+                connection.execute(
+                    "DELETE FROM conversation_review_checkpoint_cleanup "
+                    "WHERE conversation_key = ?",
+                    (key,),
+                )
 
     def purge_expired_staged(self, now: str | datetime) -> int:
         now_value = now.isoformat() if isinstance(now, datetime) else now

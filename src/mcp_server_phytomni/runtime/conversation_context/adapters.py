@@ -311,6 +311,7 @@ class ConversationContextExecutor:
         *,
         accepted: bool,
         staged_turn: StoredTurn | None = None,
+        expected_ledger_version: str | None = None,
     ) -> bool:
         """Serialize the complete Review promotion for one ack boundary."""
         async with self._review_settlement_ack_lock:
@@ -318,6 +319,7 @@ class ConversationContextExecutor:
                 key,
                 accepted=accepted,
                 staged_turn=staged_turn,
+                expected_ledger_version=expected_ledger_version,
             )
 
     async def _acknowledge_review_settlement_key_locked(
@@ -326,6 +328,7 @@ class ConversationContextExecutor:
         *,
         accepted: bool,
         staged_turn: StoredTurn | None = None,
+        expected_ledger_version: str | None = None,
     ) -> bool:
         """Apply one durable Review acknowledgment by conversation identity."""
         service = self._service_for_request()
@@ -355,7 +358,10 @@ class ConversationContextExecutor:
                 return accepted
             if settlement_state in {"rejected", "failed"}:
                 return False
-            claim = service.store.claim_review_settlement(*key)
+            claim = service.store.claim_review_settlement(
+                *key,
+                expected_ledger_version=expected_ledger_version,
+            )
             if claim.status == "invalid":
                 service.store.mark_review_settlement_failed(*key)
                 return False
@@ -379,6 +385,14 @@ class ConversationContextExecutor:
                     *key, claim_token=claim_token, state="failed"
                 )
             return False
+        if claim_token is not None:
+            set_fence = getattr(adapter, "set_settlement_fence", None)
+            if callable(set_fence):
+                set_fence(
+                    lambda: service.store.is_review_settlement_claim_active(
+                        *key, claim_token=claim_token
+                    )
+                )
         if not accepted:
             adapter.mark_failed()
             cleanup_error: BaseException | None = None
@@ -400,6 +414,13 @@ class ConversationContextExecutor:
                 raise cleanup_error
             return marker_saved
         try:
+            if (
+                claim_token is not None
+                and not service.store.is_review_settlement_claim_active(
+                    *key, claim_token=claim_token
+                )
+            ):
+                raise RuntimeError("Review settlement claim was fenced")
             await adapter.settle_async(True)
         except BaseException:
             adapter.mark_failed()
@@ -449,12 +470,14 @@ class ConversationContextExecutor:
         *,
         accepted: bool,
         staged_turn: StoredTurn | None = None,
+        expected_ledger_version: str | None = None,
     ) -> bool:
         """Acknowledge Review from the HTTP settlement route after restart."""
         return await self._acknowledge_review_settlement_key(
             (conversation_key, turn_id),
             accepted=accepted,
             staged_turn=staged_turn,
+            expected_ledger_version=expected_ledger_version,
         )
 
     async def execute(

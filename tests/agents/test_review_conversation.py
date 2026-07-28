@@ -921,6 +921,96 @@ async def test_review_ack_claim_serializes_separate_executors(
 
 
 @pytest.mark.asyncio
+async def test_review_ack_fence_blocks_promotion_after_tombstone(
+    tmp_path: Any,
+) -> None:
+    """A tombstone fences an in-flight worker before it writes stable state."""
+    prepared = ReviewConversationAdapter()
+    prepared.prepare(
+        _projection("Review maize heat tolerance", active=False),
+        turn_id="fenced-1",
+    )
+    prepared._agent = object()
+    metadata = prepared.settlement_metadata()
+    assert metadata is not None
+    key = str(_CONVERSATION_KEY)
+    db_path = tmp_path / "context.sqlite"
+    store = ConversationContextStore(str(db_path))
+    store.begin_turn(key, "fenced-1", "append", 0)
+    store.stage_turn(
+        key,
+        "fenced-1",
+        StagedTurn(
+            operation="append",
+            base_context_version=0,
+            selected_agent_id="ReviewAgent",
+            route_source="explicit_selection",
+            result={"choices": [{"message": {"content": "answer"}}]},
+            delta={},
+            ledger_version="a" * 64,
+            schema_version=1,
+            ledger_cursor=1,
+            observed_mode="expert",
+            stage_metadata={"_review_settlement": metadata},
+        ),
+    )
+    started = asyncio.Event()
+    release = asyncio.Event()
+    settle_calls = 0
+
+    class FencedAdapter:
+        report_revision = 1
+
+        def __init__(self) -> None:
+            self._fence: Any = None
+
+        def set_settlement_fence(self, fence: Any) -> None:
+            self._fence = fence
+
+        def mark_failed(self) -> None:
+            return None
+
+        async def discard_pending_candidate(self) -> None:
+            return None
+
+        async def settle_async(self, _success: bool) -> int:
+            nonlocal settle_calls
+            settle_calls += 1
+            started.set()
+            await release.wait()
+            assert self._fence is not None
+            if not self._fence():
+                raise RuntimeError("Review settlement claim was fenced")
+            return self.report_revision
+
+    async def loader(
+        _metadata: Mapping[str, Any], _staged_turn: StoredTurn
+    ) -> ReviewConversationAdapter:
+        return FencedAdapter()  # type: ignore[return-value]
+
+    executor = ConversationContextExecutor(
+        store_factory=lambda: ConversationContextStore(str(db_path)),
+        select_agent=lambda *_args, **_kwargs: pytest.fail(
+            "settlement must not route"
+        ),
+        review_settlement_loader=loader,
+    )
+    task = asyncio.create_task(
+        executor.acknowledge_review_settlement_for_turn(
+            key, "fenced-1", accepted=True
+        )
+    )
+    await started.wait()
+    assert store.tombstone(key)
+    release.set()
+
+    with pytest.raises(RuntimeError, match="fenced"):
+        await task
+    assert settle_calls == 1
+    assert store.load_turn(key, "fenced-1") is None
+
+
+@pytest.mark.asyncio
 async def test_review_loader_failure_persists_terminal_failed_marker(
     tmp_path: Any,
 ) -> None:

@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -58,13 +58,23 @@ def _require_enabled(dependencies: ContextRouteDependencies) -> None:
         raise HTTPException(status_code=404, detail="not found")
 
 
-async def _delete_checkpoint_threads(conversation_key: Any) -> None:
-    """Delete every synchronous-agent thread through the active saver."""
+async def _delete_checkpoint_threads(
+    conversation_key: Any,
+    candidate_thread_ids: Sequence[str] = (),
+) -> None:
+    """Delete stable and durable turn-scoped threads through the active saver."""
     checkpointer = ensure_checkpointer()
+    stable_thread_ids = {
+        agent_thread_id(conversation_key, agent_id)
+        for agent_id in _SYNC_CONTEXT_AGENTS
+    }
     for agent_id in _SYNC_CONTEXT_AGENTS:
         await checkpointer.adelete_thread(
             agent_thread_id(conversation_key, agent_id)
         )
+    for candidate_thread_id in dict.fromkeys(candidate_thread_ids):
+        if candidate_thread_id not in stable_thread_ids:
+            await checkpointer.adelete_thread(candidate_thread_id)
 
 
 def register_conversation_context_routes(
@@ -110,29 +120,74 @@ def register_conversation_context_routes(
                     status_code=503,
                     detail="Review settlement metadata is invalid",
                 )
-            callback = dependencies.acknowledge_review_settlement
-            if callback is None:
+            context = store.load_context(key)
+            if context is not None and context.state == "tombstoned":
                 raise HTTPException(
-                    status_code=503,
-                    detail="Review settlement is not available",
+                    status_code=409,
+                    detail="context settlement conflict",
                 )
-            try:
-                acknowledged = await callback(
-                    key,
-                    payload.turn_id,
-                    accepted=True,
-                    staged_turn=staged_turn,
+            if staged_turn.ledger_version != payload.ledger_version:
+                raise HTTPException(
+                    status_code=409,
+                    detail="context settlement conflict",
                 )
-            except Exception as exc:
+            if staged_turn.state == "staged":
+                current_version = (
+                    0 if context is None else context.context_version
+                )
+                if current_version != staged_turn.base_context_version:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="context settlement conflict",
+                    )
+            settlement_state = bounded_metadata["settlement_state"]
+            if staged_turn.state not in {"staged", "committed"}:
+                raise HTTPException(
+                    status_code=409,
+                    detail="context settlement conflict",
+                )
+            if staged_turn.state == "committed" and settlement_state != (
+                "promoted"
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail="context settlement conflict",
+                )
+            if settlement_state == "settling":
                 raise HTTPException(
                     status_code=503,
                     detail="Review settlement is pending",
-                ) from exc
-            if not acknowledged:
-                raise HTTPException(
-                    status_code=503,
-                    detail="Review settlement was not promoted",
                 )
+            if settlement_state not in {"pending", "promoted"}:
+                raise HTTPException(
+                    status_code=409,
+                    detail="context settlement conflict",
+                )
+            if settlement_state == "pending":
+                callback = dependencies.acknowledge_review_settlement
+                if callback is None:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Review settlement is not available",
+                    )
+                try:
+                    acknowledged = await callback(
+                        key,
+                        payload.turn_id,
+                        accepted=True,
+                        staged_turn=staged_turn,
+                        expected_ledger_version=payload.ledger_version,
+                    )
+                except Exception as exc:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Review settlement is pending",
+                    ) from exc
+                if not acknowledged:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="Review settlement was not promoted",
+                    )
         try:
             settlement = store.commit_staged_turn(
                 key,
@@ -171,9 +226,11 @@ def register_conversation_context_routes(
         store = dependencies.get_store()
         key = str(payload.conversation_key)
         previous = store.load_context(key)
-        store.tombstone(key)
+        candidate_thread_ids = store.tombstone(key)
         try:
-            await _delete_checkpoint_threads(payload.conversation_key)
+            await _delete_checkpoint_threads(
+                payload.conversation_key, candidate_thread_ids
+            )
         except Exception:  # noqa: BLE001 - deletion remains retryable
             logger.warning("conversation checkpoint cleanup deferred")
         else:

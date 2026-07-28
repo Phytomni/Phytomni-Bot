@@ -977,6 +977,16 @@ class ReviewConversationAdapter:
         self._candidate_discarded = False
         self._pending_report_text: str | None = None
         self._ordered_doc_list: list[dict[str, Any]] = []
+        self._settlement_fence: Callable[[], bool] | None = None
+
+    def set_settlement_fence(self, fence: Callable[[], bool]) -> None:
+        """Install the durable claim check used immediately before writes."""
+        self._settlement_fence = fence
+
+    def _check_settlement_fence(self) -> None:
+        """Fail closed when tombstone or another worker revoked the claim."""
+        if self._settlement_fence is not None and not self._settlement_fence():
+            raise RuntimeError("Review settlement claim was fenced")
 
     def prepare(
         self,
@@ -1508,6 +1518,7 @@ class ReviewConversationAdapter:
         if self._settled:
             return self._report_revision
         next_revision = self._report_revision + 1
+        self._check_settlement_fence()
         if prepared.operation in {
             ReviewConversationOperation.NEW_REVIEW,
             ReviewConversationOperation.SCOPE_CHANGE,
@@ -1537,6 +1548,7 @@ class ReviewConversationAdapter:
         values: dict[str, Any] = {"report_revision": revision}
         if self._pending_report_text is not None:
             values["summary_content"] = self._pending_report_text
+        self._check_settlement_fence()
         await updater(
             build_runnable_config(self.stable_thread_id), values=values
         )
@@ -1573,6 +1585,7 @@ class ReviewConversationAdapter:
         values["report_revision"] = revision
         if self._pending_report_text is not None:
             values["summary_content"] = self._pending_report_text
+        self._check_settlement_fence()
         await updater(
             build_runnable_config(self.stable_thread_id), values=values
         )

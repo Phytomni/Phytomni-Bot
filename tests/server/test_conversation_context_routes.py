@@ -315,7 +315,9 @@ async def test_settlement_route_invokes_injected_review_ack_before_commit(
             *,
             accepted: bool,
             staged_turn: object,
+            expected_ledger_version: str | None = None,
         ) -> bool:
+            assert expected_ledger_version == _LEDGER_VERSION
             context = store.load_context(conversation_key)
             self.context_versions_at_ack.append(
                 None if context is None else context.context_version
@@ -405,8 +407,10 @@ async def test_review_promotion_failure_does_not_commit_shared_context(
             *,
             accepted: bool,
             staged_turn: object,
+            expected_ledger_version: str | None = None,
         ) -> bool:
             assert accepted is True
+            assert expected_ledger_version == _LEDGER_VERSION
             assert store.load_context(conversation_key) is None
             del staged_turn
             raise RuntimeError("private promotion unavailable")
@@ -463,6 +467,82 @@ async def test_review_settlement_rejects_arbitrary_thread_namespace(
         failed.stage_metadata["_review_settlement"]["settlement_state"]
         == "failed"
     )
+
+
+async def test_review_stale_ledger_is_rejected_before_private_ack(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A stale Review request cannot promote before the durable ledger check."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "true")
+    tasks_db = tmp_path / "server_tasks.db"
+    keys_db = tmp_path / "keys.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tasks_db))
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(keys_db))
+    key = ApiKeyStore(str(keys_db)).create(user_id="u1").api_key
+    store = ConversationContextStore(str(tasks_db))
+    stable_thread = agent_thread_id(_CONVERSATION_KEY, "ReviewAgent")
+    metadata = {
+        "version": 1,
+        "operation": "new_review",
+        "stable_thread_id": stable_thread,
+        "candidate_thread_id": _candidate_thread_id(stable_thread, "1"),
+        "turn_id": "1",
+        "report_revision": 0,
+        "settlement_state": "pending",
+    }
+    _stage_turn(store, review_metadata=metadata)
+
+    class SpyExecutor:
+        calls = 0
+
+        async def execute(self, **_kwargs: object) -> object:
+            raise AssertionError("the route test does not invoke Expert")
+
+        async def acknowledge_review_settlement_for_turn(
+            self,
+            _conversation_key: str,
+            _turn_id: str,
+            *,
+            accepted: bool,
+            staged_turn: object,
+            expected_ledger_version: str | None = None,
+        ) -> bool:
+            assert accepted is True
+            assert staged_turn is not None
+            assert expected_ledger_version == _LEDGER_VERSION
+            self.calls += 1
+            return True
+
+    executor = SpyExecutor()
+    async with open_asgi_client(
+        monkeypatch,
+        create_app(context_executor=executor),
+        base_url="http://api.context.test",
+    ) as client:
+        stale = await client.post(
+            "/v1/conversation-context/settle",
+            headers=_headers(key),
+            json=_settlement_payload(ledger_version="b" * 64),
+        )
+        assert stale.status_code == 409
+        assert executor.calls == 0
+        assert store.load_context(str(_CONVERSATION_KEY)) is None
+        pending = store.load_turn(str(_CONVERSATION_KEY), "1")
+        assert pending is not None
+        assert pending.stage_metadata is not None
+        assert pending.stage_metadata["_review_settlement"][
+            "settlement_state"
+        ] == ("pending")
+
+        accepted = await client.post(
+            "/v1/conversation-context/settle",
+            headers=_headers(key),
+            json=_settlement_payload(),
+        )
+
+    assert accepted.status_code == 200
+    assert executor.calls == 1
 
 
 async def test_settlement_rejects_unknown_or_mismatched_turns(
@@ -548,6 +628,107 @@ async def test_tombstone_clears_state_and_deletes_sync_threads(
     }
     with pytest.raises(ConversationTombstonedError):
         store.begin_turn(str(_CONVERSATION_KEY), "3", "append", 1)
+
+
+async def test_tombstone_deletes_durable_review_candidate_thread(
+    context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tombstone cleanup includes candidate threads retained in staged metadata."""
+    from mcp_server_phytomni.api.routes import conversation_context
+
+    class _Checkpointer:
+        def __init__(self) -> None:
+            self.deleted: list[str] = []
+
+        async def adelete_thread(self, thread_id: str) -> None:
+            self.deleted.append(thread_id)
+
+    client, key, store = context_client
+    stable_thread = agent_thread_id(_CONVERSATION_KEY, "ReviewAgent")
+    candidate_thread = _candidate_thread_id(stable_thread, "1")
+    _stage_turn(
+        store,
+        review_metadata={
+            "version": 1,
+            "operation": "new_review",
+            "stable_thread_id": stable_thread,
+            "candidate_thread_id": candidate_thread,
+            "turn_id": "1",
+            "report_revision": 0,
+            "settlement_state": "pending",
+        },
+    )
+    checkpointer = _Checkpointer()
+    monkeypatch.setattr(
+        conversation_context, "ensure_checkpointer", lambda: checkpointer
+    )
+
+    response = await client.post(
+        "/v1/conversation-context/tombstone",
+        headers=_headers(key),
+        json=_tombstone_payload(),
+    )
+
+    assert response.status_code == 200
+    assert candidate_thread in checkpointer.deleted
+
+
+async def test_tombstone_retry_replays_durable_candidate_cleanup(
+    context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed cleanup retains the candidate thread for the next request."""
+    from mcp_server_phytomni.api.routes import conversation_context
+
+    class _Checkpointer:
+        def __init__(self) -> None:
+            self.fail = True
+            self.deleted: list[str] = []
+
+        async def adelete_thread(self, thread_id: str) -> None:
+            self.deleted.append(thread_id)
+            if self.fail:
+                raise RuntimeError("checkpoint cleanup unavailable")
+
+    client, key, store = context_client
+    stable_thread = agent_thread_id(_CONVERSATION_KEY, "ReviewAgent")
+    candidate_thread = _candidate_thread_id(stable_thread, "1")
+    _stage_turn(
+        store,
+        review_metadata={
+            "version": 1,
+            "operation": "scope_change",
+            "stable_thread_id": stable_thread,
+            "candidate_thread_id": candidate_thread,
+            "turn_id": "1",
+            "report_revision": 0,
+            "settlement_state": "pending",
+        },
+    )
+    checkpointer = _Checkpointer()
+    monkeypatch.setattr(
+        conversation_context, "ensure_checkpointer", lambda: checkpointer
+    )
+
+    first = await client.post(
+        "/v1/conversation-context/tombstone",
+        headers=_headers(key),
+        json=_tombstone_payload(),
+    )
+    checkpointer.fail = False
+    second = await client.post(
+        "/v1/conversation-context/tombstone",
+        headers=_headers(key),
+        json=_tombstone_payload(),
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert candidate_thread in checkpointer.deleted
+    complete = store.load_context(str(_CONVERSATION_KEY))
+    assert complete is not None
+    assert complete.checkpoint_cleanup_state == "complete"
 
 
 async def test_tombstone_is_idempotent_and_retries_pending_cleanup(

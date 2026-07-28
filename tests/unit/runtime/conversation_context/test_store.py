@@ -15,6 +15,7 @@ from threading import Barrier
 
 import pytest
 
+from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ContextVersionConflictError,
     ConversationContextStore,
@@ -365,10 +366,10 @@ def test_review_settlement_reject_race_has_one_terminal_winner(
     )
 
 
-def test_review_settlement_claim_recovers_only_after_bounded_timeout(
+def test_review_settlement_claim_never_auto_reclaims_an_active_worker(
     store: ConversationContextStore,
 ) -> None:
-    """A stranded worker lease can be replaced after its bounded timeout."""
+    """Lease expiry never permits a second worker to promote concurrently."""
     key = "conversation-1"
     start = datetime(2026, 7, 28, tzinfo=UTC)
     store.begin_turn(key, "1", "append", 0)
@@ -382,15 +383,16 @@ def test_review_settlement_claim_recovers_only_after_bounded_timeout(
     active = store.claim_review_settlement(
         key, "1", now=start + timedelta(minutes=4, seconds=59)
     )
-    recovered = store.claim_review_settlement(
+    expired = store.claim_review_settlement(
         key, "1", now=start + timedelta(minutes=5, seconds=1)
     )
 
     assert first.status == "claimed"
     assert active.status == "settling"
-    assert recovered.status == "claimed"
-    assert recovered.claim_token != first.claim_token
+    assert expired.status == "settling"
     assert first.claim_token is not None
+    assert store.mark_review_settlement_failed(key, "1")
+    assert store.claim_review_settlement(key, "1").status == "failed"
     assert not store.finalize_review_settlement(
         key,
         "1",
@@ -398,6 +400,100 @@ def test_review_settlement_claim_recovers_only_after_bounded_timeout(
         state="promoted",
         report_revision=1,
     )
+
+
+def test_review_settlement_claim_preflights_staged_ledger_version(
+    store: ConversationContextStore,
+) -> None:
+    """A stale settlement cannot claim or mutate the Review marker."""
+    key = "conversation-1"
+    store.begin_turn(key, "1", "append", 0)
+    store.stage_turn(
+        key,
+        "1",
+        _staged(stage_metadata={"_review_settlement": _review_metadata()}),
+    )
+
+    stale = store.claim_review_settlement(
+        key, "1", expected_ledger_version="b" * 64
+    )
+
+    assert stale.status == "conflict"
+    pending = store.load_turn(key, "1")
+    assert pending is not None
+    assert pending.ledger_version == "a" * 64
+    assert pending.stage_metadata is not None
+    assert pending.stage_metadata["_review_settlement"][
+        "settlement_state"
+    ] == ("pending")
+    claim = store.claim_review_settlement(
+        key, "1", expected_ledger_version="a" * 64
+    )
+    assert claim.status == "claimed"
+
+
+def test_review_settlement_claim_accepts_the_current_active_context_version(
+    store: ConversationContextStore,
+) -> None:
+    """A valid follow-up can claim against an already committed context."""
+    key = "conversation-1"
+    store.begin_turn(key, "base", "append", 0)
+    store.stage_turn(key, "base", _staged())
+    store.commit_staged_turn(key, "base", "a" * 64, "a" * 64)
+    store.begin_turn(key, "1", "append", 1)
+    store.stage_turn(
+        key,
+        "1",
+        _staged(
+            base_context_version=1,
+            stage_metadata={"_review_settlement": _review_metadata()},
+        ),
+    )
+
+    claim = store.claim_review_settlement(
+        key, "1", expected_ledger_version="a" * 64
+    )
+
+    assert claim.status == "claimed"
+
+
+def test_tombstone_fences_and_retains_review_candidate_threads(
+    store: ConversationContextStore,
+) -> None:
+    """Tombstoning records valid candidates before deleting their staged rows."""
+    key = "conversation-1"
+    stable = "ctx-" + "a" * 64
+    candidate = _candidate_thread_id(stable, "1")
+    metadata = _review_metadata()
+    metadata.update(
+        {
+            "stable_thread_id": stable,
+            "candidate_thread_id": candidate,
+        }
+    )
+    store.begin_turn(key, "1", "append", 0)
+    store.stage_turn(
+        key,
+        "1",
+        _staged(stage_metadata={"_review_settlement": metadata}),
+    )
+    claim = store.claim_review_settlement(key, "1")
+    assert claim.claim_token is not None
+
+    candidates = store.tombstone(key)
+
+    assert candidates == (candidate,)
+    assert store.load_turn(key, "1") is None
+    assert not store.is_review_settlement_claim_active(
+        key, "1", claim_token=claim.claim_token
+    )
+    store.complete_checkpoint_cleanup(key)
+    with sqlite3.connect(store.db_path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM conversation_review_checkpoint_cleanup "
+            "WHERE conversation_key = ?",
+            (key,),
+        ).fetchone() == (0,)
 
 
 def test_review_settlement_malformed_marker_is_failed_and_not_retryable(
