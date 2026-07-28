@@ -13,6 +13,7 @@ import httpx
 import pytest
 from tests.support.http_fakes import open_asgi_client
 
+from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.runtime.conversation_context.projection import (
@@ -287,11 +288,11 @@ async def test_settlement_commits_once_and_redacts_context_contents(
         assert marker not in repeated.text
 
 
-async def test_settlement_route_invokes_injected_review_ack_after_commit(
+async def test_settlement_route_invokes_injected_review_ack_before_commit(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """The production route hands durable Review metadata to the executor."""
+    """The production route promotes Review before committing shared context."""
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "true")
     tasks_db = tmp_path / "server_tasks.db"
     keys_db = tmp_path / "keys.sqlite"
@@ -302,6 +303,7 @@ async def test_settlement_route_invokes_injected_review_ack_after_commit(
     class SpyExecutor:
         def __init__(self) -> None:
             self.calls: list[tuple[str, str, bool, str]] = []
+            self.context_versions_at_ack: list[int | None] = []
 
         async def execute(self, **_kwargs: object) -> object:
             raise AssertionError("the route test does not invoke Expert")
@@ -314,6 +316,10 @@ async def test_settlement_route_invokes_injected_review_ack_after_commit(
             accepted: bool,
             staged_turn: object,
         ) -> bool:
+            context = store.load_context(conversation_key)
+            self.context_versions_at_ack.append(
+                None if context is None else context.context_version
+            )
             self.calls.append(
                 (
                     conversation_key,
@@ -328,11 +334,12 @@ async def test_settlement_route_invokes_injected_review_ack_after_commit(
 
     executor = SpyExecutor()
     store = ConversationContextStore(str(tasks_db))
+    stable_thread = agent_thread_id(_CONVERSATION_KEY, "ReviewAgent")
     metadata = {
         "version": 1,
         "operation": "new_review",
-        "stable_thread_id": "ctx-stable",
-        "candidate_thread_id": "ctx-candidate",
+        "stable_thread_id": stable_thread,
+        "candidate_thread_id": _candidate_thread_id(stable_thread, "1"),
         "turn_id": "1",
         "report_revision": 0,
         "settlement_state": "pending",
@@ -356,10 +363,106 @@ async def test_settlement_route_invokes_injected_review_ack_after_commit(
             str(_CONVERSATION_KEY),
             "1",
             True,
-            "ctx-candidate",
+            _candidate_thread_id(stable_thread, "1"),
         )
     ]
+    assert executor.context_versions_at_ack == [None]
     assert "candidate_thread_id" not in response.text
+
+
+async def test_review_promotion_failure_does_not_commit_shared_context(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A failed private promotion leaves the Bot context staged for retry."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "true")
+    tasks_db = tmp_path / "server_tasks.db"
+    keys_db = tmp_path / "keys.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tasks_db))
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(keys_db))
+    key = ApiKeyStore(str(keys_db)).create(user_id="u1").api_key
+    store = ConversationContextStore(str(tasks_db))
+    stable_thread = agent_thread_id(_CONVERSATION_KEY, "ReviewAgent")
+    metadata = {
+        "version": 1,
+        "operation": "new_review",
+        "stable_thread_id": stable_thread,
+        "candidate_thread_id": _candidate_thread_id(stable_thread, "1"),
+        "turn_id": "1",
+        "report_revision": 0,
+        "settlement_state": "pending",
+    }
+    _stage_turn(store, review_metadata=metadata)
+
+    class FailingExecutor:
+        async def execute(self, **_kwargs: object) -> object:
+            raise AssertionError("the route test does not invoke Expert")
+
+        async def acknowledge_review_settlement_for_turn(
+            self,
+            conversation_key: str,
+            _turn_id: str,
+            *,
+            accepted: bool,
+            staged_turn: object,
+        ) -> bool:
+            assert accepted is True
+            assert store.load_context(conversation_key) is None
+            del staged_turn
+            raise RuntimeError("private promotion unavailable")
+
+    async with open_asgi_client(
+        monkeypatch,
+        create_app(context_executor=FailingExecutor()),
+        base_url="http://api.context.test",
+    ) as client:
+        response = await client.post(
+            "/v1/conversation-context/settle",
+            headers=_headers(key),
+            json=_settlement_payload(),
+        )
+
+    assert response.status_code == 503
+    assert store.load_context(str(_CONVERSATION_KEY)) is None
+    staged = store.load_turn(str(_CONVERSATION_KEY), "1")
+    assert staged is not None
+    assert staged.state == "staged"
+
+
+async def test_review_settlement_rejects_arbitrary_thread_namespace(
+    context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
+) -> None:
+    """A candidate derived from an arbitrary stable ID cannot settle."""
+    client, key, store = context_client
+    stable_thread = "ctx-arbitrary"
+    _stage_turn(
+        store,
+        review_metadata={
+            "version": 1,
+            "operation": "new_review",
+            "stable_thread_id": stable_thread,
+            "candidate_thread_id": _candidate_thread_id(stable_thread, "1"),
+            "turn_id": "1",
+            "report_revision": 0,
+            "settlement_state": "pending",
+        },
+    )
+
+    response = await client.post(
+        "/v1/conversation-context/settle",
+        headers=_headers(key),
+        json=_settlement_payload(),
+    )
+
+    assert response.status_code == 503
+    assert store.load_context(str(_CONVERSATION_KEY)) is None
+    failed = store.load_turn(str(_CONVERSATION_KEY), "1")
+    assert failed is not None
+    assert failed.stage_metadata is not None
+    assert (
+        failed.stage_metadata["_review_settlement"]["settlement_state"]
+        == "failed"
+    )
 
 
 async def test_settlement_rejects_unknown_or_mismatched_turns(

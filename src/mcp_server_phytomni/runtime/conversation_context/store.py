@@ -7,10 +7,12 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
+from uuid import uuid4
 
 from ...config.defaults import ApiConfig
 from ..sqlite import sqlite_connection
@@ -133,6 +135,25 @@ class SettlementResult:
     context: StoredBusinessContext
 
 
+ReviewSettlementClaimStatus = Literal[
+    "claimed",
+    "settling",
+    "promoted",
+    "rejected",
+    "failed",
+    "missing",
+    "invalid",
+]
+
+
+@dataclass(frozen=True)
+class ReviewSettlementClaim:
+    """Durable compare-and-set result for one Review settlement marker."""
+
+    status: ReviewSettlementClaimStatus
+    claim_token: str | None = None
+
+
 def _json(value: dict[str, Any]) -> str:
     return json.dumps(
         value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
@@ -187,6 +208,11 @@ def _unpack_delta(
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+_REVIEW_SETTLEMENT_CLAIM_TTL = timedelta(minutes=5)
+_REVIEW_SETTLEMENT_TOKEN_LIMIT = 64
+_REVIEW_SETTLEMENT_TIMESTAMP_LIMIT = 64
 
 
 class ConversationContextStore:
@@ -373,6 +399,249 @@ class ConversationContextStore:
         logger.debug("conversation turn staged")
         return self._turn(row)
 
+    @staticmethod
+    def _review_record(
+        delta_json: str | None,
+    ) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        """Return the decoded delta and private Review marker if well-shaped."""
+        try:
+            decoded = _decode(delta_json)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+        if not isinstance(decoded, dict):
+            return None
+        envelope = decoded.get("__conversation_context_store__")
+        if not isinstance(envelope, Mapping):
+            return None
+        stage_metadata = envelope.get("stage_metadata")
+        if not isinstance(stage_metadata, Mapping):
+            return None
+        marker = stage_metadata.get("_review_settlement")
+        if not isinstance(marker, Mapping):
+            return None
+        return decoded, dict(marker)
+
+    @staticmethod
+    def _with_review_record(
+        decoded: dict[str, Any], marker: Mapping[str, Any]
+    ) -> str | None:
+        """Replace only the private Review marker while retaining all delta bytes."""
+        envelope = decoded.get("__conversation_context_store__")
+        if not isinstance(envelope, Mapping):
+            return None
+        stage_metadata = envelope.get("stage_metadata")
+        if not isinstance(stage_metadata, Mapping):
+            return None
+        new_stage_metadata = dict(stage_metadata)
+        new_stage_metadata["_review_settlement"] = dict(marker)
+        new_envelope = dict(envelope)
+        new_envelope["stage_metadata"] = new_stage_metadata
+        new_decoded = dict(decoded)
+        new_decoded["__conversation_context_store__"] = new_envelope
+        return _json(new_decoded)
+
+    @staticmethod
+    def _claim_datetime(value: datetime | str | None) -> datetime:
+        """Normalize a testable claim clock to UTC."""
+        if value is None:
+            return datetime.now(UTC)
+        if isinstance(value, str):
+            value = datetime.fromisoformat(value)
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+
+    @classmethod
+    def _write_review_marker(
+        cls,
+        connection: sqlite3.Connection,
+        key: str,
+        turn_id: str,
+        decoded: dict[str, Any],
+        marker: Mapping[str, Any],
+        now: str,
+    ) -> bool:
+        delta_json = cls._with_review_record(decoded, marker)
+        if delta_json is None:
+            return False
+        connection.execute(
+            "UPDATE conversation_turns SET delta_json = ?, updated_at = ? "
+            "WHERE conversation_key = ? AND turn_id = ?",
+            (delta_json, now, key, turn_id),
+        )
+        return True
+
+    def claim_review_settlement(
+        self,
+        key: str,
+        turn_id: str,
+        *,
+        now: datetime | str | None = None,
+        stale_after: timedelta = _REVIEW_SETTLEMENT_CLAIM_TTL,
+    ) -> ReviewSettlementClaim:
+        """Claim a pending Review marker with a durable compare-and-set."""
+        clock = self._claim_datetime(now)
+        now_value = clock.isoformat()
+        with self._write() as connection:
+            row = connection.execute(
+                "SELECT delta_json FROM conversation_turns "
+                "WHERE conversation_key = ? AND turn_id = ?",
+                (key, turn_id),
+            ).fetchone()
+            if row is None:
+                return ReviewSettlementClaim("missing")
+            record = self._review_record(row[0])
+            if record is None:
+                return ReviewSettlementClaim("invalid")
+            decoded, marker = record
+            state = marker.get("settlement_state")
+            if state not in {
+                "pending",
+                "settling",
+                "promoted",
+                "rejected",
+                "failed",
+            }:
+                return ReviewSettlementClaim("invalid")
+            if state in {"promoted", "rejected", "failed"}:
+                return ReviewSettlementClaim(state)
+            if state == "settling":
+                token = marker.get("settlement_claim_token")
+                claimed_at = marker.get("settlement_claimed_at")
+                if (
+                    not isinstance(token, str)
+                    or not token
+                    or len(token) > _REVIEW_SETTLEMENT_TOKEN_LIMIT
+                    or not isinstance(claimed_at, str)
+                    or not claimed_at
+                    or len(claimed_at) > _REVIEW_SETTLEMENT_TIMESTAMP_LIMIT
+                ):
+                    return ReviewSettlementClaim("invalid")
+                try:
+                    claimed_clock = self._claim_datetime(claimed_at)
+                except (TypeError, ValueError):
+                    return ReviewSettlementClaim("invalid")
+                if clock - claimed_clock < stale_after:
+                    return ReviewSettlementClaim("settling")
+            elif "settlement_claim_token" in marker or (
+                "settlement_claimed_at" in marker
+            ):
+                return ReviewSettlementClaim("invalid")
+            claim_token = uuid4().hex
+            updated = dict(marker)
+            updated.update(
+                {
+                    "settlement_state": "settling",
+                    "settlement_claim_token": claim_token,
+                    "settlement_claimed_at": now_value,
+                }
+            )
+            if not self._write_review_marker(
+                connection, key, turn_id, decoded, updated, now_value
+            ):
+                return ReviewSettlementClaim("invalid")
+            return ReviewSettlementClaim("claimed", claim_token)
+
+    def finalize_review_settlement(
+        self,
+        key: str,
+        turn_id: str,
+        *,
+        claim_token: str,
+        state: Literal["promoted", "rejected", "failed"],
+        report_revision: int | None = None,
+    ) -> bool:
+        """Finalize only the worker that durably claimed a Review marker."""
+        if (
+            not isinstance(claim_token, str)
+            or not claim_token
+            or len(claim_token) > _REVIEW_SETTLEMENT_TOKEN_LIMIT
+        ):
+            return False
+        if state == "promoted" and (
+            report_revision is None
+            or isinstance(report_revision, bool)
+            or report_revision < 0
+        ):
+            return False
+        with self._write() as connection:
+            row = connection.execute(
+                "SELECT delta_json FROM conversation_turns "
+                "WHERE conversation_key = ? AND turn_id = ?",
+                (key, turn_id),
+            ).fetchone()
+            if row is None:
+                return False
+            record = self._review_record(row[0])
+            if record is None:
+                return False
+            decoded, marker = record
+            current_state = marker.get("settlement_state")
+            if current_state == state:
+                return True
+            if (
+                current_state != "settling"
+                or marker.get("settlement_claim_token") != claim_token
+            ):
+                return False
+            updated = dict(marker)
+            updated["settlement_state"] = state
+            updated.pop("settlement_claim_token", None)
+            updated.pop("settlement_claimed_at", None)
+            if report_revision is not None:
+                updated["report_revision"] = report_revision
+            return self._write_review_marker(
+                connection, key, turn_id, decoded, updated, _now()
+            )
+
+    def mark_review_settlement_failed(self, key: str, turn_id: str) -> bool:
+        """Persist a terminal failure for a malformed or abandoned marker."""
+        with self._write() as connection:
+            row = connection.execute(
+                "SELECT delta_json FROM conversation_turns "
+                "WHERE conversation_key = ? AND turn_id = ?",
+                (key, turn_id),
+            ).fetchone()
+            if row is None:
+                return False
+            record = self._review_record(row[0])
+            if record is None:
+                return False
+            decoded, marker = record
+            if marker.get("settlement_state") == "promoted":
+                return False
+            marker = dict(marker)
+            marker["settlement_state"] = "failed"
+            marker.pop("settlement_claim_token", None)
+            marker.pop("settlement_claimed_at", None)
+            return self._write_review_marker(
+                connection, key, turn_id, decoded, marker, _now()
+            )
+
+    def update_review_settlement_metadata(
+        self,
+        key: str,
+        turn_id: str,
+        updates: Mapping[str, Any],
+    ) -> bool:
+        """Update private Review metadata for compatibility test seams."""
+        with self._write() as connection:
+            row = connection.execute(
+                "SELECT delta_json FROM conversation_turns "
+                "WHERE conversation_key = ? AND turn_id = ?",
+                (key, turn_id),
+            ).fetchone()
+            if row is None:
+                return False
+            record = self._review_record(row[0])
+            if record is None:
+                return False
+            decoded, marker = record
+            marker.update(dict(updates))
+            return self._write_review_marker(
+                connection, key, turn_id, decoded, marker, _now()
+            )
+
     def commit_staged_turn(
         self,
         key: str,
@@ -505,9 +774,10 @@ class ConversationContextStore:
 
 __all__ = [
     "BeginTurnResult",
+    "ContextVersionConflictError",
     "ConversationContextStore",
     "ConversationTombstonedError",
-    "ContextVersionConflictError",
+    "ReviewSettlementClaim",
     "SettlementResult",
     "StagedTurn",
     "StagedTurnConflictError",

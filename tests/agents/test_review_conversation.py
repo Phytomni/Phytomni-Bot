@@ -826,6 +826,170 @@ async def test_review_ack_reconstructs_from_durable_metadata_after_restart(
     assert agent.app.updates == [_THREAD_ID]
 
 
+@pytest.mark.asyncio
+async def test_review_ack_claim_serializes_separate_executors(
+    tmp_path: Any,
+) -> None:
+    """Separate workers share one durable Review claim boundary."""
+    prepared = ReviewConversationAdapter()
+    prepared.prepare(
+        _projection("Review maize heat tolerance", active=False),
+        turn_id="worker-1",
+    )
+    prepared._agent = object()
+    metadata = prepared.settlement_metadata()
+    assert metadata is not None
+    key = str(_CONVERSATION_KEY)
+    db_path = tmp_path / "context.sqlite"
+    store = ConversationContextStore(str(db_path))
+    store.begin_turn(key, "worker-1", "append", 0)
+    store.stage_turn(
+        key,
+        "worker-1",
+        StagedTurn(
+            operation="append",
+            base_context_version=0,
+            selected_agent_id="ReviewAgent",
+            route_source="explicit_selection",
+            result={"choices": [{"message": {"content": "answer"}}]},
+            delta={},
+            ledger_version="a" * 64,
+            schema_version=1,
+            ledger_cursor=1,
+            observed_mode="expert",
+            stage_metadata={"_review_settlement": metadata},
+        ),
+    )
+    started = asyncio.Event()
+    release = asyncio.Event()
+    settle_calls = 0
+
+    class FakeAdapter:
+        report_revision = 1
+
+        def mark_failed(self) -> None:
+            return None
+
+        async def discard_pending_candidate(self) -> None:
+            return None
+
+        async def settle_async(self, _success: bool) -> int:
+            nonlocal settle_calls
+            settle_calls += 1
+            started.set()
+            await release.wait()
+            return self.report_revision
+
+    async def loader(
+        _metadata: Mapping[str, Any], _staged_turn: StoredTurn
+    ) -> ReviewConversationAdapter:
+        return FakeAdapter()  # type: ignore[return-value]
+
+    def executor() -> ConversationContextExecutor:
+        return ConversationContextExecutor(
+            store_factory=lambda: ConversationContextStore(str(db_path)),
+            select_agent=lambda *_args, **_kwargs: pytest.fail(
+                "settlement must not route"
+            ),
+            review_settlement_loader=loader,
+        )
+
+    first, second = executor(), executor()
+    tasks = [
+        asyncio.create_task(
+            contender.acknowledge_review_settlement_for_turn(
+                key, "worker-1", accepted=True
+            )
+        )
+        for contender in (first, second)
+    ]
+    await started.wait()
+    await asyncio.sleep(0)
+    assert settle_calls == 1
+    release.set()
+    results = await asyncio.gather(*tasks)
+
+    assert sorted(results) == [False, True]
+    assert settle_calls == 1
+    stored = store.load_turn(key, "worker-1")
+    assert stored is not None
+    assert stored.stage_metadata is not None
+    assert (
+        stored.stage_metadata["_review_settlement"]["settlement_state"]
+        == "promoted"
+    )
+
+
+@pytest.mark.asyncio
+async def test_review_loader_failure_persists_terminal_failed_marker(
+    tmp_path: Any,
+) -> None:
+    """A restart reconstruction failure is not retried as a healthy ack."""
+    prepared = ReviewConversationAdapter()
+    prepared.prepare(
+        _projection("Review maize heat tolerance", active=False),
+        turn_id="loader-failure",
+    )
+    prepared._agent = object()
+    metadata = prepared.settlement_metadata()
+    assert metadata is not None
+    key = str(_CONVERSATION_KEY)
+    store = ConversationContextStore(str(tmp_path / "context.sqlite"))
+    store.begin_turn(key, "loader-failure", "append", 0)
+    store.stage_turn(
+        key,
+        "loader-failure",
+        StagedTurn(
+            operation="append",
+            base_context_version=0,
+            selected_agent_id="ReviewAgent",
+            route_source="explicit_selection",
+            result={"choices": [{"message": {"content": "answer"}}]},
+            delta={},
+            ledger_version="a" * 64,
+            schema_version=1,
+            ledger_cursor=1,
+            observed_mode="expert",
+            stage_metadata={"_review_settlement": metadata},
+        ),
+    )
+    loads = 0
+
+    async def loader(
+        _metadata: Mapping[str, Any], _staged_turn: StoredTurn
+    ) -> ReviewConversationAdapter:
+        nonlocal loads
+        loads += 1
+        raise ReviewClarificationError("restart checkpoint unavailable")
+
+    executor = ConversationContextExecutor(
+        store_factory=lambda: store,
+        select_agent=lambda *_args, **_kwargs: pytest.fail(
+            "settlement must not route"
+        ),
+        review_settlement_loader=loader,
+    )
+    with pytest.raises(ReviewClarificationError, match="checkpoint"):
+        await executor.acknowledge_review_settlement_for_turn(
+            key, "loader-failure", accepted=True
+        )
+    assert loads == 1
+    failed = store.load_turn(key, "loader-failure")
+    assert failed is not None
+    assert failed.stage_metadata is not None
+    assert (
+        failed.stage_metadata["_review_settlement"]["settlement_state"]
+        == "failed"
+    )
+    assert (
+        await executor.acknowledge_review_settlement_for_turn(
+            key, "loader-failure", accepted=True
+        )
+        is False
+    )
+    assert loads == 1
+
+
 def test_scope_change_stages_focus_until_successful_settlement() -> None:
     """A failed scope switch leaves the prior Review checkpoint active."""
     snapshot = extract_review_checkpoint(_checkpoint_state())

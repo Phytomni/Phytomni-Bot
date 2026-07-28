@@ -279,7 +279,7 @@ def test_legacy_staged_turn_without_metadata_still_deserializes(
             "value": {"summary": "bounded context"},
         }
     )
-    with store._write() as connection:  # noqa: SLF001 - legacy row seam
+    with store._write() as connection:
         connection.execute(
             "UPDATE conversation_turns SET delta_json = ? "
             "WHERE conversation_key = ? AND turn_id = ?",
@@ -290,6 +290,133 @@ def test_legacy_staged_turn_without_metadata_still_deserializes(
 
     assert legacy.state == "staged"
     assert legacy.stage_metadata is None
+
+
+def _review_metadata(*, turn_id: str = "1") -> dict[str, object]:
+    """Build the private marker used by the store CAS tests."""
+    return {
+        "version": 1,
+        "operation": "new_review",
+        "stable_thread_id": "ctx-stable",
+        "candidate_thread_id": "ctx-candidate",
+        "turn_id": turn_id,
+        "report_revision": 0,
+        "settlement_state": "pending",
+    }
+
+
+def test_review_settlement_claim_is_durable_across_store_instances(
+    store: ConversationContextStore,
+) -> None:
+    """Two workers cannot both claim one Review settlement marker."""
+    key = "conversation-1"
+    store.begin_turn(key, "1", "append", 0)
+    store.stage_turn(
+        key,
+        "1",
+        _staged(stage_metadata={"_review_settlement": _review_metadata()}),
+    )
+    duplicate = ConversationContextStore(store.db_path)
+
+    first = store.claim_review_settlement(key, "1")
+    second = duplicate.claim_review_settlement(key, "1")
+
+    assert sorted((first.status, second.status)) == ["claimed", "settling"]
+    token = first.claim_token or second.claim_token
+    assert token is not None
+    assert store.finalize_review_settlement(
+        key, "1", claim_token=token, state="promoted", report_revision=1
+    )
+    assert store.finalize_review_settlement(
+        key, "1", claim_token=token, state="promoted", report_revision=1
+    )
+    assert duplicate.claim_review_settlement(key, "1").status == "promoted"
+    assert not duplicate.finalize_review_settlement(
+        key, "1", claim_token="wrong", state="rejected"
+    )
+
+
+def test_review_settlement_reject_race_has_one_terminal_winner(
+    store: ConversationContextStore,
+) -> None:
+    """A rejected marker cannot later be promoted by another worker."""
+    key = "conversation-1"
+    store.begin_turn(key, "1", "append", 0)
+    store.stage_turn(
+        key,
+        "1",
+        _staged(stage_metadata={"_review_settlement": _review_metadata()}),
+    )
+    duplicate = ConversationContextStore(store.db_path)
+
+    claim = store.claim_review_settlement(key, "1")
+    assert claim.claim_token is not None
+    assert duplicate.claim_review_settlement(key, "1").status == "settling"
+    assert store.finalize_review_settlement(
+        key, "1", claim_token=claim.claim_token, state="rejected"
+    )
+    assert duplicate.claim_review_settlement(key, "1").status == "rejected"
+    assert not duplicate.finalize_review_settlement(
+        key,
+        "1",
+        claim_token=claim.claim_token,
+        state="promoted",
+        report_revision=1,
+    )
+
+
+def test_review_settlement_claim_recovers_only_after_bounded_timeout(
+    store: ConversationContextStore,
+) -> None:
+    """A stranded worker lease can be replaced after its bounded timeout."""
+    key = "conversation-1"
+    start = datetime(2026, 7, 28, tzinfo=UTC)
+    store.begin_turn(key, "1", "append", 0)
+    store.stage_turn(
+        key,
+        "1",
+        _staged(stage_metadata={"_review_settlement": _review_metadata()}),
+    )
+
+    first = store.claim_review_settlement(key, "1", now=start)
+    active = store.claim_review_settlement(
+        key, "1", now=start + timedelta(minutes=4, seconds=59)
+    )
+    recovered = store.claim_review_settlement(
+        key, "1", now=start + timedelta(minutes=5, seconds=1)
+    )
+
+    assert first.status == "claimed"
+    assert active.status == "settling"
+    assert recovered.status == "claimed"
+    assert recovered.claim_token != first.claim_token
+    assert first.claim_token is not None
+    assert not store.finalize_review_settlement(
+        key,
+        "1",
+        claim_token=first.claim_token,
+        state="promoted",
+        report_revision=1,
+    )
+
+
+def test_review_settlement_malformed_marker_is_failed_and_not_retryable(
+    store: ConversationContextStore,
+) -> None:
+    """Unknown marker state fails closed and cannot be claimed afterward."""
+    key = "conversation-1"
+    store.begin_turn(key, "1", "append", 0)
+    metadata = _review_metadata()
+    metadata["settlement_state"] = "unknown"
+    store.stage_turn(
+        key,
+        "1",
+        _staged(stage_metadata={"_review_settlement": metadata}),
+    )
+
+    assert store.claim_review_settlement(key, "1").status == "invalid"
+    assert store.mark_review_settlement_failed(key, "1")
+    assert store.claim_review_settlement(key, "1").status == "failed"
 
 
 def test_conflicting_duplicate_staging_fails_closed(

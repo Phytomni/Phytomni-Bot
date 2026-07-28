@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
+from uuid import UUID
 
 from ...agents.data.conversation import DataConversationAdapter
 from ...agents.expert import ToolSelection, ToolSelectionError
@@ -22,6 +23,7 @@ from ...agents.review.conversation import (
 )
 from ...config.defaults import ApiConfig
 from .models import BusinessContext, ContextProjection, ConversationEnvelopeV1
+from .projection import agent_thread_id
 from .service import (
     AgentOutcome,
     AgentSelection,
@@ -257,6 +259,17 @@ class ConversationContextExecutor:
         """Use the stable Go envelope identity for deferred Review state."""
         return str(envelope.conversation_key), envelope.turn_id
 
+    @staticmethod
+    def _expected_review_stable_thread_id(
+        key: tuple[str, str],
+    ) -> str | None:
+        """Derive the only stable Review namespace for one conversation."""
+        try:
+            conversation_key = UUID(key[0])
+        except (ValueError, AttributeError):
+            return None
+        return agent_thread_id(conversation_key, "ReviewAgent")
+
     async def defer_review_settlement(
         self,
         envelope: ConversationEnvelopeV1,
@@ -319,19 +332,52 @@ class ConversationContextExecutor:
         current_turn = service.store.load_turn(*key)
         staged_turn = current_turn or staged_turn
         metadata = review_settlement_metadata_from_turn(staged_turn)
-        if metadata is not None:
-            settlement_state = metadata.get("settlement_state")
+        claim_token: str | None = None
+        if current_turn is None and metadata is not None:
+            return False
+        durable_marker = metadata is not None and current_turn is not None
+        if durable_marker:
+            assert metadata is not None
+            bounded = _bounded_review_stage_metadata(
+                metadata, allow_terminal=True
+            )
+            expected_stable = self._expected_review_stable_thread_id(key)
+            if (
+                bounded is None
+                or bounded["turn_id"] != key[1]
+                or expected_stable is None
+                or bounded["stable_thread_id"] != expected_stable
+            ):
+                service.store.mark_review_settlement_failed(*key)
+                return False
+            settlement_state = bounded["settlement_state"]
             if settlement_state == "promoted":
                 return accepted
             if settlement_state in {"rejected", "failed"}:
                 return False
-            if (
-                settlement_state != "pending"
-                or _bounded_review_stage_metadata(metadata) is None
-            ):
+            claim = service.store.claim_review_settlement(*key)
+            if claim.status == "invalid":
+                service.store.mark_review_settlement_failed(*key)
                 return False
-        adapter = await self._load_review_settlement_adapter(key, staged_turn)
+            if claim.status != "claimed" or claim.claim_token is None:
+                return False
+            claim_token = claim.claim_token
+            staged_turn = service.store.load_turn(*key)
+        try:
+            adapter = await self._load_review_settlement_adapter(
+                key, staged_turn
+            )
+        except BaseException:
+            if claim_token is not None:
+                service.store.finalize_review_settlement(
+                    *key, claim_token=claim_token, state="failed"
+                )
+            raise
         if adapter is None:
+            if claim_token is not None:
+                service.store.finalize_review_settlement(
+                    *key, claim_token=claim_token, state="failed"
+                )
             return False
         if not accepted:
             adapter.mark_failed()
@@ -342,13 +388,15 @@ class ConversationContextExecutor:
                 BaseException  # noqa: BLE001 - preserve cancellation marker
             ) as exc:
                 cleanup_error = exc
-            marker_saved = (
-                metadata is None
-                or service.update_review_settlement_metadata(
-                    key[0], key[1], {"settlement_state": "rejected"}
+            if claim_token is not None:
+                marker_saved = service.store.finalize_review_settlement(
+                    *key, claim_token=claim_token, state="rejected"
                 )
-            )
+            else:
+                marker_saved = True
             if cleanup_error is not None:
+                if claim_token is not None:
+                    service.store.mark_review_settlement_failed(*key)
                 raise cleanup_error
             return marker_saved
         try:
@@ -358,20 +406,18 @@ class ConversationContextExecutor:
             try:
                 await adapter.discard_pending_candidate()
             finally:
-                if metadata is not None:
-                    service.update_review_settlement_metadata(
-                        key[0], key[1], {"settlement_state": "failed"}
+                if claim_token is not None:
+                    service.store.finalize_review_settlement(
+                        *key, claim_token=claim_token, state="failed"
                     )
             raise
         if (
-            metadata is not None
-            and not service.update_review_settlement_metadata(
-                key[0],
-                key[1],
-                {
-                    "settlement_state": "promoted",
-                    "report_revision": adapter.report_revision,
-                },
+            claim_token is not None
+            and not service.store.finalize_review_settlement(
+                *key,
+                claim_token=claim_token,
+                state="promoted",
+                report_revision=adapter.report_revision,
             )
         ):
             raise RuntimeError(

@@ -5,14 +5,14 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
 from weakref import WeakValueDictionary
 
+from ...agents.review.conversation import _candidate_thread_id
 from ...config.defaults import ApiConfig
 from .models import (
     MAX_CONTEXT_ITEMS,
@@ -111,18 +111,22 @@ _REVIEW_STAGE_FIELDS = frozenset(
         "turn_id",
         "report_revision",
         "settlement_state",
+        "settlement_claim_token",
+        "settlement_claimed_at",
     }
 )
 _REVIEW_OPERATIONS = frozenset(
     {"new_review", "follow_up", "local_revision", "scope_change"}
 )
 _REVIEW_SETTLEMENT_STATES = frozenset(
-    {"pending", "promoted", "rejected", "failed"}
+    {"pending", "settling", "promoted", "rejected", "failed"}
 )
 
 
 def _bounded_review_stage_metadata(
     value: Mapping[str, Any],
+    *,
+    allow_terminal: bool = False,
 ) -> dict[str, Any] | None:
     """Keep only bounded checkpoint identities in durable turn metadata."""
     operation = value.get("operation")
@@ -132,7 +136,7 @@ def _bounded_review_stage_metadata(
     if (
         not isinstance(settlement_state, str)
         or settlement_state not in _REVIEW_SETTLEMENT_STATES
-        or settlement_state != "pending"
+        or (not allow_terminal and settlement_state != "pending")
     ):
         return None
     result: dict[str, Any] = {}
@@ -147,6 +151,14 @@ def _bounded_review_stage_metadata(
             ):
                 continue
             result[key] = candidate
+        elif key in {"settlement_claim_token", "settlement_claimed_at"}:
+            if (
+                isinstance(candidate, str)
+                and candidate == candidate.strip()
+                and candidate
+                and len(candidate) <= 64
+            ):
+                result[key] = candidate
         elif key == "candidate_thread_id":
             if candidate is None:
                 result[key] = None
@@ -155,6 +167,8 @@ def _bounded_review_stage_metadata(
                 and candidate == candidate.strip()
                 and candidate
                 and len(candidate) <= 512
+                and "/" not in candidate
+                and "\\" not in candidate
             ):
                 result[key] = candidate[:512]
         elif (
@@ -163,7 +177,11 @@ def _bounded_review_stage_metadata(
             and candidate
         ):
             limit = 64 if key == "turn_id" else 512
-            if len(candidate) <= limit:
+            if (
+                len(candidate) <= limit
+                and "/" not in candidate
+                and "\\" not in candidate
+            ):
                 result[key] = candidate
     required = {
         "version",
@@ -179,9 +197,25 @@ def _bounded_review_stage_metadata(
         candidate = result.get("candidate_thread_id")
         if not isinstance(candidate, str) or not candidate:
             return None
-        if candidate == result["stable_thread_id"]:
+        if candidate != _candidate_thread_id(
+            result["stable_thread_id"], result["turn_id"]
+        ):
             return None
     elif result.get("candidate_thread_id") is not None:
+        return None
+    if settlement_state == "settling":
+        if not {
+            "settlement_claim_token",
+            "settlement_claimed_at",
+        }.issubset(result):
+            return None
+        try:
+            datetime.fromisoformat(result["settlement_claimed_at"])
+        except (TypeError, ValueError):
+            return None
+    elif (
+        "settlement_claim_token" in result or "settlement_claimed_at" in result
+    ):
         return None
     return result
 
@@ -402,48 +436,9 @@ class ConversationContextService:
         updates: Mapping[str, Any],
     ) -> bool:
         """Persist a small Review settlement marker on a staged turn."""
-        with self.store._write() as connection:
-            row = connection.execute(
-                "SELECT delta_json FROM conversation_turns "
-                "WHERE conversation_key = ? AND turn_id = ?",
-                (key, turn_id),
-            ).fetchone()
-            if row is None or row[0] is None:
-                return False
-            decoded = json.loads(row[0])
-            envelope = decoded.get("__conversation_context_store__")
-            if not isinstance(envelope, Mapping):
-                return False
-            stage_metadata = envelope.get("stage_metadata")
-            if not isinstance(stage_metadata, Mapping):
-                return False
-            current = stage_metadata.get(_PRIVATE_REVIEW_STAGE_KEY)
-            if not isinstance(current, Mapping):
-                return False
-            updated = dict(current)
-            updated.update(dict(updates))
-            new_stage_metadata = dict(stage_metadata)
-            new_stage_metadata[_PRIVATE_REVIEW_STAGE_KEY] = updated
-            new_envelope = dict(envelope)
-            new_envelope["stage_metadata"] = new_stage_metadata
-            new_decoded = dict(decoded)
-            new_decoded["__conversation_context_store__"] = new_envelope
-            connection.execute(
-                "UPDATE conversation_turns SET delta_json = ?, updated_at = ? "
-                "WHERE conversation_key = ? AND turn_id = ?",
-                (
-                    json.dumps(
-                        new_decoded,
-                        ensure_ascii=False,
-                        separators=(",", ":"),
-                        sort_keys=True,
-                    ),
-                    datetime.now(UTC).isoformat(),
-                    key,
-                    turn_id,
-                ),
-            )
-        return True
+        return self.store.update_review_settlement_metadata(
+            key, turn_id, updates
+        )
 
     async def execute_turn(
         self, envelope: ConversationEnvelopeV1
@@ -531,7 +526,12 @@ class ConversationContextService:
                 review_metadata = _bounded_review_stage_metadata(
                     outcome.private_stage_metadata
                 )
-                if review_metadata is None:
+                if (
+                    review_metadata is None
+                    or review_metadata["stable_thread_id"]
+                    != projection.agent_thread_id
+                    or review_metadata["turn_id"] != envelope.turn_id
+                ):
                     self.store.mark_turn_failed(key, envelope.turn_id)
                     return PreparedTurn(
                         PrepareStatus.IN_PROGRESS,

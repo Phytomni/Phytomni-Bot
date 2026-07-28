@@ -226,6 +226,8 @@ def _required_turn_id(value: object) -> str:
         not isinstance(value, str)
         or not value.strip()
         or len(value) > _MAX_TURN_ID_CHARS
+        or "/" in value
+        or "\\" in value
     ):
         raise ReviewClarificationError(
             "A valid turn id is required for every Review context turn."
@@ -239,9 +241,15 @@ def _required_thread_id(value: object, label: str) -> str:
         not isinstance(value, str)
         or not value.strip()
         or len(value) > _MAX_THREAD_ID_CHARS
+        or "/" in value
+        or "\\" in value
     ):
         raise ReviewClarificationError(
             f"Review settlement has no valid {label} checkpoint thread."
+        )
+    if label == "stable" and not re.fullmatch(r"ctx-[0-9a-f]{64}", value):
+        raise ReviewClarificationError(
+            "Review settlement stable checkpoint is outside its namespace."
         )
     return value
 
@@ -1233,6 +1241,9 @@ class ReviewConversationAdapter:
         metadata: Mapping[str, Any],
         agent: Any,
         result: Mapping[str, Any] | None = None,
+        *,
+        expected_stable_thread_id: str | None = None,
+        expected_turn_id: str | None = None,
     ) -> None:
         """Reconstruct a pending turn from durable metadata after restart."""
         version = metadata.get("version")
@@ -1255,7 +1266,8 @@ class ReviewConversationAdapter:
             raise ReviewClarificationError(
                 "Review settlement metadata is invalid."
             ) from exc
-        if metadata.get("settlement_state") != "pending":
+        settlement_state = metadata.get("settlement_state")
+        if settlement_state not in {"pending", "settling"}:
             raise ReviewClarificationError(
                 "Review settlement state is invalid for restart."
             )
@@ -1263,6 +1275,17 @@ class ReviewConversationAdapter:
             metadata.get("stable_thread_id"), "stable"
         )
         turn_id = _required_turn_id(metadata.get("turn_id"))
+        if expected_turn_id is not None and turn_id != expected_turn_id:
+            raise ReviewClarificationError(
+                "Review settlement turn id does not match the staged turn."
+            )
+        if (
+            expected_stable_thread_id is not None
+            and stable != expected_stable_thread_id
+        ):
+            raise ReviewClarificationError(
+                "Review settlement stable checkpoint is outside its namespace."
+            )
         candidate_value = metadata.get("candidate_thread_id")
         candidate: str | None = None
         if operation in {
@@ -1270,9 +1293,9 @@ class ReviewConversationAdapter:
             ReviewConversationOperation.SCOPE_CHANGE,
         }:
             candidate = _required_thread_id(candidate_value, "candidate")
-            if candidate == stable:
+            if candidate != _candidate_thread_id(stable, turn_id):
                 raise ReviewClarificationError(
-                    "Review settlement candidate must be turn-scoped."
+                    "Review settlement candidate checkpoint is not turn-scoped."
                 )
         elif candidate_value is not None:
             raise ReviewClarificationError(
@@ -1286,6 +1309,27 @@ class ReviewConversationAdapter:
         ):
             raise ReviewClarificationError(
                 "Review settlement revision metadata is invalid."
+            )
+        if settlement_state == "settling":
+            claim_token = metadata.get("settlement_claim_token")
+            claimed_at = metadata.get("settlement_claimed_at")
+            if (
+                not isinstance(claim_token, str)
+                or not claim_token.strip()
+                or len(claim_token) > 64
+                or not isinstance(claimed_at, str)
+                or not claimed_at.strip()
+                or len(claimed_at) > 64
+            ):
+                raise ReviewClarificationError(
+                    "Review settlement claim metadata is invalid."
+                )
+        elif (
+            "settlement_claim_token" in metadata
+            or "settlement_claimed_at" in metadata
+        ):
+            raise ReviewClarificationError(
+                "Review settlement claim metadata is invalid."
             )
         answer = _answer_from_result(result or {})
         if not _usable_response_text(answer):

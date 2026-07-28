@@ -11,12 +11,16 @@ from uuid import UUID
 
 import pytest
 
+from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
 from mcp_server_phytomni.runtime.conversation_context.models import (
     ArtifactRefV1,
     BusinessContext,
     ContextDelta,
     ContextEntity,
     ConversationEnvelopeV1,
+)
+from mcp_server_phytomni.runtime.conversation_context.projection import (
+    agent_thread_id,
 )
 from mcp_server_phytomni.runtime.conversation_context.service import (
     AgentOutcome,
@@ -655,14 +659,17 @@ async def test_review_settlement_metadata_is_durable_but_not_public(
     """Opaque Review checkpoint identities survive retries without API leakage."""
 
     async def invoke(*_args: object) -> AgentOutcome:
+        stable_thread = agent_thread_id(_CONVERSATION_KEY, "ReviewAgent")
         return AgentOutcome(
             result={"answer": "review"},
             context_delta=ContextDelta(summary_update="review"),
             private_stage_metadata={
                 "version": 1,
                 "operation": "new_review",
-                "stable_thread_id": "ctx-stable",
-                "candidate_thread_id": "ctx-candidate",
+                "stable_thread_id": stable_thread,
+                "candidate_thread_id": _candidate_thread_id(
+                    stable_thread, "1"
+                ),
                 "turn_id": "1",
                 "report_revision": 0,
                 "settlement_state": "pending",
@@ -679,9 +686,10 @@ async def test_review_settlement_metadata_is_durable_but_not_public(
     assert prepared.stage is not None
     assert stored is not None
     assert stored.stage_metadata is not None
-    assert (
-        stored.stage_metadata["_review_settlement"]["candidate_thread_id"]
-        == "ctx-candidate"
+    assert stored.stage_metadata["_review_settlement"][
+        "candidate_thread_id"
+    ] == _candidate_thread_id(
+        agent_thread_id(_CONVERSATION_KEY, "ReviewAgent"), "1"
     )
     assert "_review_settlement" not in prepared.stage.__dict__
 

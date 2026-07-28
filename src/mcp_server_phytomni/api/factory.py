@@ -36,7 +36,10 @@ from ..interop.registry import InteropRegistry, InteropRegistryError
 from ..runtime.conversation_context.adapters import (
     ConversationContextExecutor,
 )
-from ..runtime.conversation_context.store import ConversationContextStore
+from ..runtime.conversation_context.store import (
+    ConversationContextStore,
+    StoredTurn,
+)
 from ..runtime.locale import message_for
 from ..runtime.memory import (
     MemorySchemaError,
@@ -871,7 +874,7 @@ def _build_context_executor(
         return await _app_attr("select_agent_tool")(*args, **kwargs)
 
     async def load_review_settlement(
-        metadata: Mapping[str, Any], staged_turn: Any
+        metadata: Mapping[str, Any], staged_turn: StoredTurn
     ) -> Any:
         """Rebuild Review promotion state through its private agent seam."""
         from ..agents.review.agent import load_review_settlement_adapter

@@ -8,11 +8,13 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
+from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException
 
 from ...runtime.conversation_context.projection import agent_thread_id
 from ...runtime.conversation_context.service import (
+    _bounded_review_stage_metadata,
     review_settlement_metadata_from_turn,
 )
 from ...runtime.conversation_context.store import (
@@ -84,28 +86,30 @@ def register_conversation_context_routes(
         _require_enabled(dependencies)
         store = dependencies.get_store()
         key = str(payload.conversation_key)
-        try:
-            settlement = store.commit_staged_turn(
-                key,
-                payload.turn_id,
-                payload.ledger_version,
-                payload.ledger_version,
-            )
-        except KeyError as exc:
+        staged_turn: StoredTurn | None = store.load_turn(key, payload.turn_id)
+        if staged_turn is None:
             raise HTTPException(
                 status_code=404, detail="context turn not found"
-            ) from exc
-        except ConversationTombstonedError as exc:
-            raise HTTPException(
-                status_code=409, detail="context settlement conflict"
-            ) from exc
-        except ContextVersionConflictError as exc:
-            raise HTTPException(
-                status_code=409, detail="context settlement conflict"
-            ) from exc
-        staged_turn: StoredTurn | None = store.load_turn(key, payload.turn_id)
+            )
         review_metadata = review_settlement_metadata_from_turn(staged_turn)
         if review_metadata is not None:
+            bounded_metadata = _bounded_review_stage_metadata(
+                review_metadata, allow_terminal=True
+            )
+            try:
+                expected_stable = agent_thread_id(UUID(key), "ReviewAgent")
+            except ValueError:
+                expected_stable = None
+            if (
+                bounded_metadata is None
+                or bounded_metadata["turn_id"] != payload.turn_id
+                or bounded_metadata["stable_thread_id"] != expected_stable
+            ):
+                store.mark_review_settlement_failed(key, payload.turn_id)
+                raise HTTPException(
+                    status_code=503,
+                    detail="Review settlement metadata is invalid",
+                )
             callback = dependencies.acknowledge_review_settlement
             if callback is None:
                 raise HTTPException(
@@ -129,6 +133,25 @@ def register_conversation_context_routes(
                     status_code=503,
                     detail="Review settlement was not promoted",
                 )
+        try:
+            settlement = store.commit_staged_turn(
+                key,
+                payload.turn_id,
+                payload.ledger_version,
+                payload.ledger_version,
+            )
+        except KeyError as exc:
+            raise HTTPException(
+                status_code=404, detail="context turn not found"
+            ) from exc
+        except ConversationTombstonedError as exc:
+            raise HTTPException(
+                status_code=409, detail="context settlement conflict"
+            ) from exc
+        except ContextVersionConflictError as exc:
+            raise HTTPException(
+                status_code=409, detail="context settlement conflict"
+            ) from exc
         return ContextMutationResponse(
             state=settlement.state,
             context_version=settlement.context.context_version,

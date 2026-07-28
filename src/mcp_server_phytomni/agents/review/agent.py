@@ -16,6 +16,7 @@ pipeline.py-style siblings.
 import logging
 from collections.abc import Mapping
 from typing import Any
+from uuid import UUID
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
@@ -42,6 +43,8 @@ from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
 )
+from ...runtime.conversation_context.projection import agent_thread_id
+from ...runtime.conversation_context.store import StoredTurn
 from ...runtime.langgraph_runner import (
     ainvoke_graph,
     ensure_checkpointer,
@@ -1044,7 +1047,7 @@ async def review_agent_function(
 
 async def load_review_settlement_adapter(
     metadata: Mapping[str, Any],
-    staged_turn: Any,
+    staged_turn: StoredTurn,
 ) -> ReviewConversationAdapter:
     """Rebuild one pending Review adapter from durable staged-turn metadata."""
     review_config = REVIEW_CONFIG
@@ -1065,10 +1068,20 @@ async def load_review_settlement_adapter(
         ),
     )
     adapter = ReviewConversationAdapter()
+    try:
+        expected_stable_thread_id = agent_thread_id(
+            UUID(staged_turn.conversation_key), "ReviewAgent"
+        )
+    except (AttributeError, ValueError) as exc:
+        raise ReviewClarificationError(
+            "Review settlement conversation identity is invalid."
+        ) from exc
     await adapter.restore_settlement(
         metadata,
         agent,
-        getattr(staged_turn, "result", None),
+        staged_turn.result,
+        expected_stable_thread_id=expected_stable_thread_id,
+        expected_turn_id=staged_turn.turn_id,
     )
     return adapter
 
