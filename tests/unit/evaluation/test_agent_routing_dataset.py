@@ -421,6 +421,41 @@ def test_validate_dataset_pair_rejects_collisions_and_allows_analyst_paraphrase(
     )
     validate_dataset_pair(dev, test)
 
+    dev = _synthetic_split("dev")
+    test = _synthetic_split("test")
+    brief_dev = next(
+        i
+        for i, case in enumerate(dev)
+        if case.expected_agent == "BriefGeneAgent"
+    )
+    design_test = next(
+        i
+        for i, case in enumerate(test)
+        if case.expected_agent == "DigitalDesignAgent"
+    )
+    cross_agent_source = {
+        "kind": "workbook",
+        "workbook": "cross-agent-shared.xlsx",
+        "sheet": "Sheet1",
+        "row": 1,
+        "source_id": "Q_CROSS_AGENT",
+    }
+    cross_agent_transformation = {
+        "kind": "verbatim",
+        "source_text": "AT1 shared source",
+    }
+    dev[brief_dev] = _replace_case(
+        dev[brief_dev],
+        source=cross_agent_source,
+        transformation=cross_agent_transformation,
+    )
+    test[design_test] = _replace_case(
+        test[design_test],
+        source=cross_agent_source,
+        transformation=cross_agent_transformation,
+    )
+    validate_dataset_pair(dev, test)
+
 
 def _workbook_case(tmp_path: Path) -> tuple[AgentRoutingCase, Path]:
     """Create a valid one-row workbook fixture and matching case."""
