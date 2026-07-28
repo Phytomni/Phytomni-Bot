@@ -9,6 +9,7 @@ and replacement of expired locks.
 """
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -137,3 +138,20 @@ def test_storage_reexpire_one_func_only_touches_that_func(cache_storage):
     assert rowcount == 1
     assert cache_storage.get("f1", "k1") == b"v"
     assert cache_storage.get("f2", "k1") is None
+
+
+def test_storage_close_all_closes_connections_from_worker_threads(tmp_path):
+    """Close thread-local cache connections during process teardown."""
+    cache_storage = Storage(str(tmp_path / "worker.sqlite"))
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        executor.submit(cache_storage.set, "func", "key", b"value").result()
+
+        Storage.close_all()
+
+        assert (
+            executor.submit(cache_storage.get, "func", "key").result()
+            == b"value"
+        )
+
+    Storage.close_all()

@@ -31,6 +31,8 @@ class Storage:
     Class Attributes:
         _instances: Singleton instances keyed by database path.
         _instances_lock: Class-level lock for instance creation.
+        _connections: Process-wide registry of thread-local connections.
+        _connections_lock: Class-level lock for connection registration.
 
     Instance Attributes:
         db_path: Absolute path to the SQLite database file.
@@ -40,6 +42,8 @@ class Storage:
 
     _instances: dict[str, "Storage"] = {}
     _instances_lock = threading.Lock()
+    _connections: dict[int, tuple["Storage", sqlite3.Connection]] = {}
+    _connections_lock = threading.Lock()
 
     @classmethod
     def get_instance(cls, db_path):
@@ -59,11 +63,22 @@ class Storage:
 
     @classmethod
     def close_all(cls):
-        """Close every registered storage connection for this thread."""
+        """Close every registered storage connection in this process."""
         with cls._instances_lock:
             instances = tuple(cls._instances.values())
         for storage in instances:
             storage.close()
+
+        with cls._connections_lock:
+            connections = tuple(
+                connection for _, connection in cls._connections.values()
+            )
+            cls._connections.clear()
+        for connection in connections:
+            try:
+                connection.close()
+            except sqlite3.Error as exc:
+                logger.warning("Failed to close cache connection: %s", exc)
 
     def __init__(self, db_path):
         """Initialize storage with the given database path."""
@@ -77,26 +92,44 @@ class Storage:
             raise StorageError(f"Failed to create cache directory: {e}") from e
         self._init_db()
 
-    def _get_conn(self):
+    def _get_conn(self) -> sqlite3.Connection:
         """Get or create a thread-local database connection."""
         current_pid = os.getpid()
         if current_pid != self._pid:
             self._pid = current_pid
             self._local = threading.local()
 
-        if not hasattr(self._local, "conn") or self._local.conn is None:
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            with self._connections_lock:
+                is_registered = id(conn) in self._connections
+            if is_registered:
+                return conn
+            self._local.conn = None
+            conn = None
+
+        if conn is None:
             try:
                 conn = sqlite3.connect(
-                    self.db_path, timeout=10, isolation_level=None
+                    self.db_path,
+                    timeout=10,
+                    isolation_level=None,
+                    check_same_thread=False,
                 )
                 conn.execute("PRAGMA journal_mode=WAL")
                 conn.execute("PRAGMA synchronous=NORMAL")
                 conn.execute("PRAGMA cache_size=-8000")
                 conn.execute("PRAGMA busy_timeout=5000")
                 self._local.conn = conn
+                with self._connections_lock:
+                    self._connections[id(conn)] = (self, conn)
             except sqlite3.Error as e:
+                if conn is not None:
+                    with contextlib.suppress(sqlite3.Error):
+                        conn.close()
                 raise StorageError(f"Failed to connect to SQLite: {e}") from e
-        return self._local.conn
+        assert conn is not None
+        return conn
 
     def _init_db(self):
         """Create cache tables if they do not exist."""
@@ -509,4 +542,6 @@ class Storage:
                 conn.close()
             except sqlite3.Error as exc:
                 logger.warning("Failed to close cache connection: %s", exc)
+            with self._connections_lock:
+                self._connections.pop(id(conn), None)
             self._local.conn = None

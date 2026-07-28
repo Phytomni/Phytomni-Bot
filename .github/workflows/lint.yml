@@ -91,7 +91,7 @@ jobs:
           pip install uv
           uv pip install --system -e ".[dev]"
       - name: Lint with ruff
-        run: uv run --extra dev ruff check --config pyproject.toml .
+        run: ruff check --config pyproject.toml .
 
   flake8:
     runs-on: ubuntu-latest
