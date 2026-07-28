@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping
 from dataclasses import asdict
@@ -45,6 +46,7 @@ from mcp_server_phytomni.runtime.conversation_context.service import (
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ConversationContextStore,
     StagedTurn,
+    StoredTurn,
 )
 
 pytestmark = pytest.mark.agent
@@ -186,6 +188,7 @@ def test_prepare_local_revision_uses_only_the_requested_section() -> None:
     prepared = adapter.prepare(
         _projection("Rewrite the Evidence section to state the limitation."),
         snapshot=snapshot,
+        turn_id="local-1",
     )
 
     assert prepared["operation"] == ReviewConversationOperation.LOCAL_REVISION
@@ -207,6 +210,7 @@ def test_unknown_local_revision_section_returns_clarification() -> None:
         ReviewConversationAdapter().prepare(
             _projection("Rewrite the Limitations section to be shorter."),
             snapshot=snapshot,
+            turn_id="local-2",
         )
 
 
@@ -273,6 +277,7 @@ async def test_local_revision_reassembles_the_original_report_bytes() -> None:
     adapter.prepare(
         _projection("Rewrite the Evidence section to state the limitation."),
         snapshot=checkpoint,
+        turn_id="local-3",
     )
 
     async def fake_chat(_prompt: str) -> dict[str, Any]:
@@ -318,6 +323,7 @@ async def test_local_revision_preserves_ordered_citation_metadata() -> None:
     adapter.prepare(
         _projection("Rewrite the Evidence section to state the limitation."),
         snapshot=checkpoint,
+        turn_id="local-4",
     )
 
     async def fake_chat(_prompt: str) -> dict[str, Any]:
@@ -343,6 +349,7 @@ async def test_invalid_local_revision_does_not_advance_revision(
     adapter.prepare(
         _projection("Rewrite the Evidence section to state the limitation."),
         snapshot=snapshot,
+        turn_id="local-5",
     )
 
     async def empty_chat(_prompt: str) -> dict[str, Any]:
@@ -364,7 +371,9 @@ async def test_invalid_follow_up_is_not_a_successful_answer(
     assert snapshot is not None
     adapter = ReviewConversationAdapter()
     adapter.prepare(
-        _projection("What evidence supports that claim?"), snapshot=snapshot
+        _projection("What evidence supports that claim?"),
+        snapshot=snapshot,
+        turn_id="follow-up-1",
     )
 
     async def empty_chat(_prompt: str) -> dict[str, Any]:
@@ -382,6 +391,7 @@ def test_review_invocation_keeps_operation_and_checkpoint_private() -> None:
     dispatch = review_agent_invocation(
         projection,
         selected_arguments={"review_checkpoint": _checkpoint_state()},
+        turn_id="follow-up-2",
     )
 
     assert dispatch.arguments == {
@@ -417,6 +427,26 @@ def test_new_review_requires_a_turn_id_before_graph_execution() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("query", "active"),
+    [
+        ("Review maize heat tolerance", False),
+        ("What evidence supports that claim?", True),
+        ("Rewrite the Evidence section to state the limitation.", True),
+        ("Now investigate maize heat tolerance using a new source set.", True),
+    ],
+)
+def test_prepare_requires_turn_id_for_every_review_operation(
+    query: str, active: bool
+) -> None:
+    """The direct adapter seam rejects missing turn identity for every operation."""
+    snapshot = _checkpoint_state() if active else None
+    with pytest.raises(ReviewClarificationError, match="turn id"):
+        ReviewConversationAdapter().prepare(
+            _projection(query, active=active), snapshot=snapshot
+        )
+
+
 @pytest.mark.asyncio
 async def test_prepare_from_agent_rejects_stale_snapshot_when_stable_is_missing() -> (
     None
@@ -433,13 +463,16 @@ async def test_prepare_from_agent_rejects_stale_snapshot_when_stable_is_missing(
 
     projection = _projection("What evidence supports that claim?")
     adapter = ReviewConversationAdapter()
-    adapter.prepare(projection, snapshot=_checkpoint_state())
+    adapter.prepare(
+        projection, snapshot=_checkpoint_state(), turn_id="stale-stable"
+    )
 
     with pytest.raises(ReviewClarificationError, match="checkpoint"):
         await adapter.prepare_from_agent(
             projection,
             EmptyAgent(),
             _THREAD_ID,
+            turn_id="stale-stable",
         )
 
 
@@ -461,6 +494,42 @@ async def test_prepare_from_agent_does_not_reuse_a_prior_turn_id() -> None:
 
     with pytest.raises(ReviewClarificationError, match="turn id"):
         await adapter.prepare_from_agent(projection, EmptyAgent(), _THREAD_ID)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Review maize heat tolerance",
+        "What evidence supports that claim?",
+        "Rewrite the Evidence section to state the limitation.",
+        "Now investigate maize heat tolerance using a new source set.",
+    ],
+)
+async def test_prepare_from_agent_requires_turn_id_before_checkpoint_read(
+    query: str,
+) -> None:
+    """Every context operation fails before reading a checkpoint without turn identity."""
+    reads = 0
+
+    class EmptyApp:
+        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
+            nonlocal reads
+            reads += 1
+            return _checkpoint_state()
+
+    class EmptyAgent:
+        def __init__(self) -> None:
+            self.app = EmptyApp()
+
+    projection = _projection(
+        query, active=query != "Review maize heat tolerance"
+    )
+    with pytest.raises(ReviewClarificationError, match="turn id"):
+        await ReviewConversationAdapter().prepare_from_agent(
+            projection, EmptyAgent(), _THREAD_ID
+        )
+    assert reads == 0
 
 
 @pytest.mark.asyncio
@@ -486,6 +555,135 @@ async def test_missing_candidate_fails_readiness_before_settlement() -> None:
 
     assert await adapter.validate_settlement_candidate() is False
     assert adapter.settlement_ready is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("metadata", "message"),
+    [
+        (
+            {
+                "version": 1,
+                "operation": "new_review",
+                "stable_thread_id": _THREAD_ID,
+                "turn_id": "malformed-1",
+                "settlement_state": "pending",
+            },
+            "candidate",
+        ),
+        (
+            {
+                "version": 1,
+                "operation": "unknown",
+                "stable_thread_id": _THREAD_ID,
+                "candidate_thread_id": "candidate",
+                "turn_id": "malformed-2",
+                "settlement_state": "pending",
+            },
+            "metadata",
+        ),
+        (
+            {
+                "version": 1,
+                "operation": "follow_up",
+                "stable_thread_id": _THREAD_ID,
+                "candidate_thread_id": None,
+                "turn_id": "malformed-3",
+                "settlement_state": "unknown",
+            },
+            "state",
+        ),
+    ],
+)
+async def test_restore_settlement_rejects_malformed_metadata_before_checkpoint_read(
+    metadata: dict[str, Any], message: str
+) -> None:
+    """Restart reconstruction rejects malformed private metadata fail closed."""
+    reads = 0
+
+    class NoReadApp:
+        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
+            nonlocal reads
+            reads += 1
+            raise AssertionError(
+                "malformed metadata must not read a checkpoint"
+            )
+
+    class Agent:
+        def __init__(self) -> None:
+            self.app = NoReadApp()
+
+    with pytest.raises(ReviewClarificationError, match=message):
+        await ReviewConversationAdapter().restore_settlement(
+            metadata,
+            Agent(),
+            {"choices": [{"message": {"content": "Current answer."}}]},
+        )
+    assert reads == 0
+
+
+@pytest.mark.asyncio
+async def test_restore_settlement_requires_a_ready_candidate_report() -> None:
+    """A durable candidate without a current report cannot be promoted."""
+
+    class App:
+        async def aget_state(self, config: dict[str, Any]) -> dict[str, Any]:
+            if config["configurable"]["thread_id"] == _THREAD_ID:
+                return _checkpoint_state()
+            return {"original_user_query": "Review candidate"}
+
+    class Agent:
+        def __init__(self) -> None:
+            self.app = App()
+
+    candidate = f"{_THREAD_ID}:candidate"
+    with pytest.raises(ReviewClarificationError, match="candidate checkpoint"):
+        await ReviewConversationAdapter().restore_settlement(
+            {
+                "version": 1,
+                "operation": "new_review",
+                "stable_thread_id": _THREAD_ID,
+                "candidate_thread_id": candidate,
+                "turn_id": "restart-1",
+                "report_revision": 4,
+                "settlement_state": "pending",
+            },
+            Agent(),
+            {"choices": [{"message": {"content": "Current answer."}}]},
+        )
+
+
+@pytest.mark.asyncio
+async def test_restore_settlement_requires_the_active_report_document() -> (
+    None
+):
+    """A follow-up cannot be reconstructed from a semantic snapshot alone."""
+
+    class App:
+        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "original_user_query": "Review drought tolerance in rice",
+                "research_dimensions": ["Evidence"],
+            }
+
+    class Agent:
+        def __init__(self) -> None:
+            self.app = App()
+
+    with pytest.raises(ReviewClarificationError, match="report document"):
+        await ReviewConversationAdapter().restore_settlement(
+            {
+                "version": 1,
+                "operation": "follow_up",
+                "stable_thread_id": _THREAD_ID,
+                "candidate_thread_id": None,
+                "turn_id": "restart-2",
+                "report_revision": 4,
+                "settlement_state": "pending",
+            },
+            Agent(),
+            {"choices": [{"message": {"content": "Current answer."}}]},
+        )
 
 
 @pytest.mark.asyncio
@@ -515,6 +713,7 @@ async def test_review_ack_reconstructs_from_durable_metadata_after_restart(
         async def aupdate_state(
             self, config: dict[str, Any], *, values: dict[str, Any]
         ) -> None:
+            await asyncio.sleep(0)
             thread_id = config["configurable"]["thread_id"]
             self.updates.append(thread_id)
             self.states.setdefault(thread_id, {}).update(values)
@@ -584,7 +783,7 @@ async def test_review_ack_reconstructs_from_durable_metadata_after_restart(
     loaded: list[dict[str, Any]] = []
 
     async def loader(
-        durable_metadata: Mapping[str, Any], staged_turn: StagedTurn
+        durable_metadata: Mapping[str, Any], staged_turn: StoredTurn
     ) -> ReviewConversationAdapter:
         loaded.append(dict(durable_metadata))
         adapter = ReviewConversationAdapter()
@@ -602,9 +801,15 @@ async def test_review_ack_reconstructs_from_durable_metadata_after_restart(
         ),
         review_settlement_loader=loader,
     )
-    assert await executor.acknowledge_review_settlement_for_turn(
-        key, "10", accepted=True
+    acknowledgements = await asyncio.gather(
+        executor.acknowledge_review_settlement_for_turn(
+            key, "10", accepted=True
+        ),
+        executor.acknowledge_review_settlement_for_turn(
+            key, "10", accepted=True
+        ),
     )
+    assert acknowledgements == [True, True]
     assert agent.app.states[_THREAD_ID]["report_revision"] == 5
     assert agent.app.updates == [_THREAD_ID]
     assert loaded
@@ -652,7 +857,9 @@ def test_capture_result_does_not_rescue_invalid_public_answer_with_stale_report(
     assert snapshot is not None
     adapter = ReviewConversationAdapter()
     adapter.prepare(
-        _projection("What evidence supports that claim?"), snapshot=snapshot
+        _projection("What evidence supports that claim?"),
+        snapshot=snapshot,
+        turn_id="follow-up-4",
     )
 
     adapter.capture_result(
@@ -699,7 +906,7 @@ async def test_review_wrapper_answers_follow_up_without_running_the_graph(
     assert snapshot is not None
     projection = _projection("What evidence supports that claim?")
     adapter = ReviewConversationAdapter()
-    adapter.prepare(projection, snapshot=snapshot)
+    adapter.prepare(projection, snapshot=snapshot, turn_id="follow-up-3")
     captured: dict[str, str] = {}
 
     class FakeAgent:
@@ -727,6 +934,7 @@ async def test_review_wrapper_answers_follow_up_without_running_the_graph(
         thread_id=_THREAD_ID,
         review_adapter=adapter,
         review_projection=projection,
+        review_turn_id="follow-up-3",
     )
 
     assert result["choices"][0]["message"]["content"] == "Bounded answer."
@@ -799,7 +1007,9 @@ def test_delta_never_persists_the_full_report_and_settlement_controls_revision()
     assert snapshot is not None
     adapter = ReviewConversationAdapter()
     adapter.prepare(
-        _projection("What evidence supports that claim?"), snapshot=snapshot
+        _projection("What evidence supports that claim?"),
+        snapshot=snapshot,
+        turn_id="follow-up-5",
     )
     delta = adapter.delta(
         {
@@ -924,12 +1134,17 @@ async def test_executor_defers_review_checkpoint_until_explicit_ack(
             dispatch.private_agent_state["review_projection"],
             fake_agent,
             dispatch.agent_thread_id,
+            turn_id=dispatch.private_agent_state["review_turn_id"],
         )
         adapter.capture_result(
             {"choices": [{"message": {"content": "Review complete."}}]}
         )
         captured["adapter"] = adapter
-        return AgentOutcome(result={"ok": True}, context_delta=ContextDelta())
+        return AgentOutcome(
+            result={"ok": True},
+            context_delta=ContextDelta(),
+            private_stage_metadata=adapter.settlement_metadata(),
+        )
 
     async def forbidden_router(*_args: Any, **_kwargs: Any) -> Any:
         raise AssertionError("explicit Review selection must not route")
@@ -969,14 +1184,18 @@ async def test_executor_defers_review_checkpoint_until_explicit_ack(
         _projection("Review drought tolerance in rice"),
         fake_agent,
         _THREAD_ID,
+        turn_id=envelope.turn_id,
     )
     accepted_adapter.capture_result(
         {"choices": [{"message": {"content": "Review complete."}}]}
     )
-    await executor.defer_review_settlement(envelope, accepted_adapter)
+    accepted_envelope = envelope.model_copy(update={"turn_id": "2"})
+    await executor.defer_review_settlement(accepted_envelope, accepted_adapter)
     assert fake_agent.app.updates == []
     assert (
-        await executor.acknowledge_review_settlement(envelope, accepted=True)
+        await executor.acknowledge_review_settlement(
+            accepted_envelope, accepted=True
+        )
         is True
     )
     assert fake_agent.app.updates == [{"report_revision": 5}]

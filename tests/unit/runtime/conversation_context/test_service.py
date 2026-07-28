@@ -377,6 +377,70 @@ async def test_delta_failure_stages_degraded_but_failed_or_canceled_does_not(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["degraded", "invalid", "candidate"])
+async def test_review_invalid_outcome_fails_before_staging(
+    store: ConversationContextStore,
+    failure: str,
+) -> None:
+    """Review failures never become healthy empty-delta stages."""
+    turn_id = {"degraded": "21", "invalid": "22", "candidate": "23"}[failure]
+    metadata: dict[str, object] = {
+        "version": 1,
+        "operation": "new_review",
+        "stable_thread_id": "review-stable",
+        "candidate_thread_id": "review-candidate",
+        "turn_id": turn_id,
+        "report_revision": 0,
+        "settlement_state": "pending",
+    }
+    if failure == "candidate":
+        metadata.pop("candidate_thread_id")
+    if failure == "degraded":
+        outcome = AgentOutcome(
+            result={"answer": "visible"},
+            context_delta=ContextDelta(summary_update="must not stage"),
+            context_delta_error=True,
+            private_stage_metadata=metadata,
+        )
+    elif failure == "invalid":
+        outcome = AgentOutcome(
+            result={"answer": "visible"},
+            context_delta=ContextDelta(
+                artifact_upserts=[
+                    ArtifactRefV1(
+                        artifact_id="untrusted",
+                        display_name="untrusted",
+                    )
+                ]
+            ),
+            private_stage_metadata=metadata,
+        )
+    else:
+        outcome = AgentOutcome(
+            result={"answer": "visible"},
+            context_delta=ContextDelta(),
+            private_stage_metadata=metadata,
+        )
+
+    async def invoke(*_args: object) -> AgentOutcome:
+        return outcome
+
+    envelope = _envelope(
+        turn_id=turn_id,
+        requested_agent_id="ReviewAgent",
+        allowed_agent_ids=["ReviewAgent"],
+    )
+    result = await _service(store, invoke=invoke).execute_turn(envelope)
+
+    assert result.status is PrepareStatus.IN_PROGRESS
+    assert result.stage is None
+    stored = store.load_turn(str(_CONVERSATION_KEY), turn_id)
+    assert stored is not None
+    assert stored.state == "failed"
+    assert stored.delta is None
+
+
+@pytest.mark.asyncio
 async def test_invalid_delta_is_discarded_before_degraded_staging(
     store: ConversationContextStore,
 ) -> None:

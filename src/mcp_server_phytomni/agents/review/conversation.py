@@ -39,6 +39,8 @@ _MAX_SECTION_CHARS = MAX_CONTEXT_TEXT_CHARS
 _MAX_CLAIM_CHARS = 512
 _MAX_PROMPT_CHARS = MAX_CONTEXT_TEXT_CHARS
 _MAX_SUMMARY_CHARS = 1024
+_MAX_THREAD_ID_CHARS = 512
+_MAX_TURN_ID_CHARS = 64
 _INVALID_RESPONSE_TEXT = frozenset(
     {
         "no answer generated",
@@ -216,6 +218,32 @@ def _candidate_thread_id(stable_thread_id: str, turn_id: str) -> str:
         f"review-candidate-v1:{stable_thread_id}:{turn_id}".encode()
     ).hexdigest()[:32]
     return f"{stable_thread_id}:candidate:{digest}"
+
+
+def _required_turn_id(value: object) -> str:
+    """Require the current envelope identity before any checkpoint access."""
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or len(value) > _MAX_TURN_ID_CHARS
+    ):
+        raise ReviewClarificationError(
+            "A valid turn id is required for every Review context turn."
+        )
+    return value
+
+
+def _required_thread_id(value: object, label: str) -> str:
+    """Validate one bounded private checkpoint identity from durable metadata."""
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or len(value) > _MAX_THREAD_ID_CHARS
+    ):
+        raise ReviewClarificationError(
+            f"Review settlement has no valid {label} checkpoint thread."
+        )
+    return value
 
 
 def _state_values(state: object) -> Mapping[str, Any]:
@@ -795,6 +823,11 @@ def _usable_response_text(value: str) -> bool:
     return bool(normalized) and normalized not in _INVALID_RESPONSE_TEXT
 
 
+def _usable_report_document(document: ReviewReportDocument | None) -> bool:
+    """Require non-placeholder report bytes before restart or promotion."""
+    return document is not None and _usable_response_text(document.text)
+
+
 def _follow_up_questions(result: Mapping[str, Any]) -> list[str]:
     """Extract a bounded follow-up list without copying report state."""
     nested = result.get("result")
@@ -947,9 +980,10 @@ class ReviewConversationAdapter:
         turn_id: str | None = None,
     ) -> dict[str, Any]:
         """Classify and project one Review turn."""
+        validated_turn_id = _required_turn_id(turn_id)
         self._stable_thread_id = projection.agent_thread_id
         self._thread_id = self._stable_thread_id
-        self._turn_id = turn_id
+        self._turn_id = validated_turn_id
         self._report_document = None
         self._ordered_doc_list = []
         if snapshot is not None and not isinstance(
@@ -967,17 +1001,6 @@ class ReviewConversationAdapter:
             projection=projection,
             snapshot=snapshot,
         )
-        if (
-            operation
-            in {
-                ReviewConversationOperation.NEW_REVIEW,
-                ReviewConversationOperation.SCOPE_CHANGE,
-            }
-            and not self._turn_id
-        ):
-            raise ReviewClarificationError(
-                "A valid turn id is required for a new Review graph turn."
-            )
         section: ReviewSection | None = None
         section_id = _section_reference(projection.current_query, snapshot)
         if operation is ReviewConversationOperation.LOCAL_REVISION:
@@ -1050,12 +1073,12 @@ class ReviewConversationAdapter:
         turn_id: str | None = None,
     ) -> dict[str, Any]:
         """Load the private checkpoint, then prepare against its snapshot."""
+        validated_turn_id = _required_turn_id(turn_id)
         del thread_id
         stable_thread_id = projection.agent_thread_id
         self._agent = agent
         self._stable_thread_id = stable_thread_id
         self._thread_id = stable_thread_id
-        self._turn_id = turn_id
         state = await _load_review_checkpoint_state(agent, stable_thread_id)
         snapshot = extract_review_checkpoint(state)
         document = extract_review_report_document(state)
@@ -1069,7 +1092,7 @@ class ReviewConversationAdapter:
             projection,
             snapshot=snapshot,
             report_document=document,
-            turn_id=self._turn_id,
+            turn_id=validated_turn_id,
         )
         ordered = _reference_metadata(state)
         if ordered:
@@ -1175,7 +1198,12 @@ class ReviewConversationAdapter:
             values = _state_values(state)
             snapshot = extract_review_checkpoint(state)
             document = extract_review_report_document(state)
-            if not values or snapshot is None or document is None:
+            if (
+                not values
+                or snapshot is None
+                or document is None
+                or not _usable_report_document(document)
+            ):
                 self.mark_failed()
                 return False
             self._staged_snapshot = snapshot
@@ -1189,10 +1217,12 @@ class ReviewConversationAdapter:
             self._agent, self.stable_thread_id
         )
         snapshot = extract_review_checkpoint(state)
-        if snapshot is None:
+        document = extract_review_report_document(state)
+        if snapshot is None or not _usable_report_document(document):
             self.mark_failed()
             return False
         self._active_snapshot = snapshot
+        self._report_document = document
         return operation in {
             ReviewConversationOperation.FOLLOW_UP,
             ReviewConversationOperation.LOCAL_REVISION,
@@ -1205,68 +1235,120 @@ class ReviewConversationAdapter:
         result: Mapping[str, Any] | None = None,
     ) -> None:
         """Reconstruct a pending turn from durable metadata after restart."""
-        if metadata.get("version") != 1:
+        version = metadata.get("version")
+        if (
+            isinstance(version, bool)
+            or not isinstance(version, int)
+            or version != 1
+        ):
             raise ReviewClarificationError(
                 "Review settlement metadata version is unsupported."
             )
         operation_value = metadata.get("operation")
+        if not isinstance(operation_value, str):
+            raise ReviewClarificationError(
+                "Review settlement metadata is invalid."
+            )
         try:
-            operation = ReviewConversationOperation(str(operation_value))
+            operation = ReviewConversationOperation(operation_value)
         except ValueError as exc:
             raise ReviewClarificationError(
                 "Review settlement metadata is invalid."
             ) from exc
-        stable = metadata.get("stable_thread_id")
-        turn_id = metadata.get("turn_id")
-        candidate = metadata.get("candidate_thread_id")
-        if not isinstance(stable, str) or not stable:
+        if metadata.get("settlement_state") != "pending":
             raise ReviewClarificationError(
-                "Review settlement has no stable checkpoint thread."
+                "Review settlement state is invalid for restart."
             )
-        if not isinstance(turn_id, str) or not turn_id:
-            raise ReviewClarificationError("Review settlement has no turn id.")
+        stable = _required_thread_id(
+            metadata.get("stable_thread_id"), "stable"
+        )
+        turn_id = _required_turn_id(metadata.get("turn_id"))
+        candidate_value = metadata.get("candidate_thread_id")
+        candidate: str | None = None
         if operation in {
             ReviewConversationOperation.NEW_REVIEW,
             ReviewConversationOperation.SCOPE_CHANGE,
-        } and (not isinstance(candidate, str) or not candidate):
+        }:
+            candidate = _required_thread_id(candidate_value, "candidate")
+            if candidate == stable:
+                raise ReviewClarificationError(
+                    "Review settlement candidate must be turn-scoped."
+                )
+        elif candidate_value is not None:
             raise ReviewClarificationError(
-                "Review settlement has no candidate checkpoint thread."
+                "Review settlement has an unexpected candidate checkpoint thread."
             )
-        self._agent = agent
-        self._stable_thread_id = stable[:512]
-        self._thread_id = self._stable_thread_id
-        self._candidate_thread_id = (
-            candidate[:512] if isinstance(candidate, str) else None
-        )
-        self._execution_thread_id = (
-            self._candidate_thread_id or self._stable_thread_id
-        )
-        self._turn_id = turn_id[:64]
-        try:
-            self._report_revision = max(
-                0, int(metadata.get("report_revision", 0))
-            )
-        except (TypeError, ValueError) as exc:
+        report_revision = metadata.get("report_revision")
+        if (
+            isinstance(report_revision, bool)
+            or not isinstance(report_revision, int)
+            or report_revision < 0
+        ):
             raise ReviewClarificationError(
                 "Review settlement revision metadata is invalid."
-            ) from exc
+            )
+        answer = _answer_from_result(result or {})
+        if not _usable_response_text(answer):
+            raise ReviewClarificationError(
+                "Review settlement has no usable current answer."
+            )
+        self._agent = agent
+        self._stable_thread_id = stable
+        self._thread_id = self._stable_thread_id
+        self._candidate_thread_id = candidate
+        self._execution_thread_id = candidate or self._stable_thread_id
+        self._turn_id = turn_id
+        self._report_revision = report_revision
         self._settled = False
         self._candidate_discarded = False
         self._operation_successful = True
-        state = await _load_review_checkpoint_state(
+        stable_state = await _load_review_checkpoint_state(
             agent, self._stable_thread_id
         )
-        snapshot = extract_review_checkpoint(state)
-        if snapshot is None and operation in {
-            ReviewConversationOperation.FOLLOW_UP,
-            ReviewConversationOperation.LOCAL_REVISION,
-            ReviewConversationOperation.SCOPE_CHANGE,
-        }:
+        stable_snapshot = extract_review_checkpoint(stable_state)
+        stable_document = extract_review_report_document(stable_state)
+        if (
+            operation
+            in {
+                ReviewConversationOperation.FOLLOW_UP,
+                ReviewConversationOperation.LOCAL_REVISION,
+                ReviewConversationOperation.SCOPE_CHANGE,
+            }
+            and stable_snapshot is None
+        ):
             raise ReviewClarificationError(
                 "The active Review checkpoint is unavailable."
             )
-        self._active_snapshot = snapshot
-        self._report_document = extract_review_report_document(state)
+        if operation is not ReviewConversationOperation.NEW_REVIEW and not (
+            _usable_report_document(stable_document)
+        ):
+            raise ReviewClarificationError(
+                "The active Review report document is unavailable."
+            )
+        self._active_snapshot = stable_snapshot
+        self._report_document = stable_document
+        candidate_state: object | None = None
+        if candidate is not None:
+            candidate_state = await _load_review_checkpoint_state(
+                agent, candidate
+            )
+            candidate_values = _state_values(candidate_state)
+            candidate_snapshot = extract_review_checkpoint(candidate_state)
+            candidate_document = extract_review_report_document(
+                candidate_state
+            )
+            if (
+                not candidate_values
+                or candidate_snapshot is None
+                or candidate_document is None
+                or not _usable_report_document(candidate_document)
+            ):
+                raise ReviewClarificationError(
+                    "The Review candidate checkpoint is not ready."
+                )
+            self._staged_snapshot = candidate_snapshot
+            self._report_document = candidate_document
+            self._pending_report_text = candidate_document.text
         projection = ContextProjection.model_construct(
             current_query="settlement",
             intent_kind="follow_up",
@@ -1285,19 +1367,16 @@ class ReviewConversationAdapter:
         self._prepared = _PreparedReviewTurn(
             projection=projection,
             operation=operation,
-            snapshot=snapshot,
+            snapshot=stable_snapshot,
             section=None,
         )
-        self._staged_snapshot = None
-        self._pending_report_text = None
-        self._ordered_doc_list = _reference_metadata(state)
+        if candidate_state is None:
+            self._staged_snapshot = None
+            self._pending_report_text = None
+        self._ordered_doc_list = _reference_metadata(
+            candidate_state if candidate_state is not None else stable_state
+        )
         if operation is ReviewConversationOperation.LOCAL_REVISION:
-            answer = _answer_from_result(result or {})
-            if not _usable_response_text(answer):
-                self.mark_failed()
-                raise ReviewClarificationError(
-                    "Review section revision returned empty or invalid content."
-                )
             self._pending_report_text = answer
             self._report_document = _report_document_from_text(answer)
 
@@ -1430,9 +1509,11 @@ class ReviewConversationAdapter:
             self._agent, self.candidate_thread_id
         )
         candidate_values = _state_values(candidate)
+        candidate_document = extract_review_report_document(candidate)
         if (
             not candidate_values
             or extract_review_checkpoint(candidate) is None
+            or not _usable_report_document(candidate_document)
         ):
             raise RuntimeError("Review candidate checkpoint is not promotable")
         app = getattr(self._agent, "app", None)

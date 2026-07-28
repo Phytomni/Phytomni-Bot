@@ -113,29 +113,77 @@ _REVIEW_STAGE_FIELDS = frozenset(
         "settlement_state",
     }
 )
+_REVIEW_OPERATIONS = frozenset(
+    {"new_review", "follow_up", "local_revision", "scope_change"}
+)
+_REVIEW_SETTLEMENT_STATES = frozenset(
+    {"pending", "promoted", "rejected", "failed"}
+)
 
 
 def _bounded_review_stage_metadata(
     value: Mapping[str, Any],
 ) -> dict[str, Any] | None:
     """Keep only bounded checkpoint identities in durable turn metadata."""
+    operation = value.get("operation")
+    if not isinstance(operation, str) or operation not in _REVIEW_OPERATIONS:
+        return None
+    settlement_state = value.get("settlement_state")
+    if (
+        not isinstance(settlement_state, str)
+        or settlement_state not in _REVIEW_SETTLEMENT_STATES
+        or settlement_state != "pending"
+    ):
+        return None
     result: dict[str, Any] = {}
     for key in _REVIEW_STAGE_FIELDS:
         candidate = value.get(key)
         if key in {"version", "report_revision"}:
-            if isinstance(candidate, bool) or not isinstance(candidate, int):
+            if (
+                isinstance(candidate, bool)
+                or not isinstance(candidate, int)
+                or (key == "version" and candidate != 1)
+                or (key == "report_revision" and candidate < 0)
+            ):
                 continue
-            result[key] = max(0, candidate)
+            result[key] = candidate
         elif key == "candidate_thread_id":
             if candidate is None:
                 result[key] = None
-            elif isinstance(candidate, str) and candidate:
+            elif (
+                isinstance(candidate, str)
+                and candidate == candidate.strip()
+                and candidate
+                and len(candidate) <= 512
+            ):
                 result[key] = candidate[:512]
-        elif isinstance(candidate, str) and candidate:
+        elif (
+            isinstance(candidate, str)
+            and candidate == candidate.strip()
+            and candidate
+        ):
             limit = 64 if key == "turn_id" else 512
-            result[key] = candidate[:limit]
-    required = {"version", "operation", "stable_thread_id", "turn_id"}
-    return result if required.issubset(result) else None
+            if len(candidate) <= limit:
+                result[key] = candidate
+    required = {
+        "version",
+        "operation",
+        "stable_thread_id",
+        "turn_id",
+        "report_revision",
+        "settlement_state",
+    }
+    if not required.issubset(result):
+        return None
+    if operation in {"new_review", "scope_change"}:
+        candidate = result.get("candidate_thread_id")
+        if not isinstance(candidate, str) or not candidate:
+            return None
+        if candidate == result["stable_thread_id"]:
+            return None
+    elif result.get("candidate_thread_id") is not None:
+        return None
+    return result
 
 
 def review_settlement_metadata_from_turn(
@@ -467,6 +515,28 @@ class ConversationContextService:
                 return PreparedTurn(
                     PrepareStatus.IN_PROGRESS, stored_turn=prepared.stored_turn
                 )
+            is_review = selection.selected_agent_id == "ReviewAgent"
+            review_metadata: dict[str, Any] | None = None
+            if is_review:
+                if (
+                    outcome.context_delta_error
+                    or outcome.context_delta is None
+                    or outcome.private_stage_metadata is None
+                ):
+                    self.store.mark_turn_failed(key, envelope.turn_id)
+                    return PreparedTurn(
+                        PrepareStatus.IN_PROGRESS,
+                        stored_turn=prepared.stored_turn,
+                    )
+                review_metadata = _bounded_review_stage_metadata(
+                    outcome.private_stage_metadata
+                )
+                if review_metadata is None:
+                    self.store.mark_turn_failed(key, envelope.turn_id)
+                    return PreparedTurn(
+                        PrepareStatus.IN_PROGRESS,
+                        stored_turn=prepared.stored_turn,
+                    )
             degraded = (
                 outcome.context_delta_error or outcome.context_delta is None
             )
@@ -483,6 +553,12 @@ class ConversationContextService:
                         },
                     )
                 except ValueError:
+                    if is_review:
+                        self.store.mark_turn_failed(key, envelope.turn_id)
+                        return PreparedTurn(
+                            PrepareStatus.IN_PROGRESS,
+                            stored_turn=prepared.stored_turn,
+                        )
                     degraded = True
                     delta = ContextDelta()
             proposed = self._advance_context(
@@ -521,12 +597,8 @@ class ConversationContextService:
                 "context_rebuilt": stage.context_rebuilt,
                 "context_degraded": stage.context_degraded,
             }
-            if outcome.private_stage_metadata is not None:
-                review_metadata = _bounded_review_stage_metadata(
-                    outcome.private_stage_metadata
-                )
-                if review_metadata is not None:
-                    stage_metadata[_PRIVATE_REVIEW_STAGE_KEY] = review_metadata
+            if review_metadata is not None:
+                stage_metadata[_PRIVATE_REVIEW_STAGE_KEY] = review_metadata
             stored = self.store.stage_turn(
                 key,
                 envelope.turn_id,
@@ -579,14 +651,7 @@ class ConversationContextService:
             entities.pop(str(item), None)
         data["active_entities"] = list(entities.values())
         if delta.open_question_updates:
-            data["open_questions"] = [
-                (
-                    item.model_dump(mode="python")
-                    if hasattr(item, "model_dump")
-                    else item
-                )
-                for item in delta.open_question_updates
-            ]
+            data["open_questions"] = list(delta.open_question_updates)
         artifacts = {
             item["artifact_id"]: item for item in data["artifact_index"]
         }

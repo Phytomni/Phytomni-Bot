@@ -28,6 +28,7 @@ from .service import (
     ConversationContextService,
     PreparedTurn,
     PrepareStatus,
+    _bounded_review_stage_metadata,
     review_settlement_metadata_from_turn,
 )
 from .store import ConversationContextStore, StoredTurn
@@ -235,6 +236,7 @@ class ConversationContextExecutor:
             tuple[str, str], ReviewConversationAdapter
         ] = {}
         self._pending_review_lock = asyncio.Lock()
+        self._review_settlement_ack_lock = asyncio.Lock()
         self._max_pending_review_settlements = 256
 
     def _service_for_request(self) -> ConversationContextService:
@@ -297,16 +299,36 @@ class ConversationContextExecutor:
         accepted: bool,
         staged_turn: StoredTurn | None = None,
     ) -> bool:
+        """Serialize the complete Review promotion for one ack boundary."""
+        async with self._review_settlement_ack_lock:
+            return await self._acknowledge_review_settlement_key_locked(
+                key,
+                accepted=accepted,
+                staged_turn=staged_turn,
+            )
+
+    async def _acknowledge_review_settlement_key_locked(
+        self,
+        key: tuple[str, str],
+        *,
+        accepted: bool,
+        staged_turn: StoredTurn | None = None,
+    ) -> bool:
         """Apply one durable Review acknowledgment by conversation identity."""
         service = self._service_for_request()
         current_turn = service.store.load_turn(*key)
         staged_turn = current_turn or staged_turn
         metadata = review_settlement_metadata_from_turn(staged_turn)
         if metadata is not None:
-            settlement_state = metadata.get("settlement_state", "pending")
+            settlement_state = metadata.get("settlement_state")
             if settlement_state == "promoted":
                 return accepted
             if settlement_state in {"rejected", "failed"}:
+                return False
+            if (
+                settlement_state != "pending"
+                or _bounded_review_stage_metadata(metadata) is None
+            ):
                 return False
         adapter = await self._load_review_settlement_adapter(key, staged_turn)
         if adapter is None:
