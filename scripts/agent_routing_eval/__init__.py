@@ -4,14 +4,14 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Contracts and validation helpers for agent-routing evaluation datasets."""
 
-from .dataset import (
-    AgentRoutingCase,
-    DatasetValidationError,
-    load_dataset,
-    validate_dataset,
-    validate_dataset_pair,
-    verify_workbook_sources,
-)
+from . import dataset as _dataset
+
+AgentRoutingCase = _dataset.AgentRoutingCase
+DatasetValidationError = _dataset.DatasetValidationError
+load_dataset = _dataset.load_dataset
+validate_dataset = _dataset.validate_dataset
+validate_dataset_pair = _dataset.validate_dataset_pair
+verify_workbook_sources = _dataset.verify_workbook_sources
 
 __all__ = [
     "AgentRoutingCase",
