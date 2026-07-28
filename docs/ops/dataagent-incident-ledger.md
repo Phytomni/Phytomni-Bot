@@ -50,6 +50,16 @@ DataAgent behavior change, or a historical Analyst write.
   `sequence` tokens by safe feature flags. This excludes a simple
   identifier-drop explanation, but does not establish the provider's query
   semantics or data correctness.
+- A fresh direct call to the uncached NL2SQL execution path, using the exact
+  query and a new dialog id, again returned `sequence_2` with zero rows. Its
+  safe SQL metrics included the exact transcript id, `rice`, `SELECT`,
+  `WHERE`, and `sequence_2`; this is upstream-path evidence, not a formatter
+  observation.
+- A historical production tool log contains a structured response for the
+  same query hash with one `sequence_2` header and one value whose safe length
+  and SHA-256 exactly match the one-row controlled result. The historical
+  record therefore predates the current replay, but it does not identify the
+  provider-side semantic reason for the differing row counts.
 
 ## Not Established
 
@@ -60,12 +70,19 @@ DataAgent behavior change, or a historical Analyst write.
 - Whether failure is deterministic on the current SHA.
 - Whether `sequence_2` is the intended provider field or an unintended
   result-selection alias.
+- Whether the zero-row direct result is caused by transcript absence, a
+  provider-generated predicate, or a rewrite-dependent query branch.
+- Whether the trailing `U+002E` is present in the authoritative source value
+  or was introduced by an upstream transformation.
 
 ## Excluded As Standalone Root Cause
 
 - The separate Web dialogue reconciliation collision.
 - A Bot-side formatter mutation: the upstream result shape and formatted
   table shape matched on the observed safe fields.
+- A newly introduced current-path formatter regression is not supported by
+  the historical response's matching value hash, although historical
+  provider/client ownership is not fully proven.
 - A stage exception, timeout, or run-persistence failure: all six stage
   events completed without an error code and the run persisted as succeeded.
 
@@ -114,6 +131,12 @@ provider body:
 - Rewritten-query safe feature comparison:
   `/tmp/phytomni-dataagent-api-rerun/rewrite-shape.json` SHA-256
   `f0ed179add4d07f4a640b2624cc631277699b19e3af86402f97178b4e546ea4a4`.
+- Fresh uncached exact-query replay with SQL shape metrics:
+  `/tmp/phytomni-dataagent-api-rerun/direct-uncached-original.json` SHA-256
+  `43f295a7cd6ab26c814a3fbd7f2cd87b813c7735a54f0f5a74b370f928b846f8`.
+- Historical tool-log structure summary:
+  `/tmp/phytomni-dataagent-api-rerun/historical-log-shape.json` SHA-256
+  `f4460de7f7ab5e429e22d5cd4609dc466657c2d009e33d4eb1865640fb0e3c23`.
 
 The gate remains stopped until an operator authorizes one controlled replay
 and provides an authoritative provider-side interpretation of the returned
