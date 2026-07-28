@@ -221,6 +221,8 @@ output = "coverage.xml"
 
 [tool.pylint.main]
 py-version = "3.12"
+# Keep repository-local test and script packages importable in focused runs.
+init-hook = "import sys; sys.path.insert(0, '.')"
 # typings/ holds .pyi stubs that mirror external SDKs (e.g.
 # esdk-obs-python). The stubs have no bodies, so W0613
 # (unused-argument), C0116 (missing-function-docstring), and R0903
