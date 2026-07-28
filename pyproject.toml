@@ -82,7 +82,7 @@ dev = [
     "pytest>=9.0.3",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.1.0",
-    "ruff>=0.15.12",
+    "ruff>=0.15.12,<0.16",
     "shellcheck-py>=0.11.0",
     "toml-sort>=0.24.4",
     "types-protobuf<7",
