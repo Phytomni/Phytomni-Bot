@@ -1,7 +1,9 @@
 # DataAgent cDNA Incident Ledger
 
-This is an evidence-only ledger. It does not authorize a live replay, a
-DataAgent behavior change, or a historical Analyst write.
+This is an evidence-only ledger. It does not authorize a DataAgent behavior
+change or a historical Analyst write. The controlled replay evidence below
+was executed under separate operator authorization and remains subject to
+provider-owner interpretation.
 
 ## Identity
 
@@ -173,10 +175,10 @@ provider body:
   SHA-256
   `f534783e3364e62a98978949ec02b0ea6c5de9aed8940902e216b197972d76a0`.
 
-The gate remains stopped until an operator authorizes one controlled replay
-and provides an authoritative provider-side interpretation of the returned
-column/value shape, including the current-time database comparison. No
-behavior fix, transcript synthesis, or result selection rule is authorized
+The controlled replay has been authorized and completed. The gate remains
+stopped until the provider owner gives an authoritative interpretation of the
+returned column/value shape, including the current-time database comparison.
+No behavior fix, transcript synthesis, or result selection rule is authorized
 from the current evidence alone.
 
 ## Historical Mutation Boundary
