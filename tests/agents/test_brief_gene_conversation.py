@@ -174,6 +174,28 @@ def test_classification_keeps_new_evidence_as_follow_up() -> None:
 @pytest.mark.parametrize(
     ("query", "expected"),
     [
+        ("Arabidopsis expression?", BriefGeneConversationOperation.CLARIFY),
+        ("rice expression?", BriefGeneConversationOperation.FOLLOW_UP),
+    ],
+)
+def test_species_only_queries_respect_active_species(
+    query: str,
+    expected: BriefGeneConversationOperation,
+) -> None:
+    """Species-only conflicts clarify without changing ordinary follow-ups."""
+    assert (
+        classify_brief_gene_operation(
+            query,
+            active_gene_id="Os01g0177400",
+            active_species_code="osa",
+        )
+        is expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
         ("refresh the report", BriefGeneConversationOperation.REFRESH),
         ("rerun the latest report", BriefGeneConversationOperation.REFRESH),
         ("Os01g0177400", BriefGeneConversationOperation.NEW_REPORT),
@@ -217,6 +239,14 @@ def test_conflicting_identifier_or_species_clarifies() -> None:
     assert (
         classify_brief_gene_operation(
             "generate a new report for AT1G01010",
+            active_gene_id="Os01g0177400",
+            active_species_code="osa",
+        )
+        is BriefGeneConversationOperation.NEW_IDENTIFIER
+    )
+    assert (
+        classify_brief_gene_operation(
+            "Arabidopsis AT1G01010",
             active_gene_id="Os01g0177400",
             active_species_code="osa",
         )
@@ -429,6 +459,32 @@ def test_delta_keeps_bounded_report_metadata_and_stable_thread() -> None:
     assert [item.artifact_id for item in delta.artifact_upserts] == [
         "brief-report-1"
     ]
+
+
+def test_capture_result_stages_file_id_evidence_reference() -> None:
+    """Production citation rows use file_id without retaining document text."""
+    projection = _projection("Os01g0177400")
+    adapter = BriefGeneConversationAdapter()
+    adapter.prepare(projection)
+    result = _full_result()
+    result["choices"][0]["message"]["doc_list"] = [
+        {
+            "file_id": "paper-file-1",
+            "title": "Paper",
+            "content": "private report body",
+        }
+    ]
+
+    assert adapter.capture_result(result, resolved=_resolved()) is True
+
+    delta = adapter.delta(result)
+    evidence = [
+        entity.label
+        for entity in delta.entity_upserts
+        if entity.entity_id.startswith("brief_gene:evidence:")
+    ]
+    assert evidence == ["paper-file-1"]
+    assert "private report body" not in str(delta.model_dump())
 
 
 def test_brief_gene_invocation_keeps_private_state_and_stable_thread() -> None:

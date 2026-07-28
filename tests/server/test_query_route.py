@@ -1696,7 +1696,7 @@ async def test_context_expert_brief_gene_turn_stages_bounded_context_delta(
                             ),
                             "doc_list": [
                                 {
-                                    "source_id": "paper-1",
+                                    "file_id": "paper-1",
                                     "title": "Paper 1",
                                     "content": "full report body",
                                 }
@@ -1712,7 +1712,7 @@ async def test_context_expert_brief_gene_turn_stages_bounded_context_delta(
                     "report_revision": 4,
                     "retrieved_docs": [
                         {
-                            "source_id": "paper-1",
+                            "file_id": "paper-1",
                             "content": "full report body",
                         }
                     ],
@@ -1750,6 +1750,10 @@ async def test_context_expert_brief_gene_turn_stages_bounded_context_delta(
         mcp_handlers, "chat_kwargs", lambda *_args, **_kwargs: {}
     )
     monkeypatch.setattr(mcp_handlers, "retrieve_kwargs", lambda _config: {})
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.shared.citation_enrichment.bi_query",
+        AsyncMock(return_value={"message": "ok", "data": []}),
+    )
 
     envelope = _conversation_envelope(
         turn_id="6",

@@ -338,6 +338,14 @@ def classify_brief_gene_operation(
         )
     if identifiers and identifiers[0].casefold() != active.gene_id.casefold():
         return BriefGeneConversationOperation.NEW_IDENTIFIER
+    active_species = active.species_code or _identifier_species(active.gene_id)
+    if (
+        not identifiers
+        and len(mentioned_species) == 1
+        and active_species is not None
+        and mentioned_species[0] != active_species
+    ):
+        return BriefGeneConversationOperation.CLARIFY
     if refresh:
         return BriefGeneConversationOperation.REFRESH
     if not identifiers:
@@ -438,6 +446,7 @@ def _document_reference(document: Mapping[str, Any]) -> str:
     """Extract one opaque evidence reference from a document row."""
     for key in (
         "source_id",
+        "file_id",
         "doc_id",
         "sourceId",
         "reference_id",
