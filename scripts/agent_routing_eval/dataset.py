@@ -371,9 +371,10 @@ def validate_dataset_pair(
         if key is None:
             continue
         prior = seen.get(key)
-        if prior is not None and (
-            prior.expected_agent != "AnalystAgent"
-            or case.expected_agent != "AnalystAgent"
+        if (
+            prior is not None
+            and prior.expected_agent == case.expected_agent
+            and case.expected_agent != "AnalystAgent"
         ):
             raise DatasetValidationError("dev/test: source-row collision")
         seen[key] = case
