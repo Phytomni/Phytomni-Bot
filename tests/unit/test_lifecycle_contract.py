@@ -6,7 +6,11 @@
 
 from __future__ import annotations
 
+import sqlite3
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from uuid import UUID
 
 import pytest
 from tests.support.terminal_results import (
@@ -17,12 +21,155 @@ from tests.support.terminal_results import (
     sensitive_terminal_result,
 )
 
+from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
+from mcp_server_phytomni.api import run_lifecycle
 from mcp_server_phytomni.api.lifecycle_contract import (
     LifecycleInvariantError,
     build_agent_run_response,
     canonicalize_run_record,
     empty_agent_result,
 )
+from mcp_server_phytomni.runtime.conversation_context.projection import (
+    agent_thread_id,
+)
+from mcp_server_phytomni.runtime.conversation_context.store import (
+    ConversationContextStore,
+    StagedTurn,
+)
+
+
+def _stage_lifecycle_turn(
+    store: ConversationContextStore,
+    key: str,
+    turn_id: str,
+    *,
+    operation: str,
+    selected_agent_id: str,
+    stage_metadata: dict[str, object] | None = None,
+) -> None:
+    """Stage a compact row for the production retention contract test."""
+    store.begin_turn(key, turn_id, operation, 0)
+    store.stage_turn(
+        key,
+        turn_id,
+        StagedTurn(
+            operation=operation,
+            base_context_version=0,
+            selected_agent_id=selected_agent_id,
+            route_source="lifecycle-test",
+            result={"answer": "bounded"},
+            delta={"summary": "bounded"},
+            ledger_version="ledger-1",
+            schema_version=1,
+            ledger_cursor=0,
+            observed_mode="expert",
+            stage_metadata=stage_metadata or {},
+        ),
+    )
+
+
+def test_normal_lifecycle_gc_purges_staged_context_and_retains_review_cleanup(
+    tmp_path: Path,
+) -> None:
+    """Normal run GC expires staged rows without losing Review cleanup IDs."""
+    db_path = tmp_path / "lifecycle.sqlite"
+    store = ConversationContextStore(str(db_path))
+    key = "00000000-0000-0000-0000-000000000011"
+    review_turn_id = "review-turn"
+    stable_thread_id = agent_thread_id(UUID(key), "ReviewAgent")
+    candidate_thread_id = _candidate_thread_id(
+        stable_thread_id, review_turn_id
+    )
+    _stage_lifecycle_turn(
+        store,
+        key,
+        review_turn_id,
+        operation="new_review",
+        selected_agent_id="ReviewAgent",
+        stage_metadata={
+            "_review_settlement": {
+                "version": 1,
+                "operation": "new_review",
+                "stable_thread_id": stable_thread_id,
+                "candidate_thread_id": candidate_thread_id,
+                "turn_id": review_turn_id,
+                "report_revision": 0,
+                "settlement_state": "pending",
+            }
+        },
+    )
+    _stage_lifecycle_turn(
+        store,
+        key,
+        "chat-turn",
+        operation="append",
+        selected_agent_id="ChatAgent",
+    )
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE conversation_turns SET expires_at = ? "
+            "WHERE conversation_key = ?",
+            ("2020-01-01T00:00:00+00:00", key),
+        )
+
+    registry_calls: list[str] = []
+
+    def registry_factory(path: str) -> SimpleNamespace:
+        registry_calls.append(path)
+        return SimpleNamespace(purge_expired=lambda: 0)
+
+    run_lifecycle.purge_expired_runs_best_effort(
+        db_path=str(db_path), registry_factory=registry_factory
+    )
+
+    assert registry_calls == [str(db_path)]
+    assert store.load_turn(key, review_turn_id) is None
+    assert store.load_turn(key, "chat-turn") is None
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute(
+            "SELECT candidate_thread_id "
+            "FROM conversation_review_checkpoint_cleanup "
+            "WHERE conversation_key = ?",
+            (key,),
+        ).fetchall() == [(candidate_thread_id,)]
+
+    assert store.tombstone(key) == (candidate_thread_id,)
+    store.complete_checkpoint_cleanup(key)
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM conversation_review_checkpoint_cleanup "
+            "WHERE conversation_key = ?",
+            (key,),
+        ).fetchone() == (0,)
+
+
+def test_context_lifecycle_purge_failure_preserves_run_gc(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A context-store failure does not suppress the registry purge."""
+    db_path = str(tmp_path / "lifecycle.sqlite")
+    registry_calls: list[str] = []
+
+    def registry_factory(path: str) -> SimpleNamespace:
+        registry_calls.append(path)
+        return SimpleNamespace(purge_expired=lambda: 0)
+
+    def failing_context_factory(_path: str) -> SimpleNamespace:
+        def fail(_now: object) -> None:
+            raise sqlite3.OperationalError("context database is locked")
+
+        return SimpleNamespace(purge_expired_staged=fail)
+
+    monkeypatch.setattr(
+        run_lifecycle, "ConversationContextStore", failing_context_factory
+    )
+
+    run_lifecycle.purge_expired_runs_best_effort(
+        db_path=db_path, registry_factory=registry_factory
+    )
+
+    assert registry_calls == [db_path]
 
 
 def test_running_without_recoverable_work_is_rejected() -> None:

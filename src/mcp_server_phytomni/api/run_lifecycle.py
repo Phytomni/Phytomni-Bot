@@ -17,11 +17,13 @@ import logging
 import sqlite3
 import threading
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import BackgroundTasks, HTTPException
 
+from ..runtime.conversation_context.store import ConversationContextStore
 from ..runtime.deep_genome_store import DeepGenomeStore
 from ..runtime.deep_genome_store_projection import snapshot_to_canonical_result
 from ..runtime.run_registry import (
@@ -36,13 +38,15 @@ from ..runtime.task_manager import resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
 
 __all__ = [
+    "ResolvedRemoteRun",
+    "RunLifecycleContext",
+    "RunListQuery",
+    "RunPersistenceError",
     "agent_run_response",
     "claim_run_gc",
     "create_running_stream_run",
     "fetch_owner_run",
     "list_owner_runs",
-    "RunLifecycleContext",
-    "RunListQuery",
     "project_deep_genome_run",
     "project_public_run_record",
     "purge_expired_runs_best_effort",
@@ -50,13 +54,11 @@ __all__ = [
     "reconcile_run_task_logs",
     "record_sync_run",
     "release_run_gc",
-    "ResolvedRemoteRun",
-    "RunPersistenceError",
     "resolve_remote_run",
+    "run_record_to_dict",
     "schedule_run_gc",
     "settle_stream_run",
     "stamp_remote_request_info",
-    "run_record_to_dict",
 ]
 
 
@@ -87,7 +89,7 @@ class RunLifecycleContext:
 class RunListQuery:
     """Owner-run list filters and paging values from the HTTP query."""
 
-    run_filter: RunFilter = RunFilter()
+    run_filter: RunFilter = field(default_factory=RunFilter)
     limit: int = 50
     offset: int = 0
 
@@ -117,11 +119,19 @@ def purge_expired_runs_best_effort(
     registry_factory: RegistryFactory = RunRegistry,
     logger: logging.Logger = _LOGGER,
 ) -> None:
-    """Run one registry TTL purge, swallowing SQLite and OS failures."""
+    """Run registry and staged-context TTL purges, swallowing storage failures."""
+    path = _database_path(db_path)
     try:
-        registry_factory(_database_path(db_path)).purge_expired()
+        registry_factory(path).purge_expired()
     except (sqlite3.Error, OSError) as exc:
         logger.warning("run TTL purge failed: %s", exc.__class__.__name__)
+    try:
+        ConversationContextStore(path).purge_expired_staged(datetime.now(UTC))
+    except (sqlite3.Error, OSError, TimeoutError) as exc:
+        logger.warning(
+            "conversation context TTL purge failed: %s",
+            exc.__class__.__name__,
+        )
 
 
 async def purge_expired_runs_best_effort_async(
