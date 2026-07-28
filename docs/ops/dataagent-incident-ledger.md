@@ -60,6 +60,15 @@ DataAgent behavior change, or a historical Analyst write.
   and SHA-256 exactly match the one-row controlled result. The historical
   record therefore predates the current replay, but it does not identify the
   provider-side semantic reason for the differing row counts.
+- A read-only GaussDB replay of the current direct SQL returned zero rows,
+  while a read-only replay of the SQL captured in the historical response
+  returned one `sequence_2_1_` column with length `4185`, no invalid IUPAC
+  code points, and SHA-256
+  `82121869d7524f0b7774150144847c5ca128467533d76383cd2f2015e156de6b`.
+  The historical response itself recorded length `1003` with `U+002E` for
+  the same logged query path. Because the database replay is current-time
+  evidence, this proves a provider/result-shape discrepancy but does not
+  prove historical database state byte-for-byte.
 
 ## Not Established
 
@@ -74,6 +83,9 @@ DataAgent behavior change, or a historical Analyst write.
   provider-generated predicate, or a rewrite-dependent query branch.
 - Whether the trailing `U+002E` is present in the authoritative source value
   or was introduced by an upstream transformation.
+- Whether the historical provider response was truncated/transformed before
+  the Bot received it, or whether its `sql_text` and displayed value came
+  from different provider sub-results.
 
 ## Excluded As Standalone Root Cause
 
@@ -83,6 +95,9 @@ DataAgent behavior change, or a historical Analyst write.
 - A newly introduced current-path formatter regression is not supported by
   the historical response's matching value hash, although historical
   provider/client ownership is not fully proven.
+- A Bot-side source-data corruption is not supported by the current direct
+  GaussDB replay of the captured no-`rice` SQL; external provider ownership
+  still requires owner confirmation because the replay is time-shifted.
 - A stage exception, timeout, or run-persistence failure: all six stage
   events completed without an error code and the run persisted as succeeded.
 
@@ -137,11 +152,15 @@ provider body:
 - Historical tool-log structure summary:
   `/tmp/phytomni-dataagent-api-rerun/historical-log-shape.json` SHA-256
   `f4460de7f7ab5e429e22d5cd4609dc466657c2d009e33d4eb1865640fb0e3c23`.
+- Provider versus read-only GaussDB shape comparison:
+  `/tmp/phytomni-dataagent-api-rerun/provider-db-shapes.json` SHA-256
+  `468774ad8267ed5344642ff93d0afa4ba91754032a3be6c3d1f7a7c45ff1c973`.
 
 The gate remains stopped until an operator authorizes one controlled replay
 and provides an authoritative provider-side interpretation of the returned
-column/value shape. No behavior fix, transcript synthesis, or result
-selection rule is authorized from the current evidence alone.
+column/value shape, including the current-time database comparison. No
+behavior fix, transcript synthesis, or result selection rule is authorized
+from the current evidence alone.
 
 ## Historical Mutation Boundary
 
