@@ -378,6 +378,65 @@ def validate_dataset_pair(
         agents.add(case.expected_agent)
 
 
+def _workbook_path(
+    source: WorkbookSource, source_root: Path, resolved_root: Path
+) -> Path:
+    if Path(source.workbook).name != source.workbook:
+        raise DatasetValidationError("workbook source must be a basename")
+    workbook_path = source_root / source.workbook
+    try:
+        workbook_path.resolve().relative_to(resolved_root)
+    except ValueError as exc:
+        raise DatasetValidationError(
+            "workbook source is outside source root"
+        ) from exc
+    if not workbook_path.is_file():
+        raise DatasetValidationError("workbook source is missing")
+    return workbook_path
+
+
+def _workbook_values(source: WorkbookSource, workbook: Any) -> set[str]:
+    if source.sheet not in workbook.sheetnames:
+        raise DatasetValidationError("workbook sheet is missing")
+    sheet = workbook[source.sheet]
+    try:
+        row = next(
+            sheet.iter_rows(
+                min_row=source.row,
+                max_row=source.row,
+                values_only=True,
+            )
+        )
+    except StopIteration as exc:
+        raise DatasetValidationError(
+            "workbook physical row is missing"
+        ) from exc
+    return {str(value).strip() for value in row if value is not None}
+
+
+def _verify_workbook_case(
+    case: AgentRoutingCase,
+    source_root: Path,
+    resolved_root: Path,
+    load_workbook: Any,
+    workbooks: dict[str, Any],
+) -> None:
+    if not isinstance(case.source, WorkbookSource):
+        return
+    source = case.source
+    workbook_path = _workbook_path(source, source_root, resolved_root)
+    if source.workbook not in workbooks:
+        workbooks[source.workbook] = load_workbook(
+            workbook_path, read_only=True, data_only=True
+        )
+    values = _workbook_values(source, workbooks[source.workbook])
+    if source.source_id.strip() not in values:
+        raise DatasetValidationError("workbook source ID is absent")
+    source_text = case.transformation.source_text
+    if source_text is None or source_text.strip() not in values:
+        raise DatasetValidationError("workbook source text is absent")
+
+
 def verify_workbook_sources(
     cases: tuple[AgentRoutingCase, ...] | list[AgentRoutingCase],
     source_root: Path,
@@ -395,49 +454,13 @@ def verify_workbook_sources(
     resolved_root = source_root.resolve()
     try:
         for case in cases:
-            if not isinstance(case.source, WorkbookSource):
-                continue
-            source = case.source
-            if Path(source.workbook).name != source.workbook:
-                raise DatasetValidationError(
-                    "workbook source must be a basename"
-                )
-            workbook_path = source_root / source.workbook
-            resolved_path = workbook_path.resolve()
-            try:
-                resolved_path.relative_to(resolved_root)
-            except ValueError as exc:
-                raise DatasetValidationError(
-                    "workbook source is outside source root"
-                ) from exc
-            if not workbook_path.is_file():
-                raise DatasetValidationError("workbook source is missing")
-            if source.workbook not in workbooks:
-                workbooks[source.workbook] = load_workbook(
-                    workbook_path, read_only=True, data_only=True
-                )
-            workbook = workbooks[source.workbook]
-            if source.sheet not in workbook.sheetnames:
-                raise DatasetValidationError("workbook sheet is missing")
-            sheet = workbook[source.sheet]
-            try:
-                row = next(
-                    sheet.iter_rows(
-                        min_row=source.row,
-                        max_row=source.row,
-                        values_only=True,
-                    )
-                )
-            except StopIteration as exc:
-                raise DatasetValidationError(
-                    "workbook physical row is missing"
-                ) from exc
-            values = {str(value).strip() for value in row if value is not None}
-            if source.source_id.strip() not in values:
-                raise DatasetValidationError("workbook source ID is absent")
-            source_text = case.transformation.source_text
-            if source_text is None or source_text.strip() not in values:
-                raise DatasetValidationError("workbook source text is absent")
+            _verify_workbook_case(
+                case,
+                source_root,
+                resolved_root,
+                load_workbook,
+                workbooks,
+            )
     finally:
         for workbook in workbooks.values():
             workbook.close()
