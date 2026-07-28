@@ -30,15 +30,6 @@ from mcp_server_phytomni.agents.shared.species_catalog import (
 )
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 
-__all__ = [
-    "AgentRoutingCase",
-    "DatasetValidationError",
-    "load_dataset",
-    "validate_dataset",
-    "validate_dataset_pair",
-    "verify_workbook_sources",
-]
-
 _MODEL_BY_AGENT = {
     name.value: model for name, _description, model in AGENT_TOOL_DEFINITIONS
 }
