@@ -69,6 +69,11 @@ DataAgent behavior change, or a historical Analyst write.
   the same logged query path. Because the database replay is current-time
   evidence, this proves a provider/result-shape discrepancy but does not
   prove historical database state byte-for-byte.
+- A payload-free SQL-shape comparison found equal identifier-set hashes and
+  equal token counts for the current and historical SQL. Both retained the
+  exact transcript literal; only the current SQL carried a `rice` literal.
+  This ties the current zero-row result to a changed predicate candidate,
+  without proving that the predicate is semantically wrong.
 
 ## Not Established
 
@@ -155,6 +160,9 @@ provider body:
 - Provider versus read-only GaussDB shape comparison:
   `/tmp/phytomni-dataagent-api-rerun/provider-db-shapes.json` SHA-256
   `468774ad8267ed5344642ff93d0afa4ba91754032a3be6c3d1f7a7c45ff1c973`.
+- Current versus historical SQL shape comparison:
+  `/tmp/phytomni-dataagent-api-rerun/sql-shape-comparison.json` SHA-256
+  `6318dc1f2418f364dd3df28d959cf5ad17b4a39e10c1663f0d8d0ba4bbb876cc`.
 
 The gate remains stopped until an operator authorizes one controlled replay
 and provides an authoritative provider-side interpretation of the returned
