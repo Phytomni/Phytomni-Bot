@@ -74,6 +74,10 @@ DataAgent behavior change, or a historical Analyst write.
   exact transcript literal; only the current SQL carried a `rice` literal.
   This ties the current zero-row result to a changed predicate candidate,
   without proving that the predicate is semantically wrong.
+- A temporary provider-vs-database contract assertion failed with exit code
+  `1` on the safe shape mismatch. It is deliberately outside Git and is not
+  treated as a committed Bot regression test until the provider contract is
+  confirmed.
 
 ## Not Established
 
@@ -124,6 +128,7 @@ DataAgent behavior change, or a historical Analyst write.
 - First failing boundary: `Needs Verification` (provider/NL2SQL result
   semantics inside the successful `database_query` boundary)
 - Same-cause red test: `Needs Verification`
+- External provider-shape red assertion: `Red; temporary evidence only`
 - Adjacent candidates excluded: `Formatter mutation`, `stage exception`, and
   `run persistence` are excluded as standalone causes; rewrite identifier
   loss is not supported by the safe feature comparison.
@@ -163,6 +168,10 @@ provider body:
 - Current versus historical SQL shape comparison:
   `/tmp/phytomni-dataagent-api-rerun/sql-shape-comparison.json` SHA-256
   `6318dc1f2418f364dd3df28d959cf5ad17b4a39e10c1663f0d8d0ba4bbb876cc`.
+- Temporary provider-boundary red assertion:
+  `/tmp/phytomni-dataagent-api-rerun/provider-boundary-red-test.json`
+  SHA-256
+  `f534783e3364e62a98978949ec02b0ea6c5de9aed8940902e216b197972d76a0`.
 
 The gate remains stopped until an operator authorizes one controlled replay
 and provides an authoritative provider-side interpretation of the returned
