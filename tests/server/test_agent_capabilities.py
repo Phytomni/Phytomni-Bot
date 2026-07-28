@@ -17,7 +17,10 @@ from mcp_server_phytomni.api.agent_capabilities import (
     get_attachment_capability,
     serialize_agent_capability,
 )
-from mcp_server_phytomni.api.openai_mapping import tool_accepts_obs
+from mcp_server_phytomni.api.openai_mapping import (
+    tool_accepts_obs,
+    tool_accepts_stream,
+)
 
 pytestmark = pytest.mark.server
 
@@ -137,6 +140,25 @@ def test_obs_policy_reads_attachment_registry() -> None:
     assert tool_accepts_obs("BriefGeneAgent") is False
     assert tool_accepts_obs("DataAgent") is False
     assert tool_accepts_obs("unknown-tool") is False
+
+
+def test_stream_policy_matches_the_public_capability_contract() -> None:
+    """The HTTP stream gate matches the published agent capabilities."""
+    expected = {
+        "ChatAgent": True,
+        "KnowledgeAgent": True,
+        "DataAgent": False,
+        "ReviewAgent": True,
+        "BriefGeneAgent": True,
+        "AnalystAgent": False,
+        "DeepGenomeAgent": False,
+        "InSilicoResearchAgent": False,
+        "DigitalDesignAgent": False,
+        "GeneNetworkAgent": False,
+    }
+    for tool_name, supports_stream in expected.items():
+        assert tool_accepts_stream(tool_name) is supports_stream
+    assert tool_accepts_stream("unknown-tool") is False
 
 
 def test_unknown_capability_slug_fails_closed() -> None:
