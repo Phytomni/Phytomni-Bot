@@ -244,6 +244,8 @@ def test_probe_reads_registry_in_mode_ro_and_writes_no_rows(
             )
     assert packet["status"] == "unique_match"
     assert packet["write_authorized"] is False
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        connection.execute("SELECT 1")
 
 
 def test_probe_emits_hash_and_sanitized_packet_with_private_snapshot(

@@ -18,7 +18,8 @@ import json
 import re
 import sqlite3
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -271,19 +272,26 @@ def _read_only_authorizer(
     return sqlite3.SQLITE_DENY if action in denied else sqlite3.SQLITE_OK
 
 
-def open_read_only(db_path: str | Path) -> sqlite3.Connection:
-    """Open an existing SQLite database with URI ``mode=ro`` only."""
+@contextmanager
+def open_read_only(db_path: str | Path) -> Iterator[sqlite3.Connection]:
+    """Open an existing SQLite database read-only and close it on exit."""
     resolved = Path(db_path).expanduser().resolve()
     if not resolved.is_file():
         raise ProbeError("read-only registry is unavailable")
     uri = f"file:{quote(str(resolved), safe='/')}?mode=ro"
+    connection: sqlite3.Connection | None = None
     try:
         connection = sqlite3.connect(uri, uri=True)
         connection.row_factory = sqlite3.Row
         connection.set_authorizer(_read_only_authorizer)
-        return connection
     except sqlite3.Error as exc:
+        if connection is not None:
+            connection.close()
         raise ProbeError("read-only registry is unavailable") from exc
+    try:
+        yield connection
+    finally:
+        connection.close()
 
 
 read_only_connection = open_read_only
