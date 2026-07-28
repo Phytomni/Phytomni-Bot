@@ -12,10 +12,14 @@ from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Barrier
+from uuid import UUID
 
 import pytest
 
 from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
+from mcp_server_phytomni.runtime.conversation_context.projection import (
+    agent_thread_id,
+)
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ContextVersionConflictError,
     ConversationContextStore,
@@ -312,6 +316,65 @@ def _review_metadata(*, turn_id: str = "1") -> dict[str, object]:
         "report_revision": 0,
         "settlement_state": "pending",
     }
+
+
+def test_review_candidate_registration_is_bounded_and_idempotent(
+    store: ConversationContextStore,
+) -> None:
+    """A candidate is registered once, before any staged turn exists."""
+    key = "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7"
+    turn_id = "pre-stage-1"
+    stable = agent_thread_id(UUID(key), "ReviewAgent")
+    candidate = _candidate_thread_id(stable, turn_id)
+
+    assert store.register_review_candidate(
+        key, turn_id, "new_review", stable, candidate
+    )
+    assert store.register_review_candidate(
+        key, turn_id, "new_review", stable, candidate
+    )
+    assert store.list_checkpoint_cleanup_candidates() == ()
+
+    with sqlite3.connect(store.db_path) as connection:
+        row = connection.execute(
+            "SELECT staged_at, eligible_at, tombstone_pending "
+            "FROM conversation_review_checkpoint_cleanup "
+            "WHERE conversation_key = ? AND candidate_thread_id = ?",
+            (key, candidate),
+        ).fetchone()
+    assert row == (None, None, 0)
+
+    for operation in ("follow_up", "local_revision"):
+        operation_turn_id = f"{operation}-1"
+        operation_candidate = _candidate_thread_id(stable, operation_turn_id)
+        assert not store.register_review_candidate(
+            key,
+            operation_turn_id,
+            operation,
+            stable,
+            operation_candidate,
+        )
+
+
+def test_review_candidate_registration_fails_closed_after_tombstone(
+    store: ConversationContextStore,
+) -> None:
+    """A deleted conversation cannot acquire a new Review candidate."""
+    key = "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7"
+    turn_id = "pre-stage-tombstoned"
+    stable = agent_thread_id(UUID(key), "ReviewAgent")
+    candidate = _candidate_thread_id(stable, turn_id)
+    store.tombstone(key)
+
+    assert not store.register_review_candidate(
+        key, turn_id, "new_review", stable, candidate
+    )
+    with sqlite3.connect(store.db_path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM conversation_review_checkpoint_cleanup "
+            "WHERE conversation_key = ?",
+            (key,),
+        ).fetchone() == (0,)
 
 
 def test_review_settlement_claim_is_durable_across_store_instances(

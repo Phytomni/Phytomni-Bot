@@ -263,6 +263,58 @@ def test_failed_review_candidate_cleanup_retries_on_next_lifecycle_gc(
     assert store.list_checkpoint_cleanup_candidates() == ()
 
 
+def test_registered_candidate_survives_tombstone_until_retry_gc(
+    tmp_path: Path,
+) -> None:
+    """A pre-stage candidate remains discoverable after tombstone cleanup."""
+    db_path = tmp_path / "lifecycle-pre-stage.sqlite"
+    store = ConversationContextStore(str(db_path))
+    key = "00000000-0000-0000-0000-000000000016"
+    turn_id = "pre-stage-review"
+    stable_thread_id = agent_thread_id(UUID(key), "ReviewAgent")
+    candidate_thread_id = _candidate_thread_id(stable_thread_id, turn_id)
+
+    assert store.register_review_candidate(
+        key,
+        turn_id,
+        "new_review",
+        stable_thread_id,
+        candidate_thread_id,
+    )
+    assert store.tombstone(key) == (candidate_thread_id,)
+    store.complete_checkpoint_cleanup(key)
+
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute(
+            "SELECT staged_at, tombstone_pending "
+            "FROM conversation_review_checkpoint_cleanup "
+            "WHERE conversation_key = ? AND candidate_thread_id = ?",
+            (key, candidate_thread_id),
+        ).fetchone() == (None, 1)
+
+    created_threads = {candidate_thread_id}
+    deleted_threads: list[str] = []
+
+    async def delete_thread(thread_id: str) -> None:
+        deleted_threads.append(thread_id)
+        created_threads.discard(thread_id)
+
+    def registry_factory(path: str) -> SimpleNamespace:
+        return SimpleNamespace(purge_expired=lambda: 0)
+
+    run_lifecycle.purge_expired_runs_best_effort(
+        db_path=str(db_path),
+        registry_factory=registry_factory,
+        checkpointer_factory=lambda: SimpleNamespace(
+            adelete_thread=delete_thread
+        ),
+    )
+
+    assert created_threads == set()
+    assert deleted_threads == [candidate_thread_id]
+    assert store.list_checkpoint_cleanup_candidates() == ()
+
+
 def test_lifecycle_gc_uses_the_persistent_checkpoint_backend_by_default(
     tmp_path: Path,
 ) -> None:

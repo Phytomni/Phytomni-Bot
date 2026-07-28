@@ -72,10 +72,62 @@ _CREATE_REVIEW_CHECKPOINT_CLEANUP = """
 CREATE TABLE IF NOT EXISTS conversation_review_checkpoint_cleanup (
     conversation_key TEXT NOT NULL,
     candidate_thread_id TEXT NOT NULL,
+    turn_id TEXT,
+    operation TEXT,
+    registered_at TEXT,
+    staged_at TEXT,
     eligible_at TEXT,
+    tombstone_pending INTEGER NOT NULL DEFAULT 0 CHECK (
+        tombstone_pending IN (0, 1)
+    ),
     PRIMARY KEY (conversation_key, candidate_thread_id)
 )
 """
+
+_REVIEW_CLEANUP_ADD_COLUMN_STATEMENTS: tuple[tuple[str, str], ...] = (
+    (
+        "turn_id",
+        (
+            "ALTER TABLE conversation_review_checkpoint_cleanup "
+            "ADD COLUMN turn_id TEXT"
+        ),
+    ),
+    (
+        "operation",
+        (
+            "ALTER TABLE conversation_review_checkpoint_cleanup "
+            "ADD COLUMN operation TEXT"
+        ),
+    ),
+    (
+        "registered_at",
+        (
+            "ALTER TABLE conversation_review_checkpoint_cleanup "
+            "ADD COLUMN registered_at TEXT"
+        ),
+    ),
+    (
+        "staged_at",
+        (
+            "ALTER TABLE conversation_review_checkpoint_cleanup "
+            "ADD COLUMN staged_at TEXT"
+        ),
+    ),
+    (
+        "eligible_at",
+        (
+            "ALTER TABLE conversation_review_checkpoint_cleanup "
+            "ADD COLUMN eligible_at TEXT"
+        ),
+    ),
+    (
+        "tombstone_pending",
+        (
+            "ALTER TABLE conversation_review_checkpoint_cleanup "
+            "ADD COLUMN tombstone_pending INTEGER NOT NULL DEFAULT 0"
+        ),
+    ),
+)
 
 
 class ContextVersionConflictError(RuntimeError):
@@ -372,11 +424,9 @@ class ConversationContextStore:
                     "PRAGMA table_info(conversation_review_checkpoint_cleanup)"
                 )
             }
-            if "eligible_at" not in cleanup_columns:
-                connection.execute(
-                    "ALTER TABLE conversation_review_checkpoint_cleanup "
-                    "ADD COLUMN eligible_at TEXT"
-                )
+            for column, statement in _REVIEW_CLEANUP_ADD_COLUMN_STATEMENTS:
+                if column not in cleanup_columns:
+                    connection.execute(statement)
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_conversation_turns_expires_at "
                 "ON conversation_turns(expires_at)"
@@ -494,6 +544,125 @@ class ConversationContextStore:
         logger.debug("conversation turn begun")
         return BeginTurnResult(True, current_version, self._turn(row))
 
+    @staticmethod
+    def _upsert_review_checkpoint_cleanup(
+        connection: sqlite3.Connection,
+        key: str,
+        candidate: str,
+        *,
+        turn_id: str,
+        operation: str,
+        now: str,
+        staged: bool,
+    ) -> None:
+        """Record one bounded candidate before or during turn staging."""
+        connection.execute(
+            "INSERT OR IGNORE INTO conversation_review_checkpoint_cleanup "
+            "(conversation_key, candidate_thread_id, turn_id, operation, "
+            "registered_at, staged_at, eligible_at, tombstone_pending) "
+            "VALUES (?, ?, ?, ?, ?, ?, NULL, 0)",
+            (
+                key,
+                candidate,
+                turn_id,
+                operation,
+                now,
+                now if staged else None,
+            ),
+        )
+        connection.execute(
+            "UPDATE conversation_review_checkpoint_cleanup SET "
+            "turn_id = COALESCE(turn_id, ?), "
+            "operation = COALESCE(operation, ?), "
+            "registered_at = COALESCE(registered_at, ?) "
+            "WHERE conversation_key = ? AND candidate_thread_id = ?",
+            (turn_id, operation, now, key, candidate),
+        )
+        if staged:
+            connection.execute(
+                "UPDATE conversation_review_checkpoint_cleanup SET "
+                "staged_at = COALESCE(staged_at, ?) "
+                "WHERE conversation_key = ? AND candidate_thread_id = ?",
+                (now, key, candidate),
+            )
+
+    def register_review_candidate(
+        self,
+        key: str,
+        turn_id: str,
+        operation: str,
+        stable_thread_id: str,
+        candidate_thread_id: str,
+        *,
+        mutation_lock_held: bool = False,
+    ) -> bool:
+        """Register a candidate before Review can write its checkpoint.
+
+        Registration is intentionally separate from turn staging.  A graph
+        may create a checkpoint before the public result is stageable, so the
+        cleanup identity must already be durable at the graph boundary.
+        """
+        marker = {
+            "version": 1,
+            "operation": operation,
+            "stable_thread_id": stable_thread_id,
+            "candidate_thread_id": candidate_thread_id,
+            "turn_id": turn_id,
+            "report_revision": 0,
+            "settlement_state": "pending",
+        }
+        try:
+            UUID(key)
+        except (AttributeError, TypeError, ValueError):
+            return False
+        if operation not in {
+            "new_review",
+            "scope_change",
+        } or not self._marker_is_bounded(marker, key=key, turn_id=turn_id):
+            return False
+        if not mutation_lock_held:
+            with self.acquire_review_mutation_lock():
+                return self.register_review_candidate(
+                    key,
+                    turn_id,
+                    operation,
+                    stable_thread_id,
+                    candidate_thread_id,
+                    mutation_lock_held=True,
+                )
+        now = _now()
+        with self._write() as connection:
+            context = connection.execute(
+                "SELECT state FROM conversation_contexts "
+                "WHERE conversation_key = ?",
+                (key,),
+            ).fetchone()
+            if context is not None and context[0] == "tombstoned":
+                return False
+            existing = connection.execute(
+                "SELECT tombstone_pending, turn_id, operation FROM "
+                "conversation_review_checkpoint_cleanup "
+                "WHERE conversation_key = ? AND candidate_thread_id = ?",
+                (key, candidate_thread_id),
+            ).fetchone()
+            if existing is not None and existing[0]:
+                return False
+            if existing is not None and (
+                (existing[1] is not None and existing[1] != turn_id)
+                or (existing[2] is not None and existing[2] != operation)
+            ):
+                return False
+            self._upsert_review_checkpoint_cleanup(
+                connection,
+                key,
+                candidate_thread_id,
+                turn_id=turn_id,
+                operation=operation,
+                now=now,
+                staged=False,
+            )
+        return True
+
     def stage_turn(
         self, key: str, turn_id: str, staged: StagedTurn
     ) -> StoredTurn:
@@ -526,13 +695,21 @@ class ConversationContextStore:
                 marker = staged.stage_metadata.get("_review_settlement")
                 if isinstance(marker, Mapping):
                     candidate = _review_candidate_thread_id(marker)
-                    if candidate is not None:
-                        connection.execute(
-                            "INSERT OR IGNORE INTO "
-                            "conversation_review_checkpoint_cleanup "
-                            "(conversation_key, candidate_thread_id) "
-                            "VALUES (?, ?)",
-                            (key, candidate),
+                    operation = marker.get("operation")
+                    marker_turn_id = marker.get("turn_id")
+                    if (
+                        candidate is not None
+                        and isinstance(operation, str)
+                        and isinstance(marker_turn_id, str)
+                    ):
+                        self._upsert_review_checkpoint_cleanup(
+                            connection,
+                            key,
+                            candidate,
+                            turn_id=marker_turn_id,
+                            operation=operation,
+                            now=now,
+                            staged=True,
                         )
                 return self._turn(row)
             if row[4] != "in_progress":
@@ -556,12 +733,21 @@ class ConversationContextStore:
             marker = staged.stage_metadata.get("_review_settlement")
             if isinstance(marker, Mapping):
                 candidate = _review_candidate_thread_id(marker)
-                if candidate is not None:
-                    connection.execute(
-                        "INSERT OR IGNORE INTO "
-                        "conversation_review_checkpoint_cleanup "
-                        "(conversation_key, candidate_thread_id) VALUES (?, ?)",
-                        (key, candidate),
+                operation = marker.get("operation")
+                marker_turn_id = marker.get("turn_id")
+                if (
+                    candidate is not None
+                    and isinstance(operation, str)
+                    and isinstance(marker_turn_id, str)
+                ):
+                    self._upsert_review_checkpoint_cleanup(
+                        connection,
+                        key,
+                        candidate,
+                        turn_id=marker_turn_id,
+                        operation=operation,
+                        now=now,
+                        staged=True,
                     )
             row = connection.execute(
                 "SELECT conversation_key, turn_id, operation, base_context_version, state, selected_agent_id, route_source, "
@@ -1264,6 +1450,18 @@ class ConversationContextStore:
                 candidate = _review_candidate_thread_id(marker)
                 if candidate is not None:
                     candidates.add(candidate)
+                    operation = marker.get("operation")
+                    if not isinstance(operation, str):
+                        operation = "new_review"
+                    self._upsert_review_checkpoint_cleanup(
+                        connection,
+                        key,
+                        candidate,
+                        turn_id=turn_id,
+                        operation=operation,
+                        now=now,
+                        staged=True,
+                    )
                 if marker.get("settlement_state") in {
                     "pending",
                     "settling",
@@ -1281,12 +1479,11 @@ class ConversationContextStore:
                         failed_marker,
                         now,
                     )
-            for candidate in candidates:
-                connection.execute(
-                    "INSERT OR IGNORE INTO conversation_review_checkpoint_cleanup "
-                    "(conversation_key, candidate_thread_id) VALUES (?, ?)",
-                    (key, candidate),
-                )
+            connection.execute(
+                "UPDATE conversation_review_checkpoint_cleanup SET "
+                "tombstone_pending = 1 WHERE conversation_key = ?",
+                (key,),
+            )
             connection.execute(
                 "DELETE FROM conversation_turns WHERE conversation_key=?",
                 (key,),
@@ -1322,7 +1519,7 @@ class ConversationContextStore:
             if updated.rowcount:
                 connection.execute(
                     "DELETE FROM conversation_review_checkpoint_cleanup "
-                    "WHERE conversation_key = ?",
+                    "WHERE conversation_key = ? AND staged_at IS NOT NULL",
                     (key,),
                 )
 
@@ -1341,24 +1538,30 @@ class ConversationContextStore:
         now_value = now.isoformat() if isinstance(now, datetime) else now
         with self._write() as connection:
             rows = connection.execute(
-                "SELECT conversation_key, delta_json FROM conversation_turns "
+                "SELECT conversation_key, turn_id, delta_json "
+                "FROM conversation_turns "
                 "WHERE state='staged' AND expires_at IS NOT NULL "
                 "AND expires_at <= ?",
                 (now_value,),
             ).fetchall()
-            for key, delta_json in rows:
+            for key, turn_id, delta_json in rows:
                 record = self._review_record(delta_json)
                 if record is None:
                     continue
                 _decoded, marker = record
                 candidate = _review_candidate_thread_id(marker)
                 if candidate is not None:
-                    connection.execute(
-                        "INSERT OR IGNORE INTO "
-                        "conversation_review_checkpoint_cleanup "
-                        "(conversation_key, candidate_thread_id) "
-                        "VALUES (?, ?)",
-                        (key, candidate),
+                    operation = marker.get("operation")
+                    if not isinstance(operation, str):
+                        operation = "new_review"
+                    self._upsert_review_checkpoint_cleanup(
+                        connection,
+                        key,
+                        candidate,
+                        turn_id=turn_id,
+                        operation=operation,
+                        now=now_value,
+                        staged=True,
                     )
                     connection.execute(
                         "UPDATE conversation_review_checkpoint_cleanup "
@@ -1385,7 +1588,7 @@ class ConversationContextStore:
             rows = connection.execute(
                 "SELECT conversation_key, candidate_thread_id "
                 "FROM conversation_review_checkpoint_cleanup "
-                "WHERE eligible_at IS NOT NULL "
+                "WHERE eligible_at IS NOT NULL OR tombstone_pending = 1 "
                 "ORDER BY conversation_key, candidate_thread_id"
             ).fetchall()
         return tuple((row[0], row[1]) for row in rows)

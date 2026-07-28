@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
@@ -1384,6 +1385,7 @@ async def test_executor_defers_review_checkpoint_until_explicit_ack(
 
     fake_agent = FakeAgent()
     captured: dict[str, Any] = {}
+    store = ConversationContextStore(str(tmp_path / "context.sqlite"))
 
     async def invoke(
         _selected_agent_id: str,
@@ -1391,6 +1393,15 @@ async def test_executor_defers_review_checkpoint_until_explicit_ack(
         dispatch: Any,
     ) -> AgentOutcome:
         adapter = dispatch.private_agent_state["review_adapter"]
+        candidate = adapter.candidate_thread_id
+        assert candidate is not None
+        with sqlite3.connect(store.db_path) as connection:
+            assert connection.execute(
+                "SELECT staged_at, eligible_at, tombstone_pending "
+                "FROM conversation_review_checkpoint_cleanup "
+                "WHERE conversation_key = ? AND candidate_thread_id = ?",
+                (str(_CONVERSATION_KEY), candidate),
+            ).fetchone() == (None, None, 0)
         await adapter.prepare_from_agent(
             dispatch.private_agent_state["review_projection"],
             fake_agent,
@@ -1411,9 +1422,7 @@ async def test_executor_defers_review_checkpoint_until_explicit_ack(
         raise AssertionError("explicit Review selection must not route")
 
     executor = ConversationContextExecutor(
-        store_factory=lambda: ConversationContextStore(
-            str(tmp_path / "context.sqlite")
-        ),
+        store_factory=lambda: store,
         select_agent=forbidden_router,
     )
     prepared = await executor.execute(

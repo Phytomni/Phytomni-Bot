@@ -20,6 +20,7 @@ from ...agents.knowledge.conversation import (
 from ...agents.review.conversation import (
     ReviewClarificationError,
     ReviewConversationAdapter,
+    ReviewConversationOperation,
 )
 from ...config.defaults import ApiConfig
 from .models import BusinessContext, ContextProjection, ConversationEnvelopeV1
@@ -664,6 +665,47 @@ class ConversationContextExecutor:
                 if isinstance(adapter, ReviewConversationAdapter)
                 else None
             )
+            review_operation = (
+                adapter.operation
+                if isinstance(adapter, ReviewConversationAdapter)
+                else None
+            )
+            if (
+                isinstance(adapter, ReviewConversationAdapter)
+                and review_operation is not None
+                and review_operation
+                in {
+                    ReviewConversationOperation.NEW_REVIEW,
+                    ReviewConversationOperation.SCOPE_CHANGE,
+                }
+            ):
+                store = self._service_for_request().store
+                mutation_lock = await _acquire_review_mutation_lock(store)
+                try:
+                    registered = (
+                        adapter.stable_thread_id is not None
+                        and adapter.candidate_thread_id is not None
+                        and store.register_review_candidate(
+                            str(envelope.conversation_key),
+                            envelope.turn_id,
+                            review_operation.value,
+                            adapter.stable_thread_id,
+                            adapter.candidate_thread_id,
+                            mutation_lock_held=True,
+                        )
+                    )
+                    if not registered:
+                        adapter.mark_failed()
+                        return AgentOutcome(
+                            result={"status": "failed"}, status="failed"
+                        )
+                    return await invoke(
+                        selected_agent_id,
+                        envelope,
+                        dispatch,
+                    )
+                finally:
+                    mutation_lock.release()
         return await invoke(
             selected_agent_id,
             envelope,
