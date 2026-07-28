@@ -456,6 +456,19 @@ def test_validate_dataset_pair_rejects_collisions_and_allows_analyst_paraphrase(
     )
     validate_dataset_pair(dev, test)
 
+    repeated_brief_test = next(
+        i
+        for i, case in enumerate(test)
+        if case.expected_agent == "BriefGeneAgent"
+    )
+    test[repeated_brief_test] = _replace_case(
+        test[repeated_brief_test],
+        source=cross_agent_source,
+        transformation=cross_agent_transformation,
+    )
+    with pytest.raises(DatasetValidationError, match="source-row collision"):
+        validate_dataset_pair(dev, test)
+
 
 def _workbook_case(tmp_path: Path) -> tuple[AgentRoutingCase, Path]:
     """Create a valid one-row workbook fixture and matching case."""
