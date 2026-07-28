@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
+from ...agents.brief_gene.conversation import BriefGeneConversationAdapter
 from ...agents.data.conversation import DataConversationAdapter
 from ...agents.expert import ToolSelection, ToolSelectionError
 from ...agents.knowledge.conversation import (
@@ -170,6 +171,32 @@ def data_agent_invocation(
             "dialog_id": prepared["dialog_id"],
             "rewrite_query": prepared["rewrite_query"],
         },
+    )
+
+
+def brief_gene_agent_invocation(
+    projection: ContextProjection,
+    *,
+    selected_arguments: Mapping[str, Any] | None = None,
+) -> ContextAgentInvocation:
+    """Project Brief Gene context into private operation state."""
+    arguments = dict(selected_arguments or {})
+    arguments["user_query"] = projection.current_query
+    arguments["locale"] = projection.locale
+    adapter = BriefGeneConversationAdapter()
+    prepared = adapter.prepare(projection)
+    private_state: dict[str, Any] = {
+        "brief_gene_adapter": adapter,
+        "brief_gene_projection": projection,
+        "brief_gene_operation": prepared["operation"].value,
+    }
+    if prepared["operation"].value == "clarify":
+        private_state["clarification_message"] = adapter.clarification_message
+    return ContextAgentInvocation(
+        arguments=arguments,
+        conversation_messages=(),
+        agent_thread_id=prepared["thread_id"],
+        private_agent_state=private_state,
     )
 
 
@@ -647,6 +674,11 @@ class ConversationContextExecutor:
                 projection,
                 selected_arguments=selected_arguments,
             )
+        elif selected_agent_id == "BriefGeneAgent":
+            dispatch = brief_gene_agent_invocation(
+                projection,
+                selected_arguments=selected_arguments,
+            )
         elif selected_agent_id == "ReviewAgent":
             dispatch = review_agent_invocation(
                 projection,
@@ -729,6 +761,7 @@ class ConversationContextExecutor:
 __all__ = [
     "ContextAgentInvocation",
     "ConversationContextExecutor",
+    "brief_gene_agent_invocation",
     "canonical_agent_invocation",
     "data_agent_invocation",
     "knowledge_agent_invocation",

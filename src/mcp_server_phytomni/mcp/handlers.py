@@ -341,11 +341,15 @@ async def handle_brief_gene_agent(args: BriefGeneAgent) -> HandlerResult:
     """
     brief_config = BriefGeneConfig()
     runtime = load_handler_runtime()
+    private_state = private_agent_state()
     return await brief_gene_function(
         user_query=args.user_query,
         max_concurrency=brief_config.MAX_CONCURRENCY,
         **chat_kwargs(brief_config, runtime.sensitive, locale=args.locale),
         **retrieve_kwargs(brief_config),
+        thread_id=private_agent_thread_id(),
+        conversation_adapter=private_state.get("brief_gene_adapter"),
+        conversation_projection=private_state.get("brief_gene_projection"),
     )
 
 
