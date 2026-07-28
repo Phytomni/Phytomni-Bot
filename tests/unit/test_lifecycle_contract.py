@@ -68,10 +68,10 @@ def _stage_lifecycle_turn(
     )
 
 
-def test_normal_lifecycle_gc_purges_staged_context_and_retains_review_cleanup(
+def test_normal_lifecycle_gc_purges_staged_context_and_review_candidate(
     tmp_path: Path,
 ) -> None:
-    """Normal run GC expires staged rows without losing Review cleanup IDs."""
+    """Normal run GC expires rows and deletes only the Review candidate."""
     db_path = tmp_path / "lifecycle.sqlite"
     store = ConversationContextStore(str(db_path))
     key = "00000000-0000-0000-0000-000000000011"
@@ -118,22 +118,36 @@ def test_normal_lifecycle_gc_purges_staged_context_and_retains_review_cleanup(
         registry_calls.append(path)
         return SimpleNamespace(purge_expired=lambda: 0)
 
+    deleted_candidates: list[str] = []
+
+    async def delete_thread(thread_id: str) -> None:
+        deleted_candidates.append(thread_id)
+
+    checkpointer = SimpleNamespace(adelete_thread=delete_thread)
+
     run_lifecycle.purge_expired_runs_best_effort(
-        db_path=str(db_path), registry_factory=registry_factory
+        db_path=str(db_path),
+        registry_factory=registry_factory,
+        checkpointer_factory=lambda: checkpointer,
     )
 
     assert registry_calls == [str(db_path)]
     assert store.load_turn(key, review_turn_id) is None
     assert store.load_turn(key, "chat-turn") is None
+    assert deleted_candidates == [candidate_thread_id]
+    assert stable_thread_id not in deleted_candidates
     with sqlite3.connect(db_path) as connection:
-        assert connection.execute(
-            "SELECT candidate_thread_id "
-            "FROM conversation_review_checkpoint_cleanup "
-            "WHERE conversation_key = ?",
-            (key,),
-        ).fetchall() == [(candidate_thread_id,)]
+        assert (
+            connection.execute(
+                "SELECT candidate_thread_id "
+                "FROM conversation_review_checkpoint_cleanup "
+                "WHERE conversation_key = ?",
+                (key,),
+            ).fetchall()
+            == []
+        )
 
-    assert store.tombstone(key) == (candidate_thread_id,)
+    assert store.tombstone(key) == ()
     store.complete_checkpoint_cleanup(key)
     with sqlite3.connect(db_path) as connection:
         assert connection.execute(
@@ -141,6 +155,77 @@ def test_normal_lifecycle_gc_purges_staged_context_and_retains_review_cleanup(
             "WHERE conversation_key = ?",
             (key,),
         ).fetchone() == (0,)
+
+
+def test_failed_review_candidate_cleanup_retries_on_next_lifecycle_gc(
+    tmp_path: Path,
+) -> None:
+    """A failed candidate delete stays pending until a later GC succeeds."""
+    db_path = tmp_path / "lifecycle-retry.sqlite"
+    store = ConversationContextStore(str(db_path))
+    key = "00000000-0000-0000-0000-000000000012"
+    review_turn_id = "review-turn"
+    stable_thread_id = agent_thread_id(UUID(key), "ReviewAgent")
+    candidate_thread_id = _candidate_thread_id(
+        stable_thread_id, review_turn_id
+    )
+    _stage_lifecycle_turn(
+        store,
+        key,
+        review_turn_id,
+        operation="new_review",
+        selected_agent_id="ReviewAgent",
+        stage_metadata={
+            "_review_settlement": {
+                "version": 1,
+                "operation": "new_review",
+                "stable_thread_id": stable_thread_id,
+                "candidate_thread_id": candidate_thread_id,
+                "turn_id": review_turn_id,
+                "report_revision": 0,
+                "settlement_state": "pending",
+            }
+        },
+    )
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE conversation_turns SET expires_at = ? "
+            "WHERE conversation_key = ?",
+            ("2020-01-01T00:00:00+00:00", key),
+        )
+
+    should_fail = True
+    attempts: list[str] = []
+
+    async def delete_thread(thread_id: str) -> None:
+        attempts.append(thread_id)
+        if should_fail:
+            raise RuntimeError("checkpoint unavailable")
+
+    checkpointer = SimpleNamespace(adelete_thread=delete_thread)
+
+    def registry_factory(path: str) -> SimpleNamespace:
+        return SimpleNamespace(purge_expired=lambda: 0)
+
+    def run_purge() -> None:
+        run_lifecycle.purge_expired_runs_best_effort(
+            db_path=str(db_path),
+            registry_factory=registry_factory,
+            checkpointer_factory=lambda: checkpointer,
+        )
+
+    run_purge()
+
+    assert attempts == [candidate_thread_id]
+    assert store.list_checkpoint_cleanup_candidates() == (
+        (key, candidate_thread_id),
+    )
+
+    should_fail = False
+    run_purge()
+
+    assert attempts == [candidate_thread_id, candidate_thread_id]
+    assert store.list_checkpoint_cleanup_candidates() == ()
 
 
 def test_context_lifecycle_purge_failure_preserves_run_gc(

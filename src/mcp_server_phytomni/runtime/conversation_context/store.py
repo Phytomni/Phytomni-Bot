@@ -11,7 +11,7 @@ import os
 import sqlite3
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -1314,9 +1314,16 @@ class ConversationContextStore:
                     (key,),
                 )
 
-    def purge_expired_staged(self, now: str | datetime) -> int:
-        with self.acquire_review_mutation_lock():
-            return self._purge_expired_staged(now)
+    def purge_expired_staged(
+        self,
+        now: str | datetime,
+        *,
+        mutation_lock_held: bool = False,
+    ) -> int:
+        if not mutation_lock_held:
+            with self.acquire_review_mutation_lock():
+                return self.purge_expired_staged(now, mutation_lock_held=True)
+        return self._purge_expired_staged(now)
 
     def _purge_expired_staged(self, now: str | datetime) -> int:
         now_value = now.isoformat() if isinstance(now, datetime) else now
@@ -1346,6 +1353,45 @@ class ConversationContextStore:
                 (now_value,),
             )
             return cursor.rowcount
+
+    def list_checkpoint_cleanup_candidates(
+        self, *, mutation_lock_held: bool = False
+    ) -> tuple[tuple[str, str], ...]:
+        """Return candidate cleanup rows that remain retryable."""
+        if not mutation_lock_held:
+            with self.acquire_review_mutation_lock():
+                return self.list_checkpoint_cleanup_candidates(
+                    mutation_lock_held=True
+                )
+        with sqlite_connection(self.db_path) as connection:
+            rows = connection.execute(
+                "SELECT conversation_key, candidate_thread_id "
+                "FROM conversation_review_checkpoint_cleanup "
+                "ORDER BY conversation_key, candidate_thread_id"
+            ).fetchall()
+        return tuple((row[0], row[1]) for row in rows)
+
+    def complete_checkpoint_cleanup_candidates(
+        self,
+        candidates: Sequence[tuple[str, str]],
+        *,
+        mutation_lock_held: bool = False,
+    ) -> None:
+        """Remove only candidate rows whose checkpoint deletion succeeded."""
+        if not candidates:
+            return
+        if not mutation_lock_held:
+            with self.acquire_review_mutation_lock():
+                self.complete_checkpoint_cleanup_candidates(
+                    candidates, mutation_lock_held=True
+                )
+                return
+        with self._write() as connection:
+            connection.executemany(
+                "DELETE FROM conversation_review_checkpoint_cleanup "
+                "WHERE conversation_key = ? AND candidate_thread_id = ?",
+                candidates,
+            )
 
 
 __all__ = [
