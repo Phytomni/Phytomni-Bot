@@ -365,19 +365,17 @@ def validate_dataset_pair(
         case.question for case in test
     ):
         raise DatasetValidationError("dev/test: identical question text")
-    seen: dict[tuple[str, str, int], AgentRoutingCase] = {}
+    seen: dict[tuple[str, str, int], set[str]] = {}
     for case in (*dev, *test):
         key = _source_key(case)
         if key is None:
             continue
-        prior = seen.get(key)
-        if (
-            prior is not None
-            and prior.expected_agent == case.expected_agent
-            and case.expected_agent != "AnalystAgent"
+        agents = seen.setdefault(key, set())
+        if case.expected_agent != "AnalystAgent" and (
+            case.expected_agent in agents
         ):
             raise DatasetValidationError("dev/test: source-row collision")
-        seen[key] = case
+        agents.add(case.expected_agent)
 
 
 def verify_workbook_sources(
