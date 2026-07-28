@@ -664,6 +664,8 @@ async def _execute_context_expert(
             adapter = private_agent_state.pop("knowledge_adapter", None)
         elif selected_agent_id == "DataAgent":
             adapter = private_agent_state.get("data_adapter")
+        elif selected_agent_id == "BriefGeneAgent":
+            adapter = private_agent_state.get("brief_gene_adapter")
         elif selected_agent_id == "ReviewAgent":
             adapter = private_agent_state.get("review_adapter")
         execution_thread_id = dispatch.agent_thread_id
@@ -699,6 +701,12 @@ async def _execute_context_expert(
                 context_delta=adapter.delta(body),
             )
         if selected_agent_id == "DataAgent" and adapter is not None:
+            return AgentOutcome(
+                result=body,
+                assistant_summary=_agent_response_summary(body),
+                context_delta=adapter.delta(body),
+            )
+        if selected_agent_id == "BriefGeneAgent" and adapter is not None:
             return AgentOutcome(
                 result=body,
                 assistant_summary=_agent_response_summary(body),

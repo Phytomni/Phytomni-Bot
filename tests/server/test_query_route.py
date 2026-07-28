@@ -28,6 +28,7 @@ from tests.support.expert_router_fakes import patch_expert_router
 
 import mcp_server_phytomni.api.app as api_app
 from mcp_server_phytomni import server
+from mcp_server_phytomni.agents.brief_gene import agent as brief_gene_agent
 from mcp_server_phytomni.agents.chat import service as chat_service
 from mcp_server_phytomni.agents.expert import (
     ToolSelection,
@@ -1666,6 +1667,158 @@ async def test_context_expert_knowledge_follow_up_returns_clarification(
     assert staged is not None
     assert staged.delta is not None
     assert staged.delta["active_entities"] == []
+
+
+async def test_context_expert_brief_gene_turn_stages_bounded_context_delta(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The native Brief Gene route returns its bounded context projection."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    db_path = tmp_path / "context.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+
+    class FakeBriefGeneAgent:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def arun(self, **kwargs: Any) -> dict[str, Any]:
+            self.calls.append(kwargs)
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                "# Brief Gene Analysis\n\n"
+                                "Rice gene summary [1]."
+                            ),
+                            "doc_list": [
+                                {
+                                    "source_id": "paper-1",
+                                    "title": "Paper 1",
+                                    "content": "full report body",
+                                }
+                            ],
+                        }
+                    }
+                ],
+                "phytomni_state": {
+                    "gene_id": "Os01g0177400",
+                    "species_code": "osa",
+                    "report_summary": "Bounded rice gene summary.",
+                    "report_artifact_id": "brief-report-1",
+                    "report_revision": 4,
+                    "retrieved_docs": [
+                        {
+                            "source_id": "paper-1",
+                            "content": "full report body",
+                        }
+                    ],
+                },
+            }
+
+    fake_agent = FakeBriefGeneAgent()
+    monkeypatch.setattr(
+        brief_gene_agent,
+        "resolve_brief_gene_user_query",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                gene_id="Os01g0177400", species_code="osa"
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        brief_gene_agent,
+        "get_cached_agent",
+        lambda *_args, **_kwargs: fake_agent,
+    )
+    monkeypatch.setattr(
+        mcp_handlers,
+        "BriefGeneConfig",
+        lambda: SimpleNamespace(MAX_CONCURRENCY=1),
+    )
+    monkeypatch.setattr(
+        mcp_handlers,
+        "load_handler_runtime",
+        lambda: SimpleNamespace(
+            sensitive=object(), obs_credentials=("a", "b")
+        ),
+    )
+    monkeypatch.setattr(
+        mcp_handlers, "chat_kwargs", lambda *_args, **_kwargs: {}
+    )
+    monkeypatch.setattr(mcp_handlers, "retrieve_kwargs", lambda _config: {})
+
+    envelope = _conversation_envelope(
+        turn_id="6",
+        requested_agent_id="BriefGeneAgent",
+        allowed_agent_ids=["BriefGeneAgent"],
+    )
+    envelope["ledger_cursor"] = 6
+    envelope["current_message"]["content"] = "Os01g0177400"
+    envelope["history_delta"] = [
+        {
+            "turn_id": "6",
+            "role": "user",
+            "content": "Os01g0177400",
+        }
+    ]
+    envelope["artifact_refs"] = [
+        {
+            "artifact_id": "brief-report-1",
+            "display_name": "Brief Gene report",
+        }
+    ]
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["BriefGeneAgent"],
+            "conversation": envelope,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["conversation_context"]["selected_agent_id"] == (
+        "BriefGeneAgent"
+    )
+    assert body["conversation_context"]["context_degraded"] is False
+    assert body["result"]["formatted"]["answer"] == (
+        "# Brief Gene Analysis\n\nRice gene summary [1]."
+    )
+    expected_thread_id = context_agent_thread_id(
+        UUID(envelope["conversation_key"]), "BriefGeneAgent"
+    )
+    assert fake_agent.calls == [
+        {
+            "user_query": "Os01g0177400",
+            "locale": "en-US",
+            "thread_id": expected_thread_id,
+        }
+    ]
+
+    store = ConversationContextStore(str(db_path))
+    staged = store.load_turn(str(UUID(envelope["conversation_key"])), "6")
+    assert staged is not None
+    assert staged.delta is not None
+    labels = {item["label"] for item in staged.delta["active_entities"]}
+    assert {
+        "Os01g0177400",
+        "osa",
+        "paper-1",
+        "brief-report-1",
+        "report revision 4",
+    } <= labels
+    assert staged.delta["task_summary"] == "Bounded rice gene summary."
+    assert [
+        item["artifact_id"] for item in staged.delta["artifact_index"]
+    ] == ["brief-report-1"]
+    assert "full report body" not in json.dumps(staged.delta)
 
 
 async def test_context_expert_knowledge_explicit_switch_replaces_topic_after_success(
