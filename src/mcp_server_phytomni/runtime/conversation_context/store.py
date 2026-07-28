@@ -7,13 +7,21 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import sqlite3
+import threading
+import time
 from collections.abc import Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal
-from uuid import uuid4
+from typing import Any, Literal, Self
+from uuid import UUID, uuid4
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - the supported runtime is POSIX.
+    fcntl = None  # type: ignore[assignment]
 
 from ...config.defaults import ApiConfig
 from ..sqlite import sqlite_connection
@@ -79,6 +87,48 @@ class ConversationTombstonedError(RuntimeError):
 
 class StagedTurnConflictError(RuntimeError):
     """Raised when a retry proposes different terminal bytes."""
+
+
+class ReviewMutationLockTimeoutError(TimeoutError):
+    """Raised when a cross-worker Review mutation lock cannot be acquired."""
+
+
+class ReviewMutationLock:
+    """Releaseable process or file lock held across a private checkpoint write."""
+
+    def __init__(
+        self,
+        *,
+        file_descriptor: int | None = None,
+        local_lock: threading.Lock | None = None,
+    ) -> None:
+        self._file_descriptor = file_descriptor
+        self._local_lock = local_lock
+        self._state_lock = threading.Lock()
+        self._released = False
+
+    def release(self) -> None:
+        """Release the lock exactly once; release may run in another thread."""
+        with self._state_lock:
+            if self._released:
+                return
+            self._released = True
+            file_descriptor = self._file_descriptor
+            local_lock = self._local_lock
+            self._file_descriptor = None
+            self._local_lock = None
+        if file_descriptor is not None:
+            if fcntl is not None:
+                fcntl.flock(file_descriptor, fcntl.LOCK_UN)
+            os.close(file_descriptor)
+        elif local_lock is not None:
+            local_lock.release()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self.release()
 
 
 @dataclass(frozen=True)
@@ -147,6 +197,7 @@ class SettlementResult:
 ReviewSettlementClaimStatus = Literal[
     "claimed",
     "settling",
+    "promoting",
     "promoted",
     "rejected",
     "failed",
@@ -162,6 +213,7 @@ class ReviewSettlementClaim:
 
     status: ReviewSettlementClaimStatus
     claim_token: str | None = None
+    fence_token: int | None = None
 
 
 def _json(value: dict[str, Any]) -> str:
@@ -223,7 +275,11 @@ def _now() -> str:
 _REVIEW_SETTLEMENT_CLAIM_TTL = timedelta(minutes=5)
 _REVIEW_SETTLEMENT_TOKEN_LIMIT = 64
 _REVIEW_SETTLEMENT_TIMESTAMP_LIMIT = 64
+_REVIEW_SETTLEMENT_FENCE_LIMIT = 2**63 - 1
 _REVIEW_THREAD_ID_LIMIT = 512
+
+_REVIEW_MUTATION_LOCKS: dict[str, threading.Lock] = {}
+_REVIEW_MUTATION_LOCKS_GUARD = threading.Lock()
 
 
 def _review_candidate_thread_id(marker: Mapping[str, Any]) -> str | None:
@@ -263,6 +319,46 @@ class ConversationContextStore:
     def __init__(self, db_path: str | None = None) -> None:
         self.db_path = db_path or resolve_tasks_db_path()
         self._init_db()
+
+    def acquire_review_mutation_lock(
+        self, *, timeout: float | None = 30.0
+    ) -> ReviewMutationLock:
+        """Serialize checkpoint mutation and tombstone cleanup across workers.
+
+        SQLite transactions protect durable rows, but Review promotion also
+        writes an external checkpoint.  This lock spans both mutations so a
+        tombstone cannot interleave between the promotion fence check and the
+        checkpoint write.
+        """
+        path = os.fspath(self.db_path)
+        if fcntl is None or path == ":memory:":
+            with _REVIEW_MUTATION_LOCKS_GUARD:
+                lock = _REVIEW_MUTATION_LOCKS.setdefault(
+                    path, threading.Lock()
+                )
+            acquired = lock.acquire(timeout=-1 if timeout is None else timeout)
+            if not acquired:
+                raise ReviewMutationLockTimeoutError(path)
+            return ReviewMutationLock(local_lock=lock)
+
+        file_descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+        deadline = None if timeout is None else time.monotonic() + timeout
+        try:
+            while True:
+                try:
+                    fcntl.flock(file_descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    return ReviewMutationLock(file_descriptor=file_descriptor)
+                except (BlockingIOError, OSError) as exc:
+                    if not isinstance(exc, BlockingIOError) and getattr(
+                        exc, "errno", None
+                    ) not in {11, 13}:
+                        raise
+                    if deadline is not None and time.monotonic() >= deadline:
+                        raise ReviewMutationLockTimeoutError(path) from exc
+                    time.sleep(0.01)
+        except BaseException:
+            os.close(file_descriptor)
+            raise
 
     def _init_db(self) -> None:
         with sqlite_connection(self.db_path) as connection:
@@ -415,6 +511,17 @@ class ConversationContextStore:
                     or row[9] != staged.ledger_version
                 ):
                     raise StagedTurnConflictError((key, turn_id))
+                marker = staged.stage_metadata.get("_review_settlement")
+                if isinstance(marker, Mapping):
+                    candidate = _review_candidate_thread_id(marker)
+                    if candidate is not None:
+                        connection.execute(
+                            "INSERT OR IGNORE INTO "
+                            "conversation_review_checkpoint_cleanup "
+                            "(conversation_key, candidate_thread_id) "
+                            "VALUES (?, ?)",
+                            (key, candidate),
+                        )
                 return self._turn(row)
             if row[4] != "in_progress":
                 raise StagedTurnConflictError((key, turn_id))
@@ -434,6 +541,16 @@ class ConversationContextStore:
                     turn_id,
                 ),
             )
+            marker = staged.stage_metadata.get("_review_settlement")
+            if isinstance(marker, Mapping):
+                candidate = _review_candidate_thread_id(marker)
+                if candidate is not None:
+                    connection.execute(
+                        "INSERT OR IGNORE INTO "
+                        "conversation_review_checkpoint_cleanup "
+                        "(conversation_key, candidate_thread_id) VALUES (?, ?)",
+                        (key, candidate),
+                    )
             row = connection.execute(
                 "SELECT conversation_key, turn_id, operation, base_context_version, state, selected_agent_id, route_source, "
                 "result_json, delta_json, ledger_version, created_at, updated_at, expires_at FROM conversation_turns WHERE conversation_key=? AND turn_id=?",
@@ -514,6 +631,86 @@ class ConversationContextStore:
         )
         return True
 
+    @staticmethod
+    def _marker_fence(marker: Mapping[str, Any]) -> int | None:
+        """Return a bounded monotonic fencing token from private metadata."""
+        value = marker.get("settlement_fence")
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or value < 1
+            or value > _REVIEW_SETTLEMENT_FENCE_LIMIT
+        ):
+            return None
+        return value
+
+    @staticmethod
+    def _marker_is_bounded(
+        marker: Mapping[str, Any], *, key: str, turn_id: str
+    ) -> bool:
+        """Reject marker identities that cannot belong to this staged row."""
+        operation = marker.get("operation")
+        stable = marker.get("stable_thread_id")
+        marker_turn_id = marker.get("turn_id")
+        report_revision = marker.get("report_revision")
+        if (
+            marker.get("version") != 1
+            or operation
+            not in {
+                "new_review",
+                "follow_up",
+                "local_revision",
+                "scope_change",
+            }
+            or not isinstance(stable, str)
+            or len(stable) != len("ctx-") + 64
+            or not stable.startswith("ctx-")
+            or any(char not in "0123456789abcdef" for char in stable[4:])
+            or marker_turn_id != turn_id
+            or not isinstance(turn_id, str)
+            or not turn_id
+            or len(turn_id) > 64
+            or "/" in turn_id
+            or "\\" in turn_id
+            or report_revision is None
+            or isinstance(report_revision, bool)
+            or not isinstance(report_revision, int)
+            or report_revision < 0
+        ):
+            return False
+        try:
+            expected_stable = (
+                "ctx-"
+                + hashlib.sha256(
+                    f"conversation-context-v1:{UUID(key)}:ReviewAgent".encode(
+                        "ascii"
+                    )
+                ).hexdigest()
+            )
+        except (ValueError, AttributeError):
+            expected_stable = None
+        if expected_stable is not None and stable != expected_stable:
+            return False
+        candidate = marker.get("candidate_thread_id")
+        if operation in {"new_review", "scope_change"}:
+            if _review_candidate_thread_id(marker) is None:
+                return False
+        elif candidate is not None:
+            return False
+        return True
+
+    @staticmethod
+    def _claim_is_expired(
+        claimed_at: str, *, clock: datetime, stale_after: timedelta
+    ) -> bool:
+        try:
+            claimed_clock = ConversationContextStore._claim_datetime(
+                claimed_at
+            )
+        except (TypeError, ValueError):
+            return True
+        return clock - claimed_clock >= stale_after
+
     def claim_review_settlement(
         self,
         key: str,
@@ -522,14 +719,11 @@ class ConversationContextStore:
         now: datetime | str | None = None,
         stale_after: timedelta = _REVIEW_SETTLEMENT_CLAIM_TTL,
         expected_ledger_version: str | None = None,
+        expected_base_context_version: int | None = None,
     ) -> ReviewSettlementClaim:
         """Claim a staged Review marker with a durable compare-and-set."""
         clock = self._claim_datetime(now)
         now_value = clock.isoformat()
-        # The keyword remains for callers that supplied the old bounded lease.
-        # An active claim is never automatically replaced while its worker may
-        # still be running; explicit reconciliation must fail it first.
-        del stale_after
         with self._write() as connection:
             row = connection.execute(
                 "SELECT state, ledger_version, base_context_version, delta_json "
@@ -553,6 +747,11 @@ class ConversationContextStore:
                 and row[1] != expected_ledger_version
             ):
                 return ReviewSettlementClaim("conflict")
+            if (
+                expected_base_context_version is not None
+                and row[2] != expected_base_context_version
+            ):
+                return ReviewSettlementClaim("conflict")
             if row[0] == "staged":
                 current_version = 0 if context is None else context[0]
                 if current_version != row[2]:
@@ -561,10 +760,13 @@ class ConversationContextStore:
             if record is None:
                 return ReviewSettlementClaim("invalid")
             decoded, marker = record
+            if not self._marker_is_bounded(marker, key=key, turn_id=turn_id):
+                return ReviewSettlementClaim("invalid")
             state = marker.get("settlement_state")
             if state not in {
                 "pending",
                 "settling",
+                "promoting",
                 "promoted",
                 "rejected",
                 "failed",
@@ -572,9 +774,10 @@ class ConversationContextStore:
                 return ReviewSettlementClaim("invalid")
             if state in {"promoted", "rejected", "failed"}:
                 return ReviewSettlementClaim(state)
-            if state == "settling":
+            if state in {"settling", "promoting"}:
                 token = marker.get("settlement_claim_token")
                 claimed_at = marker.get("settlement_claimed_at")
+                fence = self._marker_fence(marker)
                 if (
                     not isinstance(token, str)
                     or not token
@@ -582,31 +785,157 @@ class ConversationContextStore:
                     or not isinstance(claimed_at, str)
                     or not claimed_at
                     or len(claimed_at) > _REVIEW_SETTLEMENT_TIMESTAMP_LIMIT
+                    or fence is None
                 ):
                     return ReviewSettlementClaim("invalid")
-                try:
-                    self._claim_datetime(claimed_at)
-                except (TypeError, ValueError):
+                if not self._claim_is_expired(
+                    claimed_at, clock=clock, stale_after=stale_after
+                ):
+                    return ReviewSettlementClaim(state, token, fence)
+                next_fence = fence + 1
+                if next_fence > _REVIEW_SETTLEMENT_FENCE_LIMIT:
                     return ReviewSettlementClaim("invalid")
-                return ReviewSettlementClaim("settling")
+                claim_token = uuid4().hex
+                updated = dict(marker)
+                updated.update(
+                    {
+                        "settlement_state": "settling",
+                        "settlement_claim_token": claim_token,
+                        "settlement_claimed_at": now_value,
+                        "settlement_fence": next_fence,
+                        "settlement_ledger_version": row[1],
+                        "settlement_base_context_version": row[2],
+                    }
+                )
+                if not self._write_review_marker(
+                    connection, key, turn_id, decoded, updated, now_value
+                ):
+                    return ReviewSettlementClaim("invalid")
+                return ReviewSettlementClaim(
+                    "claimed", claim_token, next_fence
+                )
             elif "settlement_claim_token" in marker or (
                 "settlement_claimed_at" in marker
             ):
                 return ReviewSettlementClaim("invalid")
+            previous_fence = marker.get("settlement_fence", 0)
+            if (
+                isinstance(previous_fence, bool)
+                or not isinstance(previous_fence, int)
+                or previous_fence < 0
+                or previous_fence >= _REVIEW_SETTLEMENT_FENCE_LIMIT
+            ):
+                return ReviewSettlementClaim("invalid")
             claim_token = uuid4().hex
+            fence = previous_fence + 1
             updated = dict(marker)
             updated.update(
                 {
                     "settlement_state": "settling",
                     "settlement_claim_token": claim_token,
                     "settlement_claimed_at": now_value,
+                    "settlement_fence": fence,
+                    "settlement_ledger_version": row[1],
+                    "settlement_base_context_version": row[2],
                 }
             )
             if not self._write_review_marker(
                 connection, key, turn_id, decoded, updated, now_value
             ):
                 return ReviewSettlementClaim("invalid")
-            return ReviewSettlementClaim("claimed", claim_token)
+            return ReviewSettlementClaim("claimed", claim_token, fence)
+
+    def reserve_review_settlement(
+        self,
+        key: str,
+        turn_id: str,
+        *,
+        claim_token: str,
+        fence_token: int,
+        expected_ledger_version: str | None = None,
+        expected_base_context_version: int | None = None,
+    ) -> ReviewSettlementClaim:
+        """Reserve the exact staged proposal before any private checkpoint write."""
+        if (
+            not isinstance(claim_token, str)
+            or not claim_token
+            or len(claim_token) > _REVIEW_SETTLEMENT_TOKEN_LIMIT
+            or isinstance(fence_token, bool)
+            or not isinstance(fence_token, int)
+            or fence_token < 1
+            or fence_token > _REVIEW_SETTLEMENT_FENCE_LIMIT
+        ):
+            return ReviewSettlementClaim("invalid")
+        with self._write() as connection:
+            row = connection.execute(
+                "SELECT state, ledger_version, base_context_version, delta_json "
+                "FROM conversation_turns WHERE conversation_key = ? "
+                "AND turn_id = ?",
+                (key, turn_id),
+            ).fetchone()
+            if row is None:
+                return ReviewSettlementClaim("missing")
+            context = connection.execute(
+                "SELECT context_version, state FROM conversation_contexts "
+                "WHERE conversation_key = ?",
+                (key,),
+            ).fetchone()
+            if context is not None and context[1] == "tombstoned":
+                return ReviewSettlementClaim("conflict")
+            if row[0] != "staged":
+                if row[0] == "committed":
+                    record = self._review_record(row[3])
+                    if (
+                        record is not None
+                        and record[1].get("settlement_state") == "promoted"
+                    ):
+                        return ReviewSettlementClaim("promoted")
+                return ReviewSettlementClaim("conflict")
+            if (
+                expected_ledger_version is not None
+                and row[1] != expected_ledger_version
+            ) or (
+                expected_base_context_version is not None
+                and row[2] != expected_base_context_version
+            ):
+                return ReviewSettlementClaim("conflict")
+            current_version = 0 if context is None else context[0]
+            if current_version != row[2]:
+                return ReviewSettlementClaim("conflict")
+            record = self._review_record(row[3])
+            if record is None:
+                return ReviewSettlementClaim("invalid")
+            decoded, marker = record
+            if not self._marker_is_bounded(marker, key=key, turn_id=turn_id):
+                return ReviewSettlementClaim("invalid")
+            state = marker.get("settlement_state")
+            if state == "promoting":
+                if (
+                    marker.get("settlement_claim_token") == claim_token
+                    and self._marker_fence(marker) == fence_token
+                ):
+                    return ReviewSettlementClaim(
+                        "promoting", claim_token, fence_token
+                    )
+                return ReviewSettlementClaim("conflict")
+            if state != "settling":
+                if state in {"promoted", "rejected", "failed"}:
+                    return ReviewSettlementClaim(state)
+                return ReviewSettlementClaim("conflict")
+            if (
+                marker.get("settlement_claim_token") != claim_token
+                or self._marker_fence(marker) != fence_token
+                or marker.get("settlement_ledger_version") != row[1]
+                or marker.get("settlement_base_context_version") != row[2]
+            ):
+                return ReviewSettlementClaim("conflict")
+            updated = dict(marker)
+            updated["settlement_state"] = "promoting"
+            if not self._write_review_marker(
+                connection, key, turn_id, decoded, updated, _now()
+            ):
+                return ReviewSettlementClaim("invalid")
+            return ReviewSettlementClaim("promoting", claim_token, fence_token)
 
     def is_review_settlement_claim_active(
         self,
@@ -614,12 +943,20 @@ class ConversationContextStore:
         turn_id: str,
         *,
         claim_token: str,
+        fence_token: int | None = None,
     ) -> bool:
         """Check a Review fencing token immediately before private writes."""
         if (
             not isinstance(claim_token, str)
             or not claim_token
             or len(claim_token) > _REVIEW_SETTLEMENT_TOKEN_LIMIT
+        ):
+            return False
+        if fence_token is not None and (
+            isinstance(fence_token, bool)
+            or not isinstance(fence_token, int)
+            or fence_token < 1
+            or fence_token > _REVIEW_SETTLEMENT_FENCE_LIMIT
         ):
             return False
         with sqlite_connection(self.db_path) as connection:
@@ -635,8 +972,12 @@ class ConversationContextStore:
             return False
         _decoded, marker = record
         return (
-            marker.get("settlement_state") == "settling"
+            marker.get("settlement_state") in {"settling", "promoting"}
             and marker.get("settlement_claim_token") == claim_token
+            and (
+                fence_token is None
+                or marker.get("settlement_fence") == fence_token
+            )
         )
 
     def finalize_review_settlement(
@@ -647,12 +988,20 @@ class ConversationContextStore:
         claim_token: str,
         state: Literal["promoted", "rejected", "failed"],
         report_revision: int | None = None,
+        fence_token: int | None = None,
     ) -> bool:
         """Finalize only the worker that durably claimed a Review marker."""
         if (
             not isinstance(claim_token, str)
             or not claim_token
             or len(claim_token) > _REVIEW_SETTLEMENT_TOKEN_LIMIT
+        ):
+            return False
+        if fence_token is not None and (
+            isinstance(fence_token, bool)
+            or not isinstance(fence_token, int)
+            or fence_token < 1
+            or fence_token > _REVIEW_SETTLEMENT_FENCE_LIMIT
         ):
             return False
         if state == "promoted" and (
@@ -677,10 +1026,14 @@ class ConversationContextStore:
             if current_state == state:
                 return True
             if current_state in {"promoted", "rejected", "failed"}:
-                return False
+                return current_state == state
             if (
-                current_state != "settling"
+                current_state not in {"settling", "promoting"}
                 or marker.get("settlement_claim_token") != claim_token
+                or (
+                    fence_token is not None
+                    and marker.get("settlement_fence") != fence_token
+                )
             ):
                 return False
             updated = dict(marker)
@@ -693,8 +1046,19 @@ class ConversationContextStore:
                 connection, key, turn_id, decoded, updated, _now()
             )
 
-    def mark_review_settlement_failed(self, key: str, turn_id: str) -> bool:
+    def mark_review_settlement_failed(
+        self,
+        key: str,
+        turn_id: str,
+        *,
+        mutation_lock_held: bool = False,
+    ) -> bool:
         """Persist a terminal failure for a malformed or abandoned marker."""
+        if not mutation_lock_held:
+            with self.acquire_review_mutation_lock():
+                return self.mark_review_settlement_failed(
+                    key, turn_id, mutation_lock_held=True
+                )
         with self._write() as connection:
             row = connection.execute(
                 "SELECT delta_json FROM conversation_turns "
@@ -750,8 +1114,19 @@ class ConversationContextStore:
         turn_id: str,
         expected_ledger_version: str,
         ledger_version: str,
+        *,
+        mutation_lock_held: bool = False,
     ) -> SettlementResult:
         """Atomically apply a staged turn or return its existing commit."""
+        if not mutation_lock_held:
+            with self.acquire_review_mutation_lock():
+                return self.commit_staged_turn(
+                    key,
+                    turn_id,
+                    expected_ledger_version,
+                    ledger_version,
+                    mutation_lock_held=True,
+                )
         now = _now()
         with self._write() as connection:
             turn = connection.execute(
@@ -764,6 +1139,18 @@ class ConversationContextStore:
                 raise ContextVersionConflictError(key)
             if turn[9] != expected_ledger_version:
                 raise ContextVersionConflictError(key)
+            review_record = self._review_record(turn[8])
+            if review_record is not None:
+                _decoded_review, review_marker = review_record
+                if (
+                    review_marker.get("settlement_state") != "promoted"
+                    or review_marker.get("settlement_ledger_version")
+                    != expected_ledger_version
+                    or review_marker.get("settlement_base_context_version")
+                    != turn[3]
+                    or self._marker_fence(review_marker) is None
+                ):
+                    raise ContextVersionConflictError(key)
             context = connection.execute(
                 "SELECT conversation_key, schema_version, context_version, ledger_cursor, ledger_version, observed_mode, context_json, state, checkpoint_cleanup_state, updated_at, tombstoned_at FROM conversation_contexts WHERE conversation_key=?",
                 (key,),
@@ -835,7 +1222,12 @@ class ConversationContextStore:
                 (_now(), key, turn_id),
             )
 
-    def tombstone(self, key: str) -> tuple[str, ...]:
+    def tombstone(
+        self, key: str, *, mutation_lock_held: bool = False
+    ) -> tuple[str, ...]:
+        if not mutation_lock_held:
+            with self.acquire_review_mutation_lock():
+                return self.tombstone(key, mutation_lock_held=True)
         now = _now()
         with self._write() as connection:
             candidates = {
@@ -863,6 +1255,7 @@ class ConversationContextStore:
                 if marker.get("settlement_state") in {
                     "pending",
                     "settling",
+                    "promoting",
                 }:
                     failed_marker = dict(marker)
                     failed_marker["settlement_state"] = "failed"
@@ -902,7 +1295,13 @@ class ConversationContextStore:
                 )
         return tuple(sorted(candidates))
 
-    def complete_checkpoint_cleanup(self, key: str) -> None:
+    def complete_checkpoint_cleanup(
+        self, key: str, *, mutation_lock_held: bool = False
+    ) -> None:
+        if not mutation_lock_held:
+            with self.acquire_review_mutation_lock():
+                self.complete_checkpoint_cleanup(key, mutation_lock_held=True)
+                return
         with self._write() as connection:
             updated = connection.execute(
                 "UPDATE conversation_contexts SET checkpoint_cleanup_state='complete', updated_at=? WHERE conversation_key=? AND state='tombstoned'",
@@ -916,8 +1315,32 @@ class ConversationContextStore:
                 )
 
     def purge_expired_staged(self, now: str | datetime) -> int:
+        with self.acquire_review_mutation_lock():
+            return self._purge_expired_staged(now)
+
+    def _purge_expired_staged(self, now: str | datetime) -> int:
         now_value = now.isoformat() if isinstance(now, datetime) else now
         with self._write() as connection:
+            rows = connection.execute(
+                "SELECT conversation_key, delta_json FROM conversation_turns "
+                "WHERE state='staged' AND expires_at IS NOT NULL "
+                "AND expires_at <= ?",
+                (now_value,),
+            ).fetchall()
+            for key, delta_json in rows:
+                record = self._review_record(delta_json)
+                if record is None:
+                    continue
+                _decoded, marker = record
+                candidate = _review_candidate_thread_id(marker)
+                if candidate is not None:
+                    connection.execute(
+                        "INSERT OR IGNORE INTO "
+                        "conversation_review_checkpoint_cleanup "
+                        "(conversation_key, candidate_thread_id) "
+                        "VALUES (?, ?)",
+                        (key, candidate),
+                    )
             cursor = connection.execute(
                 "DELETE FROM conversation_turns WHERE state='staged' AND expires_at IS NOT NULL AND expires_at <= ?",
                 (now_value,),
@@ -930,6 +1353,8 @@ __all__ = [
     "ContextVersionConflictError",
     "ConversationContextStore",
     "ConversationTombstonedError",
+    "ReviewMutationLock",
+    "ReviewMutationLockTimeoutError",
     "ReviewSettlementClaim",
     "SettlementResult",
     "StagedTurn",

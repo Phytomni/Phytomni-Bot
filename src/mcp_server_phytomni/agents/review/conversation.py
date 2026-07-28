@@ -1277,7 +1277,7 @@ class ReviewConversationAdapter:
                 "Review settlement metadata is invalid."
             ) from exc
         settlement_state = metadata.get("settlement_state")
-        if settlement_state not in {"pending", "settling"}:
+        if settlement_state not in {"pending", "settling", "promoting"}:
             raise ReviewClarificationError(
                 "Review settlement state is invalid for restart."
             )
@@ -1320,9 +1320,14 @@ class ReviewConversationAdapter:
             raise ReviewClarificationError(
                 "Review settlement revision metadata is invalid."
             )
-        if settlement_state == "settling":
+        if settlement_state in {"settling", "promoting"}:
             claim_token = metadata.get("settlement_claim_token")
             claimed_at = metadata.get("settlement_claimed_at")
+            fence = metadata.get("settlement_fence")
+            ledger_version = metadata.get("settlement_ledger_version")
+            base_context_version = metadata.get(
+                "settlement_base_context_version"
+            )
             if (
                 not isinstance(claim_token, str)
                 or not claim_token.strip()
@@ -1330,6 +1335,16 @@ class ReviewConversationAdapter:
                 or not isinstance(claimed_at, str)
                 or not claimed_at.strip()
                 or len(claimed_at) > 64
+                or isinstance(fence, bool)
+                or not isinstance(fence, int)
+                or fence < 1
+                or fence > 2**63 - 1
+                or not isinstance(ledger_version, str)
+                or not ledger_version.strip()
+                or len(ledger_version) > 64
+                or isinstance(base_context_version, bool)
+                or not isinstance(base_context_version, int)
+                or base_context_version < 0
             ):
                 raise ReviewClarificationError(
                     "Review settlement claim metadata is invalid."
@@ -1337,6 +1352,9 @@ class ReviewConversationAdapter:
         elif (
             "settlement_claim_token" in metadata
             or "settlement_claimed_at" in metadata
+            or "settlement_fence" in metadata
+            or "settlement_ledger_version" in metadata
+            or "settlement_base_context_version" in metadata
         ):
             raise ReviewClarificationError(
                 "Review settlement claim metadata is invalid."

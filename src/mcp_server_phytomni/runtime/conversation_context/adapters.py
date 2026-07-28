@@ -33,7 +33,11 @@ from .service import (
     _bounded_review_stage_metadata,
     review_settlement_metadata_from_turn,
 )
-from .store import ConversationContextStore, StoredTurn
+from .store import (
+    ConversationContextStore,
+    ReviewMutationLockTimeoutError,
+    StoredTurn,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +63,20 @@ StoreFactory = Callable[[], ConversationContextStore]
 ReviewSettlementLoader = Callable[
     [Mapping[str, Any], StoredTurn], Awaitable[ReviewConversationAdapter]
 ]
+
+
+async def _acquire_review_mutation_lock(
+    store: ConversationContextStore, *, wait_seconds: float = 30.0
+) -> Any:
+    """Poll a nonblocking durable lock without blocking the event loop."""
+    deadline = asyncio.get_running_loop().time() + wait_seconds
+    while True:
+        try:
+            return store.acquire_review_mutation_lock(timeout=0)
+        except ReviewMutationLockTimeoutError:
+            if asyncio.get_running_loop().time() >= deadline:
+                raise
+            await asyncio.sleep(0.01)
 
 
 def _native_history_from_turns(
@@ -312,15 +330,25 @@ class ConversationContextExecutor:
         accepted: bool,
         staged_turn: StoredTurn | None = None,
         expected_ledger_version: str | None = None,
+        mutation_lock_held: bool = False,
     ) -> bool:
         """Serialize the complete Review promotion for one ack boundary."""
         async with self._review_settlement_ack_lock:
-            return await self._acknowledge_review_settlement_key_locked(
-                key,
-                accepted=accepted,
-                staged_turn=staged_turn,
-                expected_ledger_version=expected_ledger_version,
-            )
+            service = self._service_for_request()
+            lock: Any | None = None
+            if not mutation_lock_held:
+                lock = await _acquire_review_mutation_lock(service.store)
+            try:
+                return await self._acknowledge_review_settlement_key_locked(
+                    key,
+                    accepted=accepted,
+                    staged_turn=staged_turn,
+                    expected_ledger_version=expected_ledger_version,
+                    mutation_lock_held=True,
+                )
+            finally:
+                if lock is not None:
+                    lock.release()
 
     async def _acknowledge_review_settlement_key_locked(
         self,
@@ -329,6 +357,7 @@ class ConversationContextExecutor:
         accepted: bool,
         staged_turn: StoredTurn | None = None,
         expected_ledger_version: str | None = None,
+        mutation_lock_held: bool = False,
     ) -> bool:
         """Apply one durable Review acknowledgment by conversation identity."""
         service = self._service_for_request()
@@ -336,6 +365,7 @@ class ConversationContextExecutor:
         staged_turn = current_turn or staged_turn
         metadata = review_settlement_metadata_from_turn(staged_turn)
         claim_token: str | None = None
+        claim_fence: int | None = None
         if current_turn is None and metadata is not None:
             return False
         durable_marker = metadata is not None and current_turn is not None
@@ -351,7 +381,9 @@ class ConversationContextExecutor:
                 or expected_stable is None
                 or bounded["stable_thread_id"] != expected_stable
             ):
-                service.store.mark_review_settlement_failed(*key)
+                service.store.mark_review_settlement_failed(
+                    *key, mutation_lock_held=mutation_lock_held
+                )
                 return False
             settlement_state = bounded["settlement_state"]
             if settlement_state == "promoted":
@@ -361,13 +393,26 @@ class ConversationContextExecutor:
             claim = service.store.claim_review_settlement(
                 *key,
                 expected_ledger_version=expected_ledger_version,
+                expected_base_context_version=(
+                    staged_turn.base_context_version
+                    if staged_turn is not None
+                    else None
+                ),
             )
             if claim.status == "invalid":
-                service.store.mark_review_settlement_failed(*key)
+                service.store.mark_review_settlement_failed(
+                    *key, mutation_lock_held=mutation_lock_held
+                )
                 return False
             if claim.status != "claimed" or claim.claim_token is None:
                 return False
             claim_token = claim.claim_token
+            claim_fence = claim.fence_token
+            if claim_fence is None:
+                service.store.mark_review_settlement_failed(
+                    *key, mutation_lock_held=mutation_lock_held
+                )
+                return False
             staged_turn = service.store.load_turn(*key)
         try:
             adapter = await self._load_review_settlement_adapter(
@@ -376,13 +421,19 @@ class ConversationContextExecutor:
         except BaseException:
             if claim_token is not None:
                 service.store.finalize_review_settlement(
-                    *key, claim_token=claim_token, state="failed"
+                    *key,
+                    claim_token=claim_token,
+                    fence_token=claim_fence,
+                    state="failed",
                 )
             raise
         if adapter is None:
             if claim_token is not None:
                 service.store.finalize_review_settlement(
-                    *key, claim_token=claim_token, state="failed"
+                    *key,
+                    claim_token=claim_token,
+                    fence_token=claim_fence,
+                    state="failed",
                 )
             return False
         if claim_token is not None:
@@ -390,7 +441,9 @@ class ConversationContextExecutor:
             if callable(set_fence):
                 set_fence(
                     lambda: service.store.is_review_settlement_claim_active(
-                        *key, claim_token=claim_token
+                        *key,
+                        claim_token=claim_token,
+                        fence_token=claim_fence,
                     )
                 )
         if not accepted:
@@ -404,15 +457,43 @@ class ConversationContextExecutor:
                 cleanup_error = exc
             if claim_token is not None:
                 marker_saved = service.store.finalize_review_settlement(
-                    *key, claim_token=claim_token, state="rejected"
+                    *key,
+                    claim_token=claim_token,
+                    fence_token=claim_fence,
+                    state="rejected",
                 )
             else:
                 marker_saved = True
             if cleanup_error is not None:
                 if claim_token is not None:
-                    service.store.mark_review_settlement_failed(*key)
+                    service.store.mark_review_settlement_failed(
+                        *key, mutation_lock_held=mutation_lock_held
+                    )
                 raise cleanup_error
             return marker_saved
+        if claim_token is not None:
+            assert claim_fence is not None
+            reservation = service.store.reserve_review_settlement(
+                *key,
+                claim_token=claim_token,
+                fence_token=claim_fence,
+                expected_ledger_version=expected_ledger_version,
+                expected_base_context_version=(
+                    staged_turn.base_context_version
+                    if staged_turn is not None
+                    else None
+                ),
+            )
+            if reservation.status == "promoted":
+                return True
+            if reservation.status != "promoting":
+                service.store.finalize_review_settlement(
+                    *key,
+                    claim_token=claim_token,
+                    fence_token=claim_fence,
+                    state="failed",
+                )
+                return False
         try:
             if (
                 claim_token is not None
@@ -429,7 +510,10 @@ class ConversationContextExecutor:
             finally:
                 if claim_token is not None:
                     service.store.finalize_review_settlement(
-                        *key, claim_token=claim_token, state="failed"
+                        *key,
+                        claim_token=claim_token,
+                        fence_token=claim_fence,
+                        state="failed",
                     )
             raise
         if (
@@ -437,6 +521,7 @@ class ConversationContextExecutor:
             and not service.store.finalize_review_settlement(
                 *key,
                 claim_token=claim_token,
+                fence_token=claim_fence,
                 state="promoted",
                 report_revision=adapter.report_revision,
             )
@@ -451,6 +536,7 @@ class ConversationContextExecutor:
         envelope: ConversationEnvelopeV1,
         *,
         accepted: bool,
+        mutation_lock_held: bool = False,
     ) -> bool:
         """Commit private Review state only after an explicit durable ack.
 
@@ -461,6 +547,7 @@ class ConversationContextExecutor:
         return await self._acknowledge_review_settlement_key(
             self._review_settlement_key(envelope),
             accepted=accepted,
+            mutation_lock_held=mutation_lock_held,
         )
 
     async def acknowledge_review_settlement_for_turn(
@@ -471,6 +558,7 @@ class ConversationContextExecutor:
         accepted: bool,
         staged_turn: StoredTurn | None = None,
         expected_ledger_version: str | None = None,
+        mutation_lock_held: bool = False,
     ) -> bool:
         """Acknowledge Review from the HTTP settlement route after restart."""
         return await self._acknowledge_review_settlement_key(
@@ -478,6 +566,7 @@ class ConversationContextExecutor:
             accepted=accepted,
             staged_turn=staged_turn,
             expected_ledger_version=expected_ledger_version,
+            mutation_lock_held=mutation_lock_held,
         )
 
     async def execute(

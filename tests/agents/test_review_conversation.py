@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from typing import Any
 from uuid import UUID
@@ -909,7 +910,7 @@ async def test_review_ack_claim_serializes_separate_executors(
     release.set()
     results = await asyncio.gather(*tasks)
 
-    assert sorted(results) == [False, True]
+    assert sorted(results) == [True, True]
     assert settle_calls == 1
     stored = store.load_turn(key, "worker-1")
     assert stored is not None
@@ -924,7 +925,7 @@ async def test_review_ack_claim_serializes_separate_executors(
 async def test_review_ack_fence_blocks_promotion_after_tombstone(
     tmp_path: Any,
 ) -> None:
-    """A tombstone fences an in-flight worker before it writes stable state."""
+    """A tombstone waits for an in-flight promotion before cleanup."""
     prepared = ReviewConversationAdapter()
     prepared.prepare(
         _projection("Review maize heat tolerance", active=False),
@@ -1001,11 +1002,17 @@ async def test_review_ack_fence_blocks_promotion_after_tombstone(
         )
     )
     await started.wait()
-    assert store.tombstone(key)
-    release.set()
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        tombstone = pool.submit(store.tombstone, key)
+        await asyncio.sleep(0.05)
+        assert tombstone.done() is False
+        release.set()
+        await asyncio.sleep(0.05)
+        assert tombstone.result(timeout=5) == (
+            metadata["candidate_thread_id"],
+        )
 
-    with pytest.raises(RuntimeError, match="fenced"):
-        await task
+    assert await task is True
     assert settle_calls == 1
     assert store.load_turn(key, "fenced-1") is None
 

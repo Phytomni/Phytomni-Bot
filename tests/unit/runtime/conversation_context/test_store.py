@@ -295,11 +295,12 @@ def test_legacy_staged_turn_without_metadata_still_deserializes(
 
 def _review_metadata(*, turn_id: str = "1") -> dict[str, object]:
     """Build the private marker used by the store CAS tests."""
+    stable = "ctx-" + "a" * 64
     return {
         "version": 1,
         "operation": "new_review",
-        "stable_thread_id": "ctx-stable",
-        "candidate_thread_id": "ctx-candidate",
+        "stable_thread_id": stable,
+        "candidate_thread_id": _candidate_thread_id(stable, turn_id),
         "turn_id": turn_id,
         "report_revision": 0,
         "settlement_state": "pending",
@@ -366,10 +367,10 @@ def test_review_settlement_reject_race_has_one_terminal_winner(
     )
 
 
-def test_review_settlement_claim_never_auto_reclaims_an_active_worker(
+def test_review_settlement_claim_reclaims_expired_worker_with_new_fence(
     store: ConversationContextStore,
 ) -> None:
-    """Lease expiry never permits a second worker to promote concurrently."""
+    """An expired claim is recoverable while its old fence is rejected."""
     key = "conversation-1"
     start = datetime(2026, 7, 28, tzinfo=UTC)
     store.begin_turn(key, "1", "append", 0)
@@ -389,16 +390,33 @@ def test_review_settlement_claim_never_auto_reclaims_an_active_worker(
 
     assert first.status == "claimed"
     assert active.status == "settling"
-    assert expired.status == "settling"
+    assert expired.status == "claimed"
     assert first.claim_token is not None
-    assert store.mark_review_settlement_failed(key, "1")
-    assert store.claim_review_settlement(key, "1").status == "failed"
+    assert first.fence_token is not None
+    assert expired.claim_token is not None
+    assert expired.fence_token is not None
+    assert expired.fence_token > first.fence_token
+    old_reservation = store.reserve_review_settlement(
+        key,
+        "1",
+        claim_token=first.claim_token,
+        fence_token=first.fence_token,
+    )
+    assert old_reservation.status == "conflict"
     assert not store.finalize_review_settlement(
         key,
         "1",
         claim_token=first.claim_token,
+        fence_token=first.fence_token,
         state="promoted",
         report_revision=1,
+    )
+    assert store.finalize_review_settlement(
+        key,
+        "1",
+        claim_token=expired.claim_token,
+        fence_token=expired.fence_token,
+        state="failed",
     )
 
 
@@ -613,6 +631,38 @@ def test_staged_rows_expire_using_the_success_ttl(
         assert connection.execute(
             "SELECT COUNT(*) FROM conversation_turns"
         ).fetchone() == (0,)
+
+
+def test_expired_review_turn_retains_candidate_for_later_tombstone(
+    store: ConversationContextStore,
+) -> None:
+    """Retention never removes the only durable candidate cleanup identity."""
+    key = "conversation-1"
+    stable = "ctx-" + "b" * 64
+    candidate = _candidate_thread_id(stable, "1")
+    metadata = _review_metadata()
+    metadata.update(
+        {
+            "stable_thread_id": stable,
+            "candidate_thread_id": candidate,
+        }
+    )
+    store.begin_turn(key, "1", "append", 0)
+    store.stage_turn(
+        key,
+        "1",
+        _staged(stage_metadata={"_review_settlement": metadata}),
+    )
+    with sqlite3.connect(store.db_path) as connection:
+        expires_at = connection.execute(
+            "SELECT expires_at FROM conversation_turns "
+            "WHERE conversation_key = ? AND turn_id = ?",
+            (key, "1"),
+        ).fetchone()[0]
+
+    assert store.purge_expired_staged(datetime.fromisoformat(expires_at)) == 1
+    assert store.load_turn(key, "1") is None
+    assert store.tombstone(key) == (candidate,)
 
 
 def test_store_logs_do_not_expose_conversation_payloads(

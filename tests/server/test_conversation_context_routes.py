@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -130,6 +131,40 @@ def _stage_turn(
                 else {}
             ),
         ),
+    )
+
+
+def _promote_review_marker(
+    store: ConversationContextStore, key: str, turn_id: str
+) -> None:
+    """Model the production executor's durable reservation in route fakes."""
+    turn = store.load_turn(key, turn_id)
+    assert turn is not None
+    claim = store.claim_review_settlement(
+        key,
+        turn_id,
+        expected_ledger_version=turn.ledger_version,
+        expected_base_context_version=turn.base_context_version,
+    )
+    assert claim.status == "claimed"
+    assert claim.claim_token is not None
+    assert claim.fence_token is not None
+    reserved = store.reserve_review_settlement(
+        key,
+        turn_id,
+        claim_token=claim.claim_token,
+        fence_token=claim.fence_token,
+        expected_ledger_version=turn.ledger_version,
+        expected_base_context_version=turn.base_context_version,
+    )
+    assert reserved.status == "promoting"
+    assert store.finalize_review_settlement(
+        key,
+        turn_id,
+        claim_token=claim.claim_token,
+        fence_token=claim.fence_token,
+        state="promoted",
+        report_revision=1,
     )
 
 
@@ -316,8 +351,11 @@ async def test_settlement_route_invokes_injected_review_ack_before_commit(
             accepted: bool,
             staged_turn: object,
             expected_ledger_version: str | None = None,
+            mutation_lock_held: bool = False,
         ) -> bool:
             assert expected_ledger_version == _LEDGER_VERSION
+            assert mutation_lock_held is True
+            _promote_review_marker(store, conversation_key, turn_id)
             context = store.load_context(conversation_key)
             self.context_versions_at_ack.append(
                 None if context is None else context.context_version
@@ -408,9 +446,11 @@ async def test_review_promotion_failure_does_not_commit_shared_context(
             accepted: bool,
             staged_turn: object,
             expected_ledger_version: str | None = None,
+            mutation_lock_held: bool = False,
         ) -> bool:
             assert accepted is True
             assert expected_ledger_version == _LEDGER_VERSION
+            assert mutation_lock_held is True
             assert store.load_context(conversation_key) is None
             del staged_turn
             raise RuntimeError("private promotion unavailable")
@@ -507,11 +547,14 @@ async def test_review_stale_ledger_is_rejected_before_private_ack(
             accepted: bool,
             staged_turn: object,
             expected_ledger_version: str | None = None,
+            mutation_lock_held: bool = False,
         ) -> bool:
             assert accepted is True
             assert staged_turn is not None
             assert expected_ledger_version == _LEDGER_VERSION
+            assert mutation_lock_held is True
             self.calls += 1
+            _promote_review_marker(store, _conversation_key, _turn_id)
             return True
 
     executor = SpyExecutor()
@@ -543,6 +586,89 @@ async def test_review_stale_ledger_is_rejected_before_private_ack(
 
     assert accepted.status_code == 200
     assert executor.calls == 1
+
+
+async def test_review_reservation_serializes_competing_context_commit(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A competing context commit cannot stale a reserved Review settlement."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "true")
+    tasks_db = tmp_path / "server_tasks.db"
+    keys_db = tmp_path / "keys.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tasks_db))
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(keys_db))
+    key = ApiKeyStore(str(keys_db)).create(user_id="u1").api_key
+    store = ConversationContextStore(str(tasks_db))
+    stable_thread = agent_thread_id(_CONVERSATION_KEY, "ReviewAgent")
+    _stage_turn(
+        store,
+        review_metadata={
+            "version": 1,
+            "operation": "new_review",
+            "stable_thread_id": stable_thread,
+            "candidate_thread_id": _candidate_thread_id(stable_thread, "1"),
+            "turn_id": "1",
+            "report_revision": 0,
+            "settlement_state": "pending",
+        },
+    )
+    _stage_turn(store, turn_id="2", base_version=0)
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    class BlockingExecutor:
+        async def execute(self, **_kwargs: object) -> object:
+            raise AssertionError("the route test does not invoke Expert")
+
+        async def acknowledge_review_settlement_for_turn(
+            self,
+            _conversation_key: str,
+            _turn_id: str,
+            *,
+            accepted: bool,
+            staged_turn: object,
+            expected_ledger_version: str | None = None,
+            mutation_lock_held: bool = False,
+        ) -> bool:
+            assert accepted is True
+            assert staged_turn is not None
+            assert expected_ledger_version == _LEDGER_VERSION
+            assert mutation_lock_held is True
+            started.set()
+            await release.wait()
+            _promote_review_marker(store, _conversation_key, _turn_id)
+            return True
+
+    async with open_asgi_client(
+        monkeypatch,
+        create_app(context_executor=BlockingExecutor()),
+        base_url="http://api.context.test",
+    ) as client:
+        review_task = asyncio.create_task(
+            client.post(
+                "/v1/conversation-context/settle",
+                headers=_headers(key),
+                json=_settlement_payload(turn_id="1"),
+            )
+        )
+        await started.wait()
+        competing_task = asyncio.create_task(
+            client.post(
+                "/v1/conversation-context/settle",
+                headers=_headers(key),
+                json=_settlement_payload(turn_id="2"),
+            )
+        )
+        await asyncio.sleep(0.05)
+        assert competing_task.done() is False
+        release.set()
+        review_response, competing_response = await asyncio.gather(
+            review_task, competing_task
+        )
+
+    assert review_response.status_code == 200
+    assert competing_response.status_code == 409
 
 
 async def test_settlement_rejects_unknown_or_mismatched_turns(

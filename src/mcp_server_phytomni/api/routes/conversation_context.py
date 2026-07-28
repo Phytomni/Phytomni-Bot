@@ -4,8 +4,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -21,6 +22,7 @@ from ...runtime.conversation_context.store import (
     ContextVersionConflictError,
     ConversationContextStore,
     ConversationTombstonedError,
+    ReviewMutationLockTimeoutError,
     StoredTurn,
 )
 from ...runtime.langgraph_runner import ensure_checkpointer
@@ -77,6 +79,144 @@ async def _delete_checkpoint_threads(
             await checkpointer.adelete_thread(candidate_thread_id)
 
 
+async def _acquire_review_mutation_lock(
+    store: ConversationContextStore, *, wait_seconds: float = 30.0
+) -> Any:
+    """Poll a nonblocking durable lock without blocking the event loop."""
+    deadline = asyncio.get_running_loop().time() + wait_seconds
+    while True:
+        try:
+            return store.acquire_review_mutation_lock(timeout=0)
+        except ReviewMutationLockTimeoutError:
+            if asyncio.get_running_loop().time() >= deadline:
+                raise
+            await asyncio.sleep(0.01)
+
+
+async def _settle_review_turn(
+    *,
+    store: ConversationContextStore,
+    key: str,
+    payload: ContextSettlementRequest,
+    dependencies: ContextRouteDependencies,
+) -> ContextMutationResponse:
+    """Reserve and promote Review while the cross-worker lock is held."""
+    staged_turn = store.load_turn(key, payload.turn_id)
+    if staged_turn is None:
+        raise HTTPException(status_code=404, detail="context turn not found")
+    has_private_marker = isinstance(staged_turn.stage_metadata, Mapping) and (
+        "_review_settlement" in staged_turn.stage_metadata
+    )
+    review_metadata = review_settlement_metadata_from_turn(staged_turn)
+    if review_metadata is None:
+        if has_private_marker:
+            store.mark_turn_failed(key, payload.turn_id)
+            raise HTTPException(
+                status_code=503, detail="Review settlement metadata is invalid"
+            )
+        raise HTTPException(
+            status_code=409, detail="context settlement conflict"
+        )
+    bounded_metadata = _bounded_review_stage_metadata(
+        review_metadata, allow_terminal=True
+    )
+    try:
+        expected_stable = agent_thread_id(UUID(key), "ReviewAgent")
+    except ValueError:
+        expected_stable = None
+    if (
+        bounded_metadata is None
+        or bounded_metadata["turn_id"] != payload.turn_id
+        or bounded_metadata["stable_thread_id"] != expected_stable
+    ):
+        store.mark_review_settlement_failed(
+            key, payload.turn_id, mutation_lock_held=True
+        )
+        raise HTTPException(
+            status_code=503, detail="Review settlement metadata is invalid"
+        )
+    context = store.load_context(key)
+    if context is not None and context.state == "tombstoned":
+        raise HTTPException(
+            status_code=409, detail="context settlement conflict"
+        )
+    if staged_turn.ledger_version != payload.ledger_version:
+        raise HTTPException(
+            status_code=409, detail="context settlement conflict"
+        )
+    if staged_turn.state == "staged":
+        current_version = 0 if context is None else context.context_version
+        if current_version != staged_turn.base_context_version:
+            raise HTTPException(
+                status_code=409, detail="context settlement conflict"
+            )
+    settlement_state = bounded_metadata["settlement_state"]
+    if staged_turn.state not in {"staged", "committed"}:
+        raise HTTPException(
+            status_code=409, detail="context settlement conflict"
+        )
+    if staged_turn.state == "committed" and settlement_state != "promoted":
+        raise HTTPException(
+            status_code=409, detail="context settlement conflict"
+        )
+    if settlement_state not in {
+        "pending",
+        "settling",
+        "promoting",
+        "promoted",
+    }:
+        raise HTTPException(
+            status_code=409, detail="context settlement conflict"
+        )
+    if settlement_state in {"pending", "settling", "promoting"}:
+        callback = dependencies.acknowledge_review_settlement
+        if callback is None:
+            raise HTTPException(
+                status_code=503, detail="Review settlement is not available"
+            )
+        try:
+            acknowledged = await callback(
+                key,
+                payload.turn_id,
+                accepted=True,
+                staged_turn=staged_turn,
+                expected_ledger_version=payload.ledger_version,
+                mutation_lock_held=True,
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503, detail="Review settlement is pending"
+            ) from exc
+        if not acknowledged:
+            raise HTTPException(
+                status_code=503, detail="Review settlement was not promoted"
+            )
+    try:
+        settlement = store.commit_staged_turn(
+            key,
+            payload.turn_id,
+            payload.ledger_version,
+            payload.ledger_version,
+            mutation_lock_held=True,
+        )
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=404, detail="context turn not found"
+        ) from exc
+    except ConversationTombstonedError as exc:
+        raise HTTPException(
+            status_code=409, detail="context settlement conflict"
+        ) from exc
+    except ContextVersionConflictError as exc:
+        raise HTTPException(
+            status_code=409, detail="context settlement conflict"
+        ) from exc
+    return ContextMutationResponse(
+        state=settlement.state,
+        context_version=settlement.context.context_version,
+    )
+
+
 def register_conversation_context_routes(
     app: FastAPI,
     dependencies: ContextRouteDependencies,
@@ -102,98 +242,38 @@ def register_conversation_context_routes(
                 status_code=404, detail="context turn not found"
             )
         review_metadata = review_settlement_metadata_from_turn(staged_turn)
-        if review_metadata is not None:
-            bounded_metadata = _bounded_review_stage_metadata(
-                review_metadata, allow_terminal=True
-            )
+        has_private_marker = isinstance(
+            staged_turn.stage_metadata, Mapping
+        ) and ("_review_settlement" in staged_turn.stage_metadata)
+        if review_metadata is not None or has_private_marker:
             try:
-                expected_stable = agent_thread_id(UUID(key), "ReviewAgent")
-            except ValueError:
-                expected_stable = None
-            if (
-                bounded_metadata is None
-                or bounded_metadata["turn_id"] != payload.turn_id
-                or bounded_metadata["stable_thread_id"] != expected_stable
-            ):
-                store.mark_review_settlement_failed(key, payload.turn_id)
+                mutation_lock = await _acquire_review_mutation_lock(store)
+            except ReviewMutationLockTimeoutError as exc:
                 raise HTTPException(
-                    status_code=503,
-                    detail="Review settlement metadata is invalid",
+                    status_code=503, detail="Review settlement is busy"
+                ) from exc
+            try:
+                return await _settle_review_turn(
+                    store=store,
+                    key=key,
+                    payload=payload,
+                    dependencies=dependencies,
                 )
-            context = store.load_context(key)
-            if context is not None and context.state == "tombstoned":
-                raise HTTPException(
-                    status_code=409,
-                    detail="context settlement conflict",
-                )
-            if staged_turn.ledger_version != payload.ledger_version:
-                raise HTTPException(
-                    status_code=409,
-                    detail="context settlement conflict",
-                )
-            if staged_turn.state == "staged":
-                current_version = (
-                    0 if context is None else context.context_version
-                )
-                if current_version != staged_turn.base_context_version:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="context settlement conflict",
-                    )
-            settlement_state = bounded_metadata["settlement_state"]
-            if staged_turn.state not in {"staged", "committed"}:
-                raise HTTPException(
-                    status_code=409,
-                    detail="context settlement conflict",
-                )
-            if staged_turn.state == "committed" and settlement_state != (
-                "promoted"
-            ):
-                raise HTTPException(
-                    status_code=409,
-                    detail="context settlement conflict",
-                )
-            if settlement_state == "settling":
-                raise HTTPException(
-                    status_code=503,
-                    detail="Review settlement is pending",
-                )
-            if settlement_state not in {"pending", "promoted"}:
-                raise HTTPException(
-                    status_code=409,
-                    detail="context settlement conflict",
-                )
-            if settlement_state == "pending":
-                callback = dependencies.acknowledge_review_settlement
-                if callback is None:
-                    raise HTTPException(
-                        status_code=503,
-                        detail="Review settlement is not available",
-                    )
-                try:
-                    acknowledged = await callback(
-                        key,
-                        payload.turn_id,
-                        accepted=True,
-                        staged_turn=staged_turn,
-                        expected_ledger_version=payload.ledger_version,
-                    )
-                except Exception as exc:
-                    raise HTTPException(
-                        status_code=503,
-                        detail="Review settlement is pending",
-                    ) from exc
-                if not acknowledged:
-                    raise HTTPException(
-                        status_code=503,
-                        detail="Review settlement was not promoted",
-                    )
+            finally:
+                mutation_lock.release()
+        try:
+            mutation_lock = await _acquire_review_mutation_lock(store)
+        except ReviewMutationLockTimeoutError as exc:
+            raise HTTPException(
+                status_code=503, detail="context settlement is busy"
+            ) from exc
         try:
             settlement = store.commit_staged_turn(
                 key,
                 payload.turn_id,
                 payload.ledger_version,
                 payload.ledger_version,
+                mutation_lock_held=True,
             )
         except KeyError as exc:
             raise HTTPException(
@@ -207,6 +287,8 @@ def register_conversation_context_routes(
             raise HTTPException(
                 status_code=409, detail="context settlement conflict"
             ) from exc
+        finally:
+            mutation_lock.release()
         return ContextMutationResponse(
             state=settlement.state,
             context_version=settlement.context.context_version,
@@ -225,26 +307,37 @@ def register_conversation_context_routes(
         _require_enabled(dependencies)
         store = dependencies.get_store()
         key = str(payload.conversation_key)
-        previous = store.load_context(key)
-        candidate_thread_ids = store.tombstone(key)
         try:
-            await _delete_checkpoint_threads(
-                payload.conversation_key, candidate_thread_ids
+            mutation_lock = await _acquire_review_mutation_lock(store)
+        except ReviewMutationLockTimeoutError as exc:
+            raise HTTPException(
+                status_code=503, detail="conversation deletion is busy"
+            ) from exc
+        try:
+            previous = store.load_context(key)
+            candidate_thread_ids = store.tombstone(
+                key, mutation_lock_held=True
             )
-        except Exception:  # noqa: BLE001 - deletion remains retryable
-            logger.warning("conversation checkpoint cleanup deferred")
-        else:
-            store.complete_checkpoint_cleanup(key)
-        context = store.load_context(key)
-        assert context is not None
-        return ContextMutationResponse(
-            state=(
-                "already_applied"
-                if previous is not None and previous.state == "tombstoned"
-                else "tombstoned"
-            ),
-            context_version=context.context_version,
-        )
+            try:
+                await _delete_checkpoint_threads(
+                    payload.conversation_key, candidate_thread_ids
+                )
+            except Exception:  # noqa: BLE001 - deletion remains retryable
+                logger.warning("conversation checkpoint cleanup deferred")
+            else:
+                store.complete_checkpoint_cleanup(key, mutation_lock_held=True)
+            context = store.load_context(key)
+            assert context is not None
+            return ContextMutationResponse(
+                state=(
+                    "already_applied"
+                    if previous is not None and previous.state == "tombstoned"
+                    else "tombstoned"
+                ),
+                context_version=context.context_version,
+            )
+        finally:
+            mutation_lock.release()
 
 
 __all__ = [

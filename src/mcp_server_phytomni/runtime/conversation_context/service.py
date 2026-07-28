@@ -113,13 +113,23 @@ _REVIEW_STAGE_FIELDS = frozenset(
         "settlement_state",
         "settlement_claim_token",
         "settlement_claimed_at",
+        "settlement_fence",
+        "settlement_ledger_version",
+        "settlement_base_context_version",
     }
 )
 _REVIEW_OPERATIONS = frozenset(
     {"new_review", "follow_up", "local_revision", "scope_change"}
 )
 _REVIEW_SETTLEMENT_STATES = frozenset(
-    {"pending", "settling", "promoted", "rejected", "failed"}
+    {
+        "pending",
+        "settling",
+        "promoting",
+        "promoted",
+        "rejected",
+        "failed",
+    }
 )
 
 
@@ -152,6 +162,31 @@ def _bounded_review_stage_metadata(
                 continue
             result[key] = candidate
         elif key in {"settlement_claim_token", "settlement_claimed_at"}:
+            if (
+                isinstance(candidate, str)
+                and candidate == candidate.strip()
+                and candidate
+                and len(candidate) <= 64
+            ):
+                result[key] = candidate
+        elif key == "settlement_fence":
+            if (
+                isinstance(candidate, bool)
+                or not isinstance(candidate, int)
+                or candidate < 1
+                or candidate > 2**63 - 1
+            ):
+                continue
+            result[key] = candidate
+        elif key == "settlement_base_context_version":
+            if (
+                isinstance(candidate, bool)
+                or not isinstance(candidate, int)
+                or candidate < 0
+            ):
+                continue
+            result[key] = candidate
+        elif key == "settlement_ledger_version":
             if (
                 isinstance(candidate, str)
                 and candidate == candidate.strip()
@@ -203,19 +238,49 @@ def _bounded_review_stage_metadata(
             return None
     elif result.get("candidate_thread_id") is not None:
         return None
-    if settlement_state == "settling":
-        if not {
+    if settlement_state in {"settling", "promoting", "promoted"}:
+        if settlement_state != "promoted" and not {
             "settlement_claim_token",
             "settlement_claimed_at",
         }.issubset(result):
             return None
-        try:
-            datetime.fromisoformat(result["settlement_claimed_at"])
-        except (TypeError, ValueError):
+        if settlement_state in {"settling", "promoting"} and not {
+            "settlement_fence",
+            "settlement_ledger_version",
+            "settlement_base_context_version",
+        }.issubset(result):
             return None
+        if settlement_state == "promoted" and (
+            "settlement_fence" not in result
+            or "settlement_ledger_version" not in result
+            or "settlement_base_context_version" not in result
+        ):
+            return None
+        if settlement_state == "promoted" and (
+            "settlement_claim_token" in result
+            or "settlement_claimed_at" in result
+        ):
+            return None
+        if settlement_state in {"settling", "promoting"}:
+            try:
+                datetime.fromisoformat(result["settlement_claimed_at"])
+            except (TypeError, ValueError):
+                return None
     elif (
         "settlement_claim_token" in result or "settlement_claimed_at" in result
     ):
+        return None
+    if settlement_state in {"pending", "rejected", "failed"} and any(
+        field in result
+        for field in (
+            "settlement_fence",
+            "settlement_ledger_version",
+            "settlement_base_context_version",
+        )
+    ):
+        # These fields are only emitted after a durable claim.  A pending
+        # marker with them has been partially mutated and must be retried via
+        # the store CAS, not treated as a fresh staged turn.
         return None
     return result
 
