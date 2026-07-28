@@ -242,10 +242,8 @@ def _replace_case(
     return AgentRoutingCase.model_validate(payload)
 
 
-def test_validate_dataset_rejects_duplicate_ids_questions_order_and_prefix() -> (
-    None
-):
-    """Reject duplicate identifiers, duplicate questions, ordering, prefixes."""
+def test_validate_dataset_rejects_duplicates_order_and_prefix() -> None:
+    """Reject duplicate IDs, questions, ordering, and prefixes."""
     cases = _synthetic_split("dev")
     cases[1] = cases[1].model_copy(update={"case_id": cases[0].case_id})
     with pytest.raises(DatasetValidationError, match="duplicate case ID"):
@@ -355,9 +353,7 @@ def test_brief_gene_source_identity_is_required() -> None:
         validate_dataset(cases, "dev")
 
 
-def test_validate_dataset_pair_rejects_collisions_and_allows_analyst_paraphrase() -> (
-    None
-):
+def test_validate_dataset_pair_collision_policies() -> None:
     """Check cross-split question and source-row collision policies."""
     dev = _synthetic_split("dev")
     test = _synthetic_split("test")
