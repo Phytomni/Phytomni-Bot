@@ -638,7 +638,10 @@ class BriefGeneConversationAdapter:
     @property
     def clarification_message(self) -> str:
         """Return a bounded clarification for unresolved operations."""
-        return "Please provide one unambiguous supported gene identifier and species."
+        return (
+            "Please provide one unambiguous supported gene identifier "
+            "and species."
+        )
 
     def mark_failed(self) -> None:
         """Make failed or incomplete output non-stageable."""
@@ -652,13 +655,15 @@ class BriefGeneConversationAdapter:
         active = self._active
         evidence = ", ".join(active.evidence_refs) or "none"
         return (
-            "Answer the Brief Gene follow-up using only the bounded active context. "
+            "Answer the Brief Gene follow-up using only "
+            "the bounded active context. "
             "Do not regenerate or quote the complete report.\n\n"
             f"[active gene]\n{active.gene_id or 'unknown'}\n\n"
             f"[species]\n{active.species_code or 'unknown'}\n\n"
             f"[report summary]\n{active.report_summary or 'none'}\n\n"
             f"[authorized evidence refs]\n{evidence}\n\n"
-            f"[current question]\n{_bounded_text(self._prepared.projection.current_query)}"
+            f"[current question]\n"
+            f"{_bounded_text(self._prepared.projection.current_query)}"
         )[:MAX_CONTEXT_TEXT_CHARS]
 
     async def follow_up(self, chat: ChatSeam) -> dict[str, Any]:
@@ -687,7 +692,8 @@ class BriefGeneConversationAdapter:
         *,
         resolved: object | None = None,
     ) -> bool:
-        """Capture current public output and replace active metadata on success."""
+        """Capture current public output and replace active metadata
+        on success."""
         if self._prepared is None:
             raise RuntimeError("prepare must run before capture_result")
         answer = _answer_text(result)

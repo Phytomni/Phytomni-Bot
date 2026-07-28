@@ -145,7 +145,8 @@ async def brief_gene_function(
         if conversation_adapter.operation is None:
             if conversation_projection is None:
                 return brief_gene_clarification_result(
-                    "Brief Gene context is unavailable; please clarify the gene."
+                    "Brief Gene context is unavailable; please clarify "
+                    "the gene."
                 )
             conversation_adapter.prepare(conversation_projection)
         operation = conversation_adapter.operation

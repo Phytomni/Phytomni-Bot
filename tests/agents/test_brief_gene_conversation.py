@@ -120,7 +120,10 @@ def _full_result(
         "choices": [
             {
                 "message": {
-                    "content": "# Brief Gene Analysis\n\nRice gene report [1].",
+                    "content": (
+                        "# Brief Gene Analysis\n\n"
+                        "Rice gene report [1]."
+                    ),
                     "doc_list": [{"source_id": "paper-1", "title": "Paper"}],
                     "total": 10000,
                 }
@@ -549,7 +552,8 @@ def test_capture_result_stages_file_id_evidence_reference() -> None:
 
 
 def test_brief_gene_invocation_keeps_private_state_and_stable_thread() -> None:
-    """Context dispatch passes the operation adapter outside public arguments."""
+    """Context dispatch passes the operation adapter outside public
+    arguments."""
     projection = _projection("Where is it expressed?", active=True)
     dispatch = brief_gene_agent_invocation(projection)
     assert dispatch.arguments == {
