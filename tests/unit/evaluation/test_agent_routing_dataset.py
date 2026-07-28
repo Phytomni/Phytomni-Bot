@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -16,8 +17,19 @@ from scripts.agent_routing_eval.dataset import (
     AgentRoutingCase,
     DatasetValidationError,
     load_dataset,
+    validate_dataset,
+    validate_dataset_pair,
     verify_workbook_sources,
 )
+
+from mcp_server_phytomni.agents.network.to_ontology import (
+    DEPRECATED_UPSTREAM_STATUS,
+    load_to_ontology,
+)
+from mcp_server_phytomni.agents.shared.species_catalog import (
+    supported_species_codes,
+)
+from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 
 pytestmark = pytest.mark.unit
 
@@ -122,3 +134,382 @@ def test_workbook_verifier_rejects_missing_source_text() -> None:
     )
     with pytest.raises(ValidationError, match="source_text"):
         AgentRoutingCase.model_validate(case)
+
+
+def _synthetic_case(
+    case_id: str,
+    agent: str,
+    language: str,
+    overrides: dict[str, object] | None = None,
+) -> AgentRoutingCase:
+    """Build a deterministic synthetic case for validator tests."""
+    overrides = overrides or {}
+    question = overrides.get("question")
+    expected_core_args = overrides.get("expected_core_args")
+    source = overrides.get("source")
+    transformation = overrides.get("transformation")
+    if expected_core_args is None:
+        model = next(
+            model
+            for name, _description, model in AGENT_TOOL_DEFINITIONS
+            if name.value == agent
+        )
+        schema = model.model_json_schema()
+        key = schema["required"][0]
+        if key == "species_code":
+            value = next(iter(supported_species_codes()))
+        elif key == "to_id":
+            value = next(
+                entry.id
+                for entry in load_to_ontology()
+                if entry.status != DEPRECATED_UPSTREAM_STATUS
+            )
+        else:
+            value = "AT1" if agent == "BriefGeneAgent" else "value"
+        expected_core_args = {key: value}
+    if source is None:
+        if agent == "BriefGeneAgent":
+            source = {
+                "kind": "workbook",
+                "workbook": f"{case_id}.xlsx",
+                "sheet": "Sheet1",
+                "row": 1,
+                "source_id": case_id,
+            }
+            transformation = {
+                "kind": "verbatim",
+                "source_text": "AT1",
+            }
+        else:
+            source = {
+                "kind": "authored_chat",
+                "category": "general_knowledge",
+                "rationale": "Synthetic test case.",
+            }
+            transformation = {"kind": "authored_chat"}
+    return AgentRoutingCase.model_validate(
+        {
+            "case_id": case_id,
+            "question": question or f"Question {case_id}",
+            "expected_agent": agent,
+            "expected_core_args": expected_core_args,
+            "language": language,
+            "source": source,
+            "transformation": transformation,
+        }
+    )
+
+
+def _synthetic_split(split: str) -> list[AgentRoutingCase]:
+    """Build a complete split with the required inventory and language mix."""
+    english_counts = {
+        agent: (
+            3
+            if agent
+            in {
+                "ChatAgent",
+                "KnowledgeAgent",
+                "DataAgent",
+                "AnalystAgent",
+                "ReviewAgent",
+            }
+            else 2
+        )
+        for agent in {
+            name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
+        }
+    }
+    per_agent = 5 if split == "dev" else 10
+    cases: list[AgentRoutingCase] = []
+    number = 1
+    for name, _description, _model in AGENT_TOOL_DEFINITIONS:
+        english = english_counts[name.value] if split == "dev" else 5
+        for index in range(per_agent):
+            language = "en" if index < english else "zh"
+            cases.append(
+                _synthetic_case(f"{split}-{number:03d}", name.value, language)
+            )
+            number += 1
+    return cases
+
+
+def _replace_case(
+    case: AgentRoutingCase, **updates: object
+) -> AgentRoutingCase:
+    """Apply updates through model validation for nested test fixtures."""
+    payload = case.model_dump()
+    payload.update(updates)
+    return AgentRoutingCase.model_validate(payload)
+
+
+def test_validate_dataset_rejects_duplicate_ids_questions_order_and_prefix() -> (
+    None
+):
+    """Reject duplicate identifiers, duplicate questions, ordering, prefixes."""
+    cases = _synthetic_split("dev")
+    cases[1] = cases[1].model_copy(update={"case_id": cases[0].case_id})
+    with pytest.raises(DatasetValidationError, match="duplicate case ID"):
+        validate_dataset(cases, "dev")
+
+    cases = _synthetic_split("dev")
+    cases[1] = cases[1].model_copy(update={"question": cases[0].question})
+    with pytest.raises(
+        DatasetValidationError, match="duplicate exact question"
+    ):
+        validate_dataset(cases, "dev")
+
+    cases = _synthetic_split("dev")
+    cases[0], cases[1] = cases[1], cases[0]
+    with pytest.raises(DatasetValidationError, match="not sorted"):
+        validate_dataset(cases, "dev")
+
+    cases = _synthetic_split("dev")
+    cases[-1] = cases[-1].model_copy(update={"case_id": "test-999"})
+    with pytest.raises(DatasetValidationError, match="wrong split prefix"):
+        validate_dataset(cases, "dev")
+
+
+def test_validate_dataset_rejects_inventory_language_agent_and_schema() -> (
+    None
+):
+    """Reject split balance, unknown agents, and schema-incompatible keys."""
+    cases = _synthetic_split("dev")[:-1]
+    with pytest.raises(DatasetValidationError, match="expected 50"):
+        validate_dataset(cases, "dev")
+
+    cases = _synthetic_split("dev")
+    cases[0] = cases[0].model_copy(update={"language": "zh"})
+    with pytest.raises(DatasetValidationError, match="language count"):
+        validate_dataset(cases, "dev")
+
+    cases = _synthetic_split("dev")
+    cases[0] = cases[0].model_copy(update={"expected_agent": "UnknownAgent"})
+    with pytest.raises(
+        DatasetValidationError, match="unknown canonical agent"
+    ):
+        validate_dataset(cases, "dev")
+
+    cases = _synthetic_split("dev")
+    args = {"user_query": "value", "not_a_schema_key": True}
+    cases[0] = cases[0].model_copy(update={"expected_core_args": args})
+    with pytest.raises(DatasetValidationError, match="not in .* schema"):
+        validate_dataset(cases, "dev")
+
+
+def test_validate_dataset_rejects_species_and_to_identifiers() -> None:
+    """Reject unsupported species and unknown or deprecated TO identifiers."""
+    cases = _synthetic_split("dev")
+    network_index = next(
+        i
+        for i, case in enumerate(cases)
+        if case.expected_agent == "GeneNetworkAgent"
+    )
+    cases[network_index] = cases[network_index].model_copy(
+        update={"expected_core_args": {"species_code": "XXX"}}
+    )
+    with pytest.raises(
+        DatasetValidationError, match="unsupported species_code"
+    ):
+        validate_dataset(cases, "dev")
+
+    cases = _synthetic_split("dev")
+    network_index = next(
+        i
+        for i, case in enumerate(cases)
+        if case.expected_agent == "GeneNetworkAgent"
+    )
+    cases[network_index] = cases[network_index].model_copy(
+        update={"expected_core_args": {"to_id": "TO:XXX"}}
+    )
+    with pytest.raises(DatasetValidationError, match="unknown or deprecated"):
+        validate_dataset(cases, "dev")
+
+    deprecated = next(
+        entry.id
+        for entry in load_to_ontology()
+        if entry.status == DEPRECATED_UPSTREAM_STATUS
+    )
+    cases[network_index] = cases[network_index].model_copy(
+        update={"expected_core_args": {"to_id": deprecated}}
+    )
+    with pytest.raises(DatasetValidationError, match="unknown or deprecated"):
+        validate_dataset(cases, "dev")
+
+
+def test_brief_gene_source_identity_is_required() -> None:
+    """Reject a BriefGene ID absent from retained workbook source text."""
+    cases = _synthetic_split("dev")
+    brief_index = next(
+        i
+        for i, case in enumerate(cases)
+        if case.expected_agent == "BriefGeneAgent"
+    )
+    source = cases[brief_index].source.model_copy(update={"row": 2})
+    transformation = cases[brief_index].transformation.model_copy(
+        update={"source_text": "unrelated-gene"}
+    )
+    cases[brief_index] = cases[brief_index].model_copy(
+        update={"source": source, "transformation": transformation}
+    )
+    with pytest.raises(DatasetValidationError, match="BriefGene ID"):
+        validate_dataset(cases, "dev")
+
+
+def test_validate_dataset_pair_rejects_collisions_and_allows_analyst_paraphrase() -> (
+    None
+):
+    """Check cross-split question and source-row collision policies."""
+    dev = _synthetic_split("dev")
+    test = _synthetic_split("test")
+    test[0] = test[0].model_copy(update={"question": dev[0].question})
+    with pytest.raises(DatasetValidationError, match="identical question"):
+        validate_dataset_pair(dev, test)
+
+    test = _synthetic_split("test")
+    shared_source = {
+        "kind": "workbook",
+        "workbook": "shared.xlsx",
+        "sheet": "Sheet1",
+        "row": 1,
+        "source_id": "Q_SHARED",
+    }
+    shared_transformation = {
+        "kind": "verbatim",
+        "source_text": "shared source",
+    }
+    dev[0] = _replace_case(
+        dev[0], source=shared_source, transformation=shared_transformation
+    )
+    test[0] = _replace_case(
+        test[0], source=shared_source, transformation=shared_transformation
+    )
+    with pytest.raises(DatasetValidationError, match="source-row collision"):
+        validate_dataset_pair(dev, test)
+
+    dev = _synthetic_split("dev")
+    test = _synthetic_split("test")
+    analyst_dev = next(
+        i
+        for i, case in enumerate(dev)
+        if case.expected_agent == "AnalystAgent"
+    )
+    analyst_test = next(
+        i
+        for i, case in enumerate(test)
+        if case.expected_agent == "AnalystAgent"
+    )
+    analyst_source = {
+        "kind": "workbook",
+        "workbook": "analyst-shared.xlsx",
+        "sheet": "Sheet1",
+        "row": 1,
+        "source_id": "Q_ANALYST",
+    }
+    analyst_transformation = {
+        "kind": "verbatim",
+        "source_text": "analyst source",
+    }
+    dev[analyst_dev] = _replace_case(
+        dev[analyst_dev],
+        source=analyst_source,
+        transformation=analyst_transformation,
+    )
+    test[analyst_test] = _replace_case(
+        test[analyst_test],
+        source=analyst_source,
+        transformation=analyst_transformation,
+    )
+    validate_dataset_pair(dev, test)
+
+
+def _workbook_case(tmp_path: Path) -> tuple[AgentRoutingCase, Path]:
+    """Create a valid one-row workbook fixture and matching case."""
+    openpyxl: Any = __import__("openpyxl")
+    root = tmp_path / "sources"
+    root.mkdir()
+    workbook: Any = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.title = "Sheet1"
+    sheet.append(["Q_1", "Plant height in rice"])
+    workbook.save(root / "source.xlsx")
+    workbook.close()
+    case = _synthetic_case(
+        "dev-source",
+        "ChatAgent",
+        "en",
+        {
+            "source": {
+                "kind": "workbook",
+                "workbook": "source.xlsx",
+                "sheet": "Sheet1",
+                "row": 1,
+                "source_id": "Q_1",
+            },
+            "transformation": {
+                "kind": "verbatim",
+                "source_text": "Plant height in rice",
+            },
+        },
+    )
+    return case, root
+
+
+@pytest.mark.parametrize(
+    "failure", ["workbook", "sheet", "row", "source_id", "source_text"]
+)
+def test_workbook_verifier_rejects_missing_physical_provenance(
+    tmp_path: Path, failure: str
+) -> None:
+    """Reject missing workbook, sheet, row, and source ID evidence."""
+    case, root = _workbook_case(tmp_path)
+    if failure == "workbook":
+        root.joinpath("source.xlsx").unlink()
+    elif failure == "sheet":
+        case = case.model_copy(
+            update={
+                "source": case.source.model_copy(update={"sheet": "Missing"})
+            }
+        )
+    elif failure == "row":
+        case = case.model_copy(
+            update={"source": case.source.model_copy(update={"row": 2})}
+        )
+    elif failure == "source_id":
+        case = case.model_copy(
+            update={
+                "source": case.source.model_copy(update={"source_id": "Q_2"})
+            }
+        )
+    else:
+        case = case.model_copy(
+            update={
+                "transformation": case.transformation.model_copy(
+                    update={"source_text": "Missing source text"}
+                )
+            }
+        )
+    with pytest.raises(DatasetValidationError):
+        verify_workbook_sources((case,), root)
+
+
+def test_workbook_verifier_rejects_symlink_outside_root(
+    tmp_path: Path,
+) -> None:
+    """Reject a basename symlink whose resolved target escapes source_root."""
+    case, root = _workbook_case(tmp_path)
+    outside = tmp_path / "outside.xlsx"
+    outside.write_bytes(root.joinpath("source.xlsx").read_bytes())
+    root.joinpath("source.xlsx").unlink()
+    root.joinpath("source.xlsx").symlink_to(outside)
+    with pytest.raises(DatasetValidationError, match="outside source root"):
+        verify_workbook_sources((case,), root)
+
+
+def test_workbook_verifier_reports_missing_openpyxl(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Name the [demo] extra when openpyxl is unavailable."""
+    case, root = _workbook_case(tmp_path)
+    monkeypatch.setitem(sys.modules, "openpyxl", None)
+    with pytest.raises(DatasetValidationError, match=r"\[demo\]"):
+        verify_workbook_sources((case,), root)
