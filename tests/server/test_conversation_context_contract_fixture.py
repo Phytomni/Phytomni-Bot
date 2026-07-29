@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Literal
 
 import pytest
+from pydantic import Field, StrictBool, TypeAdapter
 
 from mcp_server_phytomni.api.schemas import (
     ContextMutationResponse,
@@ -20,9 +20,6 @@ from mcp_server_phytomni.runtime.conversation_context.models import (
 )
 from mcp_server_phytomni.runtime.conversation_context.models import (
     ConversationEnvelopeV1,
-)
-from mcp_server_phytomni.runtime.conversation_context.service import (
-    ContextStageMetadata,
 )
 
 pytestmark = pytest.mark.server
@@ -37,6 +34,11 @@ _FIXTURE = (
 _CANONICAL_AGENT_IDS = [
     name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
 ]
+_STAGE_TURN_ID = TypeAdapter(
+    Annotated[str, Field(pattern=r"^[1-9][0-9]{0,18}$")]
+)
+_STAGE_SCHEMA_VERSION = TypeAdapter(Literal[1])
+_STAGE_CONTEXT_DEGRADED = TypeAdapter(StrictBool)
 
 
 def _fixture() -> dict[str, Any]:
@@ -80,47 +82,25 @@ def test_fixture_responses_are_emitted_by_current_models() -> None:
         response = ContextMutationResponse.model_validate(responses[name])
         assert response.model_dump(mode="json") == responses[name]
 
-    staged = responses["staged_metadata_response"]
-    stage = ContextStageMetadata(
-        selected_agent_id=staged["selected_agent_id"],
-        route_source=staged["route_source"],
-        route_reason_code=staged["route_reason_code"],
-        base_business_context_version=staged["base_business_context_version"],
-        proposed_business_context_version=staged[
-            "proposed_business_context_version"
-        ],
-        last_applied_ledger_cursor=staged["last_applied_ledger_cursor"],
-        context_truncated=staged["context_truncated"],
-        context_rebuilt=staged["context_rebuilt"],
-        context_degraded=staged["context_degraded"],
-    )
-    assert asdict(stage) == {
-        key: staged[key]
-        for key in staged
-        if key not in {"schema_version", "turn_id"}
-    }
+    for name in ("staged_metadata_response", "degraded_context_success"):
+        stage = responses[name]
+        common = ProjectionStageMetadata.model_validate(
+            {key: stage[key] for key in ProjectionStageMetadata.model_fields}
+        )
+        round_tripped = {
+            "schema_version": _STAGE_SCHEMA_VERSION.validate_python(
+                stage["schema_version"]
+            ),
+            "turn_id": _STAGE_TURN_ID.validate_python(stage["turn_id"]),
+            **common.model_dump(mode="json"),
+            "context_degraded": _STAGE_CONTEXT_DEGRADED.validate_python(
+                stage["context_degraded"]
+            ),
+        }
+        assert round_tripped == stage
 
-    degraded = responses["degraded_context_success"]
-    degraded_stage = ContextStageMetadata(
-        selected_agent_id=degraded["selected_agent_id"],
-        route_source=degraded["route_source"],
-        route_reason_code=degraded["route_reason_code"],
-        base_business_context_version=degraded[
-            "base_business_context_version"
-        ],
-        proposed_business_context_version=degraded[
-            "proposed_business_context_version"
-        ],
-        last_applied_ledger_cursor=degraded["last_applied_ledger_cursor"],
-        context_truncated=degraded["context_truncated"],
-        context_rebuilt=degraded["context_rebuilt"],
-        context_degraded=degraded["context_degraded"],
-    )
-    assert asdict(degraded_stage) == {
-        key: degraded[key]
-        for key in degraded
-        if key not in {"schema_version", "turn_id"}
-    }
+    assert responses["staged_metadata_response"]["context_degraded"] is False
+    assert responses["degraded_context_success"]["context_degraded"] is True
 
 
 def test_fixture_does_not_contain_sensitive_or_unbounded_content() -> None:

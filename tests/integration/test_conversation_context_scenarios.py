@@ -9,10 +9,19 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+import tests.conftest as test_config
 from tests.support.chat_fakes import install_chat_handler
+from tests.support.http_fakes import open_asgi_client
 
+import mcp_server_phytomni.api.app as api_app
+from mcp_server_phytomni.agents.expert import ToolSelection
 from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
+from mcp_server_phytomni.api.app import create_app
+from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest
+from mcp_server_phytomni.runtime.conversation_context.adapters import (
+    ConversationContextExecutor,
+)
 from mcp_server_phytomni.runtime.conversation_context.models import (
     ArtifactRefV1,
     ContextDelta,
@@ -32,7 +41,23 @@ from mcp_server_phytomni.runtime.conversation_context.store import (
     ConversationContextStore,
 )
 
-pytestmark = pytest.mark.integration
+pytestmark = pytest.mark.server
+
+
+_ORIGINAL_LAYER_MARKER = test_config._layer_marker_for_item
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """Keep this fake-boundary module out of the live integration skip gate."""
+    del metafunc
+
+    def _layer_marker(item: pytest.Item) -> str | None:
+        if Path(item.path).resolve() == Path(__file__).resolve():
+            return "server"
+        return _ORIGINAL_LAYER_MARKER(item)
+
+    test_config._layer_marker_for_item = _layer_marker
+
 
 _CANONICAL_AGENT_IDS = (
     "ChatAgent",
@@ -272,7 +297,7 @@ async def test_expert_forced_then_automatic_uses_fresh_complete_allowlist(
 async def test_knowledge_data_review_preserve_refs_without_full_text(
     tmp_path: Path,
 ) -> None:
-    """Cross-agent projections carry only bounded entities and artifact refs."""
+    """Cross-agent projections carry bounded entities and artifact refs."""
     projections: dict[str, Any] = {}
     artifact = ArtifactRefV1(
         artifact_id="artifact-evidence",
@@ -377,10 +402,11 @@ async def test_knowledge_data_review_preserve_refs_without_full_text(
     assert "full report" not in str(prepared.stored_turn.delta)
 
 
-async def test_brief_gene_pronoun_reuses_context_and_new_identifier_replaces_it(
+async def test_brief_gene_context_reuses_and_replaces_identifier(
     tmp_path: Path,
 ) -> None:
-    """Brief Gene receives the prior entity for a follow-up and a new one later."""
+    """Brief Gene receives the prior entity for a follow-up and a new
+    identifier later."""
     calls: list[tuple[str, list[str], str]] = []
 
     async def router(*_args: Any, **_kwargs: Any) -> AgentSelection:
@@ -486,7 +512,7 @@ async def test_brief_gene_pronoun_reuses_context_and_new_identifier_replaces_it(
 async def test_permission_revocation_blocks_explicit_and_automatic_selection(
     tmp_path: Path,
 ) -> None:
-    """A fresh allowlist prevents both forced and routed use of a revoked agent."""
+    """A fresh allowlist prevents forced and automatic agent selection."""
     invoked = 0
 
     async def router(*_args: Any, **_kwargs: Any) -> AgentSelection:
@@ -738,48 +764,127 @@ async def test_cross_owner_boundary_isolates_dialogues_and_artifacts(
 
 
 async def test_async_expert_selection_keeps_running_202_lifecycle(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Async Expert selection delegates a running result without sync staging."""
-    invoked: list[str] = []
-    delegated: list[str] = []
+    """The public Expert route maps an async selection to HTTP 202."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    db_path = tmp_path / "conversation.sqlite"
+    keys_path = tmp_path / "keys.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(keys_path))
+    key = ApiKeyStore(str(keys_path)).create(user_id="u1").api_key
+    selected: dict[str, Any] = {}
+    invoked: dict[str, Any] = {}
 
-    async def router(*_args: Any, **_kwargs: Any) -> AgentSelection:
-        return AgentSelection("AnalystAgent", "ROUTER")
-
-    async def invoke(*_args: Any, **_kwargs: Any) -> AgentOutcome:
-        invoked.append("sync")
-        return _outcome("AnalystAgent")
-
-    async def delegate(agent: str, _envelope: Any) -> dict[str, object]:
-        delegated.append(agent)
-        return {
-            "status": "running",
-            "id": "run-opaque",
-            "task_ids": ["task-opaque"],
-        }
-
-    service = _service(
-        tmp_path, router=router, invoke=invoke, delegate_async=delegate
-    )
-    prepared = await service.execute_turn(
-        _envelope(
-            key=_conversation_key(11),
-            turn_id="1",
-            message="Submit the bounded analysis.",
-            allowed_agent_ids=_CANONICAL_AGENT_IDS,
+    async def select_agent(
+        _query: str,
+        _history: Any,
+        *,
+        allowed_tools: Any,
+        forced_tool: Any,
+    ) -> ToolSelection:
+        selected["allowed_tools"] = tuple(allowed_tools)
+        selected["forced_tool"] = forced_tool
+        return ToolSelection(
+            "AnalystAgent",
+            {
+                "goal_description": "Submit the bounded analysis.",
+                "data_list": {},
+                "obs_file_list": [],
+            },
         )
-    )
 
-    assert prepared.status is PrepareStatus.READY
-    assert prepared.result == {
-        "status": "running",
+    async def fake_invoke_agent_run(
+        *,
+        agent: str,
+        arguments: dict[str, Any],
+        **kwargs: Any,
+    ) -> tuple[dict[str, Any], int]:
+        invoked.update(
+            agent=agent,
+            arguments=arguments,
+            conversation_messages=kwargs["conversation_messages"],
+        )
+        return (
+            {
+                "id": "run-opaque",
+                "object": "agent.run",
+                "agent": agent,
+                "status": "running",
+                "task_ids": ["task-opaque"],
+                "result": {"formatted": {}},
+            },
+            202,
+        )
+
+    executor = ConversationContextExecutor(
+        store_factory=lambda: ConversationContextStore(str(db_path)),
+        select_agent=select_agent,
+    )
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke_agent_run)
+    envelope = _envelope(
+        key=_conversation_key(11),
+        turn_id="1",
+        message="Submit the bounded analysis.",
+        allowed_agent_ids=_CANONICAL_AGENT_IDS,
+    )
+    async with open_asgi_client(
+        monkeypatch,
+        create_app(context_executor=executor),
+        base_url="http://api.context.test",
+    ) as client:
+        response = await client.post(
+            "/v1/query/route",
+            headers={"Authorization": f"Bearer {key}"},
+            json={
+                "user_query": "legacy query is ignored by V1 dispatch",
+                "allowed_tools": list(_CANONICAL_AGENT_IDS),
+                "conversation": envelope.model_dump(mode="json"),
+            },
+        )
+
+    assert response.status_code == 202
+    assert response.json() == {
         "id": "run-opaque",
+        "object": "agent.run",
+        "agent": "analyst",
+        "status": "running",
         "task_ids": ["task-opaque"],
+        "result": {
+            "formatted": {
+                "answer": "",
+                "follow_up_questions": [],
+                "references": [],
+                "tabular": {},
+                "metadata": {},
+            },
+            "execution": {
+                "tracking": {"degraded": False},
+                "warnings": [],
+                "tasks": [{"id": "task-opaque", "accepted": True}],
+                "artifacts": [],
+                "output_dirs": [],
+                "report": None,
+                "diagnostics": [],
+            },
+        },
     }
-    assert delegated == ["AnalystAgent"]
-    assert invoked == []
-    assert prepared.stage is None
+    assert selected == {
+        "allowed_tools": _CANONICAL_AGENT_IDS,
+        "forced_tool": None,
+    }
+    assert invoked == {
+        "agent": "analyst",
+        "arguments": {
+            "goal_description": "Submit the bounded analysis.",
+            "data_list": {},
+            "obs_file_list": [],
+            "user_query": "Submit the bounded analysis.",
+            "locale": "en-US",
+        },
+        "conversation_messages": (),
+    }
 
 
 async def test_legacy_request_and_response_shape_stay_v0_when_context_is_off(
