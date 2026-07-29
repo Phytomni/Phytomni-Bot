@@ -57,7 +57,6 @@ from .run_registry_reports import (
 )
 from .sqlite import sqlite_transaction
 from .task_manager import (
-    RunContext,
     Submission,
     TaskManager,
     _expires_at_for,
@@ -319,7 +318,23 @@ class RunRegistry:
             ).fetchone()
             if row is None or row[0] != "running":
                 return False
+            expected_identity = (run_id, owner, agent)
+            task_ids: set[str] = set()
             for submission in submissions:
+                ctx = submission.run_context
+                if (
+                    ctx is None
+                    or (
+                        ctx.run_id,
+                        ctx.user_id,
+                        ctx.agent,
+                    )
+                    != expected_identity
+                ):
+                    return False
+                if submission.task_id in task_ids:
+                    return False
+                task_ids.add(submission.task_id)
                 existing = conn.execute(
                     """
                     SELECT run_id, user_id, agent FROM tasks
@@ -327,10 +342,11 @@ class RunRegistry:
                     """,
                     (submission.task_id,),
                 ).fetchone()
-                if existing is not None and existing != (run_id, owner, agent):
+                if existing is not None and existing != expected_identity:
                     return False
             for submission in submissions:
-                ctx = submission.run_context or RunContext()
+                ctx = submission.run_context
+                assert ctx is not None
                 conn.execute(
                     """
                     INSERT INTO tasks (
