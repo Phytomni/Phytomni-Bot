@@ -46,14 +46,13 @@ from mcp_server_phytomni.api.schemas import ExpertQueryRequest
 from mcp_server_phytomni.config.defaults import ApiConfig, ServerConfig
 from mcp_server_phytomni.mcp import handlers as mcp_handlers
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
-from mcp_server_phytomni.runtime.run_registry import RunRecord, RunRegistry
 from mcp_server_phytomni.runtime.conversation_context.projection import (
     agent_thread_id as context_agent_thread_id,
 )
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ConversationContextStore,
 )
-from mcp_server_phytomni.runtime.run_registry import RunRegistry
+from mcp_server_phytomni.runtime.run_registry import RunRecord, RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 from mcp_server_phytomni.runtime.upload_registry import (
     UploadMetadata,
