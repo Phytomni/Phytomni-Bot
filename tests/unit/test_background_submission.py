@@ -201,6 +201,7 @@ async def test_degraded_tracking_fails_with_safe_accepted_projection(
     assert record.status == "failed"
     assert record.error == "background_submission_tracking_failed"
     assert record.task_ids == ()
+    assert record.result is not None
     assert record.result["execution"] == {
         "tracking": {"degraded": True},
         "warnings": [],
@@ -274,6 +275,7 @@ async def test_partial_submission_stays_running_with_degraded_warning(
                 )
             )
             is not None
+            and record.result is not None
             and record.result.get("execution", {}).get("tracking")
             == {"degraded": True}
         )
@@ -283,6 +285,7 @@ async def test_partial_submission_stays_running_with_degraded_warning(
     assert record is not None
     assert record.status == "running"
     assert record.task_ids == ("accepted-1",)
+    assert record.result is not None
     assert record.result["execution"]["tracking"] == {"degraded": True}
 
 
