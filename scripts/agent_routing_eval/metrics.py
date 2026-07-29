@@ -353,7 +353,8 @@ def compute_metrics(
     )
     errors = {
         "provider": sum(
-            item.predicted_agent == PROVIDER_ERROR for item in outcome_records
+            _confusion_bucket(item) == PROVIDER_ERROR
+            for item in outcome_records
         ),
         "routing": sum(
             _confusion_bucket(item) == ROUTING_ERROR
@@ -361,6 +362,7 @@ def compute_metrics(
         ),
         "schema": sum(
             item.error_code == "schema_validation_error"
+            and _confusion_bucket(item) not in {PROVIDER_ERROR, ROUTING_ERROR}
             for item in outcome_records
         ),
     }
@@ -417,7 +419,7 @@ def compute_metrics(
         },
         "errors": errors,
         "provider_completion": _ratio(
-            sum(item.provider_completed for item in outcome_records),
+            run_count - errors["provider"],
             run_count,
         ),
         "latency_ms": {
@@ -623,6 +625,8 @@ def _validate_languages(
             return False
         if not _valid_count(dispatchable_correct, row_case_count):
             return False
+        if dispatchable_correct > top1_correct:
+            return False
         if not _consistent_rate(
             row["top1_accuracy"], top1_correct, row_case_count
         ):
@@ -647,42 +651,66 @@ def _validate_confusion(
     value: object,
     case_count: int,
     rows: Mapping[str, Mapping[str, object]],
-) -> bool:
+) -> dict[str, int] | None:
     expected_keys = frozenset({"basis", *_CANONICAL_AGENTS})
     if not _has_exact_keys(value, expected_keys):
-        return False
+        return None
     if value["basis"] != _BASIS_CASE_MAJORITY:  # type: ignore[index]
-        return False
+        return None
     columns = {column: 0 for column in _CONFUSION_COLUMNS}
+    diagonal = {agent: 0 for agent in _CANONICAL_AGENTS}
     for agent in _CANONICAL_AGENTS:
         row = value[agent]  # type: ignore[index]
         if not _has_exact_keys(row, frozenset(_CONFUSION_COLUMNS)):
-            return False
+            return None
         row_total = 0
         for column in _CONFUSION_COLUMNS:
             count = row[column]
             if not _valid_count(count, case_count):
-                return False
+                return None
             row_total += count
             columns[column] += count
+            if column == agent:
+                diagonal[agent] = count
         if row_total != rows[agent]["support"]:
-            return False
+            return None
     if sum(columns.values()) != case_count:
-        return False
-    return all(
+        return None
+    if not all(
         columns[agent] == rows[agent]["predicted"]
         for agent in _CANONICAL_AGENTS
-    )
+    ):
+        return None
+    return diagonal
 
 
-def _validate_stability(value: object) -> bool:
+def _validate_stability(value: object, case_count: int) -> bool:
     if not _has_exact_keys(value, _STABILITY_KEYS):
         return False
     if not all(
         _rate(value[key]) for key in _STABILITY_KEYS  # type: ignore[index]
     ):
         return False
-    return value["exact"] <= value["modal_agreement"]  # type: ignore[index]
+    exact = float(value["exact"])  # type: ignore[index]
+    modal = float(value["modal_agreement"])  # type: ignore[index]
+    if modal < 1.0 / 3.0 or exact > modal:
+        return False
+    exact_count = exact * case_count
+    modal_votes = modal * (3 * case_count)
+    tolerance = 1e-9
+    if not math.isclose(
+        exact_count, round(exact_count), rel_tol=0.0, abs_tol=tolerance
+    ):
+        return False
+    if not math.isclose(
+        modal_votes, round(modal_votes), rel_tol=0.0, abs_tol=tolerance
+    ):
+        return False
+    stable_cases = round(exact_count)
+    unstable_cases = case_count - stable_cases
+    lower = (stable_cases + unstable_cases / 3.0) / case_count
+    upper = (stable_cases + unstable_cases * 2.0 / 3.0) / case_count
+    return lower - tolerance <= modal <= upper + tolerance
 
 
 def _validate_core(value: object, planned_runs: int) -> bool:
@@ -703,10 +731,15 @@ def _validate_core(value: object, planned_runs: int) -> bool:
 
 
 def _validate_errors(value: object, planned_runs: int) -> bool:
-    return _has_exact_keys(value, _ERROR_KEYS_SET) and all(
+    if not _has_exact_keys(value, _ERROR_KEYS_SET):
+        return False
+    if not all(
         _valid_count(value[key], planned_runs)  # type: ignore[index]
         for key in _ERROR_KEYS
-    )
+    ):
+        return False
+    error_total = sum(value[key] for key in _ERROR_KEYS)  # type: ignore[index]
+    return error_total <= planned_runs
 
 
 def _validate_latency(value: object) -> bool:
@@ -756,18 +789,34 @@ def thresholds_pass(metrics: Mapping[str, object]) -> bool:
             metrics["by_language"], case_count, majority
         ):
             return False
-        if not _validate_confusion(
+        confusion_diagonal = _validate_confusion(
             metrics["confusion_matrix"], case_count, rows
+        )
+        if confusion_diagonal is None:
+            return False
+        true_positive_total = sum(
+            rows[agent]["true_positive"] for agent in _CANONICAL_AGENTS
+        )
+        if majority["top1_correct"] != true_positive_total:
+            return False
+        if any(
+            rows[agent]["true_positive"] != confusion_diagonal[agent]
+            for agent in _CANONICAL_AGENTS
         ):
             return False
-        if not _validate_stability(metrics["stability"]):
+        if not _validate_stability(metrics["stability"], case_count):
             return False
         if not _validate_core(metrics["core_arguments"], planned_runs):
             return False
-        if not _validate_errors(metrics["errors"], planned_runs):
+        errors = metrics["errors"]
+        if not _validate_errors(errors, planned_runs):
             return False
         provider_completion = metrics["provider_completion"]
-        if not _rate(provider_completion):
+        if not _consistent_rate(
+            provider_completion,
+            planned_runs - errors["provider"],
+            planned_runs,
+        ):
             return False
         if not _validate_latency(metrics["latency_ms"]):
             return False
