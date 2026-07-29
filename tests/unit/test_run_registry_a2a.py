@@ -11,6 +11,9 @@ import pytest
 from a2a.types import TaskState
 
 from mcp_server_phytomni.api.a2a.executor import task_from_run_record
+from mcp_server_phytomni.runtime.execution_defaults import (
+    empty_execution_projection,
+)
 from mcp_server_phytomni.runtime.run_registry import (
     A2ACorrelation,
     RunOutcome,
@@ -20,6 +23,28 @@ from mcp_server_phytomni.runtime.run_registry import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_reserve_run_preserves_a2a_correlation(tmp_path: Path) -> None:
+    """Reservations retain safe A2A identifiers without raw request data."""
+    registry = RunRegistry(str(tmp_path / "tasks.db"))
+    correlation = A2ACorrelation(
+        task_id="a2a-task-reserved",
+        context_id="a2a-context-reserved",
+        message_id="a2a-message-reserved",
+    )
+    registry.reserve_run(
+        RunSpec("run-a2a-reserved", "alice", "research", "remote"),
+        request_info=RunRequestInfo(
+            request_id="req-a2a-reserved",
+            a2a=correlation,
+        ),
+        result=empty_execution_projection(),
+    )
+
+    record = registry.get_run("run-a2a-reserved", owner="alice")
+    assert record is not None
+    assert record.a2a == correlation
 
 
 def test_a2a_correlation_round_trips_and_is_owner_scoped(

@@ -28,6 +28,7 @@ from mcp_server_phytomni.runtime.request_context import (
     current_run_id,
 )
 from mcp_server_phytomni.runtime.run_registry import (
+    A2ACorrelation,
     RunRegistry,
     RunRequestInfo,
 )
@@ -78,6 +79,9 @@ async def test_launch_returns_before_operation_finishes(
     assert RunRegistry(db_path).get_run(
         reservation.run_id, owner="alice"
     ).status == "running"
+    assert RunRegistry(db_path).get_run(
+        reservation.run_id, owner="alice"
+    ).a2a == A2ACorrelation()
     release.set()
     await _wait_until(lambda: not is_live_running(reservation.run_id))
     assert observed == {
@@ -105,6 +109,11 @@ def test_reservation_discards_raw_request_payload(tmp_path: Path) -> None:
             model="phyto-analyst",
             request_json=sensitive_payload,
             locale="zh-CN",
+            a2a=A2ACorrelation(
+                task_id="a2a-task-1",
+                context_id="a2a-context-1",
+                message_id="a2a-message-1",
+            ),
         ),
         db_path=db_path,
     )
@@ -118,6 +127,11 @@ def test_reservation_discards_raw_request_payload(tmp_path: Path) -> None:
     assert record.request_info.locale == "zh-CN"
     assert record.request_info.query is None
     assert record.request_info.request_json is None
+    assert record.a2a == A2ACorrelation(
+        task_id="a2a-task-1",
+        context_id="a2a-context-1",
+        message_id="a2a-message-1",
+    )
 
     with sqlite3.connect(db_path) as connection:
         persisted = connection.execute(

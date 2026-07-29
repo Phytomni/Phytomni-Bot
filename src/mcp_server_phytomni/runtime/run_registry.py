@@ -266,7 +266,7 @@ class RunRegistry:
                     a2a_task_id, a2a_context_id, a2a_message_id
                 ) VALUES (
                     ?, ?, ?, ?, 'running', ?, NULL, ?, ?, NULL,
-                    ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -284,6 +284,9 @@ class RunRegistry:
                     request_info.model,
                     request_info.request_json,
                     request_info.locale,
+                    request_info.a2a.task_id,
+                    request_info.a2a.context_id,
+                    request_info.a2a.message_id,
                 ),
             )
 
