@@ -89,7 +89,7 @@ class BenchmarkSummary:
     """Aggregate measurements and request counts."""
 
     average_ttft: float | None
-    total_duration: float
+    total_duration: float | None
     average_query_duration: float | None
     words_per_second: float | None
     success_count: int
@@ -473,6 +473,19 @@ def main(
     except KeyboardInterrupt:
         print("benchmark interrupted", file=sys.stderr)
         return 130
+    except Exception as exc:
+        print_summary(
+            BenchmarkSummary(
+                average_ttft=None,
+                total_duration=None,
+                average_query_duration=None,
+                words_per_second=None,
+                success_count=0,
+                failure_count=len(queries),
+            )
+        )
+        print(sanitize_error(exc, config.api_key), file=sys.stderr)
+        return 1
 
     print_summary(summary)
     print_failures(results)

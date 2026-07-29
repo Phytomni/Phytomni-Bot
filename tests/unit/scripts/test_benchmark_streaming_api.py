@@ -864,3 +864,51 @@ def test_main_returns_130_without_metrics_when_interrupted(
     assert exit_code == 130
     assert captured.out == ""
     assert captured.err == "benchmark interrupted\n"
+
+
+def test_main_sanitizes_unexpected_runtime_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Return a bounded failure without exposing runtime exception details."""
+    query_file = tmp_path / "queries.txt"
+    query_file.write_text("private query\n", encoding="utf-8")
+
+    async def failed_run(
+        _config: benchmark.BenchmarkConfig,
+        _queries: Sequence[benchmark.QueryInput],
+    ) -> tuple[benchmark.BenchmarkSummary, list[benchmark.QueryResult]]:
+        raise ValueError("top-secret unexpected runtime failure")
+
+    monkeypatch.setattr(benchmark, "run_benchmark", failed_run)
+
+    exit_code = benchmark.main(
+        [
+            "--max-concurrency",
+            "1",
+            "--query-file",
+            str(query_file),
+            "--base-url",
+            "https://example.invalid/v1",
+            "--model-id",
+            "model-a",
+            "--api-key",
+            "top-secret",
+        ],
+        environ={},
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert captured.out == (
+        "平均首 Token 时间: N/A\n"
+        "总时长: N/A\n"
+        "单个 query 平均时间: N/A\n"
+        "总词数/s: N/A\n"
+    )
+    assert "<redacted> unexpected runtime failure" in captured.err
+    assert "Traceback" not in captured.err
+    assert "top-secret" not in captured.out
+    assert "top-secret" not in captured.err
+    assert "private query" not in captured.err
