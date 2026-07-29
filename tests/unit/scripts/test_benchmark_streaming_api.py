@@ -159,6 +159,18 @@ async def test_iter_sse_data_joins_data_lines_by_event() -> None:
     assert values == ['{"choices":\n[{"delta": {"content": "leaf"}}]}']
 
 
+async def test_iter_sse_data_yields_final_unterminated_event() -> None:
+    """Flush a final data event when the response closes without a blank."""
+    values = [
+        value
+        async for value in benchmark.iter_sse_data(
+            _line_stream('data: {"choices":[]}')
+        )
+    ]
+
+    assert values == ['{"choices":[]}']
+
+
 def test_decode_stream_delta_reads_reasoning_and_content() -> None:
     """Extract both generated text fields from the first choice."""
     delta = benchmark.decode_stream_delta(
@@ -191,3 +203,52 @@ def test_decode_stream_delta_rejects_malformed_json() -> None:
         match="malformed SSE JSON",
     ):
         benchmark.decode_stream_delta("{not-json}")
+
+
+def test_decode_stream_delta_rejects_non_object_json() -> None:
+    """Reject JSON values that cannot carry an OpenAI response shape."""
+    with pytest.raises(benchmark.SseProtocolError, match="must be an object"):
+        benchmark.decode_stream_delta("[]")
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        '{"choices": {}}',
+        '{"choices": [null]}',
+    ],
+)
+def test_decode_stream_delta_rejects_invalid_choices_shape(data: str) -> None:
+    """Require a non-empty choices list whose first value is an object."""
+    with pytest.raises(
+        benchmark.SseProtocolError,
+        match="choices must contain an object",
+    ):
+        benchmark.decode_stream_delta(data)
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        '{"choices": [{}]}',
+        '{"choices": [{"delta": "not-an-object"}]}',
+    ],
+)
+def test_decode_stream_delta_rejects_invalid_delta_shape(data: str) -> None:
+    """Require the first choice to contain an object delta."""
+    with pytest.raises(
+        benchmark.SseProtocolError,
+        match="choice delta must be an object",
+    ):
+        benchmark.decode_stream_delta(data)
+
+
+def test_decode_stream_delta_ignores_non_string_text_values() -> None:
+    """Treat non-string streamed text fields as absent without failing."""
+    delta = benchmark.decode_stream_delta(
+        '{"choices":[{"delta":{'
+        '"reasoning_content":12,'
+        '"content":["answer"]}}]}'
+    )
+
+    assert delta == benchmark.StreamDelta()
