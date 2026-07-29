@@ -320,6 +320,16 @@ class RunRegistry:
             if row is None or row[0] != "running":
                 return False
             for submission in submissions:
+                existing = conn.execute(
+                    """
+                    SELECT run_id, user_id, agent FROM tasks
+                    WHERE task_id = ?
+                    """,
+                    (submission.task_id,),
+                ).fetchone()
+                if existing is not None and existing != (run_id, owner, agent):
+                    return False
+            for submission in submissions:
                 ctx = submission.run_context or RunContext()
                 conn.execute(
                     """

@@ -240,6 +240,133 @@ def test_fail_running_run_is_owner_scoped(tmp_path: Path) -> None:
     assert record.error == "background_submission_failed"
 
 
+@pytest.mark.parametrize(
+    "foreign_context",
+    (
+        RunContext(run_id="run-foreign", user_id="alice", agent="analyst"),
+        RunContext(run_id="run-target", user_id="mallory", agent="analyst"),
+        RunContext(run_id="run-target", user_id="alice", agent="design"),
+    ),
+)
+def test_record_reserved_submissions_rejects_foreign_task_identity_atomically(
+    tmp_path: Path,
+    foreign_context: RunContext,
+) -> None:
+    """Foreign child identities cannot be reparented by a reserved run."""
+    registry, manager, db_path = _make_registry(tmp_path)
+    target_context = RunContext(
+        run_id="run-target", user_id="alice", agent="analyst"
+    )
+    registry.reserve_run(
+        RunSpec("run-target", "alice", "analyst", "remote"),
+        request_info=RunRequestInfo(request_id="req-target"),
+        result=empty_execution_projection(),
+    )
+    manager.record(
+        Submission(
+            task_id="task-existing",
+            status="submitted",
+            output_dir="/foreign",
+            run_context=foreign_context,
+        )
+    )
+
+    assert (
+        registry.record_reserved_submissions(
+            "run-target",
+            owner="alice",
+            agent="analyst",
+            submissions=(
+                Submission(
+                    task_id="task-new",
+                    status="submitted",
+                    output_dir="/new",
+                    run_context=target_context,
+                ),
+                Submission(
+                    task_id="task-existing",
+                    status="submitted",
+                    output_dir="/replacement",
+                    run_context=target_context,
+                ),
+            ),
+            result=empty_execution_projection(),
+            now="2026-07-30T00:00:00+00:00",
+        )
+        is False
+    )
+
+    with closed_sqlite_connection(db_path) as conn:
+        existing = conn.execute(
+            "SELECT run_id, user_id, agent, output_dir FROM tasks "
+            "WHERE task_id = 'task-existing'"
+        ).fetchone()
+        new_count = conn.execute(
+            "SELECT COUNT(*) FROM tasks WHERE task_id = 'task-new'"
+        ).fetchone()[0]
+    assert existing == (
+        foreign_context.run_id,
+        foreign_context.user_id,
+        foreign_context.agent,
+        "/foreign",
+    )
+    assert new_count == 0
+    record = registry.get_run("run-target", owner="alice")
+    assert record is not None
+    assert record.result == empty_execution_projection()
+
+
+def test_record_reserved_submissions_allows_same_run_idempotency(
+    tmp_path: Path,
+) -> None:
+    """A retry may update a child only when its immutable owner matches."""
+    registry, manager, _db_path = _make_registry(tmp_path)
+    context = RunContext(run_id="run-target", user_id="alice", agent="analyst")
+    registry.reserve_run(
+        RunSpec("run-target", "alice", "analyst", "remote"),
+        request_info=RunRequestInfo(request_id="req-target"),
+        result=empty_execution_projection(),
+    )
+    manager.record(
+        Submission(
+            task_id="task-owned",
+            status="submitted",
+            output_dir="/initial",
+            run_context=context,
+        )
+    )
+    result = empty_execution_projection()
+    result["execution"]["warnings"] = [{"code": "retry"}]
+    submission = Submission(
+        task_id="task-owned",
+        status="submitted",
+        output_dir="/retry",
+        run_context=context,
+    )
+
+    for _ in range(2):
+        assert registry.record_reserved_submissions(
+            "run-target",
+            owner="alice",
+            agent="analyst",
+            submissions=(submission,),
+            result=result,
+            now="2026-07-30T00:00:00+00:00",
+        )
+
+    record = registry.get_run("run-target", owner="alice")
+    assert record is not None
+    assert record.task_ids == ("task-owned",)
+    assert record.result == result
+    assert manager.get_task("task-owned") == {
+        "task_id": "task-owned",
+        "status": "submitted",
+        "analysis_id": "",
+        "output_dir": "/retry",
+        "source_task_id": None,
+    }
+
+
 def test_init_db_creates_runs_table_and_indices(tmp_path: Path) -> None:
     """The registry creates the runs table and shared indices."""
     db = str(tmp_path / "tasks.db")
