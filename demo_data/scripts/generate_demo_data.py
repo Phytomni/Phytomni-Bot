@@ -31,13 +31,15 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
-from importlib import import_module
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 from openpyxl import Workbook
+from reportlab.lib.pagesizes import LETTER
+from reportlab.lib.units import inch
+from reportlab.pdfgen.canvas import Canvas
 
 DEMO_ROOT = Path(__file__).resolve().parent.parent
 DEMO_OBS_PREFIX = "/obs/phytomni/demo"
@@ -413,16 +415,10 @@ def write_text(path: Path, text: str) -> None:
 
 def write_pdf(path: Path, paragraphs: Iterable[str]) -> None:
     """Render *paragraphs* to a deterministic single-page PDF."""
-    pagesizes = import_module("reportlab.lib.pagesizes")
-    units = import_module("reportlab.lib.units")
-    canvas_module = import_module("reportlab.pdfgen.canvas")
-    letter = pagesizes.LETTER
-    inch = units.inch
-    canvas_type = canvas_module.Canvas
     _ensure_parent(path)
-    canv = canvas_type(
+    canv = Canvas(
         str(path),
-        pagesize=letter,
+        pagesize=LETTER,
         invariant=1,
         pageCompression=0,
     )
@@ -433,7 +429,7 @@ def write_pdf(path: Path, paragraphs: Iterable[str]) -> None:
     canv.setFont("Helvetica", 10)
 
     text_object = canv.beginText()
-    text_object.setTextOrigin(0.75 * inch, letter[1] - 0.85 * inch)
+    text_object.setTextOrigin(0.75 * inch, LETTER[1] - 0.85 * inch)
     text_object.setLeading(13)
     for paragraph in paragraphs:
         text_object.textLine(paragraph)
