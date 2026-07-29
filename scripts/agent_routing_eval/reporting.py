@@ -205,6 +205,14 @@ _CONFUSION_ROW_KEYS: Final = frozenset(
         "__NO_MAJORITY__",
     }
 )
+_SAFE_PREDICTED_AGENTS: Final = frozenset(
+    {
+        *_CANONICAL_AGENTS,
+        "__PROVIDER_ERROR__",
+        "__ROUTING_ERROR__",
+        "__NO_MAJORITY__",
+    }
+)
 _SENSITIVE_KEY_RE: Final = re.compile(
     r"(?i)(?:\bapi[-_ ]?key\b|\bauthorization\b|\bbearer\b|"
     r"\bpassword\b|\bsecret\b|\bcredential\b|\btoken\b|\bjwt\b|"
@@ -867,6 +875,95 @@ def _safe_run_mapping(value: object) -> dict[str, object]:
     return result
 
 
+def _validate_complete_run_inventory(
+    metrics: Mapping[str, object],
+    provenance: Mapping[str, object],
+    runs: Sequence[Mapping[str, object]],
+) -> None:
+    """Keep the public writer from emitting an internally forged report."""
+    case_count = _safe_int(metrics.get("case_count"))
+    planned_runs = _safe_int(metrics.get("planned_runs"))
+    completed_records = _safe_int(metrics.get("completed_records"))
+    repeat_count = _safe_int(provenance.get("repeat_count"))
+    if (
+        case_count is None
+        or case_count <= 0
+        or planned_runs is None
+        or completed_records is None
+        or repeat_count not in {1, 3}
+        or planned_runs != case_count * repeat_count
+        or completed_records != planned_runs
+        or completed_records != len(runs)
+    ):
+        raise ValueError("complete report counts do not match runs")
+
+    by_case: dict[str, set[int]] = {}
+    expected_by_case: dict[str, str] = {}
+    for run in runs:
+        if set(run) != _RUN_KEYS:
+            raise ValueError("complete report run is incomplete")
+        case_id = run["case_id"]
+        expected_agent = run["expected_agent"]
+        predicted_agent = run["predicted_agent"]
+        repeat = run["repeat"]
+        language = run["language"]
+        if (
+            not isinstance(case_id, str)
+            or not case_id
+            or expected_agent not in _CANONICAL_AGENTS
+            or predicted_agent not in _SAFE_PREDICTED_AGENTS
+            or not isinstance(repeat, int)
+            or isinstance(repeat, bool)
+            or repeat not in range(1, repeat_count + 1)
+            or language not in {"en", "zh"}
+        ):
+            raise ValueError("complete report run contains invalid identity")
+        if any(
+            not isinstance(run[key], bool)
+            for key in (
+                "agent_correct",
+                "schema_valid",
+                "dispatchable",
+                "provider_completed",
+            )
+        ):
+            raise ValueError("complete report run contains invalid flags")
+        core_args = run["core_args_correct"]
+        if core_args is not None and not isinstance(core_args, bool):
+            raise ValueError("complete report run contains invalid core flag")
+        attempts = run["attempts"]
+        latency_ms = run["latency_ms"]
+        if (
+            not isinstance(attempts, int)
+            or isinstance(attempts, bool)
+            or attempts < 0
+            or not isinstance(latency_ms, (int, float))
+            or isinstance(latency_ms, bool)
+            or not math.isfinite(float(latency_ms))
+            or latency_ms < 0
+        ):
+            raise ValueError("complete report run contains invalid timing")
+        selected_arguments = run["selected_arguments"]
+        validation_codes = run["validation_codes"]
+        if not isinstance(selected_arguments, Mapping) or not isinstance(
+            validation_codes, list
+        ):
+            raise ValueError("complete report run contains invalid details")
+        prior_expected = expected_by_case.setdefault(case_id, expected_agent)
+        if prior_expected != expected_agent:
+            raise ValueError("complete report expected agents disagree")
+        repeats = by_case.setdefault(case_id, set())
+        if repeat in repeats:
+            raise ValueError("complete report contains duplicate runs")
+        repeats.add(repeat)
+
+    if len(by_case) != case_count or any(
+        repeats != set(range(1, repeat_count + 1))
+        for repeats in by_case.values()
+    ):
+        raise ValueError("complete report case inventory is incomplete")
+
+
 def _safe_report(report: Mapping[str, Any]) -> dict[str, Any]:
     """Validate and sanitize the public writer boundary."""
     mapping = _mapping_with_allowed_keys(report, _REPORT_KEYS, "report")
@@ -876,6 +973,7 @@ def _safe_report(report: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("unsupported report schema")
     status = _safe_status(mapping["status"])
     complete = status["state"] == "complete"
+    provenance = _safe_provenance(mapping["provenance"])
     metrics = (
         _safe_complete_metrics(mapping["metrics"])
         if complete
@@ -884,12 +982,15 @@ def _safe_report(report: Mapping[str, Any]) -> dict[str, Any]:
     runs = mapping["runs"]
     if not isinstance(runs, (list, tuple)):
         raise ValueError("report runs must be a list")
+    safe_runs = [_safe_run_mapping(run) for run in runs]
+    if complete:
+        _validate_complete_run_inventory(metrics, provenance, safe_runs)
     return {
         "schema_version": 1,
         "status": status,
-        "provenance": _safe_provenance(mapping["provenance"]),
+        "provenance": provenance,
         "metrics": metrics,
-        "runs": [_safe_run_mapping(run) for run in runs],
+        "runs": safe_runs,
     }
 
 
