@@ -581,6 +581,7 @@ async def test_background_agent_returns_reserved_run_before_handler_finishes(
     )
 
     await asyncio.wait_for(started.wait(), timeout=1)
+    response: httpx.Response | None = None
     try:
         response = await asyncio.wait_for(
             asyncio.shield(request_task), timeout=1
@@ -594,6 +595,7 @@ async def test_background_agent_returns_reserved_run_before_handler_finishes(
         response = await request_task
 
     assert returned_before_release
+    assert response is not None
     assert response.status_code == 202
     body = response.json()
     assert body["agent"] == case.slug

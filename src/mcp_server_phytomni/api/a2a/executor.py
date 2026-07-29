@@ -370,7 +370,9 @@ def task_from_run_record(record: RunRecord, history_length: int) -> Task:
                 message_payload = payload.get("message")
                 if isinstance(message_payload, Mapping):
                     message = Message()
-                    json_format.ParseDict(message_payload, message)
+                    json_format.ParseDict(
+                        cast(dict[str, Any], message_payload), message
+                    )
                     task.history.append(message)
             except (TypeError, ValueError):
                 pass

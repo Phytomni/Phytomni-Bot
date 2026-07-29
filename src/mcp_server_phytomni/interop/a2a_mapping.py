@@ -468,9 +468,11 @@ def build_user_message(
         normalized_text = _bounded_text(text)
         parts.append(Part(text=normalized_text, media_type="text/plain"))
     if data is not None:
+        if not isinstance(data, dict):
+            raise A2AMappingError("invalid_data")
         value = Value()
         try:
-            json_format.ParseDict(data, value)
+            json_format.ParseDict(cast(dict[str, Any], data), value)
         except (TypeError, ValueError):
             raise A2AMappingError("invalid_data") from None
         _bounded_json(value)
