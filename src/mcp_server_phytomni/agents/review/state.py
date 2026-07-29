@@ -130,3 +130,8 @@ class DeepResearchState(ParallelDispatchState):
     approval_pending: bool
     approval_decision: dict[str, Any]
     a2ui_round: int
+
+    # === Private conversation metadata (never part of public IO schemas) ===
+    review_operation: str | None
+    report_artifact_id: str | None
+    report_revision: int

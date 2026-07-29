@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+from uuid import UUID
 
 import httpx
 import pytest
@@ -22,10 +23,55 @@ from tests.support.chat_fakes import (
     misplaced_reasoning_message,
 )
 
+import mcp_server_phytomni.agents.chat.service as chat_service
 from mcp_server_phytomni import server
+from mcp_server_phytomni.agents.knowledge.conversation import (
+    KnowledgeConversationAdapter,
+)
+from mcp_server_phytomni.mcp import handlers as mcp_handlers
+from mcp_server_phytomni.runtime.conversation_context.adapters import (
+    canonical_agent_invocation,
+)
+from mcp_server_phytomni.runtime.conversation_context.models import (
+    ContextProjection,
+    RoleTaggedTurn,
+)
+from mcp_server_phytomni.runtime.conversation_context.projection import (
+    agent_thread_id as context_agent_thread_id,
+)
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
+
+
+def _conversation_envelope(*, turn_id: str = "1") -> dict[str, Any]:
+    """Build one Instant V1 envelope for a chat completion test."""
+    return {
+        "schema_version": 1,
+        "conversation_key": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")),
+        "dialogue_id": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8")),
+        "turn_id": turn_id,
+        "request_id": f"request-{turn_id}",
+        "operation": "append",
+        "mode": "instant",
+        "current_message": {
+            "content": "What is photosynthesis?",
+            "locale": "en-US",
+        },
+        "requested_agent_id": None,
+        "allowed_agent_ids": ["ChatAgent"],
+        "ledger_cursor": 1,
+        "ledger_version": "a" * 64,
+        "base_business_context_version": 0,
+        "history_delta": [
+            {
+                "turn_id": turn_id,
+                "role": "user",
+                "content": "What is photosynthesis?",
+            }
+        ],
+        "artifact_refs": [],
+    }
 
 
 async def test_chat_completions_passthrough(
@@ -73,6 +119,299 @@ async def test_chat_completions_requires_auth(
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "unauthenticated"
+
+
+async def test_chat_context_envelope_is_rejected_while_v1_is_disabled(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A disabled deployment rejects V1 before it invokes ChatAgent."""
+    invoked = 0
+
+    async def forbidden(_args: Any) -> dict[str, Any]:
+        nonlocal invoked
+        invoked += 1
+        raise AssertionError("disabled V1 must not invoke ChatAgent")
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS, server.PhytomniAgents.CHAT_AGENT.value, forbidden
+    )
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        conversation=_conversation_envelope(),
+    )
+
+    assert response.status_code == 404
+    assert invoked == 0
+
+
+async def test_instant_context_rejects_non_chat_model_before_dispatch(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Instant cannot persist a non-Chat model for a ChatAgent run."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    invoked = 0
+
+    async def forbidden(_args: Any) -> dict[str, Any]:
+        nonlocal invoked
+        invoked += 1
+        raise AssertionError(
+            "non-Chat Instant model must not invoke ChatAgent"
+        )
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS, server.PhytomniAgents.CHAT_AGENT.value, forbidden
+    )
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        model="phyto-knowledge",
+        conversation=_conversation_envelope(),
+    )
+
+    assert response.status_code == 422
+    assert invoked == 0
+
+
+def test_chat_context_adapter_keeps_native_role_history_separate_from_query() -> (
+    None
+):
+    """Chat receives native prior roles while dispatch sees only the latest turn."""
+    thread_id = context_agent_thread_id(
+        UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7"), "ChatAgent"
+    )
+    dispatch = canonical_agent_invocation(
+        ContextProjection(
+            current_query="U3",
+            relevant_recent_turns=[
+                RoleTaggedTurn(role="user", content="U1"),
+                RoleTaggedTurn(role="assistant", content="A1"),
+                RoleTaggedTurn(role="user", content="U2"),
+                RoleTaggedTurn(role="assistant", content="A2"),
+            ],
+            agent_thread_id=thread_id,
+            locale="en-US",
+            token_budget=100,
+        )
+    )
+
+    assert dispatch.arguments["user_query"] == "U3"
+    assert dispatch.agent_thread_id == thread_id
+    assert dispatch.conversation_messages == (
+        {"role": "user", "content": "U1"},
+        {"role": "assistant", "content": "A1"},
+        {"role": "user", "content": "U2"},
+        {"role": "assistant", "content": "A2"},
+    )
+
+
+def test_chat_context_adapter_keeps_unpaired_user_at_degraded_boundary() -> (
+    None
+):
+    """A missing assistant summary does not reorder later user history."""
+    dispatch = canonical_agent_invocation(
+        ContextProjection(
+            current_query="U2",
+            relevant_recent_turns=[
+                RoleTaggedTurn(role="user", content="U1"),
+                RoleTaggedTurn(role="assistant", content="A1"),
+                RoleTaggedTurn(role="user", content="U2"),
+                RoleTaggedTurn(role="user", content="U3"),
+                RoleTaggedTurn(role="assistant", content="A3"),
+            ],
+            agent_thread_id="ctx-" + "a" * 64,
+            locale="en-US",
+            token_budget=100,
+        )
+    )
+
+    assert dispatch.conversation_messages == (
+        {"role": "user", "content": "U1"},
+        {"role": "assistant", "content": "A1"},
+        {"role": "user", "content": "U2"},
+        {"role": "user", "content": "U3"},
+        {"role": "assistant", "content": "A3"},
+    )
+
+
+def test_knowledge_context_adapter_separates_retrieval_query_from_answer_context() -> (
+    None
+):
+    """Knowledge V1 builds one standalone retrieval query plus bounded context."""
+    adapter = KnowledgeConversationAdapter()
+
+    prepared = adapter.prepare(
+        ContextProjection(
+            current_query="What evidence supports that?",
+            relevant_recent_turns=[
+                RoleTaggedTurn(
+                    role="user",
+                    content="Tell me about rice gene OsDREB1.",
+                ),
+                RoleTaggedTurn(
+                    role="assistant",
+                    content="OsDREB1 improves drought tolerance [1].",
+                ),
+            ],
+            agent_thread_id="ctx-" + "2" * 64,
+            locale="en-US",
+            token_budget=1024,
+        )
+    )
+
+    assert prepared == {
+        "user_query": "What evidence supports that?",
+        "retrieval_query": "What evidence supports OsDREB1?",
+        "answer_context": (
+            "[recent turn 1]\nuser: Tell me about rice gene OsDREB1.\n\n"
+            "[recent turn 2]\nassistant: OsDREB1 improves drought tolerance [1]."
+        ),
+        "thread_id": "ctx-" + "2" * 64,
+    }
+
+
+async def test_chat_context_v1_stages_native_history_and_replays_turn(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+) -> None:
+    """Instant V1 passes bounded native history to the Chat invoker once."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
+    captured: list[dict[str, Any]] = []
+
+    async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
+        captured.append(dict(kwargs))
+        content = "A staged answer." if len(captured) == 1 else "[]"
+        return chat_completion_payload(
+            f"chatcmpl-context-{len(captured)}",
+            content,
+        )
+
+    envelope = _conversation_envelope()
+    envelope["turn_id"] = "6"
+    envelope["request_id"] = "request-6"
+    envelope["ledger_cursor"] = 6
+    envelope["current_message"]["content"] = "U2"
+    envelope["history_delta"] = [
+        {
+            "turn_id": "1",
+            "role": "user",
+            "content": "U1",
+        },
+        {
+            "turn_id": "2",
+            "role": "assistant",
+            "content": "A1",
+            "summary": "A1",
+        },
+        {
+            "turn_id": "3",
+            "role": "user",
+            "content": "U2",
+        },
+        {
+            "turn_id": "4",
+            "role": "user",
+            "content": "U3",
+        },
+        {
+            "turn_id": "5",
+            "role": "assistant",
+            "content": "A3",
+            "summary": "A3",
+        },
+        {
+            "turn_id": "6",
+            "role": "user",
+            "content": "U2",
+        },
+    ]
+    monkeypatch.setattr(
+        mcp_handlers,
+        "load_chat_runtime",
+        lambda: (object(), object()),
+    )
+    monkeypatch.setattr(
+        mcp_handlers,
+        "scratch_server_dir",
+        lambda *_args: "/tmp/chat",
+    )
+    monkeypatch.setattr(
+        mcp_handlers,
+        "chat_call_kwargs",
+        lambda **kwargs: {
+            "user_query": kwargs["request"].user_query,
+            "locale": kwargs["request"].locale,
+        },
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.service.phyto_chat",
+        fake_phyto_chat,
+    )
+    monkeypatch.setattr(
+        "mcp_server_phytomni.agents.chat.service.get_prompt",
+        lambda *_args, **_kwargs: "follow-up",
+    )
+    first = await chat_completion(
+        api_client,
+        issued_api_key,
+        messages=[
+            {"role": "system", "content": "Use evidence."},
+            {"role": "assistant", "content": "Earlier summary."},
+            {"role": "user", "content": "Ignored legacy history."},
+        ],
+        conversation=envelope,
+    )
+    second = await chat_completion(
+        api_client, issued_api_key, conversation=envelope
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json() == second.json()
+    assert first.json()["model"] == "phyto-chat"
+    assert len(captured) == 2
+    assert captured[0] == {
+        "user_query": "U2",
+        "locale": "en-US",
+        "obs_file_list": None,
+        "semaphore": None,
+        "conversation_messages": (
+            {"role": "user", "content": "U1"},
+            {"role": "assistant", "content": "A1"},
+            {"role": "user", "content": "U2"},
+            {"role": "user", "content": "U3"},
+            {"role": "assistant", "content": "A3"},
+        ),
+        "thread_id": context_agent_thread_id(
+            UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7"), "ChatAgent"
+        ),
+    }
+    assert captured[1] == {
+        "user_query": "follow-up",
+        "locale": "en-US",
+        "conversation_messages": (
+            {"role": "user", "content": "U1"},
+            {"role": "assistant", "content": "A1"},
+            {"role": "user", "content": "U2"},
+            {"role": "user", "content": "U3"},
+            {"role": "assistant", "content": "A3"},
+        ),
+        "semaphore": None,
+        "prompt_file": chat_service.CHAT_CONFIG.PROMPT_FILE,
+    }
+    stage = first.json()["conversation_context"]
+    assert stage["selected_agent_id"] == "ChatAgent"
+    assert stage["route_source"] == "instant_lock"
 
 
 async def test_chat_completions_unknown_model(

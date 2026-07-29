@@ -153,6 +153,20 @@ async def test_list_agents_returns_all_ten(
     assert origins["analyst"] == "remote"
 
 
+async def test_list_agents_omits_disabled_context_protocol(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+) -> None:
+    """The default-off context protocol is absent from the public catalog."""
+    response = await api_client.get(
+        "/v1/agents",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    assert "protocols" not in response.json()
+
+
 async def test_list_agents_requires_auth(
     api_client: httpx.AsyncClient,
 ) -> None:

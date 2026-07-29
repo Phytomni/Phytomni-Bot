@@ -580,6 +580,9 @@ async def _invoke_agent_run(
     *,
     agent: str,
     arguments: dict[str, Any],
+    conversation_messages: tuple[dict[str, str], ...] = (),
+    agent_thread_id: str | None = None,
+    private_agent_state: Mapping[str, Any] | None = None,
     dialogue_id: str | None = None,
     request_json: str | None = None,
     debug: bool = False,
@@ -612,14 +615,24 @@ async def _invoke_agent_run(
         arguments=arguments,
         preflight=preflight,
     )
-    if agent == "review":
+    context_review = (
+        isinstance(private_agent_state, Mapping)
+        and private_agent_state.get("review_adapter") is not None
+    )
+    if agent == "review" and not context_review:
         execution = await _run_review_with_interrupt(
             arguments=arguments,
             request_info=prepared.request_info,
         )
         return _review_run_body(execution, debug=debug), 200
     try:
-        envelope = await invoke_tool_enveloped(prepared.tool_name, arguments)
+        envelope = await invoke_tool_enveloped(
+            prepared.tool_name,
+            arguments,
+            conversation_messages=conversation_messages,
+            agent_thread_id=agent_thread_id,
+            private_agent_state=private_agent_state,
+        )
         format_context = (
             trace_data_stage(
                 DataStage.RESULT_FORMAT,
@@ -1112,7 +1125,7 @@ def _stamp_remote_request_info(
     )
 
 
-def create_app() -> FastAPI:
+def create_app(*, context_executor: Any | None = None) -> FastAPI:
     """Build the FastAPI application.
 
     Returns:
@@ -1126,4 +1139,4 @@ def create_app() -> FastAPI:
     ``_route_expert_query``, and ``resolve_chat_query`` through this module so
     existing integrations and tests can patch those names.
     """
-    return _factory.build_app()
+    return _factory.build_app(context_executor=context_executor)

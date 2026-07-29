@@ -6,9 +6,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import sqlite3
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from uuid import UUID
 
 import pytest
+from tests.support.resume_graph import build_resume_app
 from tests.support.terminal_results import (
     SensitiveTerminalResultSpec,
     public_partial_warning,
@@ -17,12 +23,459 @@ from tests.support.terminal_results import (
     sensitive_terminal_result,
 )
 
+from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
+from mcp_server_phytomni.api import run_lifecycle
 from mcp_server_phytomni.api.lifecycle_contract import (
     LifecycleInvariantError,
     build_agent_run_response,
     canonicalize_run_record,
     empty_agent_result,
 )
+from mcp_server_phytomni.runtime.checkpoint_backend import (
+    build_default_checkpointer,
+)
+from mcp_server_phytomni.runtime.conversation_context.projection import (
+    agent_thread_id,
+)
+from mcp_server_phytomni.runtime.conversation_context.store import (
+    ConversationContextStore,
+    StagedTurn,
+)
+from mcp_server_phytomni.runtime.langgraph_runner import build_runnable_config
+
+
+def _stage_lifecycle_turn(
+    store: ConversationContextStore,
+    key: str,
+    turn_id: str,
+    *,
+    operation: str,
+    selected_agent_id: str,
+    stage_metadata: dict[str, object] | None = None,
+) -> None:
+    """Stage a compact row for the production retention contract test."""
+    store.begin_turn(key, turn_id, operation, 0)
+    store.stage_turn(
+        key,
+        turn_id,
+        StagedTurn(
+            operation=operation,
+            base_context_version=0,
+            selected_agent_id=selected_agent_id,
+            route_source="lifecycle-test",
+            result={"answer": "bounded"},
+            delta={"summary": "bounded"},
+            ledger_version="ledger-1",
+            schema_version=1,
+            ledger_cursor=0,
+            observed_mode="expert",
+            stage_metadata=stage_metadata or {},
+        ),
+    )
+
+
+def test_normal_lifecycle_gc_purges_staged_context_and_review_candidate(
+    tmp_path: Path,
+) -> None:
+    """Normal run GC expires rows and deletes only the Review candidate."""
+    db_path = tmp_path / "lifecycle.sqlite"
+    store = ConversationContextStore(str(db_path))
+    key = "00000000-0000-0000-0000-000000000011"
+    review_turn_id = "review-turn"
+    stable_thread_id = agent_thread_id(UUID(key), "ReviewAgent")
+    candidate_thread_id = _candidate_thread_id(
+        stable_thread_id, review_turn_id
+    )
+    _stage_lifecycle_turn(
+        store,
+        key,
+        review_turn_id,
+        operation="new_review",
+        selected_agent_id="ReviewAgent",
+        stage_metadata={
+            "_review_settlement": {
+                "version": 1,
+                "operation": "new_review",
+                "stable_thread_id": stable_thread_id,
+                "candidate_thread_id": candidate_thread_id,
+                "turn_id": review_turn_id,
+                "report_revision": 0,
+                "settlement_state": "pending",
+            }
+        },
+    )
+    _stage_lifecycle_turn(
+        store,
+        key,
+        "chat-turn",
+        operation="append",
+        selected_agent_id="ChatAgent",
+    )
+    future_key = "00000000-0000-0000-0000-000000000013"
+    future_turn_id = "future-review-turn"
+    future_stable_thread_id = agent_thread_id(UUID(future_key), "ReviewAgent")
+    future_candidate_thread_id = _candidate_thread_id(
+        future_stable_thread_id, future_turn_id
+    )
+    _stage_lifecycle_turn(
+        store,
+        future_key,
+        future_turn_id,
+        operation="new_review",
+        selected_agent_id="ReviewAgent",
+        stage_metadata={
+            "_review_settlement": {
+                "version": 1,
+                "operation": "new_review",
+                "stable_thread_id": future_stable_thread_id,
+                "candidate_thread_id": future_candidate_thread_id,
+                "turn_id": future_turn_id,
+                "report_revision": 0,
+                "settlement_state": "pending",
+            }
+        },
+    )
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE conversation_turns SET expires_at = ? "
+            "WHERE conversation_key = ?",
+            ("2020-01-01T00:00:00+00:00", key),
+        )
+
+    registry_calls: list[str] = []
+
+    def registry_factory(path: str) -> SimpleNamespace:
+        registry_calls.append(path)
+        return SimpleNamespace(purge_expired=lambda: 0)
+
+    deleted_candidates: list[str] = []
+
+    async def delete_thread(thread_id: str) -> None:
+        deleted_candidates.append(thread_id)
+
+    checkpointer = SimpleNamespace(adelete_thread=delete_thread)
+    checkpointer.closed = False
+
+    async def close() -> None:
+        checkpointer.closed = True
+
+    checkpointer.close = close
+
+    run_lifecycle.purge_expired_runs_best_effort(
+        db_path=str(db_path),
+        registry_factory=registry_factory,
+        checkpointer_factory=lambda: checkpointer,
+    )
+
+    assert registry_calls == [str(db_path)]
+    assert store.load_turn(key, review_turn_id) is None
+    assert store.load_turn(key, "chat-turn") is None
+    assert deleted_candidates == [candidate_thread_id]
+    assert stable_thread_id not in deleted_candidates
+    assert not checkpointer.closed
+    assert store.load_turn(future_key, future_turn_id) is not None
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute(
+            "SELECT candidate_thread_id "
+            "FROM conversation_review_checkpoint_cleanup "
+            "WHERE conversation_key = ? AND eligible_at IS NULL",
+            (future_key,),
+        ).fetchone() == (future_candidate_thread_id,)
+
+    assert store.tombstone(key) == ()
+    store.complete_checkpoint_cleanup(key)
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM conversation_review_checkpoint_cleanup "
+            "WHERE conversation_key = ?",
+            (key,),
+        ).fetchone() == (0,)
+
+
+def test_failed_review_candidate_cleanup_retries_on_next_lifecycle_gc(
+    tmp_path: Path,
+) -> None:
+    """A failed candidate delete stays pending until a later GC succeeds."""
+    db_path = tmp_path / "lifecycle-retry.sqlite"
+    store = ConversationContextStore(str(db_path))
+    key = "00000000-0000-0000-0000-000000000012"
+    review_turn_id = "review-turn"
+    stable_thread_id = agent_thread_id(UUID(key), "ReviewAgent")
+    candidate_thread_id = _candidate_thread_id(
+        stable_thread_id, review_turn_id
+    )
+    _stage_lifecycle_turn(
+        store,
+        key,
+        review_turn_id,
+        operation="new_review",
+        selected_agent_id="ReviewAgent",
+        stage_metadata={
+            "_review_settlement": {
+                "version": 1,
+                "operation": "new_review",
+                "stable_thread_id": stable_thread_id,
+                "candidate_thread_id": candidate_thread_id,
+                "turn_id": review_turn_id,
+                "report_revision": 0,
+                "settlement_state": "pending",
+            }
+        },
+    )
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE conversation_turns SET expires_at = ? "
+            "WHERE conversation_key = ?",
+            ("2020-01-01T00:00:00+00:00", key),
+        )
+
+    should_fail = True
+    attempts: list[str] = []
+
+    async def delete_thread(thread_id: str) -> None:
+        attempts.append(thread_id)
+        if should_fail:
+            raise RuntimeError("checkpoint unavailable")
+
+    checkpointer = SimpleNamespace(adelete_thread=delete_thread)
+
+    def registry_factory(path: str) -> SimpleNamespace:
+        return SimpleNamespace(purge_expired=lambda: 0)
+
+    def run_purge() -> None:
+        run_lifecycle.purge_expired_runs_best_effort(
+            db_path=str(db_path),
+            registry_factory=registry_factory,
+            checkpointer_factory=lambda: checkpointer,
+        )
+
+    run_purge()
+
+    assert attempts == [candidate_thread_id]
+    assert store.list_checkpoint_cleanup_candidates() == (
+        (key, candidate_thread_id),
+    )
+
+    should_fail = False
+    run_purge()
+
+    assert attempts == [candidate_thread_id, candidate_thread_id]
+    assert store.list_checkpoint_cleanup_candidates() == ()
+
+
+def test_registered_candidate_survives_tombstone_until_retry_gc(
+    tmp_path: Path,
+) -> None:
+    """A pre-stage candidate remains discoverable after tombstone cleanup."""
+    db_path = tmp_path / "lifecycle-pre-stage.sqlite"
+    store = ConversationContextStore(str(db_path))
+    key = "00000000-0000-0000-0000-000000000016"
+    turn_id = "pre-stage-review"
+    stable_thread_id = agent_thread_id(UUID(key), "ReviewAgent")
+    candidate_thread_id = _candidate_thread_id(stable_thread_id, turn_id)
+
+    assert store.register_review_candidate(
+        key,
+        turn_id,
+        "new_review",
+        stable_thread_id,
+        candidate_thread_id,
+    )
+    assert store.tombstone(key) == (candidate_thread_id,)
+    store.complete_checkpoint_cleanup(key)
+
+    with sqlite3.connect(db_path) as connection:
+        assert connection.execute(
+            "SELECT staged_at, tombstone_pending "
+            "FROM conversation_review_checkpoint_cleanup "
+            "WHERE conversation_key = ? AND candidate_thread_id = ?",
+            (key, candidate_thread_id),
+        ).fetchone() == (None, 1)
+
+    created_threads = {candidate_thread_id}
+    deleted_threads: list[str] = []
+
+    async def delete_thread(thread_id: str) -> None:
+        deleted_threads.append(thread_id)
+        created_threads.discard(thread_id)
+
+    def registry_factory(path: str) -> SimpleNamespace:
+        return SimpleNamespace(purge_expired=lambda: 0)
+
+    run_lifecycle.purge_expired_runs_best_effort(
+        db_path=str(db_path),
+        registry_factory=registry_factory,
+        checkpointer_factory=lambda: SimpleNamespace(
+            adelete_thread=delete_thread
+        ),
+    )
+
+    assert created_threads == set()
+    assert deleted_threads == [candidate_thread_id]
+    assert store.list_checkpoint_cleanup_candidates() == ()
+
+
+def test_lifecycle_gc_uses_the_persistent_checkpoint_backend_by_default(
+    tmp_path: Path,
+) -> None:
+    """The production default deletes a row from the shared SQLite saver."""
+    db_path = tmp_path / "lifecycle-persistent.sqlite"
+    checkpoint_path = tmp_path / "checkpoints.db"
+    key = "00000000-0000-0000-0000-000000000014"
+    turn_id = "persistent-review-turn"
+    stable_thread_id = agent_thread_id(UUID(key), "ReviewAgent")
+    candidate_thread_id = _candidate_thread_id(stable_thread_id, turn_id)
+    store = ConversationContextStore(str(db_path))
+    _stage_lifecycle_turn(
+        store,
+        key,
+        turn_id,
+        operation="new_review",
+        selected_agent_id="ReviewAgent",
+        stage_metadata={
+            "_review_settlement": {
+                "version": 1,
+                "operation": "new_review",
+                "stable_thread_id": stable_thread_id,
+                "candidate_thread_id": candidate_thread_id,
+                "turn_id": turn_id,
+                "report_revision": 0,
+                "settlement_state": "pending",
+            }
+        },
+    )
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE conversation_turns SET expires_at = ? "
+            "WHERE conversation_key = ? AND turn_id = ?",
+            ("2020-01-01T00:00:00+00:00", key, turn_id),
+        )
+
+    async def seed_checkpoints() -> None:
+        saver = build_default_checkpointer(str(checkpoint_path))
+        try:
+            app = build_resume_app(saver)
+            for thread_id in (candidate_thread_id, stable_thread_id):
+                await app.ainvoke(
+                    {"value": thread_id},
+                    config=build_runnable_config(thread_id),
+                )
+        finally:
+            await saver.conn.close()
+
+    asyncio.run(seed_checkpoints())
+
+    def registry_factory(path: str) -> SimpleNamespace:
+        assert path == str(db_path)
+        return SimpleNamespace(purge_expired=lambda: 0)
+
+    run_lifecycle.purge_expired_runs_best_effort(
+        db_path=str(db_path), registry_factory=registry_factory
+    )
+
+    with sqlite3.connect(checkpoint_path) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM checkpoints WHERE thread_id = ?",
+            (candidate_thread_id,),
+        ).fetchone() == (0,)
+        assert (
+            connection.execute(
+                "SELECT COUNT(*) FROM checkpoints WHERE thread_id = ?",
+                (stable_thread_id,),
+            ).fetchone()[0]
+            > 0
+        )
+
+
+@pytest.mark.asyncio
+async def test_async_lifecycle_gc_keeps_injected_checkpointer_caller_owned(
+    tmp_path: Path,
+) -> None:
+    """The off-loop GC boundary does not close an injected shared saver."""
+    db_path = tmp_path / "lifecycle-async.sqlite"
+    store = ConversationContextStore(str(db_path))
+    key = "00000000-0000-0000-0000-000000000015"
+    turn_id = "async-review-turn"
+    stable_thread_id = agent_thread_id(UUID(key), "ReviewAgent")
+    candidate_thread_id = _candidate_thread_id(stable_thread_id, turn_id)
+    _stage_lifecycle_turn(
+        store,
+        key,
+        turn_id,
+        operation="new_review",
+        selected_agent_id="ReviewAgent",
+        stage_metadata={
+            "_review_settlement": {
+                "version": 1,
+                "operation": "new_review",
+                "stable_thread_id": stable_thread_id,
+                "candidate_thread_id": candidate_thread_id,
+                "turn_id": turn_id,
+                "report_revision": 0,
+                "settlement_state": "pending",
+            }
+        },
+    )
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE conversation_turns SET expires_at = ? "
+            "WHERE conversation_key = ? AND turn_id = ?",
+            ("2020-01-01T00:00:00+00:00", key, turn_id),
+        )
+
+    class SharedCheckpointer:
+        closed = False
+
+        async def adelete_thread(self, thread_id: str) -> None:
+            assert thread_id == candidate_thread_id
+
+        async def close(self) -> None:
+            self.closed = True
+
+    shared = SharedCheckpointer()
+
+    def registry_factory(path: str) -> SimpleNamespace:
+        return SimpleNamespace(purge_expired=lambda: 0)
+
+    await run_lifecycle.purge_expired_runs_best_effort_async(
+        purge=lambda: run_lifecycle.purge_expired_runs_best_effort(
+            db_path=str(db_path),
+            registry_factory=registry_factory,
+            checkpointer_factory=lambda: shared,
+        )
+    )
+
+    assert not shared.closed
+    assert store.list_checkpoint_cleanup_candidates() == ()
+
+
+def test_context_lifecycle_purge_failure_preserves_run_gc(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A context-store failure does not suppress the registry purge."""
+    db_path = str(tmp_path / "lifecycle.sqlite")
+    registry_calls: list[str] = []
+
+    def registry_factory(path: str) -> SimpleNamespace:
+        registry_calls.append(path)
+        return SimpleNamespace(purge_expired=lambda: 0)
+
+    def failing_context_factory(_path: str) -> SimpleNamespace:
+        def fail(_now: object) -> None:
+            raise sqlite3.OperationalError("context database is locked")
+
+        return SimpleNamespace(purge_expired_staged=fail)
+
+    monkeypatch.setattr(
+        run_lifecycle, "ConversationContextStore", failing_context_factory
+    )
+
+    run_lifecycle.purge_expired_runs_best_effort(
+        db_path=db_path, registry_factory=registry_factory
+    )
+
+    assert registry_calls == [db_path]
 
 
 def test_running_without_recoverable_work_is_rejected() -> None:

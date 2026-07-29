@@ -11,6 +11,8 @@ Public functions: handle_chat_agent, handle_knowledge_agent, handle_data_agent,
     handle_get_task_status.
 """
 
+from collections.abc import Mapping, Sequence
+from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,7 @@ from ..agents.knowledge.agent import multi_retrieve_generate
 from ..agents.network.agent import network_analysis
 from ..agents.research.agent import in_silico_research
 from ..agents.review.agent import review_agent_function
+from ..agents.review.conversation import review_clarification_result
 from ..config.defaults import (
     AnalystConfig,
     BriefGeneConfig,
@@ -73,6 +76,77 @@ from .schemas import (
 # branches return None.
 HandlerResult = dict[str, Any]
 
+PrivateConversationMessages = tuple[dict[str, str], ...]
+_private_conversation_messages: ContextVar[PrivateConversationMessages] = (
+    ContextVar("private_conversation_messages", default=())
+)
+PrivateAgentThreadId = str | None
+_private_agent_thread_id: ContextVar[PrivateAgentThreadId] = ContextVar(
+    "private_agent_thread_id", default=None
+)
+PrivateAgentState = dict[str, Any]
+PrivateAgentStateContext = PrivateAgentState | None
+_private_agent_state: ContextVar[PrivateAgentStateContext] = ContextVar(
+    "private_agent_state", default=None
+)
+
+
+def set_private_conversation_messages(
+    messages: Sequence[Mapping[str, str]],
+) -> Token[PrivateConversationMessages]:
+    """Set bounded V1 history for one in-process handler dispatch."""
+    return _private_conversation_messages.set(
+        tuple(dict(message) for message in messages)
+    )
+
+
+def reset_private_conversation_messages(
+    token: Token[PrivateConversationMessages],
+) -> None:
+    """Restore the private handler context after one raw dispatch."""
+    _private_conversation_messages.reset(token)
+
+
+def private_conversation_messages() -> PrivateConversationMessages:
+    """Return V1 history available only to the active handler invocation."""
+    return _private_conversation_messages.get()
+
+
+def set_private_agent_thread_id(
+    thread_id: str | None,
+) -> Token[PrivateAgentThreadId]:
+    """Set the stable V1 Chat thread for one in-process dispatch."""
+    return _private_agent_thread_id.set(thread_id)
+
+
+def reset_private_agent_thread_id(
+    token: Token[PrivateAgentThreadId],
+) -> None:
+    """Restore the private thread context after one raw dispatch."""
+    _private_agent_thread_id.reset(token)
+
+
+def private_agent_thread_id() -> str | None:
+    """Return the stable V1 Chat thread for the active dispatch."""
+    return _private_agent_thread_id.get()
+
+
+def set_private_agent_state(
+    state: Mapping[str, Any] | None,
+) -> Token[PrivateAgentStateContext]:
+    """Set private per-dispatch state that must stay out of public schemas."""
+    return _private_agent_state.set(dict(state or {}))
+
+
+def reset_private_agent_state(token: Token[PrivateAgentStateContext]) -> None:
+    """Restore the previous private agent state after one dispatch."""
+    _private_agent_state.reset(token)
+
+
+def private_agent_state() -> PrivateAgentState:
+    """Return the private per-dispatch state for the active handler."""
+    return dict(_private_agent_state.get() or {})
+
 
 def scratch_server_dir(config: ServerConfig, scope: str) -> str:
     """Return an obsfs-or-local scratch dir for handler ``server_dir`` use.
@@ -106,13 +180,18 @@ async def handle_chat_agent(args: ChatAgent) -> HandlerResult:
         ChatAgent response envelope dict.
     """
     chat_config, runtime = load_chat_runtime()
+    thread_kwargs = {}
+    if (thread_id := private_agent_thread_id()) is not None:
+        thread_kwargs["thread_id"] = thread_id
     return await phyto_chat_with_follow(
         **chat_call_kwargs(
             request=args,
             server_dir=scratch_server_dir(chat_config, "chat"),
             config=chat_config,
             runtime=runtime,
-        )
+        ),
+        conversation_messages=private_conversation_messages(),
+        **thread_kwargs,
     )
 
 
@@ -127,13 +206,21 @@ async def handle_knowledge_agent(args: KnowledgeAgent) -> HandlerResult:
     """
     knowledge_config = KnowledgeConfig()
     runtime = load_handler_runtime()
+    private_state = private_agent_state()
+    thread_kwargs = {}
+    if (thread_id := private_agent_thread_id()) is not None:
+        thread_kwargs["thread_id"] = thread_id
     return await multi_retrieve_generate(
         user_query=args.user_query,
         obs_file_list=args.obs_file_list,
         server_dir=scratch_server_dir(knowledge_config, "knowledge"),
+        conversation_messages=private_conversation_messages(),
+        retrieval_query=private_state.get("retrieval_query"),
+        answer_context=private_state.get("answer_context", ""),
         **chat_kwargs(knowledge_config, runtime.sensitive, locale=args.locale),
         **retrieve_kwargs(knowledge_config),
         **obs_kwargs(knowledge_config, runtime.obs_credentials),
+        **thread_kwargs,
     )
 
 
@@ -148,7 +235,13 @@ async def handle_data_agent(args: DataAgent) -> HandlerResult:
     """
     data_config = DataConfig()
     runtime = load_handler_runtime()
-    return await rewrite_nl2sql(
+    thread_id = private_agent_thread_id()
+    dialog_id = (
+        f"{thread_id}-nl2sql"
+        if thread_id is not None
+        else data_config.DIALOG_ID
+    )
+    result = await rewrite_nl2sql(
         user_query=args.user_query,
         retrieve_url=data_config.RETRIEVE_URL,
         data_repo_id=data_config.DATA_REPO_ID,
@@ -162,11 +255,17 @@ async def handle_data_agent(args: DataAgent) -> HandlerResult:
         database_url=data_config.DATABASE_URL,
         workspace_id=data_config.WORKSPACE_ID,
         subject_id=data_config.SUBJECT_ID,
-        dialog_id=data_config.DIALOG_ID,
+        dialog_id=dialog_id,
+        thread_id=thread_id,
         need_insight=data_config.NEED_INSIGHT,
         simplify_response=data_config.SIMPLIFY_RESPONSE,
         **chat_kwargs(data_config, runtime.sensitive, locale=args.locale),
     )
+    adapter = private_agent_state().get("data_adapter")
+    capture_result = getattr(adapter, "capture_result", None)
+    if callable(capture_result):
+        capture_result(result)
+    return result
 
 
 @records_submission("analyst")
@@ -213,6 +312,10 @@ async def handle_review_agent(args: ReviewAgent) -> HandlerResult:
     """
     review_config = ReviewConfig()
     runtime = load_handler_runtime()
+    private_state = private_agent_state()
+    clarification = private_state.get("clarification_message")
+    if isinstance(clarification, str) and clarification.strip():
+        return review_clarification_result(clarification)
     return await review_agent_function(
         user_query=args.user_query,
         obs_file_list=args.obs_file_list,
@@ -220,6 +323,10 @@ async def handle_review_agent(args: ReviewAgent) -> HandlerResult:
         **chat_kwargs(review_config, runtime.sensitive, locale=args.locale),
         **retrieve_kwargs(review_config),
         **obs_kwargs(review_config, runtime.obs_credentials),
+        thread_id=private_agent_thread_id(),
+        review_adapter=private_state.get("review_adapter"),
+        review_projection=private_state.get("review_projection"),
+        review_turn_id=private_state.get("review_turn_id"),
     )
 
 
@@ -234,11 +341,15 @@ async def handle_brief_gene_agent(args: BriefGeneAgent) -> HandlerResult:
     """
     brief_config = BriefGeneConfig()
     runtime = load_handler_runtime()
+    private_state = private_agent_state()
     return await brief_gene_function(
         user_query=args.user_query,
         max_concurrency=brief_config.MAX_CONCURRENCY,
         **chat_kwargs(brief_config, runtime.sensitive, locale=args.locale),
         **retrieve_kwargs(brief_config),
+        thread_id=private_agent_thread_id(),
+        conversation_adapter=private_state.get("brief_gene_adapter"),
+        conversation_projection=private_state.get("brief_gene_projection"),
     )
 
 

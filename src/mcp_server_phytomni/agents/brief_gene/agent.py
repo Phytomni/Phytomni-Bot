@@ -27,9 +27,17 @@ from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
 )
+from ...runtime.conversation_context.models import ContextProjection
 from ...runtime.locale import SupportedLocale
 from ..knowledge.agent import KnowledgeAgent
 from ..shared.options import resolve_agent_locale
+from .chat_helpers import invoke_brief_gene_chat
+from .conversation import (
+    BriefGeneClarificationError,
+    BriefGeneConversationAdapter,
+    BriefGeneConversationOperation,
+    brief_gene_clarification_result,
+)
 from .core import (
     BRIEF_CONFIG,
     BriefGeneAgent,
@@ -53,6 +61,10 @@ from .pipeline import (
     gene_retrieve,
     run_bi_api,
 )
+from .resolve_query import (
+    BriefGeneResolveError,
+    resolve_brief_gene_user_query,
+)
 
 __all__ = [
     "BRIEF_CONFIG",
@@ -61,6 +73,8 @@ __all__ = [
     "BRIEF_GENE_SENSITIVE_FIELD_MAP",
     "BriefGeneAgent",
     "BriefGeneAgentState",
+    "BriefGeneConversationAdapter",
+    "BriefGeneConversationOperation",
     "GeneRetrieveRequest",
     "_attach_metadata",
     "_dedupe",
@@ -99,6 +113,9 @@ async def brief_gene_function(
     user_query: str,
     *,
     locale: SupportedLocale | None = None,
+    thread_id: str | None = None,
+    conversation_adapter: BriefGeneConversationAdapter | None = None,
+    conversation_projection: ContextProjection | None = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Run the LangGraph brief gene function workflow.
@@ -124,6 +141,78 @@ async def brief_gene_function(
         field_map=BRIEF_GENE_SENSITIVE_FIELD_MAP,
         secret_field_map=BRIEF_GENE_SECRET_FIELD_MAP,
     )
+    if conversation_adapter is not None:
+        if conversation_adapter.operation is None:
+            if conversation_projection is None:
+                return brief_gene_clarification_result(
+                    "Brief Gene context is unavailable; please clarify "
+                    "the gene."
+                )
+            conversation_adapter.prepare(conversation_projection)
+        operation = conversation_adapter.operation
+        if operation is BriefGeneConversationOperation.CLARIFY:
+            conversation_adapter.mark_failed()
+            return brief_gene_clarification_result(
+                conversation_adapter.clarification_message
+            )
+        if operation is BriefGeneConversationOperation.FOLLOW_UP:
+            try:
+                return await conversation_adapter.follow_up(
+                    lambda prompt: invoke_brief_gene_chat(
+                        prompt,
+                        config=brief_config,
+                        sensitive_config=sensitive_config,
+                        locale=effective_locale,
+                    )
+                )
+            except BriefGeneClarificationError as exc:
+                conversation_adapter.mark_failed()
+                return brief_gene_clarification_result(str(exc))
+        resolver_query = conversation_adapter.resolver_query
+        if not resolver_query:
+            conversation_adapter.mark_failed()
+            return brief_gene_clarification_result(
+                conversation_adapter.clarification_message
+            )
+        try:
+            resolved = await resolve_brief_gene_user_query(
+                resolver_query,
+                brief_config=brief_config,
+                sensitive_config=sensitive_config,
+                timeout_seconds=brief_config.TIMEOUT,
+            )
+        except BriefGeneResolveError as exc:
+            conversation_adapter.mark_failed()
+            return brief_gene_clarification_result(str(exc))
+        agent = get_cached_agent(
+            "BriefGeneAgent",
+            lambda: BriefGeneAgent(
+                brief_config=brief_config,
+                sensitive_config=sensitive_config,
+                knowledge_agent=KnowledgeAgent(
+                    knowledge_config=brief_config,
+                    sensitive_config=sensitive_config,
+                ),
+            ),
+            agent_fingerprint_values(
+                brief_config=brief_config,
+                sensitive_config=sensitive_config,
+            ),
+        )
+        try:
+            result = await agent.arun(
+                user_query=resolved.gene_id,
+                locale=effective_locale,
+                thread_id=conversation_adapter.thread_id or thread_id,
+            )
+        except BaseException:
+            conversation_adapter.mark_failed()
+            raise
+        if not conversation_adapter.capture_result(result, resolved=resolved):
+            return brief_gene_clarification_result(
+                "Brief Gene did not return a usable report; please try again."
+            )
+        return result
     agent = get_cached_agent(
         "BriefGeneAgent",
         lambda: BriefGeneAgent(
@@ -139,7 +228,13 @@ async def brief_gene_function(
             sensitive_config=sensitive_config,
         ),
     )
-    return await agent.arun(user_query=user_query, locale=effective_locale)
+    run_kwargs: dict[str, Any] = {
+        "user_query": user_query,
+        "locale": effective_locale,
+    }
+    if thread_id is not None:
+        run_kwargs["thread_id"] = thread_id
+    return await agent.arun(**run_kwargs)
 
 
 def brief_gene_stream_seed(

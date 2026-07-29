@@ -24,6 +24,7 @@ from ...common.responses import (
     parse_follow_up_questions,
 )
 from ...runtime.memory import MemoryGraphContext
+from ..shared.conversation_messages import build_model_messages
 from ..shared.memory_context import memory_context_for_graph
 from . import service
 from .service import (
@@ -34,6 +35,17 @@ from .service import (
     _run_phyto_chat,
 )
 from .state import ChatState
+
+
+def chat_messages_for_state(
+    state: ChatState, system_prompt: str
+) -> list[dict[str, str]]:
+    """Build the provider message list from explicit Chat state."""
+    return build_model_messages(
+        system_prompt=system_prompt,
+        user_query=state["user_query"],
+        conversation_messages=state.get("conversation_messages"),
+    )
 
 
 async def prepare_context_node(state: ChatState) -> dict[str, Any]:
@@ -84,13 +96,7 @@ async def generate_node(
     )
     if memory_context:
         system_prompt = f"{system_prompt}\n\n{memory_context}"
-    messages = [
-        {
-            "role": "system",
-            "content": system_prompt,
-        },
-        {"role": "user", "content": state["user_query"]},
-    ]
+    messages = chat_messages_for_state(state, system_prompt)
     semaphore = chat_kwargs.get("semaphore")
     if semaphore is not None:
         async with semaphore:
@@ -132,6 +138,8 @@ async def follow_up_node(
     if memory_context:
         follow_query = f"{memory_context}\n\n{follow_query}"
     follow_kwargs = {**chat_kwargs, "prompt_file": prompt_file}
+    if state.get("conversation_messages"):
+        follow_kwargs["conversation_messages"] = state["conversation_messages"]
     follow_response = await service.phyto_chat(follow_query, **follow_kwargs)
     follow_list = parse_follow_up_questions(message_content(follow_response))
     message = first_message(response)

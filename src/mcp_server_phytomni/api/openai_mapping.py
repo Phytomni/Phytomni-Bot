@@ -26,14 +26,14 @@ from .agent_capabilities import (
 
 __all__ = [
     "MODEL_TO_TOOL",
-    "tool_for_model",
+    "flatten_messages",
+    "to_chat_completion",
+    "to_chat_completion_chunks",
     "tool_accepts_obs",
     "tool_accepts_resolve_gene_id",
     "tool_accepts_resolve_to_id",
     "tool_accepts_stream",
-    "flatten_messages",
-    "to_chat_completion",
-    "to_chat_completion_chunks",
+    "tool_for_model",
 ]
 
 # Chat-like agents exposed through /v1/chat/completions.
@@ -177,7 +177,7 @@ def to_chat_completion(
     }
     if isinstance(raw, dict) and raw.get("choices"):
         completion = {**raw, **base, "model": model}
-        if "id" in raw and raw["id"]:
+        if raw.get("id"):
             completion["id"] = raw["id"]
     else:
         content = ""
@@ -234,10 +234,25 @@ async def to_chat_completion_chunks(
         event, then a terminal ``data: [DONE]\\n\\n``.
     """
     del model
-    async for event in stream:
-        payload = dict(event.data)
-        yield (
-            f"event: {event.type}\n"
-            f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-        )
+    try:
+        async for event in stream:
+            payload = _serialize_agui_payload(event)
+            yield (
+                f"event: {event.type}\n"
+                f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            )
+    finally:
+        await _close_async_iterator(stream)
     yield "data: [DONE]\n\n"
+
+
+def _serialize_agui_payload(event: AguiEvent) -> dict[str, Any]:
+    """Copy one AG-UI payload without filtering unknown custom events."""
+    return dict(event.data)
+
+
+async def _close_async_iterator(stream: AsyncIterator[AguiEvent]) -> None:
+    """Propagate consumer shutdown into upstream async generators."""
+    closer = getattr(stream, "aclose", None)
+    if callable(closer):
+        await closer()

@@ -117,6 +117,8 @@ async def test_knowledge_agent_arun_invokes_graph_with_initial_state():
     assert fake_graph.state["user_query"] == "photosynthesis review"
     assert fake_graph.state["obs_file_list"] == ["obs://paper.pdf"]
     assert fake_graph.state["repo_id_dict"] == {"literature": 1}
+    assert fake_graph.state["retrieval_query"] == "photosynthesis review"
+    assert fake_graph.state["answer_context"] == ""
     assert fake_graph.state["is_generate"] is True
     assert fake_graph.state["is_follow_up"] is False
     assert fake_graph.config == _thread_config("knowledge-thread")

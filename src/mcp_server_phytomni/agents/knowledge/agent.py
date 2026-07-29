@@ -10,6 +10,7 @@ Functions: multi_retrieve, multi_retrieve_generate, rerank, retrieve,
     retrieve_generate.
 """
 
+from contextvars import ContextVar, Token
 from typing import Any, Literal
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -50,6 +51,7 @@ from ..shared.chat_subgraph import (
     make_chat_after_router,
     mount_chat_node,
 )
+from ..shared.conversation_messages import normalize_conversation_messages
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.memory_context import memory_context_for_graph
 from ..shared.options import resolve_agent_locale
@@ -63,6 +65,9 @@ from .state import (
 
 KNOWLEDGE_CONFIG = KnowledgeConfig()
 RETRIEVE_CACHE_TTL = 300
+_private_conversation_messages: ContextVar[tuple[dict[str, str], ...]] = (
+    ContextVar("knowledge_private_conversation_messages", default=())
+)
 
 KNOWLEDGE_CONFIG_FIELD_MAP = {
     "repo_id": "REPO_ID",
@@ -90,6 +95,30 @@ __all__ = [
     "retrieve",
     "retrieve_generate",
 ]
+
+
+def _set_private_conversation_messages(
+    conversation_messages: list[dict[str, str]],
+) -> Token[tuple[dict[str, str], ...]]:
+    """Bind request-local private native-role history for one arun call."""
+    return _private_conversation_messages.set(tuple(conversation_messages))
+
+
+def _reset_private_conversation_messages(
+    token: Token[tuple[dict[str, str], ...]],
+) -> None:
+    """Restore the previous request-local KnowledgeAgent history binding."""
+    _private_conversation_messages.reset(token)
+
+
+def _private_history_for_state(
+    state: KnowledgeAgentState,
+) -> list[dict[str, str]]:
+    """Read private history from state first, then request-local fallback."""
+    history = state.get("conversation_messages")
+    if history:
+        return list(history)
+    return list(_private_conversation_messages.get())
 
 
 class KnowledgeAgent:
@@ -263,14 +292,14 @@ class KnowledgeAgent:
                 - retrieve_context: The formatted context string for the LLM.
         """
         emit_progress("retrieving", 0, detail="querying knowledge base")
-        user_query = state["user_query"]
+        retrieval_query = state.get("retrieval_query") or state["user_query"]
         repo_id_dict = (
             state.get("repo_id_dict") or self.knowledge_config.REPO_ID_DICT
         )
         upload_context = state.get("upload_context", "")
 
         retrieve_response = await multi_retrieve(
-            user_query=user_query,
+            user_query=retrieval_query,
             retrieve_url=self.knowledge_config.RETRIEVE_URL,
             repo_id_dict=repo_id_dict,
             page_num=self.knowledge_config.PAGE_NUM,
@@ -321,6 +350,7 @@ class KnowledgeAgent:
         user_query = state["user_query"]
         retrieve_context = state["retrieve_context"]
         upload_context = state.get("upload_context", "")
+        answer_context = state.get("answer_context", "")
 
         if upload_context:
             chat_query = get_prompt(
@@ -342,6 +372,14 @@ class KnowledgeAgent:
                 },
             )
 
+        if answer_context:
+            chat_query = (
+                "[conversation answer context]\n"
+                f"{answer_context}\n"
+                "[conversation answer context end]\n\n"
+                f"{chat_query}"
+            )
+
         memory_context = memory_context_for_graph(
             runtime.context if runtime is not None else None
         )
@@ -354,7 +392,9 @@ class KnowledgeAgent:
             locale=state.get("locale"),
         )
         chat_payload = build_chat_input(
-            user_query=chat_query, chat_kwargs=chat_kwargs
+            user_query=chat_query,
+            chat_kwargs=chat_kwargs,
+            conversation_messages=_private_history_for_state(state),
         )
         return {
             "chat_payload": chat_payload,
@@ -460,7 +500,9 @@ class KnowledgeAgent:
             locale=state.get("locale"),
         )
         chat_payload = build_chat_input(
-            user_query=follow_up_query, chat_kwargs=chat_kwargs
+            user_query=follow_up_query,
+            chat_kwargs=chat_kwargs,
+            conversation_messages=_private_history_for_state(state),
         )
         return {
             "chat_payload": chat_payload,
@@ -593,6 +635,11 @@ class KnowledgeAgent:
             "user_query": user_query,
             "locale": resolve_agent_locale(kwargs.get("locale")),
             "obs_file_list": obs_file_list or [],
+            "conversation_messages": normalize_conversation_messages(
+                kwargs.get("conversation_messages")
+            ),
+            "retrieval_query": kwargs.get("retrieval_query") or user_query,
+            "answer_context": kwargs.get("answer_context", ""),
             "repo_id_dict": repo_id_dict,
             "upload_context": "",
             "retrieved_docs": [],
@@ -633,6 +680,9 @@ class KnowledgeAgent:
         repo_id_dict = kwargs.get("repo_id_dict")
         is_generate = kwargs.get("is_generate", True)
         is_follow_up = kwargs.get("is_follow_up", True)
+        conversation_messages = normalize_conversation_messages(
+            kwargs.get("conversation_messages")
+        )
         initial_state = self.initial_state(
             user_query,
             obs_file_list=obs_file_list,
@@ -640,13 +690,19 @@ class KnowledgeAgent:
             is_generate=is_generate,
             is_follow_up=is_follow_up,
             locale=kwargs.get("locale"),
+            conversation_messages=conversation_messages,
+            retrieval_query=kwargs.get("retrieval_query"),
+            answer_context=kwargs.get("answer_context", ""),
         )
-
-        final_state = await ainvoke_graph(
-            self.app,
-            initial_state,
-            thread_id=kwargs.get("thread_id"),
-        )
+        token = _set_private_conversation_messages(conversation_messages)
+        try:
+            final_state = await ainvoke_graph(
+                self.app,
+                initial_state,
+                thread_id=kwargs.get("thread_id"),
+            )
+        finally:
+            _reset_private_conversation_messages(token)
 
         if not is_generate:
             return final_state["retrieved_docs"]
@@ -707,13 +763,24 @@ async def multi_retrieve_generate(
             sensitive_config=sensitive_config,
         ),
     )
+    arun_kwargs: dict[str, Any] = {
+        "user_query": user_query,
+        "obs_file_list": obs_file_list or [],
+        "repo_id_dict": repo_id_dict,
+        "is_generate": is_generate,
+        "is_follow_up": is_follow_up,
+        "locale": effective_locale,
+    }
+    if "conversation_messages" in kwargs:
+        arun_kwargs["conversation_messages"] = kwargs["conversation_messages"]
+    if "retrieval_query" in kwargs:
+        arun_kwargs["retrieval_query"] = kwargs["retrieval_query"]
+    if "answer_context" in kwargs:
+        arun_kwargs["answer_context"] = kwargs["answer_context"]
+    if "thread_id" in kwargs:
+        arun_kwargs["thread_id"] = kwargs["thread_id"]
     return await agent.arun(
-        user_query=user_query,
-        obs_file_list=obs_file_list or [],
-        repo_id_dict=repo_id_dict,
-        is_generate=is_generate,
-        is_follow_up=is_follow_up,
-        locale=effective_locale,
+        **arun_kwargs,
     )
 
 

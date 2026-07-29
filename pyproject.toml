@@ -133,6 +133,9 @@ exclude = [
 ]
 
 [tool.ruff.lint]
+# Pin Ruff's historical default base rules to prevent version drift from
+# silently expanding the enabled rule surface.
+select = ["E4", "E7", "E9", "F"]
 # ASYNC109 is handled by exact function-local ``noqa`` records. The
 # approved functions forward a transport budget to a downstream client;
 # they do not own the cancellation scope for that request.

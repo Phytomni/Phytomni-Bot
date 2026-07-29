@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
+from uuid import UUID
 
 from pydantic import (
     BaseModel,
@@ -18,6 +19,7 @@ from pydantic import (
 )
 
 from ..mcp.schemas import AGENT_TOOL_DEFINITIONS
+from ..runtime.conversation_context.models import ConversationEnvelopeV1
 from ..runtime.locale import SupportedLocale
 
 _CANONICAL_AGENT_TOOL_NAMES = frozenset(
@@ -52,6 +54,9 @@ __all__ = [
     "ApiKeyRecordResponse",
     "ChatCompletionRequest",
     "ChatMessage",
+    "ContextMutationResponse",
+    "ContextSettlementRequest",
+    "ContextTombstoneRequest",
     "FileUploadResponse",
     "MemoryCreateRequest",
     "MemoryDeleteResponse",
@@ -100,6 +105,34 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class ContextSettlementRequest(BaseModel):
+    """Acknowledge one staged conversation-context delta."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    conversation_key: UUID
+    turn_id: str = Field(pattern=r"^[1-9][0-9]{0,18}$")
+    ledger_version: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class ContextTombstoneRequest(BaseModel):
+    """Delete durable context and its derived checkpoint threads."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    conversation_key: UUID
+
+
+class ContextMutationResponse(BaseModel):
+    """Public-safe result for a conversation-context mutation."""
+
+    schema_version: Literal[1] = 1
+    state: Literal["committed", "tombstoned", "already_applied"]
+    context_version: int = Field(ge=0)
+
+
 class ChatCompletionRequest(BaseModel):
     """OpenAI-compatible chat completion request subset.
 
@@ -135,6 +168,10 @@ class ChatCompletionRequest(BaseModel):
     dialogue_id: str | None = None
     debug: bool | None = None
     locale: SupportedLocale | None = None
+    conversation: ConversationEnvelopeV1 | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class AgentRunRequest(BaseModel):
@@ -225,6 +262,10 @@ class ExpertQueryRequest(BaseModel):
     allowed_tools: list[str] = Field(min_length=1, max_length=10)
     forced_tool: str | None = None
     locale: SupportedLocale | None = None
+    conversation: ConversationEnvelopeV1 | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
     @model_validator(mode="after")
     def validate_tool_constraints(self) -> ExpertQueryRequest:

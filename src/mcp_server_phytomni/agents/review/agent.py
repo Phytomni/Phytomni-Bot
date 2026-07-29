@@ -14,7 +14,9 @@ pipeline.py-style siblings.
 """
 
 import logging
+from collections.abc import Mapping
 from typing import Any
+from uuid import UUID
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
@@ -41,6 +43,8 @@ from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
 )
+from ...runtime.conversation_context.projection import agent_thread_id
+from ...runtime.conversation_context.store import StoredTurn
 from ...runtime.langgraph_runner import (
     ainvoke_graph,
     ensure_checkpointer,
@@ -60,6 +64,11 @@ from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import KnowledgeApp, build_knowledge_app
 from ..shared.options import resolve_agent_locale
 from ..shared.parallel_dispatch import FailureRecord
+from .conversation import (
+    ReviewClarificationError,
+    ReviewConversationAdapter,
+    review_clarification_result,
+)
 from .helpers import build_review_chat_kwargs
 from .planning import ReviewPlanningMixin
 from .report import ReviewReportMixin
@@ -884,6 +893,11 @@ class DeepResearchAgent(
             "approval_pending": False,
             "approval_decision": {},
             "a2ui_round": 0,
+            # Private conversation metadata is additive to the graph state;
+            # DeepResearchInput/DeepResearchOutput remain unchanged.
+            "review_operation": None,
+            "report_artifact_id": None,
+            "report_revision": 0,
         }
         return initial_state
 
@@ -893,6 +907,7 @@ class DeepResearchAgent(
         obs_file_list: list[str] | None = None,
         thread_id: str | None = None,
         locale: SupportedLocale | None = None,
+        review_operation: str | None = None,
     ) -> dict[str, Any]:
         """Execute the DeepResearchAgent workflow.
 
@@ -910,10 +925,18 @@ class DeepResearchAgent(
             obs_file_list,
             locale=locale,
         )
+        initial_state["review_operation"] = review_operation
         final_state = await ainvoke_graph(
             self.app, initial_state, thread_id=thread_id
         )
-        return merge_intermediate_state(final_state)
+        return merge_intermediate_state(
+            final_state,
+            extra_excluded_keys={
+                "review_operation",
+                "report_artifact_id",
+                "report_revision",
+            },
+        )
 
 
 async def review_agent_function(
@@ -934,6 +957,11 @@ async def review_agent_function(
     Returns:
         Chat-completions-style final response payload from DeepResearchAgent.
     """
+    thread_id = kwargs.pop("thread_id", None)
+    review_adapter = kwargs.pop("review_adapter", None)
+    review_projection = kwargs.pop("review_projection", None)
+    review_turn_id = kwargs.pop("review_turn_id", None)
+    review_operation = kwargs.pop("review_operation", None)
     effective_locale = resolve_agent_locale(locale)
     review_config = copy_config_with_overrides(
         REVIEW_CONFIG,
@@ -961,11 +989,101 @@ async def review_agent_function(
             sensitive_config=sensitive_config,
         ),
     )
-    return await agent.arun(
-        user_query=user_query,
-        obs_file_list=obs_file_list or [],
-        locale=effective_locale,
+    if isinstance(review_adapter, ReviewConversationAdapter):
+        if review_projection is not None:
+            try:
+                await review_adapter.prepare_from_agent(
+                    review_projection,
+                    agent,
+                    review_adapter.stable_thread_id
+                    or review_projection.agent_thread_id,
+                    turn_id=review_turn_id,
+                )
+            except ReviewClarificationError as exc:
+                review_adapter.mark_failed()
+                return review_clarification_result(str(exc))
+        if review_adapter.operation == "follow_up":
+            try:
+                result = await review_adapter.follow_up(agent._chat)
+            except ReviewClarificationError as exc:
+                review_adapter.mark_failed()
+                return review_clarification_result(str(exc))
+            review_adapter.capture_result(result)
+            return result
+        if review_adapter.operation == "local_revision":
+            try:
+                result = await review_adapter.local_revision(agent._chat)
+            except ReviewClarificationError as exc:
+                review_adapter.mark_failed()
+                return review_clarification_result(str(exc))
+            review_adapter.capture_result(result)
+            return result
+        review_operation = (
+            review_adapter.operation.value
+            if review_adapter.operation is not None
+            else review_operation
+        )
+    try:
+        execution_thread_id = thread_id
+        if isinstance(review_adapter, ReviewConversationAdapter):
+            execution_thread_id = (
+                review_adapter.execution_thread_id or thread_id
+            )
+        result = await agent.arun(
+            user_query=user_query,
+            obs_file_list=obs_file_list or [],
+            thread_id=execution_thread_id,
+            locale=effective_locale,
+            review_operation=review_operation,
+        )
+    except ReviewClarificationError as exc:
+        if isinstance(review_adapter, ReviewConversationAdapter):
+            review_adapter.mark_failed()
+        return review_clarification_result(str(exc))
+    if isinstance(review_adapter, ReviewConversationAdapter):
+        review_adapter.capture_result(result)
+    return result
+
+
+async def load_review_settlement_adapter(
+    metadata: Mapping[str, Any],
+    staged_turn: StoredTurn,
+) -> ReviewConversationAdapter:
+    """Rebuild one pending Review adapter from durable staged-turn metadata."""
+    review_config = REVIEW_CONFIG
+    sensitive_config = get_sensitive_config()
+    agent = get_cached_agent(
+        "DeepResearchAgent",
+        lambda: DeepResearchAgent(
+            review_config=review_config,
+            sensitive_config=sensitive_config,
+            knowledge_agent=KnowledgeAgent(
+                knowledge_config=review_config,
+                sensitive_config=sensitive_config,
+            ),
+        ),
+        agent_fingerprint_values(
+            review_config=review_config,
+            sensitive_config=sensitive_config,
+        ),
     )
+    adapter = ReviewConversationAdapter()
+    try:
+        expected_stable_thread_id = agent_thread_id(
+            UUID(staged_turn.conversation_key), "ReviewAgent"
+        )
+    except (AttributeError, ValueError) as exc:
+        raise ReviewClarificationError(
+            "Review settlement conversation identity is invalid."
+        ) from exc
+    await adapter.restore_settlement(
+        metadata,
+        agent,
+        staged_turn.result,
+        expected_stable_thread_id=expected_stable_thread_id,
+        expected_turn_id=staged_turn.turn_id,
+    )
+    return adapter
 
 
 def review_stream_target(

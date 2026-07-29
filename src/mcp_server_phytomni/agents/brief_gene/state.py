@@ -188,6 +188,17 @@ class BriefGeneState(TypedDict):
     # status projection — only the render banner and the ``degraded``
     # metadata key.
     literature_degraded: Annotated[list[DegradedRecord], operator.add]
+    # Private conversation metadata is additive and never part of the public
+    # BriefGene input/output topology.  The context adapter owns its bounded
+    # values; these fields are available only to native graph integrations.
+    conversation_operation: NotRequired[str]
+    conversation_thread_id: NotRequired[str]
+    active_gene_id: NotRequired[str]
+    active_species_code: NotRequired[str]
+    report_summary: NotRequired[str]
+    evidence_refs: NotRequired[list[str]]
+    report_artifact_id: NotRequired[str]
+    report_revision: NotRequired[int]
 
 
 BriefGeneAgentState = BriefGeneState
