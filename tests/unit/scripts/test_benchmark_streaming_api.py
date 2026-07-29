@@ -9,7 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
 from scripts import benchmark_streaming_api as benchmark
 
 pytestmark = pytest.mark.unit
@@ -109,8 +108,9 @@ def test_parse_args_rejects_zero_concurrency() -> None:
     assert raised.value.code == 2
 
 
-def test_parse_args_rejects_nonpositive_timeout() -> None:
-    """Require a positive stream inactivity timeout."""
+@pytest.mark.parametrize("timeout", ["0", "nan", "inf"])
+def test_parse_args_rejects_invalid_timeout(timeout: str) -> None:
+    """Require a finite, positive stream inactivity timeout."""
     with pytest.raises(SystemExit) as raised:
         benchmark.parse_args(
             [
@@ -125,7 +125,7 @@ def test_parse_args_rejects_nonpositive_timeout() -> None:
                 "--api-key",
                 "secret",
                 "--timeout-seconds",
-                "0",
+                timeout,
             ]
         )
 
