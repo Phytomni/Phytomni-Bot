@@ -38,6 +38,7 @@ from .service import (
 from .store import (
     ConversationContextStore,
     ReviewMutationLockTimeoutError,
+    ReviewSettlementClaim,
     StoredTurn,
 )
 
@@ -50,6 +51,27 @@ class ContextAgentInvocation:
     conversation_messages: tuple[dict[str, str], ...]
     agent_thread_id: str
     private_agent_state: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class _ReviewSettlementRequest:
+    """Inputs shared by the private Review acknowledgment helpers."""
+
+    key: tuple[str, str]
+    accepted: bool
+    staged_turn: StoredTurn | None
+    expected_ledger_version: str | None
+    mutation_lock_held: bool
+
+
+@dataclass(frozen=True, slots=True)
+class _ReviewSettlementClaim:
+    """Durable claim state carried across private Review settlement steps."""
+
+    staged_turn: StoredTurn | None
+    claim_token: str | None = None
+    claim_fence: int | None = None
+    terminal_result: bool | None = None
 
 
 SyncInvoker = Callable[
@@ -378,6 +400,244 @@ class ConversationContextExecutor:
                 if lock is not None:
                     lock.release()
 
+    def _claim_review_settlement_state(
+        self,
+        service: ConversationContextService,
+        request: _ReviewSettlementRequest,
+    ) -> _ReviewSettlementClaim:
+        """Load and claim durable Review metadata before adapter I/O."""
+        key = request.key
+        current_turn = service.store.load_turn(*key)
+        staged_turn = current_turn or request.staged_turn
+        metadata = review_settlement_metadata_from_turn(staged_turn)
+        if metadata is None or current_turn is None:
+            terminal_result = (
+                False if current_turn is None and metadata is not None else None
+            )
+            return _ReviewSettlementClaim(
+                staged_turn=staged_turn, terminal_result=terminal_result
+            )
+        bounded = _bounded_review_stage_metadata(
+            metadata, allow_terminal=True
+        )
+        expected_stable = self._expected_review_stable_thread_id(key)
+        if (
+            bounded is None
+            or bounded["turn_id"] != key[1]
+            or expected_stable is None
+            or bounded["stable_thread_id"] != expected_stable
+        ):
+            service.store.mark_review_settlement_failed(
+                *key, mutation_lock_held=request.mutation_lock_held
+            )
+            return _ReviewSettlementClaim(
+                staged_turn=staged_turn, terminal_result=False
+            )
+        settlement_state = bounded["settlement_state"]
+        terminal_result = {
+            "promoted": request.accepted,
+            "rejected": False,
+            "failed": False,
+        }.get(settlement_state)
+        if terminal_result is not None:
+            return _ReviewSettlementClaim(
+                staged_turn=staged_turn, terminal_result=terminal_result
+            )
+        claim = service.store.claim_review_settlement(
+            *key,
+            expected_ledger_version=request.expected_ledger_version,
+            expected_base_context_version=(
+                staged_turn.base_context_version
+                if staged_turn is not None
+                else None
+            ),
+        )
+        return self._review_settlement_claim_result(
+            service, request, staged_turn, claim
+        )
+
+    @staticmethod
+    def _review_settlement_claim_result(
+        service: ConversationContextService,
+        request: _ReviewSettlementRequest,
+        staged_turn: StoredTurn | None,
+        claim: ReviewSettlementClaim,
+    ) -> _ReviewSettlementClaim:
+        """Validate a durable claim and reload its authoritative staged turn."""
+        key = request.key
+        if claim.status == "invalid":
+            service.store.mark_review_settlement_failed(
+                *key, mutation_lock_held=request.mutation_lock_held
+            )
+            return _ReviewSettlementClaim(
+                staged_turn=staged_turn, terminal_result=False
+            )
+        if claim.status != "claimed" or claim.claim_token is None:
+            return _ReviewSettlementClaim(
+                staged_turn=staged_turn, terminal_result=False
+            )
+        if claim.fence_token is None:
+            service.store.mark_review_settlement_failed(
+                *key, mutation_lock_held=request.mutation_lock_held
+            )
+            return _ReviewSettlementClaim(
+                staged_turn=staged_turn, terminal_result=False
+            )
+        return _ReviewSettlementClaim(
+            staged_turn=service.store.load_turn(*key),
+            claim_token=claim.claim_token,
+            claim_fence=claim.fence_token,
+        )
+
+    @staticmethod
+    def _finalize_review_claim_failed(
+        service: ConversationContextService,
+        key: tuple[str, str],
+        claim: _ReviewSettlementClaim,
+    ) -> None:
+        """Persist a failed state when a claimed adapter cannot continue."""
+        if claim.claim_token is not None:
+            service.store.finalize_review_settlement(
+                *key,
+                claim_token=claim.claim_token,
+                fence_token=claim.claim_fence,
+                state="failed",
+            )
+
+    @staticmethod
+    def _attach_review_settlement_fence(
+        service: ConversationContextService,
+        key: tuple[str, str],
+        claim: _ReviewSettlementClaim,
+        adapter: ReviewConversationAdapter,
+    ) -> None:
+        """Give the adapter a live fence check before private writes."""
+        if claim.claim_token is None:
+            return
+        set_fence = getattr(adapter, "set_settlement_fence", None)
+        if callable(set_fence):
+            set_fence(
+                lambda: service.store.is_review_settlement_claim_active(
+                    *key,
+                    claim_token=claim.claim_token,
+                    fence_token=claim.claim_fence,
+                )
+            )
+
+    async def _reject_review_settlement(
+        self,
+        service: ConversationContextService,
+        request: _ReviewSettlementRequest,
+        claim: _ReviewSettlementClaim,
+        adapter: ReviewConversationAdapter,
+    ) -> bool:
+        """Discard a rejected Review candidate and finalize its marker."""
+        adapter.mark_failed()
+        cleanup_error: BaseException | None = None
+        try:
+            await adapter.discard_pending_candidate()
+        except (
+            asyncio.CancelledError,
+            RuntimeError,
+            ValueError,
+            TypeError,
+            OSError,
+        ) as exc:
+            cleanup_error = exc
+        if claim.claim_token is None:
+            marker_saved = True
+        else:
+            marker_saved = service.store.finalize_review_settlement(
+                *request.key,
+                claim_token=claim.claim_token,
+                fence_token=claim.claim_fence,
+                state="rejected",
+            )
+        if cleanup_error is not None:
+            if claim.claim_token is not None:
+                service.store.mark_review_settlement_failed(
+                    *request.key,
+                    mutation_lock_held=request.mutation_lock_held,
+                )
+            raise cleanup_error
+        return marker_saved
+
+    async def _accept_review_settlement(
+        self,
+        service: ConversationContextService,
+        request: _ReviewSettlementRequest,
+        claim: _ReviewSettlementClaim,
+        adapter: ReviewConversationAdapter,
+    ) -> bool:
+        """Reserve, settle, and promote one accepted Review candidate."""
+        if claim.claim_token is not None:
+            assert claim.claim_fence is not None
+            reservation = service.store.reserve_review_settlement(
+                *request.key,
+                claim_token=claim.claim_token,
+                fence_token=claim.claim_fence,
+                expected_ledger_version=request.expected_ledger_version,
+                expected_base_context_version=(
+                    claim.staged_turn.base_context_version
+                    if claim.staged_turn is not None
+                    else None
+                ),
+            )
+            if reservation.status == "promoted":
+                return True
+            if reservation.status != "promoting":
+                self._finalize_review_claim_failed(service, request.key, claim)
+                return False
+        try:
+            if (
+                claim.claim_token is not None
+                and not service.store.is_review_settlement_claim_active(
+                    *request.key, claim_token=claim.claim_token
+                )
+            ):
+                raise RuntimeError("Review settlement claim was fenced")
+            await adapter.settle_async(True)
+        except BaseException:
+            adapter.mark_failed()
+            try:
+                await adapter.discard_pending_candidate()
+            finally:
+                self._finalize_review_claim_failed(service, request.key, claim)
+            raise
+        if (
+            claim.claim_token is not None
+            and not service.store.finalize_review_settlement(
+                *request.key,
+                claim_token=claim.claim_token,
+                fence_token=claim.claim_fence,
+                state="promoted",
+                report_revision=adapter.report_revision,
+            )
+        ):
+            raise RuntimeError(
+                "Review settlement marker could not be persisted"
+            )
+        return True
+
+    async def _settle_review_adapter(
+        self,
+        service: ConversationContextService,
+        request: _ReviewSettlementRequest,
+        claim: _ReviewSettlementClaim,
+        adapter: ReviewConversationAdapter,
+    ) -> bool:
+        """Run the accepted/rejected adapter path under the durable fence."""
+        self._attach_review_settlement_fence(
+            service, request.key, claim, adapter
+        )
+        if not request.accepted:
+            return await self._reject_review_settlement(
+                service, request, claim, adapter
+            )
+        return await self._accept_review_settlement(
+            service, request, claim, adapter
+        )
+
     async def _acknowledge_review_settlement_key_locked(
         self,
         key: tuple[str, str],
@@ -389,179 +649,29 @@ class ConversationContextExecutor:
     ) -> bool:
         """Apply one durable Review acknowledgment by conversation identity."""
         service = self._service_for_request()
-        current_turn = service.store.load_turn(*key)
-        staged_turn = current_turn or staged_turn
-        metadata = review_settlement_metadata_from_turn(staged_turn)
-        claim_token: str | None = None
-        claim_fence: int | None = None
-        if current_turn is None and metadata is not None:
-            return False
-        durable_marker = metadata is not None and current_turn is not None
-        if durable_marker:
-            assert metadata is not None
-            bounded = _bounded_review_stage_metadata(
-                metadata, allow_terminal=True
-            )
-            expected_stable = self._expected_review_stable_thread_id(key)
-            if (
-                bounded is None
-                or bounded["turn_id"] != key[1]
-                or expected_stable is None
-                or bounded["stable_thread_id"] != expected_stable
-            ):
-                service.store.mark_review_settlement_failed(
-                    *key, mutation_lock_held=mutation_lock_held
-                )
-                return False
-            settlement_state = bounded["settlement_state"]
-            if settlement_state == "promoted":
-                return accepted
-            if settlement_state in {"rejected", "failed"}:
-                return False
-            claim = service.store.claim_review_settlement(
-                *key,
-                expected_ledger_version=expected_ledger_version,
-                expected_base_context_version=(
-                    staged_turn.base_context_version
-                    if staged_turn is not None
-                    else None
-                ),
-            )
-            if claim.status == "invalid":
-                service.store.mark_review_settlement_failed(
-                    *key, mutation_lock_held=mutation_lock_held
-                )
-                return False
-            if claim.status != "claimed" or claim.claim_token is None:
-                return False
-            claim_token = claim.claim_token
-            claim_fence = claim.fence_token
-            if claim_fence is None:
-                service.store.mark_review_settlement_failed(
-                    *key, mutation_lock_held=mutation_lock_held
-                )
-                return False
-            staged_turn = service.store.load_turn(*key)
+        request = _ReviewSettlementRequest(
+            key=key,
+            accepted=accepted,
+            staged_turn=staged_turn,
+            expected_ledger_version=expected_ledger_version,
+            mutation_lock_held=mutation_lock_held,
+        )
+        claim = self._claim_review_settlement_state(service, request)
+        if claim.terminal_result is not None:
+            return claim.terminal_result
         try:
             adapter = await self._load_review_settlement_adapter(
-                key, staged_turn
+                key, claim.staged_turn
             )
         except BaseException:
-            if claim_token is not None:
-                service.store.finalize_review_settlement(
-                    *key,
-                    claim_token=claim_token,
-                    fence_token=claim_fence,
-                    state="failed",
-                )
+            self._finalize_review_claim_failed(service, key, claim)
             raise
         if adapter is None:
-            if claim_token is not None:
-                service.store.finalize_review_settlement(
-                    *key,
-                    claim_token=claim_token,
-                    fence_token=claim_fence,
-                    state="failed",
-                )
+            self._finalize_review_claim_failed(service, key, claim)
             return False
-        if claim_token is not None:
-            set_fence = getattr(adapter, "set_settlement_fence", None)
-            if callable(set_fence):
-                set_fence(
-                    lambda: service.store.is_review_settlement_claim_active(
-                        *key,
-                        claim_token=claim_token,
-                        fence_token=claim_fence,
-                    )
-                )
-        if not accepted:
-            adapter.mark_failed()
-            cleanup_error: BaseException | None = None
-            try:
-                await adapter.discard_pending_candidate()
-            except (
-                asyncio.CancelledError,
-                RuntimeError,
-                ValueError,
-                TypeError,
-                OSError,
-            ) as exc:
-                cleanup_error = exc
-            if claim_token is not None:
-                marker_saved = service.store.finalize_review_settlement(
-                    *key,
-                    claim_token=claim_token,
-                    fence_token=claim_fence,
-                    state="rejected",
-                )
-            else:
-                marker_saved = True
-            if cleanup_error is not None:
-                if claim_token is not None:
-                    service.store.mark_review_settlement_failed(
-                        *key, mutation_lock_held=mutation_lock_held
-                    )
-                raise cleanup_error
-            return marker_saved
-        if claim_token is not None:
-            assert claim_fence is not None
-            reservation = service.store.reserve_review_settlement(
-                *key,
-                claim_token=claim_token,
-                fence_token=claim_fence,
-                expected_ledger_version=expected_ledger_version,
-                expected_base_context_version=(
-                    staged_turn.base_context_version
-                    if staged_turn is not None
-                    else None
-                ),
-            )
-            if reservation.status == "promoted":
-                return True
-            if reservation.status != "promoting":
-                service.store.finalize_review_settlement(
-                    *key,
-                    claim_token=claim_token,
-                    fence_token=claim_fence,
-                    state="failed",
-                )
-                return False
-        try:
-            if (
-                claim_token is not None
-                and not service.store.is_review_settlement_claim_active(
-                    *key, claim_token=claim_token
-                )
-            ):
-                raise RuntimeError("Review settlement claim was fenced")
-            await adapter.settle_async(True)
-        except BaseException:
-            adapter.mark_failed()
-            try:
-                await adapter.discard_pending_candidate()
-            finally:
-                if claim_token is not None:
-                    service.store.finalize_review_settlement(
-                        *key,
-                        claim_token=claim_token,
-                        fence_token=claim_fence,
-                        state="failed",
-                    )
-            raise
-        if (
-            claim_token is not None
-            and not service.store.finalize_review_settlement(
-                *key,
-                claim_token=claim_token,
-                fence_token=claim_fence,
-                state="promoted",
-                report_revision=adapter.report_revision,
-            )
-        ):
-            raise RuntimeError(
-                "Review settlement marker could not be persisted"
-            )
-        return True
+        return await self._settle_review_adapter(
+            service, request, claim, adapter
+        )
 
     async def acknowledge_review_settlement(
         self,
