@@ -316,14 +316,10 @@ def _preflight_agent_run(
         )
     if agent in _BACKGROUND_SUBMISSION_AGENT_SLUGS:
         validation_arguments = deepcopy(arguments)
-        if agent == "design" and validation_arguments.get(
-            "resolve_gene_id"
-        ):
+        if agent == "design" and validation_arguments.get("resolve_gene_id"):
             validation_arguments.setdefault("species_code", "ath")
             validation_arguments.setdefault("gene_id", "AT1G01010")
-        elif agent == "network" and validation_arguments.get(
-            "resolve_to_id"
-        ):
+        elif agent == "network" and validation_arguments.get("resolve_to_id"):
             validation_arguments.setdefault("species_code", "osa")
             validation_arguments.setdefault("to_id", "TO:0000001")
         validate_tool_arguments(tool_name, validation_arguments)
