@@ -550,7 +550,12 @@ class DataAgent:
         ):
             result = await execute_nl2sql_request(request)
             if result is None:
-                raise McpError(ErrorData(code=INTERNAL_ERROR, message="No response received from SQL database"))
+                raise McpError(
+                    ErrorData(
+                        code=INTERNAL_ERROR,
+                        message="No response received from SQL database",
+                    )
+                )
         logger.debug(
             "DataAgent result received",
             extra={

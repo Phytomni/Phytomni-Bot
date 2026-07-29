@@ -125,6 +125,8 @@ def test_validate_tool_arguments_rejects_invalid_payload_without_invocation(
 
     assert caught.value.error.code == INVALID_PARAMS
     assert invoked is False
+
+
 async def test_v1_history_reaches_chat_handler_through_raw_dispatch(
     demo_data_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
