@@ -12,6 +12,7 @@ chokepoint-minted ``origin="remote"`` run_id read back via
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -20,7 +21,6 @@ from typing import Any
 import httpx
 import pytest
 from tests.support.http_fakes import (
-    assert_degraded_tracking_response,
     assert_duplicate_attachment_response,
     install_rejection_handler,
     install_tool_handler,
@@ -51,6 +51,9 @@ from mcp_server_phytomni.mcp.schemas import (
 )
 from mcp_server_phytomni.runtime import (
     submit_recorder as submit_recorder_module,
+)
+from mcp_server_phytomni.runtime.background_submission import (
+    BackgroundSubmissionLaunchError,
 )
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
@@ -462,6 +465,20 @@ async def test_agent_run_sync_persists_request_info(
 _REMOTE_CASES = [
     pytest.param(
         _RemoteCase(
+            slug="deep_genome",
+            tool_name=server.PhytomniAgents.DEEP_GENOME_AGENT.value,
+            stub_return={"task_id": "T-D", "output_dir": "/obs/d"},
+            arguments={"species_code": "ATH", "gene_id": "AT1G01010"},
+            expected_task_ids={"T-D"},
+        ),
+        id="deep_genome-top-level-task_id",
+    ),
+]
+
+
+_BACKGROUND_CASES = [
+    pytest.param(
+        _RemoteCase(
             slug="analyst",
             tool_name=server.PhytomniAgents.ANALYST_AGENT.value,
             stub_return={"task_id": "T-A", "output_dir": "/obs/a"},
@@ -472,24 +489,14 @@ _REMOTE_CASES = [
             },
             expected_task_ids={"T-A"},
         ),
-        id="analyst-top-level-task_id",
-    ),
-    pytest.param(
-        _RemoteCase(
-            slug="deep_genome",
-            tool_name=server.PhytomniAgents.DEEP_GENOME_AGENT.value,
-            stub_return={"task_id": "T-D", "output_dir": "/obs/d"},
-            arguments={"species_code": "ATH", "gene_id": "AT1G01010"},
-            expected_task_ids={"T-D"},
-        ),
-        id="deep_genome-top-level-task_id",
+        id="analyst",
     ),
     pytest.param(
         _RemoteCase(
             slug="research",
             tool_name=server.PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value,
             stub_return={
-                "task_ids": {"g1": "T-R1", "g2": "T-R2"},
+                "task_ids": ["T-R1", "T-R2"],
                 "output_dir": "/obs/r",
             },
             arguments={
@@ -499,9 +506,117 @@ _REMOTE_CASES = [
             },
             expected_task_ids={"T-R1", "T-R2"},
         ),
-        id="research-task_ids-map",
+        id="research",
+    ),
+    pytest.param(
+        _RemoteCase(
+            slug="network",
+            tool_name=server.PhytomniAgents.GENE_NETWORK_AGENT.value,
+            stub_return={
+                "network_task": {
+                    "task_id": "T-N",
+                    "output_dir": "/obs/n",
+                }
+            },
+            arguments={
+                "species_code": "osa",
+                "to_id": "TO:0000207",
+                "obs_file_list": [],
+                "resolve_to_id": False,
+            },
+            expected_task_ids={"T-N"},
+        ),
+        id="network",
+    ),
+    pytest.param(
+        _RemoteCase(
+            slug="design",
+            tool_name=server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value,
+            stub_return={
+                "design_task_result": [
+                    {"task_id": "T-D1", "output_dir": "/obs/d1"},
+                    {"task_id": "T-D2", "output_dir": "/obs/d2"},
+                ]
+            },
+            arguments={
+                "species_code": "ath",
+                "gene_id": "AT1G01010",
+                "obs_file_list": [],
+                "resolve_gene_id": False,
+            },
+            expected_task_ids={"T-D1", "T-D2"},
+        ),
+        id="design",
     ),
 ]
+
+
+@pytest.mark.parametrize("case", _BACKGROUND_CASES)
+async def test_background_agent_returns_reserved_run_before_handler_finishes(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+    case: _RemoteCase,
+) -> None:
+    release = asyncio.Event()
+    started = asyncio.Event()
+
+    async def slow_handler(_args: Any) -> dict[str, Any]:
+        started.set()
+        await release.wait()
+        return case.stub_return
+
+    install_tool_handler(
+        monkeypatch,
+        case.tool_name,
+        records_submission(case.slug)(slow_handler),
+    )
+    request_task = asyncio.create_task(
+        api_client.post(
+            f"/v1/agents/{case.slug}/runs",
+            headers={"Authorization": f"Bearer {issued_api_key}"},
+            json={"arguments": case.arguments},
+        )
+    )
+
+    await asyncio.wait_for(started.wait(), timeout=1)
+    try:
+        response = await asyncio.wait_for(
+            asyncio.shield(request_task), timeout=1
+        )
+        returned_before_release = True
+    except TimeoutError:
+        returned_before_release = False
+    finally:
+        release.set()
+    if not returned_before_release:
+        response = await request_task
+
+    assert returned_before_release
+    assert response.status_code == 202
+    body = response.json()
+    assert body["agent"] == case.slug
+    assert body["status"] == "running"
+    assert body["id"] == body["run_id"]
+    assert body["run_id"]
+    assert body["task_ids"] == []
+    assert body["result"] == empty_agent_result()
+    assert "degraded_tracking" not in body
+
+    registry = RunRegistry(tasks_db_path)
+    for _ in range(100):
+        record = registry.get_run(body["run_id"], owner="u1")
+        if record is not None and set(record.task_ids) == case.expected_task_ids:
+            break
+        await asyncio.sleep(0)
+    else:
+        pytest.fail("background child tasks were not attached")
+
+    assert record is not None
+    assert record.spec.run_id == body["run_id"]
+    assert record.spec.agent == case.slug
+    assert record.status == "running"
 
 
 @pytest.mark.parametrize("case", _REMOTE_CASES)
@@ -512,15 +627,7 @@ async def test_agent_run_remote_returns_chokepoint_run_id(
     tasks_db_path: str,
     case: _RemoteCase,
 ) -> None:
-    """Remote agents return 202 + run_id + task_ids regardless of shape.
-
-    Covers all three wrapper return shapes the chokepoint handles:
-    analyst / deep_genome (top-level ``task_id``) and research
-    (``task_ids`` dict map). The HTTP layer reads ``current_run_id``
-    via contextvar, so the response no longer depends on whether the
-    formatter exposes ``metadata.task_id`` (analyst) vs
-    ``metadata.server_id`` (deep_genome) vs nothing (research).
-    """
+    """Deep Genome keeps its immediate upstream child identity."""
 
     async def fake(args: Any) -> dict[str, Any]:
         """Return the parametrised stub wrapper payload."""
@@ -563,24 +670,13 @@ async def test_agent_run_remote_returns_chokepoint_run_id(
     assert "degraded_tracking" not in body
 
 
-async def test_agent_run_remote_surfaces_degraded_tracking_when_recorder_fails(
+async def test_background_run_settles_failed_when_recorder_fails(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
-    """A recorder persistence failure surfaces ``degraded_tracking`` on 202.
-
-    Pins the silent-failure mitigation: when ``RunRegistry.create_run``
-    raises during the submit chokepoint, the remote tasks have already
-    been accepted by the upstream platform (the wrapper return is the
-    proof) but the local ``runs`` / ``tasks`` rows were not written.
-    Without the flag a client cannot distinguish this case from a
-    legitimate analyst dedup-hit (both produce ``id=None`` /
-    ``task_ids=[]``). The body must carry ``degraded_tracking: True``
-    alongside the empty identity fields so operators see a routable
-    signal and ``GET /v1/runs/{id}`` 404s are explained.
-    """
+    """A child persistence failure settles the reserved run failed."""
 
     def _raising_create_run(*_args: Any, **_kwargs: Any) -> None:
         """Simulate the persistence failure the contract handles."""
@@ -612,11 +708,65 @@ async def test_agent_run_remote_surfaces_degraded_tracking_when_recorder_fails(
         arguments=arguments,
     )
 
-    assert_degraded_tracking_response(response, "T-degraded")
-    # And the registry stayed empty since create_run was the failure
-    # point — proves the flag was driven by the live failure, not by
-    # stale state left over from a previous test.
-    assert not RunRegistry(tasks_db_path).list_runs(owner="u1")
+    assert response.status_code == 202
+    body = response.json()
+    assert body["run_id"]
+    assert body["task_ids"] == []
+    assert "degraded_tracking" not in body
+    registry = RunRegistry(tasks_db_path)
+    for _ in range(100):
+        record = registry.get_run(body["run_id"], owner="u1")
+        if record is not None and record.status == "failed":
+            break
+        await asyncio.sleep(0)
+    else:
+        pytest.fail("background recorder failure did not settle")
+    assert record is not None
+    assert record.task_ids == ()
+    assert record.error == "background_submission_failed"
+
+
+async def test_background_submission_launch_failure_is_safe(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reservation failures return a stable error without private detail."""
+
+    def fail_reservation(**_kwargs: Any) -> None:
+        raise BackgroundSubmissionLaunchError("private path")
+
+    monkeypatch.setattr(
+        api_app_module,
+        "reserve_background_submission",
+        fail_reservation,
+        raising=False,
+    )
+
+    async def fake(_args: Any) -> dict[str, Any]:
+        return {"task_id": "T-never", "output_dir": "/obs/run"}
+
+    response = await post_recorded_analyst_run(
+        monkeypatch=monkeypatch,
+        api_client=api_client,
+        issued_api_key=issued_api_key,
+        fake=fake,
+        arguments={
+            "goal_description": "test",
+            "data_list": {},
+            "obs_file_list": [],
+        },
+    )
+
+    assert response.status_code == 500
+    assert response.json()["error"] == {
+        "code": "run_persistence_failed",
+        "message": "The background run could not be started.",
+        "stage": "submission_start",
+        "retryable": False,
+        "request_id": response.headers["x-request-id"],
+    }
+    assert "private path" not in response.text
 
 
 async def test_run_read_replaces_invalid_persisted_review_surface(

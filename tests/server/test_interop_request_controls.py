@@ -11,6 +11,7 @@ the native HTTP run seam without changing the default local-only behavior.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -23,6 +24,7 @@ from mcp_server_phytomni.mcp.schemas import (
     InSilicoResearchAgent,
     agent_openai_tool_specs,
 )
+from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
 pytestmark = pytest.mark.server
@@ -110,13 +112,16 @@ async def test_native_http_runs_forward_controls_to_handler(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
 ) -> None:
     """Native HTTP runs validate and forward the opt-in controls."""
     captured: dict[str, Any] = {}
+    handled = asyncio.Event()
 
     async def fake(args: Any) -> dict[str, Any]:
         captured["mode"] = args.interop_mode
         captured["targets"] = args.interop_targets
+        handled.set()
         return {
             "task_ids": {"goal": "T-INTEROP"},
             "output_dir": "/obs/research",
@@ -143,4 +148,15 @@ async def test_native_http_runs_forward_controls_to_handler(
     )
 
     assert response.status_code == 202
+    body = response.json()
+    assert body["task_ids"] == []
+    await asyncio.wait_for(handled.wait(), timeout=1)
+    registry = RunRegistry(tasks_db_path)
+    for _ in range(100):
+        record = registry.get_run(body["run_id"], owner="u1")
+        if record is not None and set(record.task_ids) == {"T-INTEROP"}:
+            break
+        await asyncio.sleep(0)
+    else:
+        pytest.fail("background interop child task was not attached")
     assert captured == {"mode": "required", "targets": ["mcp-peer"]}

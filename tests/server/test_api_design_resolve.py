@@ -47,6 +47,7 @@ DESIGN_CASE = NativeResolverCase(
         resolver_attribute="resolve_design_user_query",
         result_factory=_resolved,
         error_factory=DigitalDesignResolveError,
+        background_submission=True,
     ),
     expected=ResolverCaseExpected(
         species_code="ath",
