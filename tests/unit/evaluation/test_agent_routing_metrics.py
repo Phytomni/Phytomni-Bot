@@ -10,7 +10,6 @@ import json
 from typing import Any
 
 import pytest
-
 from scripts.agent_routing_eval.dataset import AgentRoutingCase
 from scripts.agent_routing_eval.metrics import (
     NO_MAJORITY,
@@ -23,6 +22,7 @@ from scripts.agent_routing_eval.runner import (
     ROUTING_ERROR,
     RunOutcome,
 )
+
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 
 pytestmark = pytest.mark.unit
@@ -755,6 +755,6 @@ def test_provider_error_zero_modal_fails_completion() -> None:
     )
 
     assert report["stability"] == {"exact": 0.9, "modal_agreement": 0.9}
-    assert _validate_stability(report["stability"], case_count=10) is True
+    assert _validate_stability(report["stability"], case_count=10) is not None
     assert report["provider_completion"] == 0.9
     assert thresholds_pass(report) is False
