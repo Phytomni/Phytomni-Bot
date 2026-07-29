@@ -841,6 +841,7 @@ async def test_context_stream_stages_before_custom_and_then_finishes(
 ) -> None:
     """V1 streaming settles the run and stages context before the custom frame."""
     captured: dict[str, str] = {}
+    answer_marker = "STREAM_CONTEXT_ANSWER_OUTPUT_SENTINEL"
 
     async def fake_streamed(
         _tool_name: Any,
@@ -852,7 +853,7 @@ async def test_context_stream_stages_before_custom_and_then_finishes(
         captured["run_id"] = run_id
         yield run_started(run_id, dialogue_id)
         yield text_message_start("msg-v1")
-        yield text_message_content("msg-v1", "Hello")
+        yield text_message_content("msg-v1", answer_marker)
         yield text_message_end("msg-v1")
         yield run_finished(run_id)
 
@@ -863,6 +864,7 @@ async def test_context_stream_stages_before_custom_and_then_finishes(
         stream=True,
         conversation=_conversation_envelope(),
     )
+    assert payload.conversation is not None
     with request_context("u1", "req-context-stream"):
         response = await _stream_chat_completion(
             tool_name="ChatAgent",
@@ -890,10 +892,32 @@ async def test_context_stream_stages_before_custom_and_then_finishes(
             )
             assert stored_turn is not None
             assert stored_turn.state == "staged"
+            assert stored_turn.delta is not None
+            assert answer_marker not in json.dumps(
+                stored_turn.delta, sort_keys=True
+            )
+            assert answer_marker in json.dumps(
+                stored_turn.result, sort_keys=True
+            )
+            assert stored_turn.stage_metadata is not None
+            assert stored_turn.stage_metadata["selected_agent_id"] == (
+                "ChatAgent"
+            )
+            assert stored_turn.stage_metadata["route_source"] == "instant_lock"
             break
         else:
             raise AssertionError("phyto.context_staged was not emitted")
         accumulated += "".join([line async for line in body])
+
+    assert answer_marker in accumulated
+    committed = (
+        await streaming_runtime._context_service().acknowledge_settlement(
+            payload.conversation,
+            payload.conversation.ledger_version,
+        )
+    )
+    assert committed is not None
+    assert answer_marker not in json.dumps(committed.context, sort_keys=True)
 
     assert accumulated.index(
         '"name": "phyto.context_staged"'
@@ -1024,9 +1048,11 @@ async def test_context_stream_committed_turn_replays_without_reinvocation(
             )
 
     first = await drive("req-context-committed-first")
-    committed = await streaming_runtime._context_service().acknowledge_settlement(
-        payload.conversation,
-        payload.conversation.ledger_version,
+    committed = (
+        await streaming_runtime._context_service().acknowledge_settlement(
+            payload.conversation,
+            payload.conversation.ledger_version,
+        )
     )
     second = await drive("req-context-committed-second")
 

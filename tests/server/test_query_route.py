@@ -1437,6 +1437,7 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+    answer_marker = "KNOWLEDGE_ROUTE_ANSWER_OUTPUT_SENTINEL"
 
     class FakeKnowledgeAgent:
         def __init__(self) -> None:
@@ -1448,7 +1449,7 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
                 "choices": [
                     {
                         "message": {
-                            "content": "OsDREB1 improves drought tolerance [1].",
+                            "content": answer_marker,
                             "doc_list": [
                                 {
                                     "file_id": "doc-1",
@@ -1546,9 +1547,7 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
     assert body["conversation_context"]["selected_agent_id"] == (
         "KnowledgeAgent"
     )
-    assert body["result"]["formatted"]["answer"] == (
-        "OsDREB1 improves drought tolerance [1]."
-    )
+    assert body["result"]["formatted"]["answer"] == (answer_marker)
     expected_thread_id = context_agent_thread_id(
         UUID(envelope["conversation_key"]), "KnowledgeAgent"
     )
@@ -1576,9 +1575,47 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
     assert [item["label"] for item in staged.delta["active_entities"]] == [
         "OsDREB1"
     ]
-    assert "full report body" not in json.dumps(staged.delta)
-    assert "OsDREB1 improves drought tolerance [1]." in json.dumps(
-        staged.delta
+    staged_delta = json.dumps(staged.delta, sort_keys=True)
+    staged_result = json.dumps(staged.result, sort_keys=True)
+    assert answer_marker not in staged_delta
+    assert answer_marker in staged_result
+    assert "full report body" not in staged_delta
+    assert staged.stage_metadata is not None
+    assert staged.stage_metadata["selected_agent_id"] == "KnowledgeAgent"
+    assert staged.stage_metadata["route_source"] == "explicit_selection"
+
+    settled = store.commit_staged_turn(
+        str(UUID(envelope["conversation_key"])),
+        envelope["turn_id"],
+        envelope["ledger_version"],
+        envelope["ledger_version"],
+    )
+    assert settled.state == "committed"
+    stored_context = store.load_context(
+        str(UUID(envelope["conversation_key"]))
+    )
+    assert stored_context is not None
+    stored_context_json = json.dumps(stored_context.context, sort_keys=True)
+    assert answer_marker not in stored_context_json
+    assert stored_context.context["active_entities"]
+
+    replay = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": ["KnowledgeAgent"],
+            "conversation": envelope,
+        },
+    )
+    assert replay.status_code == 200
+    assert replay.json()["result"]["formatted"]["answer"] == answer_marker
+    replayed_context = store.load_context(
+        str(UUID(envelope["conversation_key"]))
+    )
+    assert replayed_context is not None
+    assert answer_marker not in json.dumps(
+        replayed_context.context, sort_keys=True
     )
 
 

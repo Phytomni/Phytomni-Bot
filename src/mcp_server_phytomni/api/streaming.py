@@ -319,7 +319,7 @@ async def _prepare_stream(
 
 
 def _context_delta_for_stream(
-    _answer: str,
+    _answer: str | None = None,
 ) -> tuple[ContextDelta | None, bool]:
     """Return the default Chat stream context delta and degradation flag."""
     return ContextDelta(), False
@@ -508,14 +508,14 @@ def _stage_context_stream_success(
     finish_event: AguiEvent,
 ) -> AguiEvent:
     """Durably stage one successful V1 stream before ``RunFinished``."""
-    delta, degraded = _context_delta_for_stream(snapshot.answer)
+    # Keep stream answer accumulation for visible run settlement only.  No
+    # display answer is passed across the Bot context boundary.
+    delta, degraded = _context_delta_for_stream(None)
     delta = ContextDelta() if delta is None else delta
-    assistant_summary = None if degraded else snapshot.answer
     proposed = ConversationContextService._advance_context(
         context_stream.context,
         context_stream.envelope,
         delta,
-        assistant_summary=assistant_summary,
         add_current_user_turn=not context_stream.rebuilt,
     )
     stage_metadata = {

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -54,6 +55,7 @@ class AgentSelection:
 @dataclass(frozen=True)
 class AgentOutcome:
     result: dict[str, Any]
+    # Kept for caller compatibility; V1 does not persist display prose.
     assistant_summary: str | None = None
     context_delta: ContextDelta | None = None
     context_delta_error: bool = False
@@ -118,6 +120,97 @@ _REVIEW_STAGE_FIELDS = frozenset(
         "settlement_base_context_version",
     }
 )
+_DISPLAY_OUTPUT_KEYS = frozenset(
+    {
+        "answer",
+        "content",
+        "full_report",
+        "markdown",
+        "output",
+        "report",
+        "table",
+        "tabular",
+    }
+)
+
+
+def _display_output_strings(value: object) -> tuple[str, ...]:
+    """Collect values that are exposed as an agent's visible output."""
+    outputs: list[str] = []
+
+    def visit(node: object) -> None:
+        if isinstance(node, Mapping):
+            for key, nested in node.items():
+                if str(key) in _DISPLAY_OUTPUT_KEYS:
+                    if isinstance(nested, str):
+                        outputs.append(nested)
+                    else:
+                        outputs.append(
+                            json.dumps(
+                                nested,
+                                ensure_ascii=False,
+                                sort_keys=True,
+                                default=str,
+                            )
+                        )
+                visit(nested)
+        elif isinstance(node, (list, tuple)):
+            for nested in node:
+                visit(nested)
+
+    visit(value)
+    return tuple(item.strip() for item in outputs if item.strip())
+
+
+def _without_display_output(
+    value: str | None, display_outputs: tuple[str, ...]
+) -> str | None:
+    """Drop free-form delta text that duplicates visible agent output."""
+    if value is None:
+        return None
+    candidate = value.strip()
+    if candidate and any(
+        candidate in output or output in candidate
+        for output in display_outputs
+    ):
+        return None
+    return value
+
+
+def _metadata_only_delta(
+    delta: ContextDelta, result: Mapping[str, Any]
+) -> ContextDelta:
+    """Prevent visible answer/report/table text from entering Bot context."""
+    display_outputs = _display_output_strings(result)
+    if not display_outputs:
+        return delta
+
+    memory = delta.agent_memory_update
+    if memory is not None:
+        memory = memory.model_copy(
+            update={
+                "summary": _without_display_output(
+                    memory.summary, display_outputs
+                )
+                or ""
+            }
+        )
+    return delta.model_copy(
+        update={
+            "summary_update": _without_display_output(
+                delta.summary_update, display_outputs
+            ),
+            "open_question_updates": [
+                question
+                for question in delta.open_question_updates
+                if _without_display_output(question, display_outputs)
+                is not None
+            ],
+            "agent_memory_update": memory,
+        }
+    )
+
+
 _REVIEW_OPERATIONS = frozenset(
     {"new_review", "follow_up", "local_revision", "scope_change"}
 )
@@ -608,6 +701,7 @@ class ConversationContextService:
             delta = ContextDelta() if degraded else outcome.context_delta
             assert delta is not None
             if not degraded:
+                delta = _metadata_only_delta(delta, outcome.result)
                 try:
                     validate_context_delta(
                         delta,
@@ -630,9 +724,6 @@ class ConversationContextService:
                 context,
                 envelope,
                 delta,
-                assistant_summary=(
-                    None if degraded else outcome.assistant_summary
-                ),
                 add_current_user_turn=not rebuilt,
             )
             stage = ContextStageMetadata(
@@ -696,10 +787,9 @@ class ConversationContextService:
         envelope: ConversationEnvelopeV1,
         delta: ContextDelta,
         *,
-        assistant_summary: str | None,
         add_current_user_turn: bool,
     ) -> BusinessContext:
-        """Apply a validated delta and advance only Bot-owned state."""
+        """Apply a validated metadata delta without display output."""
         data = context.model_dump(mode="python")
         if delta.summary_update is not None:
             data["task_summary"] = delta.summary_update
@@ -740,13 +830,6 @@ class ConversationContextService:
                     content=envelope.current_message.content[
                         :MAX_CONTEXT_TEXT_CHARS
                     ],
-                ).model_dump(mode="python")
-            )
-        if assistant_summary:
-            recent_turns.append(
-                RoleTaggedTurn(
-                    role="assistant",
-                    content=assistant_summary[:MAX_CONTEXT_TEXT_CHARS],
                 ).model_dump(mode="python")
             )
         data["recent_turns"] = recent_turns[-MAX_CONTEXT_ITEMS:]

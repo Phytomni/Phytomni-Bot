@@ -29,7 +29,7 @@ The Bot context store creates these tables:
 | `conversation_turns` | Per-turn operation, base version, staged/committed/failed state, selected-agent metadata, bounded result/delta metadata, ledger version, and optional `expires_at`. |
 | `conversation_review_checkpoint_cleanup` | Durable registration of Review candidate threads so tombstone and retention cleanup can retry checkpoint deletion safely. |
 
-Staged turns are purged only when their code-governed `expires_at` is reached. Tombstoned contexts retain cleanup state until checkpoint deletion succeeds. The exact retention window is configuration/code governed; operators must inspect the deployed version and configuration rather than assume a fixed TTL. Do not delete the context tables as part of an ordinary flag rollback.
+Ordinary staged-turn purge is controlled by code/configured `expires_at`; do not invent a separate TTL. Tombstoning immediately deletes rows from `conversation_turns`, while `conversation_review_checkpoint_cleanup` rows remain retryable until Review checkpoint deletion completes. Do not delete the context tables as part of an ordinary flag rollback.
 
 ## Context and thread safety
 

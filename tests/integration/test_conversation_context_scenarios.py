@@ -164,7 +164,7 @@ def _outcome(
     agent_id: str,
     *,
     delta: ContextDelta | None = None,
-    summary: str | None = "bounded assistant summary",
+    summary: str | None = "ASSISTANT_SUMMARY_OUTPUT_SENTINEL",
     result: dict[str, Any] | None = None,
     private_stage_metadata: dict[str, Any] | None = None,
 ) -> AgentOutcome:
@@ -309,6 +309,7 @@ async def test_knowledge_data_review_preserve_refs_without_full_text(
         display_name="bounded evidence",
     )
     raw_output_sentinels = (
+        "ASSISTANT_SUMMARY_OUTPUT_SENTINEL",
         "KNOWLEDGE_ANSWER_OUTPUT_SENTINEL",
         "DATA_TABLE_OUTPUT_SENTINEL",
         "REVIEW_REPORT_OUTPUT_SENTINEL",
@@ -459,15 +460,9 @@ async def test_knowledge_data_review_preserve_refs_without_full_text(
     assert context["artifact_index"] == [artifact.model_dump(mode="json")]
     assert [turn["role"] for turn in context["recent_turns"]] == [
         "user",
-        "assistant",
         "user",
-        "assistant",
     ]
-    assert all(
-        turn["content"] == "bounded assistant summary"
-        for turn in context["recent_turns"]
-        if turn["role"] == "assistant"
-    )
+    assert context["assistant_summaries"] == []
     committed_context = json.dumps(context, sort_keys=True)
     staged_delta = json.dumps(prepared.stored_turn.delta, sort_keys=True)
     proposed_context = json.dumps(
@@ -478,10 +473,33 @@ async def test_knowledge_data_review_preserve_refs_without_full_text(
         ),
         sort_keys=True,
     )
+    assert prepared.stage.selected_agent_id == "ReviewAgent"
+    assert prepared.stage.route_source == "explicit_selection"
+    assert prepared.stage.context_degraded is False
+    assert prepared.stored_turn.stage_metadata is not None
+    review_stage = prepared.stored_turn.stage_metadata["_review_settlement"]
+    assert review_stage["settlement_state"] == "pending"
+    assert review_stage["candidate_thread_id"] == _candidate_thread_id(
+        review_stage["stable_thread_id"], "3"
+    )
+    assert prepared.result is not None
+    visible_result = json.dumps(prepared.result, sort_keys=True)
+    assert "REVIEW_REPORT_OUTPUT_SENTINEL" in visible_result
+    assert "table" in visible_result
     for sentinel in raw_output_sentinels:
         assert sentinel not in committed_context
         assert sentinel not in staged_delta
         assert sentinel not in proposed_context
+    replayed = await service.execute_turn(third)
+    assert replayed.status is PrepareStatus.RETURN_STAGED
+    assert replayed.result == prepared.result
+    replayed_context = service.store.load_context(str(key))
+    assert replayed_context is not None
+    replayed_context_json = json.dumps(
+        replayed_context.context, sort_keys=True
+    )
+    for sentinel in raw_output_sentinels:
+        assert sentinel not in replayed_context_json
     assert '"answer"' not in committed_context
     assert '"report"' not in committed_context
     assert '"tabular"' not in committed_context

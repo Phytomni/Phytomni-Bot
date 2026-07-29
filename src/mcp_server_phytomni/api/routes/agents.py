@@ -395,10 +395,8 @@ async def _execute_context_chat(
             completion = dependencies.chat.projection.strip_chat_completion(
                 completion
             )
-        answer = formatted_dict.get("answer")
         return AgentOutcome(
             result=completion,
-            assistant_summary=answer if isinstance(answer, str) else None,
         )
 
     async def delegate_async(
@@ -647,12 +645,10 @@ async def _execute_context_expert(
                 if selected_agent_id != "ReviewAgent":
                     return AgentOutcome(
                         result=_clarification_agent_run(slug, clarification),
-                        assistant_summary=clarification,
                         context_delta=ContextDelta(),
                     )
                 return AgentOutcome(
                     result=_clarification_agent_run(slug, clarification),
-                    assistant_summary=clarification,
                     status="failed",
                 )
         arguments = dict(dispatch.arguments)
@@ -692,37 +688,31 @@ async def _execute_context_expert(
             return AgentOutcome(result=body, status="running")
         outcome = AgentOutcome(
             result=body,
-            assistant_summary=_agent_response_summary(body),
         )
         if selected_agent_id == "KnowledgeAgent" and adapter is not None:
             return AgentOutcome(
                 result=body,
-                assistant_summary=_agent_response_summary(body),
                 context_delta=adapter.delta(body),
             )
         if selected_agent_id == "DataAgent" and adapter is not None:
             return AgentOutcome(
                 result=body,
-                assistant_summary=_agent_response_summary(body),
                 context_delta=adapter.delta(body),
             )
         if selected_agent_id == "BriefGeneAgent" and adapter is not None:
             return AgentOutcome(
                 result=body,
-                assistant_summary=_agent_response_summary(body),
                 context_delta=adapter.delta(body),
             )
         if selected_agent_id == "ReviewAgent" and adapter is not None:
             if not getattr(adapter, "settlement_ready", False):
                 return AgentOutcome(
                     result=body,
-                    assistant_summary=_agent_response_summary(body),
                     status="failed",
                 )
             if not await adapter.validate_settlement_candidate():
                 return AgentOutcome(
                     result=body,
-                    assistant_summary=_agent_response_summary(body),
                     status="failed",
                 )
             settlement_metadata = adapter.settlement_metadata()
@@ -730,12 +720,10 @@ async def _execute_context_expert(
                 adapter.mark_failed()
                 return AgentOutcome(
                     result=body,
-                    assistant_summary=_agent_response_summary(body),
                     status="failed",
                 )
             return AgentOutcome(
                 result=body,
-                assistant_summary=_agent_response_summary(body),
                 context_delta=adapter.delta(body),
                 private_stage_metadata=settlement_metadata,
             )
@@ -784,18 +772,6 @@ def _slug_for_tool(
         if candidate == tool_name:
             return slug
     raise ValueError("selected agent is unavailable")
-
-
-def _agent_response_summary(body: Mapping[str, Any]) -> str | None:
-    """Extract a bounded terminal answer summary without exposing raw state."""
-    result = body.get("result")
-    if not isinstance(result, Mapping):
-        return None
-    formatted = result.get("formatted")
-    if not isinstance(formatted, Mapping):
-        return None
-    answer = formatted.get("answer")
-    return answer if isinstance(answer, str) else None
 
 
 def _clarification_agent_run(agent: str, message: str) -> dict[str, Any]:

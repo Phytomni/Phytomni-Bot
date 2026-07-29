@@ -561,7 +561,7 @@ async def test_valid_entity_and_artifact_delta_stages_successfully(
 async def test_incremental_advance_preserves_unpaired_user_before_later_pair(
     store: ConversationContextStore,
 ) -> None:
-    """Normal advance appends ordered turns without collapsing history."""
+    """Normal advance keeps user history without persisting display output."""
     outcomes = iter(
         (
             AgentOutcome(result={"answer": "U2"}),
@@ -603,10 +603,9 @@ async def test_incremental_advance_preserves_unpaired_user_before_later_pair(
     ] == [
         ("user", "keep rice samples"),
         ("user", "U3"),
-        ("assistant", "A3"),
     ]
     assert second.context.recent_user_turns == ["keep rice samples", "U3"]
-    assert second.context.assistant_summaries == ["A3"]
+    assert second.context.assistant_summaries == []
 
 
 @pytest.mark.asyncio
