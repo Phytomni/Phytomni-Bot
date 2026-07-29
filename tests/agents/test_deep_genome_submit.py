@@ -127,16 +127,29 @@ async def test_arun_returns_immediately_with_submit_envelope(
     can be inspected at terminal status.
     """
     _patch_db(monkeypatch, tmp_path)
+
+    class _FixedIdFactory:
+        """Return stable identities so the raw submit payload is exact."""
+
+        def new_id(self, kind: str, *_parts: str) -> str:
+            """Return the fixed ID for the requested submission identity."""
+            return {
+                "run": "run-deep_genome-submit",
+                "task": "task-deep_genome-submit",
+            }[kind]
+
+    monkeypatch.setattr(agent_module, "IdFactory", _FixedIdFactory)
     fake_app = _FakeApp(result={"final_report": "ok"})
     agent = _build_agent(fake_app, tmp_path)
 
     envelope = await agent.arun(species_code="osa", gene_id="Os01g0177400")
 
-    assert envelope["task_id"]
-    assert "task-deep_genome" in envelope["task_id"]
-    assert envelope["compute_resource"] == "deep-genome"
-    assert envelope["output_dir"].startswith(str(tmp_path))
-    assert envelope["output_dir"].endswith(envelope["task_id"])
+    assert envelope == {
+        "task_id": "task-deep_genome-submit",
+        "output_dir": f"{tmp_path}/task-deep_genome-submit",
+        "compute_resource": "deep-genome",
+    }
+    assert "run_id" not in envelope
     await _drain_background_tasks()
 
 
