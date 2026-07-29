@@ -10,7 +10,7 @@ import math
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Final, TypedDict, cast
+from typing import Any, Final, Literal, TypedDict, cast
 
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 
@@ -70,6 +70,12 @@ class _StabilityValues(TypedDict):
     modal_agreement: float
 
 
+_RateMetric = Literal["precision", "recall", "f1"]
+_RATE_METRICS: Final[tuple[_RateMetric, ...]] = (
+    "precision",
+    "recall",
+    "f1",
+)
 _MetricMap = Mapping[str, object]
 _AgentRows = Mapping[str, _AgentValues]
 _ValidatedProjection = tuple[_MajorityValues, _AgentRows, _StabilityValues]
@@ -86,6 +92,11 @@ def _ratio(numerator: int | float, denominator: int) -> float:
 def _f1(precision: float, recall: float) -> float:
     total = precision + recall
     return 0.0 if total == 0.0 else 2.0 * precision * recall / total
+
+
+def _rate_value(row: _AgentValues, metric: _RateMetric) -> float:
+    """Read one rate field with a TypedDict-safe literal key."""
+    return row[metric]
 
 
 def _wilson_95(successes: int, observations: int) -> list[float]:
@@ -431,17 +442,15 @@ def compute_metrics(
         "basis": basis,
         **_confusion_rows(projections),
     }
-    macro = {
-        "basis": basis,
-        **{
-            metric: sum(
-                float(classification_rows[agent][metric])
-                for agent in _CANONICAL_AGENTS
-            )
-            / len(_CANONICAL_AGENTS)
-            for metric in ("precision", "recall", "f1")
-        },
+    macro_rates: dict[str, float] = {
+        metric: sum(
+            _rate_value(classification_rows[agent], metric)
+            for agent in _CANONICAL_AGENTS
+        )
+        / len(_CANONICAL_AGENTS)
+        for metric in _RATE_METRICS
     }
+    macro = {"basis": basis, **macro_rates}
     result: dict[str, Any] = {
         "schema_version": 1,
         "case_count": len(cases),
@@ -735,9 +744,11 @@ def _validate_macro(value: object, rows: _AgentRows) -> bool:
     if mapping is None:
         return False
     expected = {
-        metric: sum(float(rows[agent][metric]) for agent in _CANONICAL_AGENTS)
+        metric: sum(
+            _rate_value(rows[agent], metric) for agent in _CANONICAL_AGENTS
+        )
         / len(_CANONICAL_AGENTS)
-        for metric in ("precision", "recall", "f1")
+        for metric in _RATE_METRICS
     }
     return mapping["basis"] == _BASIS_CASE_MAJORITY and all(
         _float_value(mapping[metric]) is not None
