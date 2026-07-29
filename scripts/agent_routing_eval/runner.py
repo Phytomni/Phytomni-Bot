@@ -71,10 +71,10 @@ class RunnerOptions:
     retry_delay_seconds: float = 1.0
 
     def __post_init__(self) -> None:
-        if (
-            type(self.repeat_count) is not int
-            or self.repeat_count not in {1, 3}
-        ):
+        if type(self.repeat_count) is not int or self.repeat_count not in {
+            1,
+            3,
+        }:
             raise ValueError("repeat_count must be 1 or 3")
         if (
             type(self.concurrency) is not int

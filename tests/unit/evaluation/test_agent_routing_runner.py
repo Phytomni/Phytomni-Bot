@@ -276,9 +276,7 @@ def test_hanging_selector_times_out_and_retries_three_times() -> None:
 
 def test_success_on_second_attempt_records_retry_count() -> None:
     """A recovered provider call reports both attempts."""
-    selector = RecordingSelector(
-        [ExpertProviderError(), _chat_selection()]
-    )
+    selector = RecordingSelector([ExpertProviderError(), _chat_selection()])
     options = RunnerOptions(repeat_count=1, retry_delay_seconds=0)
 
     outcome = asyncio.run(run_evaluation([_case()], selector, options))[0]
@@ -522,9 +520,7 @@ def test_failing_partial_sink_does_not_replace_unexpected_failure() -> None:
 
     with pytest.raises(EvaluationIncompleteError) as exc_info:
         asyncio.run(
-            run_evaluation(
-                [_case()], selector, partial_sink=failing_sink
-            )
+            run_evaluation([_case()], selector, partial_sink=failing_sink)
         )
 
     assert isinstance(exc_info.value.__cause__, ValueError)
