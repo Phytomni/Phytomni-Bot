@@ -247,13 +247,17 @@ def _bounded_integer(
     return value
 
 
-def _bounded_text(value: object, *, limit: int) -> str | None:
-    """Return non-empty path-free text within a metadata limit."""
+def _bounded_text(
+    value: object, *, limit: int, reject_path_chars: bool = False
+) -> str | None:
+    """Return non-empty text within a metadata limit."""
     if not isinstance(value, str):
         return None
     if value != value.strip() or not value:
         return None
-    if len(value) > limit or "/" in value or "\\" in value:
+    if len(value) > limit:
+        return None
+    if reject_path_chars and ("/" in value or "\\" in value):
         return None
     return value
 
@@ -277,11 +281,17 @@ def _bounded_review_stage_field(key: str, candidate: object) -> object:
         bounded = _bounded_integer(candidate, minimum=0)
     elif key == "settlement_ledger_version":
         bounded = _bounded_text(candidate, limit=64)
-    elif key == "candidate_thread_id" and candidate is None:
-        return None
+    elif key == "candidate_thread_id":
+        if candidate is None:
+            return None
+        bounded = _bounded_text(
+            candidate, limit=512, reject_path_chars=True
+        )
     else:
         limit = 64 if key == "turn_id" else 512
-        bounded = _bounded_text(candidate, limit=limit)
+        bounded = _bounded_text(
+            candidate, limit=limit, reject_path_chars=key == "turn_id"
+        )
     return _INVALID_REVIEW_FIELD if bounded is None else bounded
 
 
@@ -334,14 +344,14 @@ def _review_claim_fields_present(
     """Validate presence and absence of claim fields for one state."""
     present = result.keys()
     if settlement_state == "promoted":
-        return _REVIEW_FENCING_FIELDS.issubset(present) and not (
-            _REVIEW_CLAIM_FIELDS & present
-        )
+        return _REVIEW_FENCING_FIELDS.issubset(
+            present
+        ) and _REVIEW_CLAIM_FIELDS.isdisjoint(present)
     if settlement_state in {"settling", "promoting"}:
         return (_REVIEW_CLAIM_FIELDS | _REVIEW_FENCING_FIELDS).issubset(
             present
         )
-    return not (_REVIEW_CLAIM_FIELDS & present)
+    return _REVIEW_CLAIM_FIELDS.isdisjoint(present)
 
 
 def _review_claim_timestamp_valid(
