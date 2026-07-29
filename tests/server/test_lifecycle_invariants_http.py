@@ -500,6 +500,7 @@ async def test_remote_http_response_keeps_run_identity_byte_identical(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
 ) -> None:
     """A background response reserves identity before child attachment."""
 
@@ -531,9 +532,7 @@ async def test_remote_http_response_keeps_run_identity_byte_identical(
     assert "degraded_tracking" not in body
     run_id = body["run_id"]
     for _ in range(100):
-        record = RunRegistry(api_app_module.resolve_tasks_db_path()).get_run(
-            run_id, owner="u1"
-        )
+        record = RunRegistry(tasks_db_path).get_run(run_id, owner="u1")
         if record is not None and record.task_ids == ("accepted-healthy",):
             break
         await asyncio.sleep(0)
@@ -710,6 +709,7 @@ async def test_partial_research_submission_remains_running_with_warnings(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
 ) -> None:
     """One persisted research child plus warnings remains pollable."""
 
@@ -741,7 +741,7 @@ async def test_partial_research_submission_remains_running_with_warnings(
     assert response.status_code == 202
     run_id = response.json()["run_id"]
     record = await wait_for_running_projection(
-        api_app_module.resolve_tasks_db_path(), run_id, "research-accepted"
+        tasks_db_path, run_id, "research-accepted"
     )
     assert record.task_ids == ("research-accepted",)
     assert record.result is not None

@@ -442,14 +442,16 @@ async def _execute_background_agent_run(
         preflight=preflight,
     )
     envelope = await invoke_tool_enveloped(prepared.tool_name, arguments)
-    _result, response_result = _format_agent_run_result(
+    result, _response_result = _format_agent_run_result(
         envelope,
         resolve_meta=prepared.resolve_meta,
         debug=debug,
     )
     return BackgroundSubmissionOutcome(
         accepted_task_ids=current_accepted_task_ids(),
-        result=response_result,
+        # The detached worker persists this projection.  Debug is a public
+        # response option, never an authorization to retain raw agent output.
+        result=strip_agent_result(result),
         degraded=current_recorder_degraded(),
     )
 
