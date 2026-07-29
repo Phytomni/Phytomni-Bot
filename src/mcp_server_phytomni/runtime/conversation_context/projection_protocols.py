@@ -71,6 +71,8 @@ class ProjectionBuilder(Protocol):
     @property
     def __name__(self) -> str: ...
 
+    __qualname__: str
+
 
 class RebuildBuilder(Protocol):
     """Statically typed context rebuild callable contract."""
@@ -79,3 +81,5 @@ class RebuildBuilder(Protocol):
 
     @property
     def __name__(self) -> str: ...
+
+    __qualname__: str
