@@ -6,6 +6,7 @@
 
 from . import dataset as _dataset
 from . import metrics as _metrics
+from . import reporting as _reporting
 from . import runner as _runner
 
 AgentRoutingCase = _dataset.AgentRoutingCase
@@ -21,6 +22,14 @@ run_evaluation = _runner.run_evaluation
 NO_MAJORITY = _metrics.NO_MAJORITY
 compute_metrics = _metrics.compute_metrics
 thresholds_pass = _metrics.thresholds_pass
+GitState = _reporting.GitState
+ReportContext = _reporting.ReportContext
+build_report = _reporting.build_report
+collect_git_state = _reporting.collect_git_state
+dataset_sha256 = _reporting.dataset_sha256
+description_sha256 = _reporting.description_sha256
+provider_endpoint_sha256 = _reporting.provider_endpoint_sha256
+write_report_pair = _reporting.write_report_pair
 
 __all__ = [
     "AgentRoutingCase",
@@ -36,4 +45,12 @@ __all__ = [
     "NO_MAJORITY",
     "compute_metrics",
     "thresholds_pass",
+    "GitState",
+    "ReportContext",
+    "build_report",
+    "collect_git_state",
+    "dataset_sha256",
+    "description_sha256",
+    "provider_endpoint_sha256",
+    "write_report_pair",
 ]
