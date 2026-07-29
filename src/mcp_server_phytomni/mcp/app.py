@@ -171,6 +171,21 @@ def _text_response(response: Any) -> list[TextContent]:
     return [TextContent(type="text", text=dumps(response))]
 
 
+def validate_tool_arguments(name: Any, arguments: dict[str, Any]) -> Any:
+    """Validate one tool payload without invoking its handler."""
+    tool_name = _tool_name(name)
+    model = TOOL_ARGUMENT_MODELS.get(tool_name)
+    handler = TOOL_HANDLERS.get(tool_name)
+    if model is None or handler is None:
+        raise _invalid_params(f"Unknown tool: {tool_name}")
+    try:
+        return model(**arguments)
+    except ValidationError as exc:
+        raise _invalid_params(
+            _format_validation_error(tool_name, exc)
+        ) from exc
+
+
 async def invoke_tool_raw(name: Any, arguments: dict[str, Any]) -> Any:
     """Validate arguments and call a tool handler, returning its payload.
 
@@ -190,19 +205,8 @@ async def invoke_tool_raw(name: Any, arguments: dict[str, Any]) -> Any:
         McpError: If the tool is unknown or arguments fail schema validation.
     """
     tool_name = _tool_name(name)
-    model = TOOL_ARGUMENT_MODELS.get(tool_name)
-    handler = TOOL_HANDLERS.get(tool_name)
-    if model is None or handler is None:
-        raise _invalid_params(f"Unknown tool: {tool_name}")
-
-    try:
-        args = model(**arguments)
-    except ValidationError as exc:
-        raise _invalid_params(
-            _format_validation_error(tool_name, exc)
-        ) from exc
-
-    return await handler(args)
+    args = validate_tool_arguments(tool_name, arguments)
+    return await TOOL_HANDLERS[tool_name](args)
 
 
 async def invoke_tool_formatted(
