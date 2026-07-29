@@ -405,7 +405,7 @@ def _mapping_with_allowed_keys(
     value: object,
     allowed_keys: frozenset[str],
     label: str,
-) -> Mapping[object, object]:
+) -> Mapping[str, object]:
     """Require a mapping whose keys belong to a report field allowlist."""
     if not isinstance(value, Mapping):
         raise ValueError(f"{label} must be a mapping")
@@ -903,19 +903,74 @@ def _format_markdown_value(value: object) -> str:
     )
 
 
+def _append_pairs(
+    lines: list[str],
+    title: str,
+    values: Mapping[str, object],
+    keys: Sequence[str],
+) -> None:
+    lines.extend(("", f"## {title}"))
+    lines.extend(
+        f"- {key}: {_format_markdown_value(values[key])}" for key in keys
+    )
+
+
+def _append_table(
+    lines: list[str],
+    title: str,
+    headers: Sequence[str],
+    rows: Sequence[Sequence[object]],
+) -> None:
+    lines.extend(
+        (
+            "",
+            f"## {title}",
+            "| " + " | ".join(headers) + " |",
+            "| " + " | ".join("---:" for _ in headers) + " |",
+        )
+    )
+    lines.extend(
+        "| "
+        + " | ".join(_format_markdown_value(value) for value in row)
+        + " |"
+        for row in rows
+    )
+
+
 def _render_markdown(report: Mapping[str, Any]) -> str:
     lines = ["# Agent Routing Evaluation Report"]
     status = report["status"]
     provenance = report["provenance"]
     metrics = report["metrics"]
     runs = report["runs"]
-    lines += ["", "## Headline"]
-    for key in ("state", "headline", "current_accuracy", "thresholds_passed"):
-        lines.append(f"- {key}: {_format_markdown_value(status[key])}")
-    lines += ["", "## Provenance"]
-    for key in _PROVENANCE_KEYS:
-        lines.append(f"- {key}: {_format_markdown_value(provenance[key])}")
-    lines += ["", "## Metrics"]
+    _append_pairs(
+        lines,
+        "Headline",
+        status,
+        ("state", "headline", "current_accuracy", "thresholds_passed"),
+    )
+    _append_pairs(
+        lines,
+        "Provenance",
+        provenance,
+        (
+            "branch",
+            "head",
+            "dirty",
+            "model_id",
+            "provider_endpoint_hash",
+            "dataset_path",
+            "dataset_sha256",
+            "description_sha256",
+            "mode",
+            "repeat_count",
+            "concurrency",
+            "started_at",
+            "elapsed_seconds",
+            "allow_dirty",
+        ),
+    )
+    lines.extend(("", "## Metrics"))
     for key in (
         "case_count",
         "planned_runs",
@@ -937,97 +992,106 @@ def _render_markdown(report: Mapping[str, Any]) -> str:
                 )
     per_agent = metrics.get("per_agent")
     if isinstance(per_agent, Mapping):
-        lines += [
-            "",
-            "## Per-agent",
-            "| Agent | Support | Predicted | True positive | Precision | Recall | F1 |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
-        ]
-        for agent in _CANONICAL_AGENTS:
-            row = per_agent.get(agent)
-            if isinstance(row, Mapping):
-                values = [agent] + [
-                    row.get(key)
-                    for key in (
-                        "support",
-                        "predicted",
-                        "true_positive",
-                        "precision",
-                        "recall",
-                        "f1",
-                    )
-                ]
-                lines.append(
-                    "| "
-                    + " | ".join(
-                        _format_markdown_value(value) for value in values
-                    )
-                    + " |"
+        rows = [
+            [agent]
+            + [
+                row.get(key)
+                for key in (
+                    "support",
+                    "predicted",
+                    "true_positive",
+                    "precision",
+                    "recall",
+                    "f1",
                 )
+            ]
+            for agent in _CANONICAL_AGENTS
+            if isinstance(row := per_agent.get(agent), Mapping)
+        ]
+        _append_table(
+            lines,
+            "Per-agent",
+            (
+                "Agent",
+                "Support",
+                "Predicted",
+                "True positive",
+                "Precision",
+                "Recall",
+                "F1",
+            ),
+            rows,
+        )
     by_language = metrics.get("by_language")
     if isinstance(by_language, Mapping):
-        lines += [
-            "",
-            "## Language",
-            "| Language | Cases | Top-1 correct | Top-1 accuracy | Dispatchable accuracy |",
-            "| --- | ---: | ---: | ---: | ---: |",
-        ]
-        for language in ("en", "zh"):
-            row = by_language.get(language)
-            if isinstance(row, Mapping):
-                values = [language] + [
-                    row.get(key)
-                    for key in (
-                        "case_count",
-                        "top1_correct",
-                        "top1_accuracy",
-                        "dispatchable_accuracy",
-                    )
-                ]
-                lines.append(
-                    "| "
-                    + " | ".join(
-                        _format_markdown_value(value) for value in values
-                    )
-                    + " |"
+        rows = [
+            [language]
+            + [
+                row.get(key)
+                for key in (
+                    "case_count",
+                    "top1_correct",
+                    "top1_accuracy",
+                    "dispatchable_accuracy",
                 )
+            ]
+            for language in ("en", "zh")
+            if isinstance(row := by_language.get(language), Mapping)
+        ]
+        _append_table(
+            lines,
+            "Language",
+            (
+                "Language",
+                "Cases",
+                "Top-1 correct",
+                "Top-1 accuracy",
+                "Dispatchable accuracy",
+            ),
+            rows,
+        )
     errors = metrics.get("errors")
     if isinstance(errors, Mapping):
-        lines += ["", "## Errors"]
-        for key in ("provider", "routing", "schema"):
-            lines.append(f"- {key}: {_format_markdown_value(errors.get(key))}")
+        _append_pairs(
+            lines, "Errors", errors, ("provider", "routing", "schema")
+        )
     confusion = metrics.get("confusion_matrix")
     if isinstance(confusion, Mapping):
-        lines += ["", "## Confusion"]
+        lines.extend(("", "## Confusion"))
         for agent in _CANONICAL_AGENTS:
             row = confusion.get(agent)
             if isinstance(row, Mapping):
                 lines.append(f"- {agent}: {_format_markdown_value(dict(row))}")
-    lines += [
-        "",
-        "## Runs",
-        "| Case ID | Repeat | Expected | Predicted | Language | Schema valid | Core args correct | Latency ms |",
-        "| --- | ---: | --- | --- | --- | --- | --- | ---: |",
-    ]
-    for run in runs:
-        values = [
-            run.get(key)
-            for key in (
-                "case_id",
-                "repeat",
-                "expected_agent",
-                "predicted_agent",
-                "language",
-                "schema_valid",
-                "core_args_correct",
-                "latency_ms",
-            )
-        ]
-        lines.append(
-            "| "
-            + " | ".join(_format_markdown_value(value) for value in values)
-            + " |"
-        )
+    _append_table(
+        lines,
+        "Runs",
+        (
+            "Case ID",
+            "Repeat",
+            "Expected",
+            "Predicted",
+            "Language",
+            "Schema valid",
+            "Core args correct",
+            "Latency ms",
+        ),
+        [
+            [
+                run.get(key)
+                for key in (
+                    "case_id",
+                    "repeat",
+                    "expected_agent",
+                    "predicted_agent",
+                    "language",
+                    "schema_valid",
+                    "core_args_correct",
+                    "latency_ms",
+                )
+            ]
+            for run in runs
+        ],
+    )
     return "\n".join(lines) + "\n"
 
 
