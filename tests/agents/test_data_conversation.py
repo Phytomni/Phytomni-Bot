@@ -63,7 +63,7 @@ def _result(
     artifact_id: str = "artifact-expression",
 ) -> dict[str, object]:
     """Build one native DataAgent run envelope for delta extraction."""
-    result = {
+    result: dict[str, object] = {
         "id": "run-data",
         "object": "agent.run",
         "agent": "data",
@@ -94,7 +94,9 @@ def _result(
             },
         },
     }
-    raw = result["result"]["raw"]
+    payload = result["result"]
+    assert isinstance(payload, dict)
+    raw = payload["raw"]
     assert isinstance(raw, dict)
     if aggregate_summary is _MISSING:
         raw["aggregate_summary"] = summary

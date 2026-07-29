@@ -14,6 +14,8 @@ can flow through every graph node without runtime key surprises.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from mcp_server_phytomni.agents.chat.state import (
@@ -25,12 +27,12 @@ from mcp_server_phytomni.agents.chat.state import (
 pytestmark = pytest.mark.agent
 
 
-def _required(td: type) -> frozenset[str]:
+def _required(td: Any) -> frozenset[str]:
     """Return ``td.__required_keys__`` for TypedDict introspection."""
     return td.__required_keys__
 
 
-def _optional(td: type) -> frozenset[str]:
+def _optional(td: Any) -> frozenset[str]:
     """Return ``td.__optional_keys__`` for TypedDict introspection."""
     return td.__optional_keys__
 

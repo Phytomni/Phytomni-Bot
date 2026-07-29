@@ -36,6 +36,9 @@ from mcp_server_phytomni.mcp.result_formatting import (
     text_message_end,
     text_message_start,
 )
+from mcp_server_phytomni.runtime.conversation_context.models import (
+    ConversationEnvelopeV1,
+)
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ConversationContextStore,
 )
@@ -45,34 +48,38 @@ from mcp_server_phytomni.runtime.run_registry import RunRegistry
 pytestmark = pytest.mark.server
 
 
-def _conversation_envelope(*, turn_id: str = "21") -> dict[str, Any]:
+def _conversation_envelope(*, turn_id: str = "21") -> ConversationEnvelopeV1:
     """Build one Instant V1 envelope for streaming tests."""
-    return {
-        "schema_version": 1,
-        "conversation_key": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")),
-        "dialogue_id": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8")),
-        "turn_id": turn_id,
-        "request_id": f"request-{turn_id}",
-        "operation": "append",
-        "mode": "instant",
-        "current_message": {
-            "content": "What is photosynthesis?",
-            "locale": "en-US",
-        },
-        "requested_agent_id": None,
-        "allowed_agent_ids": ["ChatAgent"],
-        "ledger_cursor": int(turn_id),
-        "ledger_version": "a" * 64,
-        "base_business_context_version": 0,
-        "history_delta": [
-            {
-                "turn_id": turn_id,
-                "role": "user",
+    return ConversationEnvelopeV1.model_validate(
+        {
+            "schema_version": 1,
+            "conversation_key": str(
+                UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")
+            ),
+            "dialogue_id": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8")),
+            "turn_id": turn_id,
+            "request_id": f"request-{turn_id}",
+            "operation": "append",
+            "mode": "instant",
+            "current_message": {
                 "content": "What is photosynthesis?",
-            }
-        ],
-        "artifact_refs": [],
-    }
+                "locale": "en-US",
+            },
+            "requested_agent_id": None,
+            "allowed_agent_ids": ["ChatAgent"],
+            "ledger_cursor": int(turn_id),
+            "ledger_version": "a" * 64,
+            "base_business_context_version": 0,
+            "history_delta": [
+                {
+                    "turn_id": turn_id,
+                    "role": "user",
+                    "content": "What is photosynthesis?",
+                }
+            ],
+            "artifact_refs": [],
+        }
+    )
 
 
 def _extract_custom_context(body: str) -> dict[str, Any] | None:
@@ -1048,6 +1055,7 @@ async def test_context_stream_committed_turn_replays_without_reinvocation(
             )
 
     first = await drive("req-context-committed-first")
+    assert payload.conversation is not None
     committed = (
         await streaming_runtime._context_service().acknowledge_settlement(
             payload.conversation,

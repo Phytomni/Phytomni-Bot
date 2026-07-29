@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+from typing import Literal, TypedDict
 from uuid import UUID
 
 import pytest
@@ -32,6 +33,16 @@ from mcp_server_phytomni.runtime.conversation_context.projection import (
 pytestmark = pytest.mark.unit
 
 _CONVERSATION_KEY = UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad6")
+
+
+class _ProjectionKwargs(TypedDict):
+    conversation_key: UUID
+    current_query: str
+    locale: Literal["en-US", "zh-CN"]
+    selected_agent_id: str
+    context: BusinessContext
+    authorized_artifacts: list[ArtifactRefV1]
+    api_config: ApiConfig
 
 
 def _config() -> ApiConfig:
@@ -113,7 +124,7 @@ def test_projection_is_deterministic_and_uses_configured_agent_budget() -> (
 ):
     """The same source data rebuilds to byte-equivalent projection data."""
     context = _context()
-    kwargs = {
+    kwargs: _ProjectionKwargs = {
         "conversation_key": _CONVERSATION_KEY,
         "current_query": "follow up",
         "locale": "en-US",

@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any, cast
 from uuid import UUID
 
@@ -24,6 +24,9 @@ from mcp_server_phytomni.mcp.result_formatting import (
     text_message_content,
     text_message_end,
     text_message_start,
+)
+from mcp_server_phytomni.runtime.conversation_context.models import (
+    ConversationEnvelopeV1,
 )
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ConversationContextStore,
@@ -85,34 +88,38 @@ async def _direct_events(
     yield run_finished(run_id)
 
 
-def _conversation_envelope(*, turn_id: str = "11") -> dict[str, Any]:
+def _conversation_envelope(*, turn_id: str = "11") -> ConversationEnvelopeV1:
     """Build one Instant V1 envelope for direct streaming tests."""
-    return {
-        "schema_version": 1,
-        "conversation_key": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")),
-        "dialogue_id": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8")),
-        "turn_id": turn_id,
-        "request_id": f"request-{turn_id}",
-        "operation": "append",
-        "mode": "instant",
-        "current_message": {
-            "content": "What is photosynthesis?",
-            "locale": "en-US",
-        },
-        "requested_agent_id": None,
-        "allowed_agent_ids": ["ChatAgent"],
-        "ledger_cursor": int(turn_id),
-        "ledger_version": "a" * 64,
-        "base_business_context_version": 0,
-        "history_delta": [
-            {
-                "turn_id": turn_id,
-                "role": "user",
+    return ConversationEnvelopeV1.model_validate(
+        {
+            "schema_version": 1,
+            "conversation_key": str(
+                UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")
+            ),
+            "dialogue_id": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8")),
+            "turn_id": turn_id,
+            "request_id": f"request-{turn_id}",
+            "operation": "append",
+            "mode": "instant",
+            "current_message": {
                 "content": "What is photosynthesis?",
-            }
-        ],
-        "artifact_refs": [],
-    }
+                "locale": "en-US",
+            },
+            "requested_agent_id": None,
+            "allowed_agent_ids": ["ChatAgent"],
+            "ledger_cursor": int(turn_id),
+            "ledger_version": "a" * 64,
+            "base_business_context_version": 0,
+            "history_delta": [
+                {
+                    "turn_id": turn_id,
+                    "role": "user",
+                    "content": "What is photosynthesis?",
+                }
+            ],
+            "artifact_refs": [],
+        }
+    )
 
 
 def _stream_frames(body: str) -> list[tuple[str, dict[str, Any]]]:
@@ -389,7 +396,7 @@ async def test_context_stream_disconnect_before_stage_marks_turn_failed(
         user_query="adapter query",
         dependencies=dependencies,
     )
-    body = cast(AsyncIterator[str], response.body_iterator)
+    body = cast(AsyncGenerator[str, None], response.body_iterator)
     seen: list[str] = []
     async for line in body:
         seen.append(line)
@@ -401,6 +408,7 @@ async def test_context_stream_disconnect_before_stage_marks_turn_failed(
         await anext(body)
 
     rendered = "".join(seen)
+    assert payload.conversation is not None
     key = str(payload.conversation.conversation_key)
     turn_id = payload.conversation.turn_id
     store = ConversationContextStore(db_path)

@@ -23,7 +23,7 @@ from mcp_server_phytomni.agents.expert import ToolSelection
 from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.auth import ApiKeyStore
-from mcp_server_phytomni.api.schemas import ChatCompletionRequest
+from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
 from mcp_server_phytomni.runtime.conversation_context.adapters import (
     ConversationContextExecutor,
 )
@@ -1111,7 +1111,7 @@ async def test_legacy_request_and_response_shape_stay_v0_when_context_is_off(
 
     request = ChatCompletionRequest(
         model="phyto-chat",
-        messages=[{"role": "user", "content": "legacy request"}],
+        messages=[ChatMessage(role="user", content="legacy request")],
     )
     assert request.conversation is None
     assert request.model_dump(exclude_none=True) == {

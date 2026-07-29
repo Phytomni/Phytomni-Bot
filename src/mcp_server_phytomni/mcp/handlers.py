@@ -180,7 +180,7 @@ async def handle_chat_agent(args: ChatAgent) -> HandlerResult:
         ChatAgent response envelope dict.
     """
     chat_config, runtime = load_chat_runtime()
-    thread_kwargs = {}
+    thread_kwargs: dict[str, Any] = {}
     if (thread_id := private_agent_thread_id()) is not None:
         thread_kwargs["thread_id"] = thread_id
     return await phyto_chat_with_follow(
@@ -207,7 +207,7 @@ async def handle_knowledge_agent(args: KnowledgeAgent) -> HandlerResult:
     knowledge_config = KnowledgeConfig()
     runtime = load_handler_runtime()
     private_state = private_agent_state()
-    thread_kwargs = {}
+    thread_kwargs: dict[str, Any] = {}
     if (thread_id := private_agent_thread_id()) is not None:
         thread_kwargs["thread_id"] = thread_id
     return await multi_retrieve_generate(

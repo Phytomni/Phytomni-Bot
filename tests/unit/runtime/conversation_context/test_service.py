@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -621,7 +622,7 @@ async def test_duplicate_turns_reconstruct_staged_metadata(
 
     original_projection = module.build_context_projection
 
-    def truncated_projection(*args: object, **kwargs: object):
+    def truncated_projection(*args: Any, **kwargs: Any):
         return original_projection(*args, **kwargs).model_copy(
             update={"context_truncated": True}
         )

@@ -7,10 +7,11 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from typing import Protocol
+from typing import Literal, Protocol, cast
 from uuid import UUID
 
 from ...config.defaults import ApiConfig
+from ..locale import SupportedLocale
 from .models import (
     MAX_CONTEXT_TEXT_CHARS,
     ArtifactRefV1,
@@ -45,7 +46,7 @@ def _projection_budget_payload(
     artifact_refs: Sequence[ArtifactRefV1 | Mapping[str, object]],
     conversation_key: UUID,
     selected_agent_id: str,
-    locale: str,
+    locale: SupportedLocale,
     token_budget: int,
     context_truncated: bool,
 ) -> dict[str, object]:
@@ -128,7 +129,7 @@ def build_context_projection(
     *,
     conversation_key: UUID,
     current_query: str,
-    locale: str,
+    locale: SupportedLocale,
     selected_agent_id: str,
     context: BusinessContext,
     authorized_artifacts: Sequence[ArtifactRefV1],
@@ -148,10 +149,21 @@ def build_context_projection(
             current_query=str(result.get("current_query", "")),
             intent_kind=str(result.get("intent_kind", "follow_up")),
             task_summary=str(result.get("task_summary", "")),
-            relevant_recent_turns=result.get("relevant_recent_turns", []),
-            active_entities=result.get("active_entities", []),
-            open_questions=result.get("open_questions", []),
-            artifact_refs=result.get("artifact_refs", []),
+            relevant_recent_turns=cast(
+                Sequence[RoleTaggedTurn | Mapping[str, str]],
+                result.get("relevant_recent_turns", []),
+            ),
+            active_entities=cast(
+                Sequence[ContextEntity | Mapping[str, object]],
+                result.get("active_entities", []),
+            ),
+            open_questions=cast(
+                Sequence[str], result.get("open_questions", [])
+            ),
+            artifact_refs=cast(
+                Sequence[ArtifactRefV1 | Mapping[str, object]],
+                result.get("artifact_refs", []),
+            ),
             conversation_key=conversation_key,
             selected_agent_id=selected_agent_id,
             locale=locale,
@@ -247,12 +259,18 @@ def build_context_projection(
     admit("task_summary", context.task_summary)
 
     projection = ContextProjection(
-        current_query=result["current_query"],
-        task_summary=result.get("task_summary", ""),
-        relevant_recent_turns=result.get("relevant_recent_turns", []),
-        active_entities=result.get("active_entities", []),
-        open_questions=result.get("open_questions", []),
-        artifact_refs=result.get("artifact_refs", []),
+        current_query=cast(str, result["current_query"]),
+        task_summary=cast(str, result.get("task_summary", "")),
+        relevant_recent_turns=cast(
+            list[RoleTaggedTurn], result.get("relevant_recent_turns", [])
+        ),
+        active_entities=cast(
+            list[ContextEntity], result.get("active_entities", [])
+        ),
+        open_questions=cast(list[str], result.get("open_questions", [])),
+        artifact_refs=cast(
+            list[ArtifactRefV1], result.get("artifact_refs", [])
+        ),
         agent_thread_id=agent_thread_id(conversation_key, selected_agent_id),
         locale=locale,
         token_budget=budget,
@@ -292,7 +310,7 @@ def rebuild_business_context(
     artifact_refs: Sequence[ArtifactRefV1],
     ledger_cursor: int,
     ledger_version: str,
-    observed_mode: str,
+    observed_mode: Literal["instant", "expert"],
 ) -> BusinessContext:
     """Rebuild semantic context from bounded, ordered ledger input."""
     recent_turns: list[RoleTaggedTurn] = []
@@ -306,15 +324,17 @@ def rebuild_business_context(
 
     for raw in ledger_entries:
         role = raw.get("role")
-        if role == "user" and isinstance(raw.get("content"), str):
+        content = raw.get("content")
+        summary = raw.get("summary")
+        if role == "user" and isinstance(content, str):
             recent_turns.append(
-                RoleTaggedTurn(role="user", content=bound_text(raw["content"]))
+                RoleTaggedTurn(role="user", content=bound_text(content))
             )
-        elif role == "assistant" and isinstance(raw.get("summary"), str):
+        elif role == "assistant" and isinstance(summary, str):
             recent_turns.append(
                 RoleTaggedTurn(
                     role="assistant",
-                    content=bound_text(raw["summary"]),
+                    content=bound_text(summary),
                 )
             )
     return BusinessContext(
