@@ -13,6 +13,7 @@ import pytest
 from scripts.agent_routing_eval.dataset import AgentRoutingCase
 from scripts.agent_routing_eval.metrics import (
     NO_MAJORITY,
+    _validated_threshold_report,
     _validate_stability,
     compute_metrics,
     thresholds_pass,
@@ -705,6 +706,70 @@ def test_thresholds_rejects_forged_provider_errors_and_completion() -> None:
         "provider_completion": 2 / 3,
     }
     assert thresholds_pass(forged) is False
+
+
+def test_thresholds_rejects_errors_above_run_level_incorrect_count() -> None:
+    report = _complete_threshold_report()
+    forged_errors = {
+        **report["errors"],
+        "routing": 1,
+        "schema": 1,
+    }
+    forged = {
+        **report,
+        "errors": forged_errors,
+        "provider_completion": 1.0,
+    }
+    assert thresholds_pass(forged) is False
+
+    provider_forged = {
+        **report,
+        "errors": {**report["errors"], "provider": 1},
+        "provider_completion": 29 / 30,
+    }
+    assert thresholds_pass(provider_forged) is False
+
+
+def test_thresholds_rejects_dispatchable_rate_above_top1_rate() -> None:
+    report = _complete_threshold_report()
+    forged = {
+        **report,
+        "run_level": {
+            "top1_accuracy": 0.0,
+            "dispatchable_accuracy": 1 / 30,
+        },
+    }
+    assert thresholds_pass(forged) is False
+
+
+def test_thresholds_accepts_one_provider_error_with_matching_run_counts() -> (
+    None
+):
+    cases = tuple(
+        case(f"case-{index:03d}", agent)
+        for index, agent in enumerate(CANONICAL_AGENTS, start=1)
+    )
+    outcomes = tuple(
+        outcome(
+            f"case-{index:03d}",
+            repeat,
+            agent,
+            PROVIDER_ERROR if index == 1 and repeat == 1 else agent,
+            provider_completed=not (index == 1 and repeat == 1),
+        )
+        for index, agent in enumerate(CANONICAL_AGENTS, start=1)
+        for repeat in range(1, 4)
+    )
+    report = compute_metrics(cases, outcomes, repeat_count=3)
+
+    assert report["run_level"] == {
+        "top1_accuracy": 29 / 30,
+        "dispatchable_accuracy": 29 / 30,
+    }
+    assert report["errors"] == {"provider": 1, "routing": 0, "schema": 0}
+    assert report["provider_completion"] == 29 / 30
+    assert _validated_threshold_report(report) is not None
+    assert thresholds_pass(report) is False
 
 
 def test_thresholds_rejects_unrepresentable_stability() -> None:
