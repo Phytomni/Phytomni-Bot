@@ -71,13 +71,18 @@ class RunnerOptions:
     retry_delay_seconds: float = 1.0
 
     def __post_init__(self) -> None:
-        if type(self.repeat_count) is not int or self.repeat_count not in {
+        if (
+            not isinstance(self.repeat_count, int)
+            or isinstance(self.repeat_count, bool)
+            or self.repeat_count not in {
             1,
             3,
-        }:
+            }
+        ):
             raise ValueError("repeat_count must be 1 or 3")
         if (
-            type(self.concurrency) is not int
+            not isinstance(self.concurrency, int)
+            or isinstance(self.concurrency, bool)
             or not 1 <= self.concurrency <= 32
         ):
             raise ValueError("concurrency must be between 1 and 32")
@@ -87,7 +92,11 @@ class RunnerOptions:
             or self.timeout_seconds <= 0
         ):
             raise ValueError("timeout_seconds must be finite and positive")
-        if type(self.max_attempts) is not int or self.max_attempts != 3:
+        if (
+            not isinstance(self.max_attempts, int)
+            or isinstance(self.max_attempts, bool)
+            or self.max_attempts != 3
+        ):
             raise ValueError("max_attempts must be 3")
         if (
             not isinstance(self.retry_delay_seconds, (int, float))
@@ -142,7 +151,7 @@ async def _call_partial_sink_best_effort(
     """Attempt partial persistence without replacing the primary failure."""
     try:
         await _call_partial_sink(partial_sink, outcomes)
-    except BaseException:
+    except (RuntimeError, ValueError, TypeError, OSError):
         # Cancellation and orchestration errors must retain their original
         # identity even when a best-effort persistence callback fails.
         return
@@ -259,8 +268,6 @@ async def _run_case(
                         allowed_tools=_ALLOWED_TOOLS,
                         forced_tool=None,
                     )
-            except asyncio.CancelledError:
-                raise
             except (ExpertProviderTimeoutError, TimeoutError) as exc:
                 provider_error = exc
             except ExpertProviderError as exc:

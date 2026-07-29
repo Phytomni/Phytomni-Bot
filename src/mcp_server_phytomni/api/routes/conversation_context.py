@@ -322,7 +322,7 @@ def register_conversation_context_routes(
                 await _delete_checkpoint_threads(
                     payload.conversation_key, candidate_thread_ids
                 )
-            except Exception:  # noqa: BLE001 - deletion remains retryable
+            except (RuntimeError, OSError):
                 logger.warning("conversation checkpoint cleanup deferred")
             else:
                 store.complete_checkpoint_cleanup(key, mutation_lock_held=True)

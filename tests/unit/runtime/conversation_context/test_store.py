@@ -292,7 +292,7 @@ def test_legacy_staged_turn_without_metadata_still_deserializes(
             "value": {"summary": "bounded context"},
         }
     )
-    with store._write() as connection:
+    with store.write() as connection:
         connection.execute(
             "UPDATE conversation_turns SET delta_json = ? "
             "WHERE conversation_key = ? AND turn_id = ?",

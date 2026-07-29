@@ -40,6 +40,7 @@ from mcp_server_phytomni.agents.expert import (
 from mcp_server_phytomni.agents.expert import router as expert_router
 from mcp_server_phytomni.agents.knowledge import agent as knowledge_agent
 from mcp_server_phytomni.agents.review import agent as review_agent
+from mcp_server_phytomni.api.a2ui_runtime import ReviewExecution
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.api.schemas import ExpertQueryRequest
@@ -2797,7 +2798,7 @@ async def test_expert_synchronous_selection_skips_background_launcher(
     if slug == "review":
 
         async def fake_review(**_kwargs: Any) -> Any:
-            return api_app._ReviewExecution(
+            return ReviewExecution(
                 run_id="expert-review-sync",
                 status="succeeded",
                 result={

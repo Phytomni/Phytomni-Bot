@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from scripts.agent_routing_eval import runner
 from scripts.agent_routing_eval.dataset import AgentRoutingCase
 from scripts.agent_routing_eval.runner import (
     PROVIDER_ERROR,
@@ -29,6 +30,7 @@ from mcp_server_phytomni.agents.expert.router import (
     ToolSelection,
     ToolSelectionError,
 )
+from mcp_server_phytomni.mcp import app as mcp_app
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 from mcp_server_phytomni.runtime.locale import (
     bind_effective_locale,
@@ -574,14 +576,12 @@ def test_runner_cannot_reach_dispatch_seams(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Replacing MCP dispatch functions cannot affect selector evaluation."""
-    from mcp_server_phytomni.mcp import app
-
     def fail_dispatch(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("dispatch seam reached")
 
-    monkeypatch.setattr(app, "invoke_tool_raw", fail_dispatch)
-    monkeypatch.setattr(app, "invoke_tool_enveloped", fail_dispatch)
-    monkeypatch.setattr(app, "dispatch_tool", fail_dispatch)
+    monkeypatch.setattr(mcp_app, "invoke_tool_raw", fail_dispatch)
+    monkeypatch.setattr(mcp_app, "invoke_tool_enveloped", fail_dispatch)
+    monkeypatch.setattr(mcp_app, "dispatch_tool", fail_dispatch)
 
     outcome = asyncio.run(
         run_evaluation([_case()], RecordingSelector([_chat_selection()]))
@@ -620,8 +620,6 @@ def test_runner_options_reject_out_of_contract_values(
 
 def test_runner_module_has_no_api_or_dispatch_imports() -> None:
     """The implementation has no import path into execution surfaces."""
-    import scripts.agent_routing_eval.runner as runner
-
     source = inspect.getsource(runner)
     assert "mcp_server_phytomni.api" not in source
     assert "mcp_server_phytomni.mcp.app" not in source

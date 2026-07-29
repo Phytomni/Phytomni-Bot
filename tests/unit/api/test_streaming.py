@@ -409,8 +409,10 @@ async def test_context_stream_disconnect_before_stage_marks_turn_failed(
 
     rendered = "".join(seen)
     assert payload.conversation is not None
-    key = str(payload.conversation.conversation_key)
-    turn_id = payload.conversation.turn_id
+    conversation = payload.conversation
+    conversation_data = vars(conversation)
+    key = str(conversation_data["conversation_key"])
+    turn_id = conversation_data["turn_id"]
     store = ConversationContextStore(db_path)
 
     assert '"name": "phyto.context_staged"' not in rendered

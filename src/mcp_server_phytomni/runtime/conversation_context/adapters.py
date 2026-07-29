@@ -480,7 +480,11 @@ class ConversationContextExecutor:
             try:
                 await adapter.discard_pending_candidate()
             except (
-                BaseException  # noqa: BLE001 - preserve cancellation marker
+                asyncio.CancelledError,
+                RuntimeError,
+                ValueError,
+                TypeError,
+                OSError,
             ) as exc:
                 cleanup_error = exc
             if claim_token is not None:

@@ -712,7 +712,7 @@ async def test_disconnect_after_finish_never_attempts_failed_settlement(
 ) -> None:
     """A post-finish disconnect cannot overwrite durable success."""
     statuses: list[str] = []
-    original_settle = api_app._settle_stream_run
+    original_settle = getattr(api_app, "_settle_stream_run")
 
     def record_settlement(
         run_id: str,
@@ -893,9 +893,11 @@ async def test_context_stream_stages_before_custom_and_then_finishes(
             record = registry.get_run(captured["run_id"], owner="u1")
             assert record is not None
             assert record.status == "succeeded"
+            conversation = payload.conversation
+            conversation_data = vars(conversation)
             stored_turn = ConversationContextStore(tasks_db_path).load_turn(
-                str(payload.conversation.conversation_key),
-                payload.conversation.turn_id,
+                str(conversation_data["conversation_key"]),
+                conversation_data["turn_id"],
             )
             assert stored_turn is not None
             assert stored_turn.state == "staged"
@@ -918,9 +920,9 @@ async def test_context_stream_stages_before_custom_and_then_finishes(
 
     assert answer_marker in accumulated
     committed = (
-        await streaming_runtime._context_service().acknowledge_settlement(
+        await streaming_runtime.context_service().acknowledge_settlement(
             payload.conversation,
-            payload.conversation.ledger_version,
+            conversation_data["ledger_version"],
         )
     )
     assert committed is not None
@@ -1056,11 +1058,10 @@ async def test_context_stream_committed_turn_replays_without_reinvocation(
 
     first = await drive("req-context-committed-first")
     assert payload.conversation is not None
-    committed = (
-        await streaming_runtime._context_service().acknowledge_settlement(
-            payload.conversation,
-            payload.conversation.ledger_version,
-        )
+    conversation = payload.conversation
+    conversation_data = vars(conversation)
+    committed = await streaming_runtime.context_service().acknowledge_settlement(
+        conversation, conversation_data["ledger_version"]
     )
     second = await drive("req-context-committed-second")
 
@@ -1071,14 +1072,14 @@ async def test_context_stream_committed_turn_replays_without_reinvocation(
         if run.spec.agent == "chat" and run.request_info is not None
     ]
     stored_turn = ConversationContextStore(tasks_db_path).load_turn(
-        str(payload.conversation.conversation_key),
-        payload.conversation.turn_id,
+        str(conversation_data["conversation_key"]),
+        conversation_data["turn_id"],
     )
 
     assert invocations == 1
     assert committed is not None
     assert committed.context_version == 1
-    assert committed.ledger_version == payload.conversation.ledger_version
+    assert committed.ledger_version == conversation_data["ledger_version"]
     assert stored_turn is not None
     assert stored_turn.state == "committed"
     assert len(runs) == 1

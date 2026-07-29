@@ -98,8 +98,11 @@ def test_fixture_responses_are_emitted_by_current_models() -> None:
 
     for name in ("staged_metadata_response", "degraded_context_success"):
         stage = responses[name]
+        stage_fields = dict(
+            getattr(ProjectionStageMetadata, "model_fields", {})
+        )
         common = ProjectionStageMetadata.model_validate(
-            {key: stage[key] for key in ProjectionStageMetadata.model_fields}
+            {key: stage[key] for key in stage_fields}
         )
         round_tripped = {
             "schema_version": _STAGE_SCHEMA_VERSION.validate_python(

@@ -720,7 +720,7 @@ class ConversationContextService:
                         )
                     degraded = True
                     delta = ContextDelta()
-            proposed = self._advance_context(
+            proposed = self.advance_context(
                 context,
                 envelope,
                 delta,
@@ -787,7 +787,7 @@ class ConversationContextService:
             )
 
     @staticmethod
-    def _advance_context(
+    def advance_context(
         context: BusinessContext,
         envelope: ConversationEnvelopeV1,
         delta: ContextDelta,
@@ -847,6 +847,8 @@ class ConversationContextService:
             }
         )
         return BusinessContext.model_validate(data)
+
+    _advance_context = advance_context
 
     async def acknowledge_settlement(
         self, envelope: ConversationEnvelopeV1, ledger_version: str

@@ -17,6 +17,7 @@ from tests.support.http_fakes import open_asgi_client
 from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.auth import ApiKeyStore
+from mcp_server_phytomni.api.routes import conversation_context
 from mcp_server_phytomni.runtime.conversation_context.projection import (
     agent_thread_id,
 )
@@ -698,8 +699,6 @@ async def test_tombstone_clears_state_and_deletes_sync_threads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Tombstone removes staged context and synchronous checkpoint threads."""
-    from mcp_server_phytomni.api.routes import conversation_context
-
     class _Checkpointer:
         def __init__(self) -> None:
             self.deleted: list[str] = []
@@ -762,8 +761,6 @@ async def test_tombstone_deletes_durable_review_candidate_thread(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Tombstone cleanup includes candidate threads in staged metadata."""
-    from mcp_server_phytomni.api.routes import conversation_context
-
     class _Checkpointer:
         def __init__(self) -> None:
             self.deleted: list[str] = []
@@ -806,8 +803,6 @@ async def test_tombstone_retry_replays_durable_candidate_cleanup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failed cleanup retains the candidate thread for the next request."""
-    from mcp_server_phytomni.api.routes import conversation_context
-
     class _Checkpointer:
         def __init__(self) -> None:
             self.fail = True
@@ -863,8 +858,6 @@ async def test_tombstone_is_idempotent_and_retries_pending_cleanup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Cleanup failure retains retryable state and safe deletion."""
-    from mcp_server_phytomni.api.routes import conversation_context
-
     class _Checkpointer:
         fail = True
 

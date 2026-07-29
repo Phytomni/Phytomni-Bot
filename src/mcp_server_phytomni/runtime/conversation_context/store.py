@@ -433,7 +433,7 @@ class ConversationContextStore:
             )
 
     @contextmanager
-    def _write(self):
+    def write(self):
         with sqlite_connection(self.db_path) as connection:
             connection.execute("BEGIN IMMEDIATE")
             try:
@@ -441,8 +441,13 @@ class ConversationContextStore:
             except Exception:
                 connection.rollback()
                 raise
-            else:
-                connection.commit()
+            connection.commit()
+
+    @contextmanager
+    def _write(self):
+        """Compatibility alias for the public transaction context."""
+        with self.write() as connection:
+            yield connection
 
     @staticmethod
     def _context(row: sqlite3.Row | tuple[Any, ...]) -> StoredBusinessContext:
@@ -1029,7 +1034,7 @@ class ConversationContextStore:
                 return ReviewSettlementClaim(
                     "claimed", claim_token, next_fence
                 )
-            elif "settlement_claim_token" in marker or (
+            if "settlement_claim_token" in marker or (
                 "settlement_claimed_at" in marker
             ):
                 return ReviewSettlementClaim("invalid")
@@ -1288,7 +1293,7 @@ class ConversationContextStore:
                 return False
             decoded, marker = record
             state = marker.get("settlement_state")
-            if state == "promoted" or state == "rejected":
+            if state in {"promoted", "rejected"}:
                 return False
             if state == "failed":
                 return True

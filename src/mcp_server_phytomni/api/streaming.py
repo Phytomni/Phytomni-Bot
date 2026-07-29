@@ -336,6 +336,11 @@ def _context_service() -> ConversationContextService:
     )
 
 
+def context_service() -> ConversationContextService:
+    """Build the direct V1 service through the public runtime seam."""
+    return _context_service()
+
+
 async def _unsupported_context_router(
     _user_query: str,
     _allowed_agent_ids: tuple[str, ...],
@@ -362,7 +367,7 @@ async def _unsupported_context_delegate_async(
 async def _prepare_context_stream(
     *,
     tool_name: str,
-    arguments: dict[str, Any],
+    _arguments: dict[str, Any],
     payload: ChatCompletionRequest,
 ) -> tuple[_PreparedContextStream | None, PreparedTurn | None]:
     """Prepare an Instant V1 turn or return a staged replay envelope."""
@@ -457,7 +462,7 @@ def _prepare_contextual_raw_events(
     tool_name: str,
     arguments: dict[str, Any],
     run_id: str,
-    payload: ChatCompletionRequest,
+    _payload: ChatCompletionRequest,
     context_stream: _PreparedContextStream,
 ) -> AsyncIterator[AguiEvent]:
     """Open one raw tool stream while injecting private native-role history."""
@@ -512,7 +517,7 @@ def _stage_context_stream_success(
     # display answer is passed across the Bot context boundary.
     delta, degraded = _context_delta_for_stream(None)
     delta = ContextDelta() if delta is None else delta
-    proposed = ConversationContextService._advance_context(
+    proposed = ConversationContextService.advance_context(
         context_stream.context,
         context_stream.envelope,
         delta,
@@ -612,7 +617,7 @@ async def stream_chat_completion(
 
     context_stream, replay_prepared = await _prepare_context_stream(
         tool_name=tool_name,
-        arguments=arguments,
+        _arguments=arguments,
         payload=payload,
     )
     if replay_prepared is not None:
@@ -645,7 +650,7 @@ async def stream_chat_completion(
                         tool_name=tool_name,
                         arguments=arguments,
                         run_id=run_id,
-                        payload=payload,
+                        _payload=payload,
                         context_stream=context_stream,
                     )
                 )

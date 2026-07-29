@@ -479,7 +479,7 @@ def main(
     except KeyboardInterrupt:
         print("benchmark interrupted", file=sys.stderr)
         return 130
-    except Exception:
+    except (RuntimeError, ValueError, TypeError, OSError):
         print_summary(
             BenchmarkSummary(
                 average_ttft=None,

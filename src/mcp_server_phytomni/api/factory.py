@@ -28,6 +28,7 @@ from google.protobuf import json_format
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from ..agents.review.agent import load_review_settlement_adapter
 from ..config.defaults import ApiConfig, BriefGeneConfig
 from ..config.settings import SensitiveConfig
 from ..interop.cache import DiscoveryCache
@@ -935,8 +936,6 @@ def _build_context_executor(
         metadata: Mapping[str, Any], staged_turn: StoredTurn
     ) -> Any:
         """Rebuild Review promotion state through its private agent seam."""
-        from ..agents.review.agent import load_review_settlement_adapter
-
         return await load_review_settlement_adapter(metadata, staged_turn)
 
     return ConversationContextExecutor(

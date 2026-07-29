@@ -49,7 +49,7 @@ from mcp_server_phytomni.runtime.conversation_context.store import (
 pytestmark = pytest.mark.server
 
 
-_ORIGINAL_LAYER_MARKER = test_config._layer_marker_for_item
+_ORIGINAL_LAYER_MARKER = getattr(test_config, "_layer_marker_for_item")
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
@@ -61,7 +61,7 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
             return "server"
         return _ORIGINAL_LAYER_MARKER(item)
 
-    test_config._layer_marker_for_item = _layer_marker
+    setattr(test_config, "_layer_marker_for_item", _layer_marker)
 
 
 _CANONICAL_AGENT_IDS = (

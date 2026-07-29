@@ -724,7 +724,7 @@ async def test_review_ack_reconstructs_from_durable_metadata_after_restart(
 
     agent = FakeAgent()
     prepared = ReviewConversationAdapter()
-    prepared._agent = agent
+    prepared.attach_agent(agent)
     prepared.prepare(
         _projection("Review maize heat tolerance", active=False), turn_id="10"
     )
@@ -836,7 +836,7 @@ async def test_review_ack_claim_serializes_separate_executors(
         _projection("Review maize heat tolerance", active=False),
         turn_id="worker-1",
     )
-    prepared._agent = object()
+    prepared.attach_agent(object())
     metadata = prepared.settlement_metadata()
     assert metadata is not None
     key = str(_CONVERSATION_KEY)
@@ -930,7 +930,7 @@ async def test_review_ack_fence_blocks_promotion_after_tombstone(
         _projection("Review maize heat tolerance", active=False),
         turn_id="fenced-1",
     )
-    prepared._agent = object()
+    prepared.attach_agent(object())
     metadata = prepared.settlement_metadata()
     assert metadata is not None
     key = str(_CONVERSATION_KEY)
@@ -1026,7 +1026,7 @@ async def test_review_loader_failure_persists_terminal_failed_marker(
         _projection("Review maize heat tolerance", active=False),
         turn_id="loader-failure",
     )
-    prepared._agent = object()
+    prepared.attach_agent(object())
     metadata = prepared.settlement_metadata()
     assert metadata is not None
     key = str(_CONVERSATION_KEY)
@@ -1182,6 +1182,9 @@ async def test_review_wrapper_answers_follow_up_without_running_the_graph(
         async def _chat(self, prompt: str) -> dict[str, Any]:
             captured["prompt"] = prompt
             return {"choices": [{"message": {"content": "Bounded answer."}}]}
+
+        async def chat(self, prompt: str) -> dict[str, Any]:
+            return await self._chat(prompt)
 
         async def arun(self, **_kwargs: Any) -> dict[str, Any]:
             raise AssertionError("follow-up must not rerun the Review graph")

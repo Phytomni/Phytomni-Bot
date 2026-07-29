@@ -254,6 +254,22 @@ def _required_thread_id(value: object, label: str) -> str:
     return value
 
 
+async def _invoke_checkpoint_updater(
+    updater: Callable[..., Awaitable[Any]],
+    thread_id: str,
+    values: dict[str, Any],
+) -> None:
+    """Invoke one validated LangGraph checkpoint updater."""
+    await updater(build_runnable_config(thread_id), values=values)
+
+
+def _invoke_checkpoint_deleter(
+    deleter: Callable[[str], Any], thread_id: str
+) -> Any:
+    """Invoke one validated checkpoint-thread deletion seam."""
+    return deleter(thread_id)
+
+
 def _state_values(state: object) -> Mapping[str, Any]:
     """Unwrap LangGraph snapshots and checkpoint tuples to channel values."""
     current: object = state
@@ -983,6 +999,10 @@ class ReviewConversationAdapter:
         """Install the durable claim check used immediately before writes."""
         self._settlement_fence = fence
 
+    def attach_agent(self, agent: Any) -> None:
+        """Attach the graph agent used by durable settlement operations."""
+        self._agent = agent
+
     def _check_settlement_fence(self) -> None:
         """Fail closed when tombstone or another worker revoked the claim."""
         if self._settlement_fence is not None and not self._settlement_fence():
@@ -1553,10 +1573,7 @@ class ReviewConversationAdapter:
     async def _update_stable_checkpoint(self, revision: int) -> None:
         """Persist a bounded follow-up or revision on the active thread."""
         app = getattr(self._agent, "app", None)
-        updater = cast(
-            Callable[..., Awaitable[Any]] | None,
-            getattr(app, "aupdate_state", None),
-        )
+        updater = getattr(app, "aupdate_state", None)
         if not callable(updater) or self.stable_thread_id is None:
             if self._agent is not None:
                 raise RuntimeError(
@@ -1567,9 +1584,7 @@ class ReviewConversationAdapter:
         if self._pending_report_text is not None:
             values["summary_content"] = self._pending_report_text
         self._check_settlement_fence()
-        await updater(
-            build_runnable_config(self.stable_thread_id), values=values
-        )
+        await _invoke_checkpoint_updater(updater, self.stable_thread_id, values)
 
     async def _promote_candidate(self, revision: int) -> None:
         """Copy an isolated graph result after acknowledgement."""
@@ -1591,10 +1606,7 @@ class ReviewConversationAdapter:
         ):
             raise RuntimeError("Review candidate checkpoint is not promotable")
         app = getattr(self._agent, "app", None)
-        updater = cast(
-            Callable[..., Awaitable[Any]] | None,
-            getattr(app, "aupdate_state", None),
-        )
+        updater = getattr(app, "aupdate_state", None)
         if not callable(updater):
             raise ReviewClarificationError(
                 "Review stable checkpoint cannot be promoted."
@@ -1604,9 +1616,7 @@ class ReviewConversationAdapter:
         if self._pending_report_text is not None:
             values["summary_content"] = self._pending_report_text
         self._check_settlement_fence()
-        await updater(
-            build_runnable_config(self.stable_thread_id), values=values
-        )
+        await _invoke_checkpoint_updater(updater, self.stable_thread_id, values)
 
     async def discard_pending_candidate(self) -> None:
         """Delete an unacknowledged candidate without touching active state."""
@@ -1622,7 +1632,9 @@ class ReviewConversationAdapter:
             checkpointer = getattr(self._agent, "checkpointer", None)
             deleter = getattr(checkpointer, "adelete_thread", None)
         if callable(deleter):
-            result = deleter(self.candidate_thread_id)
+            result = _invoke_checkpoint_deleter(
+                deleter, self.candidate_thread_id
+            )
             if inspect.isawaitable(result):
                 await result
         self._candidate_discarded = True

@@ -381,6 +381,14 @@ class DeepResearchAgent(
             max_retries=self.review_config.MAX_RETRIES,
         )
 
+    async def chat(
+        self,
+        prompt: str,
+        response_format_override: dict[str, str | dict] | None = None,
+    ) -> dict[str, Any] | None:
+        """Call the configured LLM through the public review seam."""
+        return await self._chat(prompt, response_format_override)
+
     async def approval_node(self, state: DeepResearchState) -> dict[str, Any]:
         """Pause for human approval of the synthesized summary.
 
@@ -1004,7 +1012,7 @@ async def review_agent_function(
                 return review_clarification_result(str(exc))
         if review_adapter.operation == "follow_up":
             try:
-                result = await review_adapter.follow_up(agent._chat)
+                result = await review_adapter.follow_up(agent.chat)
             except ReviewClarificationError as exc:
                 review_adapter.mark_failed()
                 return review_clarification_result(str(exc))
@@ -1012,7 +1020,7 @@ async def review_agent_function(
             return result
         if review_adapter.operation == "local_revision":
             try:
-                result = await review_adapter.local_revision(agent._chat)
+                result = await review_adapter.local_revision(agent.chat)
             except ReviewClarificationError as exc:
                 review_adapter.mark_failed()
                 return review_clarification_result(str(exc))

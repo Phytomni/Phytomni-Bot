@@ -45,6 +45,7 @@ from tests.support.terminal_results import (
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.shared.a2ui import validate_a2ui_surface
 from mcp_server_phytomni.api import app as api_app_module
+from mcp_server_phytomni.api.a2ui_runtime import ReviewExecution
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.mcp.result_formatting import FormattedToolResult
 from mcp_server_phytomni.mcp.schemas import (
@@ -451,7 +452,7 @@ async def test_native_sync_agents_keep_succeeded_envelope(
     if slug == "review":
 
         async def fake_review(**_kwargs: Any) -> Any:
-            return api_app_module._ReviewExecution(
+            return ReviewExecution(
                 run_id="native-review-sync",
                 status="succeeded",
                 result={

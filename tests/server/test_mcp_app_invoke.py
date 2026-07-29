@@ -196,7 +196,8 @@ async def test_v1_history_reaches_chat_handler_through_raw_dispatch(
         "prompt_file": chat_service.CHAT_CONFIG.PROMPT_FILE,
         "conversation_messages": history,
     }
-    assert "conversation_messages" not in mcp_app.ChatAgent.model_fields
+    chat_fields = dict(getattr(mcp_app.ChatAgent, "model_fields", {}))
+    assert "conversation_messages" not in chat_fields
 
 
 async def test_v1_history_reaches_expert_handler_through_raw_dispatch(
@@ -210,7 +211,7 @@ async def test_v1_history_reaches_expert_handler_through_raw_dispatch(
         captured.update(kwargs)
         return {"choices": [{"message": {"content": "ok"}}]}
 
-    monkeypatch.setattr(mcp_handlers, "KnowledgeConfig", lambda: object())
+    monkeypatch.setattr(mcp_handlers, "KnowledgeConfig", object)
     monkeypatch.setattr(
         mcp_handlers,
         "load_handler_runtime",
@@ -245,7 +246,10 @@ async def test_v1_history_reaches_expert_handler_through_raw_dispatch(
     )
 
     assert captured["conversation_messages"] == history
-    assert "conversation_messages" not in mcp_app.KnowledgeAgent.model_fields
+    knowledge_fields = dict(
+        getattr(mcp_app.KnowledgeAgent, "model_fields", {})
+    )
+    assert "conversation_messages" not in knowledge_fields
 
 
 async def test_v1_history_reaches_knowledge_wrapper_without_leakage(
@@ -264,7 +268,7 @@ async def test_v1_history_reaches_knowledge_wrapper_without_leakage(
 
     fake_agent = FakeKnowledgeAgent()
 
-    monkeypatch.setattr(mcp_handlers, "KnowledgeConfig", lambda: object())
+    monkeypatch.setattr(mcp_handlers, "KnowledgeConfig", object)
     monkeypatch.setattr(
         mcp_handlers,
         "load_handler_runtime",
@@ -325,7 +329,10 @@ async def test_v1_history_reaches_knowledge_wrapper_without_leakage(
     assert fake_agent.calls[0]["conversation_messages"] == first_history
     assert fake_agent.calls[1]["conversation_messages"] == second_history
     assert fake_agent.calls[2]["conversation_messages"] == ()
-    assert "conversation_messages" not in mcp_app.KnowledgeAgent.model_fields
+    knowledge_fields = dict(
+        getattr(mcp_app.KnowledgeAgent, "model_fields", {})
+    )
+    assert "conversation_messages" not in knowledge_fields
 
 
 async def test_invoke_chat_agent_formats_assistant_message(

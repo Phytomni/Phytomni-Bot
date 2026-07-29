@@ -66,7 +66,13 @@ __all__ = [
 
 
 _LOGGER = logging.getLogger(__name__)
-_RUN_GC_CAUGHT: tuple[type[Exception], ...] = (Exception,)
+_RUN_GC_CAUGHT: tuple[type[Exception], ...] = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    OSError,
+    sqlite3.Error,
+)
 _RUN_GC_LOCK = threading.Lock()
 _RUN_GC_ACTIVE = threading.Event()
 _RUN_GC_POLL_SECONDS = 0.01
@@ -135,7 +141,7 @@ async def _close_checkpointer(
         result = closer()
         if inspect.isawaitable(result):
             await result
-    except Exception as exc:  # noqa: BLE001 - cleanup remains retryable
+    except (RuntimeError, ValueError, TypeError, OSError, sqlite3.Error) as exc:
         logger.warning(
             "Review candidate checkpointer close failed: %s",
             exc.__class__.__name__,
@@ -152,7 +158,7 @@ async def _delete_review_candidate_checkpoints(
     """Delete only durable candidate threads and return completed rows."""
     try:
         checkpointer = checkpointer_factory()
-    except Exception as exc:  # noqa: BLE001 - cleanup remains retryable
+    except (RuntimeError, ValueError, TypeError, OSError, sqlite3.Error) as exc:
         logger.warning(
             "Review candidate checkpoint cleanup unavailable: %s",
             exc.__class__.__name__,
@@ -173,7 +179,13 @@ async def _delete_review_candidate_checkpoints(
                 result = deleter(candidate_thread_id)
                 if inspect.isawaitable(result):
                     await result
-            except Exception as exc:  # noqa: BLE001 - retry failed rows
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                OSError,
+                sqlite3.Error,
+            ) as exc:
                 logger.warning(
                     "Review candidate checkpoint cleanup failed: %s",
                     exc.__class__.__name__,
@@ -215,7 +227,7 @@ def _run_async_at_sync_boundary(
     def _worker() -> None:
         try:
             result.append(asyncio.run(coroutine_factory()))
-        except BaseException as exc:  # noqa: BLE001 - re-raise at boundary
+        except _RUN_GC_CAUGHT as exc:
             failures.append(exc)
 
     worker = threading.Thread(target=_worker, daemon=True)
@@ -284,7 +296,7 @@ def purge_expired_runs_best_effort(
             checkpointer_factory=checkpointer_factory,
             logger=logger,
         )
-    except Exception as exc:  # noqa: BLE001 - lifecycle cleanup is best effort
+    except _RUN_GC_CAUGHT as exc:
         logger.warning(
             "conversation context TTL purge failed: %s",
             exc.__class__.__name__,

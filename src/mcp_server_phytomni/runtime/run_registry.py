@@ -395,7 +395,7 @@ class RunRegistry:
                 WHERE run_id = ? AND user_id = ? AND agent = ?
                   AND status = 'running'
                 """,
-                (json.dumps(result), _now_iso(), run_id, owner, agent),
+                (json.dumps(result), now, run_id, owner, agent),
             )
             if cursor.rowcount != 1:
                 raise sqlite3.OperationalError(

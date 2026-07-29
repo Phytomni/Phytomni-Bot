@@ -43,6 +43,16 @@ class BackgroundSubmissionExecutionError(RuntimeError):
     """Stable internal signal for a post-acceptance submission failure."""
 
 
+_BACKGROUND_ERRORS: tuple[type[Exception], ...] = (
+    BackgroundSubmissionExecutionError,
+    RuntimeError,
+    ValueError,
+    TypeError,
+    OSError,
+    sqlite3.Error,
+)
+
+
 @dataclass(frozen=True, slots=True)
 class BackgroundSubmissionOutcome:
     """Bounded result returned by one detached submission operation."""
@@ -133,7 +143,7 @@ def _settle_failed(
             result=result or empty_execution_projection(degraded=True),
             error=error,
         )
-    except Exception as exc:
+    except _BACKGROUND_ERRORS as exc:
         _LOGGER.error(
             "Background submission settlement failed",
             extra={
@@ -228,7 +238,7 @@ async def _run_background_submission(
             error="background_submission_cancelled",
         )
         raise
-    except Exception as exc:
+    except _BACKGROUND_ERRORS as exc:
         _LOGGER.error(
             "Background submission failed",
             extra={

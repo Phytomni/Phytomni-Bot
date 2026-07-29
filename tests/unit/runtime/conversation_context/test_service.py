@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from functools import partial
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -13,6 +14,7 @@ from uuid import UUID
 import pytest
 
 from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
+from mcp_server_phytomni.runtime.conversation_context import service as module
 from mcp_server_phytomni.runtime.conversation_context.models import (
     ArtifactRefV1,
     BusinessContext,
@@ -323,7 +325,7 @@ async def test_missing_or_schema_incompatible_context_requires_rebuild(
     first = await service.execute_turn(_envelope(turn_id="2"))
     assert first.stage is not None
     await service.acknowledge_settlement(_envelope(turn_id="2"), "b" * 64)
-    with store._write() as connection:
+    with store.write() as connection:
         connection.execute(
             "UPDATE conversation_contexts SET schema_version = 99 "
             "WHERE conversation_key = ?",
@@ -616,11 +618,7 @@ async def test_duplicate_turns_reconstruct_staged_metadata(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Retries preserve route and degradation metadata across settlement."""
-    from mcp_server_phytomni.runtime.conversation_context import (
-        service as module,
-    )
-
-    original_projection = module.build_context_projection
+    original_projection = partial(module.build_context_projection)
 
     def truncated_projection(*args: Any, **kwargs: Any):
         return original_projection(*args, **kwargs).model_copy(
