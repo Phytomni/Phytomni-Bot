@@ -873,13 +873,19 @@ The credential-injecting relay (`/v1/relay/*`) is off unless
   state are per worker. With N workers the effective per-key ceilings are
   ×N, so set the limits accordingly or front the relay with a single
   worker until a shared store is added.
-- **Live-task reconciliation is process-local.** The in-flight
-  `deep_genome` umbrella registry (`runtime/live_tasks.py`) that lets
-  `GetTaskStatus` and `GET /v1/runs/{run_id}` tell a live umbrella from a
-  dead one lives in one process's memory. Under multiple workers a poll
-  served by a worker that did not launch the umbrella reads it as dead
-  and can reconcile a still-running run to `failed`. Run the API
-  single-worker (the default) until the registry moves to shared storage.
+- **Live-task reconciliation is process-local.** The in-flight worker registry
+  (`runtime/live_tasks.py`) that lets `GetTaskStatus` and
+  `GET /v1/runs/{run_id}` tell a live umbrella from a dead one lives in one
+  process's memory. Under multiple workers a poll served by a worker that did
+  not launch the umbrella reads it as dead and can reconcile a still-running
+  run to `failed`. Run the API single-worker (the default) until the registry
+  moves to shared storage. The generic `analyst`, `research`, `network`, and
+  `design` path returns its initial `202` after persisting an umbrella with
+  `task_ids: []`, then submits children in that same process-local worker. A
+  restart after reservation can therefore leave a generic umbrella `running`
+  with no children; there is no durable queue, long-lived coordinator, or
+  automatic recovery for it. DeepGenome has its separate specialized
+  coordinator and restart behavior below.
 - **E12 checkpointer caveat.** ReviewAgent human-in-the-loop pause points
   live in the local SQLite `checkpoints.db` sibling of `server_tasks.db`.
   Run the API as one replica, or keep `/resume` and `/a2ui-actions`

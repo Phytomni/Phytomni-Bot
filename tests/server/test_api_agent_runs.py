@@ -13,6 +13,7 @@ chokepoint-minted ``origin="remote"`` run_id read back via
 from __future__ import annotations
 
 import asyncio
+import json
 import sqlite3
 from dataclasses import dataclass
 from types import SimpleNamespace
@@ -783,6 +784,66 @@ async def test_background_run_settles_failed_when_recorder_fails(
     assert record is not None
     assert record.task_ids == ()
     assert record.error == "background_submission_failed"
+
+
+async def test_background_debug_raw_never_persists_or_logs(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A debug request cannot retain raw worker material in the run store."""
+    sentinels = (
+        "prompt-sentinel-background",
+        "model-sentinel-background",
+        "attachment-sentinel-background",
+    )
+
+    async def fake(_args: Any) -> dict[str, Any]:
+        return {
+            "task_id": "task-private-raw",
+            "output_dir": "/obs/run",
+            "prompt": sentinels[0],
+            "model_output": sentinels[1],
+            "attachment_contents": sentinels[2],
+        }
+
+    install_tool_handler(
+        monkeypatch,
+        server.PhytomniAgents.ANALYST_AGENT.value,
+        records_submission("analyst")(fake),
+    )
+    response = await api_client.post(
+        "/v1/agents/analyst/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={
+            "arguments": {
+                "goal_description": "test",
+                "data_list": {},
+                "obs_file_list": [],
+            },
+            "debug": True,
+        },
+    )
+
+    assert response.status_code == 202
+    run_id = response.json()["run_id"]
+    registry = RunRegistry(tasks_db_path)
+    for _ in range(100):
+        record = registry.get_run(run_id, owner="u1")
+        if record is not None and record.task_ids == ("task-private-raw",):
+            break
+        await asyncio.sleep(0)
+    else:
+        pytest.fail("background debug run did not attach its task")
+
+    assert record is not None
+    persisted = json.dumps(record.result)
+    assert "raw" not in record.result
+    for sentinel in sentinels:
+        assert sentinel not in persisted
+        assert sentinel not in caplog.text
 
 
 async def test_background_submission_launch_failure_is_safe(

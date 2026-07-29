@@ -1561,11 +1561,20 @@ text, private paths, raw logs, diagnostic details, and credential-shaped
 fragments never enter the scientific surface.
 
 Remote agents (`analyst`, `deep_genome`, `research`, `design`, `network`)
-respond `202` with `status: "running"` and `task_ids` listing every child
-task registered by the submit path. Poll `/v1/runs/{run_id}` for live status;
-the owner-scoped GET reads the local run/snapshot store and does not poll the
-remote analysis platform. The long-lived coordinator owns remote polling and
-persists each report revision.
+respond `202` with `status: "running"`. The initial accepted response for
+`analyst`, `research`, `design`, and `network` contains a persisted umbrella
+`run_id` and `task_ids: []`: semantic resolution and child submission continue
+in one process-local detached worker, so no child identity is fabricated before
+acceptance. Poll `/v1/runs/{run_id}` for live status; the owner-scoped GET
+reads the local run/snapshot store and does not poll the remote analysis
+platform. After reservation, a service restart can leave one of these generic
+umbrellas `running` with no children; there is no durable queue, long-lived
+coordinator, or automatic worker recovery for that boundary.
+
+Once a generic worker records accepted children, the umbrella remains
+`running` while the existing task reconciler owns terminal settlement. This is
+separate from Deep Genome's specialized in-process coordinator and its report
+snapshots described below.
 
 The submit response is a submission acknowledgement, not a completed report.
 Use `GetTaskStatus` or `GET /v1/runs/{run_id}` for one non-blocking lookup. A
@@ -1576,10 +1585,10 @@ public artifact descriptors and output directories are siblings under
 backend acceptance.
 
 `deep_genome` runs the whole report workflow in-process in the background, so
-unlike the other remote agents its terminal product is a local markdown report
-rather than an upstream-platform artifact. The coordinator persists a public
-snapshot after BriefGene and after each optional analysis transition. While
-the run is active, `GetTaskStatus.formatted.answer` and
+unlike the generic background submission workers its terminal product is a
+local markdown report rather than an upstream-platform artifact. The
+coordinator persists a public snapshot after BriefGene and after each optional
+analysis transition. While the run is active, `GetTaskStatus.formatted.answer` and
 the `answer` field of `GET /v1/runs/{run_id}` select the latest nonblank
 intermediate report. After successful synthesis, the same answer is paired
 with `result.execution.report.state="final"`. Failed umbrellas retain their
