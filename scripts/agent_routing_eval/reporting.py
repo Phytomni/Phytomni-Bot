@@ -24,6 +24,7 @@ from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 
 from .dataset import AgentRoutingCase
 from .metrics import compute_metrics, thresholds_pass
+from .reporting_markdown import format_markdown_value, render_markdown
 from .runner import RunOutcome
 
 RunCommand = Callable[..., object]
@@ -31,35 +32,37 @@ RunCommand = Callable[..., object]
 _CANONICAL_AGENTS: Final = tuple(
     name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
 )
-_METRIC_KEYS: Final = (
-    "schema_version",
-    "case_count",
-    "planned_runs",
-    "completed_records",
-    "run_level",
-    "majority",
-    "per_agent",
-    "macro",
-    "by_language",
-    "confusion_matrix",
-    "stability",
-    "core_arguments",
-    "errors",
-    "provider_completion",
-    "latency_ms",
+_METRIC_KEYS: Final = tuple(
+    [
+        "schema_version",
+        "case_count",
+        "planned_runs",
+        "completed_records",
+        "run_level",
+        "majority",
+        "per_agent",
+        "macro",
+        "by_language",
+        "confusion_matrix",
+        "stability",
+        "core_arguments",
+        "errors",
+        "provider_completion",
+        "latency_ms",
+    ]
 )
 _SAFE_ERROR_CODES: Final = frozenset(
-    {
+    [
         "provider_timeout_exhausted",
         "provider_failure_exhausted",
         "routing_contract_error",
         "routing_missing_selection",
         "schema_validation_error",
         "core_argument_mismatch",
-    }
+    ]
 )
 _SAFE_VALIDATION_CODES: Final = frozenset(
-    {
+    [
         "assertion_error",
         "bool_type",
         "dict_type",
@@ -80,16 +83,16 @@ _SAFE_VALIDATION_CODES: Final = frozenset(
         "too_long",
         "unknown_agent",
         "value_error",
-    }
+    ]
 )
 _REPORT_KEYS: Final = frozenset(
-    {"schema_version", "status", "provenance", "metrics", "runs"}
+    ["schema_version", "status", "provenance", "metrics", "runs"]
 )
 _STATUS_KEYS: Final = frozenset(
-    {"state", "headline", "current_accuracy", "thresholds_passed"}
+    ["state", "headline", "current_accuracy", "thresholds_passed"]
 )
 _PROVENANCE_KEYS: Final = frozenset(
-    {
+    [
         "branch",
         "head",
         "dirty",
@@ -104,13 +107,29 @@ _PROVENANCE_KEYS: Final = frozenset(
         "started_at",
         "elapsed_seconds",
         "allow_dirty",
-    }
+    ]
+)
+_PROVENANCE_ORDER: Final = (
+    "branch",
+    "head",
+    "dirty",
+    "model_id",
+    "provider_endpoint_hash",
+    "dataset_path",
+    "dataset_sha256",
+    "description_sha256",
+    "mode",
+    "repeat_count",
+    "concurrency",
+    "started_at",
+    "elapsed_seconds",
+    "allow_dirty",
 )
 _INCOMPLETE_METRIC_KEYS: Final = frozenset(
-    {"planned_runs", "completed_records", "status"}
+    ["planned_runs", "completed_records", "status"]
 )
 _RUN_KEYS: Final = frozenset(
-    {
+    [
         "case_id",
         "expected_agent",
         "predicted_agent",
@@ -126,17 +145,14 @@ _RUN_KEYS: Final = frozenset(
         "selected_arguments",
         "error_code",
         "validation_codes",
-    }
+    ]
 )
 _SAFE_STEM_RE: Final = re.compile(r"[A-Za-z0-9._-]+", re.ASCII)
-_SAFE_IDENTIFIER_RE: Final = re.compile(
-    r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}", re.ASCII
-)
 _SAFE_BRANCH_RE: Final = re.compile(
     r"[A-Za-z0-9][A-Za-z0-9._/-]{0,127}", re.ASCII
 )
 _SAFE_ARGUMENT_KEYS: Final = frozenset(
-    {
+    [
         "user_query",
         "goal_description",
         "data_list",
@@ -148,38 +164,38 @@ _SAFE_ARGUMENT_KEYS: Final = frozenset(
         "interop_mode",
         "interop_targets",
         "task_id",
-    }
+    ]
 )
 _METRIC_MAP_KEYS: Final = {
-    "run_level": frozenset({"top1_accuracy", "dispatchable_accuracy"}),
+    "run_level": frozenset(["top1_accuracy", "dispatchable_accuracy"]),
     "majority": frozenset(
-        {
+        [
             "top1_correct",
             "top1_accuracy",
             "dispatchable_correct",
             "dispatchable_accuracy",
             "wilson_95",
-        }
+        ]
     ),
-    "macro": frozenset({"basis", "precision", "recall", "f1"}),
-    "by_language": frozenset({"basis", "en", "zh"}),
+    "macro": frozenset(["basis", "precision", "recall", "f1"]),
+    "by_language": frozenset(["basis", "en", "zh"]),
     "confusion_matrix": frozenset({"basis", *_CANONICAL_AGENTS}),
-    "stability": frozenset({"exact", "modal_agreement"}),
-    "core_arguments": frozenset({"eligible", "correct", "accuracy"}),
-    "errors": frozenset({"provider", "routing", "schema"}),
-    "latency_ms": frozenset({"p50", "p95"}),
+    "stability": frozenset(["exact", "modal_agreement"]),
+    "core_arguments": frozenset(["eligible", "correct", "accuracy"]),
+    "errors": frozenset(["provider", "routing", "schema"]),
+    "latency_ms": frozenset(["p50", "p95"]),
 }
 _AGENT_ROW_KEYS: Final = frozenset(
-    {"support", "predicted", "true_positive", "precision", "recall", "f1"}
+    ["support", "predicted", "true_positive", "precision", "recall", "f1"]
 )
 _LANGUAGE_ROW_KEYS: Final = frozenset(
-    {
+    [
         "case_count",
         "top1_correct",
         "top1_accuracy",
         "dispatchable_correct",
         "dispatchable_accuracy",
-    }
+    ]
 )
 _CONFUSION_ROW_KEYS: Final = frozenset(
     {
@@ -383,24 +399,6 @@ def _safe_int(value: object, *, nonnegative: bool = True) -> int | None:
     return value
 
 
-def _safe_metrics(
-    metrics: Mapping[str, Any], *, complete: bool
-) -> dict[str, object]:
-    if not complete:
-        planned = _safe_int(metrics.get("planned_runs"))
-        completed = _safe_int(metrics.get("completed_records"))
-        if planned is None or completed is None or completed > planned:
-            raise ValueError("invalid incomplete metric counts")
-        return {
-            "planned_runs": planned,
-            "completed_records": completed,
-            "status": "incomplete",
-        }
-    return {
-        key: _safe_json(metrics[key]) for key in _METRIC_KEYS if key in metrics
-    }
-
-
 def _mapping_with_allowed_keys(
     value: object,
     allowed_keys: frozenset[str],
@@ -487,7 +485,9 @@ def _safe_complete_metrics(value: object) -> dict[str, object]:
     result: dict[str, object] = {}
     for key in _METRIC_KEYS:
         item = mapping[key]
-        if key == "per_agent":
+        if key in {"majority", "stability"} and item is None:
+            result[key] = None
+        elif key == "per_agent":
             result[key] = _safe_per_agent(item)
         elif key == "by_language":
             result[key] = _safe_language_rows(item)
@@ -508,7 +508,15 @@ def _safe_incomplete_metrics(value: object) -> dict[str, object]:
     )
     if set(mapping) != set(_INCOMPLETE_METRIC_KEYS):
         raise ValueError("incomplete metrics must contain only bounded counts")
-    return _safe_metrics(mapping, complete=False)
+    planned = _safe_int(mapping["planned_runs"])
+    completed = _safe_int(mapping["completed_records"])
+    if planned is None or completed is None or completed > planned:
+        raise ValueError("invalid incomplete metric counts")
+    return {
+        "planned_runs": planned,
+        "completed_records": completed,
+        "status": "incomplete",
+    }
 
 
 def _validate_partial_inventory(
@@ -611,31 +619,27 @@ def _safe_runs(outcomes: Sequence[RunOutcome]) -> list[dict[str, object]]:
     return records
 
 
-def _metric_mapping(
-    metrics: Mapping[str, object], key: str
-) -> Mapping[str, object] | None:
-    value = metrics.get(key)
-    return value if isinstance(value, Mapping) else None
-
-
 def _primary_accuracy(
     context: ReportContext,
     metrics: Mapping[str, object],
     provider_completion: float | None,
     complete: bool,
 ) -> float | str:
+    """Return accuracy only when provider completion is trustworthy."""
     if (
         not complete
         or provider_completion is None
         or provider_completion < 0.99
     ):
         return "Unknown"
-    source = (
-        _metric_mapping(metrics, "majority")
-        if context.repeat_count == 3
-        else _metric_mapping(metrics, "run_level")
+    source = metrics.get(
+        "majority" if context.repeat_count == 3 else "run_level"
     )
-    value = _safe_float(source.get("top1_accuracy")) if source else None
+    value = (
+        _safe_float(source.get("top1_accuracy"))
+        if isinstance(source, Mapping)
+        else None
+    )
     return "Unknown" if value is None else value
 
 
@@ -705,7 +709,7 @@ def build_report(
             raise ValueError("complete report inventory is invalid") from exc
         if dict(metrics) != computed_metrics:
             raise ValueError("supplied metrics do not match outcomes")
-        safe_metrics = _safe_metrics(computed_metrics, complete=True)
+        safe_metrics = _safe_complete_metrics(computed_metrics)
     else:
         _validate_partial_inventory(cases, outcomes, context.repeat_count)
         planned_runs = len(cases) * context.repeat_count
@@ -715,7 +719,11 @@ def build_report(
             or _safe_int(metrics.get("completed_records")) != completed_records
         ):
             raise ValueError("partial report counts do not match inventory")
-        safe_metrics = _safe_metrics(metrics, complete=False)
+        safe_metrics = {
+            "planned_runs": planned_runs,
+            "completed_records": completed_records,
+            "status": "incomplete",
+        }
     provenance = {
         "branch": _safe_text(context.git.branch),
         "head": _safe_text(context.git.head),
@@ -782,7 +790,7 @@ def _safe_provenance(value: object) -> dict[str, object]:
     head = _safe_text(mapping["head"])
     if _SAFE_BRANCH_RE.fullmatch(branch) is None:
         raise ValueError("invalid report branch")
-    if _SAFE_IDENTIFIER_RE.fullmatch(head) is None:
+    if _SAFE_BRANCH_RE.fullmatch(head) is None:
         raise ValueError("invalid report head")
     mode = mapping["mode"]
     if mode not in {"quick", "benchmark"}:
@@ -886,213 +894,13 @@ def _safe_report(report: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _format_markdown_value(value: object) -> str:
-    """Format one value and neutralize Markdown table/control characters."""
-    if value is None:
-        text = "-"
-    elif isinstance(value, float):
-        text = f"{value:.6g}"
-    elif isinstance(value, (dict, list)):
-        text = json.dumps(value, ensure_ascii=False, sort_keys=True)
-    else:
-        text = str(value)
-    return (
-        text.replace("\\", "\\\\")
-        .replace("|", "\\|")
-        .replace("\r", "\\r")
-        .replace("\n", "\\n")
-    )
-
-
-def _append_pairs(
-    lines: list[str],
-    title: str,
-    values: Mapping[str, object],
-    keys: Sequence[str],
-) -> None:
-    lines.extend(("", f"## {title}"))
-    lines.extend(
-        f"- {key}: {_format_markdown_value(values[key])}" for key in keys
-    )
-
-
-def _append_table(
-    lines: list[str],
-    title: str,
-    headers: Sequence[str],
-    rows: Sequence[Sequence[object]],
-) -> None:
-    lines.extend(
-        (
-            "",
-            f"## {title}",
-            "| " + " | ".join(headers) + " |",
-            "| " + " | ".join("---:" for _ in headers) + " |",
-        )
-    )
-    lines.extend(
-        "| "
-        + " | ".join(_format_markdown_value(value) for value in row)
-        + " |"
-        for row in rows
-    )
+    """Keep the historical private formatter import stable for tests."""
+    return format_markdown_value(value)
 
 
 def _render_markdown(report: Mapping[str, Any]) -> str:
-    lines = ["# Agent Routing Evaluation Report"]
-    status = report["status"]
-    provenance = report["provenance"]
-    metrics = report["metrics"]
-    runs = report["runs"]
-    _append_pairs(
-        lines,
-        "Headline",
-        status,
-        ("state", "headline", "current_accuracy", "thresholds_passed"),
-    )
-    _append_pairs(
-        lines,
-        "Provenance",
-        provenance,
-        (
-            "branch",
-            "head",
-            "dirty",
-            "model_id",
-            "provider_endpoint_hash",
-            "dataset_path",
-            "dataset_sha256",
-            "description_sha256",
-            "mode",
-            "repeat_count",
-            "concurrency",
-            "started_at",
-            "elapsed_seconds",
-            "allow_dirty",
-        ),
-    )
-    lines.extend(("", "## Metrics"))
-    for key in (
-        "case_count",
-        "planned_runs",
-        "completed_records",
-        "provider_completion",
-    ):
-        if key in metrics:
-            lines.append(f"- {key}: {_format_markdown_value(metrics[key])}")
-    for name, keys in (
-        ("run_level", ("top1_accuracy", "dispatchable_accuracy")),
-        ("majority", ("top1_accuracy", "dispatchable_accuracy")),
-        ("latency_ms", ("p50", "p95")),
-    ):
-        row = metrics.get(name)
-        if isinstance(row, Mapping):
-            for key in keys:
-                lines.append(
-                    f"- {name}.{key}: {_format_markdown_value(row.get(key))}"
-                )
-    per_agent = metrics.get("per_agent")
-    if isinstance(per_agent, Mapping):
-        rows = [
-            [agent]
-            + [
-                row.get(key)
-                for key in (
-                    "support",
-                    "predicted",
-                    "true_positive",
-                    "precision",
-                    "recall",
-                    "f1",
-                )
-            ]
-            for agent in _CANONICAL_AGENTS
-            if isinstance(row := per_agent.get(agent), Mapping)
-        ]
-        _append_table(
-            lines,
-            "Per-agent",
-            (
-                "Agent",
-                "Support",
-                "Predicted",
-                "True positive",
-                "Precision",
-                "Recall",
-                "F1",
-            ),
-            rows,
-        )
-    by_language = metrics.get("by_language")
-    if isinstance(by_language, Mapping):
-        rows = [
-            [language]
-            + [
-                row.get(key)
-                for key in (
-                    "case_count",
-                    "top1_correct",
-                    "top1_accuracy",
-                    "dispatchable_accuracy",
-                )
-            ]
-            for language in ("en", "zh")
-            if isinstance(row := by_language.get(language), Mapping)
-        ]
-        _append_table(
-            lines,
-            "Language",
-            (
-                "Language",
-                "Cases",
-                "Top-1 correct",
-                "Top-1 accuracy",
-                "Dispatchable accuracy",
-            ),
-            rows,
-        )
-    errors = metrics.get("errors")
-    if isinstance(errors, Mapping):
-        _append_pairs(
-            lines, "Errors", errors, ("provider", "routing", "schema")
-        )
-    confusion = metrics.get("confusion_matrix")
-    if isinstance(confusion, Mapping):
-        lines.extend(("", "## Confusion"))
-        for agent in _CANONICAL_AGENTS:
-            row = confusion.get(agent)
-            if isinstance(row, Mapping):
-                lines.append(f"- {agent}: {_format_markdown_value(dict(row))}")
-    _append_table(
-        lines,
-        "Runs",
-        (
-            "Case ID",
-            "Repeat",
-            "Expected",
-            "Predicted",
-            "Language",
-            "Schema valid",
-            "Core args correct",
-            "Latency ms",
-        ),
-        [
-            [
-                run.get(key)
-                for key in (
-                    "case_id",
-                    "repeat",
-                    "expected_agent",
-                    "predicted_agent",
-                    "language",
-                    "schema_valid",
-                    "core_args_correct",
-                    "latency_ms",
-                )
-            ]
-            for run in runs
-        ],
-    )
-    return "\n".join(lines) + "\n"
+    """Render one validated report as readable Markdown."""
+    return render_markdown(report, _CANONICAL_AGENTS, _PROVENANCE_ORDER)
 
 
 def _write_temporary(path: Path, content: str) -> Path:
@@ -1128,7 +936,7 @@ def _restore_destination(path: Path, previous: bytes | None) -> None:
 def write_report_pair(
     report: Mapping[str, Any], output_dir: Path, stem: str
 ) -> tuple[Path, Path]:
-    """Write a validated JSON/Markdown pair with rollback on publication error."""
+    """Write a validated JSON/Markdown pair with rollback on failure."""
     if (
         not isinstance(stem, str)
         or _SAFE_STEM_RE.fullmatch(stem) is None
