@@ -6,16 +6,14 @@
 
 from __future__ import annotations
 
-import json
+import asyncio
 import logging
 import sqlite3
 from dataclasses import dataclass
-from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
-from tests.support.http_fakes import assert_degraded_tracking_response
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.expert import (
@@ -25,10 +23,8 @@ from mcp_server_phytomni.agents.expert import (
     ToolSelection,
 )
 from mcp_server_phytomni.api import app as api_app
-from mcp_server_phytomni.runtime import (
-    submit_recorder as submit_recorder_module,
-)
-from mcp_server_phytomni.runtime.run_registry import RunRegistry
+from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
+from mcp_server_phytomni.runtime.run_registry import RunRecord, RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
 pytestmark = pytest.mark.server
@@ -111,6 +107,32 @@ def _contract_shape(body: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def _wait_for_run(
+    db_path: str,
+    run_id: str,
+    *,
+    owner: str = "u1",
+    task_ids: set[str] | None = None,
+    status: str | None = None,
+    attempts: int = 100,
+) -> RunRecord:
+    """Poll one owned run without sleeping the event loop thread."""
+    registry = RunRegistry(db_path)
+    for _ in range(attempts):
+        record = registry.get_run(run_id, owner=owner)
+        if record is not None:
+            tasks_match = task_ids is None or set(record.task_ids) == task_ids
+            status_match = status is None or record.status == status
+            if tasks_match and status_match:
+                await asyncio.sleep(0)
+                return record
+        await asyncio.sleep(0)
+    expected = f"tasks={sorted(task_ids) if task_ids is not None else '*'}"
+    if status is not None:
+        expected += f", status={status}"
+    pytest.fail(f"run {run_id} did not reach {expected}")
+
+
 @dataclass(frozen=True, slots=True)
 class _ParityCase:
     """One direct/native versus Expert request pair."""
@@ -181,6 +203,46 @@ _PARITY_CASES = (
         ),
         id="research-remote",
     ),
+    pytest.param(
+        _ParityCase(
+            "DigitalDesignAgent",
+            "design",
+            202,
+            {
+                "species_code": "ath",
+                "gene_id": "AT1G01010",
+                "obs_file_list": [],
+                "resolve_gene_id": False,
+            },
+            {
+                "species_code": "ath",
+                "gene_id": "AT1G01010",
+                "obs_file_list": [],
+                "resolve_gene_id": False,
+            },
+        ),
+        id="design-remote",
+    ),
+    pytest.param(
+        _ParityCase(
+            "GeneNetworkAgent",
+            "network",
+            202,
+            {
+                "species_code": "osa",
+                "to_id": "TO:0000207",
+                "obs_file_list": [],
+                "resolve_to_id": False,
+            },
+            {
+                "species_code": "osa",
+                "to_id": "TO:0000207",
+                "obs_file_list": [],
+                "resolve_to_id": False,
+            },
+        ),
+        id="network-remote",
+    ),
 )
 
 
@@ -231,19 +293,53 @@ async def test_expert_uses_native_run_contract(
     expected_status = case.expected_status
     calls = 0
 
+    def _submission_payload(
+        call_number: int,
+    ) -> tuple[dict[str, Any], set[str]]:
+        task_id = f"expert-parity-{slug}-{call_number}"
+        if slug == "analyst":
+            return (
+                {"task_id": task_id, "output_dir": "tenant/expert-parity"},
+                {task_id},
+            )
+        if slug == "research":
+            return (
+                {
+                    "task_ids": [task_id],
+                    "output_dir": "tenant/expert-parity",
+                },
+                {task_id},
+            )
+        if slug == "network":
+            return (
+                {
+                    "network_task": {
+                        "task_id": task_id,
+                        "output_dir": "tenant/expert-parity",
+                    }
+                },
+                {task_id},
+            )
+        if slug == "design":
+            return (
+                {
+                    "design_task_result": [
+                        {
+                            "task_id": task_id,
+                            "output_dir": "tenant/expert-parity",
+                        }
+                    ]
+                },
+                {task_id},
+            )
+        raise AssertionError(f"unexpected background slug: {slug}")
+
     async def fake(_args: Any) -> dict[str, Any]:
         nonlocal calls
         calls += 1
-        if expected_status == 202 and slug == "research":
-            return {
-                "task_ids": [f"expert-parity-{calls}"],
-                "output_dir": "tenant/expert-parity",
-            }
         if expected_status == 202:
-            return {
-                "task_id": f"expert-parity-{calls}",
-                "output_dir": "tenant/expert-parity",
-            }
+            payload, _ = _submission_payload(calls)
+            return payload
         return {"answer": f"answer-{calls}", "doc_list": []}
 
     handler = (
@@ -257,6 +353,19 @@ async def test_expert_uses_native_run_contract(
         json={"arguments": case.native_args},
     )
     assert direct.status_code == expected_status
+    direct_body = direct.json()
+    if expected_status == 202:
+        direct_task_ids = {f"expert-parity-{slug}-1"}
+        assert direct_body["id"] == direct_body["run_id"]
+        assert direct_body["task_ids"] == []
+        assert direct_body["result"] == empty_agent_result()
+        direct_record = await _wait_for_run(
+            api_app.resolve_tasks_db_path(),
+            direct_body["run_id"],
+            task_ids=direct_task_ids,
+            status="running",
+        )
+        assert direct_record.spec.agent == slug
 
     _patch_selection(monkeypatch, tool_name, case.selected_args)
     routed = await _post_forced_expert(
@@ -269,7 +378,29 @@ async def test_expert_uses_native_run_contract(
     routed_body = routed.json()
     assert routed_body["agent"] == slug
     assert routed_body["agent"] != "expert"
-    assert _contract_shape(routed_body) == _contract_shape(direct.json())
+    if expected_status == 202:
+        routed_task_ids = {f"expert-parity-{slug}-2"}
+        assert routed_body["id"] == routed_body["run_id"]
+        assert routed_body["task_ids"] == []
+        assert routed_body["result"] == empty_agent_result()
+        routed_record = await _wait_for_run(
+            api_app.resolve_tasks_db_path(),
+            routed_body["run_id"],
+            task_ids=routed_task_ids,
+            status="running",
+        )
+        assert routed_record.spec.run_id == routed_body["run_id"]
+        assert routed_record.spec.agent == slug
+        assert (
+            routed_record.request_info.request_id
+            == routed.headers["X-Request-Id"]
+        )
+        assert routed_record.request_info.tool_name == tool_name
+        assert routed_record.request_info.query is None
+        assert routed_record.request_info.request_json is None
+        assert routed_record.task_ids != direct_record.task_ids
+    else:
+        assert _contract_shape(routed_body) == _contract_shape(direct_body)
 
 
 async def test_expert_partial_remote_preserves_execution_warnings(
@@ -313,15 +444,25 @@ async def test_expert_partial_remote_preserves_execution_warnings(
     assert response.status_code == 202
     body = response.json()
     assert body["agent"] == "research"
-    assert body["id"]
-    assert body["task_ids"] == ["expert-partial-1"]
-    assert body["result"]["execution"]["warnings"] == [
+    assert body["id"] == body["run_id"]
+    assert body["task_ids"] == []
+    assert body["result"] == empty_agent_result()
+
+    record = await _wait_for_run(
+        api_app.resolve_tasks_db_path(),
+        body["run_id"],
+        task_ids={"expert-partial-1"},
+        status="running",
+    )
+    assert record.result is not None
+    assert record.result["execution"]["warnings"] == [
         {
             "code": "partial_submission",
             "retryable": False,
             "stage": None,
         }
     ]
+    assert record.result["execution"]["tracking"] == {"degraded": True}
     assert "must not leak" not in response.text
 
 
@@ -373,18 +514,15 @@ async def test_expert_degraded_remote_preserves_accepted_task_ids(
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
-    """A registry write failure keeps real remote work in the response."""
+    """A child persistence failure settles the reserved run safely."""
 
-    def _raising_create_run(*_args: Any, **_kwargs: Any) -> None:
+    def _raising_reserved_submissions(*_args: Any, **_kwargs: Any) -> bool:
         raise sqlite3.OperationalError("private registry failure")
 
-    def _exploding_registry_factory(_db_path: str) -> SimpleNamespace:
-        return SimpleNamespace(create_run=_raising_create_run)
-
     monkeypatch.setattr(
-        submit_recorder_module,
-        "RunRegistry",
-        _exploding_registry_factory,
+        RunRegistry,
+        "record_reserved_submissions",
+        _raising_reserved_submissions,
     )
 
     async def fake(_args: Any) -> dict[str, Any]:
@@ -406,10 +544,29 @@ async def test_expert_degraded_remote_preserves_accepted_task_ids(
         "AnalystAgent",
     )
 
-    body = assert_degraded_tracking_response(response, "expert-degraded-1")
+    assert response.status_code == 202
+    body = response.json()
+    assert body["id"] == body["run_id"]
+    assert body["task_ids"] == []
+    assert body["result"] == empty_agent_result()
     assert body["agent"] == "analyst"
-    assert body["result"]["execution"]["tracking"] == {"degraded": True}
-    assert not RunRegistry(tasks_db_path).list_runs(owner="u1")
+    record = await _wait_for_run(
+        tasks_db_path,
+        body["run_id"],
+        status="failed",
+    )
+    assert record.error == "background_submission_tracking_failed"
+    assert record.task_ids == ()
+    assert record.result is not None
+    assert record.result["execution"]["tracking"] == {"degraded": True}
+    assert record.result["execution"]["tasks"] == [
+        {
+            "id": "expert-degraded-1",
+            "accepted": True,
+            "status": "submitted",
+        }
+    ]
+    assert "private registry failure" not in response.text
 
 
 async def test_expert_run_info_keeps_native_identity_without_router_payload(
@@ -444,18 +601,23 @@ async def test_expert_run_info_keeps_native_identity_without_router_payload(
     )
 
     assert response.status_code == 202
-    record = RunRegistry(tasks_db_path).list_runs(owner="u1")[0]
+    body = response.json()
+    assert body["id"] == body["run_id"]
+    assert body["task_ids"] == []
+    assert body["result"] == empty_agent_result()
+    record = RunRegistry(tasks_db_path).get_run(body["run_id"], owner="u1")
+    assert record is not None
     info = record.request_info
-    assert info.query == "original user question"
     assert info.dialogue_id == "dialogue-expert-1"
     assert info.tool_name == "AnalystAgent"
     assert info.locale == "zh-CN"
-    assert info.request_json is not None
-    assert json.loads(info.request_json) == {
-        "agent": "analyst",
-        "tool_name": "AnalystAgent",
-        "user_query": "original user question",
-        "dialogue_id": "dialogue-expert-1",
-        "locale": "zh-CN",
-    }
-    assert "private history" not in info.request_json
+    assert info.request_id == response.headers["X-Request-Id"]
+    assert info.query is None
+    assert info.request_json is None
+    record = await _wait_for_run(
+        tasks_db_path,
+        body["run_id"],
+        task_ids={"expert-identity-1"},
+        status="running",
+    )
+    assert record.task_ids == ("expert-identity-1",)

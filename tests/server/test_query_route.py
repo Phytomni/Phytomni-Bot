@@ -13,6 +13,7 @@ error paths.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from types import SimpleNamespace
@@ -37,7 +38,7 @@ from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.api.schemas import ExpertQueryRequest
 from mcp_server_phytomni.config.defaults import ApiConfig, ServerConfig
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
-from mcp_server_phytomni.runtime.run_registry import RunRegistry
+from mcp_server_phytomni.runtime.run_registry import RunRecord, RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 from mcp_server_phytomni.runtime.upload_registry import (
     UploadMetadata,
@@ -79,6 +80,27 @@ def _patch_select(
 def _auth(key: str) -> dict[str, str]:
     """Return the bearer auth header for a key."""
     return {"Authorization": f"Bearer {key}"}
+
+
+async def _wait_for_run_children(
+    db_path: str,
+    run_id: str,
+    expected_task_ids: set[str],
+    *,
+    owner: str = "u1",
+    attempts: int = 100,
+) -> RunRecord:
+    """Poll one owned run until its reserved children are queryable."""
+    registry = RunRegistry(db_path)
+    for _ in range(attempts):
+        record = registry.get_run(run_id, owner=owner)
+        if record is not None and set(record.task_ids) == expected_task_ids:
+            await asyncio.sleep(0)
+            return record
+        await asyncio.sleep(0)
+    pytest.fail(
+        f"run {run_id} did not expose children {sorted(expected_task_ids)}"
+    )
 
 
 def _router_completion(
@@ -302,13 +324,13 @@ async def test_route_sync_agent_returns_resolved_slug(
     assert record.spec.origin == "local"
 
 
-async def test_route_remote_agent_returns_running_task_ids(
+async def test_route_remote_agent_returns_reserved_run_before_child_ids(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
-    """A routed remote agent returns 202 + running + task_ids (HR-3)."""
+    """A routed remote agent returns its umbrella before child persistence."""
 
     async def fake(args: Any) -> dict[str, Any]:
         _ = args
@@ -343,11 +365,16 @@ async def test_route_remote_agent_returns_running_task_ids(
     body = response.json()
     assert body["agent"] == "analyst"
     assert body["status"] == "running"
-    assert set(body["task_ids"]) == {"T-A"}
-    assert body["id"]
+    assert body["id"] == body["run_id"]
+    assert body["task_ids"] == []
+    assert body["result"] == empty_agent_result()
     request_id = response.headers["X-Request-Id"]
 
-    record = RunRegistry(tasks_db_path).list_runs(owner="u1")[0]
+    record = await _wait_for_run_children(
+        tasks_db_path,
+        body["run_id"],
+        {"T-A"},
+    )
     assert record.spec.agent == "analyst"
     assert record.spec.origin == "remote"
     assert record.request_info.request_id == request_id
@@ -499,6 +526,238 @@ async def test_route_forces_every_canonical_tool_to_its_native_slug(
         "allowed_tools": [tool_name],
         "forced_tool": tool_name,
     }
+
+
+_BACKGROUND_EXPERT_CASES = (
+    pytest.param(
+        (
+            "AnalystAgent",
+            "analyst",
+            {
+                "goal_description": "q",
+                "data_list": {},
+                "obs_file_list": [],
+            },
+            {"task_id": "expert-launch-analyst", "output_dir": "/obs/a"},
+            {"expert-launch-analyst"},
+        ),
+        id="analyst-background",
+    ),
+    pytest.param(
+        (
+            "InSilicoResearchAgent",
+            "research",
+            {"user_query": "q", "data_list": {}, "obs_file_list": []},
+            {
+                "task_ids": ["expert-launch-research"],
+                "output_dir": "/obs/r",
+            },
+            {"expert-launch-research"},
+        ),
+        id="research-background",
+    ),
+    pytest.param(
+        (
+            "DigitalDesignAgent",
+            "design",
+            {
+                "species_code": "ath",
+                "gene_id": "AT1G01010",
+                "obs_file_list": [],
+                "resolve_gene_id": False,
+            },
+            {
+                "design_task_result": [
+                    {"task_id": "expert-launch-design", "output_dir": "/obs/d"}
+                ]
+            },
+            {"expert-launch-design"},
+        ),
+        id="design-background",
+    ),
+    pytest.param(
+        (
+            "GeneNetworkAgent",
+            "network",
+            {
+                "species_code": "osa",
+                "to_id": "TO:0000207",
+                "obs_file_list": [],
+                "resolve_to_id": False,
+            },
+            {
+                "network_task": {
+                    "task_id": "expert-launch-network",
+                    "output_dir": "/obs/n",
+                }
+            },
+            {"expert-launch-network"},
+        ),
+        id="network-background",
+    ),
+)
+
+
+@pytest.mark.parametrize("case", _BACKGROUND_EXPERT_CASES)
+async def test_expert_background_selection_launches_one_reserved_worker(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+    case: tuple[str, str, dict[str, Any], dict[str, Any], set[str]],
+) -> None:
+    """Each background Expert selection uses one shared launcher call."""
+    tool_name, slug, arguments, result, expected_task_ids = case
+    launched: list[str] = []
+    real_launch = api_app.launch_background_submission
+
+    def capture_launch(
+        reservation: Any,
+        operation: Any,
+        *,
+        db_path: str,
+    ) -> None:
+        launched.append(reservation.agent)
+        real_launch(reservation, operation, db_path=db_path)
+
+    monkeypatch.setattr(
+        api_app, "launch_background_submission", capture_launch
+    )
+
+    async def fake(_args: Any) -> dict[str, Any]:
+        return result
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        {
+            "analyst": server.PhytomniAgents.ANALYST_AGENT.value,
+            "research": server.PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value,
+            "design": server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value,
+            "network": server.PhytomniAgents.GENE_NETWORK_AGENT.value,
+        }[slug],
+        records_submission(slug)(fake),
+    )
+    _patch_select(monkeypatch, ToolSelection(tool_name, arguments))
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "q",
+            "allowed_tools": [tool_name],
+            "forced_tool": tool_name,
+        },
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["agent"] == slug
+    assert body["status"] == "running"
+    assert body["id"] == body["run_id"]
+    assert body["task_ids"] == []
+    assert body["result"] == empty_agent_result()
+    assert launched == [slug]
+    await _wait_for_run_children(
+        tasks_db_path,
+        body["run_id"],
+        expected_task_ids,
+    )
+
+
+_SYNC_EXPERT_CASES = (
+    pytest.param(
+        ("ChatAgent", "chat", {"user_query": "q", "obs_file_list": []}),
+        id="chat-synchronous",
+    ),
+    pytest.param(
+        (
+            "KnowledgeAgent",
+            "knowledge",
+            {"user_query": "q", "obs_file_list": []},
+        ),
+        id="knowledge-synchronous",
+    ),
+    pytest.param(
+        ("DataAgent", "data", {"user_query": "q"}),
+        id="data-synchronous",
+    ),
+    pytest.param(
+        ("ReviewAgent", "review", {"user_query": "q", "obs_file_list": []}),
+        id="review-synchronous",
+    ),
+    pytest.param(
+        ("BriefGeneAgent", "brief_gene", {"user_query": "AT1G01010"}),
+        id="brief-gene-synchronous",
+    ),
+)
+
+
+@pytest.mark.parametrize("case", _SYNC_EXPERT_CASES)
+async def test_expert_synchronous_selection_skips_background_launcher(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    case: tuple[str, str, dict[str, Any]],
+) -> None:
+    """Established synchronous Expert selections retain their native path."""
+    tool_name, slug, arguments = case
+    launched: list[str] = []
+    real_launch = api_app.launch_background_submission
+
+    def capture_launch(
+        reservation: Any,
+        operation: Any,
+        *,
+        db_path: str,
+    ) -> None:
+        launched.append(reservation.agent)
+        real_launch(reservation, operation, db_path=db_path)
+
+    monkeypatch.setattr(
+        api_app, "launch_background_submission", capture_launch
+    )
+    if slug == "review":
+
+        async def fake_review(**_kwargs: Any) -> Any:
+            return api_app._ReviewExecution(
+                run_id="expert-review-sync",
+                status="succeeded",
+                result={
+                    "formatted": {"answer": "review ok", "metadata": {}},
+                    "execution": {"warnings": []},
+                    "raw": None,
+                },
+            )
+
+        monkeypatch.setattr(api_app, "_run_review_with_interrupt", fake_review)
+    else:
+        _stub_tool_handler(
+            monkeypatch,
+            {
+                "chat": server.PhytomniAgents.CHAT_AGENT.value,
+                "knowledge": server.PhytomniAgents.KNOWLEDGE_AGENT.value,
+                "data": server.PhytomniAgents.DATA_AGENT.value,
+                "brief_gene": server.PhytomniAgents.BRIEF_GENE_AGENT.value,
+            }[slug],
+            {"answer": "ok", "doc_list": []},
+        )
+    _patch_select(monkeypatch, ToolSelection(tool_name, arguments))
+
+    response = await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json={
+            "user_query": "q",
+            "allowed_tools": [tool_name],
+            "forced_tool": tool_name,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["agent"] == slug
+    assert body["status"] == "succeeded"
+    assert launched == []
 
 
 async def test_route_autonomous_dispatches_one_allowed_tool(
