@@ -129,6 +129,25 @@ def _candidate_paths(root: Path, paths: Sequence[Path]) -> str:
     return ", ".join(sorted(_relative_path(root, path) for path in paths))
 
 
+def _endpoint_candidates(
+    root: Path, module: str, tracked: Sequence[Path]
+) -> tuple[Path, ...]:
+    """Return every tracked path that could represent one endpoint label."""
+    module_names = {module}
+    if module.endswith(".__init__"):
+        module_names.add(module[: -len(".__init__")])
+    suffix = f".{module}"
+    direct = root / f"{module.replace('.', '/')}.py"
+    return tuple(
+        path
+        for path in tracked
+        if _module_name(root, path) in module_names
+        or _module_name(root, path).endswith(suffix)
+        or path == direct
+        or path.stem == module
+    )
+
+
 def _resolve_module(
     root: Path,
     module: str,
@@ -238,6 +257,21 @@ def _pair_endpoints(
         tracked,
         source_hint,
     )
+    if first[0] == second[0]:
+        candidates = tuple(
+            dict.fromkeys(
+                _endpoint_candidates(
+                    root, first_match.group("module"), tracked
+                )
+                + _endpoint_candidates(
+                    root, second_match.group("module"), tracked
+                )
+            )
+        )
+        raise CollectionError(
+            "R0801 endpoints did not resolve to distinct paths; "
+            f"candidates: {_candidate_paths(root, candidates)}"
+        )
     return first[0], first[1], second[0], second[1]
 
 

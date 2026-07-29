@@ -92,11 +92,11 @@ def test_r0801_uses_source_hint_to_disambiguate_short_module(
         }
     ]
 
-    finding = parse_pylint_json(
-        tmp_path, json.dumps(document), "pylint 4.0.5"
-    )
-
-    assert finding[0].path == "tests/unit/test_models.py"
+    with pytest.raises(
+        CollectionError,
+        match="tests/server/test_models.py.*tests/unit/test_models.py",
+    ):
+        parse_pylint_json(tmp_path, json.dumps(document), "pylint 4.0.5")
 
 
 def test_r0801_reports_all_ambiguous_candidates(
