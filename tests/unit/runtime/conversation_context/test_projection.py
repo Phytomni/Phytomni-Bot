@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from typing import Literal, TypedDict
 from uuid import UUID
@@ -33,6 +34,154 @@ from mcp_server_phytomni.runtime.conversation_context.projection import (
 pytestmark = pytest.mark.unit
 
 _CONVERSATION_KEY = UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad6")
+
+
+def test_projection_callable_contracts_are_explicit_and_typed() -> None:
+    """Keep runtime callable metadata aligned with the public contract."""
+    projection_signature = inspect.signature(build_context_projection)
+    assert tuple(
+        (
+            parameter.name,
+            parameter.kind,
+            parameter.default,
+            parameter.annotation,
+        )
+        for parameter in projection_signature.parameters.values()
+    ) == (
+        (
+            "conversation_key",
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.empty,
+            "UUID",
+        ),
+        (
+            "current_query",
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.empty,
+            "str",
+        ),
+        (
+            "locale",
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.empty,
+            "SupportedLocale",
+        ),
+        (
+            "selected_agent_id",
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.empty,
+            "str",
+        ),
+        (
+            "context",
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.empty,
+            "BusinessContext",
+        ),
+        (
+            "authorized_artifacts",
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.empty,
+            "Sequence[ArtifactRefV1]",
+        ),
+        (
+            "api_config",
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.empty,
+            "ApiConfig",
+        ),
+        (
+            "estimator",
+            inspect.Parameter.KEYWORD_ONLY,
+            None,
+            "TokenEstimator | None",
+        ),
+        (
+            "exclude_current_user_turn",
+            inspect.Parameter.KEYWORD_ONLY,
+            False,
+            "bool",
+        ),
+    )
+    assert projection_signature.return_annotation == "ContextProjection"
+    assert build_context_projection.__annotations__ == {
+        "conversation_key": "UUID",
+        "current_query": "str",
+        "locale": "SupportedLocale",
+        "selected_agent_id": "str",
+        "context": "BusinessContext",
+        "authorized_artifacts": "Sequence[ArtifactRefV1]",
+        "api_config": "ApiConfig",
+        "estimator": "TokenEstimator | None",
+        "exclude_current_user_turn": "bool",
+        "return": "ContextProjection",
+    }
+    assert build_context_projection.__qualname__ == "build_context_projection"
+    assert build_context_projection.__module__ == (
+        "mcp_server_phytomni.runtime.conversation_context.projection"
+    )
+
+    rebuild_signature = inspect.signature(rebuild_business_context)
+    assert tuple(
+        (
+            parameter.name,
+            parameter.kind,
+            parameter.default,
+            parameter.annotation,
+        )
+        for parameter in rebuild_signature.parameters.values()
+    ) == (
+        (
+            "conversation_key",
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.empty,
+            "UUID",
+        ),
+        (
+            "ledger_entries",
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.empty,
+            "Sequence[Mapping[str, object]]",
+        ),
+        (
+            "artifact_refs",
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.empty,
+            "Sequence[ArtifactRefV1]",
+        ),
+        (
+            "ledger_cursor",
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.empty,
+            "int",
+        ),
+        (
+            "ledger_version",
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.empty,
+            "str",
+        ),
+        (
+            "observed_mode",
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.empty,
+            "Literal['instant', 'expert']",
+        ),
+    )
+    assert rebuild_signature.return_annotation == "BusinessContext"
+    assert rebuild_business_context.__annotations__ == {
+        "conversation_key": "UUID",
+        "ledger_entries": "Sequence[Mapping[str, object]]",
+        "artifact_refs": "Sequence[ArtifactRefV1]",
+        "ledger_cursor": "int",
+        "ledger_version": "str",
+        "observed_mode": "Literal['instant', 'expert']",
+        "return": "BusinessContext",
+    }
+    assert rebuild_business_context.__qualname__ == "rebuild_business_context"
+    assert rebuild_business_context.__module__ == (
+        "mcp_server_phytomni.runtime.conversation_context.projection"
+    )
 
 
 class _ProjectionKwargs(TypedDict):

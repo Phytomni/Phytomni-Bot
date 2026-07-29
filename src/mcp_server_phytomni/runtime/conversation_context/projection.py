@@ -8,7 +8,14 @@ import hashlib
 import inspect
 import json
 from collections.abc import Callable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple, Protocol, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Literal,
+    NamedTuple,
+    Protocol,
+    cast,
+)
 from uuid import UUID
 
 from ...config.defaults import ApiConfig
@@ -25,7 +32,7 @@ from .models import (
 )
 
 if TYPE_CHECKING:
-    from .projection_types import ProjectionBuilder, RebuildBuilder
+    from .projection_protocols import ProjectionBuilder, RebuildBuilder
 
 
 class TokenEstimator(Protocol):
@@ -86,6 +93,7 @@ def _keyword_facade(
     signature: inspect.Signature,
     name: str,
     doc: str,
+    annotations: dict[str, object],
 ) -> Callable[..., Any]:
     """Build a callable with a stable explicit keyword-only signature."""
     def invoke(**kwargs: object) -> Any:
@@ -93,6 +101,9 @@ def _keyword_facade(
 
     setattr(invoke, "__signature__", signature)
     invoke.__name__ = name
+    invoke.__qualname__ = name
+    invoke.__module__ = __name__
+    invoke.__annotations__ = annotations
     invoke.__doc__ = doc
     return invoke
 
@@ -112,32 +123,36 @@ def _keyword_parameter(
 
 _PROJECTION_SIGNATURE = inspect.Signature(
     parameters=[
-        _keyword_parameter("conversation_key", UUID),
-        _keyword_parameter("current_query", str),
-        _keyword_parameter("locale", SupportedLocale),
-        _keyword_parameter("selected_agent_id", str),
-        _keyword_parameter("context", BusinessContext),
-        _keyword_parameter("authorized_artifacts", Sequence[ArtifactRefV1]),
-        _keyword_parameter("api_config", ApiConfig),
-        _keyword_parameter("estimator", TokenEstimator | None, None),
-        _keyword_parameter("exclude_current_user_turn", bool, False),
+        _keyword_parameter("conversation_key", "UUID"),
+        _keyword_parameter("current_query", "str"),
+        _keyword_parameter("locale", "SupportedLocale"),
+        _keyword_parameter("selected_agent_id", "str"),
+        _keyword_parameter("context", "BusinessContext"),
+        _keyword_parameter(
+            "authorized_artifacts", "Sequence[ArtifactRefV1]"
+        ),
+        _keyword_parameter("api_config", "ApiConfig"),
+        _keyword_parameter("estimator", "TokenEstimator | None", None),
+        _keyword_parameter(
+            "exclude_current_user_turn", "bool", False
+        ),
     ],
-    return_annotation=ContextProjection,
+    return_annotation="ContextProjection",
 )
 _REBUILD_SIGNATURE = inspect.Signature(
     parameters=[
-        _keyword_parameter("conversation_key", UUID),
+        _keyword_parameter("conversation_key", "UUID"),
         _keyword_parameter(
-            "ledger_entries", Sequence[Mapping[str, object]]
+            "ledger_entries", "Sequence[Mapping[str, object]]"
         ),
-        _keyword_parameter("artifact_refs", Sequence[ArtifactRefV1]),
-        _keyword_parameter("ledger_cursor", int),
-        _keyword_parameter("ledger_version", str),
+        _keyword_parameter("artifact_refs", "Sequence[ArtifactRefV1]"),
+        _keyword_parameter("ledger_cursor", "int"),
+        _keyword_parameter("ledger_version", "str"),
         _keyword_parameter(
-            "observed_mode", Literal["instant", "expert"]
+            "observed_mode", "Literal['instant', 'expert']"
         ),
     ],
-    return_annotation=BusinessContext,
+    return_annotation="BusinessContext",
 )
 
 
@@ -503,6 +518,18 @@ else:
         _PROJECTION_SIGNATURE,
         "build_context_projection",
         "Admit context sections in the documented priority order.",
+        {
+            "conversation_key": "UUID",
+            "current_query": "str",
+            "locale": "SupportedLocale",
+            "selected_agent_id": "str",
+            "context": "BusinessContext",
+            "authorized_artifacts": "Sequence[ArtifactRefV1]",
+            "api_config": "ApiConfig",
+            "estimator": "TokenEstimator | None",
+            "exclude_current_user_turn": "bool",
+            "return": "ContextProjection",
+        },
     )
 
 
@@ -604,6 +631,15 @@ else:
         _REBUILD_SIGNATURE,
         "rebuild_business_context",
         "Rebuild semantic context from bounded, ordered ledger input.",
+        {
+            "conversation_key": "UUID",
+            "ledger_entries": "Sequence[Mapping[str, object]]",
+            "artifact_refs": "Sequence[ArtifactRefV1]",
+            "ledger_cursor": "int",
+            "ledger_version": "str",
+            "observed_mode": "Literal['instant', 'expert']",
+            "return": "BusinessContext",
+        },
     )
 
 
