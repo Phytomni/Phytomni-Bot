@@ -15,9 +15,11 @@ from typing import Any, Literal
 
 import pytest
 from scripts.agent_routing_eval.dataset import AgentRoutingCase
+from scripts.agent_routing_eval.metrics import compute_metrics
 from scripts.agent_routing_eval.reporting import (
     GitState,
     ReportContext,
+    _format_markdown_value,
     build_report,
     collect_git_state,
     dataset_sha256,
@@ -56,18 +58,24 @@ def _outcome(
     *,
     selected_arguments: dict[str, Any] | None = None,
     error_code: str | None = None,
+    predicted_agent: str = "ChatAgent",
+    agent_correct: bool = True,
+    schema_valid: bool = True,
+    dispatchable: bool = True,
+    core_args_correct: bool | None = True,
+    provider_completed: bool = True,
 ) -> RunOutcome:
     return RunOutcome(
         case_id=case_id,
         repeat_index=repeat_index,
         expected_agent="ChatAgent",
-        predicted_agent="ChatAgent",
+        predicted_agent=predicted_agent,
         language="en",
-        agent_correct=True,
-        schema_valid=True,
-        dispatchable=True,
-        core_args_correct=True,
-        provider_completed=True,
+        agent_correct=agent_correct,
+        schema_valid=schema_valid,
+        dispatchable=dispatchable,
+        core_args_correct=core_args_correct,
+        provider_completed=provider_completed,
         attempts=1,
         latency_ms=12.5,
         selected_arguments=selected_arguments or {"user_query": case_id},
@@ -99,52 +107,18 @@ def _context(
     )
 
 
-def _metrics(
-    *,
-    provider_completion: float = 1.0,
-    top1_accuracy: float = 1.0,
-) -> dict[str, Any]:
-    return {
-        "schema_version": 1,
-        "case_count": 1,
-        "planned_runs": 3,
-        "completed_records": 3,
-        "run_level": {
-            "top1_accuracy": top1_accuracy,
-            "dispatchable_accuracy": top1_accuracy,
-        },
-        "majority": {
-            "top1_correct": 1,
-            "top1_accuracy": top1_accuracy,
-            "dispatchable_correct": 1,
-            "dispatchable_accuracy": top1_accuracy,
-            "wilson_95": [0.1, 1.0],
-        },
-        "per_agent": {
-            "ChatAgent": {
-                "support": 1,
-                "predicted": 1,
-                "true_positive": 1,
-                "precision": 1.0,
-                "recall": 1.0,
-                "f1": 1.0,
-            }
-        },
-        "by_language": {
-            "en": {
-                "case_count": 1,
-                "top1_correct": 1,
-                "top1_accuracy": top1_accuracy,
-                "dispatchable_correct": 1,
-                "dispatchable_accuracy": top1_accuracy,
-            }
-        },
-        "errors": {"provider": 0, "routing": 0, "schema": 0},
-        "provider_completion": provider_completion,
-        "latency_ms": {"p50": 12.5, "p95": 12.5},
-        "confusion_matrix": {"ChatAgent": {"ChatAgent": 1}},
-        "stability": {"exact": 1.0, "modal_agreement": 1.0},
-    }
+def _complete_report(tmp_path: Path) -> dict[str, Any]:
+    dataset = tmp_path / "test_v1.jsonl"
+    dataset.write_bytes(b"dataset\n")
+    cases = [_case()]
+    outcomes = [_outcome("case-a", index) for index in (1, 2, 3)]
+    return build_report(
+        _context(dataset),
+        cases,
+        outcomes,
+        compute_metrics(cases, outcomes, 3),
+        complete=True,
+    )
 
 
 def test_collect_git_state_does_not_persist_changed_paths() -> None:
@@ -209,18 +183,35 @@ def test_build_report_redacts_sensitive_values_and_sorts_runs(
         [_case("case-a"), _case("case-b")],
         [
             _outcome(
-                "case-b",
-                2,
-                selected_arguments={
-                    "user_query": "Question text for case-b",
-                    "api_key": "api-key-should-not-appear",
-                    "detail": "provider raw exception detail",
-                },
-                error_code="provider raw exception detail",
-            ),
-            _outcome("case-a", 1),
+                case_id,
+                index,
+                selected_arguments=(
+                    {
+                        "user_query": "Question text for case-b",
+                        "api_key": "api-key-should-not-appear",
+                        "detail": "provider raw exception detail",
+                    }
+                    if case_id == "case-b" and index == 2
+                    else None
+                ),
+                error_code=(
+                    "provider raw exception detail"
+                    if case_id == "case-b" and index == 2
+                    else None
+                ),
+            )
+            for case_id in ("case-b", "case-a")
+            for index in (3, 2, 1)
         ],
-        _metrics(),
+        compute_metrics(
+            [_case("case-a"), _case("case-b")],
+            [
+                _outcome(case_id, index)
+                for case_id in ("case-a", "case-b")
+                for index in (1, 2, 3)
+            ],
+            3,
+        ),
         complete=True,
     )
     json_path, markdown_path = write_report_pair(
@@ -242,6 +233,10 @@ def test_build_report_redacts_sensitive_values_and_sorts_runs(
     )
     assert [run["case_id"] for run in report["runs"]] == [
         "case-a",
+        "case-a",
+        "case-a",
+        "case-b",
+        "case-b",
         "case-b",
     ]
     assert "Question text for case-b" not in markdown_text
@@ -268,8 +263,50 @@ def test_report_status_does_not_overclaim_current_accuracy(
     report = build_report(
         _context(dataset, dirty=dirty),
         [_case()],
-        [_outcome("case-a", index) for index in (1, 2, 3)],
-        _metrics(provider_completion=provider_completion),
+        (
+            [_outcome("case-a", index) for index in (1, 2, 3)]
+            if provider_completion == 1.0
+            else [
+                _outcome(
+                    "case-a",
+                    1,
+                    predicted_agent="__PROVIDER_ERROR__",
+                    agent_correct=False,
+                    schema_valid=False,
+                    dispatchable=False,
+                    core_args_correct=None,
+                    provider_completed=False,
+                    error_code="provider_timeout_exhausted",
+                    selected_arguments={},
+                ),
+                _outcome("case-a", 2),
+                _outcome("case-a", 3),
+            ]
+        ),
+        compute_metrics(
+            [_case()],
+            (
+                [_outcome("case-a", index) for index in (1, 2, 3)]
+                if provider_completion == 1.0
+                else [
+                    _outcome(
+                        "case-a",
+                        1,
+                        predicted_agent="__PROVIDER_ERROR__",
+                        agent_correct=False,
+                        schema_valid=False,
+                        dispatchable=False,
+                        core_args_correct=None,
+                        provider_completed=False,
+                        error_code="provider_timeout_exhausted",
+                        selected_arguments={},
+                    ),
+                    _outcome("case-a", 2),
+                    _outcome("case-a", 3),
+                ]
+            ),
+            3,
+        ),
         complete=True,
     )
 
@@ -288,7 +325,11 @@ def test_only_clean_test_benchmark_can_claim_stable_baseline(
         _context(dataset),
         [_case()],
         [_outcome("case-a", index) for index in (1, 2, 3)],
-        _metrics(),
+        compute_metrics(
+            [_case()],
+            [_outcome("case-a", index) for index in (1, 2, 3)],
+            3,
+        ),
         complete=True,
     )
     assert report["status"]["headline"] == "Stable baseline"
@@ -297,7 +338,7 @@ def test_only_clean_test_benchmark_can_claim_stable_baseline(
         _context(dataset, mode="quick", repeat_count=1),
         [_case()],
         [_outcome("case-a")],
-        _metrics(),
+        compute_metrics([_case()], [_outcome("case-a")], 1),
         complete=True,
     )
     assert quick_report["status"]["headline"] == "Diagnostic"
@@ -313,7 +354,7 @@ def test_incomplete_report_is_bounded_and_cannot_claim_thresholds(
         [_case()],
         [_outcome("case-a")],
         {
-            "planned_runs": 3,
+            "planned_runs": 1,
             "completed_records": 1,
             "majority": {"top1_accuracy": 1.0},
             "raw_exception": "provider raw exception detail",
@@ -322,7 +363,7 @@ def test_incomplete_report_is_bounded_and_cannot_claim_thresholds(
     )
 
     assert report["metrics"] == {
-        "planned_runs": 3,
+        "planned_runs": 1,
         "completed_records": 1,
         "status": "incomplete",
     }
@@ -336,13 +377,7 @@ def test_write_report_pair_cleans_only_its_temporary_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     output_dir = tmp_path / "out"
-    report = {
-        "schema_version": 1,
-        "status": {"state": "complete"},
-        "provenance": {},
-        "metrics": {},
-        "runs": [],
-    }
+    report = _complete_report(tmp_path)
 
     def fail_replace(_self: Path, _target: Path) -> Path:
         raise OSError("replace failed")
@@ -352,4 +387,118 @@ def test_write_report_pair_cleans_only_its_temporary_file(
         write_report_pair(report, output_dir, "failed")
 
     assert not list(output_dir.glob("*.tmp"))
+    assert not list(output_dir.glob(".*.tmp"))
+
+
+def test_complete_report_rejects_empty_or_forged_metric_inventory(
+    tmp_path: Path,
+) -> None:
+    dataset = tmp_path / "test_v1.jsonl"
+    dataset.write_bytes(b"dataset\n")
+    cases = [_case()]
+    outcomes = [_outcome("case-a", index) for index in (1, 2, 3)]
+    forged = compute_metrics(cases, outcomes, 3)
+    forged["case_count"] = 0
+
+    with pytest.raises(ValueError, match="complete report inventory"):
+        build_report(_context(dataset), cases, [], forged, complete=True)
+    with pytest.raises(ValueError, match="supplied metrics"):
+        build_report(_context(dataset), cases, outcomes, forged, complete=True)
+
+
+def test_writer_boundary_drops_sensitive_arguments_and_rejects_unknown_fields(
+    tmp_path: Path,
+) -> None:
+    report = _complete_report(tmp_path)
+    raw = json.loads(json.dumps(report))
+    raw["provenance"]["model_id"] = "provider.internal/v1"
+    raw["runs"][0]["selected_arguments"] = {
+        "user_query": "token-should-not-appear connection reset by backend-42",
+        "token": "api-key-should-not-appear",
+        "raw_exception": "provider raw exception detail",
+    }
+    json_path, markdown_path = write_report_pair(
+        raw, tmp_path / "sanitized", "run"
+    )
+    emitted = json_path.read_text(encoding="utf-8")
+    emitted += markdown_path.read_text(encoding="utf-8")
+    for secret in (
+        "provider.internal/v1",
+        "token-should-not-appear",
+        "api-key-should-not-appear",
+        "provider raw exception detail",
+    ):
+        assert secret not in emitted
+
+    raw["unknown_field"] = "must-not-be-emitted"
+    with pytest.raises(ValueError, match="unexpected fields"):
+        write_report_pair(raw, tmp_path / "rejected", "run")
+    assert not (tmp_path / "rejected").exists()
+
+
+@pytest.mark.parametrize(
+    "stem",
+    ["../escaped", "nested/name", "nested\\name", "..", "a..b"],
+)
+def test_writer_rejects_unsafe_stems(tmp_path: Path, stem: str) -> None:
+    report = _complete_report(tmp_path)
+    with pytest.raises(ValueError, match="direct ASCII basename"):
+        write_report_pair(report, tmp_path / "out", stem)
+    assert not (tmp_path / "out").exists()
+
+
+def test_writer_rejects_absolute_stem(tmp_path: Path) -> None:
+    report = _complete_report(tmp_path)
+    with pytest.raises(ValueError, match="direct ASCII basename"):
+        write_report_pair(report, tmp_path / "out", str(tmp_path / "escape"))
+
+
+def test_markdown_escapes_pipe_backslash_and_newline() -> None:
+    assert _format_markdown_value("a|b\\c\r\nd") == "a\\|b\\\\c\\r\\nd"
+
+
+def _fail_second_replace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_replace = Path.replace
+    calls = 0
+
+    def fail_second(self: Path, target: Path) -> Path:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("second artifact failed")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_second)
+
+
+def test_pair_publish_rolls_back_without_existing_pair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report = _complete_report(tmp_path)
+    output_dir = tmp_path / "new-pair"
+    _fail_second_replace(monkeypatch)
+
+    with pytest.raises(OSError, match="second artifact failed"):
+        write_report_pair(report, output_dir, "run")
+    assert not (output_dir / "run.json").exists()
+    assert not (output_dir / "run.md").exists()
+    assert not list(output_dir.glob(".*.tmp"))
+
+
+def test_pair_publish_restores_existing_pair_on_second_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    report = _complete_report(tmp_path)
+    output_dir = tmp_path / "existing-pair"
+    json_path, markdown_path = write_report_pair(report, output_dir, "run")
+    old_json = json_path.read_bytes()
+    old_markdown = markdown_path.read_bytes()
+    _fail_second_replace(monkeypatch)
+
+    with pytest.raises(OSError, match="second artifact failed"):
+        write_report_pair(report, output_dir, "run")
+    assert json_path.read_bytes() == old_json
+    assert markdown_path.read_bytes() == old_markdown
     assert not list(output_dir.glob(".*.tmp"))

@@ -17,13 +17,13 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, NamedTuple, cast
 from uuid import uuid4
 
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 
 from .dataset import AgentRoutingCase
-from .metrics import thresholds_pass
+from .metrics import compute_metrics, thresholds_pass
 from .runner import RunOutcome
 
 RunCommand = Callable[..., object]
@@ -58,17 +58,156 @@ _SAFE_ERROR_CODES: Final = frozenset(
         "core_argument_mismatch",
     }
 )
+_SAFE_VALIDATION_CODES: Final = frozenset(
+    {
+        "assertion_error",
+        "bool_type",
+        "dict_type",
+        "extra_forbidden",
+        "float_parsing",
+        "float_type",
+        "int_parsing",
+        "int_type",
+        "json_invalid",
+        "literal_error",
+        "list_type",
+        "missing",
+        "model_type",
+        "none_required",
+        "string_pattern_mismatch",
+        "string_too_long",
+        "string_type",
+        "too_long",
+        "unknown_agent",
+        "value_error",
+    }
+)
+_REPORT_KEYS: Final = frozenset(
+    {"schema_version", "status", "provenance", "metrics", "runs"}
+)
+_STATUS_KEYS: Final = frozenset(
+    {"state", "headline", "current_accuracy", "thresholds_passed"}
+)
+_PROVENANCE_KEYS: Final = frozenset(
+    {
+        "branch",
+        "head",
+        "dirty",
+        "model_id",
+        "provider_endpoint_hash",
+        "dataset_path",
+        "dataset_sha256",
+        "description_sha256",
+        "mode",
+        "repeat_count",
+        "concurrency",
+        "started_at",
+        "elapsed_seconds",
+        "allow_dirty",
+    }
+)
+_INCOMPLETE_METRIC_KEYS: Final = frozenset(
+    {"planned_runs", "completed_records", "status"}
+)
+_RUN_KEYS: Final = frozenset(
+    {
+        "case_id",
+        "expected_agent",
+        "predicted_agent",
+        "repeat",
+        "language",
+        "agent_correct",
+        "schema_valid",
+        "dispatchable",
+        "core_args_correct",
+        "provider_completed",
+        "attempts",
+        "latency_ms",
+        "selected_arguments",
+        "error_code",
+        "validation_codes",
+    }
+)
+_SAFE_STEM_RE: Final = re.compile(r"[A-Za-z0-9._-]+", re.ASCII)
+_SAFE_IDENTIFIER_RE: Final = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}", re.ASCII
+)
+_SAFE_BRANCH_RE: Final = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9._/-]{0,127}", re.ASCII
+)
+_SAFE_ARGUMENT_KEYS: Final = frozenset(
+    {
+        "user_query",
+        "goal_description",
+        "data_list",
+        "obs_file_list",
+        "species_code",
+        "gene_id",
+        "to_id",
+        "locale",
+        "interop_mode",
+        "interop_targets",
+        "task_id",
+    }
+)
+_METRIC_MAP_KEYS: Final = {
+    "run_level": frozenset({"top1_accuracy", "dispatchable_accuracy"}),
+    "majority": frozenset(
+        {
+            "top1_correct",
+            "top1_accuracy",
+            "dispatchable_correct",
+            "dispatchable_accuracy",
+            "wilson_95",
+        }
+    ),
+    "macro": frozenset({"basis", "precision", "recall", "f1"}),
+    "by_language": frozenset({"basis", "en", "zh"}),
+    "confusion_matrix": frozenset({"basis", *_CANONICAL_AGENTS}),
+    "stability": frozenset({"exact", "modal_agreement"}),
+    "core_arguments": frozenset({"eligible", "correct", "accuracy"}),
+    "errors": frozenset({"provider", "routing", "schema"}),
+    "latency_ms": frozenset({"p50", "p95"}),
+}
+_AGENT_ROW_KEYS: Final = frozenset(
+    {"support", "predicted", "true_positive", "precision", "recall", "f1"}
+)
+_LANGUAGE_ROW_KEYS: Final = frozenset(
+    {
+        "case_count",
+        "top1_correct",
+        "top1_accuracy",
+        "dispatchable_correct",
+        "dispatchable_accuracy",
+    }
+)
+_CONFUSION_ROW_KEYS: Final = frozenset(
+    {
+        *_CANONICAL_AGENTS,
+        "__PROVIDER_ERROR__",
+        "__ROUTING_ERROR__",
+        "__NO_MAJORITY__",
+    }
+)
 _SENSITIVE_KEY_RE: Final = re.compile(
-    r"(?i)(api[-_ ]?key|authorization|bearer|password|secret|"
-    r"credential|access[_ -]?token|refresh[_ -]?token)"
+    r"(?i)(?:\bapi[-_ ]?key\b|\bauthorization\b|\bbearer\b|"
+    r"\bpassword\b|\bsecret\b|\bcredential\b|\btoken\b|\bjwt\b|"
+    r"\bcookie\b|\bsession\b|\baccess[_ -]?token\b|"
+    r"\brefresh[_ -]?token\b|\bexception\b|\btraceback\b|"
+    r"\braw[_ -]?(?:error|detail)\b)"
 )
 _SENSITIVE_TEXT_RE: Final = re.compile(
-    r"(?i)(https?://[^\s\"'<>]+|api[-_ ]?key|authorization|bearer\s+"
-    r"|password|secret|credential|access[_ -]?token|refresh[_ -]?token"
-    r"|\bexception\b|\btraceback\b)"
+    r"(?i)(?:https?://[^\s\"'<>]+|\b(?:localhost|127(?:\.\d+){3}|"
+    r"0\.0\.0\.0)(?::\d+)?(?:/[^\s\"'<>]*)?|"
+    r"\b(?:[a-z0-9-]+\.)+[a-z]{2,}(?::\d+)?(?:/[^\s\"'<>]*)?|"
+    r"\b(?:api[-_ ]?key|authorization|bearer|password|secret|credential|"
+    r"token|jwt|cookie|session|access[_ -]?token|refresh[_ -]?token)\b|"
+    r"\b(?:sk|pk)[-_:=][a-z0-9._~+/=-]{8,}\b|"
+    r"\b(?:token|jwt|key|secret)[-_:=][a-z0-9._~+/=-]{8,}\b|"
+    r"\b(?:connection\s+reset|connection\s+refused|stack\s+trace|"
+    r"raw\s+exception|provider\s+raw)\b|\bexception\b|\btraceback\b)"
 )
 _SHA256_RE: Final = re.compile(r"[0-9a-fA-F]{64}")
-_SAFE_CODE_RE: Final = re.compile(r"[a-z][a-z0-9_.-]{0,63}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,8 +219,7 @@ class GitState:
     dirty: bool
 
 
-@dataclass(frozen=True, slots=True)
-class ReportContext:
+class ReportContext(NamedTuple):
     """Inputs that bind one report to its execution environment."""
 
     mode: Literal["quick", "benchmark"]
@@ -188,11 +326,17 @@ def _safe_digest(value: object) -> str:
     return provider_endpoint_sha256(text)
 
 
-def _safe_mapping(value: Mapping[object, object]) -> dict[str, object]:
+def _safe_mapping(
+    value: Mapping[str, object],
+    *,
+    allowed_keys: frozenset[str] | None = None,
+) -> dict[str, object]:
     result: dict[str, object] = {}
     for key, item in value.items():
         key_text = str(key)
-        if _SENSITIVE_KEY_RE.search(key_text):
+        if _SENSITIVE_KEY_RE.search(key_text) or (
+            allowed_keys is not None and key_text not in allowed_keys
+        ):
             continue
         result[_safe_text(key_text)] = _safe_json(item)
     return result
@@ -207,7 +351,7 @@ def _safe_json(value: object) -> object:
     elif isinstance(value, str):
         result = _safe_text(value)
     elif isinstance(value, Mapping):
-        result = _safe_mapping(value)
+        result = _safe_mapping(cast(Mapping[str, object], value))
     elif isinstance(value, (list, tuple)):
         result = [_safe_json(item) for item in value]
     return result
@@ -217,9 +361,7 @@ def _safe_code(value: object) -> str | None:
     if not isinstance(value, str):
         return None
     code = value.strip()
-    if (
-        code in _SAFE_ERROR_CODES or _SAFE_CODE_RE.fullmatch(code) is not None
-    ) and _SENSITIVE_TEXT_RE.search(code) is None:
+    if code in _SAFE_ERROR_CODES or code in _SAFE_VALIDATION_CODES:
         return code
     return None
 
@@ -257,6 +399,152 @@ def _safe_metrics(
     return {
         key: _safe_json(metrics[key]) for key in _METRIC_KEYS if key in metrics
     }
+
+
+def _mapping_with_allowed_keys(
+    value: object,
+    allowed_keys: frozenset[str],
+    label: str,
+) -> Mapping[object, object]:
+    """Require a mapping whose keys belong to a report field allowlist."""
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{label} must be a mapping")
+    unexpected = {str(key) for key in value} - allowed_keys
+    if unexpected:
+        raise ValueError(f"unexpected fields in {label}")
+    return cast(Mapping[str, object], value)
+
+
+def _safe_metric_mapping(
+    value: object,
+    allowed_keys: frozenset[str],
+    label: str,
+) -> dict[str, object]:
+    """Sanitize one bounded metric mapping."""
+    mapping = _mapping_with_allowed_keys(value, allowed_keys, label)
+    return {str(key): _safe_json(item) for key, item in mapping.items()}
+
+
+def _safe_per_agent(value: object) -> dict[str, object]:
+    mapping = _mapping_with_allowed_keys(
+        value,
+        frozenset({"basis", *_CANONICAL_AGENTS}),
+        "metrics.per_agent",
+    )
+    result: dict[str, object] = {}
+    for agent, row in mapping.items():
+        if agent == "basis":
+            result[agent] = _safe_json(row)
+        else:
+            result[agent] = _safe_metric_mapping(
+                row, _AGENT_ROW_KEYS, f"metrics.per_agent.{agent}"
+            )
+    return result
+
+
+def _safe_language_rows(value: object) -> dict[str, object]:
+    mapping = _mapping_with_allowed_keys(
+        value, frozenset({"basis", "en", "zh"}), "metrics.by_language"
+    )
+    result: dict[str, object] = {}
+    for language, row in mapping.items():
+        if language == "basis":
+            result[language] = _safe_json(row)
+        else:
+            result[language] = _safe_metric_mapping(
+                row,
+                _LANGUAGE_ROW_KEYS,
+                f"metrics.by_language.{language}",
+            )
+    return result
+
+
+def _safe_confusion_rows(value: object) -> dict[str, object]:
+    mapping = _mapping_with_allowed_keys(
+        value,
+        frozenset({"basis", *_CANONICAL_AGENTS}),
+        "metrics.confusion_matrix",
+    )
+    result: dict[str, object] = {}
+    for agent, row in mapping.items():
+        if agent == "basis":
+            result[agent] = _safe_json(row)
+        else:
+            result[agent] = _safe_metric_mapping(
+                row,
+                _CONFUSION_ROW_KEYS,
+                f"metrics.confusion_matrix.{agent}",
+            )
+    return result
+
+
+def _safe_complete_metrics(value: object) -> dict[str, object]:
+    mapping = _mapping_with_allowed_keys(
+        value, frozenset(_METRIC_KEYS), "metrics"
+    )
+    if set(mapping) != set(_METRIC_KEYS):
+        raise ValueError("complete metrics are incomplete")
+    result: dict[str, object] = {}
+    for key in _METRIC_KEYS:
+        item = mapping[key]
+        if key == "per_agent":
+            result[key] = _safe_per_agent(item)
+        elif key == "by_language":
+            result[key] = _safe_language_rows(item)
+        elif key == "confusion_matrix":
+            result[key] = _safe_confusion_rows(item)
+        elif key in _METRIC_MAP_KEYS:
+            result[key] = _safe_metric_mapping(
+                item, _METRIC_MAP_KEYS[key], f"metrics.{key}"
+            )
+        else:
+            result[key] = _safe_json(item)
+    return result
+
+
+def _safe_incomplete_metrics(value: object) -> dict[str, object]:
+    mapping = _mapping_with_allowed_keys(
+        value, _INCOMPLETE_METRIC_KEYS, "metrics"
+    )
+    if set(mapping) != set(_INCOMPLETE_METRIC_KEYS):
+        raise ValueError("incomplete metrics must contain only bounded counts")
+    return _safe_metrics(mapping, complete=False)
+
+
+def _validate_partial_inventory(
+    cases: Sequence[AgentRoutingCase],
+    outcomes: Sequence[RunOutcome],
+    repeat_count: int,
+) -> None:
+    """Validate the known portion of an incomplete run inventory."""
+    if repeat_count not in {1, 3}:
+        raise ValueError("repeat_count must be 1 or 3")
+    case_by_id: dict[str, AgentRoutingCase] = {}
+    for case in cases:
+        if case.case_id in case_by_id:
+            raise ValueError(f"duplicate case ID: {case.case_id}")
+        if case.expected_agent not in _CANONICAL_AGENTS:
+            raise ValueError(f"unknown expected agent: {case.expected_agent}")
+        case_by_id[case.case_id] = case
+    observed: set[tuple[str, int]] = set()
+    for outcome in outcomes:
+        key = (outcome.case_id, outcome.repeat_index)
+        if outcome.case_id not in case_by_id:
+            raise ValueError(f"outcome has unknown case ID: {outcome.case_id}")
+        if key in observed:
+            raise ValueError(
+                f"duplicate outcome: {outcome.case_id}/{outcome.repeat_index}"
+            )
+        if outcome.repeat_index not in range(1, repeat_count + 1):
+            raise ValueError(f"invalid repeat index: {outcome.repeat_index}")
+        case = case_by_id[outcome.case_id]
+        if outcome.expected_agent != case.expected_agent:
+            raise ValueError(
+                f"outcome expected agent mismatch: {outcome.case_id}"
+            )
+        if outcome.language != case.language:
+            raise ValueError(f"outcome language mismatch: {outcome.case_id}")
+        observed.add(key)
 
 
 def _safe_runs(outcomes: Sequence[RunOutcome]) -> list[dict[str, object]]:
@@ -312,7 +600,10 @@ def _safe_runs(outcomes: Sequence[RunOutcome]) -> list[dict[str, object]]:
                 "latency_ms": _safe_float(
                     outcome.latency_ms, nonnegative=True
                 ),
-                "selected_arguments": _safe_json(outcome.selected_arguments),
+                "selected_arguments": _safe_mapping(
+                    outcome.selected_arguments,
+                    allowed_keys=_SAFE_ARGUMENT_KEYS,
+                ),
                 "error_code": _safe_code(outcome.error_code),
                 "validation_codes": validation_codes,
             }
@@ -405,8 +696,26 @@ def build_report(
     complete: bool,
 ) -> dict[str, Any]:
     """Build a JSON-compatible report without retaining sensitive inputs."""
-    del cases
-    safe_metrics = _safe_metrics(metrics, complete=complete)
+    if complete:
+        try:
+            computed_metrics = compute_metrics(
+                cases, outcomes, context.repeat_count
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("complete report inventory is invalid") from exc
+        if dict(metrics) != computed_metrics:
+            raise ValueError("supplied metrics do not match outcomes")
+        safe_metrics = _safe_metrics(computed_metrics, complete=True)
+    else:
+        _validate_partial_inventory(cases, outcomes, context.repeat_count)
+        planned_runs = len(cases) * context.repeat_count
+        completed_records = len(outcomes)
+        if (
+            _safe_int(metrics.get("planned_runs")) != planned_runs
+            or _safe_int(metrics.get("completed_records")) != completed_records
+        ):
+            raise ValueError("partial report counts do not match inventory")
+        safe_metrics = _safe_metrics(metrics, complete=False)
     provenance = {
         "branch": _safe_text(context.git.branch),
         "head": _safe_text(context.git.head),
@@ -434,63 +743,179 @@ def build_report(
     }
 
 
+def _safe_status(value: object) -> dict[str, object]:
+    mapping = _mapping_with_allowed_keys(value, _STATUS_KEYS, "status")
+    state = mapping.get("state")
+    headline = mapping.get("headline")
+    current_accuracy = mapping.get("current_accuracy")
+    thresholds = mapping.get("thresholds_passed")
+    if state not in {"complete", "incomplete"}:
+        raise ValueError("invalid report status")
+    if headline not in {
+        "Stable baseline",
+        "Diagnostic (dirty tree)",
+        "Diagnostic",
+        "Unknown",
+        "Incomplete diagnostic",
+    }:
+        raise ValueError("invalid report headline")
+    if current_accuracy != "Unknown":
+        accuracy = _safe_float(current_accuracy)
+        if accuracy is None or not 0.0 <= accuracy <= 1.0:
+            raise ValueError("invalid current accuracy")
+        current_accuracy = accuracy
+    if not isinstance(thresholds, bool):
+        raise ValueError("invalid threshold status")
+    return {
+        "state": state,
+        "headline": headline,
+        "current_accuracy": current_accuracy,
+        "thresholds_passed": thresholds,
+    }
+
+
+def _safe_provenance(value: object) -> dict[str, object]:
+    mapping = _mapping_with_allowed_keys(value, _PROVENANCE_KEYS, "provenance")
+    if set(mapping) != set(_PROVENANCE_KEYS):
+        raise ValueError("provenance is incomplete")
+    branch = _safe_text(mapping["branch"])
+    head = _safe_text(mapping["head"])
+    if _SAFE_BRANCH_RE.fullmatch(branch) is None:
+        raise ValueError("invalid report branch")
+    if _SAFE_IDENTIFIER_RE.fullmatch(head) is None:
+        raise ValueError("invalid report head")
+    mode = mapping["mode"]
+    if mode not in {"quick", "benchmark"}:
+        raise ValueError("invalid report mode")
+    repeat_count = _safe_int(mapping["repeat_count"])
+    concurrency = _safe_int(mapping["concurrency"])
+    elapsed = _safe_float(mapping["elapsed_seconds"], nonnegative=True)
+    if (
+        repeat_count not in {1, 3}
+        or concurrency is None
+        or not 1 <= concurrency <= 32
+    ):
+        raise ValueError("invalid report execution settings")
+    if elapsed is None:
+        raise ValueError("invalid report elapsed time")
+    dirty = mapping["dirty"]
+    allow_dirty = mapping["allow_dirty"]
+    if not isinstance(dirty, bool) or not isinstance(allow_dirty, bool):
+        raise ValueError("invalid report dirty state")
+    model_id = _safe_text(mapping["model_id"])
+    dataset_path = _safe_text(mapping["dataset_path"])
+    started_at = _safe_text(mapping["started_at"])
+    return {
+        "branch": branch,
+        "head": head,
+        "dirty": dirty,
+        "model_id": model_id,
+        "provider_endpoint_hash": _safe_digest(
+            mapping["provider_endpoint_hash"]
+        ),
+        "dataset_path": dataset_path,
+        "dataset_sha256": _safe_digest(mapping["dataset_sha256"]),
+        "description_sha256": _safe_digest(mapping["description_sha256"]),
+        "mode": mode,
+        "repeat_count": repeat_count,
+        "concurrency": concurrency,
+        "started_at": started_at,
+        "elapsed_seconds": elapsed,
+        "allow_dirty": allow_dirty,
+    }
+
+
+def _safe_run_mapping(value: object) -> dict[str, object]:
+    mapping = _mapping_with_allowed_keys(value, _RUN_KEYS, "run")
+    result: dict[str, object] = {}
+    for key, item in mapping.items():
+        key_text = str(key)
+        if key_text == "selected_arguments":
+            if not isinstance(item, Mapping):
+                raise ValueError("run.selected_arguments must be a mapping")
+            result[key_text] = _safe_mapping(
+                item,
+                allowed_keys=_SAFE_ARGUMENT_KEYS,
+            )
+        elif key_text == "error_code":
+            result[key_text] = _safe_code(item)
+        elif key_text == "validation_codes":
+            if not isinstance(item, (list, tuple)):
+                raise ValueError("run.validation_codes must be a list")
+            result[key_text] = [
+                code
+                for raw_code in item
+                if (code := _safe_code(raw_code)) is not None
+            ]
+        elif key_text in {
+            "case_id",
+            "expected_agent",
+            "predicted_agent",
+            "language",
+        }:
+            result[key_text] = _safe_text(item)
+        else:
+            result[key_text] = _safe_json(item)
+    return result
+
+
+def _safe_report(report: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate and sanitize the public writer boundary."""
+    mapping = _mapping_with_allowed_keys(report, _REPORT_KEYS, "report")
+    if set(mapping) != set(_REPORT_KEYS):
+        raise ValueError("report is incomplete")
+    if mapping["schema_version"] != 1:
+        raise ValueError("unsupported report schema")
+    status = _safe_status(mapping["status"])
+    complete = status["state"] == "complete"
+    metrics = (
+        _safe_complete_metrics(mapping["metrics"])
+        if complete
+        else _safe_incomplete_metrics(mapping["metrics"])
+    )
+    runs = mapping["runs"]
+    if not isinstance(runs, (list, tuple)):
+        raise ValueError("report runs must be a list")
+    return {
+        "schema_version": 1,
+        "status": status,
+        "provenance": _safe_provenance(mapping["provenance"]),
+        "metrics": metrics,
+        "runs": [_safe_run_mapping(run) for run in runs],
+    }
+
+
 def _format_markdown_value(value: object) -> str:
+    """Format one value and neutralize Markdown table/control characters."""
     if value is None:
-        return "-"
-    if isinstance(value, float):
-        return f"{value:.6g}"
-    if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False, sort_keys=True)
-    return str(value)
-
-
-def _append_headline(lines: list[str], report: Mapping[str, Any]) -> None:
-    """Append safe report status fields."""
-    status = report.get("status")
-    values = status if isinstance(status, Mapping) else {}
-    lines.extend(
-        [
-            "",
-            "## Headline",
-            f"- State: {_format_markdown_value(values.get('state'))}",
-            "- Headline: " f"{_format_markdown_value(values.get('headline'))}",
-            "- Current accuracy: "
-            f"{_format_markdown_value(values.get('current_accuracy'))}",
-            "- Thresholds passed: "
-            f"{_format_markdown_value(values.get('thresholds_passed'))}",
-        ]
+        text = "-"
+    elif isinstance(value, float):
+        text = f"{value:.6g}"
+    elif isinstance(value, (dict, list)):
+        text = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    else:
+        text = str(value)
+    return (
+        text.replace("\\", "\\\\")
+        .replace("|", "\\|")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
     )
 
 
-def _append_provenance(lines: list[str], report: Mapping[str, Any]) -> None:
-    """Append the non-secret provenance fields."""
-    provenance = report.get("provenance")
-    values = provenance if isinstance(provenance, Mapping) else {}
-    lines.extend(["", "## Provenance"])
-    for key in (
-        "branch",
-        "head",
-        "dirty",
-        "model_id",
-        "provider_endpoint_hash",
-        "dataset_path",
-        "dataset_sha256",
-        "description_sha256",
-        "mode",
-        "repeat_count",
-        "concurrency",
-        "started_at",
-        "elapsed_seconds",
-        "allow_dirty",
-    ):
-        lines.append(f"- {key}: {_format_markdown_value(values.get(key))}")
-
-
-def _append_metric_summary(
-    lines: list[str], metrics: Mapping[str, object]
-) -> None:
-    """Append primary metric values shared with the JSON report."""
-    lines.extend(["", "## Metrics"])
+def _render_markdown(report: Mapping[str, Any]) -> str:
+    lines = ["# Agent Routing Evaluation Report"]
+    status = report["status"]
+    provenance = report["provenance"]
+    metrics = report["metrics"]
+    runs = report["runs"]
+    lines += ["", "## Headline"]
+    for key in ("state", "headline", "current_accuracy", "thresholds_passed"):
+        lines.append(f"- {key}: {_format_markdown_value(status[key])}")
+    lines += ["", "## Provenance"]
+    for key in _PROVENANCE_KEYS:
+        lines.append(f"- {key}: {_format_markdown_value(provenance[key])}")
+    lines += ["", "## Metrics"]
     for key in (
         "case_count",
         "planned_runs",
@@ -499,209 +924,191 @@ def _append_metric_summary(
     ):
         if key in metrics:
             lines.append(f"- {key}: {_format_markdown_value(metrics[key])}")
-    for metric_name, metric_keys in (
+    for name, keys in (
         ("run_level", ("top1_accuracy", "dispatchable_accuracy")),
         ("majority", ("top1_accuracy", "dispatchable_accuracy")),
         ("latency_ms", ("p50", "p95")),
     ):
-        values = _metric_mapping(metrics, metric_name)
-        if values is None:
-            continue
-        for key in metric_keys:
-            lines.append(
-                f"- {metric_name}.{key}: "
-                f"{_format_markdown_value(values.get(key))}"
-            )
-
-
-def _append_per_agent(lines: list[str], metrics: Mapping[str, object]) -> None:
-    """Append per-agent precision and recall rows."""
-    per_agent = _metric_mapping(metrics, "per_agent")
-    if per_agent is None:
-        return
-    lines.extend(
-        [
+        row = metrics.get(name)
+        if isinstance(row, Mapping):
+            for key in keys:
+                lines.append(
+                    f"- {name}.{key}: {_format_markdown_value(row.get(key))}"
+                )
+    per_agent = metrics.get("per_agent")
+    if isinstance(per_agent, Mapping):
+        lines += [
             "",
             "## Per-agent",
-            "| Agent | Support | Predicted | True positive | "
-            "Precision | Recall | F1 |",
+            "| Agent | Support | Predicted | True positive | Precision | Recall | F1 |",
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
-    )
-    for agent in _CANONICAL_AGENTS:
-        row = per_agent.get(agent)
-        if not isinstance(row, Mapping):
-            continue
-        values = [
-            agent,
-            *(
-                row.get(key)
-                for key in (
-                    "support",
-                    "predicted",
-                    "true_positive",
-                    "precision",
-                    "recall",
-                    "f1",
+        for agent in _CANONICAL_AGENTS:
+            row = per_agent.get(agent)
+            if isinstance(row, Mapping):
+                values = [agent] + [
+                    row.get(key)
+                    for key in (
+                        "support",
+                        "predicted",
+                        "true_positive",
+                        "precision",
+                        "recall",
+                        "f1",
+                    )
+                ]
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        _format_markdown_value(value) for value in values
+                    )
+                    + " |"
                 )
-            ),
-        ]
-        lines.append(
-            "| "
-            + " | ".join(_format_markdown_value(value) for value in values)
-            + " |"
-        )
-
-
-def _append_language(lines: list[str], metrics: Mapping[str, object]) -> None:
-    """Append English and Chinese accuracy slices."""
-    by_language = _metric_mapping(metrics, "by_language")
-    if by_language is None:
-        return
-    lines.extend(
-        [
+    by_language = metrics.get("by_language")
+    if isinstance(by_language, Mapping):
+        lines += [
             "",
             "## Language",
-            "| Language | Cases | Top-1 correct | Top-1 accuracy | "
-            "Dispatchable accuracy |",
+            "| Language | Cases | Top-1 correct | Top-1 accuracy | Dispatchable accuracy |",
             "| --- | ---: | ---: | ---: | ---: |",
         ]
-    )
-    for language in ("en", "zh"):
-        row = by_language.get(language)
-        if not isinstance(row, Mapping):
-            continue
-        values = [
-            language,
-            *(
-                row.get(key)
-                for key in (
-                    "case_count",
-                    "top1_correct",
-                    "top1_accuracy",
-                    "dispatchable_accuracy",
+        for language in ("en", "zh"):
+            row = by_language.get(language)
+            if isinstance(row, Mapping):
+                values = [language] + [
+                    row.get(key)
+                    for key in (
+                        "case_count",
+                        "top1_correct",
+                        "top1_accuracy",
+                        "dispatchable_accuracy",
+                    )
+                ]
+                lines.append(
+                    "| "
+                    + " | ".join(
+                        _format_markdown_value(value) for value in values
+                    )
+                    + " |"
                 )
-            ),
+    errors = metrics.get("errors")
+    if isinstance(errors, Mapping):
+        lines += ["", "## Errors"]
+        for key in ("provider", "routing", "schema"):
+            lines.append(f"- {key}: {_format_markdown_value(errors.get(key))}")
+    confusion = metrics.get("confusion_matrix")
+    if isinstance(confusion, Mapping):
+        lines += ["", "## Confusion"]
+        for agent in _CANONICAL_AGENTS:
+            row = confusion.get(agent)
+            if isinstance(row, Mapping):
+                lines.append(f"- {agent}: {_format_markdown_value(dict(row))}")
+    lines += [
+        "",
+        "## Runs",
+        "| Case ID | Repeat | Expected | Predicted | Language | Schema valid | Core args correct | Latency ms |",
+        "| --- | ---: | --- | --- | --- | --- | --- | ---: |",
+    ]
+    for run in runs:
+        values = [
+            run.get(key)
+            for key in (
+                "case_id",
+                "repeat",
+                "expected_agent",
+                "predicted_agent",
+                "language",
+                "schema_valid",
+                "core_args_correct",
+                "latency_ms",
+            )
         ]
         lines.append(
             "| "
             + " | ".join(_format_markdown_value(value) for value in values)
             + " |"
         )
-
-
-def _append_errors(lines: list[str], metrics: Mapping[str, object]) -> None:
-    """Append bounded provider, routing, and schema error counts."""
-    errors = _metric_mapping(metrics, "errors")
-    if errors is None:
-        return
-    lines.extend(
-        [
-            "",
-            "## Errors",
-            "- provider: " f"{_format_markdown_value(errors.get('provider'))}",
-            "- routing: " f"{_format_markdown_value(errors.get('routing'))}",
-            "- schema: " f"{_format_markdown_value(errors.get('schema'))}",
-        ]
-    )
-
-
-def _append_confusion(lines: list[str], metrics: Mapping[str, object]) -> None:
-    """Append confusion rows without including question text."""
-    confusion = _metric_mapping(metrics, "confusion_matrix")
-    if confusion is None:
-        return
-    lines.extend(["", "## Confusion"])
-    for agent in _CANONICAL_AGENTS:
-        row = confusion.get(agent)
-        if isinstance(row, Mapping):
-            lines.append(f"- {agent}: {_format_markdown_value(dict(row))}")
-
-
-def _append_runs(lines: list[str], report: Mapping[str, Any]) -> None:
-    """Append sorted run identifiers and safe outcome fields."""
-    runs = report.get("runs")
-    if not isinstance(runs, list):
-        return
-    lines.extend(
-        [
-            "",
-            "## Runs",
-            "| Case ID | Repeat | Expected | Predicted | Language | "
-            "Schema valid | Core args correct | Latency ms |",
-            "| --- | ---: | --- | --- | --- | --- | --- | ---: |",
-        ]
-    )
-    for run in runs:
-        if not isinstance(run, Mapping):
-            continue
-        lines.append(
-            "| "
-            + " | ".join(
-                _format_markdown_value(run.get(key))
-                for key in (
-                    "case_id",
-                    "repeat",
-                    "expected_agent",
-                    "predicted_agent",
-                    "language",
-                    "schema_valid",
-                    "core_args_correct",
-                    "latency_ms",
-                )
-            )
-            + " |"
-        )
-
-
-def _render_markdown(report: Mapping[str, Any]) -> str:
-    """Render a deterministic Markdown view of a safe report."""
-    metrics = report.get("metrics")
-    metric_mapping = metrics if isinstance(metrics, Mapping) else {}
-    lines = ["# Agent Routing Evaluation Report"]
-    _append_headline(lines, report)
-    _append_provenance(lines, report)
-    _append_metric_summary(lines, metric_mapping)
-    _append_per_agent(lines, metric_mapping)
-    _append_language(lines, metric_mapping)
-    _append_errors(lines, metric_mapping)
-    _append_confusion(lines, metric_mapping)
-    _append_runs(lines, report)
     return "\n".join(lines) + "\n"
 
 
-def _atomic_write(path: Path, content: str) -> None:
+def _write_temporary(path: Path, content: str) -> Path:
+    """Write one flushed temporary artifact beside its destination."""
     temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
     try:
         with temporary.open("x", encoding="utf-8", newline="\n") as handle:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        temporary.replace(path)
     except BaseException:
         with suppress(FileNotFoundError):
             temporary.unlink()
         raise
+    return temporary
+
+
+def _remove_temporary(path: Path | None) -> None:
+    if path is not None:
+        with suppress(FileNotFoundError):
+            path.unlink()
+
+
+def _restore_destination(path: Path, previous: bytes | None) -> None:
+    """Restore one destination after a pair publication failure."""
+    if previous is None:
+        with suppress(FileNotFoundError):
+            path.unlink()
+        return
+    path.write_bytes(previous)
 
 
 def write_report_pair(
     report: Mapping[str, Any], output_dir: Path, stem: str
 ) -> tuple[Path, Path]:
-    """Atomically write the JSON and Markdown artifacts for one report."""
+    """Write a validated JSON/Markdown pair with rollback on publication error."""
+    if (
+        not isinstance(stem, str)
+        or _SAFE_STEM_RE.fullmatch(stem) is None
+        or stem in {".", ".."}
+        or ".." in stem
+    ):
+        raise ValueError("stem must be a direct ASCII basename")
+    safe_report = _safe_report(report)
     output_dir.mkdir(parents=True, exist_ok=True)
     json_path = output_dir / f"{stem}.json"
     markdown_path = output_dir / f"{stem}.md"
     json_content = (
         json.dumps(
-            report,
+            safe_report,
             ensure_ascii=False,
             indent=2,
             sort_keys=True,
         )
         + "\n"
     )
-    _atomic_write(json_path, json_content)
-    _atomic_write(markdown_path, _render_markdown(report))
+    markdown_content = _render_markdown(safe_report)
+    previous = {
+        json_path: json_path.read_bytes() if json_path.exists() else None,
+        markdown_path: (
+            markdown_path.read_bytes() if markdown_path.exists() else None
+        ),
+    }
+    json_temporary: Path | None = None
+    markdown_temporary: Path | None = None
+    try:
+        json_temporary = _write_temporary(json_path, json_content)
+        markdown_temporary = _write_temporary(markdown_path, markdown_content)
+        json_temporary.replace(json_path)
+        markdown_temporary.replace(markdown_path)
+    except BaseException:
+        _remove_temporary(json_temporary)
+        _remove_temporary(markdown_temporary)
+        for destination, old_content in previous.items():
+            with suppress(OSError):
+                _restore_destination(destination, old_content)
+        raise
+    finally:
+        _remove_temporary(json_temporary)
+        _remove_temporary(markdown_temporary)
     return json_path, markdown_path
 
 
