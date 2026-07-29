@@ -35,8 +35,6 @@ _WILSON_Z: Final = 1.959963984540054
 
 @dataclass(frozen=True, slots=True)
 class _CaseProjection:
-    """One classification record after the requested run aggregation."""
-
     expected_agent: str
     predicted_agent: str
     language: str
@@ -86,22 +84,14 @@ def _ratio(numerator: int | float, denominator: int) -> float:
 
 
 def _f1(precision: float, recall: float) -> float:
-    return (
-        0.0
-        if precision + recall == 0.0
-        else 2.0 * precision * recall / (precision + recall)
-    )
+    total = precision + recall
+    return 0.0 if total == 0.0 else 2.0 * precision * recall / total
 
 
 def _wilson_95(successes: int, observations: int) -> list[float]:
-    """Return a two-sided 95% Wilson interval in JSON-compatible form."""
     if observations == 0:
         return [0.0, 1.0]
-    proportion = (
-        0.0
-        if successes == 0
-        else 1.0 if successes == observations else successes / observations
-    )
+    proportion = successes / observations
     z_squared = _WILSON_Z**2
     denominator = 1.0 + z_squared / observations
     centre = proportion + z_squared / (2.0 * observations)
@@ -111,10 +101,8 @@ def _wilson_95(successes: int, observations: int) -> list[float]:
     )
     lower = (centre - margin) / denominator
     upper = (centre + margin) / denominator
-    if successes == 0:
-        lower = 0.0
-    if successes == observations:
-        upper = 1.0
+    lower = 0.0 if successes == 0 else lower
+    upper = 1.0 if successes == observations else upper
     return [max(0.0, lower), min(1.0, upper)]
 
 
@@ -420,18 +408,18 @@ def compute_metrics(
     repeat_count: int,
 ) -> dict[str, Any]:
     """Compute a complete, deterministic, JSON-compatible metric report."""
-    case_records = tuple(cases)
-    outcome_records = tuple(outcomes)
-    grouped = _validate_inventory(case_records, outcome_records, repeat_count)
+    cases = tuple(cases)
+    outcomes = tuple(outcomes)
+    grouped = _validate_inventory(cases, outcomes, repeat_count)
     projections = tuple(
         _project_case(
             case,
             grouped[case.case_id],
             repeat_count,
         )
-        for case in sorted(case_records, key=lambda item: item.case_id)
+        for case in sorted(cases, key=lambda item: item.case_id)
     )
-    run_metrics = _run_metrics(outcome_records)
+    run_metrics = _run_metrics(outcomes)
     basis = _BASIS_SINGLE_RUN if repeat_count == 1 else _BASIS_CASE_MAJORITY
     classification_rows = _classification_rows(projections)
     per_agent: dict[str, object] = {"basis": basis, **classification_rows}
@@ -456,9 +444,9 @@ def compute_metrics(
     }
     result: dict[str, Any] = {
         "schema_version": 1,
-        "case_count": len(case_records),
-        "planned_runs": len(case_records) * repeat_count,
-        "completed_records": len(outcome_records),
+        "case_count": len(cases),
+        "planned_runs": len(cases) * repeat_count,
+        "completed_records": len(outcomes),
         "run_level": run_metrics["run_level"],
         "majority": (
             _majority_metrics(projections) if repeat_count == 3 else None
@@ -485,67 +473,30 @@ def _float_value(value: object) -> float | None:
     return result if math.isfinite(result) else None
 
 
-def _int_value(value: object) -> int | None:
-    return (
-        value
-        if isinstance(value, int) and not isinstance(value, bool)
-        else None
-    )
-
-
 def _mapping(value: object) -> Mapping[str, object] | None:
-    if not isinstance(value, Mapping):
-        return None
-    if any(not isinstance(key, str) for key in value):
+    if not isinstance(value, Mapping) or any(
+        not isinstance(key, str) for key in value
+    ):
         return None
     return cast(Mapping[str, object], value)
 
 
-def _rate(value: object) -> bool:
-    number = _float_value(value)
-    return number is not None and 0.0 <= number <= 1.0
-
-
 _TOP_LEVEL_KEYS: Final = frozenset(
-    {
-        "schema_version",
-        "case_count",
-        "planned_runs",
-        "completed_records",
-        "run_level",
-        "majority",
-        "per_agent",
-        "macro",
-        "by_language",
-        "confusion_matrix",
-        "stability",
-        "core_arguments",
-        "errors",
-        "provider_completion",
-        "latency_ms",
-    }
+    "schema_version case_count planned_runs completed_records run_level "
+    "majority per_agent macro by_language confusion_matrix stability "
+    "core_arguments errors provider_completion latency_ms".split()
 )
-_RUN_LEVEL_KEYS: Final = frozenset({"top1_accuracy", "dispatchable_accuracy"})
+_RUN_LEVEL_KEYS: Final = frozenset(("top1_accuracy", "dispatchable_accuracy"))
 _MAJORITY_KEYS: Final = frozenset(
-    {
-        "top1_correct",
-        "top1_accuracy",
-        "dispatchable_correct",
-        "dispatchable_accuracy",
-        "wilson_95",
-    }
+    "top1_correct top1_accuracy dispatchable_correct "
+    "dispatchable_accuracy wilson_95".split()
 )
 _AGENT_ROW_KEYS: Final = frozenset(
-    {"support", "predicted", "true_positive", "precision", "recall", "f1"}
+    "support predicted true_positive precision recall f1".split()
 )
 _LANGUAGE_ROW_KEYS: Final = frozenset(
-    {
-        "case_count",
-        "top1_correct",
-        "top1_accuracy",
-        "dispatchable_correct",
-        "dispatchable_accuracy",
-    }
+    "case_count top1_correct top1_accuracy dispatchable_correct "
+    "dispatchable_accuracy".split()
 )
 _MACRO_KEYS: Final = frozenset({"basis", "precision", "recall", "f1"})
 _STABILITY_KEYS: Final = frozenset({"exact", "modal_agreement"})
@@ -564,12 +515,29 @@ def _mapping_with_keys(
 
 
 def _count_value(value: object, maximum: int | None = None) -> int | None:
-    number = _int_value(value)
+    number = (
+        value
+        if isinstance(value, int) and not isinstance(value, bool)
+        else None
+    )
+    if (
+        number is None
+        or number < 0
+        or (maximum is not None and number > maximum)
+    ):
+        return None
+    return number
+
+
+def _rate_count(value: object, denominator: int) -> int | None:
+    rate = _float_value(value)
+    if rate is None or not 0.0 <= rate <= 1.0:
+        return None
+    count = rate * denominator
+    rounded = round(count)
     return (
-        number
-        if number is not None
-        and number >= 0
-        and (maximum is None or number <= maximum)
+        rounded
+        if math.isclose(count, rounded, rel_tol=0.0, abs_tol=1e-9)
         else None
     )
 
@@ -589,6 +557,25 @@ def _bounded_values(
 def _consistent_rate(value: object, numerator: int, denominator: int) -> bool:
     number = _float_value(value)
     return number is not None and number == _ratio(numerator, denominator)
+
+
+def _validate_run_level_counts(
+    value: object, planned_runs: int
+) -> _IntPair | None:
+    mapping = _mapping_with_keys(value, _RUN_LEVEL_KEYS)
+    if mapping is None:
+        return None
+    top1_correct = _rate_count(mapping["top1_accuracy"], planned_runs)
+    dispatchable_correct = _rate_count(
+        mapping["dispatchable_accuracy"], planned_runs
+    )
+    return (
+        None
+        if top1_correct is None
+        or dispatchable_correct is None
+        or dispatchable_correct > top1_correct
+        else (top1_correct, dispatchable_correct)
+    )
 
 
 def _majority_counts(
@@ -729,7 +716,8 @@ def _validate_macro(value: object, rows: _AgentRows) -> bool:
         for metric in ("precision", "recall", "f1")
     }
     return mapping["basis"] == _BASIS_CASE_MAJORITY and all(
-        _rate(mapping[metric]) and mapping[metric] == expected[metric]
+        _float_value(mapping[metric]) is not None
+        and mapping[metric] == expected[metric]
         for metric in expected
     )
 
@@ -840,8 +828,8 @@ def _stability_is_representable(
     if (
         exact is None
         or modal is None
-        or not _rate(exact)
-        or not _rate(modal)
+        or not 0.0 <= exact <= 1.0
+        or not 0.0 <= modal <= 1.0
         or exact > modal
     ):
         return False
@@ -874,10 +862,14 @@ def _validate_core(value: object, planned_runs: int) -> bool:
     )
 
 
-def _validate_errors(value: object, planned_runs: int) -> _ErrorValues | None:
+def _validate_errors(
+    value: object, planned_runs: int, incorrect_runs: int
+) -> _ErrorValues | None:
     mapping = _mapping_with_keys(value, _ERROR_KEYS_SET)
     counts = _bounded_values(mapping, _ERROR_KEYS, planned_runs)
-    if counts is None or sum(counts) > planned_runs:
+    if counts is None:
+        return None
+    if sum(counts) > planned_runs or sum(counts) > incorrect_runs:
         return None
     return cast(_ErrorValues, dict(zip(_ERROR_KEYS, counts)))
 
@@ -885,19 +877,23 @@ def _validate_errors(value: object, planned_runs: int) -> _ErrorValues | None:
 def _validate_threshold_header(
     metrics: _MetricMap,
 ) -> _IntPair | None:
-    schema_version = _int_value(metrics["schema_version"])
-    case_count = _count_value(metrics["case_count"])
-    planned_runs = _count_value(metrics["planned_runs"])
-    completed_records = _count_value(metrics["completed_records"])
-    if schema_version != 1 or case_count is None or case_count == 0:
+    if _count_value(metrics["schema_version"]) != 1:
         return None
-    if planned_runs is None or completed_records is None:
-        return None
-    return (
-        (case_count, planned_runs)
-        if planned_runs == case_count * 3 and completed_records == planned_runs
-        else None
+    values = tuple(
+        _count_value(metrics[key])
+        for key in ("case_count", "planned_runs", "completed_records")
     )
+    if any(value is None for value in values):
+        return None
+    case_count, planned_runs, completed_records = cast(
+        tuple[int, int, int], values
+    )
+    valid = (
+        case_count > 0
+        and planned_runs == case_count * 3
+        and completed_records == planned_runs
+    )
+    return (case_count, planned_runs) if valid else None
 
 
 def _validate_threshold_projection(
@@ -930,14 +926,17 @@ def _validate_threshold_projection(
 def _validate_threshold_operations(
     metrics: _MetricMap, planned_runs: int
 ) -> float | None:
-    run_level = _mapping_with_keys(metrics["run_level"], _RUN_LEVEL_KEYS)
-    if not (
-        run_level is not None
-        and all(_rate(run_level[key]) for key in _RUN_LEVEL_KEYS)
-        and _validate_core(metrics["core_arguments"], planned_runs)
+    run_level_counts = _validate_run_level_counts(
+        metrics["run_level"], planned_runs
+    )
+    if run_level_counts is None or not _validate_core(
+        metrics["core_arguments"], planned_runs
     ):
         return None
-    errors = _validate_errors(metrics["errors"], planned_runs)
+    top1_correct, _dispatchable_correct = run_level_counts
+    errors = _validate_errors(
+        metrics["errors"], planned_runs, planned_runs - top1_correct
+    )
     if errors is None:
         return None
     provider_completion = _float_value(metrics["provider_completion"])
