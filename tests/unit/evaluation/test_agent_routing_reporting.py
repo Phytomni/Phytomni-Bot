@@ -436,6 +436,20 @@ def test_writer_boundary_drops_sensitive_arguments_and_rejects_unknown_fields(
     assert not (tmp_path / "rejected").exists()
 
 
+def test_writer_rejects_forged_complete_run_inventory(tmp_path: Path) -> None:
+    report = _complete_report(tmp_path)
+    raw = json.loads(json.dumps(report))
+    raw["metrics"]["completed_records"] = 2
+
+    with pytest.raises(ValueError, match="complete report counts"):
+        write_report_pair(raw, tmp_path / "rejected-counts", "run")
+
+    raw = json.loads(json.dumps(report))
+    raw["runs"][0].pop("repeat")
+    with pytest.raises(ValueError, match="complete report run is incomplete"):
+        write_report_pair(raw, tmp_path / "rejected-run", "run")
+
+
 @pytest.mark.parametrize(
     "stem",
     ["../escaped", "nested/name", "nested\\name", "..", "a..b"],
