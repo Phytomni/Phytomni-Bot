@@ -250,3 +250,6 @@ e2e/.pytest_cache/
 e2e/.coverage*
 e2e/output/
 demo_data/output/
+
+# Agent-routing evaluation artifacts
+evaluation/agent_routing/results/
