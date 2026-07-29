@@ -195,6 +195,41 @@ def _initial_submission_result(
     return initial_result
 
 
+def _record_child_submissions(
+    *,
+    manager: TaskManager,
+    submissions: tuple[SubmissionTuple, ...],
+    run_id: str,
+    user_id: str,
+    agent: str,
+    now: str,
+) -> None:
+    """Record accepted child submissions under one explicit run."""
+    for (
+        task_id,
+        output_dir,
+        input_fingerprint,
+        source_task_id,
+    ) in submissions:
+        manager.record(
+            Submission(
+                task_id=task_id,
+                status="submitted",
+                output_dir=output_dir,
+                run_context=RunContext(
+                    run_id=run_id,
+                    user_id=user_id,
+                    agent=agent,
+                    origin="remote",
+                    created_at=now,
+                    updated_at=now,
+                ),
+                input_fingerprint=input_fingerprint,
+                source_task_id=source_task_id,
+            )
+        )
+
+
 def record_submitted_task(result: Any, *, agent: str) -> None:
     """Persist submitted tasks plus their owning run row.
 
@@ -255,7 +290,7 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
     ):
         return
     user_id = current_request_user() or "anonymous"
-    run_id = IdFactory().new_id("run", agent)
+    bound_run_id = current_run_id()
     now = datetime.now(UTC).isoformat()
     db_path = resolve_tasks_db_path()
     # Seed the run row with the same canonical envelope shape reconciliation
@@ -264,7 +299,34 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
     # rows without a field-ownership transition at terminal settlement.
     initial_result = _initial_submission_result(result, submissions)
     try:
-        RunRegistry(db_path).create_run(
+        registry = RunRegistry(db_path)
+        if bound_run_id is not None:
+            reserved = registry.get_run(bound_run_id, owner=user_id)
+            if (
+                reserved is None
+                or reserved.spec.agent != agent
+                or reserved.status != "running"
+            ):
+                bind_recorder_degraded(True)
+                return
+            _record_child_submissions(
+                manager=TaskManager(db_path),
+                submissions=submissions,
+                run_id=bound_run_id,
+                user_id=user_id,
+                agent=agent,
+                now=now,
+            )
+            if not registry.update_running_result(
+                bound_run_id,
+                owner=user_id,
+                result=initial_result,
+            ):
+                bind_recorder_degraded(True)
+            return
+
+        run_id = IdFactory().new_id("run", agent)
+        registry.create_run(
             RunSpec(
                 run_id=run_id,
                 user_id=user_id,
@@ -274,30 +336,14 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
             outcome=RunOutcome(result=initial_result),
             request_info=RunRequestInfo(request_id=current_request_id()),
         )
-        manager = TaskManager(db_path)
-        for (
-            task_id,
-            output_dir,
-            input_fingerprint,
-            source_task_id,
-        ) in submissions:
-            manager.record(
-                Submission(
-                    task_id=task_id,
-                    status="submitted",
-                    output_dir=output_dir,
-                    run_context=RunContext(
-                        run_id=run_id,
-                        user_id=user_id,
-                        agent=agent,
-                        origin="remote",
-                        created_at=now,
-                        updated_at=now,
-                    ),
-                    input_fingerprint=input_fingerprint,
-                    source_task_id=source_task_id,
-                )
-            )
+        _record_child_submissions(
+            manager=TaskManager(db_path),
+            submissions=submissions,
+            run_id=run_id,
+            user_id=user_id,
+            agent=agent,
+            now=now,
+        )
         bind_run_id(run_id)
         logger.info(
             "Analyst run correlated",
@@ -308,14 +354,15 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
                 "agent": agent,
             },
         )
-    except (sqlite3.Error, OSError):
-        logger.exception(
-            "Failed to persist remote submission to local registry "
-            "(agent=%s, task_count=%d); the remote tasks are live but "
-            "GET /v1/runs/{run_id} will return 404 until the registry "
-            "write succeeds on a later attempt.",
-            agent,
-            len(submissions),
+    except (sqlite3.Error, OSError) as exc:
+        logger.error(
+            "Failed to persist remote submission",
+            extra={
+                "agent": agent,
+                "run_id": bound_run_id,
+                "task_count": len(submissions),
+                "error_type": type(exc).__name__,
+            },
         )
         bind_recorder_degraded(True)
         return
