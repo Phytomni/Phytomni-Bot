@@ -462,6 +462,7 @@ async def test_native_sync_agents_keep_succeeded_envelope(
     assert body["agent"] == slug
     assert body["status"] == "succeeded"
     assert body["task_ids"] == []
+    assert body["id"] == body["run_id"]
     assert background_launcher.call_count == 0
 
 
