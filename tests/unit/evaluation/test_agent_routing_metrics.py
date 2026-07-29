@@ -13,8 +13,8 @@ import pytest
 from scripts.agent_routing_eval.dataset import AgentRoutingCase
 from scripts.agent_routing_eval.metrics import (
     NO_MAJORITY,
-    _validated_threshold_report,
     _validate_stability,
+    _validated_threshold_report,
     compute_metrics,
     thresholds_pass,
 )
