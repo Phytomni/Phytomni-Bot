@@ -175,6 +175,17 @@ class _PreparedReviewTurn:
     section: ReviewSection | None
 
 
+@dataclass(frozen=True, slots=True)
+class _RestoredReviewSettlement:
+    """Validated durable identity needed to reconstruct one Review turn."""
+
+    operation: ReviewConversationOperation
+    stable_thread_id: str
+    turn_id: str
+    candidate_thread_id: str | None
+    report_revision: int
+
+
 ChatSeam = Callable[[str], Awaitable[Mapping[str, Any] | str | None]]
 
 
@@ -971,6 +982,205 @@ def _review_summary(
     )
 
 
+def _validate_review_settlement_version(metadata: Mapping[str, Any]) -> None:
+    """Require the durable Review marker version supported by this adapter."""
+    version = metadata.get("version")
+    if (
+        isinstance(version, bool)
+        or not isinstance(version, int)
+        or version != 1
+    ):
+        raise ReviewClarificationError(
+            "Review settlement metadata version is unsupported."
+        )
+
+
+def _review_settlement_operation(
+    metadata: Mapping[str, Any],
+) -> ReviewConversationOperation:
+    """Decode the durable operation while preserving its public error text."""
+    operation_value = metadata.get("operation")
+    if not isinstance(operation_value, str):
+        raise ReviewClarificationError(
+            "Review settlement metadata is invalid."
+        )
+    try:
+        return ReviewConversationOperation(operation_value)
+    except ValueError as exc:
+        raise ReviewClarificationError(
+            "Review settlement metadata is invalid."
+        ) from exc
+
+
+def _review_settlement_state(metadata: Mapping[str, Any]) -> str:
+    """Validate the marker state allowed during restart reconstruction."""
+    settlement_state = metadata.get("settlement_state")
+    if settlement_state not in {"pending", "settling", "promoting"}:
+        raise ReviewClarificationError(
+            "Review settlement state is invalid for restart."
+        )
+    return settlement_state
+
+
+def _review_settlement_identity(
+    metadata: Mapping[str, Any],
+    *,
+    expected_stable_thread_id: str | None,
+    expected_turn_id: str | None,
+) -> tuple[str, str]:
+    """Validate stable and turn identities against the caller's namespace."""
+    stable = _required_thread_id(
+        metadata.get("stable_thread_id"), "stable"
+    )
+    turn_id = _required_turn_id(metadata.get("turn_id"))
+    if expected_turn_id is not None and turn_id != expected_turn_id:
+        raise ReviewClarificationError(
+            "Review settlement turn id does not match the staged turn."
+        )
+    if (
+        expected_stable_thread_id is not None
+        and stable != expected_stable_thread_id
+    ):
+        raise ReviewClarificationError(
+            "Review settlement stable checkpoint is outside its namespace."
+        )
+    return stable, turn_id
+
+
+def _review_settlement_candidate(
+    metadata: Mapping[str, Any],
+    operation: ReviewConversationOperation,
+    stable: str,
+    turn_id: str,
+) -> str | None:
+    """Validate the turn-scoped candidate identity when one is required."""
+    candidate_value = metadata.get("candidate_thread_id")
+    if operation in {
+        ReviewConversationOperation.NEW_REVIEW,
+        ReviewConversationOperation.SCOPE_CHANGE,
+    }:
+        candidate = _required_thread_id(candidate_value, "candidate")
+        if candidate != _candidate_thread_id(stable, turn_id):
+            raise ReviewClarificationError(
+                "Review settlement candidate is not turn-scoped."
+            )
+        return candidate
+    if candidate_value is not None:
+        raise ReviewClarificationError(
+            "Review settlement has an unexpected candidate thread."
+        )
+    return None
+
+
+def _review_settlement_revision(metadata: Mapping[str, Any]) -> int:
+    """Validate the non-negative report revision stored with a marker."""
+    report_revision = metadata.get("report_revision")
+    if (
+        isinstance(report_revision, bool)
+        or not isinstance(report_revision, int)
+        or report_revision < 0
+    ):
+        raise ReviewClarificationError(
+            "Review settlement revision metadata is invalid."
+        )
+    return report_revision
+
+
+def _valid_review_claim_text(value: object) -> bool:
+    """Check one bounded textual claim field from durable marker metadata."""
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and len(value) <= 64
+    )
+
+
+def _valid_review_claim_fence(value: object) -> bool:
+    """Check the monotonic fence value carried by a durable marker."""
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, int)
+        and 1 <= value <= 2**63 - 1
+    )
+
+
+def _valid_review_claim_base_context(value: object) -> bool:
+    """Check the base context version carried by a durable marker."""
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, int)
+        and value >= 0
+    )
+
+
+def _validate_review_settlement_claim(
+    metadata: Mapping[str, Any], settlement_state: str
+) -> None:
+    """Validate claim fields only for markers already in-flight."""
+    claim_keys = (
+        "settlement_claim_token",
+        "settlement_claimed_at",
+        "settlement_fence",
+        "settlement_ledger_version",
+        "settlement_base_context_version",
+    )
+    if settlement_state in {"settling", "promoting"}:
+        if not all(
+            (
+                _valid_review_claim_text(
+                    metadata.get("settlement_claim_token")
+                ),
+                _valid_review_claim_text(
+                    metadata.get("settlement_claimed_at")
+                ),
+                _valid_review_claim_fence(metadata.get("settlement_fence")),
+                _valid_review_claim_text(
+                    metadata.get("settlement_ledger_version")
+                ),
+                _valid_review_claim_base_context(
+                    metadata.get("settlement_base_context_version")
+                ),
+            )
+        ):
+            raise ReviewClarificationError(
+                "Review settlement claim metadata is invalid."
+            )
+        return
+    if any(key in metadata for key in claim_keys):
+        raise ReviewClarificationError(
+            "Review settlement claim metadata is invalid."
+        )
+
+
+def _parse_review_settlement_metadata(
+    metadata: Mapping[str, Any],
+    *,
+    expected_stable_thread_id: str | None,
+    expected_turn_id: str | None,
+) -> _RestoredReviewSettlement:
+    """Parse and validate durable fields before loading private checkpoints."""
+    _validate_review_settlement_version(metadata)
+    operation = _review_settlement_operation(metadata)
+    settlement_state = _review_settlement_state(metadata)
+    stable, turn_id = _review_settlement_identity(
+        metadata,
+        expected_stable_thread_id=expected_stable_thread_id,
+        expected_turn_id=expected_turn_id,
+    )
+    candidate = _review_settlement_candidate(
+        metadata, operation, stable, turn_id
+    )
+    report_revision = _review_settlement_revision(metadata)
+    _validate_review_settlement_claim(metadata, settlement_state)
+    return _RestoredReviewSettlement(
+        operation=operation,
+        stable_thread_id=stable,
+        turn_id=turn_id,
+        candidate_thread_id=candidate,
+        report_revision=report_revision,
+    )
+
+
 class ReviewConversationAdapter:
     """Prepare bounded Review turns and produce bounded context deltas."""
 
@@ -1276,121 +1486,25 @@ class ReviewConversationAdapter:
         expected_turn_id: str | None = None,
     ) -> None:
         """Reconstruct a pending turn from durable metadata after restart."""
-        version = metadata.get("version")
-        if (
-            isinstance(version, bool)
-            or not isinstance(version, int)
-            or version != 1
-        ):
-            raise ReviewClarificationError(
-                "Review settlement metadata version is unsupported."
-            )
-        operation_value = metadata.get("operation")
-        if not isinstance(operation_value, str):
-            raise ReviewClarificationError(
-                "Review settlement metadata is invalid."
-            )
-        try:
-            operation = ReviewConversationOperation(operation_value)
-        except ValueError as exc:
-            raise ReviewClarificationError(
-                "Review settlement metadata is invalid."
-            ) from exc
-        settlement_state = metadata.get("settlement_state")
-        if settlement_state not in {"pending", "settling", "promoting"}:
-            raise ReviewClarificationError(
-                "Review settlement state is invalid for restart."
-            )
-        stable = _required_thread_id(
-            metadata.get("stable_thread_id"), "stable"
+        restored = _parse_review_settlement_metadata(
+            metadata,
+            expected_stable_thread_id=expected_stable_thread_id,
+            expected_turn_id=expected_turn_id,
         )
-        turn_id = _required_turn_id(metadata.get("turn_id"))
-        if expected_turn_id is not None and turn_id != expected_turn_id:
-            raise ReviewClarificationError(
-                "Review settlement turn id does not match the staged turn."
-            )
-        if (
-            expected_stable_thread_id is not None
-            and stable != expected_stable_thread_id
-        ):
-            raise ReviewClarificationError(
-                "Review settlement stable checkpoint is outside its namespace."
-            )
-        candidate_value = metadata.get("candidate_thread_id")
-        candidate: str | None = None
-        if operation in {
-            ReviewConversationOperation.NEW_REVIEW,
-            ReviewConversationOperation.SCOPE_CHANGE,
-        }:
-            candidate = _required_thread_id(candidate_value, "candidate")
-            if candidate != _candidate_thread_id(stable, turn_id):
-                raise ReviewClarificationError(
-                    "Review settlement candidate is not turn-scoped."
-                )
-        elif candidate_value is not None:
-            raise ReviewClarificationError(
-                "Review settlement has an unexpected candidate thread."
-            )
-        report_revision = metadata.get("report_revision")
-        if (
-            isinstance(report_revision, bool)
-            or not isinstance(report_revision, int)
-            or report_revision < 0
-        ):
-            raise ReviewClarificationError(
-                "Review settlement revision metadata is invalid."
-            )
-        if settlement_state in {"settling", "promoting"}:
-            claim_token = metadata.get("settlement_claim_token")
-            claimed_at = metadata.get("settlement_claimed_at")
-            fence = metadata.get("settlement_fence")
-            ledger_version = metadata.get("settlement_ledger_version")
-            base_context_version = metadata.get(
-                "settlement_base_context_version"
-            )
-            if (
-                not isinstance(claim_token, str)
-                or not claim_token.strip()
-                or len(claim_token) > 64
-                or not isinstance(claimed_at, str)
-                or not claimed_at.strip()
-                or len(claimed_at) > 64
-                or isinstance(fence, bool)
-                or not isinstance(fence, int)
-                or fence < 1
-                or fence > 2**63 - 1
-                or not isinstance(ledger_version, str)
-                or not ledger_version.strip()
-                or len(ledger_version) > 64
-                or isinstance(base_context_version, bool)
-                or not isinstance(base_context_version, int)
-                or base_context_version < 0
-            ):
-                raise ReviewClarificationError(
-                    "Review settlement claim metadata is invalid."
-                )
-        elif (
-            "settlement_claim_token" in metadata
-            or "settlement_claimed_at" in metadata
-            or "settlement_fence" in metadata
-            or "settlement_ledger_version" in metadata
-            or "settlement_base_context_version" in metadata
-        ):
-            raise ReviewClarificationError(
-                "Review settlement claim metadata is invalid."
-            )
         answer = _answer_from_result(result or {})
         if not _usable_response_text(answer):
             raise ReviewClarificationError(
                 "Review settlement has no usable current answer."
             )
         self._agent = agent
-        self._stable_thread_id = stable
+        self._stable_thread_id = restored.stable_thread_id
         self._thread_id = self._stable_thread_id
-        self._candidate_thread_id = candidate
-        self._execution_thread_id = candidate or self._stable_thread_id
-        self._turn_id = turn_id
-        self._report_revision = report_revision
+        self._candidate_thread_id = restored.candidate_thread_id
+        self._execution_thread_id = (
+            restored.candidate_thread_id or self._stable_thread_id
+        )
+        self._turn_id = restored.turn_id
+        self._report_revision = restored.report_revision
         self._settled = False
         self._candidate_discarded = False
         self._operation_successful = True
@@ -1400,7 +1514,7 @@ class ReviewConversationAdapter:
         stable_snapshot = extract_review_checkpoint(stable_state)
         stable_document = extract_review_report_document(stable_state)
         if (
-            operation
+            restored.operation
             in {
                 ReviewConversationOperation.FOLLOW_UP,
                 ReviewConversationOperation.LOCAL_REVISION,
@@ -1411,7 +1525,7 @@ class ReviewConversationAdapter:
             raise ReviewClarificationError(
                 "The active Review checkpoint is unavailable."
             )
-        if operation is not ReviewConversationOperation.NEW_REVIEW and not (
+        if restored.operation is not ReviewConversationOperation.NEW_REVIEW and not (
             _usable_report_document(stable_document)
         ):
             raise ReviewClarificationError(
@@ -1420,9 +1534,9 @@ class ReviewConversationAdapter:
         self._active_snapshot = stable_snapshot
         self._report_document = stable_document
         candidate_state: object | None = None
-        if candidate is not None:
+        if restored.candidate_thread_id is not None:
             candidate_state = await _load_review_checkpoint_state(
-                agent, candidate
+                agent, restored.candidate_thread_id
             )
             candidate_values = _state_values(candidate_state)
             candidate_snapshot = extract_review_checkpoint(candidate_state)
@@ -1458,7 +1572,7 @@ class ReviewConversationAdapter:
         )
         self._prepared = _PreparedReviewTurn(
             projection=projection,
-            operation=operation,
+            operation=restored.operation,
             snapshot=stable_snapshot,
             section=None,
         )
@@ -1468,7 +1582,7 @@ class ReviewConversationAdapter:
         self._ordered_doc_list = _reference_metadata(
             candidate_state if candidate_state is not None else stable_state
         )
-        if operation is ReviewConversationOperation.LOCAL_REVISION:
+        if restored.operation is ReviewConversationOperation.LOCAL_REVISION:
             self._pending_report_text = answer
             self._report_document = _report_document_from_text(answer)
 
