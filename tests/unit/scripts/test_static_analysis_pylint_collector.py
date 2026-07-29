@@ -63,6 +63,80 @@ def test_r0801_resolves_short_namespace_package_module() -> None:
     assert finding.peer_path == "tests/server/test_a2ui_actions_http.py"
 
 
+def test_r0801_uses_source_hint_to_disambiguate_short_module(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A source span resolves duplicate short module labels safely."""
+    first = tmp_path / "tests/unit/test_models.py"
+    second = tmp_path / "tests/server/test_models.py"
+    first.parent.mkdir(parents=True)
+    second.parent.mkdir(parents=True)
+    first.write_text("def shared():\n    return 'unit'\n", encoding="utf-8")
+    second.write_text("def shared():\n    return 'server'\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "scripts.static_analysis.collectors.pylint.tracked_git_files",
+        lambda _root, _patterns: (first, second),
+    )
+    document = [
+        {
+            "message-id": "R0801",
+            "path": "tests/unit/test_models.py",
+            "line": 1,
+            "message": (
+                "Similar lines in 2 files\n"
+                "==test_models:[1:2]\n"
+                "==test_models:[1:2]\n"
+                "    return 'unit'\n"
+            ),
+        }
+    ]
+
+    finding = parse_pylint_json(
+        tmp_path, json.dumps(document), "pylint 4.0.5"
+    )
+
+    assert finding[0].path == "tests/unit/test_models.py"
+
+
+def test_r0801_reports_all_ambiguous_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Ambiguous endpoint evidence lists every candidate and fails closed."""
+    first = tmp_path / "tests/unit/test_models.py"
+    second = tmp_path / "tests/server/test_models.py"
+    first.parent.mkdir(parents=True)
+    second.parent.mkdir(parents=True)
+    source = "def shared():\n    return 'same'\n"
+    first.write_text(source, encoding="utf-8")
+    second.write_text(source, encoding="utf-8")
+    monkeypatch.setattr(
+        "scripts.static_analysis.collectors.pylint.tracked_git_files",
+        lambda _root, _patterns: (first, second),
+    )
+    document = [
+        {
+            "message-id": "R0801",
+            "path": "tests/unit/test_models.py",
+            "line": 1,
+            "message": (
+                "Similar lines in 2 files\n"
+                "==test_models:[1:2]\n"
+                "==test_models:[1:2]\n"
+                "def shared():\n"
+                "    return 'same'\n"
+            ),
+        }
+    ]
+
+    with pytest.raises(
+        CollectionError,
+        match="tests/server/test_models.py.*tests/unit/test_models.py",
+    ):
+        parse_pylint_json(tmp_path, json.dumps(document), "pylint 4.0.5")
+
+
 def test_r0903_resolves_the_class_symbol() -> None:
     """R0903 points to the exact class rather than only its file."""
     finding = parse_pylint_json(
