@@ -14,8 +14,14 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import AsyncIterator, Mapping, Sequence
-from typing import Any
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Mapping,
+    Sequence,
+)
+from typing import Any, cast
 
 from ..mcp.result_formatting import AguiEvent
 from ..storage.path_policy import IdFactory
@@ -255,4 +261,4 @@ async def _close_async_iterator(stream: AsyncIterator[AguiEvent]) -> None:
     """Propagate consumer shutdown into upstream async generators."""
     closer = getattr(stream, "aclose", None)
     if callable(closer):
-        await closer()
+        await cast(Callable[[], Awaitable[None]], closer)()

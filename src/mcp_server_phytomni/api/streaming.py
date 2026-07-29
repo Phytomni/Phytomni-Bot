@@ -13,11 +13,11 @@ bind application-specific registry, graph, and request-context seams through
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from importlib import import_module
-from typing import Any
+from typing import Any, cast
 
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
@@ -722,7 +722,7 @@ async def stream_chat_completion(
             try:
                 closer = getattr(sse_lines, "aclose", None)
                 if callable(closer):
-                    await closer()
+                    await cast(Callable[[], Awaitable[None]], closer)()
             finally:
                 if (
                     prepared.agent_slug is not None

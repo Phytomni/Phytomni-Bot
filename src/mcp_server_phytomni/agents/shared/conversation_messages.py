@@ -22,7 +22,11 @@ def normalize_conversation_messages(
     for message in conversation_messages:
         role = message.get("role")
         content = message.get("content")
-        if role in {"user", "assistant"} and isinstance(content, str):
+        if (
+            isinstance(role, str)
+            and role in {"user", "assistant"}
+            and isinstance(content, str)
+        ):
             normalized.append({"role": role, "content": content})
     return normalized
 
