@@ -503,6 +503,19 @@ def test_metrics_are_json_compatible_and_have_fixed_schema_version() -> None:
     json.dumps(metrics, ensure_ascii=False, allow_nan=False)
 
 
+def _complete_threshold_report() -> dict[str, Any]:
+    cases = tuple(
+        case(f"case-{index:03d}", agent)
+        for index, agent in enumerate(CANONICAL_AGENTS, start=1)
+    )
+    outcomes = tuple(
+        outcome(f"case-{index:03d}", repeat, agent, agent)
+        for index, agent in enumerate(CANONICAL_AGENTS, start=1)
+        for repeat in range(1, 4)
+    )
+    return compute_metrics(cases=cases, outcomes=outcomes, repeat_count=3)
+
+
 def test_thresholds_require_complete_three_repeat_report() -> None:
     cases = tuple(
         case(f"case-{index:03d}", agent)
@@ -601,3 +614,113 @@ def test_thresholds_rejects_structural_and_count_inconsistency() -> None:
         },
     }
     assert thresholds_pass(mismatched) is False
+
+
+def test_thresholds_rejects_cross_block_projection_mismatch() -> None:
+    report = _complete_threshold_report()
+    majority = {
+        **report["majority"],
+        "top1_correct": 9,
+        "top1_accuracy": 0.9,
+        "dispatchable_correct": 9,
+        "dispatchable_accuracy": 0.9,
+        "wilson_95": [0.5958499732047616, 0.9821237869049271],
+    }
+    language = {
+        **report["by_language"],
+        "en": {
+            **report["by_language"]["en"],
+            "top1_correct": 9,
+            "top1_accuracy": 0.9,
+            "dispatchable_correct": 9,
+            "dispatchable_accuracy": 0.9,
+        },
+    }
+    forged = {**report, "majority": majority, "by_language": language}
+
+    assert thresholds_pass(forged) is False
+
+
+def test_thresholds_rejects_majority_language_total_mismatch() -> None:
+    report = _complete_threshold_report()
+    majority = {
+        **report["majority"],
+        "top1_correct": 9,
+        "top1_accuracy": 0.9,
+        "dispatchable_correct": 9,
+        "dispatchable_accuracy": 0.9,
+        "wilson_95": [0.5958499732047616, 0.9821237869049271],
+    }
+
+    assert thresholds_pass({**report, "majority": majority}) is False
+
+
+def test_thresholds_rejects_language_dispatchable_above_top1() -> None:
+    report = _complete_threshold_report()
+    language = {
+        **report["by_language"],
+        "en": {
+            **report["by_language"]["en"],
+            "top1_correct": 0,
+            "top1_accuracy": 0.0,
+            "dispatchable_correct": 1,
+            "dispatchable_accuracy": 0.1,
+        },
+    }
+
+    assert thresholds_pass({**report, "by_language": language}) is False
+
+
+def test_thresholds_rejects_confusion_diagonal_mismatch() -> None:
+    report = _complete_threshold_report()
+    chat_row = {
+        **report["confusion_matrix"]["ChatAgent"],
+        "ChatAgent": 0,
+        PROVIDER_ERROR: 1,
+    }
+    confusion = {
+        **report["confusion_matrix"],
+        "ChatAgent": chat_row,
+    }
+
+    assert thresholds_pass({**report, "confusion_matrix": confusion}) is False
+
+
+def test_thresholds_rejects_forged_provider_errors_and_completion() -> None:
+    report = _complete_threshold_report()
+    errors = {**report["errors"], "provider": 1}
+
+    assert thresholds_pass({**report, "errors": errors}) is False
+
+    overlapping = {
+        **report["errors"],
+        "provider": 10,
+        "routing": 10,
+        "schema": 11,
+    }
+    forged = {
+        **report,
+        "errors": overlapping,
+        "provider_completion": 2 / 3,
+    }
+    assert thresholds_pass(forged) is False
+
+
+def test_thresholds_rejects_unrepresentable_stability() -> None:
+    report = _complete_threshold_report()
+    forged = {
+        **report,
+        "stability": {"exact": 0.91, "modal_agreement": 0.91},
+    }
+
+    assert thresholds_pass(forged) is False
+
+
+def test_thresholds_rejects_impossible_stability_bounds() -> None:
+    report = _complete_threshold_report()
+    forged = {
+        **report,
+        "stability": {"exact": 0.2, "modal_agreement": 0.4},
+    }
+
+    assert thresholds_pass(forged) is False
