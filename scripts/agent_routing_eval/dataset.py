@@ -91,6 +91,8 @@ class WorkbookSource(BaseModel):
     sheet: str
     row: int = Field(gt=0)
     source_id: str
+    source_id_column: Literal["A", "B", "C", "D"]
+    source_text_column: Literal["A", "B", "C", "D"]
 
     _strings = field_validator("*")(
         classmethod(lambda cls, value: _validate_string(value))
@@ -258,11 +260,22 @@ def _validate_questions(
 
 
 def _validate_gene_identity(
-    agent: str,
-    expected_core_args: dict[str, JsonValue],
-    source_text: str,
+    case: AgentRoutingCase,
     split: str,
 ) -> None:
+    agent = case.expected_agent
+    expected_core_args = case.expected_core_args
+    if (
+        isinstance(case.source, WorkbookSource)
+        and case.source.workbook == "Supplementary Data 7.xlsx"
+        and agent in {"DeepGenomeAgent", "DigitalDesignAgent"}
+    ):
+        gene_id = expected_core_args.get("gene_id")
+        if gene_id != case.source.source_id:
+            raise DatasetValidationError(
+                f"{split}: Data 7 gene ID must equal workbook source ID"
+            )
+        return
     gene_values = [
         expected_core_args[key]
         for key in _GENE_KEYS
@@ -271,6 +284,7 @@ def _validate_gene_identity(
     if agent == "BriefGeneAgent":
         gene_values.append(expected_core_args.get("user_query"))
     for gene_id in gene_values:
+        source_text = case.transformation.source_text or ""
         if not isinstance(gene_id, str) or gene_id not in source_text:
             label = "BriefGene ID" if agent == "BriefGeneAgent" else "gene ID"
             raise DatasetValidationError(
@@ -318,12 +332,7 @@ def _validate_case_arguments(
                     raise DatasetValidationError(
                         f"{split}: unknown or deprecated TO ID"
                     )
-            _validate_gene_identity(
-                agent,
-                case.expected_core_args,
-                case.transformation.source_text or "",
-                split,
-            )
+            _validate_gene_identity(case, split)
 
 
 def validate_dataset(
@@ -386,23 +395,42 @@ def _workbook_path(
     return workbook_path
 
 
-def _workbook_values(source: WorkbookSource, workbook: Any) -> set[str]:
+def _workbook_cell_value(
+    source: WorkbookSource, workbook: Any, column: str
+) -> str:
     if source.sheet not in workbook.sheetnames:
         raise DatasetValidationError("workbook sheet is missing")
     sheet = workbook[source.sheet]
+    if source.row > sheet.max_row:
+        raise DatasetValidationError("workbook physical row is missing")
     try:
-        row = next(
+        value = next(
             sheet.iter_rows(
                 min_row=source.row,
                 max_row=source.row,
+                min_col=ord(column) - ord("A") + 1,
+                max_col=ord(column) - ord("A") + 1,
                 values_only=True,
             )
-        )
+        )[0]
     except StopIteration as exc:
         raise DatasetValidationError(
             "workbook physical row is missing"
         ) from exc
-    return {str(value).strip() for value in row if value is not None}
+    if value is None:
+        column_index = ord(column) - ord("A") + 1
+        for merged_range in sheet.merged_cells.ranges:
+            if (
+                merged_range.min_row <= source.row <= merged_range.max_row
+                and merged_range.min_col
+                <= column_index
+                <= merged_range.max_col
+            ):
+                value = sheet.cell(
+                    merged_range.min_row, merged_range.min_col
+                ).value
+                break
+    return "" if value is None else str(value).strip()
 
 
 def _verify_workbook_case(
@@ -418,13 +446,17 @@ def _verify_workbook_case(
     workbook_path = _workbook_path(source, source_root, resolved_root)
     if source.workbook not in workbooks:
         workbooks[source.workbook] = load_workbook(
-            workbook_path, read_only=True, data_only=True
+            workbook_path, data_only=True
         )
-    values = _workbook_values(source, workbooks[source.workbook])
-    if source.source_id.strip() not in values:
+    workbook = workbooks[source.workbook]
+    source_id = _workbook_cell_value(source, workbook, source.source_id_column)
+    if source.source_id != source_id:
         raise DatasetValidationError("workbook source ID is absent")
     source_text = case.transformation.source_text
-    if source_text is None or source_text.strip() not in values:
+    workbook_text = _workbook_cell_value(
+        source, workbook, source.source_text_column
+    )
+    if source_text is None or source_text != workbook_text:
         raise DatasetValidationError("workbook source text is absent")
 
 

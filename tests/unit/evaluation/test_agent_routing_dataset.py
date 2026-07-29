@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from scripts.agent_routing_eval.dataset import (
     AgentRoutingCase,
     DatasetValidationError,
+    WorkbookSource,
     load_dataset,
     validate_dataset,
     validate_dataset_pair,
@@ -35,6 +36,52 @@ pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[3]
 DATASET_ROOT = ROOT / "evaluation" / "agent_routing" / "datasets"
+_WORKBOOK_COLUMNS = {
+    ("Supplementary Data 3.xlsx", "KnowledgeAgent"): ("A", "C"),
+    ("Supplementary Data 4.xlsx", "KnowledgeAgent"): ("A", "B"),
+    ("Supplementary Data 4.xlsx", "InSilicoResearchAgent"): ("A", "D"),
+    ("Supplementary Data 5.xlsx", "BriefGeneAgent"): ("A", "C"),
+    ("Supplementary Data 5.xlsx", "DataAgent"): ("A", "C"),
+    ("Supplementary Data 5.xlsx", "GeneNetworkAgent"): ("A", "C"),
+    ("Supplementary Data 6.xlsx", "AnalystAgent"): ("A", "B"),
+    ("Supplementary Data 7.xlsx", "DeepGenomeAgent"): ("B", "D"),
+    ("Supplementary Data 7.xlsx", "DigitalDesignAgent"): ("B", "D"),
+    ("Supplementary Data 17.xlsx", "ReviewAgent"): ("A", "B"),
+}
+_REVIEW_TRANSLATIONS = {
+    "test-review-006": (
+        9,
+        "S6",
+        "What are the advantages of gene synthesis？",
+        "基因合成有哪些优势？",
+    ),
+    "test-review-007": (
+        10,
+        "S7",
+        "What are the applications of the epitranscriptome in breeding?",
+        "表观转录组在育种中有哪些应用？",
+    ),
+    "test-review-008": (
+        11,
+        "S8",
+        "What are the applications of the epigenome in breeding?",
+        "表观基因组在育种中有哪些应用？",
+    ),
+    "test-review-009": (
+        12,
+        "S9",
+        "How does the crosstalk between salicylic acid (SA) and jasmonic "
+        "acid (JA) influence plant-virus interactions?",
+        "水杨酸（SA）和茉莉酸（JA）之间的串扰如何影响植物-病毒相互作用？",
+    ),
+    "test-review-010": (
+        13,
+        "S10",
+        "How does the transport and distribution of sucrose in the carbon "
+        "cycle of plants affect crop yield?",
+        "植物碳循环中蔗糖的运输和分配如何影响作物产量？",
+    ),
+}
 
 
 def test_repository_routing_datasets_pass_all_integrity_rules() -> None:
@@ -44,6 +91,72 @@ def test_repository_routing_datasets_pass_all_integrity_rules() -> None:
     validate_dataset(dev_cases, "dev")
     validate_dataset(test_cases, "test")
     validate_dataset_pair(dev_cases, test_cases)
+
+
+def test_repository_workbook_contracts_are_column_aware() -> None:
+    """Lock workbook columns and the corrected Data 7 identity boundary."""
+    cases = (
+        *load_dataset(DATASET_ROOT / "dev_v1.jsonl"),
+        *load_dataset(DATASET_ROOT / "test_v1.jsonl"),
+    )
+    workbook_cases = 0
+    for case in cases:
+        if not isinstance(case.source, WorkbookSource):
+            continue
+        workbook_cases += 1
+        source = case.source
+        assert (
+            source.source_id_column,
+            source.source_text_column,
+        ) == _WORKBOOK_COLUMNS[(source.workbook, case.expected_agent)]
+        if source.workbook == "Supplementary Data 7.xlsx":
+            assert case.expected_core_args["gene_id"] == source.source_id
+            assert case.transformation.source_text != source.source_id
+    assert workbook_cases == 135
+
+
+def test_repository_review_translations_match_retained_topics() -> None:
+    """Lock every retained Data 17 Chinese translation to its source topic."""
+    cases = {
+        case.case_id: case
+        for case in load_dataset(DATASET_ROOT / "test_v1.jsonl")
+    }
+    for case_id, expected in _REVIEW_TRANSLATIONS.items():
+        row, source_id, source_text, question = expected
+        case = cases[case_id]
+        assert isinstance(case.source, WorkbookSource)
+        assert case.question == question
+        assert case.transformation.kind == "faithful_translation"
+        assert case.transformation.source_text == source_text
+        assert case.source.row == row
+        assert case.source.source_id == source_id
+        assert case.source.source_id_column == "A"
+        assert case.source.source_text_column == "B"
+
+
+def test_data7_gene_identity_is_bound_to_column_b_source_id() -> None:
+    """Keep Data 7 identity independent from the selected D-column text."""
+    cases = list(load_dataset(DATASET_ROOT / "test_v1.jsonl"))
+    index = next(
+        index
+        for index, case in enumerate(cases)
+        if case.expected_agent == "DeepGenomeAgent"
+    )
+    case = cases[index]
+    assert isinstance(case.source, WorkbookSource)
+    assert case.source.workbook == "Supplementary Data 7.xlsx"
+    assert case.expected_core_args["gene_id"] == case.source.source_id
+    assert case.source.source_id not in (case.transformation.source_text or "")
+    cases[index] = case.model_copy(
+        update={
+            "expected_core_args": {
+                **case.expected_core_args,
+                "gene_id": "not-the-column-b-identifier",
+            }
+        }
+    )
+    with pytest.raises(DatasetValidationError, match="Data 7 gene ID"):
+        validate_dataset(cases, "test")
 
 
 def valid_case_payload() -> dict[str, object]:
@@ -117,6 +230,8 @@ def test_workbook_verifier_checks_row_id_and_source_text(
                 "sheet": "Sheet1",
                 "row": 4,
                 "source_id": "Q_1",
+                "source_id_column": "A",
+                "source_text_column": "B",
             },
             "transformation": {
                 "kind": "verbatim",
@@ -127,6 +242,56 @@ def test_workbook_verifier_checks_row_id_and_source_text(
     verify_workbook_sources(
         (AgentRoutingCase.model_validate(case),), source_root
     )
+
+
+@pytest.mark.parametrize("field", ["source_id_column", "source_text_column"])
+def test_workbook_source_requires_declared_columns(field: str) -> None:
+    """Reject incomplete workbook provenance before source verification."""
+    case = valid_case_payload()
+    source = {
+        "kind": "workbook",
+        "workbook": "source.xlsx",
+        "sheet": "Sheet1",
+        "row": 1,
+        "source_id": "Q_1",
+        "source_id_column": "A",
+        "source_text_column": "B",
+    }
+    source.pop(field)
+    case.update(
+        {
+            "source": source,
+            "transformation": {
+                "kind": "verbatim",
+                "source_text": "Plant height in rice",
+            },
+        }
+    )
+    with pytest.raises(ValidationError):
+        AgentRoutingCase.model_validate(case)
+
+
+def test_workbook_verifier_uses_only_declared_cells(
+    tmp_path: Path,
+) -> None:
+    """Reject values that only occur in a non-declared column on the row."""
+    case, root = _workbook_case(tmp_path)
+    workbook: Any = __import__("openpyxl").load_workbook(root / "source.xlsx")
+    sheet = workbook["Sheet1"]
+    sheet.cell(1, 3, "Q_2")
+    sheet.cell(1, 4, "Plant width in rice")
+    workbook.save(root / "source.xlsx")
+    workbook.close()
+
+    source = case.source.model_copy(update={"source_id_column": "C"})
+    wrong_id_column = case.model_copy(update={"source": source})
+    with pytest.raises(DatasetValidationError, match="source ID"):
+        verify_workbook_sources((wrong_id_column,), root)
+
+    source = case.source.model_copy(update={"source_text_column": "D"})
+    wrong_text_column = case.model_copy(update={"source": source})
+    with pytest.raises(DatasetValidationError, match="source text"):
+        verify_workbook_sources((wrong_text_column,), root)
 
 
 def test_workbook_verifier_rejects_missing_source_text() -> None:
@@ -140,6 +305,8 @@ def test_workbook_verifier_rejects_missing_source_text() -> None:
                 "sheet": "Sheet1",
                 "row": 1,
                 "source_id": "Q_1",
+                "source_id_column": "A",
+                "source_text_column": "B",
             },
             "transformation": {"kind": "verbatim"},
         }
@@ -187,6 +354,8 @@ def _synthetic_case(
                 "sheet": "Sheet1",
                 "row": 1,
                 "source_id": case_id,
+                "source_id_column": "A",
+                "source_text_column": "B",
             }
             transformation = {
                 "kind": "verbatim",
@@ -372,6 +541,8 @@ def test_validate_dataset_pair_collision_policies() -> None:
         "sheet": "Sheet1",
         "row": 1,
         "source_id": "Q_SHARED",
+        "source_id_column": "A",
+        "source_text_column": "B",
     }
     shared_transformation = {
         "kind": "verbatim",
@@ -404,6 +575,8 @@ def test_validate_dataset_pair_collision_policies() -> None:
         "sheet": "Sheet1",
         "row": 1,
         "source_id": "Q_ANALYST",
+        "source_id_column": "A",
+        "source_text_column": "B",
     }
     analyst_transformation = {
         "kind": "verbatim",
@@ -439,6 +612,8 @@ def test_validate_dataset_pair_collision_policies() -> None:
         "sheet": "Sheet1",
         "row": 1,
         "source_id": "Q_CROSS_AGENT",
+        "source_id_column": "A",
+        "source_text_column": "B",
     }
     cross_agent_transformation = {
         "kind": "verbatim",
@@ -492,6 +667,8 @@ def _workbook_case(tmp_path: Path) -> tuple[AgentRoutingCase, Path]:
                 "sheet": "Sheet1",
                 "row": 1,
                 "source_id": "Q_1",
+                "source_id_column": "A",
+                "source_text_column": "B",
             },
             "transformation": {
                 "kind": "verbatim",

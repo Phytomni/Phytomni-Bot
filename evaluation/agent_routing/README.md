@@ -15,32 +15,32 @@ The read-only curation source is:
 ```
 
 Each workbook record stores the workbook basename, worksheet name, physical
-one-based row, and the literal row identifier in `source.source_id`.
-`transformation.source_text` is the retained source cell used to construct
-the prompt. Workbook verification checks both strings against exactly that
-physical row. The normal routing runtime does not access this sibling
-checkout; it is required only for the explicit provenance check below.
+one-based row, literal identifier in `source.source_id`, and closed
+`source_id_column` and `source_text_column` fields. `transformation.source_text`
+is the retained source cell used to construct the prompt. Workbook
+verification reads each declared cell on that physical row exactly; it does
+not search another cell in the row. The normal routing runtime does not access
+this sibling checkout; it is required only for the explicit provenance check
+below.
 
 The source workbooks have different column shapes. The retained cells are:
 
-| Corpus surface               | Workbook cells retained                                   |
-| ---------------------------- | --------------------------------------------------------- |
-| Knowledge                    | Data 3 column C; Data 4 column B                          |
-| Data                         | Data 5 column C                                           |
-| Analyst                      | Data 6 column B                                           |
-| BriefGene                    | Data 5 column C containing the exact requested identifier |
-| DeepGenome and DigitalDesign | Data 7 column B exact gene identifier                     |
-| Review                       | Data 17 column B                                          |
-| InSilicoResearch             | Data 4 column D article title                             |
-| GeneNetwork                  | Data 5 column C                                           |
+| Corpus surface               | Source ID cell | Source text cell |
+| ---------------------------- | -------------- | ---------------- |
+| Knowledge, Data 3            | A              | C                |
+| Knowledge, Data 4            | A              | B                |
+| InSilicoResearch, Data 4     | A              | D                |
+| Data, BriefGene, GeneNetwork | A              | C                |
+| Analyst, Data 6              | A              | B                |
+| DeepGenome and DigitalDesign | B              | D                |
+| Review, Data 17              | A              | B                |
 
-Data 7's column D is a long generated query that commonly names aliases but
-does not retain the exact column-B gene identifier. Task 1's identity
-validator correctly requires every requested gene ID to occur in retained
-source text. Therefore the Data 7 gene cases retain column B rather than D;
-the physical Data 7 row is still independently verified. No source response,
-model output, prompt-template, credential, or endpoint field is included in
-either JSONL file.
+For Data 7, B is the exact `source_id` and D is the exact retained
+`transformation.source_text`; D can omit the B identifier. DeepGenome and
+DigitalDesign therefore require `expected_core_args.gene_id` to equal the
+verified B-cell `source_id`, rather than treating B as D or weakening identity
+validation. No source response, model output, credential, or endpoint field
+is included in either JSONL file.
 
 ## Split Allocation
 
