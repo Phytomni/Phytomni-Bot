@@ -14,6 +14,7 @@ from typing import Any, NoReturn
 
 import pytest
 
+from mcp_server_phytomni.runtime import background_submission
 from mcp_server_phytomni.runtime.background_submission import (
     BackgroundSubmissionLaunchError,
     launch_background_submission,
@@ -85,6 +86,48 @@ async def test_launch_returns_before_operation_finishes(
         "run_id": reservation.run_id,
         "locale": "zh-CN",
     }
+
+
+def test_reservation_discards_raw_request_payload(tmp_path: Path) -> None:
+    """Reservations retain only correlation and routing metadata."""
+    db_path = str(tmp_path / "tasks.db")
+    sensitive_query = "secret prompt with attachment filenames"
+    sensitive_payload = '{"token":"secret-token","attachments":["a.fa"]}'
+
+    reservation = reserve_background_submission(
+        agent="analyst",
+        owner="alice",
+        request_info=RunRequestInfo(
+            dialogue_id="dialogue-1",
+            request_id="req-safe",
+            query=sensitive_query,
+            tool_name="AnalystAgent",
+            model="phyto-analyst",
+            request_json=sensitive_payload,
+            locale="zh-CN",
+        ),
+        db_path=db_path,
+    )
+
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    assert record.request_info.dialogue_id == "dialogue-1"
+    assert record.request_info.request_id == "req-safe"
+    assert record.request_info.tool_name == "AnalystAgent"
+    assert record.request_info.model == "phyto-analyst"
+    assert record.request_info.locale == "zh-CN"
+    assert record.request_info.query is None
+    assert record.request_info.request_json is None
+
+    with sqlite3.connect(db_path) as connection:
+        persisted = connection.execute(
+            "SELECT query, request_json FROM runs WHERE run_id = ?",
+            (reservation.run_id,),
+        ).fetchone()
+
+    assert persisted == (None, None)
+    assert sensitive_query not in str(persisted)
+    assert sensitive_payload not in str(persisted)
 
 
 @pytest.mark.asyncio
@@ -198,6 +241,89 @@ def test_task_creation_failure_compensates_reserved_run(
     assert record is not None
     assert record.status == "failed"
     assert record.error == "background_submission_launch_failed"
+
+
+def test_task_creation_compensation_init_failure_is_sanitized(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    db_path = str(tmp_path / "tasks.db")
+    reservation = reserve_background_submission(
+        agent="research",
+        owner="alice",
+        request_info=RunRequestInfo(request_id="req-launch-init", locale="en-US"),
+        db_path=db_path,
+    )
+
+    def fail_create_task(
+        _coroutine: Coroutine[Any, Any, None],
+        *,
+        name: str | None = None,
+    ) -> NoReturn:
+        del name
+        raise RuntimeError("private event loop detail")
+
+    def fail_registry(_db_path: str) -> NoReturn:
+        raise OSError("private database path")
+
+    monkeypatch.setattr(asyncio, "create_task", fail_create_task)
+    monkeypatch.setattr(background_submission, "RunRegistry", fail_registry)
+
+    async def operation() -> None:
+        return None
+
+    with pytest.raises(BackgroundSubmissionLaunchError) as caught:
+        launch_background_submission(reservation, operation, db_path=db_path)
+
+    assert "private" not in str(caught.value)
+    assert "private event loop detail" not in caplog.text
+    assert "private database path" not in caplog.text
+    assert not is_live_running(reservation.run_id)
+
+
+@pytest.mark.asyncio
+async def test_worker_registry_init_failure_settles_and_deregisters(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    db_path = str(tmp_path / "tasks.db")
+    reservation = reserve_background_submission(
+        agent="research",
+        owner="alice",
+        request_info=RunRequestInfo(request_id="req-worker-init", locale="en-US"),
+        db_path=db_path,
+    )
+    original_registry = background_submission.RunRegistry
+    calls = 0
+
+    def fail_first_registry(path: str) -> RunRegistry:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("private database path")
+        return original_registry(path)
+
+    monkeypatch.setattr(
+        background_submission,
+        "RunRegistry",
+        fail_first_registry,
+    )
+
+    async def operation() -> None:
+        pytest.fail("operation must not run after registry init failure")
+
+    launch_background_submission(reservation, operation, db_path=db_path)
+    await _wait_until(lambda: not is_live_running(reservation.run_id))
+
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    assert record.status == "failed"
+    assert record.error == "background_submission_failed"
+    assert calls == 2
+    assert "private database path" not in caplog.text
+    assert not is_live_running(reservation.run_id)
 
 
 def test_reservation_storage_failure_is_sanitized(
