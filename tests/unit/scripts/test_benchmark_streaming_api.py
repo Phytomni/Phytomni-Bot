@@ -92,6 +92,31 @@ def test_build_config_uses_env_key_and_hides_it_from_repr(
     assert "env-secret" not in repr(config)
 
 
+def test_build_config_rejects_explicit_blank_key_without_env_fallback(
+    tmp_path: Path,
+) -> None:
+    """Treat an explicitly blank key as invalid rather than omitted."""
+    query_file = tmp_path / "queries.txt"
+    query_file.write_text("question\n", encoding="utf-8")
+    args = benchmark.parse_args(
+        [
+            "--max-concurrency",
+            "1",
+            "--query-file",
+            str(query_file),
+            "--base-url",
+            "https://example.invalid/v1",
+            "--model-id",
+            "model-a",
+            "--api-key",
+            "",
+        ]
+    )
+
+    with pytest.raises(benchmark.BenchmarkInputError, match="API key"):
+        benchmark.build_config(args, {"OPENAI_API_KEY": "env-secret"})
+
+
 def test_parse_args_rejects_zero_concurrency() -> None:
     """Require at least one concurrent request slot."""
     with pytest.raises(SystemExit) as raised:
@@ -368,6 +393,39 @@ async def test_run_query_accepts_clean_eof_without_done() -> None:
     assert result.content_text == "answer"
 
 
+async def test_run_query_uses_reasoning_after_whitespace_for_ttft() -> None:
+    """Ignore whitespace-only chunks and accept reasoning-only streams."""
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(
+            200,
+            stream=_AsyncChunks(
+                [
+                    b'data: {"choices":[{"delta":{"content":"  "}}]}\n\n',
+                    (
+                        b'data: {"choices":[{"delta":'
+                        b'{"reasoning_content":"\\u5206\\u6790"}}]}\n\n'
+                    ),
+                ]
+            ),
+        )
+    )
+    clock = iter((1.0, 1.5, 2.0)).__next__
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await benchmark.run_query(
+            _runtime_config(),
+            benchmark.QueryInput(1, "question"),
+            asyncio.Semaphore(1),
+            client,
+            clock=clock,
+        )
+
+    assert result.success is True
+    assert result.ttft == pytest.approx(0.5)
+    assert result.reasoning_text == "分析"
+    assert result.content_text == "  "
+    assert result.word_count == 2
+
+
 @pytest.mark.parametrize(
     ("chunk", "message"),
     [
@@ -434,6 +492,20 @@ def test_sanitize_error_redacts_and_bounds_api_key() -> None:
     assert sanitized.startswith("<redacted>")
     assert "top-secret" not in sanitized
     assert len(sanitized) == 200
+
+
+def test_sanitize_error_redacts_key_before_normalizing_whitespace() -> None:
+    """Redact a credential even when it contains internal whitespace."""
+    api_key = "top-\nsecret"
+
+    sanitized = benchmark.sanitize_error(
+        ValueError(f"request failed for {api_key}"),
+        api_key,
+    )
+
+    assert sanitized == "request failed for <redacted>"
+    assert "top-" not in sanitized
+    assert "secret" not in sanitized
 
 
 def _successful_result(
@@ -866,12 +938,12 @@ def test_main_returns_130_without_metrics_when_interrupted(
     assert captured.err == "benchmark interrupted\n"
 
 
-def test_main_sanitizes_unexpected_runtime_failure(
+def test_main_hides_unexpected_runtime_failure_details(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Return a bounded failure without exposing runtime exception details."""
+    """Return a fixed failure without exposing runtime exception details."""
     query_file = tmp_path / "queries.txt"
     query_file.write_text("private query\n", encoding="utf-8")
 
@@ -907,7 +979,9 @@ def test_main_sanitizes_unexpected_runtime_failure(
         "单个 query 平均时间: N/A\n"
         "总词数/s: N/A\n"
     )
-    assert "<redacted> unexpected runtime failure" in captured.err
+    assert captured.err == (
+        "benchmark failed unexpectedly\n" "成功 0/1，失败 1\n"
+    )
     assert "Traceback" not in captured.err
     assert "top-secret" not in captured.out
     assert "top-secret" not in captured.err
