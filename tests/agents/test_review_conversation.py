@@ -78,7 +78,7 @@ def _projection(query: str, *, active: bool = True) -> ContextProjection:
 
 
 def _checkpoint_state() -> dict[str, Any]:
-    """Return a graph checkpoint containing more data than the adapter admits."""
+    """Return a checkpoint containing more data than the adapter admits."""
     return {
         "original_user_query": "Review drought tolerance in rice",
         "research_dimensions": ["Background", "Evidence"],
@@ -408,7 +408,7 @@ def test_review_invocation_keeps_operation_and_checkpoint_private() -> None:
 
 
 def test_review_invocation_derives_candidate_thread_from_turn_id() -> None:
-    """A new Review graph turn receives a deterministic private candidate thread."""
+    """A new Review turn receives a deterministic candidate thread."""
     projection = _projection("Review maize heat tolerance", active=False)
     dispatch = review_agent_invocation(projection, turn_id="turn-7")
 
@@ -441,7 +441,7 @@ def test_new_review_requires_a_turn_id_before_graph_execution() -> None:
 def test_prepare_requires_turn_id_for_every_review_operation(
     query: str, active: bool
 ) -> None:
-    """The direct adapter seam rejects missing turn identity for every operation."""
+    """The adapter rejects missing turn identity for every operation."""
     snapshot = _checkpoint_state() if active else None
     with pytest.raises(ReviewClarificationError, match="turn id"):
         ReviewConversationAdapter().prepare(
@@ -450,9 +450,7 @@ def test_prepare_requires_turn_id_for_every_review_operation(
 
 
 @pytest.mark.asyncio
-async def test_prepare_from_agent_rejects_stale_snapshot_when_stable_is_missing() -> (
-    None
-):
+async def test_prepare_from_agent_rejects_stale_snapshot() -> None:
     """A request-local checkpoint never substitutes for the stable thread."""
 
     class EmptyApp:
@@ -511,7 +509,7 @@ async def test_prepare_from_agent_does_not_reuse_a_prior_turn_id() -> None:
 async def test_prepare_from_agent_requires_turn_id_before_checkpoint_read(
     query: str,
 ) -> None:
-    """Every context operation fails before reading a checkpoint without turn identity."""
+    """Every context operation fails before reading without turn identity."""
     reads = 0
 
     class EmptyApp:
@@ -597,10 +595,10 @@ async def test_missing_candidate_fails_readiness_before_settlement() -> None:
         ),
     ],
 )
-async def test_restore_settlement_rejects_malformed_metadata_before_checkpoint_read(
+async def test_restore_settlement_rejects_malformed_metadata(
     metadata: dict[str, Any], message: str
 ) -> None:
-    """Restart reconstruction rejects malformed private metadata fail closed."""
+    """Restart reconstruction rejects malformed private metadata."""
     reads = 0
 
     class NoReadApp:
@@ -1111,10 +1109,10 @@ def test_scope_change_stages_focus_until_successful_settlement() -> None:
 
 
 @pytest.mark.parametrize("answer", ["", "No answer generated."])
-def test_capture_result_does_not_rescue_invalid_public_answer_with_stale_report(
+def test_capture_result_rejects_stale_report_for_invalid_answer(
     answer: str,
 ) -> None:
-    """A stale private report cannot make an invalid current result stageable."""
+    """A stale report cannot make an invalid result stageable."""
     snapshot = extract_review_checkpoint(_checkpoint_state())
     assert snapshot is not None
     adapter = ReviewConversationAdapter()
@@ -1204,7 +1202,7 @@ async def test_review_wrapper_answers_follow_up_without_running_the_graph(
 
 
 @pytest.mark.asyncio
-async def test_review_wrapper_marks_failed_when_full_graph_returns_clarification(
+async def test_review_wrapper_marks_clarification_failed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Full-graph clarification must clear the prepared success flag."""
@@ -1261,9 +1259,7 @@ async def test_revise_section_prompt_is_bounded_and_returns_section() -> None:
     assert "Evidence claim needs a replication study." in captured["prompt"]
 
 
-def test_delta_never_persists_the_full_report_and_settlement_controls_revision() -> (
-    None
-):
+def test_delta_keeps_report_bounded_and_controls_revision() -> None:
     """Context deltas stay bounded and artifact revision is success-only."""
     snapshot = extract_review_checkpoint(_checkpoint_state())
     assert snapshot is not None
@@ -1277,7 +1273,10 @@ def test_delta_never_persists_the_full_report_and_settlement_controls_revision()
         {
             "result": {
                 "formatted": {
-                    "answer": "The evidence gap is replication, not absence of evidence."
+                    "answer": (
+                        "The evidence gap is replication, not absence "
+                        "of evidence."
+                    )
                 }
             }
         }
@@ -1473,11 +1472,11 @@ async def test_executor_defers_review_checkpoint_until_explicit_ack(
 
 
 @pytest.mark.asyncio
-async def test_new_review_promotes_candidate_only_after_ack_and_reject_discards_it(
+async def test_new_review_promotes_after_ack_and_discards_on_reject(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Any,
 ) -> None:
-    """Full-graph state stays on a candidate thread until durable acceptance."""
+    """Full-graph state stays on a candidate until durable acceptance."""
     envelope = ConversationEnvelopeV1.model_validate(
         {
             "schema_version": 1,
@@ -1627,10 +1626,10 @@ async def test_new_review_promotes_candidate_only_after_ack_and_reject_discards_
 
 
 @pytest.mark.asyncio
-async def test_failed_review_ack_discards_candidate_without_advancing_stable_state(
+async def test_failed_review_ack_discards_candidate_without_stable_advance(
     tmp_path: Any,
 ) -> None:
-    """A lost promotion acknowledgement cannot advance the active checkpoint."""
+    """A lost promotion acknowledgement cannot advance the checkpoint."""
     stable_state = _checkpoint_state()
     candidate_state = {
         "original_user_query": "Review maize heat tolerance",

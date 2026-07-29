@@ -147,7 +147,7 @@ class ReviewMutationLockTimeoutError(TimeoutError):
 
 
 class ReviewMutationLock:
-    """Releaseable process or file lock held across a private checkpoint write."""
+    """Releasable lock held across a private checkpoint write."""
 
     def __init__(
         self,
@@ -484,7 +484,8 @@ class ConversationContextStore:
         with sqlite_connection(self.db_path) as connection:
             row = connection.execute(
                 "SELECT conversation_key, schema_version, context_version, "
-                "ledger_cursor, ledger_version, observed_mode, context_json, state, "
+                "ledger_cursor, ledger_version, observed_mode, context_json, "
+                "state, "
                 "checkpoint_cleanup_state, updated_at, tombstoned_at "
                 "FROM conversation_contexts WHERE conversation_key = ?",
                 (key,),
@@ -510,18 +511,21 @@ class ConversationContextStore:
         now = _now()
         with self._write() as connection:
             context = connection.execute(
-                "SELECT conversation_key, schema_version, context_version, ledger_cursor, "
-                "ledger_version, observed_mode, context_json, state, checkpoint_cleanup_state, "
-                "updated_at, tombstoned_at FROM conversation_contexts WHERE conversation_key = ?",
+                "SELECT conversation_key, schema_version, context_version, "
+                "ledger_cursor, ledger_version, observed_mode, context_json, "
+                "state, checkpoint_cleanup_state, updated_at, tombstoned_at "
+                "FROM conversation_contexts WHERE conversation_key = ?",
                 (key,),
             ).fetchone()
             current_version = 0 if context is None else context[2]
             if context is not None and context[7] == "tombstoned":
                 raise ConversationTombstonedError(key)
             existing = connection.execute(
-                "SELECT conversation_key, turn_id, operation, base_context_version, state, "
-                "selected_agent_id, route_source, result_json, delta_json, ledger_version, "
-                "created_at, updated_at, expires_at FROM conversation_turns "
+                "SELECT conversation_key, turn_id, operation, "
+                "base_context_version, state, selected_agent_id, "
+                "route_source, "
+                "result_json, delta_json, ledger_version, created_at, "
+                "updated_at, expires_at FROM conversation_turns "
                 "WHERE conversation_key = ? AND turn_id = ?",
                 (key, turn_id),
             ).fetchone()
@@ -531,14 +535,18 @@ class ConversationContextStore:
                 )
             connection.execute(
                 "INSERT INTO conversation_turns "
-                "(conversation_key, turn_id, operation, base_context_version, state, created_at, updated_at) "
+                "(conversation_key, turn_id, operation, base_context_version, "
+                "state, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, 'in_progress', ?, ?)",
                 (key, turn_id, operation, base_version, now, now),
             )
             row = connection.execute(
-                "SELECT conversation_key, turn_id, operation, base_context_version, state, "
-                "selected_agent_id, route_source, result_json, delta_json, ledger_version, "
-                "created_at, updated_at, expires_at FROM conversation_turns WHERE conversation_key = ? AND turn_id = ?",
+                "SELECT conversation_key, turn_id, operation, "
+                "base_context_version, state, selected_agent_id, "
+                "route_source, result_json, delta_json, "
+                "ledger_version, created_at, updated_at, expires_at "
+                "FROM conversation_turns WHERE conversation_key = ? "
+                "AND turn_id = ?",
                 (key, turn_id),
             ).fetchone()
         logger.debug("conversation turn begun")
@@ -674,9 +682,12 @@ class ConversationContextStore:
         result_json, delta_json = _json(staged.result), _pack_delta(staged)
         with self._write() as connection:
             row = connection.execute(
-                "SELECT conversation_key, turn_id, operation, base_context_version, state, selected_agent_id, "
-                "route_source, result_json, delta_json, ledger_version, created_at, updated_at, expires_at "
-                "FROM conversation_turns WHERE conversation_key = ? AND turn_id = ?",
+                "SELECT conversation_key, turn_id, operation, "
+                "base_context_version, state, selected_agent_id, "
+                "route_source, result_json, delta_json, "
+                "ledger_version, created_at, updated_at, expires_at "
+                "FROM conversation_turns WHERE conversation_key = ? "
+                "AND turn_id = ?",
                 (key, turn_id),
             ).fetchone()
             if row is None:
@@ -715,8 +726,9 @@ class ConversationContextStore:
             if row[4] != "in_progress":
                 raise StagedTurnConflictError((key, turn_id))
             connection.execute(
-                "UPDATE conversation_turns SET state='staged', selected_agent_id=?, route_source=?, "
-                "result_json=?, delta_json=?, ledger_version=?, updated_at=?, expires_at=? "
+                "UPDATE conversation_turns SET state='staged', "
+                "selected_agent_id=?, route_source=?, result_json=?, "
+                "delta_json=?, ledger_version=?, updated_at=?, expires_at=? "
                 "WHERE conversation_key=? AND turn_id=?",
                 (
                     staged.selected_agent_id,
@@ -750,8 +762,11 @@ class ConversationContextStore:
                         staged=True,
                     )
             row = connection.execute(
-                "SELECT conversation_key, turn_id, operation, base_context_version, state, selected_agent_id, route_source, "
-                "result_json, delta_json, ledger_version, created_at, updated_at, expires_at FROM conversation_turns WHERE conversation_key=? AND turn_id=?",
+                "SELECT conversation_key, turn_id, operation, "
+                "base_context_version, state, selected_agent_id, "
+                "route_source, result_json, delta_json, ledger_version, "
+                "created_at, updated_at, expires_at FROM conversation_turns "
+                "WHERE conversation_key=? AND turn_id=?",
                 (key, turn_id),
             ).fetchone()
         logger.debug("conversation turn staged")
@@ -761,7 +776,7 @@ class ConversationContextStore:
     def _review_record(
         delta_json: str | None,
     ) -> tuple[dict[str, Any], dict[str, Any]] | None:
-        """Return the decoded delta and private Review marker if well-shaped."""
+        """Return the decoded delta and private Review marker."""
         try:
             decoded = _decode(delta_json)
         except (TypeError, ValueError, json.JSONDecodeError):
@@ -783,7 +798,7 @@ class ConversationContextStore:
     def _with_review_record(
         decoded: dict[str, Any], marker: Mapping[str, Any]
     ) -> str | None:
-        """Replace only the private Review marker while retaining all delta bytes."""
+        """Replace the private Review marker while retaining delta bytes."""
         envelope = decoded.get("__conversation_context_store__")
         if not isinstance(envelope, Mapping):
             return None
@@ -924,9 +939,11 @@ class ConversationContextStore:
         now_value = clock.isoformat()
         with self._write() as connection:
             row = connection.execute(
-                "SELECT state, ledger_version, base_context_version, delta_json "
+                "SELECT state, ledger_version, base_context_version, "
+                "delta_json "
                 "FROM conversation_turns "
-                "WHERE conversation_key = ? AND turn_id = ?",
+                "WHERE conversation_key = ? "
+                "AND turn_id = ?",
                 (key, turn_id),
             ).fetchone()
             if row is None:
@@ -1053,7 +1070,7 @@ class ConversationContextStore:
         expected_ledger_version: str | None = None,
         expected_base_context_version: int | None = None,
     ) -> ReviewSettlementClaim:
-        """Reserve the exact staged proposal before any private checkpoint write."""
+        """Reserve the staged proposal before a private checkpoint write."""
         if (
             not isinstance(claim_token, str)
             or not claim_token
@@ -1066,7 +1083,8 @@ class ConversationContextStore:
             return ReviewSettlementClaim("invalid")
         with self._write() as connection:
             row = connection.execute(
-                "SELECT state, ledger_version, base_context_version, delta_json "
+                "SELECT state, ledger_version, base_context_version, "
+                "delta_json "
                 "FROM conversation_turns WHERE conversation_key = ? "
                 "AND turn_id = ?",
                 (key, turn_id),
@@ -1328,7 +1346,12 @@ class ConversationContextStore:
         now = _now()
         with self._write() as connection:
             turn = connection.execute(
-                "SELECT conversation_key, turn_id, operation, base_context_version, state, selected_agent_id, route_source, result_json, delta_json, ledger_version, created_at, updated_at, expires_at FROM conversation_turns WHERE conversation_key=? AND turn_id=?",
+                "SELECT conversation_key, turn_id, operation, "
+                "base_context_version, state, selected_agent_id, "
+                "route_source, result_json, delta_json, ledger_version, "
+                "created_at, updated_at, expires_at "
+                "FROM conversation_turns WHERE conversation_key=? "
+                "AND turn_id=?",
                 (key, turn_id),
             ).fetchone()
             if turn is None:
@@ -1350,7 +1373,10 @@ class ConversationContextStore:
                 ):
                     raise ContextVersionConflictError(key)
             context = connection.execute(
-                "SELECT conversation_key, schema_version, context_version, ledger_cursor, ledger_version, observed_mode, context_json, state, checkpoint_cleanup_state, updated_at, tombstoned_at FROM conversation_contexts WHERE conversation_key=?",
+                "SELECT conversation_key, schema_version, context_version, "
+                "ledger_cursor, ledger_version, observed_mode, context_json, "
+                "state, checkpoint_cleanup_state, updated_at, tombstoned_at "
+                "FROM conversation_contexts WHERE conversation_key=?",
                 (key,),
             ).fetchone()
             if context is not None and context[7] == "tombstoned":
@@ -1375,7 +1401,9 @@ class ConversationContextStore:
             context_json = _json(context_data)
             if context is None:
                 connection.execute(
-                    "INSERT INTO conversation_contexts VALUES (?, ?, ?, ?, ?, ?, ?, 'active', 'not_requested', ?, NULL)",
+                    "INSERT INTO conversation_contexts VALUES "
+                    "(?, ?, ?, ?, ?, ?, ?, 'active', 'not_requested', ?, "
+                    "NULL)",
                     (
                         key,
                         schema_version,
@@ -1389,7 +1417,11 @@ class ConversationContextStore:
                 )
             else:
                 connection.execute(
-                    "UPDATE conversation_contexts SET schema_version=?, context_version=?, ledger_cursor=?, ledger_version=?, observed_mode=?, context_json=?, state='active', updated_at=? WHERE conversation_key=? AND context_version=?",
+                    "UPDATE conversation_contexts SET schema_version=?, "
+                    "context_version=?, ledger_cursor=?, ledger_version=?, "
+                    "observed_mode=?, context_json=?, state='active', "
+                    "updated_at=? WHERE conversation_key=? "
+                    "AND context_version=?",
                     (
                         schema_version,
                         current + 1,
@@ -1403,11 +1435,16 @@ class ConversationContextStore:
                     ),
                 )
             connection.execute(
-                "UPDATE conversation_turns SET state='committed', ledger_version=?, updated_at=? WHERE conversation_key=? AND turn_id=?",
+                "UPDATE conversation_turns SET state='committed', "
+                "ledger_version=?, updated_at=? WHERE conversation_key=? "
+                "AND turn_id=?",
                 (ledger_version, now, key, turn_id),
             )
             row = connection.execute(
-                "SELECT conversation_key, schema_version, context_version, ledger_cursor, ledger_version, observed_mode, context_json, state, checkpoint_cleanup_state, updated_at, tombstoned_at FROM conversation_contexts WHERE conversation_key=?",
+                "SELECT conversation_key, schema_version, context_version, "
+                "ledger_cursor, ledger_version, observed_mode, context_json, "
+                "state, checkpoint_cleanup_state, updated_at, tombstoned_at "
+                "FROM conversation_contexts WHERE conversation_key=?",
                 (key,),
             ).fetchone()
         logger.debug("conversation turn committed")
@@ -1416,7 +1453,8 @@ class ConversationContextStore:
     def mark_turn_failed(self, key: str, turn_id: str) -> None:
         with self._write() as connection:
             connection.execute(
-                "UPDATE conversation_turns SET state='failed', updated_at=? WHERE conversation_key=? AND turn_id=?",
+                "UPDATE conversation_turns SET state='failed', "
+                "updated_at=? WHERE conversation_key=? AND turn_id=?",
                 (_now(), key, turn_id),
             )
 
@@ -1489,17 +1527,22 @@ class ConversationContextStore:
                 (key,),
             )
             context = connection.execute(
-                "SELECT context_version FROM conversation_contexts WHERE conversation_key=?",
+                "SELECT context_version FROM conversation_contexts "
+                "WHERE conversation_key=?",
                 (key,),
             ).fetchone()
             if context is None:
                 connection.execute(
-                    "INSERT INTO conversation_contexts VALUES (?, 1, 0, 0, '', '', '{}', 'tombstoned', 'pending', ?, ?)",
+                    "INSERT INTO conversation_contexts VALUES "
+                    "(?, 1, 0, 0, '', '', '{}', 'tombstoned', "
+                    "'pending', ?, ?)",
                     (key, now, now),
                 )
             else:
                 connection.execute(
-                    "UPDATE conversation_contexts SET context_json='{}', state='tombstoned', checkpoint_cleanup_state='pending', updated_at=?, tombstoned_at=? WHERE conversation_key=?",
+                    "UPDATE conversation_contexts SET context_json='{}', "
+                    "state='tombstoned', checkpoint_cleanup_state='pending', "
+                    "updated_at=?, tombstoned_at=? WHERE conversation_key=?",
                     (now, now, key),
                 )
         return tuple(sorted(candidates))
@@ -1513,7 +1556,9 @@ class ConversationContextStore:
                 return
         with self._write() as connection:
             updated = connection.execute(
-                "UPDATE conversation_contexts SET checkpoint_cleanup_state='complete', updated_at=? WHERE conversation_key=? AND state='tombstoned'",
+                "UPDATE conversation_contexts SET "
+                "checkpoint_cleanup_state='complete', updated_at=? "
+                "WHERE conversation_key=? AND state='tombstoned'",
                 (_now(), key),
             )
             if updated.rowcount:
@@ -1566,11 +1611,13 @@ class ConversationContextStore:
                     connection.execute(
                         "UPDATE conversation_review_checkpoint_cleanup "
                         "SET eligible_at = COALESCE(eligible_at, ?) "
-                        "WHERE conversation_key = ? AND candidate_thread_id = ?",
+                        "WHERE conversation_key = ? "
+                        "AND candidate_thread_id = ?",
                         (now_value, key, candidate),
                     )
             cursor = connection.execute(
-                "DELETE FROM conversation_turns WHERE state='staged' AND expires_at IS NOT NULL AND expires_at <= ?",
+                "DELETE FROM conversation_turns WHERE state='staged' "
+                "AND expires_at IS NOT NULL AND expires_at <= ?",
                 (now_value,),
             )
             return cursor.rowcount

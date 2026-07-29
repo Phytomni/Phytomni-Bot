@@ -268,7 +268,10 @@ def purge_expired_runs_best_effort(
     logger: logging.Logger = _LOGGER,
     checkpointer_factory: CheckpointerFactory | None = None,
 ) -> None:
-    """Run registry and staged-context TTL purges, swallowing storage failures."""
+    """Run registry and staged-context TTL purges.
+
+    Storage failures are swallowed so cleanup remains best effort.
+    """
     path = _database_path(db_path)
     try:
         registry_factory(path).purge_expired()

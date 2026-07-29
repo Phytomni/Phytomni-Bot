@@ -119,7 +119,7 @@ async def test_knowledge_arun_consumes_private_history_in_chat_subgraph_input(
 async def test_knowledge_compatibility_wrappers_forward_history(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Compatibility wrappers pass private history into ``KnowledgeAgent.arun``."""
+    """Compatibility wrappers pass history into ``KnowledgeAgent.arun``."""
 
     class FakeKnowledgeAgent:
         def __init__(self) -> None:

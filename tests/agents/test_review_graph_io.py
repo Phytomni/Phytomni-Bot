@@ -97,7 +97,7 @@ def test_review_initial_state_seeds_interop_channels() -> None:
 
 
 def test_review_initial_state_seeds_private_conversation_metadata() -> None:
-    """Review state carries bounded operation metadata without public IO changes."""
+    """Review state carries bounded metadata without public IO changes."""
     agent = DeepResearchAgent.__new__(DeepResearchAgent)
     state = agent.initial_state("plant stress review")
 

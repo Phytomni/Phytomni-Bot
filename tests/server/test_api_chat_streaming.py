@@ -839,7 +839,7 @@ async def test_context_stream_stages_before_custom_and_then_finishes(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V1 streaming settles the run and stages context before the custom frame."""
+    """V1 streaming settles the run before the custom frame."""
     captured: dict[str, str] = {}
     answer_marker = "STREAM_CONTEXT_ANSWER_OUTPUT_SENTINEL"
 
@@ -939,7 +939,7 @@ async def test_context_stream_duplicate_turn_replays_without_reinvocation(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A repeated V1 turn replays the staged stream instead of reinvoking Chat."""
+    """A repeated V1 turn replays the stream instead of reinvoking Chat."""
     del tasks_db_path
     invocations = 0
 

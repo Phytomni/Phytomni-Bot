@@ -127,7 +127,8 @@ def test_initialization_uses_shared_wal_and_busy_timeout(
             yield connection
 
     monkeypatch.setattr(
-        "mcp_server_phytomni.runtime.conversation_context.store.sqlite_connection",
+        "mcp_server_phytomni.runtime.conversation_context.store."
+        "sqlite_connection",
         observing_connection,
     )
 
@@ -259,7 +260,7 @@ def test_duplicate_staging_returns_the_byte_equivalent_terminal_result(
 def test_staged_turn_round_trips_opaque_stage_metadata(
     store: ConversationContextStore,
 ) -> None:
-    """Duplicate reads retain the bounded service metadata without widening it."""
+    """Duplicate reads retain bounded service metadata."""
     metadata = {
         "selected_agent_id": "ChatAgent",
         "context_degraded": True,
@@ -548,7 +549,7 @@ def test_review_settlement_claim_accepts_the_current_active_context_version(
 def test_tombstone_fences_and_retains_review_candidate_threads(
     store: ConversationContextStore,
 ) -> None:
-    """Tombstoning records valid candidates before deleting their staged rows."""
+    """Tombstoning records candidates before deleting staged rows."""
     key = "conversation-1"
     stable = "ctx-" + "a" * 64
     candidate = _candidate_thread_id(stable, "1")
@@ -657,7 +658,8 @@ def test_tombstone_clears_context_and_turns_then_refuses_new_work(
     assert context.checkpoint_cleanup_state == "pending"
     with sqlite3.connect(store.db_path) as connection:
         assert connection.execute(
-            "SELECT COUNT(*) FROM conversation_turns WHERE conversation_key = ?",
+            "SELECT COUNT(*) FROM conversation_turns "
+            "WHERE conversation_key = ?",
             ("conversation-1",),
         ).fetchone() == (0,)
     for operation in ("append", "rebuild"):
@@ -678,7 +680,8 @@ def test_repeated_tombstone_is_idempotent(
     assert context.checkpoint_cleanup_state == "pending"
     with sqlite3.connect(store.db_path) as connection:
         assert connection.execute(
-            "SELECT COUNT(*) FROM conversation_turns WHERE conversation_key = ?",
+            "SELECT COUNT(*) FROM conversation_turns "
+            "WHERE conversation_key = ?",
             ("conversation-1",),
         ).fetchone() == (0,)
 

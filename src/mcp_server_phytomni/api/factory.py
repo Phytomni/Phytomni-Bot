@@ -926,7 +926,9 @@ def _build_context_executor(
     """Build the lazy, Bot-owned conversation context executor."""
 
     async def select_agent(*args: Any, **kwargs: Any) -> Any:
-        """Resolve the selector lazily so established test seams remain live."""
+        """Resolve the selector lazily so established test seams
+        remain live.
+        """
         return await _app_attr("select_agent_tool")(*args, **kwargs)
 
     async def load_review_settlement(

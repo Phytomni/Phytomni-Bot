@@ -122,7 +122,7 @@ class ReviewReportDocument:
     sections: tuple[ReviewReportSectionSpan, ...]
 
     def replace(self, revised: RevisedSection) -> str:
-        """Replace one section body without rendering any other report bytes."""
+        """Replace one section body without rendering other report bytes."""
         target = _slug(revised.heading or revised.section_id)
         for section in self.sections:
             if section.section_id != target:
@@ -236,7 +236,7 @@ def _required_turn_id(value: object) -> str:
 
 
 def _required_thread_id(value: object, label: str) -> str:
-    """Validate one bounded private checkpoint identity from durable metadata."""
+    """Validate one bounded private checkpoint identity."""
     if (
         not isinstance(value, str)
         or not value.strip()
@@ -332,7 +332,7 @@ def _report_document_from_text(report: str) -> ReviewReportDocument:
 def extract_review_report_document(
     state: object,
 ) -> ReviewReportDocument | None:
-    """Extract the private report source without admitting it to projections."""
+    """Extract the private report source, never admitting it to projections."""
     values = _state_values(state)
     candidate: object = values.get("summary_content")
     if not isinstance(candidate, str) or not candidate:
@@ -619,7 +619,7 @@ async def _load_review_checkpoint_state(
     agent: Any,
     thread_id: str,
 ) -> object:
-    """Read one checkpoint object for both metadata and private report bytes."""
+    """Read one checkpoint object for metadata and private report bytes."""
     config = build_runnable_config(thread_id)
     app = getattr(agent, "app", None)
     getter = cast(
@@ -868,7 +868,7 @@ def _bounded_doc_list(value: object) -> list[dict[str, Any]]:
 def _ordered_doc_list(
     value: object, *, depth: int = 0
 ) -> list[dict[str, Any]]:
-    """Find Review's existing ordered references through known result wrappers."""
+    """Find Review's ordered references through known result wrappers."""
     if depth > 4 or not isinstance(value, Mapping):
         return []
     for key in ("ordered_doc_list", "doc_list", "references"):
@@ -1129,7 +1129,7 @@ class ReviewConversationAdapter:
 
     @property
     def active_snapshot(self) -> ReviewCheckpointSnapshot | None:
-        """Return the last committed snapshot, excluding staged scope changes."""
+        """Return the last committed snapshot, excluding staged changes."""
         return self._active_snapshot
 
     @property
@@ -1159,7 +1159,7 @@ class ReviewConversationAdapter:
 
     @property
     def settlement_ready(self) -> bool:
-        """Return whether this turn produced a valid candidate for settlement."""
+        """Return whether this turn produced a candidate for settlement."""
         if self._prepared is not None and self._prepared.operation in {
             ReviewConversationOperation.NEW_REVIEW,
             ReviewConversationOperation.SCOPE_CHANGE,
@@ -1305,11 +1305,11 @@ class ReviewConversationAdapter:
             candidate = _required_thread_id(candidate_value, "candidate")
             if candidate != _candidate_thread_id(stable, turn_id):
                 raise ReviewClarificationError(
-                    "Review settlement candidate checkpoint is not turn-scoped."
+                    "Review settlement candidate is not turn-scoped."
                 )
         elif candidate_value is not None:
             raise ReviewClarificationError(
-                "Review settlement has an unexpected candidate checkpoint thread."
+                "Review settlement has an unexpected candidate thread."
             )
         report_revision = metadata.get("report_revision")
         if (
@@ -1527,7 +1527,7 @@ class ReviewConversationAdapter:
         return self._report_revision
 
     async def settle_async(self, success: bool) -> int:
-        """Settle the candidate and persist private report state when available."""
+        """Settle the candidate and persist private report state."""
         prepared = self._prepared
         if prepared is None:
             raise RuntimeError("prepare must run before settle_async")
@@ -1551,7 +1551,7 @@ class ReviewConversationAdapter:
         return self.settle(True)
 
     async def _update_stable_checkpoint(self, revision: int) -> None:
-        """Persist a bounded follow-up or local revision on the active thread."""
+        """Persist a bounded follow-up or revision on the active thread."""
         app = getattr(self._agent, "app", None)
         updater = cast(
             Callable[..., Awaitable[Any]] | None,
@@ -1572,7 +1572,7 @@ class ReviewConversationAdapter:
         )
 
     async def _promote_candidate(self, revision: int) -> None:
-        """Copy an isolated graph result to the stable thread after acknowledgement."""
+        """Copy an isolated graph result after acknowledgement."""
         if self._agent is None or self.candidate_thread_id is None:
             raise RuntimeError("Review candidate checkpoint is unavailable")
         if self.stable_thread_id is None:
@@ -1633,7 +1633,7 @@ class ReviewConversationAdapter:
             raise RuntimeError("prepare must run before follow_up_prompt")
         context = _prompt_context(self._prepared.snapshot)
         return (
-            "Answer the current Review follow-up using only the bounded context. "
+            "Answer the current Review follow-up using only bounded context. "
             "Do not reconstruct or quote the complete prior report.\n\n"
             f"{context}\n\n[current question]\n"
             f"{self._prepared.projection.current_query}"
@@ -1692,7 +1692,7 @@ class ReviewConversationAdapter:
         )
 
     def delta(self, result: Mapping[str, Any] | None = None) -> ContextDelta:
-        """Convert a successful Review result into bounded semantic metadata."""
+        """Convert a successful Review result into bounded metadata."""
         if self._prepared is None:
             raise RuntimeError("prepare must run before delta")
         result = result or self._captured_result

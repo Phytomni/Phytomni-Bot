@@ -179,10 +179,8 @@ async def test_instant_context_rejects_non_chat_model_before_dispatch(
     assert invoked == 0
 
 
-def test_chat_context_adapter_keeps_native_role_history_separate_from_query() -> (
-    None
-):
-    """Chat receives native prior roles while dispatch sees only the latest turn."""
+def test_chat_context_adapter_separates_native_history_from_query() -> None:
+    """Chat receives prior roles while dispatch sees the latest turn."""
     thread_id = context_agent_thread_id(
         UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7"), "ChatAgent"
     )
@@ -240,10 +238,8 @@ def test_chat_context_adapter_keeps_unpaired_user_at_degraded_boundary() -> (
     )
 
 
-def test_knowledge_context_adapter_separates_retrieval_query_from_answer_context() -> (
-    None
-):
-    """Knowledge V1 builds one standalone retrieval query plus bounded context."""
+def test_knowledge_context_adapter_separates_query_from_context() -> None:
+    """Knowledge builds one retrieval query plus bounded context."""
     adapter = KnowledgeConversationAdapter()
 
     prepared = adapter.prepare(
@@ -270,7 +266,8 @@ def test_knowledge_context_adapter_separates_retrieval_query_from_answer_context
         "retrieval_query": "What evidence supports OsDREB1?",
         "answer_context": (
             "[recent turn 1]\nuser: Tell me about rice gene OsDREB1.\n\n"
-            "[recent turn 2]\nassistant: OsDREB1 improves drought tolerance [1]."
+            "[recent turn 2]\nassistant: OsDREB1 improves drought "
+            "tolerance [1]."
         ),
         "thread_id": "ctx-" + "2" * 64,
     }

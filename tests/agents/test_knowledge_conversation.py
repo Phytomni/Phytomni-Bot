@@ -87,7 +87,7 @@ def test_prepare_requires_clarification_for_unresolved_pronoun() -> None:
 async def test_retrieve_node_uses_retrieval_query_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Retrieval receives the resolved standalone query, not transcript text."""
+    """Retrieval receives the standalone query, not transcript text."""
     captured: dict[str, Any] = {}
 
     async def fake_multi_retrieve(**kwargs: Any) -> dict[str, Any]:
@@ -186,7 +186,7 @@ async def test_generate_prep_uses_answer_context_without_transcript(
 
 
 def test_delta_promotes_bounded_summary_and_topic_without_raw_docs() -> None:
-    """Knowledge delta retains citations and topic, but not full report bodies."""
+    """Knowledge delta retains citations and topic, not full report bodies."""
     adapter = KnowledgeConversationAdapter()
     adapter.prepare(
         _projection(current_query="Tell me about OsDREB1 drought evidence.")
@@ -209,7 +209,8 @@ def test_delta_promotes_bounded_summary_and_topic_without_raw_docs() -> None:
                                     {
                                         "title": "Paper 1",
                                         "content": (
-                                            "full report body that must not persist"
+                                            "full report body that must "
+                                            "not persist"
                                         ),
                                     }
                                 ]

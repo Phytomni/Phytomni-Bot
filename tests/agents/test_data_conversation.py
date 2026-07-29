@@ -103,9 +103,7 @@ def _result(
     return result
 
 
-def test_prepare_merges_follow_up_filters_and_grouping_without_losing_dataset() -> (
-    None
-):
+def test_prepare_merges_filters_and_grouping_without_losing_dataset() -> None:
     """Follow-up filters and regrouping keep the active dataset."""
     first = DataConversationAdapter()
     initial = first.prepare(_projection("Show expression by tissue"))
@@ -327,7 +325,7 @@ def test_prepare_drops_unsafe_projection_summary_during_rehydration(
 
 
 def test_delta_rejects_generic_raw_and_formatted_summaries() -> None:
-    """Legacy answer/summary fields are ignored when canonical summary is absent."""
+    """Legacy summaries are ignored when canonical summary is absent."""
     adapter = DataConversationAdapter()
     adapter.prepare(_projection("Show expression by tissue"))
 
@@ -345,9 +343,7 @@ def test_delta_rejects_generic_raw_and_formatted_summaries() -> None:
     assert delta.summary_update is None
 
 
-def test_delta_rejects_oversized_or_invalid_metadata_without_persisting_it() -> (
-    None
-):
+def test_delta_rejects_oversized_or_invalid_metadata() -> None:
     """Oversized lists and malformed artifact ids fail closed."""
     adapter = DataConversationAdapter()
     adapter.prepare(_projection("Show expression by tissue"))

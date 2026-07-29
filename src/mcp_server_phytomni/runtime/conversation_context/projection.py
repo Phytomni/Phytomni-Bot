@@ -221,7 +221,7 @@ def build_context_projection(
         and recent_turns[-1].role == "user"
     ):
         # Rebuilt contexts include the envelope's current user turn as their
-        # trailing slot; dispatch carries that turn separately as current_query.
+        # trailing slot; dispatch carries it separately as current_query.
         recent_turns = recent_turns[:-1]
     admitted_turns: list[dict[str, str]] = []
     for turn in [item.model_dump(mode="json") for item in recent_turns]:

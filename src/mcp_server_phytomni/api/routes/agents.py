@@ -352,7 +352,9 @@ async def _execute_context_chat(
                 raw_query=arguments["user_query"],
                 resolve_flag=bool(payload.resolve_gene_id),
                 tool_name="ChatAgent",
-                brief_gene_resolver=dependencies.chat.input.brief_gene_resolver,
+                brief_gene_resolver=(
+                    dependencies.chat.input.brief_gene_resolver
+                ),
             )
         )
         arguments["user_query"] = user_query
@@ -791,7 +793,7 @@ def _slug_for_tool(
 
 
 def _clarification_agent_run(agent: str, message: str) -> dict[str, Any]:
-    """Return a sync agent.run envelope for clarification-only Knowledge turns."""
+    """Return a sync agent.run envelope for clarification-only turns."""
     return {
         "id": None,
         "object": "agent.run",

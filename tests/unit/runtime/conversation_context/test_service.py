@@ -192,7 +192,7 @@ async def test_unforced_expert_passes_complete_ordered_allowlist(
 async def test_duplicate_staged_and_committed_turns_do_not_reinvoke_agent(
     store: ConversationContextStore,
 ) -> None:
-    """Retries reuse staged output, then expose committed settlement metadata."""
+    """Retries reuse staged output and expose settlement metadata."""
     calls = 0
 
     async def invoke(*_args: object) -> AgentOutcome:
@@ -268,7 +268,7 @@ async def test_stale_or_invalidated_context_requires_rebuild(
     operation: str,
     base_version: int,
 ) -> None:
-    """Stale versions, append regression, and replace invalidation fail closed."""
+    """Stale versions and replace invalidation fail closed."""
     service = _service(store)
     first = await service.execute_turn(_envelope())
     assert first.stage is not None
@@ -312,7 +312,7 @@ async def test_rebuild_required_turn_is_failed_and_retries_as_rebuild_required(
 async def test_missing_or_schema_incompatible_context_requires_rebuild(
     store: ConversationContextStore,
 ) -> None:
-    """Only a version-zero initial context may rebuild locally from a ledger."""
+    """Only a version-zero context may rebuild from a ledger."""
     service = _service(store)
     missing = await service.prepare_turn(
         _envelope(base_business_context_version=3)
@@ -324,7 +324,8 @@ async def test_missing_or_schema_incompatible_context_requires_rebuild(
     await service.acknowledge_settlement(_envelope(turn_id="2"), "b" * 64)
     with store._write() as connection:
         connection.execute(
-            "UPDATE conversation_contexts SET schema_version = 99 WHERE conversation_key = ?",
+            "UPDATE conversation_contexts SET schema_version = 99 "
+            "WHERE conversation_key = ?",
             (str(_CONVERSATION_KEY),),
         )
     incompatible = await service.prepare_turn(
@@ -342,7 +343,7 @@ async def test_missing_or_schema_incompatible_context_requires_rebuild(
 async def test_delta_failure_stages_degraded_but_failed_or_canceled_does_not(
     store: ConversationContextStore,
 ) -> None:
-    """A visible answer survives delta failure; nonterminal output has no summary."""
+    """A visible answer survives delta failure without a summary."""
     outcomes = iter(
         [
             AgentOutcome(
@@ -448,7 +449,7 @@ async def test_review_invalid_outcome_fails_before_staging(
 async def test_invalid_delta_is_discarded_before_degraded_staging(
     store: ConversationContextStore,
 ) -> None:
-    """An invalid artifact delta cannot mutate the successful answer context."""
+    """An invalid artifact delta cannot mutate the answer context."""
     unauthorized = ArtifactRefV1(
         artifact_id="not-authorized",
         display_name="untrusted output",
@@ -655,7 +656,7 @@ async def test_duplicate_turns_reconstruct_staged_metadata(
 async def test_review_settlement_metadata_is_durable_but_not_public(
     store: ConversationContextStore,
 ) -> None:
-    """Opaque Review checkpoint identities survive retries without API leakage."""
+    """Opaque Review checkpoint identities survive retries."""
 
     async def invoke(*_args: object) -> AgentOutcome:
         stable_thread = agent_thread_id(_CONVERSATION_KEY, "ReviewAgent")
@@ -710,7 +711,7 @@ async def test_review_settlement_metadata_is_durable_but_not_public(
 async def test_async_agent_delegates_without_projection_or_staging(
     store: ConversationContextStore,
 ) -> None:
-    """Non-eligible Expert agents retain their current accepted-run lifecycle."""
+    """Non-eligible Expert agents retain their accepted-run lifecycle."""
     invoked = False
 
     async def invoke(*_args: object) -> AgentOutcome:

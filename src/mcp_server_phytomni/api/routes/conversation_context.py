@@ -64,7 +64,7 @@ async def _delete_checkpoint_threads(
     conversation_key: Any,
     candidate_thread_ids: Sequence[str] = (),
 ) -> None:
-    """Delete stable and durable turn-scoped threads through the active saver."""
+    """Delete stable and durable turn-scoped threads through the saver."""
     checkpointer = ensure_checkpointer()
     stable_thread_ids = {
         agent_thread_id(conversation_key, agent_id)

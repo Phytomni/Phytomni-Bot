@@ -499,7 +499,7 @@ class ConversationContextService:
     def _matches_duplicate(
         self, turn: StoredTurn, envelope: ConversationEnvelopeV1
     ) -> bool:
-        """Reject retry envelopes that change an already-owned turn proposal."""
+        """Reject retries that change an owned turn proposal."""
         if (
             turn.operation != envelope.operation
             or turn.base_context_version
@@ -566,7 +566,7 @@ class ConversationContextService:
     async def prepare_turn(
         self, envelope: ConversationEnvelopeV1
     ) -> PreparedTurn:
-        """Validate, deduplicate, and prepare a turn without invoking an agent."""
+        """Validate, deduplicate, and prepare without invoking an agent."""
         if not isinstance(envelope, ConversationEnvelopeV1):
             raise TypeError("envelope must be ConversationEnvelopeV1")
         async with self._lock(self._key(envelope)):
@@ -730,9 +730,12 @@ class ConversationContextService:
                 selected_agent_id=selection.selected_agent_id,
                 route_source=route_source,
                 route_reason_code=selection.reason_code,
-                base_business_context_version=envelope.base_business_context_version,
-                proposed_business_context_version=envelope.base_business_context_version
-                + 1,
+                base_business_context_version=(
+                    envelope.base_business_context_version
+                ),
+                proposed_business_context_version=(
+                    envelope.base_business_context_version + 1
+                ),
                 last_applied_ledger_cursor=envelope.ledger_cursor,
                 context_truncated=projection.context_truncated,
                 context_rebuilt=rebuilt,
@@ -760,7 +763,9 @@ class ConversationContextService:
                 envelope.turn_id,
                 StagedTurn(
                     operation=envelope.operation,
-                    base_context_version=envelope.base_business_context_version,
+                    base_context_version=(
+                        envelope.base_business_context_version
+                    ),
                     selected_agent_id=selection.selected_agent_id,
                     route_source=route_source,
                     result=outcome.result,

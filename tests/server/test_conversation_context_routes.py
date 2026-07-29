@@ -194,7 +194,7 @@ async def test_context_mutations_require_existing_agents_auth(
     path: str,
     payload: dict[str, str | int],
 ) -> None:
-    """Settlement and tombstone retain the normal agents authentication gate."""
+    """Settlement and tombstone retain the normal authentication gate."""
     client, _key, _store = context_client
 
     response = await client.post(path, json=payload)
@@ -285,7 +285,7 @@ async def test_disabled_context_mutations_return_not_found(
 async def test_settlement_commits_once_and_redacts_context_contents(
     context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
 ) -> None:
-    """A staged delta commits once and repeats without returning private data."""
+    """A staged delta commits once without returning private data."""
     client, key, store = context_client
     _stage_turn(store)
 
@@ -327,7 +327,7 @@ async def test_settlement_route_invokes_injected_review_ack_before_commit(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """The production route promotes Review before committing shared context."""
+    """The route promotes Review before committing shared context."""
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "true")
     tasks_db = tmp_path / "server_tasks.db"
     keys_db = tmp_path / "keys.sqlite"
@@ -513,7 +513,7 @@ async def test_review_stale_ledger_is_rejected_before_private_ack(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """A stale Review request cannot promote before the durable ledger check."""
+    """A stale Review request cannot promote before the ledger check."""
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "true")
     tasks_db = tmp_path / "server_tasks.db"
     keys_db = tmp_path / "keys.sqlite"
@@ -697,7 +697,7 @@ async def test_tombstone_clears_state_and_deletes_sync_threads(
     context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Tombstone removes staged context and all synchronous checkpoint threads."""
+    """Tombstone removes staged context and synchronous checkpoint threads."""
     from mcp_server_phytomni.api.routes import conversation_context
 
     class _Checkpointer:
@@ -739,7 +739,8 @@ async def test_tombstone_clears_state_and_deletes_sync_threads(
     assert context.checkpoint_cleanup_state == "complete"
     with sqlite3.connect(store.db_path) as connection:
         assert connection.execute(
-            "SELECT COUNT(*) FROM conversation_turns WHERE conversation_key = ?",
+            "SELECT COUNT(*) FROM conversation_turns "
+            "WHERE conversation_key = ?",
             (str(_CONVERSATION_KEY),),
         ).fetchone() == (0,)
     assert set(checkpointer.deleted) == {
@@ -760,7 +761,7 @@ async def test_tombstone_deletes_durable_review_candidate_thread(
     context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Tombstone cleanup includes candidate threads retained in staged metadata."""
+    """Tombstone cleanup includes candidate threads in staged metadata."""
     from mcp_server_phytomni.api.routes import conversation_context
 
     class _Checkpointer:
@@ -861,7 +862,7 @@ async def test_tombstone_is_idempotent_and_retries_pending_cleanup(
     context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Cleanup failure retains retryable state while public deletion stays safe."""
+    """Cleanup failure retains retryable state and safe deletion."""
     from mcp_server_phytomni.api.routes import conversation_context
 
     class _Checkpointer:

@@ -45,7 +45,7 @@ def _envelope_artifact() -> ArtifactRefV1:
 
 
 def _context() -> BusinessContext:
-    """Return context whose sections exceed the selected agent budget in order."""
+    """Return context sections that exceed the selected agent budget."""
     return BusinessContext(
         schema_version=1,
         version=7,
@@ -111,7 +111,7 @@ def test_projection_trims_in_documented_priority_order() -> None:
 def test_projection_is_deterministic_and_uses_configured_agent_budget() -> (
     None
 ):
-    """The same ordered source data rebuilds to byte-equivalent projection data."""
+    """The same source data rebuilds to byte-equivalent projection data."""
     context = _context()
     kwargs = {
         "conversation_key": _CONVERSATION_KEY,
@@ -261,7 +261,7 @@ def test_projection_excludes_only_rebuilt_trailing_user_position() -> None:
 
 
 def test_agent_thread_id_is_opaque_and_stable() -> None:
-    """Thread IDs use a stable digest rather than public conversation values."""
+    """Thread IDs use a stable digest, not public conversation values."""
     thread_id = agent_thread_id(_CONVERSATION_KEY, "DataAgent")
 
     assert thread_id.startswith("ctx-")

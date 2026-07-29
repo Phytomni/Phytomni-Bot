@@ -125,7 +125,7 @@ def knowledge_agent_invocation(
     *,
     selected_arguments: Mapping[str, Any] | None = None,
 ) -> ContextAgentInvocation:
-    """Project Knowledge V1 context into retrieval-safe private dispatch state."""
+    """Project Knowledge V1 context into private retrieval dispatch state."""
     arguments = dict(selected_arguments or {})
     arguments["user_query"] = projection.current_query
     arguments["locale"] = projection.locale

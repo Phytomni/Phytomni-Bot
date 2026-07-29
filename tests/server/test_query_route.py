@@ -491,7 +491,7 @@ async def test_context_expert_explicit_selection_stages_without_router(
         ),
     ],
 )
-async def test_context_expert_review_follow_up_and_local_revision_use_native_adapter(
+async def test_context_expert_review_follow_up_and_revision_use_adapter(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -717,7 +717,7 @@ async def test_context_expert_review_missing_candidate_fails_before_staging(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """A public graph answer is not healthy until its candidate checkpoint exists."""
+    """A graph answer is not healthy until its candidate checkpoint exists."""
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
@@ -871,7 +871,7 @@ async def test_context_expert_review_empty_local_revision_does_not_settle(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """An empty section response leaves the private Review revision unchanged."""
+    """An empty section response leaves the Review revision unchanged."""
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
@@ -1068,7 +1068,7 @@ async def test_context_expert_review_unknown_section_clarification_fails_turn(
     assert staged.delta is None
 
 
-async def test_context_expert_data_reuses_private_ids_and_stages_bounded_intent(
+async def test_context_expert_data_reuses_ids_and_stages_bounded_intent(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
@@ -1240,13 +1240,13 @@ async def test_context_expert_data_reuses_private_ids_and_stages_bounded_intent(
     assert "postgresql://user:pass@example/db" not in second_payload
 
 
-async def test_context_expert_explicit_chat_preserves_private_thread_only_for_primary_call(
+async def test_context_expert_chat_keeps_thread_private_to_primary_call(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Explicit Expert Chat keeps the stable thread private to the first call."""
+    """Explicit Chat keeps the stable thread private to the first call."""
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
     captured: list[dict[str, Any]] = []
@@ -1309,8 +1309,12 @@ async def test_context_expert_explicit_chat_preserves_private_thread_only_for_pr
         {
             "turn_id": "2",
             "role": "assistant",
-            "content": "OsDREB1A is a rice stress-response transcription factor.",
-            "summary": "OsDREB1A is a rice stress-response transcription factor.",
+            "content": (
+                "OsDREB1A is a rice stress-response " "transcription factor."
+            ),
+            "summary": (
+                "OsDREB1A is a rice stress-response " "transcription factor."
+            ),
         },
         {
             "turn_id": "7",
@@ -1467,7 +1471,7 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Knowledge V1 resolves retrieval privately and stages only bounded context."""
+    """Knowledge resolves retrieval privately and stages bounded context."""
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
@@ -1489,7 +1493,8 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
                                     "file_id": "doc-1",
                                     "title": "Paper 1.pdf",
                                     "content": (
-                                        "full report body that must not persist"
+                                        "full report body that must "
+                                        "not persist"
                                     ),
                                 }
                             ],
@@ -1596,7 +1601,8 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
             "retrieval_query": "What evidence supports OsDREB1?",
             "answer_context": (
                 "[recent turn 1]\nuser: Tell me about rice gene OsDREB1.\n\n"
-                "[recent turn 2]\nassistant: OsDREB1 improves drought tolerance [1]."
+                "[recent turn 2]\nassistant: OsDREB1 improves drought "
+                "tolerance [1]."
             ),
             "thread_id": expected_thread_id,
             "conversation_messages": (),
@@ -1659,7 +1665,7 @@ async def test_context_expert_knowledge_follow_up_returns_clarification(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """An unresolved Knowledge pronoun asks for clarification without guessing."""
+    """An unresolved Knowledge pronoun asks for clarification."""
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
@@ -1907,13 +1913,13 @@ async def test_context_expert_brief_gene_turn_stages_bounded_context_delta(
     assert "full report body" not in json.dumps(staged.delta)
 
 
-async def test_context_expert_knowledge_explicit_switch_replaces_topic_after_success(
+async def test_context_expert_knowledge_switch_replaces_topic(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """A successful explicit topic switch commits only the new Knowledge topic."""
+    """A successful topic switch commits only the new Knowledge topic."""
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))

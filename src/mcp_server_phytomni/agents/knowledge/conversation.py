@@ -110,7 +110,7 @@ def _explicit_topic(
 
 
 def _standalone_query(query: str, topic: str) -> str:
-    """Resolve a pronoun-heavy follow-up into one standalone retrieval query."""
+    """Resolve a pronoun-heavy follow-up into a standalone retrieval query."""
     if _EVIDENCE_PATTERN.search(query):
         return _EVIDENCE_PATTERN.sub(
             f"What evidence supports {topic}", query, count=1
@@ -255,7 +255,7 @@ class KnowledgeConversationAdapter:
         if topic_label is None and _PRONOUN_PATTERN.search(query):
             if not candidates:
                 raise KnowledgeClarificationError(
-                    "Please clarify which gene, trait, or entity you want evidence for."
+                    "Please clarify the target requiring evidence."
                 )
             topic_label = candidates[0]
         retrieval_query = (
@@ -284,7 +284,7 @@ class KnowledgeConversationAdapter:
         }
 
     def delta(self, result: Mapping[str, Any]) -> ContextDelta:
-        """Convert one successful Knowledge answer into bounded context deltas."""
+        """Convert a successful Knowledge answer into bounded deltas."""
         if self._prepared is None:
             raise RuntimeError("prepare must run before delta")
         answer = _answer_text(result)
