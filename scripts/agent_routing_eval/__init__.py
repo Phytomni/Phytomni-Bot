@@ -5,6 +5,7 @@
 """Contracts and validation helpers for agent-routing evaluation datasets."""
 
 from . import dataset as _dataset
+from . import metrics as _metrics
 from . import runner as _runner
 
 AgentRoutingCase = _dataset.AgentRoutingCase
@@ -17,6 +18,9 @@ EvaluationIncompleteError = _runner.EvaluationIncompleteError
 RunOutcome = _runner.RunOutcome
 RunnerOptions = _runner.RunnerOptions
 run_evaluation = _runner.run_evaluation
+NO_MAJORITY = _metrics.NO_MAJORITY
+compute_metrics = _metrics.compute_metrics
+thresholds_pass = _metrics.thresholds_pass
 
 __all__ = [
     "AgentRoutingCase",
@@ -29,4 +33,7 @@ __all__ = [
     "RunOutcome",
     "RunnerOptions",
     "run_evaluation",
+    "NO_MAJORITY",
+    "compute_metrics",
+    "thresholds_pass",
 ]
