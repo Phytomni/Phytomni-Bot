@@ -121,8 +121,7 @@ def _full_result(
             {
                 "message": {
                     "content": (
-                        "# Brief Gene Analysis\n\n"
-                        "Rice gene report [1]."
+                        "# Brief Gene Analysis\n\n" "Rice gene report [1]."
                     ),
                     "doc_list": [{"source_id": "paper-1", "title": "Paper"}],
                     "total": 10000,

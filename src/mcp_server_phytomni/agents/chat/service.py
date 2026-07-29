@@ -195,9 +195,7 @@ async def phyto_chat_with_follow(
     prompt_file = kwargs.get("prompt_file", CHAT_CONFIG.PROMPT_FILE)
     graph_thread_id = kwargs.get("thread_id")
     base_kwargs = {
-        key: value
-        for key, value in kwargs.items()
-        if key != "thread_id"
+        key: value for key, value in kwargs.items() if key != "thread_id"
     }
 
     phyto_response = await phyto_chat(

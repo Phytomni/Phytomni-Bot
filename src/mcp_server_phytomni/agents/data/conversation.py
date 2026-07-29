@@ -262,7 +262,9 @@ def _validated_list(
 
 def _validated_aggregate_summary(value: object) -> str | None:
     """Accept only one bounded aggregate narrative, never raw rows or SQL."""
-    summary = _validated_text(value, limit=1024) if isinstance(value, str) else None
+    summary = (
+        _validated_text(value, limit=1024) if isinstance(value, str) else None
+    )
     if summary is None:
         return None
     if _SUMMARY_SQL_RE.search(summary):

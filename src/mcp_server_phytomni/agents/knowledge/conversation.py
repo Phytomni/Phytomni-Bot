@@ -103,7 +103,9 @@ def _explicit_topic(
     tokens = _candidate_tokens(query)
     if tokens:
         token = tokens[0]
-        return token, token.lower() not in {item.lower() for item in candidates}
+        return token, token.lower() not in {
+            item.lower() for item in candidates
+        }
     return None, False
 
 
@@ -130,7 +132,9 @@ def _answer_context_fragments(
         if content:
             fragments.append(f"[recent turn {index}]\n{role}: {content}")
     if not fragments and projection.task_summary:
-        fragments.append(f"[task summary]\n{_bounded_text(projection.task_summary)}")
+        fragments.append(
+            f"[task summary]\n{_bounded_text(projection.task_summary)}"
+        )
     if projection.active_entities:
         labels = ", ".join(item.label for item in projection.active_entities)
         fragments.append(f"[active entities]\n{_bounded_text(labels)}")
@@ -245,7 +249,9 @@ class KnowledgeConversationAdapter:
         """Resolve one retrieval query and bounded answer context."""
         query = _normalize_space(projection.current_query)
         candidates = _topic_candidates(projection)
-        topic_label, is_new_topic = _explicit_topic(query, candidates=candidates)
+        topic_label, is_new_topic = _explicit_topic(
+            query, candidates=candidates
+        )
         if topic_label is None and _PRONOUN_PATTERN.search(query):
             if not candidates:
                 raise KnowledgeClarificationError(

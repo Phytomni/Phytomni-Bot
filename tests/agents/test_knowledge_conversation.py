@@ -68,13 +68,11 @@ def test_prepare_resolves_follow_up_into_standalone_retrieval_query() -> None:
 
     assert prepared["user_query"] == "What evidence supports that?"
     assert prepared["thread_id"] == "ctx-" + "1" * 64
-    assert prepared["retrieval_query"] == (
-        "What evidence supports OsDREB1?"
-    )
+    assert prepared["retrieval_query"] == ("What evidence supports OsDREB1?")
     assert "role" not in prepared["retrieval_query"].lower()
-    assert "OsDREB1 improves drought tolerance [1]." in prepared[
-        "answer_context"
-    ]
+    assert (
+        "OsDREB1 improves drought tolerance [1]." in prepared["answer_context"]
+    )
 
 
 def test_prepare_requires_clarification_for_unresolved_pronoun() -> None:
@@ -106,15 +104,15 @@ async def test_retrieve_node_uses_retrieval_query_only(
         cast(
             KnowledgeState,
             agent.initial_state(
-            "What evidence supports that?",
-            retrieval_query="What evidence supports OsDREB1?",
-            conversation_messages=[
-                {"role": "user", "content": "Tell me about OsDREB1."},
-                {
-                    "role": "assistant",
-                    "content": "OsDREB1 improves drought tolerance.",
-                },
-            ],
+                "What evidence supports that?",
+                retrieval_query="What evidence supports OsDREB1?",
+                conversation_messages=[
+                    {"role": "user", "content": "Tell me about OsDREB1."},
+                    {
+                        "role": "assistant",
+                        "content": "OsDREB1 improves drought tolerance.",
+                    },
+                ],
             ),
         )
     )
@@ -223,9 +221,7 @@ def test_delta_promotes_bounded_summary_and_topic_without_raw_docs() -> None:
         }
     )
 
-    assert delta.summary_update == (
-        "OsDREB1 improves drought tolerance [1]."
-    )
+    assert delta.summary_update == ("OsDREB1 improves drought tolerance [1].")
     assert delta.open_question_updates == [
         "What promoter evidence exists for OsDREB1?"
     ]

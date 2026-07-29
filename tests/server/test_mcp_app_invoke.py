@@ -86,11 +86,7 @@ async def test_v1_history_reaches_chat_handler_through_raw_dispatch(
         captured.append(kwargs)
         return {
             "choices": [
-                {
-                    "message": {
-                        "content": "ok" if len(captured) == 1 else "[]"
-                    }
-                }
+                {"message": {"content": "ok" if len(captured) == 1 else "[]"}}
             ]
         }
 

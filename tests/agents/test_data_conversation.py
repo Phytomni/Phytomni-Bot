@@ -71,7 +71,11 @@ def _result(
         "task_ids": [],
         "result": {
             "formatted": {
-                "answer": formatted_answer if formatted_answer is not None else summary,
+                "answer": (
+                    formatted_answer
+                    if formatted_answer is not None
+                    else summary
+                ),
                 "metadata": {
                     "user_query": "placeholder",
                     "rewrite_query": "placeholder",

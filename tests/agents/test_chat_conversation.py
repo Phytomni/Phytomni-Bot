@@ -21,7 +21,10 @@ def test_chat_messages_for_state_preserve_roles_and_single_current_turn() -> (
         {
             "user_query": "What about its drought response?",
             "conversation_messages": [
-                {"role": "user", "content": "Tell me about rice gene OsDREB1A."},
+                {
+                    "role": "user",
+                    "content": "Tell me about rice gene OsDREB1A.",
+                },
                 {
                     "role": "assistant",
                     "content": "OsDREB1A is a rice stress-response transcription factor.",
@@ -49,9 +52,9 @@ def test_chat_messages_for_state_preserve_roles_and_single_current_turn() -> (
         "user",
         "user",
     ]
-    assert [
-        message["content"] for message in messages
-    ].count("What about its drought response?") == 1
+    assert [message["content"] for message in messages].count(
+        "What about its drought response?"
+    ) == 1
 
 
 def test_chat_messages_for_state_v0_matches_existing_single_turn_shape() -> (
@@ -111,9 +114,9 @@ async def test_phyto_chat_passes_thread_id_and_history_in_state(
             "content": "OsDREB1A is a rice stress-response transcription factor.",
         },
     ]
-    assert "conversation_messages" not in captured["initial_state"][
-        "chat_kwargs"
-    ]
+    assert (
+        "conversation_messages" not in captured["initial_state"]["chat_kwargs"]
+    )
 
 
 async def test_phyto_chat_with_follow_strips_thread_id_from_nested_follow_up(
@@ -128,16 +131,18 @@ async def test_phyto_chat_with_follow_strips_thread_id_from_nested_follow_up(
             "choices": [
                 {
                     "message": {
-                        "content": "primary answer"
-                        if len(calls) == 1
-                        else "[]"
+                        "content": (
+                            "primary answer" if len(calls) == 1 else "[]"
+                        )
                     }
                 }
             ]
         }
 
     monkeypatch.setattr(chat_service, "phyto_chat", fake_phyto_chat)
-    monkeypatch.setattr(chat_service, "get_prompt", lambda *_args, **_kwargs: "follow-up")
+    monkeypatch.setattr(
+        chat_service, "get_prompt", lambda *_args, **_kwargs: "follow-up"
+    )
 
     await chat_service.phyto_chat_with_follow(
         user_query="What about drought response?",

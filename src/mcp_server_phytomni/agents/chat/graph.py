@@ -139,9 +139,7 @@ async def follow_up_node(
         follow_query = f"{memory_context}\n\n{follow_query}"
     follow_kwargs = {**chat_kwargs, "prompt_file": prompt_file}
     if state.get("conversation_messages"):
-        follow_kwargs["conversation_messages"] = state[
-            "conversation_messages"
-        ]
+        follow_kwargs["conversation_messages"] = state["conversation_messages"]
     follow_response = await service.phyto_chat(follow_query, **follow_kwargs)
     follow_list = parse_follow_up_questions(message_content(follow_response))
     message = first_message(response)
