@@ -205,29 +205,43 @@ def _record_child_submissions(
     now: str,
 ) -> None:
     """Record accepted child submissions under one explicit run."""
-    for (
-        task_id,
-        output_dir,
-        input_fingerprint,
-        source_task_id,
-    ) in submissions:
-        manager.record(
-            Submission(
-                task_id=task_id,
-                status="submitted",
-                output_dir=output_dir,
-                run_context=RunContext(
-                    run_id=run_id,
-                    user_id=user_id,
-                    agent=agent,
-                    origin="remote",
-                    created_at=now,
-                    updated_at=now,
-                ),
-                input_fingerprint=input_fingerprint,
-                source_task_id=source_task_id,
-            )
+    for submission in _build_child_submissions(
+        submissions=submissions,
+        run_id=run_id,
+        user_id=user_id,
+        agent=agent,
+        now=now,
+    ):
+        manager.record(submission)
+
+
+def _build_child_submissions(
+    *,
+    submissions: tuple[SubmissionTuple, ...],
+    run_id: str,
+    user_id: str,
+    agent: str,
+    now: str,
+) -> tuple[Submission, ...]:
+    """Build task rows with one shared run context."""
+    return tuple(
+        Submission(
+            task_id=task_id,
+            status="submitted",
+            output_dir=output_dir,
+            run_context=RunContext(
+                run_id=run_id,
+                user_id=user_id,
+                agent=agent,
+                origin="remote",
+                created_at=now,
+                updated_at=now,
+            ),
+            input_fingerprint=input_fingerprint,
+            source_task_id=source_task_id,
         )
+        for task_id, output_dir, input_fingerprint, source_task_id in submissions
+    )
 
 
 def record_submitted_task(result: Any, *, agent: str) -> None:
@@ -240,11 +254,10 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
     ``RunRegistry.reconcile`` can join them by ``tasks.run_id``.
     Best-effort: a registry / SQLite / OS error must never break an
     already-successful remote submission. On such a failure the
-    chokepoint (1) records the full traceback via
-    ``logger.exception`` so operators can diagnose the persistence
-    issue from logs, and (2) sets the ``recorder_degraded`` request
-    contextvar so the HTTP layer can surface the degraded-tracking
-    state to the client. Accepted upstream task ids are bound before
+    chokepoint (1) logs only safe identifiers and the exception class,
+    and (2) sets the ``recorder_degraded`` request contextvar so the
+    HTTP layer can surface the degraded-tracking state to the client.
+    Accepted upstream task ids are bound before
     local persistence so the HTTP layer can still return real work
     identities when that write fails.
 
@@ -301,26 +314,20 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
     try:
         registry = RunRegistry(db_path)
         if bound_run_id is not None:
-            reserved = registry.get_run(bound_run_id, owner=user_id)
-            if (
-                reserved is None
-                or reserved.spec.agent != agent
-                or reserved.status != "running"
-            ):
-                bind_recorder_degraded(True)
-                return
-            _record_child_submissions(
-                manager=TaskManager(db_path),
+            child_submissions = _build_child_submissions(
                 submissions=submissions,
                 run_id=bound_run_id,
                 user_id=user_id,
                 agent=agent,
                 now=now,
             )
-            if not registry.update_running_result(
+            if not registry.record_reserved_submissions(
                 bound_run_id,
                 owner=user_id,
+                agent=agent,
+                submissions=child_submissions,
                 result=initial_result,
+                now=now,
             ):
                 bind_recorder_degraded(True)
             return
