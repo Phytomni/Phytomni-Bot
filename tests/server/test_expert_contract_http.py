@@ -354,6 +354,7 @@ async def test_expert_uses_native_run_contract(
     )
     assert direct.status_code == expected_status
     direct_body = direct.json()
+    direct_record: RunRecord | None = None
     if expected_status == 202:
         direct_task_ids = {f"expert-parity-{slug}-1"}
         assert direct_body["id"] == direct_body["run_id"]
@@ -398,6 +399,7 @@ async def test_expert_uses_native_run_contract(
         assert routed_record.request_info.tool_name == tool_name
         assert routed_record.request_info.query is None
         assert routed_record.request_info.request_json is None
+        assert direct_record is not None
         assert routed_record.task_ids != direct_record.task_ids
     else:
         assert _contract_shape(routed_body) == _contract_shape(direct_body)
