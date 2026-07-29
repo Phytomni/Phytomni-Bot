@@ -531,9 +531,9 @@ async def test_remote_http_response_keeps_run_identity_byte_identical(
     assert "degraded_tracking" not in body
     run_id = body["run_id"]
     for _ in range(100):
-        record = RunRegistry(
-            api_app_module.resolve_tasks_db_path()
-        ).get_run(run_id, owner="u1")
+        record = RunRegistry(api_app_module.resolve_tasks_db_path()).get_run(
+            run_id, owner="u1"
+        )
         if record is not None and record.task_ids == ("accepted-healthy",):
             break
         await asyncio.sleep(0)
@@ -637,7 +637,9 @@ async def test_background_resolver_failure_settles_reserved_run(
         called["handler"] = True
         return {"task_id": "never-accepted", "output_dir": "tenant/out"}
 
-    monkeypatch.setattr(api_app_module, "resolve_design_user_query", fail_resolver)
+    monkeypatch.setattr(
+        api_app_module, "resolve_design_user_query", fail_resolver
+    )
     install_tool_handler(
         monkeypatch,
         server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value,
@@ -673,6 +675,7 @@ async def test_background_handler_failure_settles_reserved_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Handler failures before acceptance use the stable worker error code."""
+
     async def fail_handler(_args: Any) -> dict[str, Any]:
         raise RuntimeError("private handler failure")
 
@@ -708,6 +711,7 @@ async def test_partial_research_submission_remains_running_with_warnings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """One persisted research child plus warnings remains pollable."""
+
     async def partial_handler(_args: Any) -> dict[str, Any]:
         return {
             "task_ids": ["research-accepted"],
