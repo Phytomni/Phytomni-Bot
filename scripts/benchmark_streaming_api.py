@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -96,7 +97,7 @@ def _positive_float(value: str) -> float:
         parsed = float(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError("must be a number") from exc
-    if parsed <= 0:
+    if not math.isfinite(parsed) or parsed <= 0:
         raise argparse.ArgumentTypeError("must be greater than zero")
     return parsed
 
@@ -158,7 +159,9 @@ def read_queries(path: Path) -> list[QueryInput]:
     except UnicodeDecodeError as exc:
         raise BenchmarkInputError(f"query file is not UTF-8: {path}") from exc
     except OSError as exc:
-        raise BenchmarkInputError(f"query file is not readable: {path}") from exc
+        raise BenchmarkInputError(
+            f"query file is not readable: {path}"
+        ) from exc
 
     queries = [
         QueryInput(line_number, line)
