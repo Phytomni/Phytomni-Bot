@@ -580,6 +580,7 @@ async def test_remote_tracking_failure_returns_safe_failed_projection(
     )
     assert record.error == "background_submission_tracking_failed"
     assert record.task_ids == ()
+    assert record.result is not None
     assert record.result["execution"]["tasks"] == [
         {"id": "accepted-1", "accepted": True, "status": "submitted"}
     ]
@@ -743,6 +744,7 @@ async def test_partial_research_submission_remains_running_with_warnings(
         api_app_module.resolve_tasks_db_path(), run_id, "research-accepted"
     )
     assert record.task_ids == ("research-accepted",)
+    assert record.result is not None
     execution = record.result["execution"]
     assert execution["tracking"] == {"degraded": True}
     assert execution["warnings"] == [
