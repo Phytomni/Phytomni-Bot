@@ -269,6 +269,18 @@ class ReviewSettlementClaim:
     fence_token: int | None = None
 
 
+@dataclass(frozen=True)
+class _ReviewCleanupEntry:
+    """Values needed to persist one Review checkpoint cleanup candidate."""
+
+    key: str
+    candidate: str
+    turn_id: str
+    operation: str
+    now: str
+    staged: bool
+
+
 def _json(value: dict[str, Any]) -> str:
     return json.dumps(
         value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
@@ -560,13 +572,7 @@ class ConversationContextStore:
     @staticmethod
     def _upsert_review_checkpoint_cleanup(
         connection: sqlite3.Connection,
-        key: str,
-        candidate: str,
-        *,
-        turn_id: str,
-        operation: str,
-        now: str,
-        staged: bool,
+        entry: _ReviewCleanupEntry,
     ) -> None:
         """Record one bounded candidate before or during turn staging."""
         connection.execute(
@@ -575,12 +581,12 @@ class ConversationContextStore:
             "registered_at, staged_at, eligible_at, tombstone_pending) "
             "VALUES (?, ?, ?, ?, ?, ?, NULL, 0)",
             (
-                key,
-                candidate,
-                turn_id,
-                operation,
-                now,
-                now if staged else None,
+                entry.key,
+                entry.candidate,
+                entry.turn_id,
+                entry.operation,
+                entry.now,
+                entry.now if entry.staged else None,
             ),
         )
         connection.execute(
@@ -589,14 +595,20 @@ class ConversationContextStore:
             "operation = COALESCE(operation, ?), "
             "registered_at = COALESCE(registered_at, ?) "
             "WHERE conversation_key = ? AND candidate_thread_id = ?",
-            (turn_id, operation, now, key, candidate),
+            (
+                entry.turn_id,
+                entry.operation,
+                entry.now,
+                entry.key,
+                entry.candidate,
+            ),
         )
-        if staged:
+        if entry.staged:
             connection.execute(
                 "UPDATE conversation_review_checkpoint_cleanup SET "
                 "staged_at = COALESCE(staged_at, ?) "
                 "WHERE conversation_key = ? AND candidate_thread_id = ?",
-                (now, key, candidate),
+                (entry.now, entry.key, entry.candidate),
             )
 
     def register_review_candidate(
@@ -667,12 +679,14 @@ class ConversationContextStore:
                 return False
             self._upsert_review_checkpoint_cleanup(
                 connection,
-                key,
-                candidate_thread_id,
-                turn_id=turn_id,
-                operation=operation,
-                now=now,
-                staged=False,
+                _ReviewCleanupEntry(
+                    key=key,
+                    candidate=candidate_thread_id,
+                    turn_id=turn_id,
+                    operation=operation,
+                    now=now,
+                    staged=False,
+                ),
             )
         return True
 
@@ -720,12 +734,14 @@ class ConversationContextStore:
                     ):
                         self._upsert_review_checkpoint_cleanup(
                             connection,
-                            key,
-                            candidate,
-                            turn_id=marker_turn_id,
-                            operation=operation,
-                            now=now,
-                            staged=True,
+                            _ReviewCleanupEntry(
+                                key=key,
+                                candidate=candidate,
+                                turn_id=marker_turn_id,
+                                operation=operation,
+                                now=now,
+                                staged=True,
+                            ),
                         )
                 return self._turn(row)
             if row[4] != "in_progress":
@@ -759,12 +775,14 @@ class ConversationContextStore:
                 ):
                     self._upsert_review_checkpoint_cleanup(
                         connection,
-                        key,
-                        candidate,
-                        turn_id=marker_turn_id,
-                        operation=operation,
-                        now=now,
-                        staged=True,
+                        _ReviewCleanupEntry(
+                            key=key,
+                            candidate=candidate,
+                            turn_id=marker_turn_id,
+                            operation=operation,
+                            now=now,
+                            staged=True,
+                        ),
                     )
             row = connection.execute(
                 "SELECT conversation_key, turn_id, operation, "
@@ -863,39 +881,72 @@ class ConversationContextStore:
         return value
 
     @staticmethod
-    def _marker_is_bounded(
-        marker: Mapping[str, Any], *, key: str, turn_id: str
-    ) -> bool:
-        """Reject marker identities that cannot belong to this staged row."""
+    def _marker_operation(marker: Mapping[str, Any]) -> str | None:
+        """Return a supported Review operation from one marker."""
+        if marker.get("version") != 1:
+            return None
         operation = marker.get("operation")
+        if operation not in {
+            "new_review",
+            "follow_up",
+            "local_revision",
+            "scope_change",
+        }:
+            return None
+        return operation
+
+    @staticmethod
+    def _marker_stable_thread_id(marker: Mapping[str, Any]) -> str | None:
+        """Return a bounded stable Review thread identity."""
         stable = marker.get("stable_thread_id")
-        marker_turn_id = marker.get("turn_id")
-        report_revision = marker.get("report_revision")
-        if (
-            marker.get("version") != 1
-            or operation
-            not in {
-                "new_review",
-                "follow_up",
-                "local_revision",
-                "scope_change",
-            }
-            or not isinstance(stable, str)
-            or len(stable) != len("ctx-") + 64
-            or not stable.startswith("ctx-")
-            or any(char not in "0123456789abcdef" for char in stable[4:])
-            or marker_turn_id != turn_id
-            or not isinstance(turn_id, str)
-            or not turn_id
-            or len(turn_id) > 64
-            or "/" in turn_id
-            or "\\" in turn_id
-            or report_revision is None
-            or isinstance(report_revision, bool)
-            or not isinstance(report_revision, int)
-            or report_revision < 0
-        ):
+        if not isinstance(stable, str):
+            return None
+        if len(stable) != len("ctx-") + 64:
+            return None
+        if not stable.startswith("ctx-"):
+            return None
+        if any(char not in "0123456789abcdef" for char in stable[4:]):
+            return None
+        return stable
+
+    @staticmethod
+    def _turn_id_is_bounded(turn_id: str) -> bool:
+        """Reject turn identifiers that could escape the bounded marker."""
+        if not isinstance(turn_id, str) or not turn_id:
             return False
+        return not (len(turn_id) > 64 or "/" in turn_id or "\\" in turn_id)
+
+    @staticmethod
+    def _report_revision_is_bounded(marker: Mapping[str, Any]) -> bool:
+        """Reject malformed Review report revisions."""
+        report_revision = marker.get("report_revision")
+        return (
+            report_revision is not None
+            and not isinstance(report_revision, bool)
+            and isinstance(report_revision, int)
+            and report_revision >= 0
+        )
+
+    @classmethod
+    def _bounded_marker_fields(
+        cls, marker: Mapping[str, Any], turn_id: str
+    ) -> tuple[str, str] | None:
+        """Validate marker fields shared by every Review settlement state."""
+        operation = cls._marker_operation(marker)
+        stable = cls._marker_stable_thread_id(marker)
+        if operation is None or stable is None:
+            return None
+        if marker.get("turn_id") != turn_id:
+            return None
+        if not cls._turn_id_is_bounded(turn_id):
+            return None
+        if not cls._report_revision_is_bounded(marker):
+            return None
+        return operation, stable
+
+    @staticmethod
+    def _stable_marker_matches_key(stable: str, key: str) -> bool:
+        """Check that a marker belongs to this conversation's Review agent."""
         try:
             expected_stable = (
                 "ctx-"
@@ -906,16 +957,31 @@ class ConversationContextStore:
                 ).hexdigest()
             )
         except (ValueError, AttributeError):
-            expected_stable = None
-        if expected_stable is not None and stable != expected_stable:
-            return False
+            return True
+        return stable == expected_stable
+
+    @staticmethod
+    def _marker_candidate_is_bounded(
+        marker: Mapping[str, Any], operation: str
+    ) -> bool:
+        """Validate candidate identity only for candidate-producing states."""
         candidate = marker.get("candidate_thread_id")
         if operation in {"new_review", "scope_change"}:
-            if _review_candidate_thread_id(marker) is None:
-                return False
-        elif candidate is not None:
+            return _review_candidate_thread_id(marker) is not None
+        return candidate is None
+
+    @classmethod
+    def _marker_is_bounded(
+        cls, marker: Mapping[str, Any], *, key: str, turn_id: str
+    ) -> bool:
+        """Reject marker identities that cannot belong to this staged row."""
+        fields = cls._bounded_marker_fields(marker, turn_id)
+        if fields is None:
             return False
-        return True
+        operation, stable = fields
+        return cls._stable_marker_matches_key(
+            stable, key
+        ) and cls._marker_candidate_is_bounded(marker, operation)
 
     @staticmethod
     def _claim_is_expired(
@@ -1498,12 +1564,14 @@ class ConversationContextStore:
                         operation = "new_review"
                     self._upsert_review_checkpoint_cleanup(
                         connection,
-                        key,
-                        candidate,
-                        turn_id=turn_id,
-                        operation=operation,
-                        now=now,
-                        staged=True,
+                        _ReviewCleanupEntry(
+                            key=key,
+                            candidate=candidate,
+                            turn_id=turn_id,
+                            operation=operation,
+                            now=now,
+                            staged=True,
+                        ),
                     )
                 if marker.get("settlement_state") in {
                     "pending",
@@ -1606,12 +1674,14 @@ class ConversationContextStore:
                         operation = "new_review"
                     self._upsert_review_checkpoint_cleanup(
                         connection,
-                        key,
-                        candidate,
-                        turn_id=turn_id,
-                        operation=operation,
-                        now=now_value,
-                        staged=True,
+                        _ReviewCleanupEntry(
+                            key=key,
+                            candidate=candidate,
+                            turn_id=turn_id,
+                            operation=operation,
+                            now=now_value,
+                            staged=True,
+                        ),
                     )
                     connection.execute(
                         "UPDATE conversation_review_checkpoint_cleanup "
