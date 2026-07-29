@@ -234,6 +234,80 @@ async def run_query(
             )
 
 
+def summarize_results(
+    results: Sequence[QueryResult],
+    total_duration: float,
+) -> BenchmarkSummary:
+    """Aggregate successful measurements over the approved denominators."""
+    successful = [result for result in results if result.success]
+    success_count = len(successful)
+    failure_count = len(results) - success_count
+    ttft_values = [
+        result.ttft for result in successful if result.ttft is not None
+    ]
+    average_ttft = (
+        sum(ttft_values) / success_count
+        if success_count and len(ttft_values) == success_count
+        else None
+    )
+    average_query_duration = (
+        sum(result.duration for result in successful) / success_count
+        if success_count
+        else None
+    )
+    words_per_second = (
+        sum(result.word_count for result in successful) / total_duration
+        if success_count and total_duration > 0
+        else None
+    )
+    return BenchmarkSummary(
+        average_ttft=average_ttft,
+        total_duration=total_duration,
+        average_query_duration=average_query_duration,
+        words_per_second=words_per_second,
+        success_count=success_count,
+        failure_count=failure_count,
+    )
+
+
+async def run_benchmark(
+    config: BenchmarkConfig,
+    queries: Sequence[QueryInput],
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+    clock: Callable[[], float] = time.perf_counter,
+) -> tuple[BenchmarkSummary, list[QueryResult]]:
+    """Run every query through one bounded shared HTTP client."""
+    if not queries:
+        raise BenchmarkInputError("benchmark requires at least one query")
+    semaphore = asyncio.Semaphore(config.max_concurrency)
+    limits = httpx.Limits(
+        max_connections=config.max_concurrency,
+        max_keepalive_connections=config.max_concurrency,
+    )
+    timeout = httpx.Timeout(config.timeout_seconds, connect=30.0)
+    async with httpx.AsyncClient(
+        limits=limits,
+        timeout=timeout,
+        transport=transport,
+    ) as client:
+        started_at = clock()
+        results = await asyncio.gather(
+            *(
+                run_query(
+                    config,
+                    query,
+                    semaphore,
+                    client,
+                    clock=clock,
+                )
+                for query in queries
+            )
+        )
+        total_duration = clock() - started_at
+    return summarize_results(results, total_duration), list(results)
+
+
 def _positive_int(value: str) -> int:
     """Parse a strictly positive integer for argparse."""
     try:
