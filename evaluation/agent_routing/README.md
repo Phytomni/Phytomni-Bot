@@ -116,3 +116,30 @@ UV_CACHE_DIR=/tmp/phytomni-routing-uv \
   uv run --no-sync python -c \
   "from pathlib import Path; from scripts.agent_routing_eval.dataset import load_dataset, verify_workbook_sources; root=Path('../manuscript/1.submittion/2025-11-31329A-Z_Source_Data/Supplementary Data'); cases=load_dataset(Path('evaluation/agent_routing/datasets/dev_v1.jsonl'))+load_dataset(Path('evaluation/agent_routing/datasets/test_v1.jsonl')); verify_workbook_sources(cases, root); print(f'verified {len(cases)} cases')"
 ```
+
+## Selector Evaluation
+
+Run the selector-only evaluation from the repository root:
+
+```bash
+uv run python scripts/evaluate_agent_routing.py --mode quick
+
+uv run python scripts/evaluate_agent_routing.py --mode benchmark
+
+uv run python scripts/evaluate_agent_routing.py \
+  --mode benchmark \
+  --dataset evaluation/agent_routing/datasets/dev_v1.jsonl
+```
+
+Quick mode evaluates the development split once. The default benchmark
+evaluates the test split three times, producing 300 logical calls; each
+logical call may make up to three provider attempts after a typed provider
+failure. The selected agents are never executed: only the selector and its
+schema/core-argument result are measured. Benchmark runs require a clean
+working tree unless `--allow-dirty` is supplied; that override records a
+diagnostic report rather than a stable baseline. `--enforce-thresholds` is
+available only for benchmark mode and changes threshold failure to exit code
+1. Exit codes are 0 for a completed run, 1 for an enforced threshold failure,
+2 for invalid configuration/data or a blocked dirty benchmark, and 3 for an
+incomplete or cancelled run. JSON and Markdown artifacts are written under
+`evaluation/agent_routing/results/`, which is intentionally ignored.
