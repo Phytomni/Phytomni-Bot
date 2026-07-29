@@ -14,18 +14,12 @@ from typing import Any, Final, Literal, cast
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 
 from .dataset import AgentRoutingCase
-from .metrics_types import (
-    AgentValues,
-    CaseProjection,
-    ErrorValues,
-    MajorityValues,
-    StabilityValues,
-)
+from .metrics_types import AgentValues as _AgentValues
+from .metrics_types import CaseProjection as _CaseProjection
+from .metrics_types import ErrorValues as _ErrorValues
+from .metrics_types import MajorityValues as _MajorityValues
+from .metrics_types import StabilityValues as _StabilityValues
 from .runner import PROVIDER_ERROR, ROUTING_ERROR, RunOutcome
-
-(_CaseProjection, _AgentValues, _MajorityValues, _ErrorValues, _StabilityValues) = (
-    CaseProjection, AgentValues, MajorityValues, ErrorValues, StabilityValues
-)
 
 NO_MAJORITY: Final = "__NO_MAJORITY__"
 _CANONICAL_AGENTS: Final = tuple(
@@ -44,11 +38,9 @@ _WILSON_Z: Final = 1.959963984540054
 _RateMetric = Literal["precision", "recall", "f1"]
 _RATE_METRICS: Final[tuple[_RateMetric, ...]] = ("precision", "recall", "f1")
 _MetricMap = Mapping[str, object]
-_AgentRows = Mapping[str, AgentValues]
-_ValidatedProjection = tuple[MajorityValues, _AgentRows, StabilityValues]
+_AgentRows = Mapping[str, _AgentValues]
+_ValidatedProjection = tuple[_MajorityValues, _AgentRows, _StabilityValues]
 _ValidatedThresholdReport = tuple[_ValidatedProjection, float]
-_IntPair = tuple[int, int]
-_IntTriple = tuple[int, int, int]
 _CountMap = dict[str, int]
 
 
@@ -61,7 +53,7 @@ def _f1(precision: float, recall: float) -> float:
     return 0.0 if total == 0.0 else 2.0 * precision * recall / total
 
 
-def _rate_value(row: AgentValues, metric: _RateMetric) -> float:
+def _rate_value(row: _AgentValues, metric: _RateMetric) -> float:
     """Read one rate field with a TypedDict-safe literal key."""
     return row[metric]
 
@@ -561,7 +553,7 @@ def _consistent_rate(value: object, numerator: int, denominator: int) -> bool:
 
 def _validate_run_level_counts(
     value: object, planned_runs: int
-) -> _IntPair | None:
+) -> tuple[int, int] | None:
     mapping = _mapping_with_keys(value, _RUN_LEVEL_KEYS)
     if mapping is None:
         return None
@@ -657,7 +649,9 @@ def _validate_majority(
     }
 
 
-def _validate_agent_row(value: object, case_count: int) -> _AgentValues | None:
+def _validate_agent_row(
+    value: object, case_count: int
+) -> _AgentValues | None:
     keys = ("support", "predicted", "true_positive")
     counts = _bounded_values(value, keys, case_count)
     row = _mapping_with_keys(value, _AGENT_ROW_KEYS)
@@ -750,7 +744,7 @@ def _validate_languages(
 
 def _validate_language_row(
     value: object, case_count: int
-) -> _IntTriple | None:
+) -> tuple[int, int, int] | None:
     keys = ("case_count", "top1_correct", "dispatchable_correct")
     counts = _bounded_values(value, keys, case_count)
     row = _mapping_with_keys(value, _LANGUAGE_ROW_KEYS)
@@ -878,7 +872,7 @@ def _validate_errors(
 
 def _validate_threshold_header(
     metrics: _MetricMap,
-) -> _IntPair | None:
+) -> tuple[int, int] | None:
     if _count_value(metrics["schema_version"]) != 1:
         return None
     values = tuple(
