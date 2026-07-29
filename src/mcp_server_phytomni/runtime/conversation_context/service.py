@@ -290,7 +290,10 @@ def _bounded_review_stage_field(key: str, candidate: object) -> object:
     else:
         limit = 64 if key == "turn_id" else 512
         bounded = _bounded_text(
-            candidate, limit=limit, reject_path_chars=key == "turn_id"
+            candidate,
+            limit=limit,
+            reject_path_chars=key
+            in {"operation", "stable_thread_id", "turn_id", "settlement_state"},
         )
     return _INVALID_REVIEW_FIELD if bounded is None else bounded
 

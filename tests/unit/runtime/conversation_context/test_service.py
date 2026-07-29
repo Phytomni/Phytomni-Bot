@@ -132,6 +132,29 @@ def _service(
     )
 
 
+def test_review_metadata_path_bounds_match_field_contracts() -> None:
+    """Path restrictions apply only to identities, not claim values."""
+    for key in (
+        "operation",
+        "stable_thread_id",
+        "turn_id",
+        "settlement_state",
+        "candidate_thread_id",
+    ):
+        assert (
+            module._bounded_review_stage_field(key, "value/with/path")
+            is module._INVALID_REVIEW_FIELD
+        )
+    for key in (
+        "settlement_claim_token",
+        "settlement_claimed_at",
+        "settlement_ledger_version",
+    ):
+        assert module._bounded_review_stage_field(
+            key, "value/with/path"
+        ) == "value/with/path"
+
+
 @pytest.mark.asyncio
 async def test_instant_selects_chat_without_router(
     store: ConversationContextStore,
