@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 
 import httpx
@@ -433,3 +433,197 @@ def test_sanitize_error_redacts_and_bounds_api_key() -> None:
     assert sanitized.startswith("<redacted>")
     assert "top-secret" not in sanitized
     assert len(sanitized) == 200
+
+
+def _successful_result(
+    line_number: int,
+    *,
+    duration: float = 1.0,
+    ttft: float = 0.2,
+    word_count: int = 10,
+) -> benchmark.QueryResult:
+    """Build a successful terminal result for aggregation tests."""
+    return benchmark.QueryResult(
+        line_number=line_number,
+        duration=duration,
+        ttft=ttft,
+        reasoning_text="",
+        content_text="answer",
+        word_count=word_count,
+        error=None,
+    )
+
+
+def test_summarize_results_uses_approved_denominators() -> None:
+    """Use successful busy time and global physical throughput time."""
+    results = [
+        _successful_result(1, duration=1.0, word_count=10),
+        _successful_result(2, duration=1.0, word_count=10),
+        _successful_result(3, duration=1.0, word_count=10),
+        _successful_result(4, duration=1.0, word_count=10),
+        _successful_result(5, duration=1.0, word_count=10),
+    ]
+
+    summary = benchmark.summarize_results(results, total_duration=2.0)
+
+    assert summary.average_ttft == pytest.approx(0.2)
+    assert summary.average_query_duration == pytest.approx(
+        (2.0 + 2.0 + 1.0) / 5.0
+    )
+    assert summary.total_duration == pytest.approx(2.0)
+    assert summary.words_per_second == pytest.approx(25.0)
+    assert summary.success_count == 5
+    assert summary.failure_count == 0
+
+
+def test_summarize_results_excludes_failures_from_averages() -> None:
+    """Keep failed requests in counts but not successful averages."""
+    results = [
+        _successful_result(1, duration=2.0, ttft=0.4, word_count=8),
+        benchmark.QueryResult(
+            line_number=2,
+            duration=9.0,
+            ttft=None,
+            reasoning_text="",
+            content_text="",
+            word_count=0,
+            error="timeout",
+        ),
+    ]
+
+    summary = benchmark.summarize_results(results, total_duration=10.0)
+
+    assert summary.average_ttft == pytest.approx(0.4)
+    assert summary.average_query_duration == pytest.approx(2.0)
+    assert summary.words_per_second == pytest.approx(0.8)
+    assert summary.success_count == 1
+    assert summary.failure_count == 1
+
+
+def test_summarize_results_uses_none_when_every_query_fails() -> None:
+    """Represent unavailable successful measurements explicitly."""
+    results = [
+        benchmark.QueryResult(
+            line_number=1,
+            duration=3.0,
+            ttft=None,
+            reasoning_text="",
+            content_text="",
+            word_count=0,
+            error="timeout",
+        )
+    ]
+
+    summary = benchmark.summarize_results(results, total_duration=3.0)
+
+    assert summary.average_ttft is None
+    assert summary.average_query_duration is None
+    assert summary.words_per_second is None
+    assert summary.total_duration == pytest.approx(3.0)
+    assert summary.success_count == 0
+    assert summary.failure_count == 1
+
+
+async def test_run_benchmark_never_exceeds_pool_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bound simultaneous query runners to the configured semaphore."""
+    active = 0
+    peak = 0
+    entered = 0
+    release = asyncio.Event()
+
+    async def fake_run_query(
+        _config: benchmark.BenchmarkConfig,
+        query: benchmark.QueryInput,
+        semaphore: asyncio.Semaphore,
+        _client: httpx.AsyncClient,
+        *,
+        clock: Callable[[], float],
+    ) -> benchmark.QueryResult:
+        del clock
+        nonlocal active, peak, entered
+        async with semaphore:
+            active += 1
+            entered += 1
+            peak = max(peak, active)
+            if entered == 3:
+                release.set()
+            await release.wait()
+            await asyncio.sleep(0)
+            active -= 1
+        return _successful_result(query.line_number, word_count=1)
+
+    monkeypatch.setattr(benchmark, "run_query", fake_run_query)
+    config = benchmark.BenchmarkConfig(
+        max_concurrency=3,
+        query_file=Path("queries.txt"),
+        base_url="https://example.invalid/v1",
+        model_id="model-a",
+        api_key="secret",
+    )
+    queries = [
+        benchmark.QueryInput(index, f"query {index}") for index in range(1, 6)
+    ]
+    clock = iter((100.0, 105.0)).__next__
+
+    summary, results = await benchmark.run_benchmark(
+        config,
+        queries,
+        transport=httpx.MockTransport(lambda _request: httpx.Response(200)),
+        clock=clock,
+    )
+
+    assert peak == 3
+    assert len(results) == 5
+    assert summary.total_duration == pytest.approx(5.0)
+    assert summary.average_query_duration == pytest.approx(1.0)
+    assert summary.words_per_second == pytest.approx(1.0)
+
+
+async def test_run_benchmark_keeps_running_after_one_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Collect a later success after an earlier terminal failure."""
+    attempted: list[int] = []
+
+    async def fake_run_query(
+        _config: benchmark.BenchmarkConfig,
+        query: benchmark.QueryInput,
+        semaphore: asyncio.Semaphore,
+        _client: httpx.AsyncClient,
+        *,
+        clock: Callable[[], float],
+    ) -> benchmark.QueryResult:
+        del clock
+        async with semaphore:
+            attempted.append(query.line_number)
+        if query.line_number == 1:
+            return benchmark.QueryResult(
+                line_number=1,
+                duration=1.0,
+                ttft=None,
+                reasoning_text="",
+                content_text="",
+                word_count=0,
+                error="upstream failure",
+            )
+        return _successful_result(2, word_count=4)
+
+    monkeypatch.setattr(benchmark, "run_query", fake_run_query)
+    clock = iter((10.0, 12.0)).__next__
+    summary, results = await benchmark.run_benchmark(
+        _runtime_config(),
+        [
+            benchmark.QueryInput(1, "first"),
+            benchmark.QueryInput(2, "second"),
+        ],
+        transport=httpx.MockTransport(lambda _request: httpx.Response(200)),
+        clock=clock,
+    )
+
+    assert sorted(attempted) == [1, 2]
+    assert [result.success for result in results] == [False, True]
+    assert summary.success_count == 1
+    assert summary.failure_count == 1
+    assert summary.total_duration == pytest.approx(2.0)
