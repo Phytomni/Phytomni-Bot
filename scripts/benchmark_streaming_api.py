@@ -155,11 +155,12 @@ def decode_stream_delta(data: str) -> StreamDelta | None:
 
 def sanitize_error(error: BaseException, api_key: str) -> str:
     """Return a bounded one-line error with the credential redacted."""
-    message = " ".join(str(error).split())
-    if not message:
-        message = type(error).__name__
+    message = str(error)
     if api_key:
         message = message.replace(api_key, "<redacted>")
+    message = " ".join(message.split())
+    if not message:
+        message = type(error).__name__
     return message[:200]
 
 
@@ -366,7 +367,12 @@ def build_config(
     """Validate parsed values and resolve the API-key environment fallback."""
     base_url = str(args.base_url).strip().rstrip("/")
     model_id = str(args.model_id).strip()
-    api_key = str(args.api_key or environ.get("OPENAI_API_KEY", "")).strip()
+    raw_api_key = (
+        environ.get("OPENAI_API_KEY", "")
+        if args.api_key is None
+        else args.api_key
+    )
+    api_key = str(raw_api_key).strip()
     if not base_url:
         raise BenchmarkInputError("base URL must not be blank")
     if not model_id:
@@ -473,7 +479,7 @@ def main(
     except KeyboardInterrupt:
         print("benchmark interrupted", file=sys.stderr)
         return 130
-    except Exception as exc:
+    except Exception:
         print_summary(
             BenchmarkSummary(
                 average_ttft=None,
@@ -484,7 +490,11 @@ def main(
                 failure_count=len(queries),
             )
         )
-        print(sanitize_error(exc, config.api_key), file=sys.stderr)
+        print("benchmark failed unexpectedly", file=sys.stderr)
+        print(
+            f"成功 0/{len(queries)}，失败 {len(queries)}",
+            file=sys.stderr,
+        )
         return 1
 
     print_summary(summary)
