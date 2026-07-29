@@ -312,11 +312,13 @@ async def purge_expired_runs_best_effort_async(
     if not claim_run_gc():
         return
     finished = threading.Event()
-    failures: list[Exception] = []
+    failures: list[BaseException] = []
 
     def _run() -> None:
         try:
             purge()
+        except asyncio.CancelledError as exc:
+            failures.append(exc)
         except _RUN_GC_CAUGHT as exc:
             failures.append(exc)
         finally:

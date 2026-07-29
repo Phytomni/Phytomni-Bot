@@ -59,6 +59,19 @@ async def test_sync_gc_boundary_propagates_worker_cancellation() -> None:
         boundary(cancelled)
 
 
+@pytest.mark.asyncio
+async def test_async_gc_wrapper_propagates_worker_cancellation() -> None:
+    """The async GC wrapper re-raises cancellation from its worker."""
+
+    def cancelled() -> None:
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_lifecycle.purge_expired_runs_best_effort_async(
+            purge=cancelled
+        )
+
+
 def _stage_lifecycle_turn(
     store: ConversationContextStore,
     key: str,
