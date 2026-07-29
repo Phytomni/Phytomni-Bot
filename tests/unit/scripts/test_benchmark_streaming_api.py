@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
@@ -130,3 +131,63 @@ def test_parse_args_rejects_invalid_timeout(timeout: str) -> None:
         )
 
     assert raised.value.code == 2
+
+
+async def _line_stream(
+    *lines: str,
+) -> AsyncIterator[str]:
+    """Yield deterministic decoded HTTP lines."""
+    for line in lines:
+        yield line
+
+
+async def test_iter_sse_data_joins_data_lines_by_event() -> None:
+    """Respect SSE event framing instead of network chunk boundaries."""
+    values = [
+        value
+        async for value in benchmark.iter_sse_data(
+            _line_stream(
+                ": keepalive",
+                "event: message",
+                'data: {"choices":',
+                'data: [{"delta": {"content": "leaf"}}]}',
+                "",
+            )
+        )
+    ]
+
+    assert values == ['{"choices":\n[{"delta": {"content": "leaf"}}]}']
+
+
+def test_decode_stream_delta_reads_reasoning_and_content() -> None:
+    """Extract both generated text fields from the first choice."""
+    delta = benchmark.decode_stream_delta(
+        '{"choices":[{"delta":{'
+        '"reasoning_content":"分析",'
+        '"content":"answer"}}]}'
+    )
+
+    assert delta == benchmark.StreamDelta(
+        reasoning_content="分析",
+        content="answer",
+        done=False,
+    )
+
+
+def test_decode_stream_delta_handles_done_and_usage() -> None:
+    """Recognize the terminal sentinel and ignore usage-only payloads."""
+    assert benchmark.decode_stream_delta("[DONE]") == benchmark.StreamDelta(
+        done=True
+    )
+    assert benchmark.decode_stream_delta(
+        '{"choices":[],"usage":{"completion_tokens":4}}'
+    ) is None
+
+
+def test_decode_stream_delta_rejects_malformed_json() -> None:
+    """Convert JSON failures into a bounded protocol error."""
+    with pytest.raises(
+        benchmark.SseProtocolError,
+        match="malformed SSE JSON",
+    ):
+        benchmark.decode_stream_delta("{not-json}")

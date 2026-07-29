@@ -7,9 +7,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -18,6 +19,19 @@ _WORD_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]|[A-Za-z0-9]+")
 
 class BenchmarkInputError(ValueError):
     """Raised when benchmark configuration or query input is invalid."""
+
+
+class SseProtocolError(ValueError):
+    """Raised when a streaming data event violates the expected shape."""
+
+
+@dataclass(frozen=True)
+class StreamDelta:
+    """Generated text extracted from one OpenAI-compatible SSE event."""
+
+    reasoning_content: str = ""
+    content: str = ""
+    done: bool = False
 
 
 @dataclass(frozen=True)
@@ -78,6 +92,58 @@ class BenchmarkSummary:
 def count_words(text: str) -> int:
     """Count deterministic provider-independent generated word units."""
     return len(_WORD_PATTERN.findall(text))
+
+
+async def iter_sse_data(
+    lines: AsyncIterator[str],
+) -> AsyncIterator[str]:
+    """Yield complete SSE data values from decoded response lines."""
+    data_lines: list[str] = []
+    async for line in lines:
+        if line == "":
+            if data_lines:
+                yield "\n".join(data_lines)
+                data_lines.clear()
+            continue
+        if line.startswith(":"):
+            continue
+        field_name, separator, value = line.partition(":")
+        if field_name != "data":
+            continue
+        if separator and value.startswith(" "):
+            value = value[1:]
+        data_lines.append(value)
+    if data_lines:
+        yield "\n".join(data_lines)
+
+
+def _string_value(value: object) -> str:
+    """Return a streamed text field only when it is a string."""
+    return value if isinstance(value, str) else ""
+
+
+def decode_stream_delta(data: str) -> StreamDelta | None:
+    """Decode one complete SSE data value into a generated-text delta."""
+    if data.strip() == "[DONE]":
+        return StreamDelta(done=True)
+    try:
+        payload = json.loads(data)
+    except json.JSONDecodeError as exc:
+        raise SseProtocolError("malformed SSE JSON") from exc
+    if not isinstance(payload, dict):
+        raise SseProtocolError("SSE JSON must be an object")
+    choices = payload.get("choices")
+    if choices is None or choices == []:
+        return None
+    if not isinstance(choices, list) or not isinstance(choices[0], dict):
+        raise SseProtocolError("SSE choices must contain an object")
+    delta = choices[0].get("delta")
+    if not isinstance(delta, dict):
+        raise SseProtocolError("SSE choice delta must be an object")
+    return StreamDelta(
+        reasoning_content=_string_value(delta.get("reasoning_content")),
+        content=_string_value(delta.get("content")),
+    )
 
 
 def _positive_int(value: str) -> int:
