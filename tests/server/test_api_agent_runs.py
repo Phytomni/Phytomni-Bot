@@ -825,6 +825,7 @@ async def test_background_debug_raw_never_persists_or_logs(
         pytest.fail("background debug run did not attach its task")
 
     assert record is not None
+    assert record.result is not None
     persisted = json.dumps(record.result)
     assert "raw" not in record.result
     for sentinel in sentinels:
