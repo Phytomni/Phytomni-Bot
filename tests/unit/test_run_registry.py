@@ -169,7 +169,9 @@ def test_update_running_result_is_owner_and_status_scoped(
         )
         is False
     )
-    assert registry.update_running_result("run-1", owner="alice", result=updated)
+    assert registry.update_running_result(
+        "run-1", owner="alice", result=updated
+    )
     assert registry.get_run("run-1", owner="alice").result == updated
 
     assert registry.settle_run(

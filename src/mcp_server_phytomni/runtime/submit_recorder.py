@@ -240,7 +240,12 @@ def _build_child_submissions(
             input_fingerprint=input_fingerprint,
             source_task_id=source_task_id,
         )
-        for task_id, output_dir, input_fingerprint, source_task_id in submissions
+        for (
+            task_id,
+            output_dir,
+            input_fingerprint,
+            source_task_id,
+        ) in submissions
     )
 
 

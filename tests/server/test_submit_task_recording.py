@@ -330,9 +330,9 @@ def test_recorder_attaches_children_to_reserved_run(
             str(result["network_task"].get("output_dir") or "")
         ]
     else:
-        expected_output_dirs = [
-            str(result.get("output_dir") or "")
-        ] * len(expected_ids)
+        expected_output_dirs = [str(result.get("output_dir") or "")] * len(
+            expected_ids
+        )
     assert stored.result["execution"]["output_dirs"] == expected_output_dirs
     with closed_sqlite_connection(tasks_db_path) as conn:
         rows = conn.execute(

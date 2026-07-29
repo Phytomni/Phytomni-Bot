@@ -42,33 +42,33 @@ class _CaseProjection:
     dispatchable: bool
 
 
-_AgentValues = TypedDict(
-    "_AgentValues",
-    {
-        "support": int,
-        "predicted": int,
-        "true_positive": int,
-        "precision": float,
-        "recall": float,
-        "f1": float,
-    },
-)
-_MajorityValues = TypedDict(
-    "_MajorityValues",
-    {
-        "top1_correct": int,
-        "top1_accuracy": float,
-        "dispatchable_correct": int,
-        "dispatchable_accuracy": float,
-        "wilson_95": list[float],
-    },
-)
-_ErrorValues = TypedDict(
-    "_ErrorValues", {"provider": int, "routing": int, "schema": int}
-)
-_StabilityValues = TypedDict(
-    "_StabilityValues", {"exact": float, "modal_agreement": float}
-)
+class _AgentValues(TypedDict):
+    support: int
+    predicted: int
+    true_positive: int
+    precision: float
+    recall: float
+    f1: float
+
+
+class _MajorityValues(TypedDict):
+    top1_correct: int
+    top1_accuracy: float
+    dispatchable_correct: int
+    dispatchable_accuracy: float
+    wilson_95: list[float]
+
+
+class _ErrorValues(TypedDict):
+    provider: int
+    routing: int
+    schema: int
+
+
+class _StabilityValues(TypedDict):
+    exact: float
+    modal_agreement: float
+
 
 _MetricMap = Mapping[str, object]
 _AgentRows = Mapping[str, _AgentValues]
@@ -482,21 +482,45 @@ def _mapping(value: object) -> Mapping[str, object] | None:
 
 
 _TOP_LEVEL_KEYS: Final = frozenset(
-    "schema_version case_count planned_runs completed_records run_level "
-    "majority per_agent macro by_language confusion_matrix stability "
-    "core_arguments errors provider_completion latency_ms".split()
+    [
+        "schema_version",
+        "case_count",
+        "planned_runs",
+        "completed_records",
+        "run_level",
+        "majority",
+        "per_agent",
+        "macro",
+        "by_language",
+        "confusion_matrix",
+        "stability",
+        "core_arguments",
+        "errors",
+        "provider_completion",
+        "latency_ms",
+    ]
 )
 _RUN_LEVEL_KEYS: Final = frozenset(("top1_accuracy", "dispatchable_accuracy"))
 _MAJORITY_KEYS: Final = frozenset(
-    "top1_correct top1_accuracy dispatchable_correct "
-    "dispatchable_accuracy wilson_95".split()
+    [
+        "top1_correct",
+        "top1_accuracy",
+        "dispatchable_correct",
+        "dispatchable_accuracy",
+        "wilson_95",
+    ]
 )
 _AGENT_ROW_KEYS: Final = frozenset(
-    "support predicted true_positive precision recall f1".split()
+    ["support", "predicted", "true_positive", "precision", "recall", "f1"]
 )
 _LANGUAGE_ROW_KEYS: Final = frozenset(
-    "case_count top1_correct top1_accuracy dispatchable_correct "
-    "dispatchable_accuracy".split()
+    [
+        "case_count",
+        "top1_correct",
+        "top1_accuracy",
+        "dispatchable_correct",
+        "dispatchable_accuracy",
+    ]
 )
 _MACRO_KEYS: Final = frozenset({"basis", "precision", "recall", "f1"})
 _STABILITY_KEYS: Final = frozenset({"exact", "modal_agreement"})
