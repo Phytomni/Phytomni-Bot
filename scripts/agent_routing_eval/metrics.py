@@ -44,56 +44,64 @@ class _CaseProjection:
     dispatchable: bool
 
 
-class _AgentValues(TypedDict):
-    support: int
-    predicted: int
-    true_positive: int
-    precision: float
-    recall: float
-    f1: float
+_AgentValues = TypedDict(
+    "_AgentValues",
+    {
+        "support": int,
+        "predicted": int,
+        "true_positive": int,
+        "precision": float,
+        "recall": float,
+        "f1": float,
+    },
+)
+_MajorityValues = TypedDict(
+    "_MajorityValues",
+    {
+        "top1_correct": int,
+        "top1_accuracy": float,
+        "dispatchable_correct": int,
+        "dispatchable_accuracy": float,
+        "wilson_95": list[float],
+    },
+)
+_ErrorValues = TypedDict(
+    "_ErrorValues", {"provider": int, "routing": int, "schema": int}
+)
+_StabilityValues = TypedDict(
+    "_StabilityValues", {"exact": float, "modal_agreement": float}
+)
 
-
-class _MajorityValues(TypedDict):
-    top1_correct: int
-    top1_accuracy: float
-    dispatchable_correct: int
-    dispatchable_accuracy: float
-    wilson_95: list[float]
-
-
-class _ErrorValues(TypedDict):
-    provider: int
-    routing: int
-    schema: int
-
-
-class _StabilityValues(TypedDict):
-    exact: float
-    modal_agreement: float
+_MetricMap = Mapping[str, object]
+_AgentRows = Mapping[str, _AgentValues]
+_ValidatedProjection = tuple[_MajorityValues, _AgentRows, _StabilityValues]
+_ValidatedThresholdReport = tuple[_ValidatedProjection, float]
+_IntPair = tuple[int, int]
+_IntTriple = tuple[int, int, int]
+_CountMap = dict[str, int]
 
 
 def _ratio(numerator: int | float, denominator: int) -> float:
-    if denominator == 0:
-        return 0.0
-    return numerator / denominator
+    return 0.0 if denominator == 0 else numerator / denominator
 
 
 def _f1(precision: float, recall: float) -> float:
-    if precision + recall == 0.0:
-        return 0.0
-    return 2.0 * precision * recall / (precision + recall)
+    return (
+        0.0
+        if precision + recall == 0.0
+        else 2.0 * precision * recall / (precision + recall)
+    )
 
 
 def _wilson_95(successes: int, observations: int) -> list[float]:
     """Return a two-sided 95% Wilson interval in JSON-compatible form."""
     if observations == 0:
         return [0.0, 1.0]
-    if successes == 0:
-        proportion = 0.0
-    elif successes == observations:
-        proportion = 1.0
-    else:
-        proportion = successes / observations
+    proportion = (
+        0.0
+        if successes == 0
+        else 1.0 if successes == observations else successes / observations
+    )
     z_squared = _WILSON_Z**2
     denominator = 1.0 + z_squared / observations
     centre = proportion + z_squared / (2.0 * observations)
@@ -129,7 +137,11 @@ def _validate_inventory(
     outcomes: Sequence[RunOutcome],
     repeat_count: int,
 ) -> dict[str, tuple[RunOutcome, ...]]:
-    if type(repeat_count) is not int or repeat_count not in {1, 3}:
+    if (
+        not isinstance(repeat_count, int)
+        or isinstance(repeat_count, bool)
+        or repeat_count not in {1, 3}
+    ):
         raise ValueError("repeat_count must be 1 or 3")
 
     case_by_id: dict[str, AgentRoutingCase] = {}
@@ -191,11 +203,12 @@ def _confusion_bucket(outcome: RunOutcome) -> str:
         return outcome.predicted_agent
     if outcome.predicted_agent in {PROVIDER_ERROR, ROUTING_ERROR}:
         return outcome.predicted_agent
-    if outcome.error_code is not None and outcome.error_code.startswith(
-        "routing_"
-    ):
-        return ROUTING_ERROR
-    return NO_MAJORITY
+    return (
+        ROUTING_ERROR
+        if outcome.error_code is not None
+        and outcome.error_code.startswith("routing_")
+        else NO_MAJORITY
+    )
 
 
 def _majority_bucket(items: Sequence[RunOutcome]) -> str:
@@ -204,20 +217,19 @@ def _majority_bucket(items: Sequence[RunOutcome]) -> str:
         for item in items
         if item.predicted_agent in _CANONICAL_AGENTS
     )
-    if canonical_counts:
+    if canonical_counts and max(canonical_counts.values()) >= 2:
         modal_count = max(canonical_counts.values())
-        if modal_count >= 2:
-            return next(
-                agent
-                for agent in _CANONICAL_AGENTS
-                if canonical_counts[agent] == modal_count
-            )
+        return next(
+            agent
+            for agent in _CANONICAL_AGENTS
+            if canonical_counts[agent] == modal_count
+        )
     buckets = {_confusion_bucket(item) for item in items}
-    if buckets == {PROVIDER_ERROR}:
-        return PROVIDER_ERROR
-    if buckets == {ROUTING_ERROR}:
-        return ROUTING_ERROR
-    return NO_MAJORITY
+    return (
+        PROVIDER_ERROR
+        if buckets == {PROVIDER_ERROR}
+        else ROUTING_ERROR if buckets == {ROUTING_ERROR} else NO_MAJORITY
+    )
 
 
 def _project_case(
@@ -257,11 +269,13 @@ def _classification_rows(
 ) -> dict[str, _AgentValues]:
     rows: dict[str, _AgentValues] = {}
     for agent in _CANONICAL_AGENTS:
-        support = sum(item.expected_agent == agent for item in projections)
-        predicted = sum(item.predicted_agent == agent for item in projections)
-        true_positive = sum(
-            item.expected_agent == agent and item.predicted_agent == agent
-            for item in projections
+        support, predicted, true_positive = (
+            sum(item.expected_agent == agent for item in projections),
+            sum(item.predicted_agent == agent for item in projections),
+            sum(
+                item.expected_agent == agent and item.predicted_agent == agent
+                for item in projections
+            ),
         )
         precision = _ratio(true_positive, predicted)
         recall = _ratio(true_positive, support)
@@ -299,11 +313,14 @@ def _confusion_rows(
 ) -> dict[str, dict[str, int]]:
     rows: dict[str, dict[str, int]] = {}
     for expected_agent in _CANONICAL_AGENTS:
-        row = {column: 0 for column in _CONFUSION_COLUMNS}
-        for item in projections:
-            if item.expected_agent == expected_agent:
-                row[item.predicted_agent] += 1
-        rows[expected_agent] = row
+        counts = Counter(
+            item.predicted_agent
+            for item in projections
+            if item.expected_agent == expected_agent
+        )
+        rows[expected_agent] = {
+            column: counts[column] for column in _CONFUSION_COLUMNS
+        }
     return rows
 
 
@@ -347,6 +364,56 @@ def _stability_metrics(
     }
 
 
+def _run_metrics(outcomes: Sequence[RunOutcome]) -> dict[str, Any]:
+    run_count = len(outcomes)
+    top1_correct = sum(item.agent_correct for item in outcomes)
+    dispatchable_correct = sum(item.dispatchable for item in outcomes)
+    core_eligible = sum(
+        item.agent_correct
+        and item.schema_valid
+        and item.core_args_correct is not None
+        for item in outcomes
+    )
+    core_correct = sum(
+        item.agent_correct
+        and item.schema_valid
+        and item.core_args_correct is True
+        for item in outcomes
+    )
+    buckets = Counter(_confusion_bucket(item) for item in outcomes)
+    errors = {
+        "provider": buckets[PROVIDER_ERROR],
+        "routing": buckets[ROUTING_ERROR],
+        "schema": sum(
+            item.error_code == "schema_validation_error"
+            and _confusion_bucket(item) not in {PROVIDER_ERROR, ROUTING_ERROR}
+            for item in outcomes
+        ),
+    }
+    latency_values = sorted(float(item.latency_ms) for item in outcomes)
+    return {
+        "run_level": {
+            "top1_accuracy": _ratio(top1_correct, run_count),
+            "dispatchable_accuracy": _ratio(dispatchable_correct, run_count),
+        },
+        "core_arguments": {
+            "eligible": core_eligible,
+            "correct": core_correct,
+            "accuracy": (
+                _ratio(core_correct, core_eligible) if core_eligible else None
+            ),
+        },
+        "errors": errors,
+        "provider_completion": _ratio(
+            run_count - errors["provider"], run_count
+        ),
+        "latency_ms": {
+            "p50": _linear_quantile(latency_values, 0.50),
+            "p95": _linear_quantile(latency_values, 0.95),
+        },
+    }
+
+
 def compute_metrics(
     cases: Sequence[AgentRoutingCase],
     outcomes: Sequence[RunOutcome],
@@ -364,70 +431,35 @@ def compute_metrics(
         )
         for case in sorted(case_records, key=lambda item: item.case_id)
     )
-    run_count = len(outcome_records)
-    top1_correct = sum(item.agent_correct for item in outcome_records)
-    dispatchable_correct = sum(item.dispatchable for item in outcome_records)
-    core_eligible = sum(
-        item.agent_correct
-        and item.schema_valid
-        and item.core_args_correct is not None
-        for item in outcome_records
-    )
-    core_correct = sum(
-        item.agent_correct
-        and item.schema_valid
-        and item.core_args_correct is True
-        for item in outcome_records
-    )
-    errors = {
-        "provider": sum(
-            _confusion_bucket(item) == PROVIDER_ERROR
-            for item in outcome_records
-        ),
-        "routing": sum(
-            _confusion_bucket(item) == ROUTING_ERROR
-            for item in outcome_records
-        ),
-        "schema": sum(
-            item.error_code == "schema_validation_error"
-            and _confusion_bucket(item) not in {PROVIDER_ERROR, ROUTING_ERROR}
-            for item in outcome_records
-        ),
-    }
+    run_metrics = _run_metrics(outcome_records)
     basis = _BASIS_SINGLE_RUN if repeat_count == 1 else _BASIS_CASE_MAJORITY
-    per_agent: dict[str, object] = {"basis": basis}
-    per_agent.update(_classification_rows(projections))
-    by_language: dict[str, object] = {"basis": basis}
-    by_language.update(_language_rows(projections))
-    confusion_matrix: dict[str, object] = {"basis": basis}
-    confusion_matrix.update(_confusion_rows(projections))
-    macro_rows = _classification_rows(projections)
+    classification_rows = _classification_rows(projections)
+    per_agent: dict[str, object] = {"basis": basis, **classification_rows}
+    by_language: dict[str, object] = {
+        "basis": basis,
+        **_language_rows(projections),
+    }
+    confusion_matrix: dict[str, object] = {
+        "basis": basis,
+        **_confusion_rows(projections),
+    }
     macro = {
         "basis": basis,
-        "precision": sum(
-            float(macro_rows[agent]["precision"])
-            for agent in _CANONICAL_AGENTS
-        )
-        / len(_CANONICAL_AGENTS),
-        "recall": sum(
-            float(macro_rows[agent]["recall"]) for agent in _CANONICAL_AGENTS
-        )
-        / len(_CANONICAL_AGENTS),
-        "f1": sum(
-            float(macro_rows[agent]["f1"]) for agent in _CANONICAL_AGENTS
-        )
-        / len(_CANONICAL_AGENTS),
+        **{
+            metric: sum(
+                float(classification_rows[agent][metric])
+                for agent in _CANONICAL_AGENTS
+            )
+            / len(_CANONICAL_AGENTS)
+            for metric in ("precision", "recall", "f1")
+        },
     }
-    latency_values = sorted(float(item.latency_ms) for item in outcome_records)
     result: dict[str, Any] = {
         "schema_version": 1,
         "case_count": len(case_records),
         "planned_runs": len(case_records) * repeat_count,
         "completed_records": len(outcome_records),
-        "run_level": {
-            "top1_accuracy": _ratio(top1_correct, run_count),
-            "dispatchable_accuracy": _ratio(dispatchable_correct, run_count),
-        },
+        "run_level": run_metrics["run_level"],
         "majority": (
             _majority_metrics(projections) if repeat_count == 3 else None
         ),
@@ -438,22 +470,10 @@ def compute_metrics(
         "stability": (
             _stability_metrics(grouped) if repeat_count == 3 else None
         ),
-        "core_arguments": {
-            "eligible": core_eligible,
-            "correct": core_correct,
-            "accuracy": (
-                _ratio(core_correct, core_eligible) if core_eligible else None
-            ),
-        },
-        "errors": errors,
-        "provider_completion": _ratio(
-            run_count - errors["provider"],
-            run_count,
-        ),
-        "latency_ms": {
-            "p50": _linear_quantile(latency_values, 0.50),
-            "p95": _linear_quantile(latency_values, 0.95),
-        },
+        "core_arguments": run_metrics["core_arguments"],
+        "errors": run_metrics["errors"],
+        "provider_completion": run_metrics["provider_completion"],
+        "latency_ms": run_metrics["latency_ms"],
     }
     return result
 
@@ -466,9 +486,11 @@ def _float_value(value: object) -> float | None:
 
 
 def _int_value(value: object) -> int | None:
-    if type(value) is not int:
-        return None
-    return cast(int, value)
+    return (
+        value
+        if isinstance(value, int) and not isinstance(value, bool)
+        else None
+    )
 
 
 def _mapping(value: object) -> Mapping[str, object] | None:
@@ -477,10 +499,6 @@ def _mapping(value: object) -> Mapping[str, object] | None:
     if any(not isinstance(key, str) for key in value):
         return None
     return cast(Mapping[str, object], value)
-
-
-def _finite_number(value: object) -> bool:
-    return _float_value(value) is not None
 
 
 def _rate(value: object) -> bool:
@@ -536,18 +554,36 @@ _ERROR_KEYS_SET: Final = frozenset(_ERROR_KEYS)
 _LATENCY_KEYS: Final = frozenset({"p50", "p95"})
 
 
-def _has_exact_keys(value: object, expected: frozenset[str]) -> bool:
+def _mapping_with_keys(
+    value: object, expected: frozenset[str]
+) -> Mapping[str, object] | None:
     mapping = _mapping(value)
-    return mapping is not None and set(mapping) == expected
+    return (
+        mapping if mapping is not None and set(mapping) == expected else None
+    )
 
 
-def _valid_count(value: object, maximum: int | None = None) -> bool:
+def _count_value(value: object, maximum: int | None = None) -> int | None:
     number = _int_value(value)
     return (
-        number is not None
+        number
+        if number is not None
         and number >= 0
         and (maximum is None or number <= maximum)
+        else None
     )
+
+
+def _bounded_values(
+    value: object, keys: Sequence[str], maximum: int
+) -> tuple[int, ...] | None:
+    mapping = _mapping(value)
+    if mapping is None:
+        return None
+    values = tuple(_count_value(mapping[key], maximum) for key in keys)
+    if any(item is None for item in values):
+        return None
+    return tuple(cast(int, item) for item in values)
 
 
 def _consistent_rate(value: object, numerator: int, denominator: int) -> bool:
@@ -555,122 +591,144 @@ def _consistent_rate(value: object, numerator: int, denominator: int) -> bool:
     return number is not None and number == _ratio(numerator, denominator)
 
 
-def _validate_run_level(value: object) -> bool:
-    mapping = _mapping(value)
-    if mapping is None or set(mapping) != _RUN_LEVEL_KEYS:
-        return False
-    return all(_rate(mapping[key]) for key in _RUN_LEVEL_KEYS)
+def _majority_counts(
+    mapping: Mapping[str, object], case_count: int
+) -> tuple[int, int, float, float] | None:
+    counts = tuple(
+        _count_value(mapping[key], case_count)
+        for key in ("top1_correct", "dispatchable_correct")
+    )
+    top1_accuracy = _float_value(mapping["top1_accuracy"])
+    dispatchable_accuracy = _float_value(mapping["dispatchable_accuracy"])
+    if (
+        any(value is None for value in counts)
+        or top1_accuracy is None
+        or dispatchable_accuracy is None
+    ):
+        return None
+    top1_correct, dispatchable_correct = cast(tuple[int, int], counts)
+    if dispatchable_correct > top1_correct:
+        return None
+    if not _consistent_rate(
+        top1_accuracy, top1_correct, case_count
+    ) or not _consistent_rate(
+        dispatchable_accuracy, dispatchable_correct, case_count
+    ):
+        return None
+    return (
+        top1_correct,
+        dispatchable_correct,
+        top1_accuracy,
+        dispatchable_accuracy,
+    )
+
+
+def _majority_interval(
+    value: object, top1_correct: int, case_count: int
+) -> list[float] | None:
+    if not isinstance(value, list):
+        return None
+    interval_values = [
+        number
+        for item in value
+        if (number := _float_value(item)) is not None and 0.0 <= number <= 1.0
+    ]
+    return (
+        interval_values
+        if len(interval_values) == 2
+        and interval_values == _wilson_95(top1_correct, case_count)
+        else None
+    )
 
 
 def _validate_majority(
     value: object, case_count: int
 ) -> _MajorityValues | None:
-    mapping = _mapping(value)
-    if mapping is None or set(mapping) != _MAJORITY_KEYS:
+    mapping = _mapping_with_keys(value, _MAJORITY_KEYS)
+    if mapping is None:
         return None
-    top1_correct = _int_value(mapping["top1_correct"])
-    dispatchable_correct = _int_value(mapping["dispatchable_correct"])
-    if top1_correct is None or not _valid_count(top1_correct, case_count):
+    counts = _majority_counts(mapping, case_count)
+    if counts is None:
         return None
-    if dispatchable_correct is None or not _valid_count(
-        dispatchable_correct, case_count
-    ):
-        return None
-    if dispatchable_correct > top1_correct:
-        return None
-    top1_accuracy = _float_value(mapping["top1_accuracy"])
-    dispatchable_accuracy = _float_value(mapping["dispatchable_accuracy"])
-    if top1_accuracy is None or not _consistent_rate(
-        top1_accuracy, top1_correct, case_count
-    ):
-        return None
-    if dispatchable_accuracy is None or not _consistent_rate(
-        dispatchable_accuracy, dispatchable_correct, case_count
-    ):
-        return None
-    interval = mapping["wilson_95"]
-    if not isinstance(interval, list) or len(interval) != 2:
-        return None
-    interval_values: list[float] = []
-    for item in interval:
-        number = _float_value(item)
-        if number is None or not 0.0 <= number <= 1.0:
-            return None
-        interval_values.append(number)
-    if interval_values != _wilson_95(top1_correct, case_count):
+    (
+        top1_correct,
+        dispatchable_correct,
+        top1_accuracy,
+        dispatchable_accuracy,
+    ) = counts
+    interval = _majority_interval(
+        mapping["wilson_95"], top1_correct, case_count
+    )
+    if interval is None:
         return None
     return {
         "top1_correct": top1_correct,
         "top1_accuracy": top1_accuracy,
         "dispatchable_correct": dispatchable_correct,
         "dispatchable_accuracy": dispatchable_accuracy,
-        "wilson_95": interval_values,
+        "wilson_95": interval,
     }
 
 
-def _validate_per_agent(
-    value: object, case_count: int
-) -> Mapping[str, _AgentValues] | None:
-    expected_keys = frozenset({"basis", *_CANONICAL_AGENTS})
-    mapping = _mapping(value)
-    if mapping is None or set(mapping) != expected_keys:
+def _validate_agent_row(value: object, case_count: int) -> _AgentValues | None:
+    keys = ("support", "predicted", "true_positive")
+    counts = _bounded_values(value, keys, case_count)
+    row = _mapping_with_keys(value, _AGENT_ROW_KEYS)
+    if counts is None or row is None:
         return None
-    if mapping["basis"] != _BASIS_CASE_MAJORITY:
+    support_value, predicted_value, true_positive_value = counts
+    if true_positive_value > min(support_value, predicted_value):
+        return None
+    precision = _ratio(true_positive_value, predicted_value)
+    recall = _ratio(true_positive_value, support_value)
+    f1 = _float_value(row["f1"])
+    if (
+        not _consistent_rate(
+            row["precision"], true_positive_value, predicted_value
+        )
+        or not _consistent_rate(
+            row["recall"], true_positive_value, support_value
+        )
+        or f1 is None
+        or f1 != _f1(precision, recall)
+    ):
+        return None
+    return {
+        "support": support_value,
+        "predicted": predicted_value,
+        "true_positive": true_positive_value,
+        "precision": precision,
+        "recall": recall,
+        "f1": f1,
+    }
+
+
+def _validate_per_agent(value: object, case_count: int) -> _AgentRows | None:
+    expected_keys = frozenset({"basis", *_CANONICAL_AGENTS})
+    mapping = _mapping_with_keys(value, expected_keys)
+    if mapping is None or mapping["basis"] != _BASIS_CASE_MAJORITY:
         return None
     rows: dict[str, _AgentValues] = {}
     support_total = 0
     for agent in _CANONICAL_AGENTS:
-        row = _mapping(mapping[agent])
-        if row is None or set(row) != _AGENT_ROW_KEYS:
+        row = _validate_agent_row(mapping[agent], case_count)
+        if row is None:
             return None
-        support = _int_value(row["support"])
-        predicted = _int_value(row["predicted"])
-        true_positive = _int_value(row["true_positive"])
-        if support is None or not _valid_count(support, case_count):
-            return None
-        if predicted is None or not _valid_count(predicted, case_count):
-            return None
-        if true_positive is None or not _valid_count(
-            true_positive, case_count
-        ):
-            return None
-        if true_positive > min(support, predicted):
-            return None
-        precision = _ratio(true_positive, predicted)
-        recall = _ratio(true_positive, support)
-        if not _consistent_rate(row["precision"], true_positive, predicted):
-            return None
-        if not _consistent_rate(row["recall"], true_positive, support):
-            return None
-        f1 = _float_value(row["f1"])
-        if f1 is None or f1 != _f1(precision, recall):
-            return None
-        support_total += support
-        rows[agent] = {
-            "support": support,
-            "predicted": predicted,
-            "true_positive": true_positive,
-            "precision": precision,
-            "recall": recall,
-            "f1": f1,
-        }
-    if support_total != case_count:
-        return None
-    return rows
+        support_total += row["support"]
+        rows[agent] = row
+    return rows if support_total == case_count else None
 
 
-def _validate_macro(value: object, rows: Mapping[str, _AgentValues]) -> bool:
-    mapping = _mapping(value)
-    if mapping is None or set(mapping) != _MACRO_KEYS:
-        return False
-    if mapping["basis"] != _BASIS_CASE_MAJORITY:
+def _validate_macro(value: object, rows: _AgentRows) -> bool:
+    mapping = _mapping_with_keys(value, _MACRO_KEYS)
+    if mapping is None:
         return False
     expected = {
         metric: sum(float(rows[agent][metric]) for agent in _CANONICAL_AGENTS)
         / len(_CANONICAL_AGENTS)
         for metric in ("precision", "recall", "f1")
     }
-    return all(
+    return mapping["basis"] == _BASIS_CASE_MAJORITY and all(
         _rate(mapping[metric]) and mapping[metric] == expected[metric]
         for metric in expected
     )
@@ -681,45 +739,15 @@ def _validate_languages(
     case_count: int,
     majority: _MajorityValues,
 ) -> bool:
-    mapping = _mapping(value)
-    if mapping is None or set(mapping) != frozenset({"basis", "en", "zh"}):
-        return False
-    if mapping["basis"] != _BASIS_CASE_MAJORITY:
-        return False
+    mapping = _mapping_with_keys(value, frozenset({"basis", "en", "zh"}))
     case_total = top1_total = dispatchable_total = 0
+    if mapping is None or mapping["basis"] != _BASIS_CASE_MAJORITY:
+        return False
     for language in ("en", "zh"):
-        row = _mapping(mapping[language])
-        if row is None or set(row) != _LANGUAGE_ROW_KEYS:
+        row = _validate_language_row(mapping[language], case_count)
+        if row is None:
             return False
-        row_case_count = _int_value(row["case_count"])
-        top1_correct = _int_value(row["top1_correct"])
-        dispatchable_correct = _int_value(row["dispatchable_correct"])
-        if row_case_count is None or not _valid_count(
-            row_case_count, case_count
-        ):
-            return False
-        if top1_correct is None or not _valid_count(
-            top1_correct, row_case_count
-        ):
-            return False
-        if dispatchable_correct is None or not _valid_count(
-            dispatchable_correct, row_case_count
-        ):
-            return False
-        if dispatchable_correct > top1_correct:
-            return False
-        if dispatchable_correct > top1_correct:
-            return False
-        if not _consistent_rate(
-            row["top1_accuracy"], top1_correct, row_case_count
-        ):
-            return False
-        if not _consistent_rate(
-            row["dispatchable_accuracy"],
-            dispatchable_correct,
-            row_case_count,
-        ):
-            return False
+        row_case_count, top1_correct, dispatchable_correct = row
         case_total += row_case_count
         top1_total += top1_correct
         dispatchable_total += dispatchable_correct
@@ -730,34 +758,59 @@ def _validate_languages(
     )
 
 
+def _validate_language_row(
+    value: object, case_count: int
+) -> _IntTriple | None:
+    keys = ("case_count", "top1_correct", "dispatchable_correct")
+    counts = _bounded_values(value, keys, case_count)
+    row = _mapping_with_keys(value, _LANGUAGE_ROW_KEYS)
+    if counts is None or row is None:
+        return None
+    row_case_count, top1_correct, dispatchable_correct = counts
+    if top1_correct > row_case_count or dispatchable_correct > row_case_count:
+        return None
+    if dispatchable_correct > top1_correct:
+        return None
+    if not _consistent_rate(
+        row["top1_accuracy"], top1_correct, row_case_count
+    ) or not _consistent_rate(
+        row["dispatchable_accuracy"], dispatchable_correct, row_case_count
+    ):
+        return None
+    return (
+        row_case_count,
+        top1_correct,
+        dispatchable_correct,
+    )
+
+
+def _validate_confusion_row(
+    value: object, case_count: int
+) -> _CountMap | None:
+    values = _bounded_values(value, _CONFUSION_COLUMNS, case_count)
+    return (
+        dict(zip(_CONFUSION_COLUMNS, values)) if values is not None else None
+    )
+
+
 def _validate_confusion(
     value: object,
     case_count: int,
-    rows: Mapping[str, _AgentValues],
+    rows: _AgentRows,
 ) -> dict[str, int] | None:
     expected_keys = frozenset({"basis", *_CANONICAL_AGENTS})
-    mapping = _mapping(value)
-    if mapping is None or set(mapping) != expected_keys:
-        return None
-    if mapping["basis"] != _BASIS_CASE_MAJORITY:
-        return None
+    mapping = _mapping_with_keys(value, expected_keys)
     columns = {column: 0 for column in _CONFUSION_COLUMNS}
     diagonal = {agent: 0 for agent in _CANONICAL_AGENTS}
+    if mapping is None or mapping["basis"] != _BASIS_CASE_MAJORITY:
+        return None
     for agent in _CANONICAL_AGENTS:
-        row = _mapping(mapping[agent])
-        if row is None or set(row) != frozenset(_CONFUSION_COLUMNS):
+        counts = _validate_confusion_row(mapping[agent], case_count)
+        if counts is None or sum(counts.values()) != rows[agent]["support"]:
             return None
-        row_total = 0
         for column in _CONFUSION_COLUMNS:
-            count = _int_value(row[column])
-            if count is None or not _valid_count(count, case_count):
-                return None
-            row_total += count
-            columns[column] += count
-            if column == agent:
-                diagonal[agent] = count
-        if row_total != rows[agent]["support"]:
-            return None
+            columns[column] += counts[column]
+        diagonal[agent] = counts[agent]
     if sum(columns.values()) != case_count:
         return None
     if not all(
@@ -771,162 +824,170 @@ def _validate_confusion(
 def _validate_stability(
     value: object, case_count: int
 ) -> _StabilityValues | None:
-    mapping = _mapping(value)
-    if mapping is None or set(mapping) != _STABILITY_KEYS:
+    mapping = _mapping_with_keys(value, _STABILITY_KEYS)
+    if mapping is None:
         return None
     exact = _float_value(mapping["exact"])
     modal = _float_value(mapping["modal_agreement"])
-    if exact is None or modal is None or not _rate(exact) or not _rate(modal):
+    if not _stability_is_representable(exact, modal, case_count):
         return None
-    if exact > modal:
-        return None
+    return {"exact": cast(float, exact), "modal_agreement": cast(float, modal)}
+
+
+def _stability_is_representable(
+    exact: float | None, modal: float | None, case_count: int
+) -> bool:
+    if (
+        exact is None
+        or modal is None
+        or not _rate(exact)
+        or not _rate(modal)
+        or exact > modal
+    ):
+        return False
+    tolerance = 1e-9
     exact_count = exact * case_count
     modal_votes = modal * (3 * case_count)
-    tolerance = 1e-9
-    if not math.isclose(
-        exact_count, round(exact_count), rel_tol=0.0, abs_tol=tolerance
+    if not all(
+        math.isclose(value, round(value), rel_tol=0.0, abs_tol=tolerance)
+        for value in (exact_count, modal_votes)
     ):
-        return None
-    if not math.isclose(
-        modal_votes, round(modal_votes), rel_tol=0.0, abs_tol=tolerance
-    ):
-        return None
+        return False
     stable_cases = round(exact_count)
     unstable_cases = case_count - stable_cases
-    lower = stable_cases / case_count
     upper = (stable_cases + unstable_cases * 2.0 / 3.0) / case_count
-    if not lower - tolerance <= modal <= upper + tolerance:
-        return None
-    return {"exact": exact, "modal_agreement": modal}
+    return stable_cases / case_count - tolerance <= modal <= upper + tolerance
 
 
 def _validate_core(value: object, planned_runs: int) -> bool:
-    mapping = _mapping(value)
-    if mapping is None or set(mapping) != _CORE_KEYS:
+    mapping = _mapping_with_keys(value, _CORE_KEYS)
+    if mapping is None:
         return False
-    eligible = _int_value(mapping["eligible"])
-    correct = _int_value(mapping["correct"])
-    accuracy = mapping["accuracy"]
-    if eligible is None or not _valid_count(eligible, planned_runs):
-        return False
-    if correct is None or not _valid_count(correct, eligible):
+    eligible = _count_value(mapping["eligible"], planned_runs)
+    correct = _count_value(mapping["correct"], planned_runs)
+    if eligible is None or correct is None or correct > eligible:
         return False
     return (
-        accuracy is None
+        mapping["accuracy"] is None
         if eligible == 0
-        else _consistent_rate(accuracy, correct, eligible)
+        else _consistent_rate(mapping["accuracy"], correct, eligible)
     )
 
 
 def _validate_errors(value: object, planned_runs: int) -> _ErrorValues | None:
-    mapping = _mapping(value)
-    if mapping is None or set(mapping) != _ERROR_KEYS_SET:
+    mapping = _mapping_with_keys(value, _ERROR_KEYS_SET)
+    counts = _bounded_values(mapping, _ERROR_KEYS, planned_runs)
+    if counts is None or sum(counts) > planned_runs:
         return None
-    counts = [_int_value(mapping[key]) for key in _ERROR_KEYS]
-    if any(
-        count is None or not _valid_count(count, planned_runs)
-        for count in counts
+    return cast(_ErrorValues, dict(zip(_ERROR_KEYS, counts)))
+
+
+def _validate_threshold_header(
+    metrics: _MetricMap,
+) -> _IntPair | None:
+    schema_version = _int_value(metrics["schema_version"])
+    case_count = _count_value(metrics["case_count"])
+    planned_runs = _count_value(metrics["planned_runs"])
+    completed_records = _count_value(metrics["completed_records"])
+    if schema_version != 1 or case_count is None or case_count == 0:
+        return None
+    if planned_runs is None or completed_records is None:
+        return None
+    return (
+        (case_count, planned_runs)
+        if planned_runs == case_count * 3 and completed_records == planned_runs
+        else None
+    )
+
+
+def _validate_threshold_projection(
+    metrics: _MetricMap, case_count: int
+) -> _ValidatedProjection | None:
+    majority = _validate_majority(metrics["majority"], case_count)
+    if majority is None:
+        return None
+    rows = _validate_per_agent(metrics["per_agent"], case_count)
+    if rows is None or not _validate_macro(metrics["macro"], rows):
+        return None
+    if not _validate_languages(metrics["by_language"], case_count, majority):
+        return None
+    confusion_diagonal = _validate_confusion(
+        metrics["confusion_matrix"], case_count, rows
+    )
+    stability = _validate_stability(metrics["stability"], case_count)
+    if confusion_diagonal is None or stability is None:
+        return None
+    if majority["top1_correct"] != sum(
+        rows[agent]["true_positive"] for agent in _CANONICAL_AGENTS
+    ) or not all(
+        rows[agent]["true_positive"] == confusion_diagonal[agent]
+        for agent in _CANONICAL_AGENTS
     ):
         return None
-    error_total = sum(cast(int, count) for count in counts)
-    if error_total > planned_runs:
+    return majority, rows, stability
+
+
+def _validate_threshold_operations(
+    metrics: _MetricMap, planned_runs: int
+) -> float | None:
+    run_level = _mapping_with_keys(metrics["run_level"], _RUN_LEVEL_KEYS)
+    if not (
+        run_level is not None
+        and all(_rate(run_level[key]) for key in _RUN_LEVEL_KEYS)
+        and _validate_core(metrics["core_arguments"], planned_runs)
+    ):
         return None
-    return {
-        "provider": cast(int, counts[0]),
-        "routing": cast(int, counts[1]),
-        "schema": cast(int, counts[2]),
-    }
+    errors = _validate_errors(metrics["errors"], planned_runs)
+    if errors is None:
+        return None
+    provider_completion = _float_value(metrics["provider_completion"])
+    if provider_completion is None or not _consistent_rate(
+        provider_completion, planned_runs - errors["provider"], planned_runs
+    ):
+        return None
+    latency = _mapping_with_keys(metrics["latency_ms"], _LATENCY_KEYS)
+    if latency is None:
+        return None
+    p50 = _float_value(latency["p50"])
+    p95 = _float_value(latency["p95"])
+    if p50 is None or p95 is None or not 0.0 <= p50 <= p95:
+        return None
+    return provider_completion
 
 
-def _validate_latency(value: object) -> bool:
-    mapping = _mapping(value)
-    if mapping is None or set(mapping) != _LATENCY_KEYS:
-        return False
-    p50 = _float_value(mapping["p50"])
-    p95 = _float_value(mapping["p95"])
-    if p50 is None or p95 is None:
-        return False
-    return 0.0 <= p50 <= p95
+def _validated_threshold_report(
+    metrics: _MetricMap,
+) -> _ValidatedThresholdReport | None:
+    if _mapping_with_keys(metrics, _TOP_LEVEL_KEYS) is None:
+        return None
+    header = _validate_threshold_header(metrics)
+    if header is None:
+        return None
+    case_count, planned_runs = header
+    projection = _validate_threshold_projection(metrics, case_count)
+    provider_completion = _validate_threshold_operations(metrics, planned_runs)
+    if projection is None or provider_completion is None:
+        return None
+    return projection, provider_completion
 
 
-def thresholds_pass(metrics: Mapping[str, object]) -> bool:
+def _meets_thresholds(report: _ValidatedThresholdReport) -> bool:
+    projection, provider_completion = report
+    majority, rows, stability = projection
+    return (
+        majority["top1_accuracy"] >= 0.90
+        and all(rows[agent]["recall"] >= 0.80 for agent in _CANONICAL_AGENTS)
+        and majority["dispatchable_accuracy"] >= 0.85
+        and stability["exact"] >= 0.90
+        and provider_completion >= 0.99
+    )
+
+
+def thresholds_pass(metrics: _MetricMap) -> bool:
     """Return whether a complete, internally consistent report passes gates."""
     try:
-        if not _has_exact_keys(metrics, _TOP_LEVEL_KEYS):
-            return False
-        schema_version = _int_value(metrics["schema_version"])
-        case_count = _int_value(metrics["case_count"])
-        if schema_version != 1 or case_count is None:
-            return False
-        planned_runs = _int_value(metrics["planned_runs"])
-        completed_records = _int_value(metrics["completed_records"])
-        if planned_runs is None or completed_records is None:
-            return False
-        if case_count <= 0 or not _valid_count(planned_runs):
-            return False
-        if not _valid_count(completed_records):
-            return False
-        if planned_runs != case_count * 3:
-            return False
-        if completed_records != planned_runs:
-            return False
-        if not _validate_run_level(metrics["run_level"]):
-            return False
-        majority = _validate_majority(metrics["majority"], case_count)
-        if majority is None:
-            return False
-        rows = _validate_per_agent(metrics["per_agent"], case_count)
-        if rows is None:
-            return False
-        if not _validate_macro(metrics["macro"], rows):
-            return False
-        if not _validate_languages(
-            metrics["by_language"], case_count, majority
-        ):
-            return False
-        confusion_diagonal = _validate_confusion(
-            metrics["confusion_matrix"], case_count, rows
-        )
-        if confusion_diagonal is None:
-            return False
-        true_positive_total = sum(
-            rows[agent]["true_positive"] for agent in _CANONICAL_AGENTS
-        )
-        if majority["top1_correct"] != true_positive_total:
-            return False
-        if any(
-            rows[agent]["true_positive"] != confusion_diagonal[agent]
-            for agent in _CANONICAL_AGENTS
-        ):
-            return False
-        stability = _validate_stability(metrics["stability"], case_count)
-        if stability is None:
-            return False
-        if not _validate_core(metrics["core_arguments"], planned_runs):
-            return False
-        errors = _validate_errors(metrics["errors"], planned_runs)
-        if errors is None:
-            return False
-        provider_completion = _float_value(metrics["provider_completion"])
-        if provider_completion is None:
-            return False
-        if not _consistent_rate(
-            provider_completion,
-            planned_runs - errors["provider"],
-            planned_runs,
-        ):
-            return False
-        if not _validate_latency(metrics["latency_ms"]):
-            return False
-        return (
-            majority["top1_accuracy"] >= 0.90
-            and all(
-                rows[agent]["recall"] >= 0.80 for agent in _CANONICAL_AGENTS
-            )
-            and majority["dispatchable_accuracy"] >= 0.85
-            and stability["exact"] >= 0.90
-            and provider_completion >= 0.99
-        )
+        report = _validated_threshold_report(metrics)
+        return report is not None and _meets_thresholds(report)
     except (KeyError, TypeError, ValueError, ZeroDivisionError):
         return False
 
