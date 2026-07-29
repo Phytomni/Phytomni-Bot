@@ -268,9 +268,11 @@ async def test_partial_submission_stays_running_with_degraded_warning(
     launch_background_submission(reservation, operation, db_path=db_path)
     await _wait_until(
         lambda: (
-            (record := RunRegistry(db_path).get_run(
-                reservation.run_id, owner="alice"
-            ))
+            (
+                record := RunRegistry(db_path).get_run(
+                    reservation.run_id, owner="alice"
+                )
+            )
             is not None
             and record.result.get("execution", {}).get("tracking")
             == {"degraded": True}
@@ -282,6 +284,31 @@ async def test_partial_submission_stays_running_with_degraded_warning(
     assert record.status == "running"
     assert record.task_ids == ("accepted-1",)
     assert record.result["execution"]["tracking"] == {"degraded": True}
+
+
+@pytest.mark.asyncio
+async def test_accepted_ids_without_persisted_children_fail_safely(
+    tmp_path: Path,
+) -> None:
+    """An unqueryable accepted id cannot leave a run perpetually running."""
+    db_path = str(tmp_path / "tasks.db")
+    reservation = reserve_background_submission(
+        agent="research",
+        owner="alice",
+        request_info=RunRequestInfo(request_id="req-orphan", locale="en-US"),
+        db_path=db_path,
+    )
+
+    async def operation() -> BackgroundSubmissionOutcome:
+        return BackgroundSubmissionOutcome(accepted_task_ids=("orphan",))
+
+    launch_background_submission(reservation, operation, db_path=db_path)
+    await _wait_until(lambda: not is_live_running(reservation.run_id))
+
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    assert record.status == "failed"
+    assert record.error == "background_submission_failed"
 
 
 @pytest.mark.asyncio
