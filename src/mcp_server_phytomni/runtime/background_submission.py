@@ -10,6 +10,7 @@ import logging
 import sqlite3
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Any
 
 from ..storage.path_policy import IdFactory
 from .execution_defaults import empty_execution_projection
@@ -25,7 +26,9 @@ _LOGGER = logging.getLogger(__name__)
 _RUN_ID_ATTEMPTS = 3
 
 __all__ = [
+    "BackgroundSubmissionExecutionError",
     "BackgroundSubmissionLaunchError",
+    "BackgroundSubmissionOutcome",
     "BackgroundSubmissionReservation",
     "launch_background_submission",
     "reserve_background_submission",
@@ -34,6 +37,19 @@ __all__ = [
 
 class BackgroundSubmissionLaunchError(RuntimeError):
     """Raised when a reserved worker cannot be launched."""
+
+
+class BackgroundSubmissionExecutionError(RuntimeError):
+    """Stable internal signal for a post-acceptance submission failure."""
+
+
+@dataclass(frozen=True, slots=True)
+class BackgroundSubmissionOutcome:
+    """Bounded result returned by one detached submission operation."""
+
+    accepted_task_ids: tuple[str, ...] = ()
+    result: dict[str, Any] | None = None
+    degraded: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +122,7 @@ def _settle_failed(
     reservation: BackgroundSubmissionReservation,
     *,
     error: str,
+    result: dict[str, Any] | None = None,
 ) -> None:
     """Best-effort safe settlement that cannot leak a worker exception."""
     try:
@@ -113,7 +130,7 @@ def _settle_failed(
         registry.fail_running_run(
             reservation.run_id,
             owner=reservation.owner,
-            result=empty_execution_projection(degraded=True),
+            result=result or empty_execution_projection(degraded=True),
             error=error,
         )
     except Exception as exc:
@@ -129,7 +146,7 @@ def _settle_failed(
 
 async def _run_background_submission(
     reservation: BackgroundSubmissionReservation,
-    operation: Callable[[], Awaitable[None]],
+    operation: Callable[[], Awaitable[BackgroundSubmissionOutcome]],
     *,
     db_path: str,
 ) -> None:
@@ -141,7 +158,54 @@ async def _run_background_submission(
             reservation.run_id,
             locale=reservation.request_info.locale,
         ):
-            await operation()
+            outcome = await operation()
+            if outcome.degraded:
+                degraded_result = empty_execution_projection(degraded=True)
+                degraded_result["execution"]["tasks"] = [
+                    {
+                        "id": task_id,
+                        "accepted": True,
+                        "status": "submitted",
+                    }
+                    for task_id in outcome.accepted_task_ids
+                ]
+                _settle_failed(
+                    db_path,
+                    reservation,
+                    error="background_submission_tracking_failed",
+                    result=degraded_result,
+                )
+                return
+            if not outcome.accepted_task_ids:
+                raise BackgroundSubmissionExecutionError(
+                    "no accepted child tasks"
+                )
+            projection = outcome.result or empty_execution_projection()
+            execution = projection.get("execution")
+            if not isinstance(execution, dict):
+                execution = {}
+                projection["execution"] = execution
+            if execution.get("warnings"):
+                execution["tracking"] = {"degraded": True}
+            registry = RunRegistry(db_path)
+            updated = registry.update_running_result(
+                reservation.run_id,
+                owner=reservation.owner,
+                result=projection,
+            )
+            if not updated:
+                current = registry.get_run(
+                    reservation.run_id,
+                    owner=reservation.owner,
+                )
+                if current is not None and current.status in {
+                    "succeeded",
+                    "failed",
+                }:
+                    return
+                raise BackgroundSubmissionExecutionError(
+                    "unable to update running projection"
+                )
     except asyncio.CancelledError:
         _settle_failed(
             db_path,
@@ -169,7 +233,7 @@ async def _run_background_submission(
 
 def launch_background_submission(
     reservation: BackgroundSubmissionReservation,
-    operation: Callable[[], Awaitable[None]],
+    operation: Callable[[], Awaitable[BackgroundSubmissionOutcome]],
     *,
     db_path: str,
 ) -> None:

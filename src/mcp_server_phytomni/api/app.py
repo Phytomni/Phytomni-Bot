@@ -55,6 +55,7 @@ from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
 from ..runtime import task_reconcile as _task_reconcile
 from ..runtime.background_submission import (
     BackgroundSubmissionLaunchError,
+    BackgroundSubmissionOutcome,
     launch_background_submission,
     reserve_background_submission,
 )
@@ -432,7 +433,7 @@ async def _execute_background_agent_run(
     arguments: dict[str, Any],
     preflight: _AgentRunPreflight,
     debug: bool,
-) -> None:
+) -> BackgroundSubmissionOutcome:
     """Resolve, invoke, and project one already-reserved background run."""
     prepared = await _prepare_agent_run(
         agent=agent,
@@ -445,19 +446,11 @@ async def _execute_background_agent_run(
         resolve_meta=prepared.resolve_meta,
         debug=debug,
     )
-    run_id = current_run_id()
-    if run_id is None:
-        raise RuntimeError("background run context missing")
-    task_ids = current_accepted_task_ids()
-    if current_recorder_degraded() or not task_ids:
-        raise RuntimeError("background child persistence failed")
-    updated = RunRegistry(resolve_tasks_db_path()).update_running_result(
-        run_id,
-        owner=prepared.owner,
+    return BackgroundSubmissionOutcome(
+        accepted_task_ids=current_accepted_task_ids(),
         result=response_result,
+        degraded=current_recorder_degraded(),
     )
-    if not updated:
-        raise RuntimeError("background run projection update failed")
 
 
 def _background_agent_run_response(

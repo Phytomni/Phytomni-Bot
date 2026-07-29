@@ -9,6 +9,7 @@ import asyncio
 import json
 import sqlite3
 from collections.abc import Callable, Coroutine
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NoReturn
 
@@ -17,6 +18,7 @@ import pytest
 from mcp_server_phytomni.runtime import background_submission
 from mcp_server_phytomni.runtime.background_submission import (
     BackgroundSubmissionLaunchError,
+    BackgroundSubmissionOutcome,
     launch_background_submission,
     reserve_background_submission,
 )
@@ -32,6 +34,7 @@ from mcp_server_phytomni.runtime.run_registry import (
     RunRegistry,
     RunRequestInfo,
 )
+from mcp_server_phytomni.runtime.task_manager import RunContext, Submission
 
 
 async def _wait_until(
@@ -60,7 +63,7 @@ async def test_launch_returns_before_operation_finishes(
     release = asyncio.Event()
     observed: dict[str, str | None] = {}
 
-    async def operation() -> None:
+    async def operation() -> BackgroundSubmissionOutcome:
         observed.update(
             user=current_request_user(),
             request_id=current_request_id(),
@@ -68,6 +71,7 @@ async def test_launch_returns_before_operation_finishes(
             locale=current_effective_locale(),
         )
         await release.wait()
+        return BackgroundSubmissionOutcome()
 
     launch_background_submission(
         reservation,
@@ -155,7 +159,7 @@ async def test_worker_failure_settles_owned_run_without_raw_error(
         db_path=db_path,
     )
 
-    async def operation() -> None:
+    async def operation() -> BackgroundSubmissionOutcome:
         raise RuntimeError("secret prompt and token")
 
     launch_background_submission(reservation, operation, db_path=db_path)
@@ -171,6 +175,151 @@ async def test_worker_failure_settles_owned_run_without_raw_error(
 
 
 @pytest.mark.asyncio
+async def test_degraded_tracking_fails_with_safe_accepted_projection(
+    tmp_path: Path,
+) -> None:
+    """Recorder failure settles safely without creating unpollable work."""
+    db_path = str(tmp_path / "tasks.db")
+    reservation = reserve_background_submission(
+        agent="research",
+        owner="alice",
+        request_info=RunRequestInfo(request_id="req-degraded", locale="en-US"),
+        db_path=db_path,
+    )
+
+    async def operation() -> BackgroundSubmissionOutcome:
+        return BackgroundSubmissionOutcome(
+            accepted_task_ids=("accepted-1",),
+            degraded=True,
+        )
+
+    launch_background_submission(reservation, operation, db_path=db_path)
+    await _wait_until(lambda: not is_live_running(reservation.run_id))
+
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    assert record.status == "failed"
+    assert record.error == "background_submission_tracking_failed"
+    assert record.task_ids == ()
+    assert record.result["execution"] == {
+        "tracking": {"degraded": True},
+        "warnings": [],
+        "tasks": [
+            {"id": "accepted-1", "accepted": True, "status": "submitted"}
+        ],
+        "artifacts": [],
+        "output_dirs": [],
+        "report": None,
+        "diagnostics": [],
+    }
+
+
+@pytest.mark.asyncio
+async def test_partial_submission_stays_running_with_degraded_warning(
+    tmp_path: Path,
+) -> None:
+    """Persisted partial work remains pollable and marks tracking degraded."""
+    db_path = str(tmp_path / "tasks.db")
+    reservation = reserve_background_submission(
+        agent="design",
+        owner="alice",
+        request_info=RunRequestInfo(request_id="req-partial", locale="en-US"),
+        db_path=db_path,
+    )
+    projection = {
+        "formatted": {"answer": ""},
+        "execution": {
+            "warnings": [{"code": "submission_partial", "retryable": False}],
+            "tasks": [
+                {"id": "accepted-1", "accepted": True, "status": "submitted"}
+            ],
+        },
+    }
+
+    async def operation() -> BackgroundSubmissionOutcome:
+        now = datetime.now(UTC).isoformat()
+        assert RunRegistry(db_path).record_reserved_submissions(
+            reservation.run_id,
+            owner="alice",
+            agent="design",
+            submissions=(
+                Submission(
+                    task_id="accepted-1",
+                    status="submitted",
+                    output_dir="tenant/out",
+                    run_context=RunContext(
+                        run_id=reservation.run_id,
+                        user_id="alice",
+                        agent="design",
+                        origin="remote",
+                        created_at=now,
+                        updated_at=now,
+                    ),
+                ),
+            ),
+            result=projection,
+            now=now,
+        )
+        return BackgroundSubmissionOutcome(
+            accepted_task_ids=("accepted-1",),
+            result=projection,
+        )
+
+    launch_background_submission(reservation, operation, db_path=db_path)
+    await _wait_until(
+        lambda: (
+            (record := RunRegistry(db_path).get_run(
+                reservation.run_id, owner="alice"
+            ))
+            is not None
+            and record.result.get("execution", {}).get("tracking")
+            == {"degraded": True}
+        )
+    )
+
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    assert record.status == "running"
+    assert record.task_ids == ("accepted-1",)
+    assert record.result["execution"]["tracking"] == {"degraded": True}
+
+
+@pytest.mark.asyncio
+async def test_terminal_reconciliation_owns_projection_race(
+    tmp_path: Path,
+) -> None:
+    """A terminal reconciliation result is never overwritten by the worker."""
+    db_path = str(tmp_path / "tasks.db")
+    reservation = reserve_background_submission(
+        agent="network",
+        owner="alice",
+        request_info=RunRequestInfo(request_id="req-race", locale="en-US"),
+        db_path=db_path,
+    )
+
+    async def operation() -> BackgroundSubmissionOutcome:
+        registry = RunRegistry(db_path)
+        assert registry.settle_run(
+            reservation.run_id,
+            owner="alice",
+            status="succeeded",
+            result={"formatted": {"answer": "reconciled"}},
+        )
+        return BackgroundSubmissionOutcome(
+            accepted_task_ids=("accepted-race",),
+            result={"formatted": {"answer": "worker"}},
+        )
+
+    launch_background_submission(reservation, operation, db_path=db_path)
+    await _wait_until(lambda: not is_live_running(reservation.run_id))
+
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    assert record.status == "succeeded"
+    assert record.result == {"formatted": {"answer": "reconciled"}}
+
+
+@pytest.mark.asyncio
 async def test_cancelled_worker_settles_run_failed(tmp_path: Path) -> None:
     db_path = str(tmp_path / "tasks.db")
     reservation = reserve_background_submission(
@@ -180,7 +329,7 @@ async def test_cancelled_worker_settles_run_failed(tmp_path: Path) -> None:
         db_path=db_path,
     )
 
-    async def operation() -> None:
+    async def operation() -> BackgroundSubmissionOutcome:
         raise asyncio.CancelledError
 
     launch_background_submission(reservation, operation, db_path=db_path)
@@ -203,8 +352,9 @@ async def test_active_reservation_cannot_launch_twice(tmp_path: Path) -> None:
     )
     release = asyncio.Event()
 
-    async def operation() -> None:
+    async def operation() -> BackgroundSubmissionOutcome:
         await release.wait()
+        return BackgroundSubmissionOutcome()
 
     launch_background_submission(reservation, operation, db_path=db_path)
     with pytest.raises(
@@ -243,8 +393,8 @@ def test_task_creation_failure_compensates_reserved_run(
 
     monkeypatch.setattr(asyncio, "create_task", fail_create_task)
 
-    async def operation() -> None:
-        return None
+    async def operation() -> BackgroundSubmissionOutcome:
+        return BackgroundSubmissionOutcome()
 
     with pytest.raises(BackgroundSubmissionLaunchError):
         launch_background_submission(reservation, operation, db_path=db_path)
@@ -284,8 +434,8 @@ def test_task_creation_compensation_init_failure_is_sanitized(
     monkeypatch.setattr(asyncio, "create_task", fail_create_task)
     monkeypatch.setattr(background_submission, "RunRegistry", fail_registry)
 
-    async def operation() -> None:
-        return None
+    async def operation() -> BackgroundSubmissionOutcome:
+        return BackgroundSubmissionOutcome()
 
     with pytest.raises(BackgroundSubmissionLaunchError) as caught:
         launch_background_submission(reservation, operation, db_path=db_path)
@@ -327,7 +477,7 @@ async def test_worker_registry_init_failure_settles_and_deregisters(
         fail_first_registry,
     )
 
-    async def operation() -> None:
+    async def operation() -> BackgroundSubmissionOutcome:
         pytest.fail("operation must not run after registry init failure")
 
     launch_background_submission(reservation, operation, db_path=db_path)
