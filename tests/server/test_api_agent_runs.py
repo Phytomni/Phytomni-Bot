@@ -607,7 +607,10 @@ async def test_background_agent_returns_reserved_run_before_handler_finishes(
     registry = RunRegistry(tasks_db_path)
     for _ in range(100):
         record = registry.get_run(body["run_id"], owner="u1")
-        if record is not None and set(record.task_ids) == case.expected_task_ids:
+        if (
+            record is not None
+            and set(record.task_ids) == case.expected_task_ids
+        ):
             break
         await asyncio.sleep(0)
     else:
