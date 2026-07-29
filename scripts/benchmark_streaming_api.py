@@ -10,11 +10,14 @@ import argparse
 import asyncio
 import json
 import math
+import os
 import re
+import sys
 import time
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TextIO
 
 import httpx
 
@@ -399,3 +402,82 @@ def read_queries(path: Path) -> list[QueryInput]:
     if not queries:
         raise BenchmarkInputError("query file contains no queries")
     return queries
+
+
+def _format_seconds(value: float | None) -> str:
+    """Format one optional duration for the fixed CLI output."""
+    return "N/A" if value is None else f"{value:.3f} s"
+
+
+def _format_rate(value: float | None) -> str:
+    """Format one optional word-throughput value."""
+    return "N/A" if value is None else f"{value:.2f}"
+
+
+def print_summary(
+    summary: BenchmarkSummary,
+    *,
+    stream: TextIO | None = None,
+) -> None:
+    """Print exactly the four requested aggregate metrics."""
+    target = sys.stdout if stream is None else stream
+    print(
+        f"平均首 Token 时间: {_format_seconds(summary.average_ttft)}",
+        file=target,
+    )
+    print(f"总时长: {_format_seconds(summary.total_duration)}", file=target)
+    print(
+        "单个 query 平均时间: "
+        f"{_format_seconds(summary.average_query_duration)}",
+        file=target,
+    )
+    print(f"总词数/s: {_format_rate(summary.words_per_second)}", file=target)
+
+
+def print_failures(
+    results: Sequence[QueryResult],
+    *,
+    stream: TextIO | None = None,
+) -> None:
+    """Print line-number-only failures and counts to standard error."""
+    target = sys.stderr if stream is None else stream
+    failures = [result for result in results if not result.success]
+    for result in failures:
+        reason = result.error or "unknown error"
+        print(f"query line {result.line_number} failed: {reason}", file=target)
+    if failures:
+        success_count = len(results) - len(failures)
+        print(
+            f"成功 {success_count}/{len(results)}，失败 {len(failures)}",
+            file=target,
+        )
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    *,
+    environ: Mapping[str, str] | None = None,
+) -> int:
+    """Run the benchmark CLI and return its process exit status."""
+    args = parse_args(argv)
+    environment = os.environ if environ is None else environ
+    try:
+        config = build_config(args, environment)
+        queries = read_queries(config.query_file)
+    except BenchmarkInputError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    try:
+        summary, results = asyncio.run(run_benchmark(config, queries))
+    except KeyboardInterrupt:
+        print("benchmark interrupted", file=sys.stderr)
+        return 130
+
+    print_summary(summary)
+    print_failures(results)
+    return 1 if summary.failure_count else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

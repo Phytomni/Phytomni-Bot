@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
+from io import StringIO
 from pathlib import Path
 
 import httpx
@@ -627,3 +628,239 @@ async def test_run_benchmark_keeps_running_after_one_failure(
     assert summary.success_count == 1
     assert summary.failure_count == 1
     assert summary.total_duration == pytest.approx(2.0)
+
+
+def test_print_summary_has_exact_four_line_contract() -> None:
+    """Print only the four requested aggregate metrics."""
+    stream = StringIO()
+    summary = benchmark.BenchmarkSummary(
+        average_ttft=0.8424,
+        total_duration=12.3044,
+        average_query_duration=5.1156,
+        words_per_second=83.466,
+        success_count=5,
+        failure_count=0,
+    )
+
+    benchmark.print_summary(summary, stream=stream)
+
+    assert stream.getvalue() == (
+        "平均首 Token 时间: 0.842 s\n"
+        "总时长: 12.304 s\n"
+        "单个 query 平均时间: 5.116 s\n"
+        "总词数/s: 83.47\n"
+    )
+
+
+def test_print_summary_uses_na_for_zero_success() -> None:
+    """Keep four lines when successful metrics are unavailable."""
+    stream = StringIO()
+    summary = benchmark.BenchmarkSummary(
+        average_ttft=None,
+        total_duration=2.0,
+        average_query_duration=None,
+        words_per_second=None,
+        success_count=0,
+        failure_count=2,
+    )
+
+    benchmark.print_summary(summary, stream=stream)
+
+    assert stream.getvalue() == (
+        "平均首 Token 时间: N/A\n"
+        "总时长: 2.000 s\n"
+        "单个 query 平均时间: N/A\n"
+        "总词数/s: N/A\n"
+    )
+
+
+def test_print_failures_uses_line_numbers_not_queries() -> None:
+    """Report bounded failure identity without echoing query content."""
+    stream = StringIO()
+    results = [
+        _successful_result(1),
+        benchmark.QueryResult(
+            line_number=7,
+            duration=1.0,
+            ttft=None,
+            reasoning_text="",
+            content_text="",
+            word_count=0,
+            error="timeout",
+        ),
+    ]
+
+    benchmark.print_failures(results, stream=stream)
+
+    assert stream.getvalue() == (
+        "query line 7 failed: timeout\n" "成功 1/2，失败 1\n"
+    )
+
+
+def test_main_returns_zero_for_complete_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A fully successful benchmark prints four metrics and exits zero."""
+    query_file = tmp_path / "queries.txt"
+    query_file.write_text("question\n", encoding="utf-8")
+    results = [_successful_result(1, word_count=4)]
+    summary = benchmark.summarize_results(results, total_duration=2.0)
+
+    async def fake_run_benchmark(
+        _config: benchmark.BenchmarkConfig,
+        _queries: Sequence[benchmark.QueryInput],
+    ) -> tuple[benchmark.BenchmarkSummary, list[benchmark.QueryResult]]:
+        return summary, results
+
+    monkeypatch.setattr(benchmark, "run_benchmark", fake_run_benchmark)
+
+    exit_code = benchmark.main(
+        [
+            "--max-concurrency",
+            "1",
+            "--query-file",
+            str(query_file),
+            "--base-url",
+            "https://example.invalid/v1",
+            "--model-id",
+            "model-a",
+            "--api-key",
+            "secret",
+        ],
+        environ={},
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert len(captured.out.splitlines()) == 4
+    assert captured.err == ""
+
+
+def test_main_prints_partial_metrics_and_returns_one(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A partial run prints metrics, reports failure, and exits non-zero."""
+    query_file = tmp_path / "queries.txt"
+    query_file.write_text(
+        "first private query\nsecond private query\n",
+        encoding="utf-8",
+    )
+    results = [
+        _successful_result(1, word_count=10),
+        benchmark.QueryResult(
+            line_number=2,
+            duration=2.0,
+            ttft=None,
+            reasoning_text="",
+            content_text="",
+            word_count=0,
+            error="<redacted> timeout",
+        ),
+    ]
+    summary = benchmark.summarize_results(results, total_duration=4.0)
+
+    async def fake_run_benchmark(
+        _config: benchmark.BenchmarkConfig,
+        _queries: Sequence[benchmark.QueryInput],
+    ) -> tuple[benchmark.BenchmarkSummary, list[benchmark.QueryResult]]:
+        return summary, results
+
+    monkeypatch.setattr(benchmark, "run_benchmark", fake_run_benchmark)
+
+    exit_code = benchmark.main(
+        [
+            "--max-concurrency",
+            "2",
+            "--query-file",
+            str(query_file),
+            "--base-url",
+            "https://example.invalid/v1",
+            "--model-id",
+            "model-a",
+            "--api-key",
+            "top-secret",
+        ],
+        environ={},
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert len(captured.out.splitlines()) == 4
+    assert "query line 2 failed" in captured.err
+    assert "top-secret" not in captured.out
+    assert "top-secret" not in captured.err
+    assert "first private query" not in captured.err
+    assert "second private query" not in captured.err
+
+
+def test_main_returns_two_for_empty_query_file(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Input rejection does not claim benchmark measurements."""
+    query_file = tmp_path / "queries.txt"
+    query_file.write_text("\n", encoding="utf-8")
+
+    exit_code = benchmark.main(
+        [
+            "--max-concurrency",
+            "1",
+            "--query-file",
+            str(query_file),
+            "--base-url",
+            "https://example.invalid/v1",
+            "--model-id",
+            "model-a",
+            "--api-key",
+            "secret",
+        ],
+        environ={},
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert captured.out == ""
+    assert "no queries" in captured.err
+
+
+def test_main_returns_130_without_metrics_when_interrupted(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Do not claim a complete benchmark after cancellation."""
+    query_file = tmp_path / "queries.txt"
+    query_file.write_text("question\n", encoding="utf-8")
+
+    async def interrupted_run(
+        _config: benchmark.BenchmarkConfig,
+        _queries: Sequence[benchmark.QueryInput],
+    ) -> tuple[benchmark.BenchmarkSummary, list[benchmark.QueryResult]]:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(benchmark, "run_benchmark", interrupted_run)
+
+    exit_code = benchmark.main(
+        [
+            "--max-concurrency",
+            "1",
+            "--query-file",
+            str(query_file),
+            "--base-url",
+            "https://example.invalid/v1",
+            "--model-id",
+            "model-a",
+            "--api-key",
+            "secret",
+        ],
+        environ={},
+    )
+    captured = capsys.readouterr()
+
+    assert exit_code == 130
+    assert captured.out == ""
+    assert captured.err == "benchmark interrupted\n"
