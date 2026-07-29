@@ -129,6 +129,18 @@ def _candidate_paths(root: Path, paths: Sequence[Path]) -> str:
     return ", ".join(sorted(_relative_path(root, path) for path in paths))
 
 
+def _normalize_span_source(source: str) -> str:
+    """Normalize complete or partial Pylint source spans."""
+    try:
+        return normalize_source(source)
+    except ValueError:
+        dedented = textwrap.dedent(source)
+        try:
+            return normalize_source(dedented)
+        except ValueError:
+            return dedented.strip()
+
+
 def _endpoint_candidates(
     root: Path, module: str, tracked: Sequence[Path]
 ) -> tuple[Path, ...]:
@@ -199,13 +211,7 @@ def _span_source(path: Path, start: int, end: int) -> str:
             f"Pylint span is outside {path.as_posix()}: {start}:{end}"
         )
     snippet = "\n".join(lines[start - 1 : end])
-    try:
-        return normalize_source(snippet)
-    except ValueError:
-        try:
-            return normalize_source(textwrap.dedent(snippet))
-        except ValueError:
-            return snippet.strip()
+    return _normalize_span_source(snippet)
 
 
 def _span_endpoint(
@@ -231,16 +237,8 @@ def _pair_endpoints(
             "R0801 diagnostic must contain exactly two source endpoints"
         )
     first_match, second_match = matches
-    source = message[second_match.end() :].strip()
-    source_hint = None
-    if source:
-        try:
-            source_hint = normalize_source(source)
-        except ValueError:
-            try:
-                source_hint = normalize_source(textwrap.dedent(source))
-            except ValueError:
-                source_hint = None
+    source = message[second_match.end() :]
+    source_hint = _normalize_span_source(source) if source.strip() else None
     first = _span_endpoint(
         root,
         first_match.group("module"),

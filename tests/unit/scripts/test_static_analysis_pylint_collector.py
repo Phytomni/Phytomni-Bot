@@ -137,6 +137,43 @@ def test_r0801_reports_all_ambiguous_candidates(
         parse_pylint_json(tmp_path, json.dumps(document), "pylint 4.0.5")
 
 
+def test_r0801_resolves_real_partial_source_hint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A real incomplete Pylint excerpt still selects the runtime model."""
+    interop = _ROOT / "tests/unit/interop/test_models.py"
+    runtime = _ROOT / "tests/unit/runtime/conversation_context/test_models.py"
+    review = _ROOT / "tests/agents/test_review_conversation.py"
+    monkeypatch.setattr(
+        "scripts.static_analysis.collectors.pylint.tracked_git_files",
+        lambda _root, _patterns: (interop, runtime, review),
+    )
+    document = [
+        {
+            "message-id": "R0801",
+            "path": "tests/unit/runtime/conversation_context/test_models.py",
+            "line": 37,
+            "message": (
+                "Similar lines in 2 files\n"
+                "==test_models:[37:42]\n"
+                "==tests.agents.test_review_conversation:[1344:1349]\n"
+                '        "turn_id": "1",\n'
+                '        "request_id": "request-1",\n'
+                '        "operation": "append",\n'
+                '        "mode": "expert",\n'
+                '        "current_message": {\n'
+            ),
+        }
+    ]
+
+    finding = parse_pylint_json(_ROOT, json.dumps(document), "pylint 4.0.5")[0]
+
+    assert finding.path == (
+        "tests/unit/runtime/conversation_context/test_models.py"
+    )
+    assert finding.peer_path == "tests/agents/test_review_conversation.py"
+
+
 def test_r0903_resolves_the_class_symbol() -> None:
     """R0903 points to the exact class rather than only its file."""
     finding = parse_pylint_json(
