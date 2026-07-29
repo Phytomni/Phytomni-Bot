@@ -693,7 +693,7 @@ def _validate_stability(value: object, case_count: int) -> bool:
         return False
     exact = float(value["exact"])  # type: ignore[index]
     modal = float(value["modal_agreement"])  # type: ignore[index]
-    if modal < 1.0 / 3.0 or exact > modal:
+    if exact > modal:
         return False
     exact_count = exact * case_count
     modal_votes = modal * (3 * case_count)
@@ -708,7 +708,7 @@ def _validate_stability(value: object, case_count: int) -> bool:
         return False
     stable_cases = round(exact_count)
     unstable_cases = case_count - stable_cases
-    lower = (stable_cases + unstable_cases / 3.0) / case_count
+    lower = stable_cases / case_count
     upper = (stable_cases + unstable_cases * 2.0 / 3.0) / case_count
     return lower - tolerance <= modal <= upper + tolerance
 

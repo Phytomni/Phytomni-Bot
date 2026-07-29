@@ -14,6 +14,7 @@ import pytest
 from scripts.agent_routing_eval.dataset import AgentRoutingCase
 from scripts.agent_routing_eval.metrics import (
     NO_MAJORITY,
+    _validate_stability,
     compute_metrics,
     thresholds_pass,
 )
@@ -724,3 +725,36 @@ def test_thresholds_rejects_impossible_stability_bounds() -> None:
     }
 
     assert thresholds_pass(forged) is False
+
+
+def test_provider_error_zero_modal_fails_completion() -> None:
+    cases = tuple(
+        case(f"case-{index:03d}", agent)
+        for index, agent in enumerate(CANONICAL_AGENTS, start=1)
+    )
+    provider_outcomes = tuple(
+        outcome(
+            "case-001",
+            repeat,
+            "ChatAgent",
+            PROVIDER_ERROR,
+            provider_completed=False,
+        )
+        for repeat in range(1, 4)
+    )
+    stable_outcomes = tuple(
+        outcome(f"case-{index:03d}", repeat, agent, agent)
+        for index, agent in enumerate(CANONICAL_AGENTS, start=1)
+        if index != 1
+        for repeat in range(1, 4)
+    )
+    report = compute_metrics(
+        cases,
+        provider_outcomes + stable_outcomes,
+        repeat_count=3,
+    )
+
+    assert report["stability"] == {"exact": 0.9, "modal_agreement": 0.9}
+    assert _validate_stability(report["stability"], case_count=10) is True
+    assert report["provider_completion"] == 0.9
+    assert thresholds_pass(report) is False
