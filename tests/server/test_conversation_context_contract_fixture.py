@@ -34,11 +34,11 @@ _FIXTURE = (
 _CANONICAL_AGENT_IDS = [
     name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
 ]
-_STAGE_TURN_ID = TypeAdapter(
+_STAGE_TURN_ID: TypeAdapter[str] = TypeAdapter(
     Annotated[str, Field(pattern=r"^[1-9][0-9]{0,18}$")]
 )
-_STAGE_SCHEMA_VERSION = TypeAdapter(Literal[1])
-_STAGE_CONTEXT_DEGRADED = TypeAdapter(StrictBool)
+_STAGE_SCHEMA_VERSION: TypeAdapter[Literal[1]] = TypeAdapter(Literal[1])
+_STAGE_CONTEXT_DEGRADED: TypeAdapter[bool] = TypeAdapter(StrictBool)
 
 
 def _fixture() -> dict[str, Any]:
@@ -58,6 +58,20 @@ def test_protocol_advertisement_and_canonical_allowlist_are_current() -> None:
         payload["requests"]["expert_unforced_envelope"]["allowed_agent_ids"]
         == _CANONICAL_AGENT_IDS
     )
+
+
+def test_fixture_redaction_contract_names_bounded_context_only() -> None:
+    """The fixture records metadata fields, never output payload fields."""
+    assert _fixture()["redaction_contract"] == {
+        "bounded_context_fields": [
+            "active_entities",
+            "artifact_index",
+            "per_agent_memory",
+            "recent_turns",
+            "task_summary",
+        ],
+        "excluded_output_kinds": ["answer", "report", "table", "tabular"],
+    }
 
 
 def test_fixture_requests_decode_with_current_python_models() -> None:

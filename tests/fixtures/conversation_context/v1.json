@@ -5,6 +5,16 @@
       "conversation_context": [1]
     }
   },
+  "redaction_contract": {
+    "bounded_context_fields": [
+      "active_entities",
+      "artifact_index",
+      "per_agent_memory",
+      "recent_turns",
+      "task_summary"
+    ],
+    "excluded_output_kinds": ["answer", "report", "table", "tabular"]
+  },
   "requests": {
     "instant_envelope": {
       "schema_version": 1,

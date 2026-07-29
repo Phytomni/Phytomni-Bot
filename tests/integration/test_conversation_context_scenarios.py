@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,10 @@ from tests.support.chat_fakes import install_chat_handler
 from tests.support.http_fakes import open_asgi_client
 
 import mcp_server_phytomni.api.app as api_app
+from mcp_server_phytomni.agents.brief_gene.conversation import (
+    BriefGeneConversationAdapter,
+    BriefGeneConversationOperation,
+)
 from mcp_server_phytomni.agents.expert import ToolSelection
 from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
 from mcp_server_phytomni.api.app import create_app
@@ -297,11 +302,16 @@ async def test_expert_forced_then_automatic_uses_fresh_complete_allowlist(
 async def test_knowledge_data_review_preserve_refs_without_full_text(
     tmp_path: Path,
 ) -> None:
-    """Cross-agent projections carry bounded entities and artifact refs."""
+    """Cross-agent projections never retain complete tool outputs."""
     projections: dict[str, Any] = {}
     artifact = ArtifactRefV1(
         artifact_id="artifact-evidence",
         display_name="bounded evidence",
+    )
+    raw_output_sentinels = (
+        "KNOWLEDGE_ANSWER_OUTPUT_SENTINEL",
+        "DATA_TABLE_OUTPUT_SENTINEL",
+        "REVIEW_REPORT_OUTPUT_SENTINEL",
     )
 
     async def router(*_args: Any, **_kwargs: Any) -> AgentSelection:
@@ -311,6 +321,7 @@ async def test_knowledge_data_review_preserve_refs_without_full_text(
         agent: str, _envelope: Any, projection: Any
     ) -> AgentOutcome:
         projections[agent] = projection
+        result: dict[str, Any]
         if agent == "KnowledgeAgent":
             delta = ContextDelta(
                 summary_update="bounded knowledge summary",
@@ -323,8 +334,46 @@ async def test_knowledge_data_review_preserve_refs_without_full_text(
                 ],
                 artifact_upserts=[artifact],
             )
+            result = {
+                "status": "succeeded",
+                "agent": agent,
+                "answer": (
+                    "# Evidence summary\n\n"
+                    "KNOWLEDGE_ANSWER_OUTPUT_SENTINEL: sanitized evidence "
+                    "text with bounded citations."
+                ),
+                "references": [
+                    {"artifact_id": "artifact-evidence", "section": "results"}
+                ],
+            }
+        elif agent == "DataAgent":
+            delta = ContextDelta()
+            result = {
+                "status": "succeeded",
+                "agent": agent,
+                "formatted": {
+                    "answer": "DATA_TABLE_OUTPUT_SENTINEL: comparison table",
+                    "tabular": {
+                        "columns": ["sample", "score"],
+                        "rows": [["sample-a", 0.91], ["sample-b", 0.87]],
+                    },
+                },
+            }
         else:
             delta = ContextDelta()
+            result = {
+                "status": "succeeded",
+                "agent": agent,
+                "report": (
+                    "# Review report\n\n"
+                    "REVIEW_REPORT_OUTPUT_SENTINEL: sanitized report text "
+                    "with a bounded conclusion."
+                ),
+                "table": {
+                    "columns": ["criterion", "finding"],
+                    "rows": [["coverage", "bounded"]],
+                },
+            }
         private = None
         if agent == "ReviewAgent":
             stable = agent_thread_id(key, agent)
@@ -341,11 +390,7 @@ async def test_knowledge_data_review_preserve_refs_without_full_text(
         return _outcome(
             agent,
             delta=delta,
-            result={
-                "status": "succeeded",
-                "agent": agent,
-                "artifact_id": "artifact-evidence",
-            },
+            result=result,
             private_stage_metadata=private,
         )
 
@@ -399,15 +444,68 @@ async def test_knowledge_data_review_preserve_refs_without_full_text(
         assert projection.artifact_refs == [artifact]
         assert "full answer" not in projection.task_summary
     assert prepared.stored_turn is not None
-    assert "full report" not in str(prepared.stored_turn.delta)
+    committed = service.store.load_context(str(key))
+    assert committed is not None
+    context = committed.context
+    assert context["version"] == 2
+    assert context["task_summary"] == "bounded knowledge summary"
+    assert context["active_entities"] == [
+        {
+            "entity_id": "entity-focus",
+            "entity_type": "dataset",
+            "label": "focus item",
+        }
+    ]
+    assert context["artifact_index"] == [artifact.model_dump(mode="json")]
+    assert [turn["role"] for turn in context["recent_turns"]] == [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+    ]
+    assert all(
+        turn["content"] == "bounded assistant summary"
+        for turn in context["recent_turns"]
+        if turn["role"] == "assistant"
+    )
+    committed_context = json.dumps(context, sort_keys=True)
+    staged_delta = json.dumps(prepared.stored_turn.delta, sort_keys=True)
+    proposed_context = json.dumps(
+        (
+            prepared.context.model_dump(mode="json")
+            if prepared.context is not None
+            else {}
+        ),
+        sort_keys=True,
+    )
+    for sentinel in raw_output_sentinels:
+        assert sentinel not in committed_context
+        assert sentinel not in staged_delta
+        assert sentinel not in proposed_context
+    assert '"answer"' not in committed_context
+    assert '"report"' not in committed_context
+    assert '"tabular"' not in committed_context
+    assert '"table"' not in committed_context
 
 
 async def test_brief_gene_context_reuses_and_replaces_identifier(
     tmp_path: Path,
 ) -> None:
-    """Brief Gene receives the prior entity for a follow-up and a new
-    identifier later."""
+    """Brief Gene follows up on prior state and replaces it for a new id."""
     calls: list[tuple[str, list[str], str]] = []
+    operations: list[BriefGeneConversationOperation] = []
+    follow_up_prompts: list[str] = []
+    results: list[dict[str, Any]] = []
+    first_gene = "Os01g0100100"
+    second_gene = "At1g01010"
+    first_artifact = ArtifactRefV1(
+        artifact_id="brief-report-first",
+        display_name="first Brief Gene report",
+    )
+    second_artifact = ArtifactRefV1(
+        artifact_id="brief-report-second",
+        display_name="second Brief Gene report",
+    )
 
     async def router(*_args: Any, **_kwargs: Any) -> AgentSelection:
         return AgentSelection("BriefGeneAgent", "ROUTER")
@@ -422,34 +520,91 @@ async def test_brief_gene_context_reuses_and_replaces_identifier(
                 agent,
             )
         )
-        is_new = "new identifier" in envelope.current_message.content
-        delta = ContextDelta(
-            entity_upserts=(
-                [
-                    ContextEntity(
-                        entity_id=(
-                            "entity-second" if is_new else "entity-first"
-                        ),
-                        entity_type="gene",
-                        label="opaque identifier",
-                    )
-                ]
-                if is_new or not projection.active_entities
-                else []
+        adapter = BriefGeneConversationAdapter()
+        prepared = adapter.prepare(projection)
+        operation = prepared["operation"]
+        operations.append(operation)
+        if operation is BriefGeneConversationOperation.FOLLOW_UP:
+
+            async def follow_up_chat(prompt: str) -> dict[str, Any]:
+                follow_up_prompts.append(prompt)
+                return {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": (
+                                    "BRIEF_FOLLOW_UP_ANSWER_SENTINEL: "
+                                    "bounded follow-up answer."
+                                )
+                            }
+                        }
+                    ]
+                }
+
+            result = await adapter.follow_up(follow_up_chat)
+            results.append(result)
+            return _outcome(
+                agent,
+                delta=adapter.delta(result),
+                summary="bounded follow-up summary",
+                result=result,
             )
+
+        gene_id = first_gene if not projection.active_entities else second_gene
+        artifact_ref = (
+            first_artifact if gene_id == first_gene else second_artifact
         )
+        result = {
+            "choices": [
+                {
+                    "message": {
+                        "content": (
+                            "# Brief Gene Analysis\n\n"
+                            f"BRIEF_REPORT_OUTPUT_SENTINEL_{gene_id}: "
+                            "sanitized report body."
+                        ),
+                        "doc_list": [
+                            {
+                                "file_id": (
+                                    "evidence-first"
+                                    if gene_id == first_gene
+                                    else "evidence-second"
+                                ),
+                                "content": "sanitized evidence body",
+                            }
+                        ],
+                    }
+                }
+            ],
+            "phytomni_state": {
+                "gene_id": gene_id,
+                "species_code": "osa" if gene_id == first_gene else "ath",
+                "report_summary": "bounded Brief Gene report summary",
+                "report_artifact_id": artifact_ref.artifact_id,
+                "report_revision": 1,
+                "retrieved_docs": [
+                    {
+                        "file_id": (
+                            "evidence-first"
+                            if gene_id == first_gene
+                            else "evidence-second"
+                        ),
+                        "content": "sanitized evidence body",
+                    }
+                ],
+            },
+        }
+        resolved = {
+            "gene_id": gene_id,
+            "species_code": "osa" if gene_id == first_gene else "ath",
+        }
+        assert adapter.capture_result(result, resolved=resolved)
+        results.append(result)
         return _outcome(
             agent,
-            delta=delta,
-            result={
-                "status": "succeeded",
-                "agent": agent,
-                "report_action": (
-                    "new"
-                    if is_new or not projection.active_entities
-                    else "follow_up"
-                ),
-            },
+            delta=adapter.delta(result),
+            summary="bounded report summary",
+            result=result,
         )
 
     async def delegate(*_args: Any, **_kwargs: Any) -> dict[str, object]:
@@ -464,9 +619,10 @@ async def test_brief_gene_context_reuses_and_replaces_identifier(
         _envelope(
             key=key,
             turn_id="1",
-            message="Identifier item-alpha",
+            message=f"Identifier {first_gene}",
             allowed_agent_ids=("BriefGeneAgent",),
             requested_agent_id="BriefGeneAgent",
+            artifacts=(first_artifact,),
         ),
     )
     await _commit(
@@ -478,34 +634,71 @@ async def test_brief_gene_context_reuses_and_replaces_identifier(
             allowed_agent_ids=("BriefGeneAgent",),
             requested_agent_id="BriefGeneAgent",
             base_version=1,
+            artifacts=(first_artifact,),
         ),
     )
     third = _envelope(
         key=key,
         turn_id="3",
-        message="Use the new identifier item-beta.",
+        message=f"Use the new identifier {second_gene}.",
         allowed_agent_ids=("BriefGeneAgent",),
         requested_agent_id="BriefGeneAgent",
         base_version=2,
+        artifacts=(second_artifact,),
     )
     prepared = await service.execute_turn(third)
 
     assert prepared.stage is not None
-    assert calls[0] == ("Identifier item-alpha", [], "BriefGeneAgent")
+    assert calls[0] == (f"Identifier {first_gene}", [], "BriefGeneAgent")
     assert calls[1] == (
         "What about its function?",
-        ["entity-first"],
+        [
+            "brief_gene.gene.os01g0100100",
+            "brief_gene.species.osa",
+            "brief_gene.report_revision.1",
+            "brief_gene.evidence.evidence-first",
+            "brief_gene.artifact.brief-report-first",
+        ],
         "BriefGeneAgent",
     )
     assert calls[2] == (
-        "Use the new identifier item-beta.",
-        ["entity-first"],
+        f"Use the new identifier {second_gene}.",
+        [
+            "brief_gene.gene.os01g0100100",
+            "brief_gene.species.osa",
+            "brief_gene.report_revision.1",
+            "brief_gene.evidence.evidence-first",
+            "brief_gene.artifact.brief-report-first",
+        ],
         "BriefGeneAgent",
     )
-    assert prepared.result == {
-        "status": "succeeded",
-        "agent": "BriefGeneAgent",
-        "report_action": "new",
+    assert operations == [
+        BriefGeneConversationOperation.NEW_REPORT,
+        BriefGeneConversationOperation.FOLLOW_UP,
+        BriefGeneConversationOperation.NEW_IDENTIFIER,
+    ]
+    assert len(follow_up_prompts) == 1
+    assert first_gene in follow_up_prompts[0]
+    assert "bounded Brief Gene report summary" in follow_up_prompts[0]
+    assert "evidence-first" in follow_up_prompts[0]
+    follow_up_result = results[1]
+    assert follow_up_result["choices"][0]["message"]["doc_list"] == [
+        {"file_id": "evidence-first"}
+    ]
+    assert "phytomni_state" not in follow_up_result
+    assert "report_artifact_id" not in json.dumps(follow_up_result)
+    assert results[0]["phytomni_state"]["gene_id"] == first_gene
+    assert results[2]["phytomni_state"]["gene_id"] == second_gene
+    assert prepared.result == results[2]
+    assert prepared.context is not None
+    assert {item.entity_id for item in prepared.context.active_entities} >= {
+        "brief_gene.gene.at1g01010",
+        "brief_gene.species.ath",
+        "brief_gene.report_revision.1",
+        "brief_gene.evidence.evidence-second",
+    }
+    assert "brief_gene.gene.os01g0100100" not in {
+        item.entity_id for item in prepared.context.active_entities
     }
 
 
