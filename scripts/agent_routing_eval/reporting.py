@@ -910,6 +910,7 @@ def _validate_complete_run_inventory(
         if (
             not isinstance(case_id, str)
             or not case_id
+            or not isinstance(expected_agent, str)
             or expected_agent not in _CANONICAL_AGENTS
             or predicted_agent not in _SAFE_PREDICTED_AGENTS
             or not isinstance(repeat, int)
