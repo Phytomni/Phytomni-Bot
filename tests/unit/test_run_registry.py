@@ -367,6 +367,135 @@ def test_record_reserved_submissions_allows_same_run_idempotency(
     }
 
 
+def test_record_reserved_submissions_rejects_duplicate_batch_conflict(
+    tmp_path: Path,
+) -> None:
+    """A duplicate batch ID cannot let a later context reparent a child."""
+    registry, _manager, db_path = _make_registry(tmp_path)
+    context = RunContext(run_id="run-target", user_id="alice", agent="analyst")
+    registry.reserve_run(
+        RunSpec("run-target", "alice", "analyst", "remote"),
+        request_info=RunRequestInfo(request_id="req-target"),
+        result=empty_execution_projection(),
+    )
+
+    assert (
+        registry.record_reserved_submissions(
+            "run-target",
+            owner="alice",
+            agent="analyst",
+            submissions=(
+                Submission(
+                    task_id="task-other",
+                    status="submitted",
+                    output_dir="/other",
+                    run_context=context,
+                ),
+                Submission(
+                    task_id="task-duplicate",
+                    status="submitted",
+                    output_dir="/first",
+                    run_context=context,
+                ),
+                Submission(
+                    task_id="task-duplicate",
+                    status="submitted",
+                    output_dir="/second",
+                    run_context=RunContext(
+                        run_id="run-other", user_id="mallory", agent="design"
+                    ),
+                ),
+            ),
+            result=empty_execution_projection(),
+            now="2026-07-30T00:00:00+00:00",
+        )
+        is False
+    )
+
+    with closed_sqlite_connection(db_path) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+    assert count == 0
+
+
+def test_record_reserved_submissions_rejects_duplicate_same_identity_batch(
+    tmp_path: Path,
+) -> None:
+    """One reserved batch may contain each immutable child identity once."""
+    registry, _manager, db_path = _make_registry(tmp_path)
+    context = RunContext(run_id="run-target", user_id="alice", agent="analyst")
+    registry.reserve_run(
+        RunSpec("run-target", "alice", "analyst", "remote"),
+        request_info=RunRequestInfo(request_id="req-target"),
+        result=empty_execution_projection(),
+    )
+    duplicate = Submission(
+        task_id="task-duplicate",
+        status="submitted",
+        output_dir="/same",
+        run_context=context,
+    )
+
+    assert (
+        registry.record_reserved_submissions(
+            "run-target",
+            owner="alice",
+            agent="analyst",
+            submissions=(duplicate, duplicate),
+            result=empty_execution_projection(),
+            now="2026-07-30T00:00:00+00:00",
+        )
+        is False
+    )
+    with closed_sqlite_connection(db_path) as conn:
+        count = conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0]
+    assert count == 0
+
+
+def test_record_reserved_submissions_rejects_missing_context_collision(
+    tmp_path: Path,
+) -> None:
+    """A context-free reserved retry cannot clear an owned child identity."""
+    registry, manager, db_path = _make_registry(tmp_path)
+    context = RunContext(run_id="run-target", user_id="alice", agent="analyst")
+    registry.reserve_run(
+        RunSpec("run-target", "alice", "analyst", "remote"),
+        request_info=RunRequestInfo(request_id="req-target"),
+        result=empty_execution_projection(),
+    )
+    manager.record(
+        Submission(
+            task_id="task-owned",
+            status="submitted",
+            output_dir="/owned",
+            run_context=context,
+        )
+    )
+
+    assert (
+        registry.record_reserved_submissions(
+            "run-target",
+            owner="alice",
+            agent="analyst",
+            submissions=(
+                Submission(
+                    task_id="task-owned",
+                    status="submitted",
+                    output_dir="/cleared",
+                ),
+            ),
+            result=empty_execution_projection(),
+            now="2026-07-30T00:00:00+00:00",
+        )
+        is False
+    )
+    with closed_sqlite_connection(db_path) as conn:
+        stored = conn.execute(
+            "SELECT run_id, user_id, agent, output_dir FROM tasks "
+            "WHERE task_id = 'task-owned'"
+        ).fetchone()
+    assert stored == ("run-target", "alice", "analyst", "/owned")
+
+
 def test_init_db_creates_runs_table_and_indices(tmp_path: Path) -> None:
     """The registry creates the runs table and shared indices."""
     db = str(tmp_path / "tasks.db")
