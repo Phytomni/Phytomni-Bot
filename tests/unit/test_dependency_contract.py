@@ -37,3 +37,10 @@ def test_python_314_runtime_dependency_floors_are_explicit() -> None:
     assert not any(
         dependency.startswith("markitdown[all]") for dependency in dependencies
     )
+
+
+def test_mcp_runtime_contract_is_bounded_to_supported_major() -> None:
+    """Keep CI resolution on the MCP API used by the repository."""
+    dependencies = _runtime_dependencies()
+
+    assert "mcp>=1.27.0,<2" in dependencies
