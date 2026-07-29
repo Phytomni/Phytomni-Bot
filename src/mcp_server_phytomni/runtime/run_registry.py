@@ -57,6 +57,8 @@ from .run_registry_reports import (
 )
 from .sqlite import sqlite_transaction
 from .task_manager import (
+    RunContext,
+    Submission,
     TaskManager,
     _expires_at_for,
     resolve_tasks_db_path,
@@ -289,6 +291,91 @@ class RunRegistry:
                     request_info.a2a.message_id,
                 ),
             )
+
+    def record_reserved_submissions(
+        self,
+        run_id: str,
+        *,
+        owner: str,
+        agent: str,
+        submissions: Sequence[Submission],
+        result: dict[str, Any],
+        now: str,
+    ) -> bool:
+        """Atomically attach children and project a running reserved run.
+
+        The owner, canonical agent, and running status are checked while a
+        write transaction is held. This prevents a terminal settlement from
+        interleaving between validation and child-row persistence.
+        """
+        with sqlite_transaction(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT status FROM runs
+                WHERE run_id = ? AND user_id = ? AND agent = ?
+                """,
+                (run_id, owner, agent),
+            ).fetchone()
+            if row is None or row[0] != "running":
+                return False
+            for submission in submissions:
+                ctx = submission.run_context or RunContext()
+                conn.execute(
+                    """
+                    INSERT INTO tasks (
+                        task_id, status, analysis_id, output_dir,
+                        run_id, user_id, agent, origin, created_at,
+                        updated_at, input_fingerprint, source_task_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(task_id) DO UPDATE SET
+                        status = excluded.status,
+                        analysis_id = excluded.analysis_id,
+                        output_dir = excluded.output_dir,
+                        run_id = excluded.run_id,
+                        user_id = excluded.user_id,
+                        agent = excluded.agent,
+                        origin = excluded.origin,
+                        created_at = excluded.created_at,
+                        updated_at = excluded.updated_at,
+                        input_fingerprint = COALESCE(
+                            excluded.input_fingerprint,
+                            tasks.input_fingerprint
+                        ),
+                        source_task_id = COALESCE(
+                            excluded.source_task_id,
+                            tasks.source_task_id
+                        )
+                    """,
+                    (
+                        submission.task_id,
+                        submission.status,
+                        submission.analysis_id,
+                        submission.output_dir,
+                        ctx.run_id,
+                        ctx.user_id,
+                        ctx.agent,
+                        ctx.origin,
+                        ctx.created_at,
+                        ctx.updated_at,
+                        submission.input_fingerprint,
+                        submission.source_task_id,
+                    ),
+                )
+            cursor = conn.execute(
+                """
+                UPDATE runs
+                SET result_json = ?, updated_at = ?
+                WHERE run_id = ? AND user_id = ? AND agent = ?
+                  AND status = 'running'
+                """,
+                (json.dumps(result), _now_iso(), run_id, owner, agent),
+            )
+            if cursor.rowcount != 1:
+                raise sqlite3.OperationalError(
+                    "reserved run changed during submission"
+                )
+            return True
 
     def update_running_result(
         self,

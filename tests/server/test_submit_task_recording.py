@@ -315,6 +315,35 @@ def test_recorder_attaches_children_to_reserved_run(
     stored = registry.get_run("run-reserved", owner="alice")
     assert stored is not None
     assert tuple(stored.task_ids) == expected_ids
+    assert stored.result is not None
+    assert stored.result["execution"]["tasks"] == [
+        {"id": task_id, "accepted": True, "status": "submitted"}
+        for task_id in expected_ids
+    ]
+    if agent == "design":
+        expected_output_dirs = [
+            str(entry.get("output_dir") or "")
+            for entry in result["design_task_result"]
+        ]
+    elif agent == "network":
+        expected_output_dirs = [
+            str(result["network_task"].get("output_dir") or "")
+        ]
+    else:
+        expected_output_dirs = [
+            str(result.get("output_dir") or "")
+        ] * len(expected_ids)
+    assert stored.result["execution"]["output_dirs"] == expected_output_dirs
+    with closed_sqlite_connection(tasks_db_path) as conn:
+        rows = conn.execute(
+            "SELECT task_id, run_id, user_id, agent FROM tasks "
+            "WHERE run_id = ? ORDER BY task_id",
+            ("run-reserved",),
+        ).fetchall()
+    assert {row[0] for row in rows} == set(expected_ids)
+    assert {(row[1], row[2], row[3]) for row in rows} == {
+        ("run-reserved", "alice", agent)
+    }
     assert len(registry.list_runs(owner="alice", limit=10, offset=0)) == 1
 
 
@@ -347,12 +376,84 @@ def test_recorder_rejects_reserved_run_agent_mismatch(
             agent="design",
         )
         assert current_recorder_degraded() is True
+        assert current_accepted_task_ids() == ("design-mismatch",)
 
     stored = registry.get_run("run-agent-mismatch", owner="alice")
     assert stored is not None
     assert stored.spec.agent == "analyst"
     assert stored.task_ids == ()
     assert len(registry.list_runs(owner="alice", limit=10, offset=0)) == 1
+
+
+def test_recorder_rejects_reserved_run_owner_mismatch(
+    tasks_db_path: str,
+) -> None:
+    """Do not attach children when the reserved owner is different."""
+    registry = RunRegistry(tasks_db_path)
+    registry.reserve_run(
+        RunSpec(
+            run_id="run-owner-mismatch",
+            user_id="alice",
+            agent="analyst",
+            origin="remote",
+        ),
+        request_info=RunRequestInfo(request_id="req-owner-mismatch"),
+        result=empty_execution_projection(),
+    )
+
+    with request_context("bob", "req-owner-mismatch", "run-owner-mismatch"):
+        record_submitted_task(
+            {"task_id": "owner-mismatch", "output_dir": "/safe/owner"},
+            agent="analyst",
+        )
+        assert current_recorder_degraded() is True
+        assert current_accepted_task_ids() == ("owner-mismatch",)
+
+    stored = registry.get_run("run-owner-mismatch", owner="alice")
+    assert stored is not None
+    assert stored.task_ids == ()
+
+
+def test_recorder_rejects_terminal_reserved_run(
+    tasks_db_path: str,
+) -> None:
+    """Do not attach children after the umbrella has become terminal."""
+    registry = RunRegistry(tasks_db_path)
+    registry.reserve_run(
+        RunSpec(
+            run_id="run-terminal-mismatch",
+            user_id="alice",
+            agent="analyst",
+            origin="remote",
+        ),
+        request_info=RunRequestInfo(request_id="req-terminal-mismatch"),
+        result=empty_execution_projection(),
+    )
+    assert registry.update_running_result(
+        "run-terminal-mismatch",
+        owner="alice",
+        result={"terminal": True},
+    )
+    with closed_sqlite_connection(tasks_db_path) as conn:
+        conn.execute(
+            "UPDATE runs SET status = 'succeeded' WHERE run_id = ?",
+            ("run-terminal-mismatch",),
+        )
+        conn.commit()
+
+    with request_context(
+        "alice", "req-terminal-mismatch", "run-terminal-mismatch"
+    ):
+        record_submitted_task(
+            {"task_id": "terminal-mismatch", "output_dir": "/safe/terminal"},
+            agent="analyst",
+        )
+        assert current_recorder_degraded() is True
+        assert current_accepted_task_ids() == ("terminal-mismatch",)
+
+    stored = registry.get_run("run-terminal-mismatch", owner="alice")
+    assert stored is not None
+    assert stored.task_ids == ()
 
 
 def test_record_handles_research_task_ids_map(tasks_db_path: str) -> None:
@@ -620,9 +721,7 @@ def test_record_logs_and_flags_degraded_on_persistence_failure(
         del args
         error_calls.append((msg, kwargs.get("extra", {})))
 
-    monkeypatch.setattr(
-        submit_recorder_module.logger, "error", fake_error
-    )
+    monkeypatch.setattr(submit_recorder_module.logger, "error", fake_error)
     # Reset the contextvar manually because the test runs outside an
     # HTTP request_context() block — without this, a flag flipped
     # by an earlier test in the same process leaks into this assert.
