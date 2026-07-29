@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
-from types import SimpleNamespace
 from typing import Any, NotRequired, TypedDict
 
 import httpx
@@ -15,7 +15,6 @@ import pytest
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from tests.support.http_fakes import (
-    assert_degraded_tracking_response,
     install_tool_handler,
     open_asgi_client,
 )
@@ -29,9 +28,6 @@ from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api import run_lifecycle
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.lifecycle_contract import canonicalize_run_record
-from mcp_server_phytomni.runtime import (
-    submit_recorder as submit_recorder_module,
-)
 from mcp_server_phytomni.runtime.checkpoint_backend import (
     build_default_checkpointer,
 )
@@ -39,13 +35,58 @@ from mcp_server_phytomni.runtime.request_context import (
     current_run_id,
     request_context,
 )
-from mcp_server_phytomni.runtime.run_registry import RunRegistry
+from mcp_server_phytomni.runtime.run_registry import RunRecord, RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import (
     record_submitted_task,
     records_submission,
 )
 
 pytestmark = pytest.mark.server
+
+
+async def wait_for_status(
+    db_path: str,
+    run_id: str,
+    expected: str,
+    *,
+    owner: str = "u1",
+    attempts: int = 100,
+) -> RunRecord:
+    """Poll one owned run without sleeping the event loop."""
+    registry = RunRegistry(db_path)
+    for _ in range(attempts):
+        record = registry.get_run(run_id, owner=owner)
+        if record is not None and record.status == expected:
+            return record
+        await asyncio.sleep(0)
+    pytest.fail(f"run {run_id} did not reach {expected}")
+
+
+async def wait_for_running_projection(
+    db_path: str,
+    run_id: str,
+    task_id: str,
+    *,
+    owner: str = "u1",
+    attempts: int = 100,
+) -> RunRecord:
+    """Wait for child attachment and warning projection after reservation."""
+    registry = RunRegistry(db_path)
+    for _ in range(attempts):
+        record = registry.get_run(run_id, owner=owner)
+        if record is not None:
+            execution = (
+                record.result.get("execution", {}) if record.result else {}
+            )
+            if (
+                record.status == "running"
+                and task_id in record.task_ids
+                and execution.get("tracking") == {"degraded": True}
+                and execution.get("warnings")
+            ):
+                return record
+        await asyncio.sleep(0)
+    pytest.fail(f"run {run_id} did not expose child projection")
 
 
 def test_canonical_owner_read_preserves_sanitized_deep_genome_snapshot() -> (
@@ -460,7 +501,7 @@ async def test_remote_http_response_keeps_run_identity_byte_identical(
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A durable remote response exposes the same public id in both fields."""
+    """A background response reserves identity before child attachment."""
 
     async def fake(_args: Any) -> dict[str, Any]:
         return {"task_id": "accepted-healthy", "output_dir": "tenant/out"}
@@ -486,25 +527,33 @@ async def test_remote_http_response_keeps_run_identity_byte_identical(
     assert response.status_code == 202
     body = response.json()
     assert body["id"] == body["run_id"]
-    assert body["task_ids"] == ["accepted-healthy"]
+    assert body["task_ids"] == []
     assert "degraded_tracking" not in body
+    run_id = body["run_id"]
+    for _ in range(100):
+        record = RunRegistry(
+            api_app_module.resolve_tasks_db_path()
+        ).get_run(run_id, owner="u1")
+        if record is not None and record.task_ids == ("accepted-healthy",):
+            break
+        await asyncio.sleep(0)
+    else:
+        pytest.fail("accepted child was not attached to reserved run")
+    assert record.status == "running"
 
 
-async def test_remote_registry_failure_returns_real_tasks(
+async def test_remote_tracking_failure_returns_safe_failed_projection(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Accepted remote work remains visible when local persistence fails."""
+    """Reserved runs fail closed when child persistence cannot be tracked."""
 
-    def _raising_create_run(*_args: Any, **_kwargs: Any) -> None:
+    def _raising_record(*_args: Any, **_kwargs: Any) -> None:
         raise sqlite3.OperationalError("closed")
 
-    def _exploding_registry_factory(_db_path: str) -> SimpleNamespace:
-        return SimpleNamespace(create_run=_raising_create_run)
-
     monkeypatch.setattr(
-        submit_recorder_module, "RunRegistry", _exploding_registry_factory
+        RunRegistry, "record_reserved_submissions", _raising_record
     )
 
     async def fake(_args: Any) -> dict[str, Any]:
@@ -522,24 +571,27 @@ async def test_remote_registry_failure_returns_real_tasks(
         },
     )
 
-    body = assert_degraded_tracking_response(response, "accepted-1")
-    execution = body["result"]["execution"]
-    assert execution["tracking"] == {"degraded": True}
-    assert execution["warnings"] == [
-        {
-            "code": "run_registry_unavailable",
-            "retryable": False,
-        }
+    assert response.status_code == 202
+    body = response.json()
+    assert body["id"] == body["run_id"]
+    assert body["task_ids"] == []
+    record = await wait_for_status(
+        api_app_module.resolve_tasks_db_path(), body["run_id"], "failed"
+    )
+    assert record.error == "background_submission_tracking_failed"
+    assert record.task_ids == ()
+    assert record.result["execution"]["tasks"] == [
+        {"id": "accepted-1", "accepted": True, "status": "submitted"}
     ]
-    assert execution["tasks"] == [{"id": "accepted-1", "accepted": True}]
+    assert "closed" not in str(record.result)
 
 
-async def test_remote_response_without_durable_or_accepted_work_is_safe_error(
+async def test_remote_post_acceptance_failure_is_safe_error(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A remote handler with no accepted identity cannot return a fake 202."""
+    """A handler that returns no accepted identity settles the reserved run."""
 
     async def fake(_args: Any) -> dict[str, Any]:
         return {"output_dir": "tenant/out"}
@@ -560,15 +612,138 @@ async def test_remote_response_without_durable_or_accepted_work_is_safe_error(
         },
     )
 
-    assert response.status_code == 500
-    error = response.json()["error"]
-    assert error["code"] == "running_without_work"
-    assert error["message"] == (
-        "agent run response violated lifecycle contract"
+    assert response.status_code == 202
+    body = response.json()
+    assert body["id"] == body["run_id"]
+    assert body["task_ids"] == []
+    record = await wait_for_status(
+        api_app_module.resolve_tasks_db_path(), body["run_id"], "failed"
     )
-    assert error["stage"] == "lifecycle"
-    assert error["retryable"] is False
-    assert error["request_id"]
+    assert record.error == "background_submission_failed"
+
+
+async def test_background_resolver_failure_settles_reserved_run(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resolver failures after reservation become a pollable terminal run."""
+    called = {"handler": False}
+
+    async def fail_resolver(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("private resolver failure")
+
+    async def handler(_args: Any) -> dict[str, Any]:
+        called["handler"] = True
+        return {"task_id": "never-accepted", "output_dir": "tenant/out"}
+
+    monkeypatch.setattr(api_app_module, "resolve_design_user_query", fail_resolver)
+    install_tool_handler(
+        monkeypatch,
+        server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value,
+        records_submission("design")(handler),
+    )
+    response = await post_native_run(
+        api_client,
+        issued_api_key,
+        "design",
+        {
+            "user_query": "design a promoter for a drought response gene",
+            "species_code": "ath",
+            "gene_id": "AT1G01010",
+            "resolve_gene_id": True,
+            "obs_file_list": [],
+        },
+    )
+
+    assert response.status_code == 202
+    run_id = response.json()["run_id"]
+    record = await wait_for_status(
+        api_app_module.resolve_tasks_db_path(), run_id, "failed"
+    )
+    assert record.task_ids == ()
+    assert record.error == "background_submission_failed"
+    assert called["handler"] is False
+    assert "private resolver failure" not in str(record.result)
+
+
+async def test_background_handler_failure_settles_reserved_run(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Handler failures before acceptance use the stable worker error code."""
+    async def fail_handler(_args: Any) -> dict[str, Any]:
+        raise RuntimeError("private handler failure")
+
+    install_tool_handler(
+        monkeypatch,
+        server.PhytomniAgents.ANALYST_AGENT.value,
+        records_submission("analyst")(fail_handler),
+    )
+    response = await post_native_run(
+        api_client,
+        issued_api_key,
+        "analyst",
+        {
+            "goal_description": "analyze this dataset",
+            "data_list": {},
+            "obs_file_list": [],
+        },
+    )
+
+    assert response.status_code == 202
+    run_id = response.json()["run_id"]
+    record = await wait_for_status(
+        api_app_module.resolve_tasks_db_path(), run_id, "failed"
+    )
+    assert record.error == "background_submission_failed"
+    assert record.task_ids == ()
+    assert "private handler failure" not in str(record.result)
+
+
+async def test_partial_research_submission_remains_running_with_warnings(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """One persisted research child plus warnings remains pollable."""
+    async def partial_handler(_args: Any) -> dict[str, Any]:
+        return {
+            "task_ids": ["research-accepted"],
+            "output_dir": "tenant/research",
+            "submission_warnings": [
+                {"code": "submission_partial", "retryable": False}
+            ],
+        }
+
+    install_tool_handler(
+        monkeypatch,
+        server.PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value,
+        records_submission("research")(partial_handler),
+    )
+    response = await post_native_run(
+        api_client,
+        issued_api_key,
+        "research",
+        {
+            "user_query": "reproduce a paper study",
+            "data_list": {},
+            "obs_file_list": [],
+        },
+    )
+
+    assert response.status_code == 202
+    run_id = response.json()["run_id"]
+    record = await wait_for_running_projection(
+        api_app_module.resolve_tasks_db_path(), run_id, "research-accepted"
+    )
+    assert record.task_ids == ("research-accepted",)
+    execution = record.result["execution"]
+    assert execution["tracking"] == {"degraded": True}
+    assert execution["warnings"] == [
+        {"code": "submission_partial", "retryable": False, "stage": None}
+    ]
 
 
 async def test_review_a2ui_survives_client_and_registry_reload(
