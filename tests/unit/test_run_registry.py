@@ -21,6 +21,9 @@ from tests.support.run_registry_fakes import (
 )
 from tests.support.sqlite import closed_sqlite_connection
 
+from mcp_server_phytomni.runtime.execution_defaults import (
+    empty_execution_projection,
+)
 from mcp_server_phytomni.runtime.run_registry import (
     A2UIActionConflict,
     A2UIActionInvariantError,
@@ -99,6 +102,136 @@ def _create_paused_review(
             },
         ),
     )
+
+
+def test_reserve_run_rejects_collision_without_overwriting(
+    tmp_path: Path,
+) -> None:
+    """A reservation collision preserves the established owner and metadata."""
+    db_path = str(tmp_path / "tasks.db")
+    registry = RunRegistry(db_path)
+    first = RunSpec(
+        run_id="run-fixed",
+        user_id="alice",
+        agent="analyst",
+        origin="remote",
+    )
+    registry.reserve_run(
+        first,
+        request_info=RunRequestInfo(
+            request_id="req-first",
+            locale="en-US",
+        ),
+        result=empty_execution_projection(),
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        registry.reserve_run(
+            RunSpec(
+                run_id="run-fixed",
+                user_id="mallory",
+                agent="design",
+                origin="remote",
+            ),
+            request_info=RunRequestInfo(request_id="req-second"),
+            result=empty_execution_projection(),
+        )
+
+    stored = registry.get_run("run-fixed", owner="alice")
+    assert stored is not None
+    assert stored.spec.agent == "analyst"
+    assert stored.request_info.request_id == "req-first"
+    assert registry.get_run("run-fixed", owner="mallory") is None
+
+
+def test_update_running_result_is_owner_and_status_scoped(
+    tmp_path: Path,
+) -> None:
+    """Only an owner can update a running projection, never a terminal one."""
+    db_path = str(tmp_path / "tasks.db")
+    registry = RunRegistry(db_path)
+    registry.reserve_run(
+        RunSpec(
+            run_id="run-1",
+            user_id="alice",
+            agent="research",
+            origin="remote",
+        ),
+        request_info=RunRequestInfo(request_id="req-1"),
+        result=empty_execution_projection(),
+    )
+    updated = empty_execution_projection()
+    updated["execution"]["warnings"] = [{"code": "partial_submission"}]
+
+    assert (
+        registry.update_running_result(
+            "run-1", owner="mallory", result=updated
+        )
+        is False
+    )
+    assert registry.update_running_result("run-1", owner="alice", result=updated)
+    assert registry.get_run("run-1", owner="alice").result == updated
+
+    assert registry.settle_run(
+        "run-1",
+        owner="alice",
+        status="succeeded",
+        result=updated,
+    )
+    assert (
+        registry.update_running_result(
+            "run-1", owner="alice", result=empty_execution_projection()
+        )
+        is False
+    )
+    assert (
+        registry.fail_running_run(
+            "run-1",
+            owner="alice",
+            result=empty_execution_projection(degraded=True),
+            error="background_submission_failed",
+        )
+        is False
+    )
+    assert registry.get_run("run-1", owner="alice").status == "succeeded"
+
+
+def test_fail_running_run_is_owner_scoped(tmp_path: Path) -> None:
+    """A background failure can settle only its owner's running row."""
+    db_path = str(tmp_path / "tasks.db")
+    registry = RunRegistry(db_path)
+    registry.reserve_run(
+        RunSpec(
+            run_id="run-fail",
+            user_id="alice",
+            agent="design",
+            origin="remote",
+        ),
+        request_info=RunRequestInfo(request_id="req-fail"),
+        result=empty_execution_projection(),
+    )
+    degraded = empty_execution_projection(degraded=True)
+
+    assert (
+        registry.fail_running_run(
+            "run-fail",
+            owner="mallory",
+            result=degraded,
+            error="background_submission_failed",
+        )
+        is False
+    )
+    assert registry.fail_running_run(
+        "run-fail",
+        owner="alice",
+        result=degraded,
+        error="background_submission_failed",
+    )
+    record = registry.get_run("run-fail", owner="alice")
+    assert record is not None
+    assert record.status == "failed"
+    assert record.result == degraded
+    assert record.error == "background_submission_failed"
 
 
 def test_init_db_creates_runs_table_and_indices(tmp_path: Path) -> None:

@@ -245,6 +245,99 @@ class RunRegistry:
                 ),
             )
 
+    def reserve_run(
+        self,
+        spec: RunSpec,
+        *,
+        request_info: RunRequestInfo,
+        result: dict[str, Any],
+    ) -> None:
+        """Reserve a fresh running run without replacing an existing row."""
+        now = _now_iso()
+        with sqlite_transaction(self.db_path) as conn:
+            conn.execute(
+                """
+                INSERT INTO runs (
+                    run_id, user_id, agent, origin, status,
+                    result_json, error, created_at, updated_at,
+                    expires_at,
+                    dialogue_id, request_id, query, tool_name, model,
+                    request_json, locale,
+                    a2a_task_id, a2a_context_id, a2a_message_id
+                ) VALUES (
+                    ?, ?, ?, ?, 'running', ?, NULL, ?, ?, NULL,
+                    ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL
+                )
+                """,
+                (
+                    spec.run_id,
+                    spec.user_id,
+                    spec.agent,
+                    spec.origin,
+                    json.dumps(result),
+                    now,
+                    now,
+                    request_info.dialogue_id,
+                    request_info.request_id,
+                    request_info.query,
+                    request_info.tool_name,
+                    request_info.model,
+                    request_info.request_json,
+                    request_info.locale,
+                ),
+            )
+
+    def update_running_result(
+        self,
+        run_id: str,
+        *,
+        owner: str,
+        result: dict[str, Any],
+    ) -> bool:
+        """Update the projection of an owned run only while it is running."""
+        with sqlite_transaction(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE runs
+                SET result_json = ?, updated_at = ?
+                WHERE run_id = ? AND user_id = ? AND status = 'running'
+                """,
+                (json.dumps(result), _now_iso(), run_id, owner),
+            )
+            return cursor.rowcount == 1
+
+    def fail_running_run(
+        self,
+        run_id: str,
+        *,
+        owner: str,
+        result: dict[str, Any],
+        error: str,
+    ) -> bool:
+        """Fail an owned run only while it is still running."""
+        now = _now_iso()
+        with sqlite_transaction(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE runs
+                SET status = 'failed',
+                    result_json = ?,
+                    error = ?,
+                    updated_at = ?,
+                    expires_at = ?
+                WHERE run_id = ? AND user_id = ? AND status = 'running'
+                """,
+                (
+                    json.dumps(result),
+                    error,
+                    now,
+                    _expires_at_for("failed", now),
+                    run_id,
+                    owner,
+                ),
+            )
+            return cursor.rowcount == 1
+
     def update_request_info(
         self,
         run_id: str,
