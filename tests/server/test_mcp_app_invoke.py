@@ -19,6 +19,9 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
+from mcp.shared.exceptions import McpError
+from mcp.types import INVALID_PARAMS
+from pydantic import BaseModel
 from tests.support.formatting_fakes import (
     design_task_payload,
     network_task_payload,
@@ -29,6 +32,10 @@ from mcp_server_phytomni.mcp.result_formatting import FormattedToolResult
 from mcp_server_phytomni.mcp.schemas import PhytomniAgents
 
 pytestmark = pytest.mark.server
+
+
+class _TestArguments(BaseModel):
+    value: str
 
 
 def _payload(demo_data_dir: Path, name: str) -> dict[str, Any]:
@@ -69,6 +76,51 @@ async def test_invoke_tool_raw_returns_handler_payload(
     )
 
     assert result is sentinel
+
+
+def test_validate_tool_arguments_does_not_invoke_handler(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Validation parses one payload without executing its handler."""
+    invoked = False
+
+    async def handler(_args: Any) -> dict[str, bool]:
+        nonlocal invoked
+        invoked = True
+        return {"ok": True}
+
+    monkeypatch.setitem(mcp_app.TOOL_HANDLERS, "test_tool", handler)
+    monkeypatch.setitem(
+        mcp_app.TOOL_ARGUMENT_MODELS, "test_tool", _TestArguments
+    )
+
+    parsed = mcp_app.validate_tool_arguments("test_tool", {"value": "ok"})
+
+    assert parsed == _TestArguments(value="ok")
+    assert invoked is False
+
+
+def test_validate_tool_arguments_rejects_invalid_payload_without_invocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Invalid payloads preserve MCP validation errors without invocation."""
+    invoked = False
+
+    async def handler(_args: Any) -> dict[str, bool]:
+        nonlocal invoked
+        invoked = True
+        return {"ok": True}
+
+    monkeypatch.setitem(mcp_app.TOOL_HANDLERS, "test_tool", handler)
+    monkeypatch.setitem(
+        mcp_app.TOOL_ARGUMENT_MODELS, "test_tool", _TestArguments
+    )
+
+    with pytest.raises(McpError) as caught:
+        mcp_app.validate_tool_arguments("test_tool", {})
+
+    assert caught.value.error.code == INVALID_PARAMS
+    assert invoked is False
 
 
 async def test_invoke_chat_agent_formats_assistant_message(
