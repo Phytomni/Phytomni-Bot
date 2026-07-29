@@ -40,7 +40,11 @@ from mcp_server_phytomni.runtime.request_context import (
     current_run_id,
     request_context,
 )
-from mcp_server_phytomni.runtime.run_registry import RunRegistry
+from mcp_server_phytomni.runtime.run_registry import (
+    RunRegistry,
+    RunRequestInfo,
+    RunSpec,
+)
 from mcp_server_phytomni.runtime.submit_recorder import (
     record_submitted_task,
     records_submission,
@@ -244,6 +248,111 @@ def test_record_persists_request_id_across_run_reads(
     assert fetched is not None
     assert fetched.task_ids == ("T-request",)
     assert fetched.request_info.request_id == "request-analyst-1"
+
+
+@pytest.mark.parametrize(
+    ("agent", "result", "expected_ids"),
+    [
+        (
+            "analyst",
+            {"task_id": "analyst-1", "output_dir": "/safe/a"},
+            ("analyst-1",),
+        ),
+        (
+            "research",
+            {
+                "task_ids": ["research-1", "research-2"],
+                "output_dir": "/safe/r",
+            },
+            ("research-1", "research-2"),
+        ),
+        (
+            "network",
+            {
+                "network_task": {
+                    "task_id": "network-1",
+                    "output_dir": "/safe/n",
+                }
+            },
+            ("network-1",),
+        ),
+        (
+            "design",
+            {
+                "design_task_result": [
+                    {"task_id": "design-1", "output_dir": "/safe/d1"},
+                    {"task_id": "design-2", "output_dir": "/safe/d2"},
+                ]
+            },
+            ("design-1", "design-2"),
+        ),
+    ],
+)
+def test_recorder_attaches_children_to_reserved_run(
+    tasks_db_path: str,
+    agent: str,
+    result: dict[str, Any],
+    expected_ids: tuple[str, ...],
+) -> None:
+    """Attach each accepted child to the already-reserved umbrella."""
+    registry = RunRegistry(tasks_db_path)
+    registry.reserve_run(
+        RunSpec(
+            run_id="run-reserved",
+            user_id="alice",
+            agent=agent,
+            origin="remote",
+        ),
+        request_info=RunRequestInfo(request_id="req-1"),
+        result=empty_execution_projection(),
+    )
+
+    with request_context("alice", "req-1", "run-reserved"):
+        record_submitted_task(result, agent=agent)
+        assert current_run_id() == "run-reserved"
+        assert current_accepted_task_ids() == expected_ids
+
+    stored = registry.get_run("run-reserved", owner="alice")
+    assert stored is not None
+    assert tuple(stored.task_ids) == expected_ids
+    assert len(registry.list_runs(owner="alice", limit=10, offset=0)) == 1
+
+
+def test_recorder_rejects_reserved_run_agent_mismatch(
+    tasks_db_path: str,
+) -> None:
+    """Reject a reserved umbrella whose canonical agent does not match."""
+    registry = RunRegistry(tasks_db_path)
+    registry.reserve_run(
+        RunSpec(
+            run_id="run-agent-mismatch",
+            user_id="alice",
+            agent="analyst",
+            origin="remote",
+        ),
+        request_info=RunRequestInfo(request_id="req-mismatch"),
+        result=empty_execution_projection(),
+    )
+
+    with request_context("alice", "req-mismatch", "run-agent-mismatch"):
+        record_submitted_task(
+            {
+                "design_task_result": [
+                    {
+                        "task_id": "design-mismatch",
+                        "output_dir": "/safe/design",
+                    }
+                ]
+            },
+            agent="design",
+        )
+        assert current_recorder_degraded() is True
+
+    stored = registry.get_run("run-agent-mismatch", owner="alice")
+    assert stored is not None
+    assert stored.spec.agent == "analyst"
+    assert stored.task_ids == ()
+    assert len(registry.list_runs(owner="alice", limit=10, offset=0)) == 1
 
 
 def test_record_handles_research_task_ids_map(tasks_db_path: str) -> None:
@@ -465,7 +574,7 @@ def test_record_logs_and_flags_degraded_on_persistence_failure(
     tasks_db_path: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A registry-write failure logs the traceback and flags the request.
+    """A registry-write failure logs safe metadata and flags the request.
 
     The chokepoint catches ``sqlite3.Error`` / ``OSError`` to honour
     the "do not break an already-successful remote submission"
@@ -473,7 +582,7 @@ def test_record_logs_and_flags_degraded_on_persistence_failure(
     invisible to operators and indistinguishable from the legitimate
     analyst dedup-hit passthrough (both return ``(None, [])`` to the
     HTTP layer). The fix surfaces the failure on two channels:
-    ``logger.exception`` writes the full traceback for log readers,
+    ``logger.error`` writes safe identifiers and the exception class,
     and ``bind_recorder_degraded(True)`` flips the request
     contextvar so the HTTP body assembler can attach
     ``degraded_tracking: True`` alongside ``id=None`` /
@@ -500,14 +609,19 @@ def test_record_logs_and_flags_degraded_on_persistence_failure(
         submit_recorder_module, "RunRegistry", _exploding_registry_factory
     )
 
-    exception_calls: list[tuple[str, tuple[Any, ...]]] = []
+    error_calls: list[tuple[str, dict[str, Any]]] = []
 
-    def fake_exception(msg: str, *args: Any) -> None:
-        """Capture the ``logger.exception(msg, *args)`` payload."""
-        exception_calls.append((msg, args))
+    def fake_error(
+        msg: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        """Capture the safe ``logger.error`` payload."""
+        del args
+        error_calls.append((msg, kwargs.get("extra", {})))
 
     monkeypatch.setattr(
-        submit_recorder_module.logger, "exception", fake_exception
+        submit_recorder_module.logger, "error", fake_error
     )
     # Reset the contextvar manually because the test runs outside an
     # HTTP request_context() block — without this, a flag flipped
@@ -523,11 +637,15 @@ def test_record_logs_and_flags_degraded_on_persistence_failure(
 
     assert current_run_id() is None
     assert current_recorder_degraded() is True
-    assert len(exception_calls) == 1
-    rendered_msg, rendered_args = exception_calls[0]
-    assert "Failed to persist remote submission" in rendered_msg
-    assert "analyst" in rendered_args
-    assert 1 in rendered_args  # task_count payload arg
+    assert len(error_calls) == 1
+    rendered_msg, rendered_extra = error_calls[0]
+    assert rendered_msg == "Failed to persist remote submission"
+    assert rendered_extra == {
+        "agent": "analyst",
+        "run_id": None,
+        "task_count": 1,
+        "error_type": "OperationalError",
+    }
 
 
 def test_recorder_keeps_accepted_ids_when_registry_fails(
