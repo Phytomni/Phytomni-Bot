@@ -46,6 +46,18 @@ class BackgroundSubmissionReservation:
     request_info: RunRequestInfo
 
 
+def _safe_request_info(request_info: RunRequestInfo) -> RunRequestInfo:
+    """Keep only correlation and routing metadata in a reserved run."""
+    return RunRequestInfo(
+        dialogue_id=request_info.dialogue_id,
+        request_id=request_info.request_id,
+        tool_name=request_info.tool_name,
+        model=request_info.model,
+        locale=request_info.locale,
+        a2a=request_info.a2a,
+    )
+
+
 def reserve_background_submission(
     *,
     agent: str,
@@ -54,6 +66,7 @@ def reserve_background_submission(
     db_path: str,
 ) -> BackgroundSubmissionReservation:
     """Persist one fresh running umbrella before background work starts."""
+    safe_request_info = _safe_request_info(request_info)
     try:
         registry = RunRegistry(db_path)
     except (sqlite3.Error, OSError) as exc:
@@ -70,7 +83,7 @@ def reserve_background_submission(
                     agent=agent,
                     origin="remote",
                 ),
-                request_info=request_info,
+                request_info=safe_request_info,
                 result=empty_execution_projection(),
             )
         except sqlite3.IntegrityError:
@@ -83,19 +96,20 @@ def reserve_background_submission(
             run_id=run_id,
             owner=owner,
             agent=agent,
-            request_info=request_info,
+            request_info=safe_request_info,
         )
     raise BackgroundSubmissionLaunchError("unable to reserve background run")
 
 
 def _settle_failed(
-    registry: RunRegistry,
+    db_path: str,
     reservation: BackgroundSubmissionReservation,
     *,
     error: str,
 ) -> None:
     """Best-effort safe settlement that cannot leak a worker exception."""
     try:
+        registry = RunRegistry(db_path)
         registry.fail_running_run(
             reservation.run_id,
             owner=reservation.owner,
@@ -119,8 +133,8 @@ async def _run_background_submission(
     *,
     db_path: str,
 ) -> None:
-    registry = RunRegistry(db_path)
     try:
+        RunRegistry(db_path)
         with request_context(
             reservation.owner,
             reservation.request_info.request_id,
@@ -130,7 +144,7 @@ async def _run_background_submission(
             await operation()
     except asyncio.CancelledError:
         _settle_failed(
-            registry,
+            db_path,
             reservation,
             error="background_submission_cancelled",
         )
@@ -145,7 +159,7 @@ async def _run_background_submission(
             },
         )
         _settle_failed(
-            registry,
+            db_path,
             reservation,
             error="background_submission_failed",
         )
@@ -180,7 +194,7 @@ def launch_background_submission(
     except Exception as exc:
         coroutine.close()
         _settle_failed(
-            RunRegistry(db_path),
+            db_path,
             reservation,
             error="background_submission_launch_failed",
         )
