@@ -7,12 +7,16 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import math
 import re
-from collections.abc import AsyncIterator, Mapping, Sequence
+import time
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import httpx
 
 _WORD_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]|[A-Za-z0-9]+")
 
@@ -144,6 +148,90 @@ def decode_stream_delta(data: str) -> StreamDelta | None:
         reasoning_content=_string_value(delta.get("reasoning_content")),
         content=_string_value(delta.get("content")),
     )
+
+
+def sanitize_error(error: BaseException, api_key: str) -> str:
+    """Return a bounded one-line error with the credential redacted."""
+    message = " ".join(str(error).split())
+    if not message:
+        message = type(error).__name__
+    if api_key:
+        message = message.replace(api_key, "<redacted>")
+    return message[:200]
+
+
+async def run_query(
+    config: BenchmarkConfig,
+    query: QueryInput,
+    semaphore: asyncio.Semaphore,
+    client: httpx.AsyncClient,
+    *,
+    clock: Callable[[], float] = time.perf_counter,
+) -> QueryResult:
+    """Run and measure one streaming request inside a concurrency slot."""
+    async with semaphore:
+        started_at = clock()
+        first_text_at: float | None = None
+        reasoning_parts: list[str] = []
+        content_parts: list[str] = []
+        try:
+            async with client.stream(
+                "POST",
+                config.endpoint,
+                headers={
+                    "Authorization": f"Bearer {config.api_key}",
+                    "Accept": "text/event-stream",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": config.model_id,
+                    "messages": [{"role": "user", "content": query.text}],
+                    "stream": True,
+                },
+            ) as response:
+                response.raise_for_status()
+                async for data in iter_sse_data(response.aiter_lines()):
+                    delta = decode_stream_delta(data)
+                    if delta is None:
+                        continue
+                    if delta.done:
+                        break
+                    reasoning_parts.append(delta.reasoning_content)
+                    content_parts.append(delta.content)
+                    has_text = (
+                        delta.reasoning_content.strip()
+                        or delta.content.strip()
+                    )
+                    if first_text_at is None and has_text:
+                        first_text_at = clock()
+
+            if first_text_at is None:
+                raise SseProtocolError("stream contained no generated text")
+            finished_at = clock()
+            reasoning_text = "".join(reasoning_parts)
+            content_text = "".join(content_parts)
+            return QueryResult(
+                line_number=query.line_number,
+                duration=finished_at - started_at,
+                ttft=first_text_at - started_at,
+                reasoning_text=reasoning_text,
+                content_text=content_text,
+                word_count=(
+                    count_words(reasoning_text) + count_words(content_text)
+                ),
+                error=None,
+            )
+        except (httpx.HTTPError, SseProtocolError) as exc:
+            finished_at = clock()
+            return QueryResult(
+                line_number=query.line_number,
+                duration=finished_at - started_at,
+                ttft=None,
+                reasoning_text="",
+                content_text="",
+                word_count=0,
+                error=sanitize_error(exc, config.api_key),
+            )
 
 
 def _positive_int(value: str) -> int:

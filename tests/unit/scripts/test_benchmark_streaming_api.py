@@ -6,9 +6,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+import httpx
 import pytest
 from scripts import benchmark_streaming_api as benchmark
 
@@ -191,9 +194,12 @@ def test_decode_stream_delta_handles_done_and_usage() -> None:
     assert benchmark.decode_stream_delta("[DONE]") == benchmark.StreamDelta(
         done=True
     )
-    assert benchmark.decode_stream_delta(
-        '{"choices":[],"usage":{"completion_tokens":4}}'
-    ) is None
+    assert (
+        benchmark.decode_stream_delta(
+            '{"choices":[],"usage":{"completion_tokens":4}}'
+        )
+        is None
+    )
 
 
 def test_decode_stream_delta_rejects_malformed_json() -> None:
@@ -252,3 +258,178 @@ def test_decode_stream_delta_ignores_non_string_text_values() -> None:
     )
 
     assert delta == benchmark.StreamDelta()
+
+
+class _AsyncChunks(httpx.AsyncByteStream):
+    """Yield predetermined raw response chunks."""
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self._chunks = chunks
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        for chunk in self._chunks:
+            yield chunk
+
+    async def aclose(self) -> None:
+        """Close the in-memory stream."""
+
+
+def _runtime_config(api_key: str = "top-secret") -> benchmark.BenchmarkConfig:
+    """Build a minimal request configuration for transport tests."""
+    return benchmark.BenchmarkConfig(
+        max_concurrency=1,
+        query_file=Path("queries.txt"),
+        base_url="https://example.invalid/v1",
+        model_id="model-a",
+        api_key=api_key,
+        timeout_seconds=10.0,
+    )
+
+
+async def test_run_query_measures_first_text_and_full_stream() -> None:
+    """Measure TTFT once and count joined reasoning plus answer text."""
+    captured: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request)
+        return httpx.Response(
+            200,
+            stream=_AsyncChunks(
+                [
+                    (
+                        b'data: {"choices":[{"delta":'
+                        b'{"role":"assistant","content":""}}]}\n\n'
+                    ),
+                    (
+                        b'data: {"choices":[{"delta":'
+                        b'{"reasoning_content":"\xe5\x88\x86\xe6\x9e\x90 "}}]}'
+                        b"\n\n"
+                    ),
+                    (
+                        b'data: {"choices":[{"delta":'
+                        b'{"content":"green le"}}]}\n\n'
+                    ),
+                    (
+                        b'data: {"choices":[{"delta":'
+                        b'{"content":"af"}}]}\n\n'
+                    ),
+                    b"data: [DONE]\n\n",
+                ]
+            ),
+        )
+
+    clock = iter((10.0, 10.25, 11.0)).__next__
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await benchmark.run_query(
+            _runtime_config(),
+            benchmark.QueryInput(7, "question"),
+            asyncio.Semaphore(1),
+            client,
+            clock=clock,
+        )
+
+    assert result.success is True
+    assert result.ttft == pytest.approx(0.25)
+    assert result.duration == pytest.approx(1.0)
+    assert result.reasoning_text == "分析 "
+    assert result.content_text == "green leaf"
+    assert result.word_count == 4
+    assert captured[0].headers["authorization"] == "Bearer top-secret"
+    assert json.loads(captured[0].content) == {
+        "model": "model-a",
+        "messages": [{"role": "user", "content": "question"}],
+        "stream": True,
+    }
+
+
+async def test_run_query_accepts_clean_eof_without_done() -> None:
+    """Accept provider EOF after valid generated text."""
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(
+            200,
+            stream=_AsyncChunks(
+                [b'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n']
+            ),
+        )
+    )
+    clock = iter((1.0, 1.1, 2.0)).__next__
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await benchmark.run_query(
+            _runtime_config(),
+            benchmark.QueryInput(1, "question"),
+            asyncio.Semaphore(1),
+            client,
+            clock=clock,
+        )
+
+    assert result.success is True
+    assert result.content_text == "answer"
+
+
+@pytest.mark.parametrize(
+    ("chunk", "message"),
+    [
+        (b"data: {not-json}\n\n", "malformed SSE JSON"),
+        (b"data: [DONE]\n\n", "no generated text"),
+    ],
+)
+async def test_run_query_isolates_stream_failures(
+    chunk: bytes,
+    message: str,
+) -> None:
+    """Return a failed result for invalid or empty streams."""
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(200, stream=_AsyncChunks([chunk]))
+    )
+    clock = iter((1.0, 2.0)).__next__
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await benchmark.run_query(
+            _runtime_config(),
+            benchmark.QueryInput(4, "private question"),
+            asyncio.Semaphore(1),
+            client,
+            clock=clock,
+        )
+
+    assert result.success is False
+    assert result.error is not None
+    assert message in result.error
+    assert "private question" not in result.error
+
+
+async def test_run_query_does_not_retry_http_failure_or_print_body() -> None:
+    """Make one attempt and exclude response bodies from the failure."""
+    calls = 0
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(502, text="top-secret backend body")
+
+    transport = httpx.MockTransport(handler)
+    clock = iter((1.0, 2.0)).__next__
+    async with httpx.AsyncClient(transport=transport) as client:
+        result = await benchmark.run_query(
+            _runtime_config(),
+            benchmark.QueryInput(3, "question"),
+            asyncio.Semaphore(1),
+            client,
+            clock=clock,
+        )
+
+    assert calls == 1
+    assert result.success is False
+    assert result.error is not None
+    assert "top-secret" not in result.error
+
+
+def test_sanitize_error_redacts_and_bounds_api_key() -> None:
+    """Redact credentials before applying the error-length cap."""
+    error = ValueError("top-secret " + ("x" * 300))
+
+    sanitized = benchmark.sanitize_error(error, "top-secret")
+
+    assert sanitized.startswith("<redacted>")
+    assert "top-secret" not in sanitized
+    assert len(sanitized) == 200
