@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from collections.abc import Callable, Coroutine
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -42,6 +43,20 @@ from mcp_server_phytomni.runtime.conversation_context.store import (
     StagedTurn,
 )
 from mcp_server_phytomni.runtime.langgraph_runner import build_runnable_config
+
+
+@pytest.mark.asyncio
+async def test_sync_gc_boundary_propagates_worker_cancellation() -> None:
+    """Cancellation raised in the off-loop worker reaches the caller."""
+
+    async def cancelled() -> None:
+        raise asyncio.CancelledError
+
+    boundary: Callable[
+        [Callable[[], Coroutine[Any, Any, Any]]], Any
+    ] = getattr(run_lifecycle, "_run_async_at_sync_boundary")
+    with pytest.raises(asyncio.CancelledError):
+        boundary(cancelled)
 
 
 def _stage_lifecycle_turn(

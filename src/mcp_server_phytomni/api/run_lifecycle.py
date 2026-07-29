@@ -227,6 +227,8 @@ def _run_async_at_sync_boundary(
     def _worker() -> None:
         try:
             result.append(asyncio.run(coroutine_factory()))
+        except asyncio.CancelledError as exc:
+            failures.append(exc)
         except _RUN_GC_CAUGHT as exc:
             failures.append(exc)
 
