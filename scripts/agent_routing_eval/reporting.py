@@ -9,7 +9,6 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import os
 import re
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
@@ -18,12 +17,20 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, Literal, NamedTuple, cast
-from uuid import uuid4
 
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 
 from .dataset import AgentRoutingCase
 from .metrics import compute_metrics, thresholds_pass
+from .reporting_atomic import (
+    remove_temporary,
+    restore_destination,
+    write_temporary,
+)
+from .reporting_inventory import (
+    InventoryRules,
+    validate_complete_run_inventory,
+)
 from .reporting_markdown import format_markdown_value, render_markdown
 from .runner import RunOutcome
 
@@ -875,96 +882,6 @@ def _safe_run_mapping(value: object) -> dict[str, object]:
     return result
 
 
-def _validate_complete_run_inventory(
-    metrics: Mapping[str, object],
-    provenance: Mapping[str, object],
-    runs: Sequence[Mapping[str, object]],
-) -> None:
-    """Keep the public writer from emitting an internally forged report."""
-    case_count = _safe_int(metrics.get("case_count"))
-    planned_runs = _safe_int(metrics.get("planned_runs"))
-    completed_records = _safe_int(metrics.get("completed_records"))
-    repeat_count = _safe_int(provenance.get("repeat_count"))
-    if (
-        case_count is None
-        or case_count <= 0
-        or planned_runs is None
-        or completed_records is None
-        or repeat_count not in {1, 3}
-        or planned_runs != case_count * repeat_count
-        or completed_records != planned_runs
-        or completed_records != len(runs)
-    ):
-        raise ValueError("complete report counts do not match runs")
-
-    by_case: dict[str, set[int]] = {}
-    expected_by_case: dict[str, str] = {}
-    for run in runs:
-        if set(run) != _RUN_KEYS:
-            raise ValueError("complete report run is incomplete")
-        case_id = run["case_id"]
-        expected_agent = run["expected_agent"]
-        predicted_agent = run["predicted_agent"]
-        repeat = run["repeat"]
-        language = run["language"]
-        if (
-            not isinstance(case_id, str)
-            or not case_id
-            or not isinstance(expected_agent, str)
-            or expected_agent not in _CANONICAL_AGENTS
-            or predicted_agent not in _SAFE_PREDICTED_AGENTS
-            or not isinstance(repeat, int)
-            or isinstance(repeat, bool)
-            or repeat not in range(1, repeat_count + 1)
-            or language not in {"en", "zh"}
-        ):
-            raise ValueError("complete report run contains invalid identity")
-        if any(
-            not isinstance(run[key], bool)
-            for key in (
-                "agent_correct",
-                "schema_valid",
-                "dispatchable",
-                "provider_completed",
-            )
-        ):
-            raise ValueError("complete report run contains invalid flags")
-        core_args = run["core_args_correct"]
-        if core_args is not None and not isinstance(core_args, bool):
-            raise ValueError("complete report run contains invalid core flag")
-        attempts = run["attempts"]
-        latency_ms = run["latency_ms"]
-        if (
-            not isinstance(attempts, int)
-            or isinstance(attempts, bool)
-            or attempts < 0
-            or not isinstance(latency_ms, (int, float))
-            or isinstance(latency_ms, bool)
-            or not math.isfinite(float(latency_ms))
-            or latency_ms < 0
-        ):
-            raise ValueError("complete report run contains invalid timing")
-        selected_arguments = run["selected_arguments"]
-        validation_codes = run["validation_codes"]
-        if not isinstance(selected_arguments, Mapping) or not isinstance(
-            validation_codes, list
-        ):
-            raise ValueError("complete report run contains invalid details")
-        prior_expected = expected_by_case.setdefault(case_id, expected_agent)
-        if prior_expected != expected_agent:
-            raise ValueError("complete report expected agents disagree")
-        repeats = by_case.setdefault(case_id, set())
-        if repeat in repeats:
-            raise ValueError("complete report contains duplicate runs")
-        repeats.add(repeat)
-
-    if len(by_case) != case_count or any(
-        repeats != set(range(1, repeat_count + 1))
-        for repeats in by_case.values()
-    ):
-        raise ValueError("complete report case inventory is incomplete")
-
-
 def _safe_report(report: Mapping[str, Any]) -> dict[str, Any]:
     """Validate and sanitize the public writer boundary."""
     mapping = _mapping_with_allowed_keys(report, _REPORT_KEYS, "report")
@@ -985,7 +902,16 @@ def _safe_report(report: Mapping[str, Any]) -> dict[str, Any]:
         raise ValueError("report runs must be a list")
     safe_runs = [_safe_run_mapping(run) for run in runs]
     if complete:
-        _validate_complete_run_inventory(metrics, provenance, safe_runs)
+        validate_complete_run_inventory(
+            metrics,
+            provenance,
+            safe_runs,
+            rules=InventoryRules(
+                run_keys=_RUN_KEYS,
+                canonical_agents=frozenset(_CANONICAL_AGENTS),
+                safe_predicted_agents=_SAFE_PREDICTED_AGENTS,
+            ),
+        )
     return {
         "schema_version": 1,
         "status": status,
@@ -1003,36 +929,6 @@ def _format_markdown_value(value: object) -> str:
 def _render_markdown(report: Mapping[str, Any]) -> str:
     """Render one validated report as readable Markdown."""
     return render_markdown(report, _CANONICAL_AGENTS, _PROVENANCE_ORDER)
-
-
-def _write_temporary(path: Path, content: str) -> Path:
-    """Write one flushed temporary artifact beside its destination."""
-    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
-    try:
-        with temporary.open("x", encoding="utf-8", newline="\n") as handle:
-            handle.write(content)
-            handle.flush()
-            os.fsync(handle.fileno())
-    except BaseException:
-        with suppress(FileNotFoundError):
-            temporary.unlink()
-        raise
-    return temporary
-
-
-def _remove_temporary(path: Path | None) -> None:
-    if path is not None:
-        with suppress(FileNotFoundError):
-            path.unlink()
-
-
-def _restore_destination(path: Path, previous: bytes | None) -> None:
-    """Restore one destination after a pair publication failure."""
-    if previous is None:
-        with suppress(FileNotFoundError):
-            path.unlink()
-        return
-    path.write_bytes(previous)
 
 
 def write_report_pair(
@@ -1069,20 +965,20 @@ def write_report_pair(
     json_temporary: Path | None = None
     markdown_temporary: Path | None = None
     try:
-        json_temporary = _write_temporary(json_path, json_content)
-        markdown_temporary = _write_temporary(markdown_path, markdown_content)
+        json_temporary = write_temporary(json_path, json_content)
+        markdown_temporary = write_temporary(markdown_path, markdown_content)
         json_temporary.replace(json_path)
         markdown_temporary.replace(markdown_path)
     except BaseException:
-        _remove_temporary(json_temporary)
-        _remove_temporary(markdown_temporary)
+        remove_temporary(json_temporary)
+        remove_temporary(markdown_temporary)
         for destination, old_content in previous.items():
             with suppress(OSError):
-                _restore_destination(destination, old_content)
+                restore_destination(destination, old_content)
         raise
     finally:
-        _remove_temporary(json_temporary)
-        _remove_temporary(markdown_temporary)
+        remove_temporary(json_temporary)
+        remove_temporary(markdown_temporary)
     return json_path, markdown_path
 
 

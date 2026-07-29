@@ -9,17 +9,25 @@ from __future__ import annotations
 import math
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from typing import Any, Final, Literal, TypedDict, cast
+from typing import Any, Final, Literal, cast
 
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 
 from .dataset import AgentRoutingCase
+from .metrics_types import (
+    AgentValues,
+    CaseProjection,
+    ErrorValues,
+    MajorityValues,
+    StabilityValues,
+)
 from .runner import PROVIDER_ERROR, ROUTING_ERROR, RunOutcome
 
+(_CaseProjection, _AgentValues, _MajorityValues, _ErrorValues, _StabilityValues) = (
+    CaseProjection, AgentValues, MajorityValues, ErrorValues, StabilityValues
+)
+
 NO_MAJORITY: Final = "__NO_MAJORITY__"
-_BASIS_SINGLE_RUN: Final = "single_run"
-_BASIS_CASE_MAJORITY: Final = "case_majority"
 _CANONICAL_AGENTS: Final = tuple(
     name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
 )
@@ -33,52 +41,11 @@ _ERROR_KEYS: Final = ("provider", "routing", "schema")
 _WILSON_Z: Final = 1.959963984540054
 
 
-@dataclass(frozen=True, slots=True)
-class _CaseProjection:
-    expected_agent: str
-    predicted_agent: str
-    language: str
-    top1_correct: bool
-    dispatchable: bool
-
-
-class _AgentValues(TypedDict):
-    support: int
-    predicted: int
-    true_positive: int
-    precision: float
-    recall: float
-    f1: float
-
-
-class _MajorityValues(TypedDict):
-    top1_correct: int
-    top1_accuracy: float
-    dispatchable_correct: int
-    dispatchable_accuracy: float
-    wilson_95: list[float]
-
-
-class _ErrorValues(TypedDict):
-    provider: int
-    routing: int
-    schema: int
-
-
-class _StabilityValues(TypedDict):
-    exact: float
-    modal_agreement: float
-
-
 _RateMetric = Literal["precision", "recall", "f1"]
-_RATE_METRICS: Final[tuple[_RateMetric, ...]] = (
-    "precision",
-    "recall",
-    "f1",
-)
+_RATE_METRICS: Final[tuple[_RateMetric, ...]] = ("precision", "recall", "f1")
 _MetricMap = Mapping[str, object]
-_AgentRows = Mapping[str, _AgentValues]
-_ValidatedProjection = tuple[_MajorityValues, _AgentRows, _StabilityValues]
+_AgentRows = Mapping[str, AgentValues]
+_ValidatedProjection = tuple[MajorityValues, _AgentRows, StabilityValues]
 _ValidatedThresholdReport = tuple[_ValidatedProjection, float]
 _IntPair = tuple[int, int]
 _IntTriple = tuple[int, int, int]
@@ -94,7 +61,7 @@ def _f1(precision: float, recall: float) -> float:
     return 0.0 if total == 0.0 else 2.0 * precision * recall / total
 
 
-def _rate_value(row: _AgentValues, metric: _RateMetric) -> float:
+def _rate_value(row: AgentValues, metric: _RateMetric) -> float:
     """Read one rate field with a TypedDict-safe literal key."""
     return row[metric]
 
@@ -431,7 +398,7 @@ def compute_metrics(
         for case in sorted(cases, key=lambda item: item.case_id)
     )
     run_metrics = _run_metrics(outcomes)
-    basis = _BASIS_SINGLE_RUN if repeat_count == 1 else _BASIS_CASE_MAJORITY
+    basis = "single_run" if repeat_count == 1 else "case_majority"
     classification_rows = _classification_rows(projections)
     per_agent: dict[str, object] = {"basis": basis, **classification_rows}
     by_language: dict[str, object] = {
@@ -726,7 +693,7 @@ def _validate_agent_row(value: object, case_count: int) -> _AgentValues | None:
 def _validate_per_agent(value: object, case_count: int) -> _AgentRows | None:
     expected_keys = frozenset({"basis", *_CANONICAL_AGENTS})
     mapping = _mapping_with_keys(value, expected_keys)
-    if mapping is None or mapping["basis"] != _BASIS_CASE_MAJORITY:
+    if mapping is None or mapping["basis"] != "case_majority":
         return None
     rows: dict[str, _AgentValues] = {}
     support_total = 0
@@ -750,7 +717,7 @@ def _validate_macro(value: object, rows: _AgentRows) -> bool:
         / len(_CANONICAL_AGENTS)
         for metric in _RATE_METRICS
     }
-    return mapping["basis"] == _BASIS_CASE_MAJORITY and all(
+    return mapping["basis"] == "case_majority" and all(
         _float_value(mapping[metric]) is not None
         and mapping[metric] == expected[metric]
         for metric in expected
@@ -764,7 +731,7 @@ def _validate_languages(
 ) -> bool:
     mapping = _mapping_with_keys(value, frozenset({"basis", "en", "zh"}))
     case_total = top1_total = dispatchable_total = 0
-    if mapping is None or mapping["basis"] != _BASIS_CASE_MAJORITY:
+    if mapping is None or mapping["basis"] != "case_majority":
         return False
     for language in ("en", "zh"):
         row = _validate_language_row(mapping[language], case_count)
@@ -825,7 +792,7 @@ def _validate_confusion(
     mapping = _mapping_with_keys(value, expected_keys)
     columns = {column: 0 for column in _CONFUSION_COLUMNS}
     diagonal = {agent: 0 for agent in _CANONICAL_AGENTS}
-    if mapping is None or mapping["basis"] != _BASIS_CASE_MAJORITY:
+    if mapping is None or mapping["basis"] != "case_majority":
         return None
     for agent in _CANONICAL_AGENTS:
         counts = _validate_confusion_row(mapping[agent], case_count)
