@@ -309,7 +309,8 @@ def _preflight_agent_run(
     dialogue_id: str | None,
     request_json: str | None,
 ) -> _AgentRunPreflight:
-    """Validate structural inputs and capture request context before dispatch."""
+    """Validate structural inputs and capture request context
+    before dispatch."""
     tool_name = _AGENT_SLUG_TO_TOOL.get(agent)
     if tool_name is None:
         raise HTTPException(
