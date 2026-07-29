@@ -188,6 +188,21 @@ async def _run_background_submission(
             if execution.get("warnings"):
                 execution["tracking"] = {"degraded": True}
             registry = RunRegistry(db_path)
+            current = registry.get_run(
+                reservation.run_id,
+                owner=reservation.owner,
+            )
+            if current is not None and current.status in {
+                "succeeded",
+                "failed",
+            }:
+                return
+            if current is None or not set(
+                outcome.accepted_task_ids
+            ).intersection(current.task_ids):
+                raise BackgroundSubmissionExecutionError(
+                    "accepted child tasks are not queryable"
+                )
             updated = registry.update_running_result(
                 reservation.run_id,
                 owner=reservation.owner,
