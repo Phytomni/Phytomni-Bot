@@ -76,14 +76,10 @@ async def test_launch_returns_before_operation_finishes(
     )
 
     assert is_live_running(reservation.run_id)
-    assert (
-        RunRegistry(db_path).get_run(reservation.run_id, owner="alice").status
-        == "running"
-    )
-    assert (
-        RunRegistry(db_path).get_run(reservation.run_id, owner="alice").a2a
-        == A2ACorrelation()
-    )
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    assert record.status == "running"
+    assert record.a2a == A2ACorrelation()
     release.set()
     await _wait_until(lambda: not is_live_running(reservation.run_id))
     assert observed == {
@@ -218,10 +214,9 @@ async def test_active_reservation_cannot_launch_twice(tmp_path: Path) -> None:
         launch_background_submission(reservation, operation, db_path=db_path)
 
     assert is_live_running(reservation.run_id)
-    assert (
-        RunRegistry(db_path).get_run(reservation.run_id, owner="alice").status
-        == "running"
-    )
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    assert record.status == "running"
     release.set()
     await _wait_until(lambda: not is_live_running(reservation.run_id))
 
