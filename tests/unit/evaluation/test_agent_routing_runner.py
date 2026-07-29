@@ -239,6 +239,41 @@ def test_provider_failures_retry_exactly_three_attempts(
     assert outcome.provider_completed is False
 
 
+def test_hanging_selector_times_out_and_retries_three_times() -> None:
+    """The per-attempt asyncio timeout exhausts exactly three attempts."""
+    attempts = 0
+
+    async def hanging_selector(
+        user_query: str,
+        history: Sequence[Mapping[str, object]] = (),
+        *,
+        allowed_tools: Sequence[str] | None = None,
+        forced_tool: str | None = None,
+    ) -> ToolSelection:
+        nonlocal attempts
+        attempts += 1
+        await asyncio.sleep(3600)
+        return _chat_selection(user_query)
+
+    outcome = asyncio.run(
+        run_evaluation(
+            [_case()],
+            hanging_selector,
+            RunnerOptions(
+                repeat_count=1,
+                timeout_seconds=0.001,
+                retry_delay_seconds=0,
+            ),
+        )
+    )[0]
+
+    assert attempts == 3
+    assert outcome.attempts == 3
+    assert outcome.predicted_agent == PROVIDER_ERROR
+    assert outcome.error_code == "provider_timeout_exhausted"
+    assert outcome.provider_completed is False
+
+
 def test_success_on_second_attempt_records_retry_count() -> None:
     """A recovered provider call reports both attempts."""
     selector = RecordingSelector(
@@ -440,6 +475,103 @@ def test_cancellation_sinks_completed_outcomes() -> None:
 
     assert len(partials) == 1
     assert [item.case_id for item in partials[0]] == ["case-done"]
+
+
+def test_failing_partial_sink_does_not_replace_cancellation() -> None:
+    """A sink failure cannot replace the caller's cancellation."""
+    started = asyncio.Event()
+    blocked = asyncio.Event()
+
+    async def selector(
+        user_query: str,
+        history: Sequence[Mapping[str, object]] = (),
+        *,
+        allowed_tools: Sequence[str] | None = None,
+        forced_tool: str | None = None,
+    ) -> ToolSelection:
+        started.set()
+        await blocked.wait()
+        return _chat_selection(user_query)
+
+    async def failing_sink(_outcomes: tuple[RunOutcome, ...]) -> None:
+        raise RuntimeError("sink failed during cancellation")
+
+    async def execute() -> None:
+        task = asyncio.create_task(
+            run_evaluation(
+                [_case()],
+                selector,
+                RunnerOptions(repeat_count=1),
+                partial_sink=failing_sink,
+            )
+        )
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(execute())
+
+
+def test_failing_partial_sink_does_not_replace_unexpected_failure() -> None:
+    """A sink failure cannot replace the original unexpected exception."""
+    selector = RecordingSelector([ValueError("selector failed")])
+
+    async def failing_sink(_outcomes: tuple[RunOutcome, ...]) -> None:
+        raise RuntimeError("sink failed during abort")
+
+    with pytest.raises(EvaluationIncompleteError) as exc_info:
+        asyncio.run(
+            run_evaluation(
+                [_case()], selector, partial_sink=failing_sink
+            )
+        )
+
+    assert isinstance(exc_info.value.__cause__, ValueError)
+    assert str(exc_info.value.__cause__) == "selector failed"
+
+
+def test_selector_concurrency_never_exceeds_configured_ceiling() -> None:
+    """The semaphore covers every case repetition and logical run."""
+    active = 0
+    max_active = 0
+
+    async def selector(
+        user_query: str,
+        history: Sequence[Mapping[str, object]] = (),
+        *,
+        allowed_tools: Sequence[str] | None = None,
+        forced_tool: str | None = None,
+    ) -> ToolSelection:
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        try:
+            await asyncio.sleep(0.001)
+            return _chat_selection(user_query)
+        finally:
+            active -= 1
+
+    outcomes = asyncio.run(
+        run_evaluation(
+            [
+                _case("case-a", question="a"),
+                _case("case-b", question="b"),
+                _case("case-c", question="c"),
+                _case("case-d", question="d"),
+            ],
+            selector,
+            RunnerOptions(
+                repeat_count=3,
+                concurrency=2,
+                retry_delay_seconds=0,
+            ),
+        )
+    )
+
+    assert len(outcomes) == 12
+    assert max_active <= 2
+    assert max_active > 1
 
 
 def test_runner_cannot_reach_dispatch_seams(

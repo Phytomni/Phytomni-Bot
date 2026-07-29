@@ -135,6 +135,19 @@ async def _call_partial_sink(
         await result
 
 
+async def _call_partial_sink_best_effort(
+    partial_sink: PartialSink | None,
+    outcomes: Sequence[RunOutcome],
+) -> None:
+    """Attempt partial persistence without replacing the primary failure."""
+    try:
+        await _call_partial_sink(partial_sink, outcomes)
+    except BaseException:
+        # Cancellation and orchestration errors must retain their original
+        # identity even when a best-effort persistence callback fails.
+        return
+
+
 def _sort_outcomes(outcomes: Sequence[RunOutcome]) -> list[RunOutcome]:
     return sorted(outcomes, key=lambda item: (item.case_id, item.repeat_index))
 
@@ -201,12 +214,16 @@ async def run_evaluation(
     except asyncio.CancelledError:
         results = await _cancel_tasks(tasks)
         _record_completed(completed, results)
-        await _call_partial_sink(partial_sink, tuple(completed.values()))
+        await _call_partial_sink_best_effort(
+            partial_sink, tuple(completed.values())
+        )
         raise
     except Exception as exc:
         results = await _cancel_tasks(tasks)
         _record_completed(completed, results)
-        await _call_partial_sink(partial_sink, tuple(completed.values()))
+        await _call_partial_sink_best_effort(
+            partial_sink, tuple(completed.values())
+        )
         raise EvaluationIncompleteError("evaluation did not complete") from exc
     return tuple(_sort_outcomes(tuple(completed.values())))
 
