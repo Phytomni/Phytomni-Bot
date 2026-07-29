@@ -17,6 +17,7 @@ import sqlite3
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import Mock
 
 import httpx
 import pytest
@@ -398,9 +399,24 @@ async def test_agent_run_sync_persistence_failure_returns_safe_500(
             {"user_query": "hi", "obs_file_list": []},
         ),
         (
+            "knowledge",
+            server.PhytomniAgents.KNOWLEDGE_AGENT.value,
+            {"user_query": "hi", "obs_file_list": []},
+        ),
+        (
             "data",
             server.PhytomniAgents.DATA_AGENT.value,
             {"user_query": "count rice genes"},
+        ),
+        (
+            "review",
+            server.PhytomniAgents.REVIEW_AGENT.value,
+            {"user_query": "review this", "obs_file_list": []},
+        ),
+        (
+            "brief_gene",
+            server.PhytomniAgents.BRIEF_GENE_AGENT.value,
+            {"user_query": "AT1G01010"},
         ),
     ],
 )
@@ -410,12 +426,33 @@ async def test_native_sync_agents_keep_succeeded_envelope(
     monkeypatch: pytest.MonkeyPatch,
     case: tuple[str, str, dict[str, Any]],
 ) -> None:
-    """Representative synchronous native runs retain the common envelope."""
+    """Established synchronous native runs never launch a worker."""
     slug, tool_name, arguments = case
 
-    fake = minimal_tool_handler("ok")
+    background_launcher = Mock(name="background_launcher")
+    monkeypatch.setattr(
+        api_app_module, "launch_background_submission", background_launcher
+    )
+    if slug == "review":
 
-    install_tool_handler(monkeypatch, tool_name, fake)
+        async def fake_review(**_kwargs: Any) -> Any:
+            return api_app_module._ReviewExecution(
+                run_id="native-review-sync",
+                status="succeeded",
+                result={
+                    "formatted": {"answer": "review ok", "metadata": {}},
+                    "execution": {"warnings": []},
+                    "raw": None,
+                },
+            )
+
+        monkeypatch.setattr(
+            api_app_module, "_run_review_with_interrupt", fake_review
+        )
+    else:
+        install_tool_handler(
+            monkeypatch, tool_name, minimal_tool_handler("ok")
+        )
     response = await post_native_run(
         api_client, issued_api_key, slug, arguments
     )
@@ -425,6 +462,7 @@ async def test_native_sync_agents_keep_succeeded_envelope(
     assert body["agent"] == slug
     assert body["status"] == "succeeded"
     assert body["task_ids"] == []
+    assert background_launcher.call_count == 0
 
 
 async def test_agent_run_sync_persists_request_info(
@@ -656,6 +694,7 @@ async def test_agent_run_remote_returns_chokepoint_run_id(
     assert body["agent"] == case.slug
     assert body["status"] == "running"
     assert body["id"]
+    assert body["id"] == body["run_id"]
     assert set(body["task_ids"]) == case.expected_task_ids
 
     listing = RunRegistry(tasks_db_path).list_runs(owner="u1")
