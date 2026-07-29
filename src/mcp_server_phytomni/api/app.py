@@ -13,6 +13,7 @@ import json
 import logging
 from collections.abc import Mapping
 from contextlib import nullcontext
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -43,6 +44,7 @@ from ..mcp import app as _mcp_app
 from ..mcp.app import (
     invoke_tool_enveloped,
     prepare_tool_stream,
+    validate_tool_arguments,
 )
 from ..mcp.result_formatting import (
     resolve_debug,
@@ -51,6 +53,11 @@ from ..mcp.result_formatting import (
 )
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
 from ..runtime import task_reconcile as _task_reconcile
+from ..runtime.background_submission import (
+    BackgroundSubmissionLaunchError,
+    launch_background_submission,
+    reserve_background_submission,
+)
 from ..runtime.locale import current_effective_locale
 from ..runtime.request_context import (
     current_accepted_task_ids,
@@ -240,6 +247,10 @@ _REMOTE_AGENT_SLUGS = frozenset(
     {"analyst", "deep_genome", "research", "design", "network"}
 )
 
+_BACKGROUND_SUBMISSION_AGENT_SLUGS = frozenset(
+    {"analyst", "research", "network", "design"}
+)
+
 # Historical Web ``tool_name`` aliases preserved on ``/v1/agents`` rows
 # as ``legacy_aliases`` metadata. The route itself never accepts these
 # as routing slugs; chat-ai and Phytomni-Web Go consume the list to
@@ -274,6 +285,15 @@ class _AgentRunPreparation:
     resolve_meta: dict[str, Any]
 
 
+@dataclass(frozen=True, slots=True)
+class _AgentRunPreflight:
+    """Synchronous validation and immutable request context for one run."""
+
+    tool_name: str
+    owner: str
+    request_info: RunRequestInfo
+
+
 def _project_submission_warnings(raw: Any) -> list[dict[str, Any]]:
     """Project safe remote-submission warnings into HTTP execution state."""
     if not isinstance(raw, Mapping):
@@ -281,19 +301,61 @@ def _project_submission_warnings(raw: Any) -> list[dict[str, Any]]:
     return _project_warnings(raw.get("submission_warnings"))
 
 
-async def _prepare_agent_run(
+def _preflight_agent_run(
     *,
     agent: str,
     arguments: dict[str, Any],
     dialogue_id: str | None,
     request_json: str | None,
-) -> _AgentRunPreparation:
-    """Resolve the public slug and request context before dispatch."""
+) -> _AgentRunPreflight:
+    """Validate structural inputs and capture request context before dispatch."""
     tool_name = _AGENT_SLUG_TO_TOOL.get(agent)
     if tool_name is None:
         raise HTTPException(
             status_code=404, detail=f"agent not found: {agent}"
         )
+    if agent in _BACKGROUND_SUBMISSION_AGENT_SLUGS:
+        validation_arguments = deepcopy(arguments)
+        if agent == "design" and validation_arguments.get(
+            "resolve_gene_id"
+        ):
+            validation_arguments.setdefault("species_code", "ath")
+            validation_arguments.setdefault("gene_id", "AT1G01010")
+        elif agent == "network" and validation_arguments.get(
+            "resolve_to_id"
+        ):
+            validation_arguments.setdefault("species_code", "osa")
+            validation_arguments.setdefault("to_id", "TO:0000001")
+        validate_tool_arguments(tool_name, validation_arguments)
+    owner = current_request_user() or "anonymous"
+    validate_native_attachments(
+        agent,
+        arguments,
+        owner=owner,
+        db_path=resolve_tasks_db_path(),
+    )
+    return _AgentRunPreflight(
+        tool_name=tool_name,
+        owner=owner,
+        request_info=RunRequestInfo(
+            dialogue_id=dialogue_id,
+            request_id=current_request_id(),
+            query=_request_info_query(arguments, request_json),
+            tool_name=tool_name,
+            model=None,
+            request_json=request_json,
+            locale=current_effective_locale(),
+        ),
+    )
+
+
+async def _prepare_agent_run(
+    *,
+    agent: str,
+    arguments: dict[str, Any],
+    preflight: _AgentRunPreflight,
+) -> _AgentRunPreparation:
+    """Resolve semantic arguments after structural preflight."""
     resolve_meta = await apply_runs_resolver(
         agent,
         arguments,
@@ -304,19 +366,10 @@ async def _prepare_agent_run(
             network_resolver=resolve_network_user_query,
         ),
     )
-    request_info = RunRequestInfo(
-        dialogue_id=dialogue_id,
-        request_id=current_request_id(),
-        query=_request_info_query(arguments, request_json),
-        tool_name=tool_name,
-        model=None,
-        request_json=request_json,
-        locale=current_effective_locale(),
-    )
     return _AgentRunPreparation(
-        tool_name=tool_name,
-        owner=current_request_user() or "anonymous",
-        request_info=request_info,
+        tool_name=preflight.tool_name,
+        owner=preflight.owner,
+        request_info=preflight.request_info,
         resolve_meta=resolve_meta,
     )
 
@@ -375,6 +428,78 @@ def _format_agent_run_result(
     }
     response_result = result if debug else strip_agent_result(result)
     return result, response_result
+
+
+async def _execute_background_agent_run(
+    *,
+    agent: str,
+    arguments: dict[str, Any],
+    preflight: _AgentRunPreflight,
+    debug: bool,
+) -> None:
+    """Resolve, invoke, and project one already-reserved background run."""
+    prepared = await _prepare_agent_run(
+        agent=agent,
+        arguments=arguments,
+        preflight=preflight,
+    )
+    envelope = await invoke_tool_enveloped(prepared.tool_name, arguments)
+    _result, response_result = _format_agent_run_result(
+        envelope,
+        resolve_meta=prepared.resolve_meta,
+        debug=debug,
+    )
+    run_id = current_run_id()
+    if run_id is None:
+        raise RuntimeError("background run context missing")
+    task_ids = current_accepted_task_ids()
+    if current_recorder_degraded() or not task_ids:
+        raise RuntimeError("background child persistence failed")
+    updated = RunRegistry(resolve_tasks_db_path()).update_running_result(
+        run_id,
+        owner=prepared.owner,
+        result=response_result,
+    )
+    if not updated:
+        raise RuntimeError("background run projection update failed")
+
+
+def _background_agent_run_response(
+    *,
+    agent: str,
+    arguments: dict[str, Any],
+    preflight: _AgentRunPreflight,
+    debug: bool,
+) -> tuple[dict[str, Any], int]:
+    """Reserve and launch one background run before returning 202."""
+    db_path = resolve_tasks_db_path()
+    worker_arguments = deepcopy(arguments)
+    reservation = reserve_background_submission(
+        agent=agent,
+        owner=preflight.owner,
+        request_info=preflight.request_info,
+        db_path=db_path,
+    )
+    launch_background_submission(
+        reservation,
+        lambda: _execute_background_agent_run(
+            agent=agent,
+            arguments=worker_arguments,
+            preflight=preflight,
+            debug=debug,
+        ),
+        db_path=db_path,
+    )
+    body = build_agent_run_response(
+        run_id=reservation.run_id,
+        agent=agent,
+        status="running",
+        task_ids=[],
+        result=empty_agent_result(),
+        persisted=True,
+        degraded_tracking=False,
+    )
+    return body, 202
 
 
 def _remote_agent_run_response(
@@ -470,17 +595,32 @@ async def _invoke_agent_run(
     debug: bool = False,
 ) -> tuple[dict[str, Any], int]:
     """Dispatch one native run through the shared lifecycle contract."""
-    prepared = await _prepare_agent_run(
+    preflight = _preflight_agent_run(
         agent=agent,
         arguments=arguments,
         dialogue_id=dialogue_id,
         request_json=request_json,
     )
-    validate_native_attachments(
-        agent,
-        arguments,
-        owner=prepared.owner,
-        db_path=resolve_tasks_db_path(),
+    if agent in _BACKGROUND_SUBMISSION_AGENT_SLUGS:
+        try:
+            return _background_agent_run_response(
+                agent=agent,
+                arguments=arguments,
+                preflight=preflight,
+                debug=debug,
+            )
+        except BackgroundSubmissionLaunchError as exc:
+            raise SafeApiError(
+                status_code=500,
+                code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
+                message="The background run could not be started.",
+                stage="submission_start",
+                retryable=False,
+            ) from exc
+    prepared = await _prepare_agent_run(
+        agent=agent,
+        arguments=arguments,
+        preflight=preflight,
     )
     if agent == "review":
         execution = await _run_review_with_interrupt(

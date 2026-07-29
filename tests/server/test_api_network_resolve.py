@@ -11,6 +11,7 @@ flag and TO-id metadata key, not ``resolve_gene_id``.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -24,6 +25,7 @@ from mcp_server_phytomni.agents.network.resolve_query import (
     GeneNetworkToIdCandidate,
 )
 from mcp_server_phytomni.api import app as api_app
+from mcp_server_phytomni.runtime.run_registry import RunRecord, RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 
 pytestmark = pytest.mark.server
@@ -86,6 +88,25 @@ async def _post_run(
     )
 
 
+async def _wait_for_background_run(
+    tasks_db_path: str,
+    run_id: str,
+    *,
+    failed: bool = False,
+) -> RunRecord:
+    """Poll one accepted Network run until it attaches work or fails."""
+    registry = RunRegistry(tasks_db_path)
+    for _ in range(100):
+        record = registry.get_run(run_id, owner="u1")
+        if record is not None:
+            if failed and record.status == "failed":
+                return record
+            if not failed and record.task_ids:
+                return record
+        await asyncio.sleep(0)
+    pytest.fail("background Network run did not settle")
+
+
 async def test_native_runs_resolves_when_flag_true(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -93,7 +114,6 @@ async def test_native_runs_resolves_when_flag_true(
     tasks_db_path: str,
 ) -> None:
     """flag=true rewrites user_query into to_id and stamps metadata."""
-    del tasks_db_path
     captured: dict[str, Any] = {}
     resolver_calls: list[str] = []
     _stub_network_handler(monkeypatch, captured)
@@ -118,12 +138,15 @@ async def test_native_runs_resolves_when_flag_true(
         },
     )
 
-    assert response.status_code == 202  # remote-submit agent
+    assert response.status_code == 202
     body = response.json()
+    assert body["task_ids"] == []
+    record = await _wait_for_background_run(tasks_db_path, body["run_id"])
     assert captured["species_code"] == "osa"
     assert captured["to_id"] == "TO:0000207"
     assert resolver_calls == ["rice plant height trait"]
-    metadata = body["result"]["formatted"].get("metadata") or {}
+    assert record.result is not None
+    metadata = record.result["formatted"].get("metadata") or {}
     assert metadata.get("original_query") == "rice plant height trait"
     assert metadata.get("resolved_to_id") == "TO:0000207"
     assert metadata.get("resolved_species_code") == "osa"
@@ -137,7 +160,6 @@ async def test_native_runs_skips_resolver_when_flag_false(
     tasks_db_path: str,
 ) -> None:
     """flag=false leaves to_id as-is from the structured request."""
-    del tasks_db_path
     captured: dict[str, Any] = {}
     resolver_calls: list[str] = []
     _stub_network_handler(monkeypatch, captured)
@@ -164,6 +186,10 @@ async def test_native_runs_skips_resolver_when_flag_false(
     )
 
     assert response.status_code == 202
+    body = response.json()
+    assert body["task_ids"] == []
+    record = await _wait_for_background_run(tasks_db_path, body["run_id"])
+    assert set(record.task_ids) == {"network-resolver-task"}
     assert captured["to_id"] == "TO:0000207"
     assert not resolver_calls
 
@@ -213,14 +239,13 @@ async def test_native_runs_rejects_resolve_to_id_on_non_network_agent(
     assert "user_query" not in captured
 
 
-async def test_native_runs_rejects_missing_user_query(
+async def test_native_runs_missing_user_query_settles_failed(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
-    """flag=true without user_query is 400 before the resolver runs."""
-    del tasks_db_path
+    """flag=true without user_query settles the accepted run failed."""
     captured: dict[str, Any] = {}
     resolver_calls: list[str] = []
     _stub_network_handler(monkeypatch, captured)
@@ -245,19 +270,25 @@ async def test_native_runs_rejects_missing_user_query(
         },
     )
 
-    assert_invalid_argument_response(response)
+    assert response.status_code == 202
+    body = response.json()
+    assert body["task_ids"] == []
+    record = await _wait_for_background_run(
+        tasks_db_path, body["run_id"], failed=True
+    )
+    assert record.task_ids == ()
+    assert record.error == "background_submission_failed"
     assert not resolver_calls
     assert "to_id" not in captured
 
 
-async def test_native_runs_resolver_failure_returns_400(
+async def test_native_runs_resolver_failure_settles_failed(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
-    """GeneNetworkResolveError surfaces as HTTP 400 with the reason."""
-    del tasks_db_path
+    """GeneNetworkResolveError settles the accepted run failed safely."""
     captured: dict[str, Any] = {}
     _stub_network_handler(monkeypatch, captured)
 
@@ -282,25 +313,32 @@ async def test_native_runs_resolver_failure_returns_400(
         },
     )
 
-    assert_invalid_argument_response(response)
+    assert response.status_code == 202
+    body = response.json()
+    assert body["task_ids"] == []
+    record = await _wait_for_background_run(
+        tasks_db_path, body["run_id"], failed=True
+    )
+    assert record.task_ids == ()
+    assert record.error == "background_submission_failed"
+    assert "no valid candidate" not in record.error
     assert "to_id" not in captured
 
 
-async def test_native_runs_blank_species_code_returns_400(
+async def test_native_runs_blank_species_code_settles_failed(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
-    """LLM blank species_code surfaces as HTTP 400, never 500.
+    """LLM blank species_code settles the accepted run failed safely.
 
     The network resolver owns its own empty-string guard (independent
     of the BGA path): when the LLM omits ``species_code`` the
     resolver raises ``GeneNetworkResolveError`` and the API layer
-    maps that to 400. Pinning this case here keeps the contract
-    regression-proofed at the HTTP boundary.
+    settles the reserved run failed. Pinning this case here keeps the
+    contract regression-proofed at the HTTP boundary.
     """
-    del tasks_db_path
     captured: dict[str, Any] = {}
     _stub_network_handler(monkeypatch, captured)
 
@@ -325,6 +363,14 @@ async def test_native_runs_blank_species_code_returns_400(
         },
     )
 
-    assert_invalid_argument_response(response)
+    assert response.status_code == 202
+    body = response.json()
+    assert body["task_ids"] == []
+    record = await _wait_for_background_run(
+        tasks_db_path, body["run_id"], failed=True
+    )
+    assert record.task_ids == ()
+    assert record.error == "background_submission_failed"
+    assert "species_code" not in record.error
     assert "to_id" not in captured
     assert "species_code" not in captured

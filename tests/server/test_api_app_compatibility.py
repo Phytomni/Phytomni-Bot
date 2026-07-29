@@ -39,6 +39,10 @@ from mcp_server_phytomni.agents.network.resolve_query import (
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api import resolvers as resolver_module
 from mcp_server_phytomni.api.app import create_app
+from mcp_server_phytomni.api.lifecycle_contract import (
+    build_agent_run_response,
+    empty_agent_result,
+)
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
@@ -55,6 +59,22 @@ _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 _OPENAPI_HASH = (
     "7c881bf9987f7c117c96fe703a79487ebc3af63c3fe2fcbc096d0c91f81116bf"
 )
+
+
+def test_persisted_running_response_accepts_empty_child_list() -> None:
+    body = build_agent_run_response(
+        run_id="run-empty-child",
+        agent="analyst",
+        status="running",
+        task_ids=[],
+        result=empty_agent_result(),
+        persisted=True,
+        degraded_tracking=False,
+    )
+
+    assert body["id"] == body["run_id"] == "run-empty-child"
+    assert body["task_ids"] == []
+    assert "degraded_tracking" not in body
 
 
 @dataclass(frozen=True, slots=True)

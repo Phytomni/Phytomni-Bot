@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -14,6 +15,7 @@ import pytest
 
 from mcp_server_phytomni import server
 from mcp_server_phytomni.api import app as api_app
+from mcp_server_phytomni.runtime.run_registry import RunRecord, RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
 from tests.support.http_fakes import install_tool_handler
 
@@ -36,6 +38,7 @@ class ResolverCaseSpec:
     resolver_attribute: str
     result_factory: Callable[[str, str], Any]
     error_factory: Callable[[str], Exception]
+    background_submission: bool = False
 
 
 @dataclass(frozen=True)
@@ -76,6 +79,7 @@ class NativeResolverContext:
     api_client: httpx.AsyncClient
     issued_api_key: str
     monkeypatch: pytest.MonkeyPatch
+    tasks_db_path: str
 
 
 @dataclass(frozen=True)
@@ -234,6 +238,64 @@ async def assert_native_resolver_case(
         context.api_client, context.issued_api_key, case.spec.slug, arguments
     )
 
+    if case.spec.background_submission:
+        assert response.status_code == 202
+        body = response.json()
+        assert body["task_ids"] == []
+        assert body["run_id"]
+        registry = RunRegistry(context.tasks_db_path)
+        record: RunRecord | None = None
+        for _ in range(100):
+            record = registry.get_run(body["run_id"], owner="u1")
+            if record is not None:
+                if scenario in {"resolved", "passthrough"} and record.task_ids:
+                    break
+                if scenario in {"missing", "failure", "blank"} and (
+                    record.status == "failed"
+                ):
+                    break
+            await asyncio.sleep(0)
+        else:
+            pytest.fail("background resolver run did not settle")
+
+        assert record is not None
+        if scenario == "resolved":
+            assert captured["species_code"] == case.expected.species_code
+            assert captured["gene_id"] == case.expected.resolved_gene_id
+            assert resolver_calls == [case.expected.resolved_raw_query]
+            assert record.result is not None
+            metadata = record.result["formatted"].get("metadata") or {}
+            assert (
+                metadata.get("original_query")
+                == case.expected.resolved_raw_query
+            )
+            assert (
+                metadata.get("resolved_gene_id")
+                == case.expected.resolved_gene_id
+            )
+            assert (
+                metadata.get("resolved_species_code")
+                == case.expected.species_code
+            )
+            assert metadata.get("resolve_gene_id") is True
+            return
+        if scenario == "passthrough":
+            assert captured["gene_id"] == case.expected.resolved_gene_id
+            assert not resolver_calls
+            return
+
+        assert record.status == "failed"
+        assert record.task_ids == ()
+        assert record.error == "background_submission_failed"
+        assert case.expected.failure_message not in record.error
+        assert case.expected.blank_message not in record.error
+        if scenario == "missing":
+            assert not resolver_calls
+        else:
+            assert resolver_calls == [arguments["user_query"]]
+        assert "gene_id" not in captured
+        return
+
     if scenario == "resolved":
         assert response.status_code == 202
         body = response.json()
@@ -285,11 +347,11 @@ def make_native_resolver_test(
         monkeypatch: pytest.MonkeyPatch,
         tasks_db_path: str,
     ) -> None:
-        del tasks_db_path
         context = NativeResolverContext(
             api_client=api_client,
             issued_api_key=issued_api_key,
             monkeypatch=monkeypatch,
+            tasks_db_path=tasks_db_path,
         )
         await assert_native_resolver_case(
             context,
@@ -306,6 +368,19 @@ def install_native_resolver_tests(
     namespace: dict[str, Any], case: NativeResolverCase
 ) -> None:
     """Install the stable five-scenario test names for one native agent."""
+    failure_names = (
+        (
+            "test_native_runs_missing_user_query_settles_failed",
+            "test_native_runs_resolver_failure_settles_failed",
+            "test_native_runs_blank_species_code_settles_failed",
+        )
+        if case.spec.background_submission
+        else (
+            "test_native_runs_rejects_missing_user_query",
+            "test_native_runs_resolver_failure_returns_400",
+            "test_native_runs_blank_species_code_returns_400",
+        )
+    )
     scenarios = (
         (
             "test_native_runs_resolves_when_flag_true",
@@ -318,19 +393,19 @@ def install_native_resolver_tests(
             "flag=false leaves gene_id as-is from the structured request.",
         ),
         (
-            "test_native_runs_rejects_missing_user_query",
+            failure_names[0],
             "missing",
-            "flag=true without user_query is 400 before the resolver runs.",
+            "flag=true without user_query settles the accepted run failed.",
         ),
         (
-            "test_native_runs_resolver_failure_returns_400",
+            failure_names[1],
             "failure",
-            "ResolverError surfaces as HTTP 400 with the reason.",
+            "ResolverError settles the accepted run failed safely.",
         ),
         (
-            "test_native_runs_blank_species_code_returns_400",
+            failure_names[2],
             "blank",
-            "Blank species_code from the resolver maps to HTTP 400.",
+            "Blank species_code settles the accepted run failed safely.",
         ),
     )
     for test_name, scenario, docstring in scenarios:
