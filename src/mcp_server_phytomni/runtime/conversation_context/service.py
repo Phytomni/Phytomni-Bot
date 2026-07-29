@@ -225,6 +225,164 @@ _REVIEW_SETTLEMENT_STATES = frozenset(
     }
 )
 
+_INVALID_REVIEW_FIELD = object()
+
+
+def _bounded_integer(
+    value: object,
+    *,
+    minimum: int | None = None,
+    maximum: int | None = None,
+    exact: int | None = None,
+) -> int | None:
+    """Return an integer that fits one bounded Review metadata field."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    if exact is not None and value != exact:
+        return None
+    if minimum is not None and value < minimum:
+        return None
+    if maximum is not None and value > maximum:
+        return None
+    return value
+
+
+def _bounded_text(value: object, *, limit: int) -> str | None:
+    """Return non-empty path-free text within a metadata limit."""
+    if not isinstance(value, str):
+        return None
+    if value != value.strip() or not value:
+        return None
+    if len(value) > limit or "/" in value or "\\" in value:
+        return None
+    return value
+
+
+def _bounded_review_stage_field(key: str, candidate: object) -> object:
+    """Normalize one private Review stage field or return its invalid marker."""
+    bounded: int | str | None
+    if key in {"version", "report_revision"}:
+        bounded = _bounded_integer(
+            candidate,
+            minimum=0 if key == "report_revision" else None,
+            exact=1 if key == "version" else None,
+        )
+    elif key in {"settlement_claim_token", "settlement_claimed_at"}:
+        bounded = _bounded_text(candidate, limit=64)
+    elif key == "settlement_fence":
+        bounded = _bounded_integer(
+            candidate, minimum=1, maximum=2**63 - 1
+        )
+    elif key == "settlement_base_context_version":
+        bounded = _bounded_integer(candidate, minimum=0)
+    elif key == "settlement_ledger_version":
+        bounded = _bounded_text(candidate, limit=64)
+    elif key == "candidate_thread_id" and candidate is None:
+        return None
+    else:
+        limit = 64 if key == "turn_id" else 512
+        bounded = _bounded_text(candidate, limit=limit)
+    return _INVALID_REVIEW_FIELD if bounded is None else bounded
+
+
+def _review_stage_identity(
+    value: Mapping[str, Any], *, allow_terminal: bool
+) -> tuple[str, str] | None:
+    """Validate the operation and settlement state of a Review marker."""
+    operation = value.get("operation")
+    if not isinstance(operation, str) or operation not in _REVIEW_OPERATIONS:
+        return None
+    settlement_state = value.get("settlement_state")
+    if not isinstance(settlement_state, str):
+        return None
+    if settlement_state not in _REVIEW_SETTLEMENT_STATES:
+        return None
+    if not allow_terminal and settlement_state != "pending":
+        return None
+    return operation, settlement_state
+
+
+def _review_stage_candidate_valid(
+    result: Mapping[str, Any], operation: str
+) -> bool:
+    """Ensure candidate checkpoint identity matches its Review operation."""
+    candidate = result.get("candidate_thread_id")
+    if operation in {"new_review", "scope_change"}:
+        if not isinstance(candidate, str) or not candidate:
+            return False
+        return candidate == _candidate_thread_id(
+            result["stable_thread_id"], result["turn_id"]
+        )
+    return candidate is None
+
+
+_REVIEW_CLAIM_FIELDS = frozenset(
+    {"settlement_claim_token", "settlement_claimed_at"}
+)
+_REVIEW_FENCING_FIELDS = frozenset(
+    {
+        "settlement_fence",
+        "settlement_ledger_version",
+        "settlement_base_context_version",
+    }
+)
+
+
+def _review_claim_fields_present(
+    result: Mapping[str, Any], settlement_state: str
+) -> bool:
+    """Validate presence and absence of claim fields for one state."""
+    present = result.keys()
+    if settlement_state == "promoted":
+        return _REVIEW_FENCING_FIELDS.issubset(present) and not (
+            _REVIEW_CLAIM_FIELDS & present
+        )
+    if settlement_state in {"settling", "promoting"}:
+        return (_REVIEW_CLAIM_FIELDS | _REVIEW_FENCING_FIELDS).issubset(
+            present
+        )
+    return not (_REVIEW_CLAIM_FIELDS & present)
+
+
+def _review_claim_timestamp_valid(
+    result: Mapping[str, Any], settlement_state: str
+) -> bool:
+    """Validate the timestamp when a Review claim is active."""
+    if settlement_state not in {"settling", "promoting"}:
+        return True
+    try:
+        datetime.fromisoformat(result["settlement_claimed_at"])
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _review_settlement_claim_fields_valid(
+    result: Mapping[str, Any], settlement_state: str
+) -> bool:
+    """Validate claim and promotion fields for one settlement state."""
+    return _review_claim_fields_present(
+        result, settlement_state
+    ) and _review_claim_timestamp_valid(result, settlement_state)
+
+
+def _review_settlement_fence_fields_valid(
+    result: Mapping[str, Any], settlement_state: str
+) -> bool:
+    """Reject durable claim fencing fields on unclaimed markers."""
+    if settlement_state not in {"pending", "rejected", "failed"}:
+        return True
+    return not any(field in result for field in _REVIEW_FENCING_FIELDS)
+
+
+def _review_settlement_fields_valid(
+    result: Mapping[str, Any], settlement_state: str
+) -> bool:
+    """Validate all state-dependent fields of a private Review marker."""
+    return _review_settlement_claim_fields_valid(
+        result, settlement_state
+    ) and _review_settlement_fence_fields_valid(result, settlement_state)
+
 
 def _bounded_review_stage_metadata(
     value: Mapping[str, Any],
@@ -232,85 +390,15 @@ def _bounded_review_stage_metadata(
     allow_terminal: bool = False,
 ) -> dict[str, Any] | None:
     """Keep only bounded checkpoint identities in durable turn metadata."""
-    operation = value.get("operation")
-    if not isinstance(operation, str) or operation not in _REVIEW_OPERATIONS:
+    identity = _review_stage_identity(value, allow_terminal=allow_terminal)
+    if identity is None:
         return None
-    settlement_state = value.get("settlement_state")
-    if (
-        not isinstance(settlement_state, str)
-        or settlement_state not in _REVIEW_SETTLEMENT_STATES
-        or (not allow_terminal and settlement_state != "pending")
-    ):
-        return None
+    operation, settlement_state = identity
     result: dict[str, Any] = {}
     for key in _REVIEW_STAGE_FIELDS:
-        candidate = value.get(key)
-        if key in {"version", "report_revision"}:
-            if (
-                isinstance(candidate, bool)
-                or not isinstance(candidate, int)
-                or (key == "version" and candidate != 1)
-                or (key == "report_revision" and candidate < 0)
-            ):
-                continue
-            result[key] = candidate
-        elif key in {"settlement_claim_token", "settlement_claimed_at"}:
-            if (
-                isinstance(candidate, str)
-                and candidate == candidate.strip()
-                and candidate
-                and len(candidate) <= 64
-            ):
-                result[key] = candidate
-        elif key == "settlement_fence":
-            if (
-                isinstance(candidate, bool)
-                or not isinstance(candidate, int)
-                or candidate < 1
-                or candidate > 2**63 - 1
-            ):
-                continue
-            result[key] = candidate
-        elif key == "settlement_base_context_version":
-            if (
-                isinstance(candidate, bool)
-                or not isinstance(candidate, int)
-                or candidate < 0
-            ):
-                continue
-            result[key] = candidate
-        elif key == "settlement_ledger_version":
-            if (
-                isinstance(candidate, str)
-                and candidate == candidate.strip()
-                and candidate
-                and len(candidate) <= 64
-            ):
-                result[key] = candidate
-        elif key == "candidate_thread_id":
-            if candidate is None:
-                result[key] = None
-            elif (
-                isinstance(candidate, str)
-                and candidate == candidate.strip()
-                and candidate
-                and len(candidate) <= 512
-                and "/" not in candidate
-                and "\\" not in candidate
-            ):
-                result[key] = candidate[:512]
-        elif (
-            isinstance(candidate, str)
-            and candidate == candidate.strip()
-            and candidate
-        ):
-            limit = 64 if key == "turn_id" else 512
-            if (
-                len(candidate) <= limit
-                and "/" not in candidate
-                and "\\" not in candidate
-            ):
-                result[key] = candidate
+        bounded = _bounded_review_stage_field(key, value.get(key))
+        if bounded is not _INVALID_REVIEW_FIELD:
+            result[key] = bounded
     required = {
         "version",
         "operation",
@@ -321,59 +409,9 @@ def _bounded_review_stage_metadata(
     }
     if not required.issubset(result):
         return None
-    if operation in {"new_review", "scope_change"}:
-        candidate = result.get("candidate_thread_id")
-        if not isinstance(candidate, str) or not candidate:
-            return None
-        if candidate != _candidate_thread_id(
-            result["stable_thread_id"], result["turn_id"]
-        ):
-            return None
-    elif result.get("candidate_thread_id") is not None:
+    if not _review_stage_candidate_valid(result, operation):
         return None
-    if settlement_state in {"settling", "promoting", "promoted"}:
-        if settlement_state != "promoted" and not {
-            "settlement_claim_token",
-            "settlement_claimed_at",
-        }.issubset(result):
-            return None
-        if settlement_state in {"settling", "promoting"} and not {
-            "settlement_fence",
-            "settlement_ledger_version",
-            "settlement_base_context_version",
-        }.issubset(result):
-            return None
-        if settlement_state == "promoted" and (
-            "settlement_fence" not in result
-            or "settlement_ledger_version" not in result
-            or "settlement_base_context_version" not in result
-        ):
-            return None
-        if settlement_state == "promoted" and (
-            "settlement_claim_token" in result
-            or "settlement_claimed_at" in result
-        ):
-            return None
-        if settlement_state in {"settling", "promoting"}:
-            try:
-                datetime.fromisoformat(result["settlement_claimed_at"])
-            except (TypeError, ValueError):
-                return None
-    elif (
-        "settlement_claim_token" in result or "settlement_claimed_at" in result
-    ):
-        return None
-    if settlement_state in {"pending", "rejected", "failed"} and any(
-        field in result
-        for field in (
-            "settlement_fence",
-            "settlement_ledger_version",
-            "settlement_base_context_version",
-        )
-    ):
-        # These fields are only emitted after a durable claim.  A pending
-        # marker with them has been partially mutated and must be retried via
-        # the store CAS, not treated as a fresh staged turn.
+    if not _review_settlement_fields_valid(result, settlement_state):
         return None
     return result
 
