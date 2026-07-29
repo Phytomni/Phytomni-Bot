@@ -5,9 +5,10 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 from collections.abc import Callable, Mapping, Sequence
-from typing import Literal, NamedTuple, Protocol, cast
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, Protocol, cast
 from uuid import UUID
 
 from ...config.defaults import ApiConfig
@@ -22,6 +23,9 @@ from .models import (
     PerAgentMemory,
     RoleTaggedTurn,
 )
+
+if TYPE_CHECKING:
+    from .projection_types import ProjectionBuilder, RebuildBuilder
 
 
 class TokenEstimator(Protocol):
@@ -75,6 +79,66 @@ class _RebuildRequest(NamedTuple):
     ledger_cursor: int
     ledger_version: str
     observed_mode: Literal["instant", "expert"]
+
+
+def _keyword_facade(
+    builder: Callable[[Mapping[str, object]], Any],
+    signature: inspect.Signature,
+    name: str,
+    doc: str,
+) -> Callable[..., Any]:
+    """Build a callable with a stable explicit keyword-only signature."""
+    def invoke(**kwargs: object) -> Any:
+        return builder(kwargs)
+
+    setattr(invoke, "__signature__", signature)
+    invoke.__name__ = name
+    invoke.__doc__ = doc
+    return invoke
+
+
+def _keyword_parameter(
+    name: str,
+    annotation: object,
+    default: object = inspect.Parameter.empty,
+) -> inspect.Parameter:
+    return inspect.Parameter(
+        name,
+        kind=inspect.Parameter.KEYWORD_ONLY,
+        annotation=annotation,
+        default=default,
+    )
+
+
+_PROJECTION_SIGNATURE = inspect.Signature(
+    parameters=[
+        _keyword_parameter("conversation_key", UUID),
+        _keyword_parameter("current_query", str),
+        _keyword_parameter("locale", SupportedLocale),
+        _keyword_parameter("selected_agent_id", str),
+        _keyword_parameter("context", BusinessContext),
+        _keyword_parameter("authorized_artifacts", Sequence[ArtifactRefV1]),
+        _keyword_parameter("api_config", ApiConfig),
+        _keyword_parameter("estimator", TokenEstimator | None, None),
+        _keyword_parameter("exclude_current_user_turn", bool, False),
+    ],
+    return_annotation=ContextProjection,
+)
+_REBUILD_SIGNATURE = inspect.Signature(
+    parameters=[
+        _keyword_parameter("conversation_key", UUID),
+        _keyword_parameter(
+            "ledger_entries", Sequence[Mapping[str, object]]
+        ),
+        _keyword_parameter("artifact_refs", Sequence[ArtifactRefV1]),
+        _keyword_parameter("ledger_cursor", int),
+        _keyword_parameter("ledger_version", str),
+        _keyword_parameter(
+            "observed_mode", Literal["instant", "expert"]
+        ),
+    ],
+    return_annotation=BusinessContext,
+)
 
 
 def _projection_budget_payload(
@@ -292,11 +356,6 @@ def _projection_request(values: Mapping[str, object]) -> _ProjectionRequest:
     )
 
 
-def build_context_projection(**kwargs: object) -> ContextProjection:
-    """Admit context sections in the documented priority order."""
-    return _build_context_projection(_projection_request(kwargs))
-
-
 def _build_context_projection(request: _ProjectionRequest) -> ContextProjection:
     """Admit context sections in the documented priority order."""
     estimator = request.estimator or ConservativeTokenEstimator()
@@ -432,6 +491,21 @@ def _build_context_projection(request: _ProjectionRequest) -> ContextProjection:
     return projection
 
 
+def _run_projection(values: Mapping[str, object]) -> ContextProjection:
+    return _build_context_projection(_projection_request(values))
+
+
+if TYPE_CHECKING:
+    build_context_projection: ProjectionBuilder
+else:
+    build_context_projection = _keyword_facade(
+        _run_projection,
+        _PROJECTION_SIGNATURE,
+        "build_context_projection",
+        "Admit context sections in the documented priority order.",
+    )
+
+
 _REBUILD_FIELDS = frozenset(
     {
         "conversation_key",
@@ -442,34 +516,6 @@ _REBUILD_FIELDS = frozenset(
         "observed_mode",
     }
 )
-
-
-def rebuild_business_context(**kwargs: object) -> BusinessContext:
-    """Rebuild semantic context from bounded, ordered ledger input."""
-    unexpected = set(kwargs) - _REBUILD_FIELDS
-    missing = _REBUILD_FIELDS - set(kwargs)
-    if unexpected:
-        names = ", ".join(sorted(unexpected))
-        raise TypeError(f"unexpected rebuild fields: {names}")
-    if missing:
-        names = ", ".join(sorted(missing))
-        raise TypeError(f"missing rebuild fields: {names}")
-    return _rebuild_business_context(
-        _RebuildRequest(
-            conversation_key=cast(UUID, kwargs["conversation_key"]),
-            ledger_entries=cast(
-                Sequence[Mapping[str, object]], kwargs["ledger_entries"]
-            ),
-            artifact_refs=cast(
-                Sequence[ArtifactRefV1], kwargs["artifact_refs"]
-            ),
-            ledger_cursor=cast(int, kwargs["ledger_cursor"]),
-            ledger_version=cast(str, kwargs["ledger_version"]),
-            observed_mode=cast(
-                Literal["instant", "expert"], kwargs["observed_mode"]
-            ),
-        )
-    )
 
 
 def _rebuild_business_context(request: _RebuildRequest) -> BusinessContext:
@@ -519,6 +565,45 @@ def _rebuild_business_context(request: _RebuildRequest) -> BusinessContext:
                 "BriefGeneAgent",
             )
         },
+    )
+
+
+def _rebuild_request(values: Mapping[str, object]) -> _RebuildRequest:
+    """Validate keyword-compatible reconstruction arguments."""
+    unexpected = set(values) - _REBUILD_FIELDS
+    missing = _REBUILD_FIELDS - set(values)
+    if unexpected:
+        names = ", ".join(sorted(unexpected))
+        raise TypeError(f"unexpected rebuild fields: {names}")
+    if missing:
+        names = ", ".join(sorted(missing))
+        raise TypeError(f"missing rebuild fields: {names}")
+    return _RebuildRequest(
+        conversation_key=cast(UUID, values["conversation_key"]),
+        ledger_entries=cast(
+            Sequence[Mapping[str, object]], values["ledger_entries"]
+        ),
+        artifact_refs=cast(Sequence[ArtifactRefV1], values["artifact_refs"]),
+        ledger_cursor=cast(int, values["ledger_cursor"]),
+        ledger_version=cast(str, values["ledger_version"]),
+        observed_mode=cast(
+            Literal["instant", "expert"], values["observed_mode"]
+        ),
+    )
+
+
+def _run_rebuild(values: Mapping[str, object]) -> BusinessContext:
+    return _rebuild_business_context(_rebuild_request(values))
+
+
+if TYPE_CHECKING:
+    rebuild_business_context: RebuildBuilder
+else:
+    rebuild_business_context = _keyword_facade(
+        _run_rebuild,
+        _REBUILD_SIGNATURE,
+        "rebuild_business_context",
+        "Rebuild semantic context from bounded, ordered ledger input.",
     )
 
 
