@@ -311,6 +311,18 @@ class _ReviewClaimMarkerRequest:
 
 
 @dataclass(frozen=True)
+class _ReviewMarkerWriteRequest:
+    """Inputs for one private Review marker write."""
+
+    connection: sqlite3.Connection
+    key: str
+    turn_id: str
+    decoded: dict[str, Any]
+    marker: Mapping[str, Any]
+    now: str
+
+
+@dataclass(frozen=True)
 class _ReviewClaimLookupRequest:
     """Inputs for precondition checks before a Review marker claim."""
 
@@ -921,20 +933,15 @@ class ConversationContextStore:
     @classmethod
     def _write_review_marker(
         cls,
-        connection: sqlite3.Connection,
-        key: str,
-        turn_id: str,
-        decoded: dict[str, Any],
-        marker: Mapping[str, Any],
-        now: str,
+        request: _ReviewMarkerWriteRequest,
     ) -> bool:
-        delta_json = cls._with_review_record(decoded, marker)
+        delta_json = cls._with_review_record(request.decoded, request.marker)
         if delta_json is None:
             return False
-        connection.execute(
+        request.connection.execute(
             "UPDATE conversation_turns SET delta_json = ?, updated_at = ? "
             "WHERE conversation_key = ? AND turn_id = ?",
-            (delta_json, now, key, turn_id),
+            (delta_json, request.now, request.key, request.turn_id),
         )
         return True
 
@@ -1140,12 +1147,14 @@ class ConversationContextStore:
             }
         )
         if not self._write_review_marker(
-            request.connection,
-            request.identity.key,
-            request.identity.turn_id,
-            request.decoded,
-            updated,
-            request.timing.now_value,
+            _ReviewMarkerWriteRequest(
+                connection=request.connection,
+                key=request.identity.key,
+                turn_id=request.identity.turn_id,
+                decoded=request.decoded,
+                marker=updated,
+                now=request.timing.now_value,
+            )
         ):
             return ReviewSettlementClaim("invalid")
         return ReviewSettlementClaim("claimed", claim_token, next_fence)
@@ -1180,12 +1189,14 @@ class ConversationContextStore:
             }
         )
         if not self._write_review_marker(
-            request.connection,
-            request.identity.key,
-            request.identity.turn_id,
-            request.decoded,
-            updated,
-            request.timing.now_value,
+            _ReviewMarkerWriteRequest(
+                connection=request.connection,
+                key=request.identity.key,
+                turn_id=request.identity.turn_id,
+                decoded=request.decoded,
+                marker=updated,
+                now=request.timing.now_value,
+            )
         ):
             return ReviewSettlementClaim("invalid")
         return ReviewSettlementClaim("claimed", claim_token, fence)
@@ -1371,7 +1382,14 @@ class ConversationContextStore:
             updated = dict(marker)
             updated["settlement_state"] = "promoting"
             if not self._write_review_marker(
-                connection, key, turn_id, decoded, updated, _now()
+                _ReviewMarkerWriteRequest(
+                    connection=connection,
+                    key=key,
+                    turn_id=turn_id,
+                    decoded=decoded,
+                    marker=updated,
+                    now=_now(),
+                )
             ):
                 return ReviewSettlementClaim("invalid")
             return ReviewSettlementClaim("promoting", claim_token, fence_token)
@@ -1455,12 +1473,14 @@ class ConversationContextStore:
         if request.report_revision is not None:
             updated["report_revision"] = request.report_revision
         return self._write_review_marker(
-            request.connection,
-            request.identity.key,
-            request.identity.turn_id,
-            decoded,
-            updated,
-            _now(),
+            _ReviewMarkerWriteRequest(
+                connection=request.connection,
+                key=request.identity.key,
+                turn_id=request.identity.turn_id,
+                decoded=decoded,
+                marker=updated,
+                now=_now(),
+            )
         )
 
     def finalize_review_settlement(
@@ -1540,7 +1560,14 @@ class ConversationContextStore:
             marker.pop("settlement_claim_token", None)
             marker.pop("settlement_claimed_at", None)
             return self._write_review_marker(
-                connection, key, turn_id, decoded, marker, _now()
+                _ReviewMarkerWriteRequest(
+                    connection=connection,
+                    key=key,
+                    turn_id=turn_id,
+                    decoded=decoded,
+                    marker=marker,
+                    now=_now(),
+                )
             )
 
     def update_review_settlement_metadata(
@@ -1564,7 +1591,14 @@ class ConversationContextStore:
             decoded, marker = record
             marker.update(dict(updates))
             return self._write_review_marker(
-                connection, key, turn_id, decoded, marker, _now()
+                _ReviewMarkerWriteRequest(
+                    connection=connection,
+                    key=key,
+                    turn_id=turn_id,
+                    decoded=decoded,
+                    marker=marker,
+                    now=_now(),
+                )
             )
 
     def commit_staged_turn(
@@ -1755,12 +1789,14 @@ class ConversationContextStore:
                     failed_marker.pop("settlement_claim_token", None)
                     failed_marker.pop("settlement_claimed_at", None)
                     self._write_review_marker(
-                        connection,
-                        key,
-                        turn_id,
-                        decoded,
-                        failed_marker,
-                        now,
+                        _ReviewMarkerWriteRequest(
+                            connection=connection,
+                            key=key,
+                            turn_id=turn_id,
+                            decoded=decoded,
+                            marker=failed_marker,
+                            now=now,
+                        )
                     )
             connection.execute(
                 "UPDATE conversation_review_checkpoint_cleanup SET "
