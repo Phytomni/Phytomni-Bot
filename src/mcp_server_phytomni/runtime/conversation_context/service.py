@@ -5,11 +5,8 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
 from datetime import datetime
-from enum import StrEnum
 from typing import Any
 from weakref import WeakValueDictionary
 
@@ -27,63 +24,36 @@ from .models import (
 from .projection import (
     build_context_projection,
     rebuild_business_context,
-    validate_context_delta,
+)
+from .service_execution import (
+    _SyncTurnRequest,
+    delegate_async_turn,
+    finish_sync_turn,
+    invoke_sync_turn,
+    select_agent_for_turn,
+)
+from .service_types import (
+    AgentOutcome,
+    AgentSelection,
+    ContextStageMetadata,
+    PreparedTurn,
+    PrepareStatus,
 )
 from .store import (
     ContextVersionConflictError,
     ConversationContextStore,
-    StagedTurn,
     StoredBusinessContext,
     StoredTurn,
 )
 
-
-class PrepareStatus(StrEnum):
-    READY = "ready"
-    RETURN_STAGED = "return_staged"
-    RETURN_COMMITTED = "return_committed"
-    REBUILD_REQUIRED = "rebuild_required"
-    IN_PROGRESS = "in_progress"
-
-
-@dataclass(frozen=True)
-class AgentSelection:
-    selected_agent_id: str
-    reason_code: str
-
-
-@dataclass(frozen=True)
-class AgentOutcome:
-    result: dict[str, Any]
-    # Kept for caller compatibility; V1 does not persist display prose.
-    assistant_summary: str | None = None
-    context_delta: ContextDelta | None = None
-    context_delta_error: bool = False
-    status: str = "succeeded"
-    private_stage_metadata: Mapping[str, Any] | None = None
-
-
-@dataclass(frozen=True)
-class ContextStageMetadata:
-    selected_agent_id: str
-    route_source: str
-    route_reason_code: str
-    base_business_context_version: int
-    proposed_business_context_version: int
-    last_applied_ledger_cursor: int
-    context_truncated: bool
-    context_rebuilt: bool
-    context_degraded: bool
-
-
-@dataclass(frozen=True)
-class PreparedTurn:
-    status: PrepareStatus
-    context: BusinessContext | None = None
-    projection: ContextProjection | None = None
-    stored_turn: StoredTurn | None = None
-    result: dict[str, Any] | None = None
-    stage: ContextStageMetadata | None = None
+for _service_type in (
+    AgentOutcome,
+    AgentSelection,
+    ContextStageMetadata,
+    PrepareStatus,
+    PreparedTurn,
+):
+    _service_type.__module__ = __name__
 
 
 class SettlementMismatchError(RuntimeError):
@@ -120,97 +90,6 @@ _REVIEW_STAGE_FIELDS = frozenset(
         "settlement_base_context_version",
     }
 )
-_DISPLAY_OUTPUT_KEYS = frozenset(
-    {
-        "answer",
-        "content",
-        "full_report",
-        "markdown",
-        "output",
-        "report",
-        "table",
-        "tabular",
-    }
-)
-
-
-def _display_output_strings(value: object) -> tuple[str, ...]:
-    """Collect values that are exposed as an agent's visible output."""
-    outputs: list[str] = []
-
-    def visit(node: object) -> None:
-        if isinstance(node, Mapping):
-            for key, nested in node.items():
-                if str(key) in _DISPLAY_OUTPUT_KEYS:
-                    if isinstance(nested, str):
-                        outputs.append(nested)
-                    else:
-                        outputs.append(
-                            json.dumps(
-                                nested,
-                                ensure_ascii=False,
-                                sort_keys=True,
-                                default=str,
-                            )
-                        )
-                visit(nested)
-        elif isinstance(node, (list, tuple)):
-            for nested in node:
-                visit(nested)
-
-    visit(value)
-    return tuple(item.strip() for item in outputs if item.strip())
-
-
-def _without_display_output(
-    value: str | None, display_outputs: tuple[str, ...]
-) -> str | None:
-    """Drop free-form delta text that duplicates visible agent output."""
-    if value is None:
-        return None
-    candidate = value.strip()
-    if candidate and any(
-        candidate in output or output in candidate
-        for output in display_outputs
-    ):
-        return None
-    return value
-
-
-def _metadata_only_delta(
-    delta: ContextDelta, result: Mapping[str, Any]
-) -> ContextDelta:
-    """Prevent visible answer/report/table text from entering Bot context."""
-    display_outputs = _display_output_strings(result)
-    if not display_outputs:
-        return delta
-
-    memory = delta.agent_memory_update
-    if memory is not None:
-        memory = memory.model_copy(
-            update={
-                "summary": _without_display_output(
-                    memory.summary, display_outputs
-                )
-                or ""
-            }
-        )
-    return delta.model_copy(
-        update={
-            "summary_update": _without_display_output(
-                delta.summary_update, display_outputs
-            ),
-            "open_question_updates": [
-                question
-                for question in delta.open_question_updates
-                if _without_display_output(question, display_outputs)
-                is not None
-            ],
-            "agent_memory_update": memory,
-        }
-    )
-
-
 _REVIEW_OPERATIONS = frozenset(
     {"new_review", "follow_up", "local_revision", "scope_change"}
 )
@@ -274,9 +153,7 @@ def _bounded_review_stage_field(key: str, candidate: object) -> object:
     elif key in {"settlement_claim_token", "settlement_claimed_at"}:
         bounded = _bounded_text(candidate, limit=64)
     elif key == "settlement_fence":
-        bounded = _bounded_integer(
-            candidate, minimum=1, maximum=2**63 - 1
-        )
+        bounded = _bounded_integer(candidate, minimum=1, maximum=2**63 - 1)
     elif key == "settlement_base_context_version":
         bounded = _bounded_integer(candidate, minimum=0)
     elif key == "settlement_ledger_version":
@@ -284,16 +161,19 @@ def _bounded_review_stage_field(key: str, candidate: object) -> object:
     elif key == "candidate_thread_id":
         if candidate is None:
             return None
-        bounded = _bounded_text(
-            candidate, limit=512, reject_path_chars=True
-        )
+        bounded = _bounded_text(candidate, limit=512, reject_path_chars=True)
     else:
         limit = 64 if key == "turn_id" else 512
         bounded = _bounded_text(
             candidate,
             limit=limit,
             reject_path_chars=key
-            in {"operation", "stable_thread_id", "turn_id", "settlement_state"},
+            in {
+                "operation",
+                "stable_thread_id",
+                "turn_id",
+                "settlement_state",
+            },
         )
     return _INVALID_REVIEW_FIELD if bounded is None else bounded
 
@@ -451,16 +331,6 @@ AsyncDelegator = Callable[
     [str, ConversationEnvelopeV1], Awaitable[dict[str, object]]
 ]
 
-_SYNC_CONTEXT_AGENTS = frozenset(
-    {
-        "ChatAgent",
-        "KnowledgeAgent",
-        "DataAgent",
-        "ReviewAgent",
-        "BriefGeneAgent",
-    }
-)
-
 
 class ConversationContextService:
     """Keep transaction work short and serialize only one conversation."""
@@ -515,37 +385,49 @@ class ConversationContextService:
         envelope: ConversationEnvelopeV1,
         stored: StoredBusinessContext | None,
     ) -> tuple[BusinessContext | None, bool, PrepareStatus | None]:
+        context: BusinessContext | None = None
+        rebuilt = False
+        failure: PrepareStatus | None = None
         if stored is None:
-            if envelope.base_business_context_version != 0:
-                return None, False, PrepareStatus.REBUILD_REQUIRED
-            return self._rebuild_context(envelope), True, None
-        if stored.state != "active":
-            return None, False, PrepareStatus.REBUILD_REQUIRED
-        if stored.context_version != envelope.base_business_context_version:
-            return None, False, PrepareStatus.REBUILD_REQUIRED
-        if envelope.operation == "rebuild":
-            return self._rebuild_context(envelope), True, None
-        if stored.schema_version != 1:
-            return None, False, PrepareStatus.REBUILD_REQUIRED
-        if stored.observed_mode != envelope.mode:
-            return None, False, PrepareStatus.REBUILD_REQUIRED
-        if envelope.operation == "replace":
+            if envelope.base_business_context_version == 0:
+                context = self._rebuild_context(envelope)
+                rebuilt = True
+            else:
+                failure = PrepareStatus.REBUILD_REQUIRED
+        elif (
+            stored.state != "active"
+            or stored.context_version != envelope.base_business_context_version
+        ):
+            failure = PrepareStatus.REBUILD_REQUIRED
+        elif envelope.operation == "rebuild":
+            context = self._rebuild_context(envelope)
+            rebuilt = True
+        elif (
+            stored.schema_version != 1
+            or stored.observed_mode != envelope.mode
+            or envelope.operation == "replace"
+            or envelope.ledger_cursor != stored.ledger_cursor + 1
+        ):
             # A replacement can invalidate every semantic fact retained at its
             # cursor and after it, so Go must resend an explicit rebuild.
-            return None, False, PrepareStatus.REBUILD_REQUIRED
-        if envelope.ledger_cursor != stored.ledger_cursor + 1:
-            return None, False, PrepareStatus.REBUILD_REQUIRED
-        try:
-            context = BusinessContext.model_validate(stored.context)
-        except ValueError:
-            return None, False, PrepareStatus.REBUILD_REQUIRED
+            failure = PrepareStatus.REBUILD_REQUIRED
+        else:
+            try:
+                context = BusinessContext.model_validate(stored.context)
+            except ValueError:
+                failure = PrepareStatus.REBUILD_REQUIRED
         if (
-            context.version != stored.context_version
-            or context.last_applied_ledger_cursor != stored.ledger_cursor
-            or context.last_applied_ledger_version != stored.ledger_version
+            context is not None
+            and stored is not None
+            and (
+                context.version != stored.context_version
+                or context.last_applied_ledger_cursor != stored.ledger_cursor
+                or context.last_applied_ledger_version != stored.ledger_version
+            )
         ):
-            return None, False, PrepareStatus.REBUILD_REQUIRED
-        return context, False, None
+            failure = PrepareStatus.REBUILD_REQUIRED
+            context = None
+        return context, rebuilt, failure
 
     def _matches_duplicate(
         self, turn: StoredTurn, envelope: ConversationEnvelopeV1
@@ -666,37 +548,19 @@ class ConversationContextService:
             )
             context = prepared.context
             rebuilt = prepared.context.version == 0
-            if envelope.mode == "instant":
-                selection = AgentSelection("ChatAgent", "INSTANT_LOCK")
-                route_source = "instant_lock"
-            elif envelope.requested_agent_id is not None:
-                selection = AgentSelection(
-                    envelope.requested_agent_id, "EXPLICIT_SELECTION"
-                )
-                route_source = "explicit_selection"
-            else:
-                selection = await self.router(
-                    envelope.current_message.content,
-                    tuple(envelope.allowed_agent_ids),
-                    context,
-                )
-                route_source = "router"
+            selection, route_source = await select_agent_for_turn(
+                self, envelope, context
+            )
             if selection.selected_agent_id not in envelope.allowed_agent_ids:
                 self.store.mark_turn_failed(key, envelope.turn_id)
                 raise ValueError(
                     "selected agent is outside the envelope allowlist"
                 )
-            if selection.selected_agent_id not in _SYNC_CONTEXT_AGENTS:
-                try:
-                    result = await self.delegate_async(
-                        selection.selected_agent_id, envelope
-                    )
-                except BaseException:
-                    self.store.mark_turn_failed(key, envelope.turn_id)
-                    raise
-                return PreparedTurn(
-                    PrepareStatus.READY, context=context, result=result
-                )
+            delegated = await delegate_async_turn(
+                self, key, envelope, context, selection
+            )
+            if delegated is not None:
+                return delegated
             projection = build_context_projection(
                 conversation_key=envelope.conversation_key,
                 current_query=envelope.current_message.content,
@@ -707,134 +571,23 @@ class ConversationContextService:
                 api_config=self.api_config,
                 exclude_current_user_turn=rebuilt,
             )
-            try:
-                outcome = await self.invoke(
-                    selection.selected_agent_id, envelope, projection
-                )
-            except BaseException:
-                self.store.mark_turn_failed(key, envelope.turn_id)
-                raise
-            if outcome.status != "succeeded":
-                self.store.mark_turn_failed(key, envelope.turn_id)
-                return PreparedTurn(
-                    PrepareStatus.IN_PROGRESS, stored_turn=prepared.stored_turn
-                )
-            is_review = selection.selected_agent_id == "ReviewAgent"
-            review_metadata: dict[str, Any] | None = None
-            if is_review:
-                if (
-                    outcome.context_delta_error
-                    or outcome.context_delta is None
-                    or outcome.private_stage_metadata is None
-                ):
-                    self.store.mark_turn_failed(key, envelope.turn_id)
-                    return PreparedTurn(
-                        PrepareStatus.IN_PROGRESS,
-                        stored_turn=prepared.stored_turn,
-                    )
-                review_metadata = _bounded_review_stage_metadata(
-                    outcome.private_stage_metadata
-                )
-                if (
-                    review_metadata is None
-                    or review_metadata["stable_thread_id"]
-                    != projection.agent_thread_id
-                    or review_metadata["turn_id"] != envelope.turn_id
-                ):
-                    self.store.mark_turn_failed(key, envelope.turn_id)
-                    return PreparedTurn(
-                        PrepareStatus.IN_PROGRESS,
-                        stored_turn=prepared.stored_turn,
-                    )
-            degraded = (
-                outcome.context_delta_error or outcome.context_delta is None
+            outcome = await invoke_sync_turn(
+                self, key, envelope, selection, projection
             )
-            delta = ContextDelta() if degraded else outcome.context_delta
-            assert delta is not None
-            if not degraded:
-                delta = _metadata_only_delta(delta, outcome.result)
-                try:
-                    validate_context_delta(
-                        delta,
-                        conversation_key=envelope.conversation_key,
-                        selected_agent_id=selection.selected_agent_id,
-                        authorized_artifact_ids={
-                            item.artifact_id for item in envelope.artifact_refs
-                        },
-                    )
-                except ValueError:
-                    if is_review:
-                        self.store.mark_turn_failed(key, envelope.turn_id)
-                        return PreparedTurn(
-                            PrepareStatus.IN_PROGRESS,
-                            stored_turn=prepared.stored_turn,
-                        )
-                    degraded = True
-                    delta = ContextDelta()
-            proposed = self.advance_context(
-                context,
-                envelope,
-                delta,
-                add_current_user_turn=not rebuilt,
-            )
-            stage = ContextStageMetadata(
-                selected_agent_id=selection.selected_agent_id,
-                route_source=route_source,
-                route_reason_code=selection.reason_code,
-                base_business_context_version=(
-                    envelope.base_business_context_version
-                ),
-                proposed_business_context_version=(
-                    envelope.base_business_context_version + 1
-                ),
-                last_applied_ledger_cursor=envelope.ledger_cursor,
-                context_truncated=projection.context_truncated,
-                context_rebuilt=rebuilt,
-                context_degraded=degraded,
-            )
-            stage_metadata: dict[str, Any] = {
-                "selected_agent_id": stage.selected_agent_id,
-                "route_source": stage.route_source,
-                "route_reason_code": stage.route_reason_code,
-                "base_business_context_version": (
-                    stage.base_business_context_version
-                ),
-                "proposed_business_context_version": (
-                    stage.proposed_business_context_version
-                ),
-                "last_applied_ledger_cursor": stage.last_applied_ledger_cursor,
-                "context_truncated": stage.context_truncated,
-                "context_rebuilt": stage.context_rebuilt,
-                "context_degraded": stage.context_degraded,
-            }
-            if review_metadata is not None:
-                stage_metadata[_PRIVATE_REVIEW_STAGE_KEY] = review_metadata
-            stored = self.store.stage_turn(
-                key,
-                envelope.turn_id,
-                StagedTurn(
-                    operation=envelope.operation,
-                    base_context_version=(
-                        envelope.base_business_context_version
-                    ),
-                    selected_agent_id=selection.selected_agent_id,
+            return await finish_sync_turn(
+                self,
+                _SyncTurnRequest(
+                    key=key,
+                    envelope=envelope,
+                    context=context,
+                    rebuilt=rebuilt,
+                    selection=selection,
                     route_source=route_source,
-                    result=outcome.result,
-                    delta=proposed.model_dump(mode="json"),
-                    ledger_version=envelope.ledger_version,
-                    schema_version=proposed.schema_version,
-                    ledger_cursor=envelope.ledger_cursor,
-                    observed_mode=envelope.mode,
-                    stage_metadata=stage_metadata,
+                    projection=projection,
+                    prepared_turn=prepared,
+                    outcome=outcome,
                 ),
-            )
-            return PreparedTurn(
-                PrepareStatus.RETURN_STAGED,
-                context=proposed,
-                projection=projection,
-                stored_turn=stored,
-                result=outcome.result,
-                stage=stage,
+                bounded_metadata=_bounded_review_stage_metadata,
             )
 
     @staticmethod
