@@ -786,6 +786,27 @@ class ConversationContextStore:
             )
         )
 
+    @staticmethod
+    def _staged_turn_matches(
+        row: sqlite3.Row | tuple[Any, ...],
+        staged: StagedTurn,
+        result_json: str,
+        delta_json: str,
+    ) -> bool:
+        """Check idempotent staging fields in their existing order."""
+        return all(
+            value == expected
+            for value, expected in (
+                (row[2], staged.operation),
+                (row[3], staged.base_context_version),
+                (row[5], staged.selected_agent_id),
+                (row[6], staged.route_source),
+                (row[7], result_json),
+                (row[8], delta_json),
+                (row[9], staged.ledger_version),
+            )
+        )
+
     def stage_turn(
         self, key: str, turn_id: str, staged: StagedTurn
     ) -> StoredTurn:
@@ -808,14 +829,8 @@ class ConversationContextStore:
             if row is None:
                 raise KeyError((key, turn_id))
             if row[4] in {"staged", "committed"}:
-                if (
-                    row[2] != staged.operation
-                    or row[3] != staged.base_context_version
-                    or row[5] != staged.selected_agent_id
-                    or row[6] != staged.route_source
-                    or row[7] != result_json
-                    or row[8] != delta_json
-                    or row[9] != staged.ledger_version
+                if not self._staged_turn_matches(
+                    row, staged, result_json, delta_json
                 ):
                     raise StagedTurnConflictError((key, turn_id))
                 marker = staged.stage_metadata.get("_review_settlement")
