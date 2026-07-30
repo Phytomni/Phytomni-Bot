@@ -739,6 +739,21 @@ def test_native_run_facade_preserves_signature_and_module_identity() -> None:
     }
 
 
+def test_native_run_facade_binds_arguments_before_returning_coroutine() -> None:
+    """Keep the old async facade's immediate argument errors."""
+    invoke = getattr(api_app_module, "_invoke_agent_run")
+    with pytest.raises(TypeError):
+        invoke(arguments={})
+    with pytest.raises(TypeError):
+        invoke(agent="chat", arguments={}, unexpected=True)
+    with pytest.raises(TypeError):
+        invoke("chat", {})
+
+    coroutine = invoke(agent="chat", arguments={})
+    assert inspect.iscoroutine(coroutine)
+    coroutine.close()
+
+
 def test_native_run_preflight_uses_app_compatibility_seams(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

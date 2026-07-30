@@ -501,9 +501,19 @@ async def _invoke_prepared_agent_run(
         raise safe_error from exc
 
 
-async def _invoke_agent_run(**kwargs: Any) -> tuple[dict[str, Any], int]:
-    """Dispatch one native run through the shared lifecycle contract."""
-    return await _invoke_agent_run_request(kwargs)
+def _invoke_agent_run(**kwargs: Any) -> Any:
+    """Validate and dispatch one native run through the lifecycle contract.
+
+    The historical implementation was an ``async def`` with eight explicit
+    keyword-only parameters.  Python performed that call-time binding before
+    creating its coroutine, so the compatibility facade must do the same
+    even though the implementation is now kept behind a low-complexity
+    request mapping.  ``Signature.bind`` also keeps unknown and missing
+    arguments from being silently accepted by the ``**kwargs`` facade.
+    """
+    bound = _INVOKE_AGENT_RUN_SIGNATURE.bind(**kwargs)
+    bound.apply_defaults()
+    return _invoke_agent_run_request(bound.arguments)
 
 
 _INVOKE_AGENT_RUN_ANNOTATIONS = {
