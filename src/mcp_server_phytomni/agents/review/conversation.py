@@ -186,6 +186,15 @@ class _RestoredReviewSettlement:
     report_revision: int
 
 
+@dataclass(frozen=True, slots=True)
+class _RestoredReviewCheckpoint:
+    """Checkpoint values loaded during restart reconstruction."""
+
+    state: object
+    snapshot: ReviewCheckpointSnapshot | None
+    document: ReviewReportDocument | None
+
+
 ChatSeam = Callable[[str], Awaitable[Mapping[str, Any] | str | None]]
 
 
@@ -1196,6 +1205,57 @@ def _parse_review_settlement_metadata(
     )
 
 
+async def _load_restored_stable_checkpoint(
+    agent: Any,
+    operation: ReviewConversationOperation,
+    stable_thread_id: str,
+) -> _RestoredReviewCheckpoint:
+    """Load and validate the active checkpoint before candidate restoration."""
+    state = await _load_review_checkpoint_state(agent, stable_thread_id)
+    snapshot = extract_review_checkpoint(state)
+    document = extract_review_report_document(state)
+    if (
+        operation
+        in {
+            ReviewConversationOperation.FOLLOW_UP,
+            ReviewConversationOperation.LOCAL_REVISION,
+            ReviewConversationOperation.SCOPE_CHANGE,
+        }
+        and snapshot is None
+    ):
+        raise ReviewClarificationError(
+            "The active Review checkpoint is unavailable."
+        )
+    if operation is not ReviewConversationOperation.NEW_REVIEW and not (
+        _usable_report_document(document)
+    ):
+        raise ReviewClarificationError(
+            "The active Review report document is unavailable."
+        )
+    return _RestoredReviewCheckpoint(state, snapshot, document)
+
+
+async def _load_restored_candidate_checkpoint(
+    agent: Any,
+    candidate_thread_id: str,
+) -> _RestoredReviewCheckpoint:
+    """Load and validate the isolated candidate before promotion."""
+    state = await _load_review_checkpoint_state(agent, candidate_thread_id)
+    values = _state_values(state)
+    snapshot = extract_review_checkpoint(state)
+    document = extract_review_report_document(state)
+    if (
+        not values
+        or snapshot is None
+        or document is None
+        or not _usable_report_document(document)
+    ):
+        raise ReviewClarificationError(
+            "The Review candidate checkpoint is not ready."
+        )
+    return _RestoredReviewCheckpoint(state, snapshot, document)
+
+
 class ReviewConversationAdapter:
     """Prepare bounded Review turns and produce bounded context deltas."""
 
@@ -1534,53 +1594,20 @@ class ReviewConversationAdapter:
         self._settled = False
         self._candidate_discarded = False
         self._operation_successful = True
-        stable_state = await _load_review_checkpoint_state(
-            agent, self._stable_thread_id
+        stable_checkpoint = await _load_restored_stable_checkpoint(
+            agent, restored.operation, self._stable_thread_id
         )
-        stable_snapshot = extract_review_checkpoint(stable_state)
-        stable_document = extract_review_report_document(stable_state)
-        if (
-            restored.operation
-            in {
-                ReviewConversationOperation.FOLLOW_UP,
-                ReviewConversationOperation.LOCAL_REVISION,
-                ReviewConversationOperation.SCOPE_CHANGE,
-            }
-            and stable_snapshot is None
-        ):
-            raise ReviewClarificationError(
-                "The active Review checkpoint is unavailable."
-            )
-        if restored.operation is not ReviewConversationOperation.NEW_REVIEW and not (
-            _usable_report_document(stable_document)
-        ):
-            raise ReviewClarificationError(
-                "The active Review report document is unavailable."
-            )
-        self._active_snapshot = stable_snapshot
-        self._report_document = stable_document
-        candidate_state: object | None = None
+        self._active_snapshot = stable_checkpoint.snapshot
+        self._report_document = stable_checkpoint.document
+        candidate_checkpoint: _RestoredReviewCheckpoint | None = None
         if restored.candidate_thread_id is not None:
-            candidate_state = await _load_review_checkpoint_state(
+            candidate_checkpoint = await _load_restored_candidate_checkpoint(
                 agent, restored.candidate_thread_id
             )
-            candidate_values = _state_values(candidate_state)
-            candidate_snapshot = extract_review_checkpoint(candidate_state)
-            candidate_document = extract_review_report_document(
-                candidate_state
-            )
-            if (
-                not candidate_values
-                or candidate_snapshot is None
-                or candidate_document is None
-                or not _usable_report_document(candidate_document)
-            ):
-                raise ReviewClarificationError(
-                    "The Review candidate checkpoint is not ready."
-                )
-            self._staged_snapshot = candidate_snapshot
-            self._report_document = candidate_document
-            self._pending_report_text = candidate_document.text
+            self._staged_snapshot = candidate_checkpoint.snapshot
+            self._report_document = candidate_checkpoint.document
+            assert candidate_checkpoint.document is not None
+            self._pending_report_text = candidate_checkpoint.document.text
         projection = ContextProjection.model_construct(
             current_query="settlement",
             intent_kind="follow_up",
@@ -1599,14 +1626,16 @@ class ReviewConversationAdapter:
         self._prepared = _PreparedReviewTurn(
             projection=projection,
             operation=restored.operation,
-            snapshot=stable_snapshot,
+            snapshot=stable_checkpoint.snapshot,
             section=None,
         )
-        if candidate_state is None:
+        if candidate_checkpoint is None:
             self._staged_snapshot = None
             self._pending_report_text = None
         self._ordered_doc_list = _reference_metadata(
-            candidate_state if candidate_state is not None else stable_state
+            candidate_checkpoint.state
+            if candidate_checkpoint is not None
+            else stable_checkpoint.state
         )
         if restored.operation is ReviewConversationOperation.LOCAL_REVISION:
             self._pending_report_text = answer
