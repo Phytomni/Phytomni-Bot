@@ -14,7 +14,7 @@ from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Literal, Self
+from typing import TYPE_CHECKING, Any, Literal, Self
 from uuid import UUID, uuid4
 
 try:
@@ -25,7 +25,25 @@ except ImportError:  # pragma: no cover - the supported runtime is POSIX.
 from ...config.defaults import ApiConfig
 from ..sqlite import sqlite_connection
 from ..task_manager import resolve_tasks_db_path
-from .review_mixin import ConversationContextReviewMixin
+from .review_mixin import (
+    _bounded_claim_parts,
+    _bounded_marker_fields,
+    _claim_datetime,
+    _claim_is_expired,
+    _claim_row_failure,
+    _marker_candidate_is_bounded,
+    _marker_fence,
+    _marker_is_bounded,
+    _marker_operation,
+    _marker_stable_thread_id,
+    _report_revision_is_bounded,
+    _review_context_state,
+    _review_record,
+    _stable_marker_matches_key,
+    _turn_id_is_bounded,
+    _with_review_record,
+    _write_review_marker,
+)
 from .review_support import (
     _REVIEW_SETTLEMENT_CLAIM_TTL,
     _REVIEW_SETTLEMENT_FENCE_LIMIT,
@@ -329,8 +347,29 @@ _REVIEW_MUTATION_LOCKS: dict[str, threading.Lock] = {}
 _REVIEW_MUTATION_LOCKS_GUARD = threading.Lock()
 
 
-class ConversationContextStore(ConversationContextReviewMixin):
+class ConversationContextStore:
     """Persist versioned context and one terminal proposal per turn."""
+
+    if TYPE_CHECKING:
+        _review_context_state = staticmethod(_review_context_state)
+        _review_record = staticmethod(_review_record)
+        _with_review_record = staticmethod(_with_review_record)
+        _claim_datetime = staticmethod(_claim_datetime)
+        _write_review_marker = classmethod(_write_review_marker)
+        _marker_fence = staticmethod(_marker_fence)
+        _marker_operation = staticmethod(_marker_operation)
+        _marker_stable_thread_id = staticmethod(_marker_stable_thread_id)
+        _turn_id_is_bounded = staticmethod(_turn_id_is_bounded)
+        _report_revision_is_bounded = staticmethod(_report_revision_is_bounded)
+        _bounded_marker_fields = classmethod(_bounded_marker_fields)
+        _stable_marker_matches_key = staticmethod(_stable_marker_matches_key)
+        _marker_candidate_is_bounded = staticmethod(
+            _marker_candidate_is_bounded
+        )
+        _marker_is_bounded = classmethod(_marker_is_bounded)
+        _claim_is_expired = staticmethod(_claim_is_expired)
+        _claim_row_failure = _claim_row_failure
+        _bounded_claim_parts = staticmethod(_bounded_claim_parts)
 
     def __init__(self, db_path: str | None = None) -> None:
         self.db_path = db_path or resolve_tasks_db_path()
@@ -1661,6 +1700,84 @@ class ConversationContextStore(ConversationContextReviewMixin):
                 "WHERE conversation_key = ? AND candidate_thread_id = ?",
                 candidates,
             )
+
+
+# Install private marker seams without changing the public store class identity.
+setattr(
+    ConversationContextStore,
+    "_review_context_state",
+    staticmethod(_review_context_state),
+)
+setattr(
+    ConversationContextStore, "_review_record", staticmethod(_review_record)
+)
+setattr(
+    ConversationContextStore,
+    "_with_review_record",
+    staticmethod(_with_review_record),
+)
+setattr(
+    ConversationContextStore,
+    "_claim_datetime",
+    staticmethod(_claim_datetime),
+)
+setattr(
+    ConversationContextStore,
+    "_write_review_marker",
+    classmethod(_write_review_marker),
+)
+setattr(ConversationContextStore, "_marker_fence", staticmethod(_marker_fence))
+setattr(
+    ConversationContextStore,
+    "_marker_operation",
+    staticmethod(_marker_operation),
+)
+setattr(
+    ConversationContextStore,
+    "_marker_stable_thread_id",
+    staticmethod(_marker_stable_thread_id),
+)
+setattr(
+    ConversationContextStore,
+    "_turn_id_is_bounded",
+    staticmethod(_turn_id_is_bounded),
+)
+setattr(
+    ConversationContextStore,
+    "_report_revision_is_bounded",
+    staticmethod(_report_revision_is_bounded),
+)
+setattr(
+    ConversationContextStore,
+    "_bounded_marker_fields",
+    classmethod(_bounded_marker_fields),
+)
+setattr(
+    ConversationContextStore,
+    "_stable_marker_matches_key",
+    staticmethod(_stable_marker_matches_key),
+)
+setattr(
+    ConversationContextStore,
+    "_marker_candidate_is_bounded",
+    staticmethod(_marker_candidate_is_bounded),
+)
+setattr(
+    ConversationContextStore,
+    "_marker_is_bounded",
+    classmethod(_marker_is_bounded),
+)
+setattr(
+    ConversationContextStore,
+    "_claim_is_expired",
+    staticmethod(_claim_is_expired),
+)
+setattr(ConversationContextStore, "_claim_row_failure", _claim_row_failure)
+setattr(
+    ConversationContextStore,
+    "_bounded_claim_parts",
+    staticmethod(_bounded_claim_parts),
+)
 
 
 __all__ = [
