@@ -1428,36 +1428,35 @@ class ReviewConversationAdapter:
             "settlement_state": "pending",
         }
 
-    async def validate_settlement_candidate(self) -> bool:
-        """Verify the current private candidate before context staging."""
-        if not self.settlement_ready or self._agent is None:
+    async def _validate_candidate_settlement(self) -> bool:
+        """Validate and retain a new-review candidate checkpoint."""
+        if self.candidate_thread_id is None:
+            self.mark_failed()
             return False
-        operation = self.operation
-        if operation in {
-            ReviewConversationOperation.NEW_REVIEW,
-            ReviewConversationOperation.SCOPE_CHANGE,
-        }:
-            if self.candidate_thread_id is None:
-                self.mark_failed()
-                return False
-            state = await _load_review_checkpoint_state(
-                self._agent, self.candidate_thread_id
-            )
-            values = _state_values(state)
-            snapshot = extract_review_checkpoint(state)
-            document = extract_review_report_document(state)
-            if (
-                not values
-                or snapshot is None
-                or document is None
-                or not _usable_report_document(document)
-            ):
-                self.mark_failed()
-                return False
-            self._staged_snapshot = snapshot
-            self._report_document = document
-            self._pending_report_text = document.text
-            return True
+        state = await _load_review_checkpoint_state(
+            self._agent, self.candidate_thread_id
+        )
+        values = _state_values(state)
+        snapshot = extract_review_checkpoint(state)
+        document = extract_review_report_document(state)
+        if (
+            not values
+            or snapshot is None
+            or document is None
+            or not _usable_report_document(document)
+        ):
+            self.mark_failed()
+            return False
+        self._staged_snapshot = snapshot
+        self._report_document = document
+        self._pending_report_text = document.text
+        return True
+
+    async def _validate_active_settlement(
+        self,
+        operation: ReviewConversationOperation | None,
+    ) -> bool:
+        """Validate the active checkpoint for follow-up or local revision."""
         if self.stable_thread_id is None:
             self.mark_failed()
             return False
@@ -1475,6 +1474,18 @@ class ReviewConversationAdapter:
             ReviewConversationOperation.FOLLOW_UP,
             ReviewConversationOperation.LOCAL_REVISION,
         }
+
+    async def validate_settlement_candidate(self) -> bool:
+        """Verify the current private candidate before context staging."""
+        if not self.settlement_ready or self._agent is None:
+            return False
+        operation = self.operation
+        if operation in {
+            ReviewConversationOperation.NEW_REVIEW,
+            ReviewConversationOperation.SCOPE_CHANGE,
+        }:
+            return await self._validate_candidate_settlement()
+        return await self._validate_active_settlement(operation)
 
     async def restore_settlement(
         self,
