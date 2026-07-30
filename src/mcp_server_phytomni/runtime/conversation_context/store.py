@@ -321,6 +321,18 @@ class _ReviewClaimLookupRequest:
     expected_base_context_version: int | None
 
 
+@dataclass(frozen=True)
+class _ReviewFinalizeRequest:
+    """Inputs for one validated terminal Review settlement transition."""
+
+    connection: sqlite3.Connection
+    identity: _ReviewClaimIdentity
+    claim_token: str
+    state: Literal["promoted", "rejected", "failed"]
+    report_revision: int | None
+    fence_token: int | None
+
+
 def _json(value: dict[str, Any]) -> str:
     return json.dumps(
         value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
@@ -1390,6 +1402,50 @@ class ConversationContextStore:
             )
         )
 
+    def _finalize_review_settlement_locked(
+        self, request: _ReviewFinalizeRequest
+    ) -> bool:
+        """Persist one terminal Review state inside the open transaction."""
+        row = request.connection.execute(
+            "SELECT delta_json FROM conversation_turns "
+            "WHERE conversation_key = ? AND turn_id = ?",
+            (request.identity.key, request.identity.turn_id),
+        ).fetchone()
+        if row is None:
+            return False
+        record = self._review_record(row[0])
+        if record is None:
+            return False
+        decoded, marker = record
+        current_state = marker.get("settlement_state")
+        if current_state == request.state:
+            return True
+        if current_state in {"promoted", "rejected", "failed"}:
+            return current_state == request.state
+        if (
+            current_state not in {"settling", "promoting"}
+            or marker.get("settlement_claim_token") != request.claim_token
+            or (
+                request.fence_token is not None
+                and marker.get("settlement_fence") != request.fence_token
+            )
+        ):
+            return False
+        updated = dict(marker)
+        updated["settlement_state"] = request.state
+        updated.pop("settlement_claim_token", None)
+        updated.pop("settlement_claimed_at", None)
+        if request.report_revision is not None:
+            updated["report_revision"] = request.report_revision
+        return self._write_review_marker(
+            request.connection,
+            request.identity.key,
+            request.identity.turn_id,
+            decoded,
+            updated,
+            _now(),
+        )
+
     def finalize_review_settlement(
         self,
         key: str,
@@ -1421,39 +1477,15 @@ class ConversationContextStore:
         ):
             return False
         with self._write() as connection:
-            row = connection.execute(
-                "SELECT delta_json FROM conversation_turns "
-                "WHERE conversation_key = ? AND turn_id = ?",
-                (key, turn_id),
-            ).fetchone()
-            if row is None:
-                return False
-            record = self._review_record(row[0])
-            if record is None:
-                return False
-            decoded, marker = record
-            current_state = marker.get("settlement_state")
-            if current_state == state:
-                return True
-            if current_state in {"promoted", "rejected", "failed"}:
-                return current_state == state
-            if (
-                current_state not in {"settling", "promoting"}
-                or marker.get("settlement_claim_token") != claim_token
-                or (
-                    fence_token is not None
-                    and marker.get("settlement_fence") != fence_token
+            return self._finalize_review_settlement_locked(
+                _ReviewFinalizeRequest(
+                    connection=connection,
+                    identity=_ReviewClaimIdentity(key=key, turn_id=turn_id),
+                    claim_token=claim_token,
+                    state=state,
+                    report_revision=report_revision,
+                    fence_token=fence_token,
                 )
-            ):
-                return False
-            updated = dict(marker)
-            updated["settlement_state"] = state
-            updated.pop("settlement_claim_token", None)
-            updated.pop("settlement_claimed_at", None)
-            if report_revision is not None:
-                updated["report_revision"] = report_revision
-            return self._write_review_marker(
-                connection, key, turn_id, decoded, updated, _now()
             )
 
     def mark_review_settlement_failed(
