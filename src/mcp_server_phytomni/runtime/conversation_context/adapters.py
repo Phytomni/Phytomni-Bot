@@ -89,6 +89,30 @@ ReviewSettlementLoader = Callable[
 ]
 
 
+@dataclass(slots=True)
+class _ExecutorBindings:
+    """Request-local callback and Review adapter context variables."""
+
+    sync_invoker: ContextVar[SyncInvoker | None]
+    async_invoker: ContextVar[AsyncInvoker | None]
+    selected_arguments: ContextVar[dict[str, Any] | None]
+    review_adapter: ContextVar[ReviewConversationAdapter | None]
+
+
+@dataclass(slots=True)
+class _ReviewSettlementRuntime:
+    """Locks and bounded in-memory candidates shared by one executor."""
+
+    pending_review_settlements: dict[
+        tuple[str, str], ReviewConversationAdapter
+    ] = field(default_factory=dict)
+    pending_review_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    review_settlement_ack_lock: asyncio.Lock = field(
+        default_factory=asyncio.Lock
+    )
+    max_pending_review_settlements: int = 256
+
+
 async def _acquire_review_mutation_lock(
     store: ConversationContextStore, *, wait_seconds: float = 30.0
 ) -> Any:
@@ -290,24 +314,21 @@ class ConversationContextExecutor:
         self._api_config_factory = api_config_factory
         self._review_settlement_loader = review_settlement_loader
         self._service: ConversationContextService | None = None
-        self._sync_invoker: ContextVar[SyncInvoker | None] = ContextVar(
-            "conversation_context_sync_invoker", default=None
+        self._bindings = _ExecutorBindings(
+            sync_invoker=ContextVar(
+                "conversation_context_sync_invoker", default=None
+            ),
+            async_invoker=ContextVar(
+                "conversation_context_async_invoker", default=None
+            ),
+            selected_arguments=ContextVar(
+                "conversation_context_selected_arguments", default=None
+            ),
+            review_adapter=ContextVar(
+                "conversation_context_review_adapter", default=None
+            ),
         )
-        self._async_invoker: ContextVar[AsyncInvoker | None] = ContextVar(
-            "conversation_context_async_invoker", default=None
-        )
-        self._selected_arguments: ContextVar[dict[str, Any] | None] = (
-            ContextVar("conversation_context_selected_arguments", default=None)
-        )
-        self._review_adapter: ContextVar[ReviewConversationAdapter | None] = (
-            ContextVar("conversation_context_review_adapter", default=None)
-        )
-        self._pending_review_settlements: dict[
-            tuple[str, str], ReviewConversationAdapter
-        ] = {}
-        self._pending_review_lock = asyncio.Lock()
-        self._review_settlement_ack_lock = asyncio.Lock()
-        self._max_pending_review_settlements = 256
+        self._review_settlement = _ReviewSettlementRuntime()
 
     def _service_for_request(self) -> ConversationContextService:
         if self._service is None:
@@ -346,13 +367,17 @@ class ConversationContextExecutor:
         """Retain one successful Review candidate until Go acknowledges it."""
         if not adapter.settlement_ready:
             return
-        async with self._pending_review_lock:
-            if len(self._pending_review_settlements) >= (
-                self._max_pending_review_settlements
+        async with self._review_settlement.pending_review_lock:
+            if len(self._review_settlement.pending_review_settlements) >= (
+                self._review_settlement.max_pending_review_settlements
             ):
-                oldest = next(iter(self._pending_review_settlements))
-                self._pending_review_settlements.pop(oldest, None)
-            self._pending_review_settlements[
+                oldest = next(
+                    iter(self._review_settlement.pending_review_settlements)
+                )
+                self._review_settlement.pending_review_settlements.pop(
+                    oldest, None
+                )
+            self._review_settlement.pending_review_settlements[
                 self._review_settlement_key(envelope)
             ] = adapter
 
@@ -362,8 +387,10 @@ class ConversationContextExecutor:
         staged_turn: StoredTurn | None,
     ) -> ReviewConversationAdapter | None:
         """Load a pending adapter from memory or durable staged metadata."""
-        async with self._pending_review_lock:
-            adapter = self._pending_review_settlements.pop(key, None)
+        async with self._review_settlement.pending_review_lock:
+            adapter = self._review_settlement.pending_review_settlements.pop(
+                key, None
+            )
         if adapter is not None:
             return adapter
         if staged_turn is None or self._review_settlement_loader is None:
@@ -383,7 +410,7 @@ class ConversationContextExecutor:
         mutation_lock_held: bool = False,
     ) -> bool:
         """Serialize the complete Review promotion for one ack boundary."""
-        async with self._review_settlement_ack_lock:
+        async with self._review_settlement.review_settlement_ack_lock:
             service = self._service_for_request()
             lock: Any | None = None
             if not mutation_lock_held:
@@ -719,13 +746,13 @@ class ConversationContextExecutor:
         delegate_async: AsyncInvoker,
     ) -> PreparedTurn:
         """Bind one transport and execute the durable context lifecycle."""
-        sync_token = self._sync_invoker.set(invoke)
-        async_token = self._async_invoker.set(delegate_async)
-        arguments_token = self._selected_arguments.set({})
-        review_token = self._review_adapter.set(None)
+        sync_token = self._bindings.sync_invoker.set(invoke)
+        async_token = self._bindings.async_invoker.set(delegate_async)
+        arguments_token = self._bindings.selected_arguments.set({})
+        review_token = self._bindings.review_adapter.set(None)
         try:
             prepared = await self._service_for_request().execute_turn(envelope)
-            adapter = self._review_adapter.get()
+            adapter = self._bindings.review_adapter.get()
             if adapter is not None:
                 ready_to_stage = (
                     prepared.status is PrepareStatus.RETURN_STAGED
@@ -740,16 +767,16 @@ class ConversationContextExecutor:
                     await adapter.discard_pending_candidate()
             return prepared
         except BaseException:
-            adapter = self._review_adapter.get()
+            adapter = self._bindings.review_adapter.get()
             if adapter is not None:
                 adapter.mark_failed()
                 await adapter.discard_pending_candidate()
             raise
         finally:
-            self._review_adapter.reset(review_token)
-            self._selected_arguments.reset(arguments_token)
-            self._async_invoker.reset(async_token)
-            self._sync_invoker.reset(sync_token)
+            self._bindings.review_adapter.reset(review_token)
+            self._bindings.selected_arguments.reset(arguments_token)
+            self._bindings.async_invoker.reset(async_token)
+            self._bindings.sync_invoker.reset(sync_token)
 
     async def _route(
         self,
@@ -765,7 +792,7 @@ class ConversationContextExecutor:
         )
         if selection is None:
             raise ToolSelectionError("strict routing returned no selection")
-        self._selected_arguments.set(dict(selection.arguments))
+        self._bindings.selected_arguments.set(dict(selection.arguments))
         return AgentSelection(selection.tool_name, "ROUTER_SELECTED")
 
     async def _invoke(
@@ -774,10 +801,10 @@ class ConversationContextExecutor:
         envelope: ConversationEnvelopeV1,
         projection: ContextProjection,
     ) -> AgentOutcome:
-        invoke = self._sync_invoker.get()
+        invoke = self._bindings.sync_invoker.get()
         if invoke is None:
             raise RuntimeError("context sync invoker is unavailable")
-        selected_arguments = self._selected_arguments.get() or {}
+        selected_arguments = self._bindings.selected_arguments.get() or {}
         if selected_agent_id == "KnowledgeAgent":
             dispatch = knowledge_agent_invocation(
                 projection,
@@ -806,7 +833,7 @@ class ConversationContextExecutor:
             )
         if selected_agent_id == "ReviewAgent":
             adapter = dispatch.private_agent_state.get("review_adapter")
-            self._review_adapter.set(
+            self._bindings.review_adapter.set(
                 adapter
                 if isinstance(adapter, ReviewConversationAdapter)
                 else None
@@ -863,10 +890,10 @@ class ConversationContextExecutor:
         selected_agent_id: str,
         envelope: ConversationEnvelopeV1,
     ) -> dict[str, Any]:
-        invoke = self._async_invoker.get()
+        invoke = self._bindings.async_invoker.get()
         if invoke is None:
             raise RuntimeError("context async invoker is unavailable")
-        arguments = dict(self._selected_arguments.get() or {})
+        arguments = dict(self._bindings.selected_arguments.get() or {})
         arguments.setdefault("user_query", envelope.current_message.content)
         arguments["locale"] = envelope.current_message.locale
         return await invoke(selected_agent_id, envelope, arguments)
