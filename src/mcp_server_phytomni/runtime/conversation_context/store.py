@@ -623,6 +623,37 @@ class ConversationContextStore:
                 (entry.now, entry.key, entry.candidate),
             )
 
+    def _register_review_candidate_locked(
+        self, entry: _ReviewCleanupEntry
+    ) -> bool:
+        """Persist a validated candidate while the mutation lock is held."""
+        with self._write() as connection:
+            context = connection.execute(
+                "SELECT state FROM conversation_contexts "
+                "WHERE conversation_key = ?",
+                (entry.key,),
+            ).fetchone()
+            if context is not None and context[0] == "tombstoned":
+                return False
+            existing = connection.execute(
+                "SELECT tombstone_pending, turn_id, operation FROM "
+                "conversation_review_checkpoint_cleanup "
+                "WHERE conversation_key = ? AND candidate_thread_id = ?",
+                (entry.key, entry.candidate),
+            ).fetchone()
+            if existing is not None and existing[0]:
+                return False
+            if existing is not None and (
+                (existing[1] is not None and existing[1] != entry.turn_id)
+                or (
+                    existing[2] is not None
+                    and existing[2] != entry.operation
+                )
+            ):
+                return False
+            self._upsert_review_checkpoint_cleanup(connection, entry)
+        return True
+
     def register_review_candidate(
         self,
         key: str,
@@ -667,40 +698,16 @@ class ConversationContextStore:
                     candidate_thread_id,
                     mutation_lock_held=True,
                 )
-        now = _now()
-        with self._write() as connection:
-            context = connection.execute(
-                "SELECT state FROM conversation_contexts "
-                "WHERE conversation_key = ?",
-                (key,),
-            ).fetchone()
-            if context is not None and context[0] == "tombstoned":
-                return False
-            existing = connection.execute(
-                "SELECT tombstone_pending, turn_id, operation FROM "
-                "conversation_review_checkpoint_cleanup "
-                "WHERE conversation_key = ? AND candidate_thread_id = ?",
-                (key, candidate_thread_id),
-            ).fetchone()
-            if existing is not None and existing[0]:
-                return False
-            if existing is not None and (
-                (existing[1] is not None and existing[1] != turn_id)
-                or (existing[2] is not None and existing[2] != operation)
-            ):
-                return False
-            self._upsert_review_checkpoint_cleanup(
-                connection,
-                _ReviewCleanupEntry(
-                    key=key,
-                    candidate=candidate_thread_id,
-                    turn_id=turn_id,
-                    operation=operation,
-                    now=now,
-                    staged=False,
-                ),
+        return self._register_review_candidate_locked(
+            _ReviewCleanupEntry(
+                key=key,
+                candidate=candidate_thread_id,
+                turn_id=turn_id,
+                operation=operation,
+                now=_now(),
+                staged=False,
             )
-        return True
+        )
 
     def stage_turn(
         self, key: str, turn_id: str, staged: StagedTurn
