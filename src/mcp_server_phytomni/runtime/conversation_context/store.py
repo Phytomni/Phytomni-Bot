@@ -6,25 +6,22 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sqlite3
-import threading
-import time
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Literal, Self
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID, uuid4
-
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - the supported runtime is POSIX.
-    fcntl = None  # type: ignore[assignment]
 
 from ...config.defaults import ApiConfig
 from ..sqlite import sqlite_connection
 from ..task_manager import resolve_tasks_db_path
+from .review_lock import (
+    ReviewMutationLock,
+    ReviewMutationLockTimeoutError,
+    acquire_review_mutation_lock,
+)
 from .review_mixin import (
     _bounded_claim_parts,
     _bounded_marker_fields,
@@ -66,6 +63,8 @@ from .review_support import (
 )
 
 # Preserve the historical public import and pickle path after support split.
+ReviewMutationLock.__module__ = __name__
+ReviewMutationLockTimeoutError.__module__ = __name__
 ReviewSettlementClaim.__module__ = __name__
 
 logger = logging.getLogger(__name__)
@@ -181,48 +180,6 @@ class ConversationTombstonedError(RuntimeError):
 
 class StagedTurnConflictError(RuntimeError):
     """Raised when a retry proposes different terminal bytes."""
-
-
-class ReviewMutationLockTimeoutError(TimeoutError):
-    """Raised when a cross-worker Review mutation lock cannot be acquired."""
-
-
-class ReviewMutationLock:
-    """Releasable lock held across a private checkpoint write."""
-
-    def __init__(
-        self,
-        *,
-        file_descriptor: int | None = None,
-        local_lock: threading.Lock | None = None,
-    ) -> None:
-        self._file_descriptor = file_descriptor
-        self._local_lock = local_lock
-        self._state_lock = threading.Lock()
-        self._released = False
-
-    def release(self) -> None:
-        """Release the lock exactly once; release may run in another thread."""
-        with self._state_lock:
-            if self._released:
-                return
-            self._released = True
-            file_descriptor = self._file_descriptor
-            local_lock = self._local_lock
-            self._file_descriptor = None
-            self._local_lock = None
-        if file_descriptor is not None:
-            if fcntl is not None:
-                fcntl.flock(file_descriptor, fcntl.LOCK_UN)
-            os.close(file_descriptor)
-        elif local_lock is not None:
-            local_lock.release()
-
-    def __enter__(self) -> Self:
-        return self
-
-    def __exit__(self, *_args: object) -> None:
-        self.release()
 
 
 @dataclass(frozen=True)
@@ -343,10 +300,6 @@ def _unpack_delta(
     return decoded["value"], metadata, metadata.get("stage_metadata")
 
 
-_REVIEW_MUTATION_LOCKS: dict[str, threading.Lock] = {}
-_REVIEW_MUTATION_LOCKS_GUARD = threading.Lock()
-
-
 class ConversationContextStore:
     """Persist versioned context and one terminal proposal per turn."""
 
@@ -378,42 +331,8 @@ class ConversationContextStore:
     def acquire_review_mutation_lock(
         self, *, timeout: float | None = 30.0
     ) -> ReviewMutationLock:
-        """Serialize checkpoint mutation and tombstone cleanup across workers.
-
-        SQLite transactions protect durable rows, but Review promotion also
-        writes an external checkpoint.  This lock spans both mutations so a
-        tombstone cannot interleave between the promotion fence check and the
-        checkpoint write.
-        """
-        path = os.fspath(self.db_path)
-        if fcntl is None or path == ":memory:":
-            with _REVIEW_MUTATION_LOCKS_GUARD:
-                lock = _REVIEW_MUTATION_LOCKS.setdefault(
-                    path, threading.Lock()
-                )
-            acquired = lock.acquire(timeout=-1 if timeout is None else timeout)
-            if not acquired:
-                raise ReviewMutationLockTimeoutError(path)
-            return ReviewMutationLock(local_lock=lock)
-
-        file_descriptor = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
-        deadline = None if timeout is None else time.monotonic() + timeout
-        try:
-            while True:
-                try:
-                    fcntl.flock(file_descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    return ReviewMutationLock(file_descriptor=file_descriptor)
-                except (BlockingIOError, OSError) as exc:
-                    if not isinstance(exc, BlockingIOError) and getattr(
-                        exc, "errno", None
-                    ) not in {11, 13}:
-                        raise
-                    if deadline is not None and time.monotonic() >= deadline:
-                        raise ReviewMutationLockTimeoutError(path) from exc
-                    time.sleep(0.01)
-        except BaseException:
-            os.close(file_descriptor)
-            raise
+        """Serialize checkpoint mutation and tombstone cleanup across workers."""
+        return acquire_review_mutation_lock(self.db_path, timeout)
 
     def _init_db(self) -> None:
         with sqlite_connection(self.db_path) as connection:

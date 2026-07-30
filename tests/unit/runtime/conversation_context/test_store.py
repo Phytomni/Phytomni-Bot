@@ -30,6 +30,7 @@ from mcp_server_phytomni.runtime.conversation_context.store import (
     ContextVersionConflictError,
     ConversationContextStore,
     ConversationTombstonedError,
+    ReviewMutationLock,
     StagedTurn,
     StagedTurnConflictError,
 )
@@ -185,6 +186,20 @@ def test_claim_expiry_keeps_static_base_clock_dispatch() -> None:
         clock=now,
         stale_after=timedelta(seconds=1),
     )
+
+
+def test_review_lock_public_identity_is_preserved(
+    store: ConversationContextStore,
+) -> None:
+    """The extracted lock keeps the store's public class identity."""
+    lock = store.acquire_review_mutation_lock(timeout=0)
+    try:
+        assert isinstance(lock, ReviewMutationLock)
+        assert ReviewMutationLock.__module__.endswith(
+            "conversation_context.store"
+        )
+    finally:
+        lock.release()
 
 
 def test_init_is_idempotent_and_adds_only_context_tables(
