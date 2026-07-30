@@ -189,10 +189,12 @@ def test_claim_expiry_keeps_static_base_clock_dispatch() -> None:
 
 
 def test_review_lock_public_identity_is_preserved(
-    store: ConversationContextStore,
+    request: pytest.FixtureRequest,
 ) -> None:
     """The extracted lock keeps the store's public class identity."""
-    lock = store.acquire_review_mutation_lock(timeout=0)
+    context_store = request.getfixturevalue("store")
+    assert isinstance(context_store, ConversationContextStore)
+    lock = context_store.acquire_review_mutation_lock(timeout=0)
     try:
         assert isinstance(lock, ReviewMutationLock)
         assert ReviewMutationLock.__module__.endswith(
