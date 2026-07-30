@@ -60,7 +60,8 @@ def test_record_reserved_submissions_preserves_public_signature() -> None:
         "submissions: 'Sequence[Submission]', result: 'dict[str, Any]', "
         "now: 'str') -> 'bool'"
     )
-    bound_method = method.__get__(RunRegistry.__new__(RunRegistry), RunRegistry)
+    instance = RunRegistry.__new__(RunRegistry)
+    bound_method = getattr(instance, "record_reserved_submissions")
     assert str(inspect.signature(bound_method)) == (
         "(run_id: 'str', *, owner: 'str', agent: 'str', "
         "submissions: 'Sequence[Submission]', result: 'dict[str, Any]', "
