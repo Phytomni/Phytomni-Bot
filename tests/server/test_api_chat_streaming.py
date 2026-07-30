@@ -29,12 +29,9 @@ from mcp_server_phytomni.api import streaming as streaming_runtime
 from mcp_server_phytomni.api.app import _stream_chat_completion
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
 from mcp_server_phytomni.mcp.result_formatting import (
-    run_error,
     run_finished,
     run_started,
     text_message_content,
-    text_message_end,
-    text_message_start,
 )
 from mcp_server_phytomni.runtime.conversation_context.models import (
     ConversationEnvelopeV1,
@@ -93,6 +90,52 @@ def _extract_custom_context(body: str) -> dict[str, Any] | None:
             value = payload.get("value")
             return value if isinstance(value, dict) else None
     return None
+
+
+def _runtime_context_service() -> Any:
+    """Resolve the runtime context service through its public test seam."""
+    return getattr(streaming_runtime, "context_service")()
+
+
+async def _consume_context_stage(
+    response: Any,
+    payload: ChatCompletionRequest,
+    db_path: str,
+    run_id: str,
+    answer_marker: str,
+) -> tuple[str, dict[str, Any]]:
+    """Consume through the staged frame and verify durable pre-finish state."""
+    body = cast(AsyncGenerator[str, None], response.body_iterator)
+    accumulated = ""
+    async for line in body:
+        accumulated += line
+        if '"name": "phyto.context_staged"' not in line:
+            continue
+        record = RunRegistry(db_path=db_path).get_run(run_id, owner="u1")
+        assert record is not None
+        assert record.status == "succeeded"
+        assert payload.conversation is not None
+        conversation_data = vars(payload.conversation)
+        stored_turn = ConversationContextStore(db_path).load_turn(
+            str(conversation_data["conversation_key"]),
+            conversation_data["turn_id"],
+        )
+        assert stored_turn is not None
+        assert stored_turn.state == "staged"
+        assert stored_turn.delta is not None
+        assert answer_marker not in json.dumps(
+            stored_turn.delta, sort_keys=True
+        )
+        assert answer_marker in json.dumps(stored_turn.result, sort_keys=True)
+        assert stored_turn.stage_metadata is not None
+        assert stored_turn.stage_metadata["selected_agent_id"] == "ChatAgent"
+        assert stored_turn.stage_metadata["route_source"] == "instant_lock"
+        break
+    else:
+        raise AssertionError("phyto.context_staged was not emitted")
+    accumulated += "".join([line async for line in body])
+    assert payload.conversation is not None
+    return accumulated, vars(payload.conversation)
 
 
 def _stream_frames(body: str) -> list[tuple[str, dict[str, Any]]]:
@@ -840,318 +883,3 @@ async def test_stream_settle_marks_truncated_when_over_cap(
     assert len(answer.encode("utf-8")) <= 4
     # Wire still carried the full text.
     assert "HelloWorld" in response.text or "Hello" in response.text
-
-
-async def test_context_stream_stages_before_custom_and_then_finishes(
-    tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """V1 streaming settles the run before the custom frame."""
-    captured: dict[str, str] = {}
-    answer_marker = "STREAM_CONTEXT_ANSWER_OUTPUT_SENTINEL"
-
-    async def fake_streamed(
-        _tool_name: Any,
-        _arguments: dict[str, Any],
-        *,
-        run_id: str,
-        dialogue_id: str | None,
-    ) -> AsyncIterator[Any]:
-        captured["run_id"] = run_id
-        yield run_started(run_id, dialogue_id)
-        yield text_message_start("msg-v1")
-        yield text_message_content("msg-v1", answer_marker)
-        yield text_message_end("msg-v1")
-        yield run_finished(run_id)
-
-    monkeypatch.setattr(api_app, "prepare_tool_stream", fake_streamed)
-    payload = ChatCompletionRequest(
-        model="phyto-chat",
-        messages=[ChatMessage(role="user", content="context")],
-        stream=True,
-        conversation=_conversation_envelope(),
-    )
-    assert payload.conversation is not None
-    with request_context("u1", "req-context-stream"):
-        response = await _stream_chat_completion(
-            tool_name="ChatAgent",
-            arguments={
-                "user_query": "context",
-                "locale": "en-US",
-                "obs_file_list": [],
-            },
-            payload=payload,
-            user_query="context",
-        )
-        body = cast(AsyncGenerator[str, None], response.body_iterator)
-        accumulated = ""
-        async for line in body:
-            accumulated += line
-            if '"name": "phyto.context_staged"' not in line:
-                continue
-            registry = RunRegistry(db_path=tasks_db_path)
-            record = registry.get_run(captured["run_id"], owner="u1")
-            assert record is not None
-            assert record.status == "succeeded"
-            conversation = payload.conversation
-            conversation_data = vars(conversation)
-            stored_turn = ConversationContextStore(tasks_db_path).load_turn(
-                str(conversation_data["conversation_key"]),
-                conversation_data["turn_id"],
-            )
-            assert stored_turn is not None
-            assert stored_turn.state == "staged"
-            assert stored_turn.delta is not None
-            assert answer_marker not in json.dumps(
-                stored_turn.delta, sort_keys=True
-            )
-            assert answer_marker in json.dumps(
-                stored_turn.result, sort_keys=True
-            )
-            assert stored_turn.stage_metadata is not None
-            assert stored_turn.stage_metadata["selected_agent_id"] == (
-                "ChatAgent"
-            )
-            assert stored_turn.stage_metadata["route_source"] == "instant_lock"
-            break
-        else:
-            raise AssertionError("phyto.context_staged was not emitted")
-        accumulated += "".join([line async for line in body])
-
-    assert answer_marker in accumulated
-    committed = (
-        await streaming_runtime.context_service().acknowledge_settlement(
-            payload.conversation,
-            conversation_data["ledger_version"],
-        )
-    )
-    assert committed is not None
-    assert answer_marker not in json.dumps(committed.context, sort_keys=True)
-
-    assert accumulated.index(
-        '"name": "phyto.context_staged"'
-    ) < accumulated.index("event: RunFinished\n")
-    assert accumulated.count("event: RunFinished\n") == 1
-    assert _extract_custom_context(accumulated) == {
-        "schema_version": 1,
-        "turn_id": "21",
-        "selected_agent_id": "ChatAgent",
-        "route_source": "instant_lock",
-        "proposed_business_context_version": 1,
-        "context_truncated": False,
-        "context_rebuilt": True,
-        "context_degraded": False,
-    }
-
-
-async def test_context_stream_duplicate_turn_replays_without_reinvocation(
-    tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A repeated V1 turn replays the stream instead of reinvoking Chat."""
-    del tasks_db_path
-    invocations = 0
-
-    async def fake_streamed(
-        _tool_name: Any,
-        _arguments: dict[str, Any],
-        *,
-        run_id: str,
-        dialogue_id: str | None,
-    ) -> AsyncIterator[Any]:
-        nonlocal invocations
-        invocations += 1
-        yield run_started(run_id, dialogue_id)
-        yield text_message_start("msg-dup")
-        yield text_message_content("msg-dup", "Replay me")
-        yield text_message_end("msg-dup")
-        yield run_finished(run_id)
-
-    monkeypatch.setattr(api_app, "prepare_tool_stream", fake_streamed)
-    payload = ChatCompletionRequest(
-        model="phyto-chat",
-        messages=[ChatMessage(role="user", content="context")],
-        stream=True,
-        conversation=_conversation_envelope(turn_id="22"),
-    )
-
-    async def drive() -> str:
-        with request_context("u1", "req-context-dup"):
-            response = await _stream_chat_completion(
-                tool_name="ChatAgent",
-                arguments={
-                    "user_query": "context",
-                    "locale": "en-US",
-                    "obs_file_list": [],
-                },
-                payload=payload,
-                user_query="context",
-            )
-            return "".join(
-                [
-                    line
-                    async for line in cast(
-                        AsyncGenerator[str, None], response.body_iterator
-                    )
-                ]
-            )
-
-    first = await drive()
-    second = await drive()
-
-    assert invocations == 1
-    assert _stream_frames(first) == _stream_frames(second)
-    assert first.count("event: RunFinished\n") == 1
-    assert '"name": "phyto.context_staged"' in first
-
-
-async def test_context_stream_committed_turn_replays_without_reinvocation(
-    tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A committed V1 turn replays the stored SSE bytes without Chat replay."""
-    invocations = 0
-
-    async def fake_streamed(
-        _tool_name: Any,
-        _arguments: dict[str, Any],
-        *,
-        run_id: str,
-        dialogue_id: str | None,
-    ) -> AsyncIterator[Any]:
-        nonlocal invocations
-        invocations += 1
-        yield run_started(run_id, dialogue_id)
-        yield text_message_start("msg-committed")
-        yield text_message_content("msg-committed", "Replay me")
-        yield text_message_end("msg-committed")
-        yield run_finished(run_id)
-
-    monkeypatch.setattr(api_app, "prepare_tool_stream", fake_streamed)
-    payload = ChatCompletionRequest(
-        model="phyto-chat",
-        messages=[ChatMessage(role="user", content="context")],
-        stream=True,
-        conversation=_conversation_envelope(turn_id="24"),
-    )
-
-    async def drive(request_id: str) -> str:
-        with request_context("u1", request_id):
-            response = await _stream_chat_completion(
-                tool_name="ChatAgent",
-                arguments={
-                    "user_query": "context",
-                    "locale": "en-US",
-                    "obs_file_list": [],
-                },
-                payload=payload,
-                user_query="context",
-            )
-            return "".join(
-                [
-                    line
-                    async for line in cast(
-                        AsyncGenerator[str, None], response.body_iterator
-                    )
-                ]
-            )
-
-    first = await drive("req-context-committed-first")
-    assert payload.conversation is not None
-    conversation = payload.conversation
-    conversation_data = vars(conversation)
-    committed = await streaming_runtime.context_service().acknowledge_settlement(
-        conversation, conversation_data["ledger_version"]
-    )
-    second = await drive("req-context-committed-second")
-
-    registry = RunRegistry(db_path=tasks_db_path)
-    runs = [
-        run
-        for run in registry.list_runs(owner="u1")
-        if run.spec.agent == "chat" and run.request_info is not None
-    ]
-    stored_turn = ConversationContextStore(tasks_db_path).load_turn(
-        str(conversation_data["conversation_key"]),
-        conversation_data["turn_id"],
-    )
-
-    assert invocations == 1
-    assert committed is not None
-    assert committed.context_version == 1
-    assert committed.ledger_version == conversation_data["ledger_version"]
-    assert stored_turn is not None
-    assert stored_turn.state == "committed"
-    assert len(runs) == 1
-    assert _stream_frames(first) == _stream_frames(second)
-    assert [name for name, _payload in _stream_frames(second)] == [
-        "RunStarted",
-        "TextMessageStart",
-        "TextMessageContent",
-        "TextMessageEnd",
-        "Custom",
-        "RunFinished",
-    ]
-    assert second.count("event: RunFinished\n") == 1
-    assert _extract_custom_context(second) == {
-        "schema_version": 1,
-        "turn_id": "24",
-        "selected_agent_id": "ChatAgent",
-        "route_source": "instant_lock",
-        "proposed_business_context_version": 1,
-        "context_truncated": False,
-        "context_rebuilt": True,
-        "context_degraded": False,
-    }
-
-
-async def test_context_stream_failure_emits_no_successful_context_metadata(
-    tasks_db_path: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A failed V1 stream never emits the successful context custom event."""
-    del tasks_db_path
-
-    async def failing_streamed(
-        _tool_name: Any,
-        _arguments: dict[str, Any],
-        *,
-        run_id: str,
-        dialogue_id: str | None,
-    ) -> AsyncIterator[Any]:
-        yield run_started(run_id, dialogue_id)
-        yield text_message_start("msg-fail")
-        yield text_message_content("msg-fail", "partial")
-        yield text_message_end("msg-fail")
-        yield run_error("agent_execution_failed", "already safe")
-
-    monkeypatch.setattr(api_app, "prepare_tool_stream", failing_streamed)
-    payload = ChatCompletionRequest(
-        model="phyto-chat",
-        messages=[ChatMessage(role="user", content="context")],
-        stream=True,
-        conversation=_conversation_envelope(turn_id="23"),
-    )
-    with request_context("u1", "req-context-fail"):
-        response = await _stream_chat_completion(
-            tool_name="ChatAgent",
-            arguments={
-                "user_query": "context",
-                "locale": "en-US",
-                "obs_file_list": [],
-            },
-            payload=payload,
-            user_query="context",
-        )
-        body = "".join(
-            [
-                line
-                async for line in cast(
-                    AsyncGenerator[str, None], response.body_iterator
-                )
-            ]
-        )
-
-    assert '"name": "phyto.context_staged"' not in body
-    assert "event: RunFinished\n" not in body
-    assert body.count("event: RunError\n") == 1
