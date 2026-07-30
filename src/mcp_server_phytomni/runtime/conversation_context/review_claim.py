@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -99,6 +100,24 @@ def _review_claim_lookup(
     )
 
 
+def _review_marker_write_request(
+    connection: Any,
+    identity: _ReviewClaimIdentity,
+    decoded: dict[str, Any],
+    marker: Mapping[str, Any],
+    now: str,
+) -> _ReviewMarkerWriteRequest:
+    """Build one marker write request shared by Review transitions."""
+    return _ReviewMarkerWriteRequest(
+        connection=connection,
+        key=identity.key,
+        turn_id=identity.turn_id,
+        decoded=decoded,
+        marker=marker,
+        now=now,
+    )
+
+
 def _review_marker_context_for(
     self, connection: Any, request: Any, failure_method: str
 ) -> ReviewSettlementClaim | _ReviewMarkerContext:
@@ -172,13 +191,12 @@ def _write_reservation_marker(
 ) -> bool:
     """Persist a reservation marker through the store's dynamic seam."""
     return getattr(self, "_write_review_marker")(
-        _ReviewMarkerWriteRequest(
-            connection=request.connection,
-            key=request.identity.key,
-            turn_id=request.identity.turn_id,
-            decoded=request.decoded,
-            marker=marker,
-            now=_now(),
+        _review_marker_write_request(
+            request.connection,
+            request.identity,
+            request.decoded,
+            marker,
+            _now(),
         )
     )
 
@@ -219,13 +237,12 @@ def _claim_active_marker(
         }
     )
     if not getattr(self, "_write_review_marker")(
-        _ReviewMarkerWriteRequest(
-            connection=request.connection,
-            key=request.identity.key,
-            turn_id=request.identity.turn_id,
-            decoded=request.decoded,
-            marker=updated,
-            now=request.timing.now_value,
+        _review_marker_write_request(
+            request.connection,
+            request.identity,
+            request.decoded,
+            updated,
+            request.timing.now_value,
         )
     ):
         return ReviewSettlementClaim("invalid")
@@ -262,13 +279,12 @@ def _claim_pending_marker(
         }
     )
     if not getattr(self, "_write_review_marker")(
-        _ReviewMarkerWriteRequest(
-            connection=request.connection,
-            key=request.identity.key,
-            turn_id=request.identity.turn_id,
-            decoded=request.decoded,
-            marker=updated,
-            now=request.timing.now_value,
+        _review_marker_write_request(
+            request.connection,
+            request.identity,
+            request.decoded,
+            updated,
+            request.timing.now_value,
         )
     ):
         return ReviewSettlementClaim("invalid")

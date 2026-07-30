@@ -24,6 +24,15 @@ from .review_claim import (
     _claim_review_settlement,
     _ReviewClaimRequest,
 )
+from .review_finalize import (
+    _finalize_review_settlement,
+    _finalize_review_settlement_locked,
+    _mark_review_settlement_failed,
+    _ReviewFailureCall,
+    _ReviewFinalizeCall,
+    _ReviewMetadataCall,
+    _update_review_settlement_metadata,
+)
 from .review_lock import (
     ReviewMutationLock,
     ReviewMutationLockTimeoutError,
@@ -64,9 +73,7 @@ from .review_support import (
     _json,
     _now,
     _review_candidate_thread_id,
-    _ReviewClaimIdentity,
     _ReviewCleanupEntry,
-    _ReviewFinalizeRequest,
     _ReviewMarkerWriteRequest,
 )
 
@@ -339,6 +346,7 @@ class ConversationContextStore:
             _review_reservation_inputs_valid
         )
         _reserve_marker_state = _reserve_marker_state
+        _finalize_review_settlement_locked = _finalize_review_settlement_locked
 
     def __init__(self, db_path: str | None = None) -> None:
         self.db_path = db_path or resolve_tasks_db_path()
@@ -831,52 +839,6 @@ class ConversationContextStore:
             )
         )
 
-    def _finalize_review_settlement_locked(
-        self, request: _ReviewFinalizeRequest
-    ) -> bool:
-        """Persist one terminal Review state inside the open transaction."""
-        row = request.connection.execute(
-            "SELECT delta_json FROM conversation_turns "
-            "WHERE conversation_key = ? AND turn_id = ?",
-            (request.identity.key, request.identity.turn_id),
-        ).fetchone()
-        if row is None:
-            return False
-        record = self._review_record(row[0])
-        if record is None:
-            return False
-        decoded, marker = record
-        current_state = marker.get("settlement_state")
-        if current_state == request.state:
-            return True
-        if current_state in {"promoted", "rejected", "failed"}:
-            return current_state == request.state
-        if (
-            current_state not in {"settling", "promoting"}
-            or marker.get("settlement_claim_token") != request.claim_token
-            or (
-                request.fence_token is not None
-                and marker.get("settlement_fence") != request.fence_token
-            )
-        ):
-            return False
-        updated = dict(marker)
-        updated["settlement_state"] = request.state
-        updated.pop("settlement_claim_token", None)
-        updated.pop("settlement_claimed_at", None)
-        if request.report_revision is not None:
-            updated["report_revision"] = request.report_revision
-        return self._write_review_marker(
-            _ReviewMarkerWriteRequest(
-                connection=request.connection,
-                key=request.identity.key,
-                turn_id=request.identity.turn_id,
-                decoded=decoded,
-                marker=updated,
-                now=_now(),
-            )
-        )
-
     def finalize_review_settlement(
         self,
         key: str,
@@ -888,36 +850,17 @@ class ConversationContextStore:
         fence_token: int | None = None,
     ) -> bool:
         """Finalize only the worker that durably claimed a Review marker."""
-        if (
-            not isinstance(claim_token, str)
-            or not claim_token
-            or len(claim_token) > _REVIEW_SETTLEMENT_TOKEN_LIMIT
-        ):
-            return False
-        if fence_token is not None and (
-            isinstance(fence_token, bool)
-            or not isinstance(fence_token, int)
-            or fence_token < 1
-            or fence_token > _REVIEW_SETTLEMENT_FENCE_LIMIT
-        ):
-            return False
-        if state == "promoted" and (
-            report_revision is None
-            or isinstance(report_revision, bool)
-            or report_revision < 0
-        ):
-            return False
-        with self._write() as connection:
-            return self._finalize_review_settlement_locked(
-                _ReviewFinalizeRequest(
-                    connection=connection,
-                    identity=_ReviewClaimIdentity(key=key, turn_id=turn_id),
-                    claim_token=claim_token,
-                    state=state,
-                    report_revision=report_revision,
-                    fence_token=fence_token,
-                )
-            )
+        return _finalize_review_settlement(
+            self,
+            _ReviewFinalizeCall(
+                key=key,
+                turn_id=turn_id,
+                claim_token=claim_token,
+                state=state,
+                report_revision=report_revision,
+                fence_token=fence_token,
+            ),
+        )
 
     def mark_review_settlement_failed(
         self,
@@ -927,42 +870,14 @@ class ConversationContextStore:
         mutation_lock_held: bool = False,
     ) -> bool:
         """Persist a terminal failure for a malformed or abandoned marker."""
-        if not mutation_lock_held:
-            with self.acquire_review_mutation_lock():
-                return self.mark_review_settlement_failed(
-                    key, turn_id, mutation_lock_held=True
-                )
-        with self._write() as connection:
-            row = connection.execute(
-                "SELECT delta_json FROM conversation_turns "
-                "WHERE conversation_key = ? AND turn_id = ?",
-                (key, turn_id),
-            ).fetchone()
-            if row is None:
-                return False
-            record = self._review_record(row[0])
-            if record is None:
-                return False
-            decoded, marker = record
-            state = marker.get("settlement_state")
-            if state in {"promoted", "rejected"}:
-                return False
-            if state == "failed":
-                return True
-            marker = dict(marker)
-            marker["settlement_state"] = "failed"
-            marker.pop("settlement_claim_token", None)
-            marker.pop("settlement_claimed_at", None)
-            return self._write_review_marker(
-                _ReviewMarkerWriteRequest(
-                    connection=connection,
-                    key=key,
-                    turn_id=turn_id,
-                    decoded=decoded,
-                    marker=marker,
-                    now=_now(),
-                )
-            )
+        return _mark_review_settlement_failed(
+            self,
+            _ReviewFailureCall(
+                key=key,
+                turn_id=turn_id,
+                mutation_lock_held=mutation_lock_held,
+            ),
+        )
 
     def update_review_settlement_metadata(
         self,
@@ -971,29 +886,14 @@ class ConversationContextStore:
         updates: Mapping[str, Any],
     ) -> bool:
         """Update private Review metadata for compatibility test seams."""
-        with self._write() as connection:
-            row = connection.execute(
-                "SELECT delta_json FROM conversation_turns "
-                "WHERE conversation_key = ? AND turn_id = ?",
-                (key, turn_id),
-            ).fetchone()
-            if row is None:
-                return False
-            record = self._review_record(row[0])
-            if record is None:
-                return False
-            decoded, marker = record
-            marker.update(dict(updates))
-            return self._write_review_marker(
-                _ReviewMarkerWriteRequest(
-                    connection=connection,
-                    key=key,
-                    turn_id=turn_id,
-                    decoded=decoded,
-                    marker=marker,
-                    now=_now(),
-                )
-            )
+        return _update_review_settlement_metadata(
+            self,
+            _ReviewMetadataCall(
+                key=key,
+                turn_id=turn_id,
+                updates=updates,
+            ),
+        )
 
     def _apply_staged_turn_locked(
         self, request: _StagedTurnCommitRequest
@@ -1461,6 +1361,11 @@ setattr(
     staticmethod(_review_reservation_inputs_valid),
 )
 setattr(ConversationContextStore, "_reserve_marker_state", _reserve_marker_state)
+setattr(
+    ConversationContextStore,
+    "_finalize_review_settlement_locked",
+    _finalize_review_settlement_locked,
+)
 
 
 __all__ = [
