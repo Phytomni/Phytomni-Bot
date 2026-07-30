@@ -12,11 +12,23 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from ...config.defaults import ApiConfig
 from ..sqlite import sqlite_connection
 from ..task_manager import resolve_tasks_db_path
+from .review_claim import (
+    _claim_active_marker,
+    _claim_pending_marker,
+    _claim_review_marker,
+    _claim_review_settlement,
+    _reservation_marker_request,
+    _review_claim_lookup,
+    _review_marker_context,
+    _review_turn_row,
+    _ReviewClaimRequest,
+    _write_reservation_marker,
+)
 from .review_lock import (
     ReviewMutationLock,
     ReviewMutationLockTimeoutError,
@@ -44,18 +56,14 @@ from .review_mixin import (
 from .review_support import (
     _REVIEW_SETTLEMENT_CLAIM_TTL,
     _REVIEW_SETTLEMENT_FENCE_LIMIT,
-    _REVIEW_SETTLEMENT_STATES,
     _REVIEW_SETTLEMENT_TOKEN_LIMIT,
     ReviewSettlementClaim,
-    ReviewSettlementClaimStatus,
     _decode,
     _json,
     _now,
     _review_candidate_thread_id,
     _ReviewClaimIdentity,
     _ReviewClaimLookupRequest,
-    _ReviewClaimMarkerRequest,
-    _ReviewClaimTiming,
     _ReviewCleanupEntry,
     _ReviewFinalizeRequest,
     _ReviewMarkerWriteRequest,
@@ -323,6 +331,9 @@ class ConversationContextStore:
         _claim_is_expired = staticmethod(_claim_is_expired)
         _claim_row_failure = _claim_row_failure
         _bounded_claim_parts = staticmethod(_bounded_claim_parts)
+        _claim_active_marker = _claim_active_marker
+        _claim_pending_marker = _claim_pending_marker
+        _claim_review_marker = _claim_review_marker
 
     def __init__(self, db_path: str | None = None) -> None:
         self.db_path = db_path or resolve_tasks_db_path()
@@ -726,109 +737,6 @@ class ConversationContextStore:
         logger.debug("conversation turn staged")
         return self._turn(row)
 
-    def _claim_active_marker(
-        self,
-        request: _ReviewClaimMarkerRequest,
-        state: ReviewSettlementClaimStatus,
-    ) -> ReviewSettlementClaim:
-        """Refresh an expired settling/promoting marker claim."""
-        parts = self._bounded_claim_parts(
-            request.marker.get("settlement_claim_token"),
-            request.marker.get("settlement_claimed_at"),
-            self._marker_fence(request.marker),
-        )
-        if parts is None:
-            return ReviewSettlementClaim("invalid")
-        token, claimed_at, fence = parts
-        if not self._claim_is_expired(
-            claimed_at,
-            clock=request.timing.clock,
-            stale_after=request.timing.stale_after,
-        ):
-            return ReviewSettlementClaim(state, token, fence)
-        next_fence = fence + 1
-        if next_fence > _REVIEW_SETTLEMENT_FENCE_LIMIT:
-            return ReviewSettlementClaim("invalid")
-        claim_token = uuid4().hex
-        updated = dict(request.marker)
-        updated.update(
-            {
-                "settlement_state": "settling",
-                "settlement_claim_token": claim_token,
-                "settlement_claimed_at": request.timing.now_value,
-                "settlement_fence": next_fence,
-                "settlement_ledger_version": request.row[1],
-                "settlement_base_context_version": request.row[2],
-            }
-        )
-        if not self._write_review_marker(
-            _ReviewMarkerWriteRequest(
-                connection=request.connection,
-                key=request.identity.key,
-                turn_id=request.identity.turn_id,
-                decoded=request.decoded,
-                marker=updated,
-                now=request.timing.now_value,
-            )
-        ):
-            return ReviewSettlementClaim("invalid")
-        return ReviewSettlementClaim("claimed", claim_token, next_fence)
-
-    def _claim_pending_marker(
-        self, request: _ReviewClaimMarkerRequest
-    ) -> ReviewSettlementClaim:
-        """Create the first claim for a pending marker."""
-        if "settlement_claim_token" in request.marker or (
-            "settlement_claimed_at" in request.marker
-        ):
-            return ReviewSettlementClaim("invalid")
-        previous_fence = request.marker.get("settlement_fence", 0)
-        if (
-            isinstance(previous_fence, bool)
-            or not isinstance(previous_fence, int)
-            or previous_fence < 0
-            or previous_fence >= _REVIEW_SETTLEMENT_FENCE_LIMIT
-        ):
-            return ReviewSettlementClaim("invalid")
-        claim_token = uuid4().hex
-        fence = previous_fence + 1
-        updated = dict(request.marker)
-        updated.update(
-            {
-                "settlement_state": "settling",
-                "settlement_claim_token": claim_token,
-                "settlement_claimed_at": request.timing.now_value,
-                "settlement_fence": fence,
-                "settlement_ledger_version": request.row[1],
-                "settlement_base_context_version": request.row[2],
-            }
-        )
-        if not self._write_review_marker(
-            _ReviewMarkerWriteRequest(
-                connection=request.connection,
-                key=request.identity.key,
-                turn_id=request.identity.turn_id,
-                decoded=request.decoded,
-                marker=updated,
-                now=request.timing.now_value,
-            )
-        ):
-            return ReviewSettlementClaim("invalid")
-        return ReviewSettlementClaim("claimed", claim_token, fence)
-
-    def _claim_review_marker(
-        self, request: _ReviewClaimMarkerRequest
-    ) -> ReviewSettlementClaim:
-        """Advance a validated Review marker under its open transaction."""
-        state = request.marker.get("settlement_state")
-        if state not in _REVIEW_SETTLEMENT_STATES:
-            return ReviewSettlementClaim("invalid")
-        if state in {"promoted", "rejected", "failed"}:
-            return ReviewSettlementClaim(state)
-        if state in {"settling", "promoting"}:
-            return self._claim_active_marker(request, state)
-        return self._claim_pending_marker(request)
-
     def claim_review_settlement(
         self,
         key: str,
@@ -840,50 +748,17 @@ class ConversationContextStore:
         expected_base_context_version: int | None = None,
     ) -> ReviewSettlementClaim:
         """Claim a staged Review marker with a durable compare-and-set."""
-        clock = self._claim_datetime(now)
-        now_value = clock.isoformat()
-        with self._write() as connection:
-            row = connection.execute(
-                "SELECT state, ledger_version, base_context_version, "
-                "delta_json "
-                "FROM conversation_turns "
-                "WHERE conversation_key = ? "
-                "AND turn_id = ?",
-                (key, turn_id),
-            ).fetchone()
-            if row is None:
-                return ReviewSettlementClaim("missing")
-            failure = self._claim_row_failure(
-                _ReviewClaimLookupRequest(
-                    connection=connection,
-                    key=key,
-                    row=row,
-                    expected_ledger_version=expected_ledger_version,
-                    expected_base_context_version=expected_base_context_version,
-                )
-            )
-            if failure is not None:
-                return failure
-            record = self._review_record(row[3])
-            if record is None:
-                return ReviewSettlementClaim("invalid")
-            decoded, marker = record
-            if not self._marker_is_bounded(marker, key=key, turn_id=turn_id):
-                return ReviewSettlementClaim("invalid")
-            return self._claim_review_marker(
-                _ReviewClaimMarkerRequest(
-                    connection=connection,
-                    identity=_ReviewClaimIdentity(key=key, turn_id=turn_id),
-                    row=row,
-                    decoded=decoded,
-                    marker=marker,
-                    timing=_ReviewClaimTiming(
-                        now_value=now_value,
-                        clock=clock,
-                        stale_after=stale_after,
-                    ),
-                )
-            )
+        return _claim_review_settlement(
+            self,
+            _ReviewClaimRequest(
+                key=key,
+                turn_id=turn_id,
+                now=now,
+                stale_after=stale_after,
+                expected_ledger_version=expected_ledger_version,
+                expected_base_context_version=expected_base_context_version,
+            ),
+        )
 
     def _reserve_row_failure(
         self, request: _ReviewClaimLookupRequest
@@ -967,16 +842,7 @@ class ConversationContextStore:
             return ReviewSettlementClaim("conflict")
         updated = dict(request.marker)
         updated["settlement_state"] = "promoting"
-        if not self._write_review_marker(
-            _ReviewMarkerWriteRequest(
-                connection=request.connection,
-                key=request.identity.key,
-                turn_id=request.identity.turn_id,
-                decoded=request.decoded,
-                marker=updated,
-                now=_now(),
-            )
-        ):
+        if not _write_reservation_marker(self, request, updated):
             return ReviewSettlementClaim("invalid")
         return ReviewSettlementClaim(
             "promoting", request.claim_token, request.fence_token
@@ -996,22 +862,16 @@ class ConversationContextStore:
         if not self._review_reservation_inputs_valid(claim_token, fence_token):
             return ReviewSettlementClaim("invalid")
         with self._write() as connection:
-            row = connection.execute(
-                "SELECT state, ledger_version, base_context_version, "
-                "delta_json "
-                "FROM conversation_turns WHERE conversation_key = ? "
-                "AND turn_id = ?",
-                (key, turn_id),
-            ).fetchone()
+            row = _review_turn_row(connection, key, turn_id)
             if row is None:
                 return ReviewSettlementClaim("missing")
             failure = self._reserve_row_failure(
-                _ReviewClaimLookupRequest(
-                    connection=connection,
-                    key=key,
-                    row=row,
-                    expected_ledger_version=expected_ledger_version,
-                    expected_base_context_version=expected_base_context_version,
+                _review_claim_lookup(
+                    connection,
+                    key,
+                    row,
+                    expected_ledger_version,
+                    expected_base_context_version,
                 )
             )
             if failure is not None:
@@ -1022,15 +882,14 @@ class ConversationContextStore:
             decoded, marker = record
             if not self._marker_is_bounded(marker, key=key, turn_id=turn_id):
                 return ReviewSettlementClaim("invalid")
+            identity = _ReviewClaimIdentity(key=key, turn_id=turn_id)
             return self._reserve_marker_state(
-                _ReviewReservationMarkerRequest(
-                    connection=connection,
-                    identity=_ReviewClaimIdentity(key=key, turn_id=turn_id),
-                    row=row,
-                    decoded=decoded,
-                    marker=marker,
-                    claim_token=claim_token,
-                    fence_token=fence_token,
+                _reservation_marker_request(
+                    _review_marker_context(
+                        connection, identity, row, decoded, marker
+                    ),
+                    claim_token,
+                    fence_token,
                 )
             )
 
@@ -1697,6 +1556,9 @@ setattr(
     "_bounded_claim_parts",
     staticmethod(_bounded_claim_parts),
 )
+setattr(ConversationContextStore, "_claim_active_marker", _claim_active_marker)
+setattr(ConversationContextStore, "_claim_pending_marker", _claim_pending_marker)
+setattr(ConversationContextStore, "_claim_review_marker", _claim_review_marker)
 
 
 __all__ = [
