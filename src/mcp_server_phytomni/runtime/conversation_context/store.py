@@ -310,6 +310,17 @@ class _ReviewClaimMarkerRequest:
     timing: _ReviewClaimTiming
 
 
+@dataclass(frozen=True)
+class _ReviewClaimLookupRequest:
+    """Inputs for precondition checks before a Review marker claim."""
+
+    connection: sqlite3.Connection
+    key: str
+    row: sqlite3.Row | tuple[Any, ...]
+    expected_ledger_version: str | None
+    expected_base_context_version: int | None
+
+
 def _json(value: dict[str, Any]) -> str:
     return json.dumps(
         value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
@@ -1032,6 +1043,38 @@ class ConversationContextStore:
             return True
         return clock - claimed_clock >= stale_after
 
+    def _claim_row_failure(
+        self, request: _ReviewClaimLookupRequest
+    ) -> ReviewSettlementClaim | None:
+        """Return the first durable row precondition failure, if any."""
+        context = request.connection.execute(
+            "SELECT context_version, state FROM conversation_contexts "
+            "WHERE conversation_key = ?",
+            (request.key,),
+        ).fetchone()
+        failure: ReviewSettlementClaim | None = None
+        if context is not None and context[1] == "tombstoned":
+            failure = ReviewSettlementClaim("conflict")
+        if failure is None and request.row[0] not in {"staged", "committed"}:
+            failure = ReviewSettlementClaim("conflict")
+        if (
+            failure is None
+            and request.expected_ledger_version is not None
+            and request.row[1] != request.expected_ledger_version
+        ):
+            failure = ReviewSettlementClaim("conflict")
+        if (
+            failure is None
+            and request.expected_base_context_version is not None
+            and request.row[2] != request.expected_base_context_version
+        ):
+            failure = ReviewSettlementClaim("conflict")
+        if failure is None and request.row[0] == "staged":
+            current_version = 0 if context is None else context[0]
+            if current_version != request.row[2]:
+                failure = ReviewSettlementClaim("conflict")
+        return failure
+
     @staticmethod
     def _bounded_claim_parts(
         token: object, claimed_at: object, fence: int | None
@@ -1179,29 +1222,17 @@ class ConversationContextStore:
             ).fetchone()
             if row is None:
                 return ReviewSettlementClaim("missing")
-            context = connection.execute(
-                "SELECT context_version, state FROM conversation_contexts "
-                "WHERE conversation_key = ?",
-                (key,),
-            ).fetchone()
-            if context is not None and context[1] == "tombstoned":
-                return ReviewSettlementClaim("conflict")
-            if row[0] not in {"staged", "committed"}:
-                return ReviewSettlementClaim("conflict")
-            if (
-                expected_ledger_version is not None
-                and row[1] != expected_ledger_version
-            ):
-                return ReviewSettlementClaim("conflict")
-            if (
-                expected_base_context_version is not None
-                and row[2] != expected_base_context_version
-            ):
-                return ReviewSettlementClaim("conflict")
-            if row[0] == "staged":
-                current_version = 0 if context is None else context[0]
-                if current_version != row[2]:
-                    return ReviewSettlementClaim("conflict")
+            failure = self._claim_row_failure(
+                _ReviewClaimLookupRequest(
+                    connection=connection,
+                    key=key,
+                    row=row,
+                    expected_ledger_version=expected_ledger_version,
+                    expected_base_context_version=expected_base_context_version,
+                )
+            )
+            if failure is not None:
+                return failure
             record = self._review_record(row[3])
             if record is None:
                 return ReviewSettlementClaim("invalid")
