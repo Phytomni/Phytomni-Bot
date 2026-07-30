@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import httpx
-from openai import APIError, APITimeoutError, AsyncOpenAI
+from openai import APIError, APITimeoutError, AsyncOpenAI, BadRequestError
 
 from ...config.settings import get_sensitive_config
 from ...mcp.schemas import agent_openai_tool_specs
@@ -45,6 +45,13 @@ __all__ = [
 ]
 
 _LOGGER = logging.getLogger(__name__)
+
+# Base URLs (empty string when unset) observed to reject
+# ``tool_choice="required"`` with an HTTP 400. Once an endpoint is recorded
+# here, strict routing sends ``"auto"`` up front instead of paying a wasted
+# 400 round-trip. Process-local and non-secret, mirroring how the router
+# already reads ``sensitive.BASE_URL``; never persisted.
+_TOOL_CHOICE_REQUIRED_UNSUPPORTED: set[str] = set()
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,19 +212,67 @@ async def complete_expert_routing(
 
     Provider exception details are intentionally discarded at this boundary;
     the HTTP layer maps the typed outcome to the public safe error envelope.
+
+    Some OpenAI-compatible endpoints (e.g. the Huawei pangu ``mastudio``
+    deployment) reject ``tool_choice="required"`` with an HTTP 400 while
+    honoring ``"auto"``. When that specific 400 is seen the endpoint is
+    recorded and the call retried once with ``"auto"``; later strict calls to
+    it skip straight to ``"auto"``. The strict single-tool guarantee is
+    preserved by ``_selection_from_completion``, which still rejects a missing
+    tool call under ``request.strict``.
     """
     sensitive = get_sensitive_config()
+    base_url = sensitive.BASE_URL or None
     client = AsyncOpenAI(
         api_key=sensitive.API_KEY.get_secret_value(),
-        base_url=sensitive.BASE_URL or None,
+        base_url=base_url,
     )
-    try:
+    base_url_key = base_url or ""
+    effective_choice = tool_choice
+    if (
+        tool_choice == "required"
+        and base_url_key in _TOOL_CHOICE_REQUIRED_UNSUPPORTED
+    ):
+        effective_choice = "auto"
+
+    async def _create(choice: Any) -> Any:
         return await client.chat.completions.create(
             model=sensitive.MODEL_ID,
             messages=cast(Any, messages),
             tools=cast(Any, tools),
-            tool_choice=tool_choice,
+            tool_choice=choice,
         )
+
+    try:
+        return await _create(effective_choice)
+    except (APITimeoutError, httpx.TimeoutException, TimeoutError) as exc:
+        raise ExpertProviderTimeoutError() from exc
+    except BadRequestError as exc:
+        if effective_choice == "required" and _rejects_required_tool_choice(
+            exc
+        ):
+            _TOOL_CHOICE_REQUIRED_UNSUPPORTED.add(base_url_key)
+            _LOGGER.warning(
+                "Endpoint rejected tool_choice='required'; "
+                "retrying once with 'auto'."
+            )
+            return await _complete_with_auto_fallback(_create)
+        raise ExpertProviderError() from exc
+    except APIError as exc:
+        raise ExpertProviderError() from exc
+
+
+def _rejects_required_tool_choice(exc: BadRequestError) -> bool:
+    """True when a 400 complains specifically about ``tool_choice``."""
+    return "tool_choice" in str(exc).lower()
+
+
+async def _complete_with_auto_fallback(
+    create: Callable[[Any], Awaitable[Any]],
+) -> Any:
+    """Retry a routing completion with ``tool_choice="auto"``."""
+    try:
+        return await create("auto")
     except (APITimeoutError, httpx.TimeoutException, TimeoutError) as exc:
         raise ExpertProviderTimeoutError() from exc
     except APIError as exc:

@@ -15,7 +15,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
+from openai import BadRequestError
 
 from mcp_server_phytomni.agents.expert import (
     ExpertRoutingContractError,
@@ -341,3 +343,124 @@ def test_agent_openai_tool_specs_excludes_get_task_status() -> None:
         assert function["name"]
         assert function["description"]
         assert function["parameters"]["type"] == "object"
+
+
+@pytest.fixture(autouse=True)
+def _reset_tool_choice_cache() -> Any:
+    """Isolate the process-level unsupported-endpoint set per test."""
+    expert_router._TOOL_CHOICE_REQUIRED_UNSUPPORTED.clear()
+    yield
+    expert_router._TOOL_CHOICE_REQUIRED_UNSUPPORTED.clear()
+
+
+def _bad_request(message: str) -> BadRequestError:
+    """Build an offline OpenAI 400 with a controllable message body."""
+    request = httpx.Request("POST", "https://example.invalid/chat/completions")
+    response = httpx.Response(400, request=request)
+    return BadRequestError(message, response=response, body=None)
+
+
+_REQUIRED_REJECTION = (
+    'tool_choice must either be a named tool or "auto". '
+    'tool_choice="required" is not supported'
+)
+
+
+async def test_routing_falls_back_to_auto_on_required_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 400 on 'required' retries once with 'auto' and succeeds."""
+    calls: list[dict[str, Any]] = []
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        side_effects=[_bad_request(_REQUIRED_REJECTION)],
+        calls=calls,
+    )
+
+    result = await select_agent_tool(
+        "route this",
+        allowed_tools=["KnowledgeAgent", "ChatAgent"],
+    )
+
+    assert result == ToolSelection("ChatAgent", {})
+    assert [call["tool_choice"] for call in calls] == ["required", "auto"]
+
+
+async def test_routing_caches_unsupported_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After one 400 downgrade, later strict calls send 'auto' directly."""
+    first_calls: list[dict[str, Any]] = []
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        side_effects=[_bad_request(_REQUIRED_REJECTION)],
+        calls=first_calls,
+    )
+    await select_agent_tool("first", allowed_tools=["ChatAgent"])
+    assert [call["tool_choice"] for call in first_calls] == [
+        "required",
+        "auto",
+    ]
+
+    second_calls: list[dict[str, Any]] = []
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        calls=second_calls,
+    )
+    await select_agent_tool("second", allowed_tools=["ChatAgent"])
+
+    # No wasted 400 round-trip: the single call goes straight to 'auto'.
+    assert [call["tool_choice"] for call in second_calls] == ["auto"]
+
+
+async def test_routing_unrelated_400_is_not_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 400 unrelated to tool_choice surfaces without an auto retry."""
+    calls: list[dict[str, Any]] = []
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        side_effects=[_bad_request("context length exceeded")],
+        calls=calls,
+    )
+
+    with pytest.raises(expert_router.ExpertProviderError):
+        await select_agent_tool("route this", allowed_tools=["ChatAgent"])
+
+    assert [call["tool_choice"] for call in calls] == ["required"]
+
+
+async def test_routing_forced_tool_400_is_not_downgraded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A forced named tool_choice that 400s is not downgraded to 'auto'."""
+    calls: list[dict[str, Any]] = []
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        side_effects=[_bad_request(_REQUIRED_REJECTION)],
+        calls=calls,
+    )
+
+    with pytest.raises(expert_router.ExpertProviderError):
+        await select_agent_tool(
+            "route this",
+            allowed_tools=["ChatAgent"],
+            forced_tool="ChatAgent",
+        )
+
+    # Only the bare 'required' sentinel is eligible for downgrade.
+    assert len(calls) == 1
+    assert calls[0]["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "ChatAgent"},
+    }
