@@ -12,7 +12,7 @@ import math
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Final, Literal, Protocol
+from typing import Final, Literal, NamedTuple
 
 from pydantic import JsonValue, ValidationError
 
@@ -44,17 +44,7 @@ _MODEL_BY_AGENT = {
 }
 
 
-class Selector(Protocol):
-    """Callable contract for the injectable routing selector."""
-
-    def __call__(
-        self,
-        user_query: str,
-        history: Sequence[Mapping[str, object]] = (),
-        *,
-        allowed_tools: Sequence[str] | None = None,
-        forced_tool: str | None = None,
-    ) -> Awaitable[ToolSelection | None]: ...
+type Selector = Callable[..., Awaitable[ToolSelection | None]]
 
 
 PartialSink = Callable[[tuple["RunOutcome", ...]], Awaitable[None] | None]
@@ -74,9 +64,10 @@ class RunnerOptions:
         if (
             not isinstance(self.repeat_count, int)
             or isinstance(self.repeat_count, bool)
-            or self.repeat_count not in {
-            1,
-            3,
+            or self.repeat_count
+            not in {
+                1,
+                3,
             }
         ):
             raise ValueError("repeat_count must be 1 or 3")
@@ -108,8 +99,7 @@ class RunnerOptions:
             )
 
 
-@dataclass(frozen=True, slots=True)
-class RunOutcome:
+class RunOutcome(NamedTuple):
     """Immutable result for one case repetition."""
 
     case_id: str

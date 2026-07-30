@@ -301,6 +301,70 @@ def _coerce_active_context(
     )
 
 
+def _classify_active_brief_gene_turn(
+    active: BriefGeneActiveContext,
+    identifiers: Sequence[str],
+    mentioned_species: Sequence[str],
+    text: str,
+) -> BriefGeneConversationOperation:
+    """Apply the ordered operation rules once input is normalized."""
+    inferred_species = (
+        _identifier_species(identifiers[0]) if len(identifiers) == 1 else None
+    )
+    refresh = bool(_REFRESH_PATTERN.search(text))
+    operation: BriefGeneConversationOperation
+    if _requires_brief_gene_clarification(
+        identifiers, mentioned_species, inferred_species, text
+    ):
+        operation = BriefGeneConversationOperation.CLARIFY
+    elif active.gene_id is None:
+        operation = (
+            BriefGeneConversationOperation.NEW_REPORT
+            if len(identifiers) == 1
+            else BriefGeneConversationOperation.CLARIFY
+        )
+    elif (
+        identifiers and identifiers[0].casefold() != active.gene_id.casefold()
+    ):
+        operation = BriefGeneConversationOperation.NEW_IDENTIFIER
+    else:
+        active_species = active.species_code or _identifier_species(
+            active.gene_id
+        )
+        species_changed = (
+            not identifiers
+            and len(mentioned_species) == 1
+            and active_species is not None
+            and mentioned_species[0] != active_species
+        )
+        if species_changed:
+            operation = BriefGeneConversationOperation.CLARIFY
+        elif refresh:
+            operation = BriefGeneConversationOperation.REFRESH
+        else:
+            operation = BriefGeneConversationOperation.FOLLOW_UP
+    return operation
+
+
+def _requires_brief_gene_clarification(
+    identifiers: Sequence[str],
+    mentioned_species: Sequence[str],
+    inferred_species: str | None,
+    text: str,
+) -> bool:
+    """Return whether normalized identifiers require a clarification turn."""
+    multiple_values = len(identifiers) > 1 or len(mentioned_species) > 1
+    species_conflict = bool(
+        inferred_species
+        and mentioned_species
+        and inferred_species not in mentioned_species
+    )
+    missing_identifier = bool(_NEW_IDENTIFIER_PATTERN.search(text)) and not (
+        identifiers
+    )
+    return multiple_values or species_conflict or missing_identifier
+
+
 def classify_brief_gene_operation(
     query: str | ContextProjection,
     *,
@@ -327,45 +391,12 @@ def classify_brief_gene_operation(
             artifact_id=active.artifact_id,
             report_revision=active.report_revision,
         )
-    identifiers = explicit_brief_gene_identifiers(text)
-    mentioned_species = _species_mentions(text)
-    inferred_species = (
-        _identifier_species(identifiers[0]) if len(identifiers) == 1 else None
+    return _classify_active_brief_gene_turn(
+        active,
+        explicit_brief_gene_identifiers(text),
+        _species_mentions(text),
+        text,
     )
-    if len(identifiers) > 1 or len(mentioned_species) > 1:
-        return BriefGeneConversationOperation.CLARIFY
-    if (
-        inferred_species is not None
-        and mentioned_species
-        and inferred_species not in mentioned_species
-    ):
-        return BriefGeneConversationOperation.CLARIFY
-    if _NEW_IDENTIFIER_PATTERN.search(text) and not identifiers:
-        return BriefGeneConversationOperation.CLARIFY
-    refresh = bool(_REFRESH_PATTERN.search(text))
-    if active.gene_id is None:
-        return (
-            BriefGeneConversationOperation.NEW_REPORT
-            if len(identifiers) == 1
-            else BriefGeneConversationOperation.CLARIFY
-        )
-    if identifiers and identifiers[0].casefold() != active.gene_id.casefold():
-        return BriefGeneConversationOperation.NEW_IDENTIFIER
-    active_species = active.species_code or _identifier_species(active.gene_id)
-    if (
-        not identifiers
-        and len(mentioned_species) == 1
-        and active_species is not None
-        and mentioned_species[0] != active_species
-    ):
-        return BriefGeneConversationOperation.CLARIFY
-    if refresh:
-        return BriefGeneConversationOperation.REFRESH
-    if not identifiers:
-        return BriefGeneConversationOperation.FOLLOW_UP
-    if identifiers[0].casefold() == active.gene_id.casefold():
-        return BriefGeneConversationOperation.FOLLOW_UP
-    return BriefGeneConversationOperation.NEW_IDENTIFIER
 
 
 def _answer_text(value: object) -> str:
@@ -766,6 +797,7 @@ class BriefGeneConversationAdapter:
 
     def delta(self, result: Mapping[str, Any] | None = None) -> ContextDelta:
         """Project bounded gene/report metadata into a ContextDelta."""
+        del result
         if self._prepared is None:
             raise RuntimeError("prepare must run before delta")
         if not self._operation_successful:
