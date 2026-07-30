@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from weakref import WeakValueDictionary
@@ -322,23 +323,51 @@ AsyncDelegator = Callable[
 ]
 
 
+@dataclass(frozen=True, slots=True)
+class ConversationContextDependencies:
+    """Collaborators required by one conversation-context service."""
+
+    store: ConversationContextStore
+    router: Router
+    invoke: Invoker
+    delegate_async: AsyncDelegator
+    api_config: ApiConfig | None = None
+
+
 class ConversationContextService:
     """Keep transaction work short and serialize only one conversation."""
 
     def __init__(
         self,
-        store: ConversationContextStore,
+        store: ConversationContextStore | None = None,
         *,
-        router: Router,
-        invoke: Invoker,
-        delegate_async: AsyncDelegator,
-        api_config: ApiConfig | None = None,
+        dependencies: ConversationContextDependencies | None = None,
+        **legacy: Any,
     ) -> None:
-        self.store = store
-        self.router = router
-        self.invoke = invoke
-        self.delegate_async = delegate_async
-        self.api_config = api_config or ApiConfig()
+        if dependencies is not None and (store is not None or legacy):
+            raise TypeError(
+                "dependencies cannot be combined with legacy collaborators"
+            )
+        if dependencies is None:
+            if store is None:
+                raise TypeError("store is required")
+            dependencies = ConversationContextDependencies(
+                store=store,
+                router=legacy.pop("router"),
+                invoke=legacy.pop("invoke"),
+                delegate_async=legacy.pop("delegate_async"),
+                api_config=legacy.pop("api_config", None),
+            )
+            if legacy:
+                raise TypeError(
+                    "unknown conversation service collaborator: "
+                    + next(iter(legacy))
+                )
+        self.store = dependencies.store
+        self.router = dependencies.router
+        self.invoke = dependencies.invoke
+        self.delegate_async = dependencies.delegate_async
+        self.api_config = dependencies.api_config or ApiConfig()
         self._locks: WeakValueDictionary[str, asyncio.Lock] = (
             WeakValueDictionary()
         )

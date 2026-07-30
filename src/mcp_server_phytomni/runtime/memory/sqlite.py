@@ -23,6 +23,7 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -85,6 +86,35 @@ class _MemoryUpdateContext:
     current: MemoryRecord
     payload: MemoryWrite
     timestamp: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryListOptions:
+    """Optional filters and bounds for one user-scoped list operation."""
+
+    kind: str | None = None
+    limit: int | None = None
+    now: datetime | None = None
+    include_expired: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryUpdateOptions:
+    """Concurrency fields for replacing one memory record."""
+
+    expected_revision: int
+    now: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryAuditQuery:
+    """Optional filters and pagination for the digest-only audit view."""
+
+    user_id: str | None = None
+    operation: str | None = None
+    memory_id: str | None = None
+    limit: int = 100
+    offset: int = 0
 
 
 def _now_utc(value: datetime | None = None) -> datetime:
@@ -426,22 +456,24 @@ class MemoryStore:
         self,
         user_id: str,
         *,
-        kind: str | None = None,
-        limit: int | None = None,
-        now: datetime | None = None,
-        include_expired: bool = False,
+        options: MemoryListOptions | None = None,
+        **legacy: Any,
     ) -> list[MemoryRecord]:
         """List a user's live records newest-first within the read bound."""
+        if options is not None and legacy:
+            raise TypeError("options cannot be combined with legacy filters")
+        if options is None:
+            options = MemoryListOptions(**legacy)
         owner = self._validate_user_id(user_id)
-        bounded_limit = self.policy.bounded_retrieval_limit(limit)
+        bounded_limit = self.policy.bounded_retrieval_limit(options.limit)
         clauses = ["user_id = ?"]
         params: list[object] = [owner]
-        if kind is not None:
+        if options.kind is not None:
             clauses.append("kind = ?")
-            params.append(self._validate_kind(kind))
-        if not include_expired:
+            params.append(self._validate_kind(options.kind))
+        if not options.include_expired:
             clauses.append("(expires_at IS NULL OR expires_at > ?)")
-            params.append(_iso(_now_utc(now)))
+            params.append(_iso(_now_utc(options.now)))
         params.append(bounded_limit)
         query = (
             "SELECT * FROM memories WHERE "
@@ -556,10 +588,14 @@ class MemoryStore:
         memory_id: str,
         write: MemoryWrite,
         *,
-        expected_revision: int,
-        now: datetime | None = None,
+        options: MemoryUpdateOptions | None = None,
+        **legacy: Any,
     ) -> MemoryRecord:
         """Replace one record when the caller presents its current revision."""
+        if options is not None and legacy:
+            raise TypeError("options cannot be combined with legacy fields")
+        if options is None:
+            options = MemoryUpdateOptions(**legacy)
         owner = self._validate_user_id(user_id)
         identifier = self._validate_id(memory_id)
         payload = MemoryWrite.model_validate(write)
@@ -567,20 +603,20 @@ class MemoryStore:
             raise MemoryStoreError(
                 "memory update namespace does not match user"
             )
-        if expected_revision < 1:
+        if options.expected_revision < 1:
             raise MemoryConflictError("memory revision must be positive")
         self.policy.validate_write(payload)
-        timestamp = _now_utc(now)
+        timestamp = _now_utc(options.now)
         with self._transaction() as conn:
             current = self._current_for_update(
-                conn, owner, identifier, expected_revision
+                conn, owner, identifier, options.expected_revision
             )
             updated = self._persist_update(
                 conn,
                 _MemoryUpdateContext(
                     owner=owner,
                     identifier=identifier,
-                    expected_revision=expected_revision,
+                    expected_revision=options.expected_revision,
                     current=current,
                     payload=payload,
                     timestamp=timestamp,
@@ -633,13 +669,19 @@ class MemoryStore:
     def list_audit(
         self,
         *,
-        user_id: str | None = None,
-        operation: str | None = None,
-        memory_id: str | None = None,
-        limit: int = 100,
-        offset: int = 0,
+        query: MemoryAuditQuery | None = None,
+        **legacy: Any,
     ) -> Sequence[MemoryAuditRecord]:
         """List digest-only mutation records for a trusted admin caller."""
+        if query is not None and legacy:
+            raise TypeError("query cannot be combined with legacy filters")
+        if query is None:
+            query = MemoryAuditQuery(**legacy)
+        user_id = query.user_id
+        operation = query.operation
+        memory_id = query.memory_id
+        limit = query.limit
+        offset = query.offset
         if limit < 1 or limit > _MAX_AUDIT_LIMIT:
             raise MemoryPolicyError(
                 f"audit limit must be between 1 and {_MAX_AUDIT_LIMIT}"
@@ -659,13 +701,13 @@ class MemoryStore:
             params.append(self._validate_id(memory_id))
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         params.extend((limit, offset))
-        query = (
+        statement = (
             "SELECT * FROM memory_mutation_audit"
             + where
             + " ORDER BY occurred_at DESC, audit_id DESC LIMIT ? OFFSET ?"
         )
         with self._connect() as conn:
-            rows = conn.execute(query, tuple(params)).fetchall()
+            rows = conn.execute(statement, tuple(params)).fetchall()
         return [self._audit_row_to_record(row) for row in rows]
 
     def purge_expired(self, *, now: datetime | None = None) -> int:

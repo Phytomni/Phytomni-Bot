@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import sqlite3
 from collections.abc import Callable, Mapping, Sequence
@@ -98,6 +99,25 @@ from .turn_commit import (
     _apply_staged_turn_locked,
     _commit_staged_turn,
     _CommitCall,
+)
+
+_COMMIT_STAGED_TURN_SIGNATURE = inspect.Signature(
+    parameters=(
+        inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        inspect.Parameter("key", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        inspect.Parameter("turn_id", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        inspect.Parameter(
+            "expected_ledger_version", inspect.Parameter.POSITIONAL_OR_KEYWORD
+        ),
+        inspect.Parameter(
+            "ledger_version", inspect.Parameter.POSITIONAL_OR_KEYWORD
+        ),
+        inspect.Parameter(
+            "mutation_lock_held",
+            inspect.Parameter.KEYWORD_ONLY,
+            default=False,
+        ),
+    )
 )
 
 # Preserve the historical public import and pickle path after support split.
@@ -471,27 +491,36 @@ class ConversationContextStore:
 
     def commit_staged_turn(
         self,
-        key: str,
-        turn_id: str,
-        expected_ledger_version: str,
-        ledger_version: str,
-        *,
-        mutation_lock_held: bool = False,
+        *args: Any,
+        **kwargs: Any,
     ) -> SettlementResult:
         """Atomically apply a staged turn or return its existing commit."""
+        bound = _COMMIT_STAGED_TURN_SIGNATURE.bind(self, *args, **kwargs)
+        bound.apply_defaults()
         result = _commit_staged_turn(
             self,
             _CommitCall(
-                key=key,
-                turn_id=turn_id,
-                expected_ledger_version=expected_ledger_version,
-                ledger_version=ledger_version,
-                mutation_lock_held=mutation_lock_held,
+                key=bound.arguments["key"],
+                turn_id=bound.arguments["turn_id"],
+                expected_ledger_version=bound.arguments[
+                    "expected_ledger_version"
+                ],
+                ledger_version=bound.arguments["ledger_version"],
+                mutation_lock_held=bound.arguments["mutation_lock_held"],
             ),
         )
-        if mutation_lock_held and result.state == "committed":
+        if (
+            bound.arguments["mutation_lock_held"]
+            and result.state == "committed"
+        ):
             logger.debug("conversation turn committed")
         return result
+
+    setattr(
+        commit_staged_turn,
+        "__signature__",
+        _COMMIT_STAGED_TURN_SIGNATURE,
+    )
 
     def mark_turn_failed(self, key: str, turn_id: str) -> None:
         """Mark a context turn failed without changing its result payload."""

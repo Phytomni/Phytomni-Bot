@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, TypedDict, Unpack
@@ -47,3 +48,46 @@ class RecordReservedSubmissionsCallable(Protocol):
     def __name__(self) -> str: ...
 
     __qualname__: str
+
+
+_SETTLE_RUN_SIGNATURE = inspect.Signature(
+    parameters=(
+        inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        inspect.Parameter("run_id", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        inspect.Parameter("owner", inspect.Parameter.KEYWORD_ONLY),
+        inspect.Parameter("status", inspect.Parameter.KEYWORD_ONLY),
+        inspect.Parameter(
+            "result", inspect.Parameter.KEYWORD_ONLY, default=None
+        ),
+        inspect.Parameter(
+            "error", inspect.Parameter.KEYWORD_ONLY, default=None
+        ),
+    )
+)
+_RECONCILE_SIGNATURE = inspect.Signature(
+    parameters=(
+        inspect.Parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        inspect.Parameter("run_id", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        inspect.Parameter("owner", inspect.Parameter.KEYWORD_ONLY),
+        inspect.Parameter(
+            "lister", inspect.Parameter.KEYWORD_ONLY, default=None
+        ),
+        inspect.Parameter(
+            "object_lister", inspect.Parameter.KEYWORD_ONLY, default=None
+        ),
+        inspect.Parameter(
+            "manifest_loader", inspect.Parameter.KEYWORD_ONLY, default=None
+        ),
+    )
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _ReconcileRequest:
+    """Validated arguments for one run reconciliation pass."""
+
+    run_id: str
+    owner: str
+    lister: Any
+    object_lister: Any
+    manifest_loader: Any

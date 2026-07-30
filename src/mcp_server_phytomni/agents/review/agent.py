@@ -56,6 +56,7 @@ from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import KnowledgeApp, build_knowledge_app
 from ..shared.options import resolve_agent_locale
 from ..shared.parallel_dispatch import FailureRecord
+from .arun_options import resolve_arun_options
 from .conversation import (
     ReviewClarificationError,
     ReviewConversationAdapter,
@@ -757,10 +758,8 @@ class DeepResearchAgent(
     async def arun(
         self,
         user_query: str,
-        obs_file_list: list[str] | None = None,
-        thread_id: str | None = None,
-        locale: SupportedLocale | None = None,
-        review_operation: str | None = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """Execute the DeepResearchAgent workflow.
 
@@ -773,6 +772,9 @@ class DeepResearchAgent(
             Chat-completions-style final response payload with review text,
             ordered references, and follow-up questions.
         """
+        obs_file_list, thread_id, locale, review_operation = (
+            resolve_arun_options(args, kwargs)
+        )
         initial_state = self.initial_state(
             user_query,
             obs_file_list,

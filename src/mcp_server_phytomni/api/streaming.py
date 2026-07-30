@@ -30,7 +30,11 @@ from ..mcp.handlers import (
     reset_private_conversation_messages,
     set_private_conversation_messages,
 )
-from ..mcp.result_formatting import AguiEvent, context_staged
+from ..mcp.result_formatting import (
+    AguiEvent,
+    ContextStagedPayload,
+    context_staged,
+)
 from ..mcp.stream_lifecycle import (
     EmptyStreamError,
     PrimedAguiStream,
@@ -539,15 +543,17 @@ def _stage_context_stream_success(
         "context_degraded": degraded,
     }
     custom_event = context_staged(
-        turn_id=context_stream.envelope.turn_id,
-        selected_agent_id="ChatAgent",
-        route_source="instant_lock",
-        proposed_business_context_version=(
-            context_stream.envelope.base_business_context_version + 1
-        ),
-        context_truncated=snapshot.truncated,
-        context_rebuilt=context_stream.rebuilt,
-        context_degraded=degraded,
+        ContextStagedPayload(
+            turn_id=context_stream.envelope.turn_id,
+            selected_agent_id="ChatAgent",
+            route_source="instant_lock",
+            proposed_business_context_version=(
+                context_stream.envelope.base_business_context_version + 1
+            ),
+            context_truncated=snapshot.truncated,
+            context_rebuilt=context_stream.rebuilt,
+            context_degraded=degraded,
+        )
     )
     final_replay_events = [
         *replay_events,

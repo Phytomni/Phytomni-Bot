@@ -47,7 +47,12 @@ from .run_registry_models import (
     _now_iso,
     local_run_spec,
 )
-from .run_registry_protocols import _ReservedSubmissionRequest
+from .run_registry_protocols import (
+    _RECONCILE_SIGNATURE,
+    _SETTLE_RUN_SIGNATURE,
+    _ReconcileRequest,
+    _ReservedSubmissionRequest,
+)
 from .run_registry_reports import (
     ReportArtifactSources,
     any_degraded,
@@ -66,9 +71,6 @@ from .task_manager import (
 from .task_reconcile import reconcile_task
 from .terminal_answer import TerminalAnswerContext, synthesize_terminal_answer
 from .terminal_artifacts import (
-    ArtifactLister,
-    ArtifactObjectLister,
-    ManifestLoader,
     collect_terminal_artifacts,
     enumerate_artifact_paths,
 )
@@ -130,10 +132,8 @@ if TYPE_CHECKING:
 
 
 class RunRegistry(RunRegistryViewsMixin):
-    """Run-level CRUD + aggregation over the shared task database.
-
-    Shares ``resolve_tasks_db_path`` with ``TaskManager`` so a run row
-    and its child tasks are always co-located in one SQLite file.
+    """Run-level CRUD and aggregation over the shared task database.
+    ``resolve_tasks_db_path`` keeps run rows and child tasks co-located.
     """
 
     def __init__(self, db_path: str | None = None) -> None:
@@ -521,12 +521,8 @@ class RunRegistry(RunRegistryViewsMixin):
 
     def settle_run(
         self,
-        run_id: str,
-        *,
-        owner: str,
-        status: str,
-        result: dict[str, Any] | None = None,
-        error: str | None = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> bool:
         """Settle an owned run to a terminal status in place.
 
@@ -545,6 +541,13 @@ class RunRegistry(RunRegistryViewsMixin):
         Returns:
             True when an owned row was updated, False otherwise.
         """
+        bound = _SETTLE_RUN_SIGNATURE.bind(self, *args, **kwargs)
+        bound.apply_defaults()
+        run_id = bound.arguments["run_id"]
+        owner = bound.arguments["owner"]
+        status = bound.arguments["status"]
+        result = bound.arguments["result"]
+        error = bound.arguments["error"]
         now = _now_iso()
         expires_at = _expires_at_for(status, now)
         with sqlite_transaction(self.db_path) as conn:
@@ -569,6 +572,8 @@ class RunRegistry(RunRegistryViewsMixin):
                 ),
             )
             return cursor.rowcount > 0
+
+    setattr(settle_run, "__signature__", _SETTLE_RUN_SIGNATURE)
 
     def list_runs(
         self,
@@ -626,12 +631,8 @@ class RunRegistry(RunRegistryViewsMixin):
 
     async def reconcile(
         self,
-        run_id: str,
-        *,
-        owner: str,
-        lister: ArtifactLister | None = None,
-        object_lister: ArtifactObjectLister | None = None,
-        manifest_loader: ManifestLoader | None = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> RunRecord | None:
         """Refresh a non-terminal run by polling its child tasks.
 
@@ -648,7 +649,16 @@ class RunRegistry(RunRegistryViewsMixin):
         Returns:
             Updated ``RunRecord`` or ``None`` (unknown / not-owner).
         """
-        current = self.get_run(run_id, owner=owner)
+        bound = _RECONCILE_SIGNATURE.bind(self, *args, **kwargs)
+        bound.apply_defaults()
+        request = _ReconcileRequest(
+            run_id=bound.arguments["run_id"],
+            owner=bound.arguments["owner"],
+            lister=bound.arguments["lister"],
+            object_lister=bound.arguments["object_lister"],
+            manifest_loader=bound.arguments["manifest_loader"],
+        )
+        current = self.get_run(request.run_id, owner=request.owner)
         if current is None or current.status in _NON_POLLABLE_RUN_STATUSES:
             return current
         live: list[dict[str, Any]] = []
@@ -663,14 +673,14 @@ class RunRegistry(RunRegistryViewsMixin):
                 new_status,
                 live,
                 sources=ReportArtifactSources(
-                    lister=lister,
-                    object_lister=object_lister,
-                    manifest_loader=manifest_loader,
+                    lister=request.lister,
+                    object_lister=request.object_lister,
+                    manifest_loader=request.manifest_loader,
                 ),
             )
 
         if new_status == "succeeded":
-            live = await enumerate_artifact_paths(live, lister=lister)
+            live = await enumerate_artifact_paths(live, lister=request.lister)
         artifacts = (
             collect_terminal_artifacts(live)
             if new_status == "succeeded"
@@ -695,6 +705,8 @@ class RunRegistry(RunRegistryViewsMixin):
         return self._settle_terminal(
             current, new_status, legacy_result_payload, error
         )
+
+    setattr(reconcile, "__signature__", _RECONCILE_SIGNATURE)
 
     async def _settle_report_terminal(
         self,
@@ -867,9 +879,7 @@ def _record_reserved_submissions_facade(
     self: RunRegistry, *args: Any, **kwargs: Any
 ) -> bool:
     """Adapt the historical public call shape to the typed request object."""
-    bound = _RECORD_RESERVED_SUBMISSIONS_SIGNATURE.bind(
-        self, *args, **kwargs
-    )
+    bound = _RECORD_RESERVED_SUBMISSIONS_SIGNATURE.bind(self, *args, **kwargs)
     request = _ReservedSubmissionRequest(
         run_id=bound.arguments["run_id"],
         owner=bound.arguments["owner"],

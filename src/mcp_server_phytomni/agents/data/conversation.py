@@ -265,21 +265,22 @@ def _validated_aggregate_summary(value: object) -> str | None:
     summary = (
         _validated_text(value, limit=1024) if isinstance(value, str) else None
     )
-    if summary is None:
-        return None
-    if _SUMMARY_SQL_RE.search(summary):
-        return None
-    if _SUMMARY_DSN_RE.search(summary):
-        return None
-    if _SUMMARY_ROW_RE.search(summary):
-        return None
-    if _SUMMARY_SECRET_FIELD_RE.search(summary):
-        return None
-    if _SUMMARY_SECRET_NAME_RE.search(summary):
-        return None
-    if _SUMMARY_SECRET_PHRASE_RE.search(summary):
+    if summary is None or _summary_contains_forbidden_content(summary):
         return None
     return summary
+
+
+def _summary_contains_forbidden_content(summary: str) -> bool:
+    """Detect SQL, row-shaped data, DSNs, or credential-like text."""
+    patterns = (
+        _SUMMARY_SQL_RE,
+        _SUMMARY_DSN_RE,
+        _SUMMARY_ROW_RE,
+        _SUMMARY_SECRET_FIELD_RE,
+        _SUMMARY_SECRET_NAME_RE,
+        _SUMMARY_SECRET_PHRASE_RE,
+    )
+    return any(pattern.search(summary) for pattern in patterns)
 
 
 def _dataset_from_query(query: str) -> str | None:

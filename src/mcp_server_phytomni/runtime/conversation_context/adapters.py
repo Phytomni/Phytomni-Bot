@@ -7,7 +7,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 from uuid import UUID
 
@@ -397,26 +397,17 @@ class ConversationContextExecutor:
 
     async def _acknowledge_review_settlement_key(
         self,
-        key: tuple[str, str],
-        *,
-        accepted: bool,
-        staged_turn: StoredTurn | None = None,
-        expected_ledger_version: str | None = None,
-        mutation_lock_held: bool = False,
+        request: ReviewSettlementForTurnRequest,
     ) -> bool:
         """Serialize the complete Review promotion for one ack boundary."""
         async with self._review_settlement.review_settlement_ack_lock:
             service = self._service_for_request()
             lock: Any | None = None
-            if not mutation_lock_held:
+            if not request.mutation_lock_held:
                 lock = await _acquire_review_mutation_lock(service.store)
             try:
                 return await self._acknowledge_review_settlement_key_locked(
-                    key,
-                    accepted=accepted,
-                    staged_turn=staged_turn,
-                    expected_ledger_version=expected_ledger_version,
-                    mutation_lock_held=True,
+                    replace(request, mutation_lock_held=True)
                 )
             finally:
                 if lock is not None:
@@ -664,34 +655,22 @@ class ConversationContextExecutor:
 
     async def _acknowledge_review_settlement_key_locked(
         self,
-        key: tuple[str, str],
-        *,
-        accepted: bool,
-        staged_turn: StoredTurn | None = None,
-        expected_ledger_version: str | None = None,
-        mutation_lock_held: bool = False,
+        request: ReviewSettlementForTurnRequest,
     ) -> bool:
         """Apply one durable Review acknowledgment by conversation identity."""
         service = self._service_for_request()
-        request = ReviewSettlementForTurnRequest(
-            key=key,
-            accepted=accepted,
-            staged_turn=staged_turn,
-            expected_ledger_version=expected_ledger_version,
-            mutation_lock_held=mutation_lock_held,
-        )
         claim = self._claim_review_settlement_state(service, request)
         if claim.terminal_result is not None:
             return claim.terminal_result
         try:
             adapter = await self._load_review_settlement_adapter(
-                key, claim.staged_turn
+                request.key, claim.staged_turn
             )
         except BaseException:
-            self._finalize_review_claim_failed(service, key, claim)
+            self._finalize_review_claim_failed(service, request.key, claim)
             raise
         if adapter is None:
-            self._finalize_review_claim_failed(service, key, claim)
+            self._finalize_review_claim_failed(service, request.key, claim)
             return False
         return await self._settle_review_adapter(
             service, request, claim, adapter
@@ -711,22 +690,20 @@ class ConversationContextExecutor:
         candidate and leaves the active Review checkpoint untouched.
         """
         return await self._acknowledge_review_settlement_key(
-            self._review_settlement_key(envelope),
-            accepted=accepted,
-            mutation_lock_held=mutation_lock_held,
+            ReviewSettlementForTurnRequest(
+                key=self._review_settlement_key(envelope),
+                accepted=accepted,
+                staged_turn=None,
+                expected_ledger_version=None,
+                mutation_lock_held=mutation_lock_held,
+            ),
         )
 
     async def _acknowledge_review_settlement_for_turn(
         self, request: ReviewSettlementForTurnRequest
     ) -> bool:
         """Acknowledge Review from the HTTP settlement route after restart."""
-        return await self._acknowledge_review_settlement_key(
-            request.key,
-            accepted=request.accepted,
-            staged_turn=request.staged_turn,
-            expected_ledger_version=request.expected_ledger_version,
-            mutation_lock_held=request.mutation_lock_held,
-        )
+        return await self._acknowledge_review_settlement_key(request)
 
     async def execute(
         self,

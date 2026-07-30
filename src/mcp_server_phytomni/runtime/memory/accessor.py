@@ -18,9 +18,10 @@ import sqlite3
 from collections.abc import Callable, Generator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
+from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from ...config.defaults import ApiConfig
 from ..request_context import current_request_user
@@ -57,6 +58,27 @@ class MemoryGraphContext(TypedDict, total=False):
     memory_accessor: MemoryAccessor
 
 
+@dataclass(frozen=True, slots=True)
+class MemoryAccessorOptions:
+    """Construction settings for a lazy, bounded memory accessor."""
+
+    enabled: bool = True
+    store_factory: _StoreFactory | None = None
+    policy: MemoryPolicy | None = None
+    max_bytes: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryRetrievalRequest:
+    """Optional filters and budgets for one accessor read."""
+
+    user_id: str | None = None
+    kind: str | None = None
+    limit: int | None = None
+    max_bytes: int | None = None
+    now: datetime | None = None
+
+
 def memory_policy_from_config(
     config: ApiConfig | None = None,
 ) -> MemoryPolicy:
@@ -90,12 +112,18 @@ class MemoryAccessor:
         self,
         store: MemoryStore | None = None,
         *,
-        enabled: bool = True,
-        store_factory: _StoreFactory | None = None,
-        policy: MemoryPolicy | None = None,
-        max_bytes: int | None = None,
+        options: MemoryAccessorOptions | None = None,
+        **legacy: Any,
     ) -> None:
         """Initialize one graph-facing memory accessor."""
+        if options is not None and legacy:
+            raise TypeError("options cannot be combined with legacy fields")
+        if options is None:
+            options = MemoryAccessorOptions(**legacy)
+        enabled = options.enabled
+        store_factory = options.store_factory
+        policy = options.policy
+        max_bytes = options.max_bytes
         if store is not None and store_factory is not None:
             raise ValueError(
                 "memory accessor accepts store or factory, not both"
@@ -141,11 +169,8 @@ class MemoryAccessor:
     def retrieve(
         self,
         *,
-        user_id: str | None = None,
-        kind: str | None = None,
-        limit: int | None = None,
-        max_bytes: int | None = None,
-        now: datetime | None = None,
+        request: MemoryRetrievalRequest | None = None,
+        **legacy: Any,
     ) -> list[MemoryRecord]:
         """Return a newest-first, bounded prefix for one user namespace.
 
@@ -156,19 +181,27 @@ class MemoryAccessor:
         newest-first ordering; a record that would exceed the budget stops
         the prefix rather than being truncated.
         """
+        if request is not None and legacy:
+            raise TypeError("request cannot be combined with legacy filters")
+        if request is None:
+            request = MemoryRetrievalRequest(**legacy)
         if not self.enabled:
             return []
-        owner = current_request_user() if user_id is None else user_id
+        owner = (
+            current_request_user()
+            if request.user_id is None
+            else request.user_id
+        )
         if not owner:
             return []
-        bounded_limit = self.policy.bounded_retrieval_limit(limit)
-        budget = self._byte_budget(max_bytes)
+        bounded_limit = self.policy.bounded_retrieval_limit(request.limit)
+        budget = self._byte_budget(request.max_bytes)
         try:
             records = self._open_store().list(
                 owner,
-                kind=kind,
+                kind=request.kind,
                 limit=bounded_limit,
-                now=now,
+                now=request.now,
             )
         except (
             MemorySchemaError,
