@@ -173,6 +173,19 @@ class ReviewCheckpointSnapshot(_ReviewCheckpointSnapshotFields):
         return None
 
 
+def _restore_checkpoint_snapshot_metadata() -> None:
+    """Keep direct class metadata compatible with the original dataclass."""
+    annotations = {
+        **_ReviewCheckpointSnapshotFields.__annotations__,
+        **ReviewCheckpointSnapshot.__annotations__,
+    }
+    ReviewCheckpointSnapshot.__annotations__ = annotations
+    setattr(ReviewCheckpointSnapshot, "__slots__", tuple(annotations))
+
+
+_restore_checkpoint_snapshot_metadata()
+
+
 @dataclass(frozen=True, slots=True)
 class _PreparedReviewTurn:
     projection: ContextProjection

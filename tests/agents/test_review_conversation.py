@@ -10,7 +10,7 @@ import json
 import sqlite3
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict
+from dataclasses import asdict, fields
 from typing import Any
 from uuid import UUID
 
@@ -179,6 +179,27 @@ def test_extract_review_checkpoint_admits_only_bounded_review_snapshot() -> (
     assert snapshot.report_revision == 4
     assert _FULL_REPORT not in json.dumps(asdict(snapshot), sort_keys=True)
     assert all("raw source body" not in claim for claim in snapshot.key_claims)
+
+
+def test_review_snapshot_preserves_direct_dataclass_metadata() -> None:
+    """Field factoring keeps the original public introspection contract."""
+    field_names = [item.name for item in fields(ReviewCheckpointSnapshot)]
+    snapshot = ReviewCheckpointSnapshot("question")
+
+    assert field_names == [
+        "research_question",
+        "source_ids",
+        "outline_headings",
+        "key_claims",
+        "evidence_gaps",
+        "sections",
+        "report_artifact_id",
+        "report_revision",
+    ]
+    assert list(ReviewCheckpointSnapshot.__annotations__) == field_names
+    assert ReviewCheckpointSnapshot.__slots__ == tuple(field_names)
+    assert not hasattr(snapshot, "__dict__")
+    assert list(asdict(snapshot)) == field_names
 
 
 def test_prepare_local_revision_uses_only_the_requested_section() -> None:
