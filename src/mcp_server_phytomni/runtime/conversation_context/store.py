@@ -323,6 +323,19 @@ class _ReviewMarkerWriteRequest:
 
 
 @dataclass(frozen=True)
+class _StagedTurnCommitRequest:
+    """Inputs for applying one staged turn inside its open transaction."""
+
+    connection: sqlite3.Connection
+    key: str
+    turn_id: str
+    turn: sqlite3.Row | tuple[Any, ...]
+    context: sqlite3.Row | tuple[Any, ...] | None
+    ledger_version: str
+    now: str
+
+
+@dataclass(frozen=True)
 class _ReviewClaimLookupRequest:
     """Inputs for precondition checks before a Review marker claim."""
 
@@ -1601,6 +1614,75 @@ class ConversationContextStore:
                 )
             )
 
+    def _apply_staged_turn_locked(
+        self, request: _StagedTurnCommitRequest
+    ) -> sqlite3.Row | tuple[Any, ...]:
+        """Apply staged data and return the updated context row."""
+        data, metadata, _stage_metadata = _unpack_delta(request.turn[8])
+        assert data is not None
+        schema_version = metadata["schema_version"]
+        cursor = metadata["ledger_cursor"]
+        mode = metadata["observed_mode"]
+        context_data = dict(data)
+        if "last_applied_ledger_version" in context_data:
+            context_data["last_applied_ledger_version"] = (
+                request.ledger_version
+            )
+        context_json = _json(context_data)
+        if request.context is None:
+            request.connection.execute(
+                "INSERT INTO conversation_contexts VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, 'active', 'not_requested', ?, "
+                "NULL)",
+                (
+                    request.key,
+                    schema_version,
+                    1,
+                    cursor,
+                    request.ledger_version,
+                    mode,
+                    context_json,
+                    request.now,
+                ),
+            )
+        else:
+            request.connection.execute(
+                "UPDATE conversation_contexts SET schema_version=?, "
+                "context_version=?, ledger_cursor=?, ledger_version=?, "
+                "observed_mode=?, context_json=?, state='active', "
+                "updated_at=? WHERE conversation_key=? "
+                "AND context_version=?",
+                (
+                    schema_version,
+                    request.context[2] + 1,
+                    cursor,
+                    request.ledger_version,
+                    mode,
+                    context_json,
+                    request.now,
+                    request.key,
+                    request.turn[3],
+                ),
+            )
+        request.connection.execute(
+            "UPDATE conversation_turns SET state='committed', "
+            "ledger_version=?, updated_at=? WHERE conversation_key=? "
+            "AND turn_id=?",
+            (
+                request.ledger_version,
+                request.now,
+                request.key,
+                request.turn_id,
+            ),
+        )
+        return request.connection.execute(
+            "SELECT conversation_key, schema_version, context_version, "
+            "ledger_cursor, ledger_version, observed_mode, context_json, "
+            "state, checkpoint_cleanup_state, updated_at, tombstoned_at "
+            "FROM conversation_contexts WHERE conversation_key=?",
+            (request.key,),
+        ).fetchone()
+
     def commit_staged_turn(
         self,
         key: str,
@@ -1667,63 +1749,17 @@ class ConversationContextStore:
             current = 0 if context is None else context[2]
             if current != turn[3]:
                 raise ContextVersionConflictError(key)
-            data, metadata, _stage_metadata = _unpack_delta(turn[8])
-            assert data is not None
-            schema_version = metadata["schema_version"]
-            cursor = metadata["ledger_cursor"]
-            mode = metadata["observed_mode"]
-            context_data = dict(data)
-            if "last_applied_ledger_version" in context_data:
-                context_data["last_applied_ledger_version"] = ledger_version
-            context_json = _json(context_data)
-            if context is None:
-                connection.execute(
-                    "INSERT INTO conversation_contexts VALUES "
-                    "(?, ?, ?, ?, ?, ?, ?, 'active', 'not_requested', ?, "
-                    "NULL)",
-                    (
-                        key,
-                        schema_version,
-                        1,
-                        cursor,
-                        ledger_version,
-                        mode,
-                        context_json,
-                        now,
-                    ),
+            row = self._apply_staged_turn_locked(
+                _StagedTurnCommitRequest(
+                    connection=connection,
+                    key=key,
+                    turn_id=turn_id,
+                    turn=turn,
+                    context=context,
+                    ledger_version=ledger_version,
+                    now=now,
                 )
-            else:
-                connection.execute(
-                    "UPDATE conversation_contexts SET schema_version=?, "
-                    "context_version=?, ledger_cursor=?, ledger_version=?, "
-                    "observed_mode=?, context_json=?, state='active', "
-                    "updated_at=? WHERE conversation_key=? "
-                    "AND context_version=?",
-                    (
-                        schema_version,
-                        current + 1,
-                        cursor,
-                        ledger_version,
-                        mode,
-                        context_json,
-                        now,
-                        key,
-                        turn[3],
-                    ),
-                )
-            connection.execute(
-                "UPDATE conversation_turns SET state='committed', "
-                "ledger_version=?, updated_at=? WHERE conversation_key=? "
-                "AND turn_id=?",
-                (ledger_version, now, key, turn_id),
             )
-            row = connection.execute(
-                "SELECT conversation_key, schema_version, context_version, "
-                "ledger_cursor, ledger_version, observed_mode, context_json, "
-                "state, checkpoint_cleanup_state, updated_at, tombstoned_at "
-                "FROM conversation_contexts WHERE conversation_key=?",
-                (key,),
-            ).fetchone()
         logger.debug("conversation turn committed")
         return SettlementResult("committed", self._context(row))
 
