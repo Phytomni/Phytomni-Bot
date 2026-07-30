@@ -176,6 +176,8 @@ def test_review_reservation_preflight_preserves_subclass_dispatch() -> None:
     """Reservation preflight uses an instance's private override."""
 
     class OverrideStore(ConversationContextStore):
+        """Reject reservation preflight before touching storage."""
+
         @staticmethod
         def _review_reservation_inputs_valid(
             _claim_token: object, _fence_token: object
