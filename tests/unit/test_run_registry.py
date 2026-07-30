@@ -11,6 +11,7 @@ and the manual cascade in purge_expired.
 
 from __future__ import annotations
 
+import inspect
 import sqlite3
 from pathlib import Path
 
@@ -49,6 +50,33 @@ def _make_registry(tmp_path: Path) -> tuple[RunRegistry, TaskManager, str]:
     """Return a (registry, manager, db_path) trio on a fresh tmp DB."""
     db = str(tmp_path / "tasks.db")
     return RunRegistry(db), TaskManager(db), db
+
+
+def test_record_reserved_submissions_preserves_public_signature() -> None:
+    """The compatibility facade keeps class and bound call signatures."""
+    method = RunRegistry.record_reserved_submissions
+    assert str(inspect.signature(method)) == (
+        "(self, run_id: 'str', *, owner: 'str', agent: 'str', "
+        "submissions: 'Sequence[Submission]', result: 'dict[str, Any]', "
+        "now: 'str') -> 'bool'"
+    )
+    bound_method = method.__get__(RunRegistry.__new__(RunRegistry), RunRegistry)
+    assert str(inspect.signature(bound_method)) == (
+        "(run_id: 'str', *, owner: 'str', agent: 'str', "
+        "submissions: 'Sequence[Submission]', result: 'dict[str, Any]', "
+        "now: 'str') -> 'bool'"
+    )
+    assert method.__annotations__ == {
+        "run_id": "str",
+        "owner": "str",
+        "agent": "str",
+        "submissions": "Sequence[Submission]",
+        "result": "dict[str, Any]",
+        "now": "str",
+        "return": "bool",
+    }
+    assert method.__qualname__ == "RunRegistry.record_reserved_submissions"
+    assert method.__module__ == RunRegistry.__module__
 
 
 def _seed_async_run(

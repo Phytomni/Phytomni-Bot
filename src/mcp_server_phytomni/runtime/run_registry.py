@@ -13,10 +13,12 @@ Public dataclasses: RunSpec, RunFilter, Timestamps, RunRecord, RunRegistry.
 from __future__ import annotations
 
 import contextlib
+import inspect
 import json
 import sqlite3
-from collections.abc import Sequence
-from typing import Any
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from .run_registry_models import (
     _A2A_COLUMNS,
@@ -124,6 +126,18 @@ def purge_run_children(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _ReservedSubmissionRequest:
+    """Validated inputs for one reserved-run submission projection."""
+
+    run_id: str
+    owner: str
+    agent: str
+    submissions: Sequence[Submission]
+    result: dict[str, Any]
+    now: str
+
+
 class RunRegistry(RunRegistryViewsMixin):
     """Run-level CRUD + aggregation over the shared task database.
 
@@ -140,6 +154,11 @@ class RunRegistry(RunRegistryViewsMixin):
         """
         self.db_path = db_path or resolve_tasks_db_path()
         self._init_db()
+
+    if TYPE_CHECKING:
+        # Runtime installation below keeps the historical explicit signature
+        # while this annotation preserves the public static call seam.
+        record_reserved_submissions: Callable[..., bool]
 
     def _init_db(self) -> None:
         """Create the ``runs`` table and shared indices if missing.
@@ -291,15 +310,8 @@ class RunRegistry(RunRegistryViewsMixin):
                 ),
             )
 
-    def record_reserved_submissions(
-        self,
-        run_id: str,
-        *,
-        owner: str,
-        agent: str,
-        submissions: Sequence[Submission],
-        result: dict[str, Any],
-        now: str,
+    def _record_reserved_submissions(
+        self, request: _ReservedSubmissionRequest
     ) -> bool:
         """Atomically attach children and project a running reserved run.
 
@@ -314,13 +326,17 @@ class RunRegistry(RunRegistryViewsMixin):
                 SELECT status FROM runs
                 WHERE run_id = ? AND user_id = ? AND agent = ?
                 """,
-                (run_id, owner, agent),
+                (request.run_id, request.owner, request.agent),
             ).fetchone()
             if row is None or row[0] != "running":
                 return False
-            expected_identity = (run_id, owner, agent)
+            expected_identity = (
+                request.run_id,
+                request.owner,
+                request.agent,
+            )
             task_ids: set[str] = set()
-            for submission in submissions:
+            for submission in request.submissions:
                 ctx = submission.run_context
                 if (
                     ctx is None
@@ -344,7 +360,7 @@ class RunRegistry(RunRegistryViewsMixin):
                 ).fetchone()
                 if existing is not None and existing != expected_identity:
                     return False
-            for submission in submissions:
+            for submission in request.submissions:
                 ctx = submission.run_context
                 assert ctx is not None
                 conn.execute(
@@ -395,7 +411,13 @@ class RunRegistry(RunRegistryViewsMixin):
                 WHERE run_id = ? AND user_id = ? AND agent = ?
                   AND status = 'running'
                 """,
-                (json.dumps(result), now, run_id, owner, agent),
+                (
+                    json.dumps(request.result),
+                    request.now,
+                    request.run_id,
+                    request.owner,
+                    request.agent,
+                ),
             )
             if cursor.rowcount != 1:
                 raise sqlite3.OperationalError(
@@ -810,6 +832,85 @@ class RunRegistry(RunRegistryViewsMixin):
             task_ids=current.task_ids,
             request_info=current.request_info,
         )
+
+
+def _reserved_parameter(
+    name: str, kind: Any, annotation: object = inspect.Parameter.empty
+) -> inspect.Parameter:
+    """Build one parameter for the reserved-submission facade signature."""
+    return inspect.Parameter(name, kind, annotation=annotation)
+
+
+_RECORD_RESERVED_SUBMISSIONS_SIGNATURE = inspect.Signature(
+    parameters=(
+        _reserved_parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        _reserved_parameter(
+            "run_id", inspect.Parameter.POSITIONAL_OR_KEYWORD, "str"
+        ),
+        _reserved_parameter("owner", inspect.Parameter.KEYWORD_ONLY, "str"),
+        _reserved_parameter("agent", inspect.Parameter.KEYWORD_ONLY, "str"),
+        _reserved_parameter(
+            "submissions",
+            inspect.Parameter.KEYWORD_ONLY,
+            "Sequence[Submission]",
+        ),
+        _reserved_parameter(
+            "result", inspect.Parameter.KEYWORD_ONLY, "dict[str, Any]"
+        ),
+        _reserved_parameter("now", inspect.Parameter.KEYWORD_ONLY, "str"),
+    ),
+    return_annotation="bool",
+)
+_RECORD_RESERVED_SUBMISSIONS_ANNOTATIONS: dict[str, object] = {
+    "run_id": "str",
+    "owner": "str",
+    "agent": "str",
+    "submissions": "Sequence[Submission]",
+    "result": "dict[str, Any]",
+    "now": "str",
+    "return": "bool",
+}
+
+
+def _record_reserved_submissions_facade(
+    self: RunRegistry, *args: Any, **kwargs: Any
+) -> bool:
+    """Adapt the historical public call shape to the typed request object."""
+    bound = _RECORD_RESERVED_SUBMISSIONS_SIGNATURE.bind(
+        self, *args, **kwargs
+    )
+    request = _ReservedSubmissionRequest(
+        run_id=bound.arguments["run_id"],
+        owner=bound.arguments["owner"],
+        agent=bound.arguments["agent"],
+        submissions=bound.arguments["submissions"],
+        result=bound.arguments["result"],
+        now=bound.arguments["now"],
+    )
+    implementation = getattr(self, "_record_reserved_submissions")
+    return implementation(request)
+
+
+def _install_record_reserved_submissions_facade() -> None:
+    """Install the compatibility facade after ``RunRegistry`` is defined."""
+    facade = _record_reserved_submissions_facade
+    metadata = (
+        ("__signature__", _RECORD_RESERVED_SUBMISSIONS_SIGNATURE),
+        ("__annotations__", _RECORD_RESERVED_SUBMISSIONS_ANNOTATIONS),
+        ("__name__", "record_reserved_submissions"),
+        ("__qualname__", "RunRegistry.record_reserved_submissions"),
+        ("__module__", __name__),
+        (
+            "__doc__",
+            getattr(RunRegistry, "_record_reserved_submissions").__doc__,
+        ),
+    )
+    for name, value in metadata:
+        setattr(facade, name, value)
+    setattr(RunRegistry, "record_reserved_submissions", facade)
+
+
+_install_record_reserved_submissions_facade()
 
 
 def _build_list_where(
