@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import inspect
 import json
+from collections.abc import Sequence
 from typing import Literal, TypedDict
 from uuid import UUID
 
@@ -241,6 +242,9 @@ def test_projection_trims_in_documented_priority_order() -> None:
         def estimate(self, text: str) -> int:
             return len(text)
 
+        def estimate_many(self, texts: Sequence[str]) -> int:
+            return sum(self.estimate(text) for text in texts)
+
     projection = build_context_projection(
         conversation_key=_CONVERSATION_KEY,
         current_query="c" * 200,
@@ -299,6 +303,9 @@ def test_projection_budget_validation_counts_private_recent_turns() -> None:
     class CharacterEstimator:
         def estimate(self, text: str) -> int:
             return len(text)
+
+        def estimate_many(self, texts: Sequence[str]) -> int:
+            return sum(self.estimate(text) for text in texts)
 
     projection = build_context_projection(
         conversation_key=_CONVERSATION_KEY,

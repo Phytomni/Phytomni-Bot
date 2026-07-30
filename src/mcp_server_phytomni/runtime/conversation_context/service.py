@@ -25,6 +25,7 @@ from .projection import (
     build_context_projection,
     rebuild_business_context,
 )
+from .review_support import _REVIEW_SETTLEMENT_STATES
 from .service_execution import (
     _SyncTurnRequest,
     delegate_async_turn,
@@ -93,17 +94,6 @@ _REVIEW_STAGE_FIELDS = frozenset(
 _REVIEW_OPERATIONS = frozenset(
     {"new_review", "follow_up", "local_revision", "scope_change"}
 )
-_REVIEW_SETTLEMENT_STATES = frozenset(
-    {
-        "pending",
-        "settling",
-        "promoting",
-        "promoted",
-        "rejected",
-        "failed",
-    }
-)
-
 _INVALID_REVIEW_FIELD = object()
 
 

@@ -30,20 +30,34 @@ from .models import (
     PerAgentMemory,
     RoleTaggedTurn,
 )
+from .service_types import _SYNC_CONTEXT_AGENTS
 
 if TYPE_CHECKING:
     from .projection_protocols import ProjectionBuilder, RebuildBuilder
 
 
 class TokenEstimator(Protocol):
-    def estimate(self, text: str) -> int: ...
+    """Estimate the bounded token cost of one text value."""
+
+    def estimate(self, text: str) -> int:
+        """Return the estimated token count for ``text``."""
+        raise NotImplementedError
+
+    def estimate_many(self, texts: Sequence[str]) -> int:
+        """Return the combined estimate for a sequence of text values."""
+        return sum(self.estimate(text) for text in texts)
 
 
 class ConservativeTokenEstimator:
     """Estimate UTF-8 tokens without adding a tokenizer dependency."""
 
     def estimate(self, text: str) -> int:
+        """Return a conservative UTF-8 byte-based token estimate."""
         return max(1, (len(text.encode("utf-8")) + 2) // 3)
+
+    def estimate_many(self, texts: Sequence[str]) -> int:
+        """Return the combined conservative estimate for ``texts``."""
+        return sum(self.estimate(text) for text in texts)
 
 
 class _ProjectionBudget(NamedTuple):
@@ -96,6 +110,7 @@ def _keyword_facade(
     annotations: dict[str, object],
 ) -> Callable[..., Any]:
     """Build a callable with a stable explicit keyword-only signature."""
+
     def invoke(**kwargs: object) -> Any:
         return builder(kwargs)
 
@@ -128,29 +143,21 @@ _PROJECTION_SIGNATURE = inspect.Signature(
         _keyword_parameter("locale", "SupportedLocale"),
         _keyword_parameter("selected_agent_id", "str"),
         _keyword_parameter("context", "BusinessContext"),
-        _keyword_parameter(
-            "authorized_artifacts", "Sequence[ArtifactRefV1]"
-        ),
+        _keyword_parameter("authorized_artifacts", "Sequence[ArtifactRefV1]"),
         _keyword_parameter("api_config", "ApiConfig"),
         _keyword_parameter("estimator", "TokenEstimator | None", None),
-        _keyword_parameter(
-            "exclude_current_user_turn", "bool", False
-        ),
+        _keyword_parameter("exclude_current_user_turn", "bool", False),
     ],
     return_annotation="ContextProjection",
 )
 _REBUILD_SIGNATURE = inspect.Signature(
     parameters=[
         _keyword_parameter("conversation_key", "UUID"),
-        _keyword_parameter(
-            "ledger_entries", "Sequence[Mapping[str, object]]"
-        ),
+        _keyword_parameter("ledger_entries", "Sequence[Mapping[str, object]]"),
         _keyword_parameter("artifact_refs", "Sequence[ArtifactRefV1]"),
         _keyword_parameter("ledger_cursor", "int"),
         _keyword_parameter("ledger_version", "str"),
-        _keyword_parameter(
-            "observed_mode", "Literal['instant', 'expert']"
-        ),
+        _keyword_parameter("observed_mode", "Literal['instant', 'expert']"),
     ],
     return_annotation="BusinessContext",
 )
@@ -174,9 +181,7 @@ def _projection_budget_payload(
                 Sequence[ContextEntity | Mapping[str, object]],
                 kwargs.pop("active_entities"),
             ),
-            open_questions=cast(
-                Sequence[str], kwargs.pop("open_questions")
-            ),
+            open_questions=cast(Sequence[str], kwargs.pop("open_questions")),
             artifact_refs=cast(
                 Sequence[ArtifactRefV1 | Mapping[str, object]],
                 kwargs.pop("artifact_refs"),
@@ -371,7 +376,9 @@ def _projection_request(values: Mapping[str, object]) -> _ProjectionRequest:
     )
 
 
-def _build_context_projection(request: _ProjectionRequest) -> ContextProjection:
+def _build_context_projection(
+    request: _ProjectionRequest,
+) -> ContextProjection:
     """Admit context sections in the documented priority order."""
     estimator = request.estimator or ConservativeTokenEstimator()
     budget = _budget(request.api_config, request.selected_agent_id)
@@ -430,12 +437,18 @@ def _build_context_projection(request: _ProjectionRequest) -> ContextProjection:
     if query_limit < len(request.current_query):
         truncated = True
 
-    truncated = _admit_projection_value(
-        result,
-        "active_entities",
-        [item.model_dump(mode="json") for item in request.context.active_entities],
-        fits,
-    ) or truncated
+    truncated = (
+        _admit_projection_value(
+            result,
+            "active_entities",
+            [
+                item.model_dump(mode="json")
+                for item in request.context.active_entities
+            ],
+            fits,
+        )
+        or truncated
+    )
     truncated = (
         _admit_projection_value(
             result, "open_questions", request.context.open_questions, fits
@@ -584,13 +597,7 @@ def _rebuild_business_context(request: _RebuildRequest) -> BusinessContext:
                 agent_id=agent,
                 thread_id=agent_thread_id(request.conversation_key, agent),
             )
-            for agent in (
-                "ChatAgent",
-                "KnowledgeAgent",
-                "DataAgent",
-                "ReviewAgent",
-                "BriefGeneAgent",
-            )
+            for agent in _SYNC_CONTEXT_AGENTS
         },
     )
 

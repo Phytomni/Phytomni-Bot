@@ -18,6 +18,7 @@ from .models import (
 )
 from .projection import validate_context_delta
 from .service_types import (
+    _SYNC_CONTEXT_AGENTS,
     AgentOutcome,
     AgentSelection,
     ContextStageMetadata,
@@ -40,15 +41,6 @@ _DISPLAY_OUTPUT_KEYS = frozenset(
         "report",
         "table",
         "tabular",
-    }
-)
-_SYNC_CONTEXT_AGENTS = frozenset(
-    {
-        "ChatAgent",
-        "KnowledgeAgent",
-        "DataAgent",
-        "ReviewAgent",
-        "BriefGeneAgent",
     }
 )
 _PRIVATE_REVIEW_STAGE_KEY = "_review_settlement"

@@ -314,6 +314,7 @@ class ConversationContextStore:
 
     @contextmanager
     def write(self):
+        """Open the public transaction context for one store operation."""
         with write(self) as connection:
             yield connection
 
@@ -332,6 +333,7 @@ class ConversationContextStore:
         return _turn(row)
 
     def load_context(self, key: str) -> StoredBusinessContext | None:
+        """Load the durable business context for a conversation key."""
         return load_context(self, key)
 
     def load_turn(self, key: str, turn_id: str) -> StoredTurn | None:
@@ -341,6 +343,7 @@ class ConversationContextStore:
     def begin_turn(
         self, key: str, turn_id: str, operation: str, base_version: int
     ) -> BeginTurnResult:
+        """Create or replay one in-progress terminal turn row."""
         return begin_turn(self, key, turn_id, operation, base_version)
 
     @staticmethod
@@ -372,6 +375,7 @@ class ConversationContextStore:
     def stage_turn(
         self, key: str, turn_id: str, staged: StagedTurn
     ) -> StoredTurn:
+        """Persist a bounded terminal proposal before ledger settlement."""
         return stage_turn(self, key, turn_id, staged)
 
     def _claim_review_settlement(
@@ -490,6 +494,7 @@ class ConversationContextStore:
         return result
 
     def mark_turn_failed(self, key: str, turn_id: str) -> None:
+        """Mark a context turn failed without changing its result payload."""
         with self._write() as connection:
             connection.execute(
                 "UPDATE conversation_turns SET state='failed', "
@@ -564,6 +569,7 @@ class ConversationContextStore:
     def tombstone(
         self, key: str, *, mutation_lock_held: bool = False
     ) -> tuple[str, ...]:
+        """Tombstone a conversation and return candidate threads to clean."""
         if not mutation_lock_held:
             with self.acquire_review_mutation_lock():
                 return self.tombstone(key, mutation_lock_held=True)
@@ -605,6 +611,7 @@ class ConversationContextStore:
     def complete_checkpoint_cleanup(
         self, key: str, *, mutation_lock_held: bool = False
     ) -> None:
+        """Mark durable candidate-checkpoint cleanup complete."""
         if not mutation_lock_held:
             with self.acquire_review_mutation_lock():
                 self.complete_checkpoint_cleanup(key, mutation_lock_held=True)
@@ -629,6 +636,7 @@ class ConversationContextStore:
         *,
         mutation_lock_held: bool = False,
     ) -> int:
+        """Remove expired staged turns while holding the mutation fence."""
         if not mutation_lock_held:
             with self.acquire_review_mutation_lock():
                 return self.purge_expired_staged(now, mutation_lock_held=True)

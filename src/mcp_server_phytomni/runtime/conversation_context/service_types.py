@@ -14,6 +14,14 @@ from typing import Any
 from .models import BusinessContext, ContextDelta, ContextProjection
 from .store import StoredTurn
 
+_SYNC_CONTEXT_AGENTS = (
+    "ChatAgent",
+    "KnowledgeAgent",
+    "DataAgent",
+    "ReviewAgent",
+    "BriefGeneAgent",
+)
+
 
 class PrepareStatus(StrEnum):
     """Durable lifecycle states returned by conversation preparation."""
