@@ -73,6 +73,10 @@ class RecordingSelector:
             raise result
         return result
 
+    def recorded_calls(self) -> tuple[dict[str, object], ...]:
+        """Return an immutable snapshot of calls observed by the fake."""
+        return tuple(self.calls)
+
 
 def _case(
     case_id: str = "case-001",
@@ -119,7 +123,7 @@ def test_selector_receives_canonical_surface_without_context() -> None:
     outcomes = asyncio.run(run_evaluation([_case()], selector))
 
     assert len(outcomes) == 1
-    assert selector.calls == [
+    assert selector.recorded_calls() == (
         {
             "user_query": "What is plant height?",
             "history": (),
@@ -129,8 +133,8 @@ def test_selector_receives_canonical_surface_without_context() -> None:
             ),
             "forced_tool": None,
             "locale": "en-US",
-        }
-    ]
+        },
+    )
 
 
 def test_valid_selection_is_schema_valid_and_dispatchable() -> None:
@@ -252,6 +256,7 @@ def test_hanging_selector_times_out_and_retries_three_times() -> None:
         allowed_tools: Sequence[str] | None = None,
         forced_tool: str | None = None,
     ) -> ToolSelection:
+        del history, allowed_tools, forced_tool
         nonlocal attempts
         attempts += 1
         await asyncio.sleep(3600)
@@ -310,6 +315,7 @@ def test_outputs_are_sorted_by_case_and_repeat() -> None:
         allowed_tools: Sequence[str] | None = None,
         forced_tool: str | None = None,
     ) -> ToolSelection:
+        del history, allowed_tools, forced_tool
         if user_query == "slow":
             await release.wait()
         return _chat_selection(user_query)
@@ -353,6 +359,7 @@ def test_locale_isolated_for_concurrent_cases_and_restored() -> None:
         allowed_tools: Sequence[str] | None = None,
         forced_tool: str | None = None,
     ) -> ToolSelection:
+        del history, allowed_tools, forced_tool
         await release.wait()
         observed[user_query] = current_effective_locale()
         return _chat_selection(user_query)
@@ -397,6 +404,7 @@ def test_cancellation_cleans_children_and_sinks_partial_results() -> None:
         allowed_tools: Sequence[str] | None = None,
         forced_tool: str | None = None,
     ) -> ToolSelection:
+        del history, allowed_tools, forced_tool
         nonlocal cancelled_count, started_count
         started_count += 1
         if started_count == 2:
@@ -445,6 +453,7 @@ def test_cancellation_sinks_completed_outcomes() -> None:
         allowed_tools: Sequence[str] | None = None,
         forced_tool: str | None = None,
     ) -> ToolSelection:
+        del history, allowed_tools, forced_tool
         if user_query == "blocked":
             block_started.set()
             await blocked.wait()
@@ -489,6 +498,7 @@ def test_failing_partial_sink_does_not_replace_cancellation() -> None:
         allowed_tools: Sequence[str] | None = None,
         forced_tool: str | None = None,
     ) -> ToolSelection:
+        del history, allowed_tools, forced_tool
         started.set()
         await blocked.wait()
         return _chat_selection(user_query)
@@ -541,6 +551,7 @@ def test_selector_concurrency_never_exceeds_configured_ceiling() -> None:
         allowed_tools: Sequence[str] | None = None,
         forced_tool: str | None = None,
     ) -> ToolSelection:
+        del history, allowed_tools, forced_tool
         nonlocal active, max_active
         active += 1
         max_active = max(max_active, active)

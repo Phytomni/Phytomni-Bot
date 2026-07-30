@@ -41,6 +41,7 @@ def case(
     language: str = "en",
     expected_core_args: dict[str, Any] | None = None,
 ) -> AgentRoutingCase:
+    """Build one provenance-complete routing case fixture."""
     return AgentRoutingCase.model_validate(
         {
             "case_id": case_id,
@@ -63,37 +64,43 @@ def outcome(
     repeat_index: int,
     expected_agent: str,
     predicted_agent: str,
-    *,
-    language: str = "en",
-    schema_valid: bool = True,
-    dispatchable: bool | None = None,
-    core_args_correct: bool | None = None,
-    provider_completed: bool = True,
-    latency_ms: float = 10.0,
-    error_code: str | None = None,
+    **options: Any,
 ) -> RunOutcome:
-    if dispatchable is None:
-        dispatchable = predicted_agent == expected_agent and schema_valid
+    """Build one deterministic routing outcome fixture."""
+    options = {
+        "language": options.get("language", "en"),
+        "schema_valid": options.get("schema_valid", True),
+        "dispatchable": options.get("dispatchable"),
+        "core_args_correct": options.get("core_args_correct"),
+        "provider_completed": options.get("provider_completed", True),
+        "latency_ms": options.get("latency_ms", 10.0),
+        "error_code": options.get("error_code"),
+    }
+    if options["dispatchable"] is None:
+        options["dispatchable"] = (
+            predicted_agent == expected_agent and options["schema_valid"]
+        )
     return RunOutcome(
         case_id=case_id,
         repeat_index=repeat_index,
         expected_agent=expected_agent,
         predicted_agent=predicted_agent,
-        language=language,
+        language=options["language"],
         agent_correct=predicted_agent == expected_agent,
-        schema_valid=schema_valid,
-        dispatchable=dispatchable,
-        core_args_correct=core_args_correct,
-        provider_completed=provider_completed,
+        schema_valid=options["schema_valid"],
+        dispatchable=options["dispatchable"],
+        core_args_correct=options["core_args_correct"],
+        provider_completed=options["provider_completed"],
         attempts=1,
-        latency_ms=latency_ms,
+        latency_ms=options["latency_ms"],
         selected_arguments={},
-        error_code=error_code,
+        error_code=options["error_code"],
         validation_codes=(),
     )
 
 
 def test_two_of_three_is_a_correct_majority() -> None:
+    """Count the modal prediction as a correct majority."""
     metrics = compute_metrics(
         cases=(case("test-chat-001", "ChatAgent"),),
         outcomes=(
@@ -127,6 +134,7 @@ def test_majority_and_confusion_bucket_are_deterministic(
     expected_bucket: str,
     top1_correct: int,
 ) -> None:
+    """Keep majority and confusion buckets deterministic."""
     metrics = compute_metrics(
         cases=(case("case-001", "ChatAgent"),),
         outcomes=tuple(
@@ -143,6 +151,7 @@ def test_majority_and_confusion_bucket_are_deterministic(
 def test_errors_without_a_canonical_majority_are_not_silently_correct() -> (
     None
 ):
+    """Keep provider errors from becoming an accidental correct majority."""
     metrics = compute_metrics(
         cases=(case("case-001", "ChatAgent"),),
         outcomes=(
@@ -172,6 +181,7 @@ def test_errors_without_a_canonical_majority_are_not_silently_correct() -> (
 
 
 def test_one_schema_valid_repeat_not_dispatchable_majority() -> None:
+    """Exclude schema-invalid repeats from dispatchable accuracy."""
     metrics = compute_metrics(
         cases=(case("case-001", "ChatAgent"),),
         outcomes=(
@@ -204,6 +214,7 @@ def test_one_schema_valid_repeat_not_dispatchable_majority() -> None:
 
 
 def test_unknown_routing_contract_prediction_counts_as_routing_error() -> None:
+    """Classify unknown agents as routing failures."""
     metrics = compute_metrics(
         cases=(case("case-001", "ChatAgent"),),
         outcomes=(
@@ -226,6 +237,7 @@ def test_unknown_routing_contract_prediction_counts_as_routing_error() -> None:
 
 
 def test_run_level_denominators_retain_provider_and_routing_failures() -> None:
+    """Retain provider and routing failures in run-level denominators."""
     cases = (
         case("case-001", "ChatAgent"),
         case("case-002", "KnowledgeAgent"),
@@ -262,6 +274,7 @@ def test_run_level_denominators_retain_provider_and_routing_failures() -> None:
 
 
 def test_incomplete_repeat_inventory_is_rejected() -> None:
+    """Reject reports missing a required repeat."""
     with pytest.raises(ValueError, match="incomplete"):
         compute_metrics(
             cases=(case("case-001", "ChatAgent"),),
@@ -271,6 +284,7 @@ def test_incomplete_repeat_inventory_is_rejected() -> None:
 
 
 def test_duplicate_repeat_inventory_is_rejected() -> None:
+    """Reject duplicate case/repeat outcomes."""
     repeated = outcome("case-001", 1, "ChatAgent", "ChatAgent")
     with pytest.raises(ValueError, match="duplicate outcome"):
         compute_metrics(
@@ -281,6 +295,7 @@ def test_duplicate_repeat_inventory_is_rejected() -> None:
 
 
 def test_per_agent_language_and_macro_metrics_use_single_run_basis() -> None:
+    """Use one-run denominators for per-agent and language metrics."""
     cases = (
         case("case-001", "ChatAgent", language="en"),
         case("case-002", "KnowledgeAgent", language="zh"),
@@ -321,6 +336,7 @@ def test_per_agent_language_and_macro_metrics_use_single_run_basis() -> None:
 
 
 def test_confusion_matrix_has_all_canonical_and_failure_columns() -> None:
+    """Expose every canonical and failure confusion column."""
     metrics = compute_metrics(
         cases=(case("case-001", "ChatAgent"),),
         outcomes=(outcome("case-001", 1, "ChatAgent", PROVIDER_ERROR),),
@@ -340,6 +356,7 @@ def test_confusion_matrix_has_all_canonical_and_failure_columns() -> None:
 
 
 def test_majority_language_slices_use_case_majority() -> None:
+    """Aggregate language slices from case-level majorities."""
     cases = (
         case("case-en", "ChatAgent", language="en"),
         case("case-zh", "ChatAgent", language="zh"),
@@ -363,6 +380,7 @@ def test_majority_language_slices_use_case_majority() -> None:
 
 
 def test_core_accuracy_reports_only_correct_schema_valid_denominator() -> None:
+    """Compute core accuracy only from eligible schema-valid cases."""
     cases = (
         case("case-001", "ChatAgent", expected_core_args={"x": "y"}),
         case("case-002", "ChatAgent", expected_core_args={"x": "y"}),
@@ -403,6 +421,7 @@ def test_core_accuracy_reports_only_correct_schema_valid_denominator() -> None:
 
 
 def test_latency_percentiles_use_linear_interpolation() -> None:
+    """Use deterministic linear interpolation for latency percentiles."""
     cases = tuple(
         case(f"case-{index:03d}", "ChatAgent") for index in range(1, 5)
     )
@@ -423,6 +442,7 @@ def test_latency_percentiles_use_linear_interpolation() -> None:
 
 
 def test_wilson_interval_handles_zero_and_full_success() -> None:
+    """Bound Wilson intervals at zero and full success."""
     cases = tuple(
         case(f"case-{index:03d}", "ChatAgent") for index in range(1, 4)
     )
@@ -465,6 +485,7 @@ def test_wilson_interval_handles_zero_and_full_success() -> None:
 
 
 def test_wilson_interval_values_are_exact_and_deterministic() -> None:
+    """Keep exact Wilson interval values reproducible."""
     metrics = compute_metrics(
         cases=(case("case-001", "ChatAgent"),),
         outcomes=(
@@ -482,6 +503,7 @@ def test_wilson_interval_values_are_exact_and_deterministic() -> None:
 
 
 def test_quick_mode_has_single_run_aggregates_and_no_majority() -> None:
+    """Expose single-run aggregates without majority fields in quick mode."""
     metrics = compute_metrics(
         cases=(case("case-001", "ChatAgent"),),
         outcomes=(outcome("case-001", 1, "ChatAgent", "ChatAgent"),),
@@ -495,6 +517,7 @@ def test_quick_mode_has_single_run_aggregates_and_no_majority() -> None:
 
 
 def test_metrics_are_json_compatible_and_have_fixed_schema_version() -> None:
+    """Keep metric output JSON-safe and schema-versioned."""
     metrics = compute_metrics(
         cases=(case("case-001", "ChatAgent"),),
         outcomes=(outcome("case-001", 1, "ChatAgent", "ChatAgent"),),
@@ -519,6 +542,7 @@ def _complete_threshold_report() -> dict[str, Any]:
 
 
 def test_thresholds_require_complete_three_repeat_report() -> None:
+    """Require a complete three-repeat report for threshold success."""
     cases = tuple(
         case(f"case-{index:03d}", agent)
         for index, agent in enumerate(CANONICAL_AGENTS, start=1)
@@ -561,6 +585,7 @@ def test_thresholds_require_complete_three_repeat_report() -> None:
 
 
 def test_thresholds_reject_nonnumeric_values() -> None:
+    """Reject nonnumeric completion values in threshold reports."""
     cases = tuple(
         case(f"case-{index:03d}", agent)
         for index, agent in enumerate(CANONICAL_AGENTS, start=1)
@@ -578,6 +603,7 @@ def test_thresholds_reject_nonnumeric_values() -> None:
 
 
 def test_thresholds_rejects_minimal_forged_report() -> None:
+    """Reject a minimal forged report missing required metric blocks."""
     assert (
         thresholds_pass(
             {
@@ -594,6 +620,7 @@ def test_thresholds_rejects_minimal_forged_report() -> None:
 
 
 def test_thresholds_rejects_structural_and_count_inconsistency() -> None:
+    """Reject unexpected fields and inconsistent majority counts."""
     cases = tuple(
         case(f"case-{index:03d}", agent)
         for index, agent in enumerate(CANONICAL_AGENTS, start=1)
@@ -619,6 +646,7 @@ def test_thresholds_rejects_structural_and_count_inconsistency() -> None:
 
 
 def test_thresholds_rejects_cross_block_projection_mismatch() -> None:
+    """Reject mismatched majority and language projections."""
     report = _complete_threshold_report()
     majority = {
         **report["majority"],
@@ -644,6 +672,7 @@ def test_thresholds_rejects_cross_block_projection_mismatch() -> None:
 
 
 def test_thresholds_rejects_majority_language_total_mismatch() -> None:
+    """Reject majority totals that disagree with language slices."""
     report = _complete_threshold_report()
     majority = {
         **report["majority"],
@@ -658,6 +687,7 @@ def test_thresholds_rejects_majority_language_total_mismatch() -> None:
 
 
 def test_thresholds_rejects_language_dispatchable_above_top1() -> None:
+    """Reject language dispatchable rates above top-one rates."""
     report = _complete_threshold_report()
     language = {
         **report["by_language"],
@@ -674,6 +704,7 @@ def test_thresholds_rejects_language_dispatchable_above_top1() -> None:
 
 
 def test_thresholds_rejects_confusion_diagonal_mismatch() -> None:
+    """Reject confusion matrices with inconsistent diagonal counts."""
     report = _complete_threshold_report()
     chat_row = {
         **report["confusion_matrix"]["ChatAgent"],
@@ -689,6 +720,7 @@ def test_thresholds_rejects_confusion_diagonal_mismatch() -> None:
 
 
 def test_thresholds_rejects_forged_provider_errors_and_completion() -> None:
+    """Reject forged provider error and completion totals."""
     report = _complete_threshold_report()
     errors = {**report["errors"], "provider": 1}
 
@@ -709,6 +741,7 @@ def test_thresholds_rejects_forged_provider_errors_and_completion() -> None:
 
 
 def test_thresholds_rejects_errors_above_run_level_incorrect_count() -> None:
+    """Reject error totals above the run-level incorrect count."""
     report = _complete_threshold_report()
     forged_errors = {
         **report["errors"],
@@ -731,6 +764,7 @@ def test_thresholds_rejects_errors_above_run_level_incorrect_count() -> None:
 
 
 def test_thresholds_rejects_dispatchable_rate_above_top1_rate() -> None:
+    """Reject dispatchable accuracy above top-one accuracy."""
     report = _complete_threshold_report()
     forged = {
         **report,
@@ -745,6 +779,7 @@ def test_thresholds_rejects_dispatchable_rate_above_top1_rate() -> None:
 def test_thresholds_accepts_one_provider_error_with_matching_run_counts() -> (
     None
 ):
+    """Validate the bounded report when one provider run fails."""
     cases = tuple(
         case(f"case-{index:03d}", agent)
         for index, agent in enumerate(CANONICAL_AGENTS, start=1)
@@ -773,6 +808,7 @@ def test_thresholds_accepts_one_provider_error_with_matching_run_counts() -> (
 
 
 def test_thresholds_rejects_unrepresentable_stability() -> None:
+    """Reject stability values that cannot arise from repeat outcomes."""
     report = _complete_threshold_report()
     forged = {
         **report,
@@ -783,6 +819,7 @@ def test_thresholds_rejects_unrepresentable_stability() -> None:
 
 
 def test_thresholds_rejects_impossible_stability_bounds() -> None:
+    """Reject stability bounds that violate repeat constraints."""
     report = _complete_threshold_report()
     forged = {
         **report,
@@ -793,6 +830,7 @@ def test_thresholds_rejects_impossible_stability_bounds() -> None:
 
 
 def test_provider_error_zero_modal_fails_completion() -> None:
+    """Reject a zero-modal provider-error report at completion time."""
     cases = tuple(
         case(f"case-{index:03d}", agent)
         for index, agent in enumerate(CANONICAL_AGENTS, start=1)

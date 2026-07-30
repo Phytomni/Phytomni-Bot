@@ -11,7 +11,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Literal
+from typing import Any
 
 import pytest
 from scripts.agent_routing_eval.dataset import AgentRoutingCase
@@ -55,44 +55,51 @@ def _case(case_id: str = "case-a") -> AgentRoutingCase:
 def _outcome(
     case_id: str,
     repeat_index: int = 1,
-    *,
-    selected_arguments: dict[str, Any] | None = None,
-    error_code: str | None = None,
-    predicted_agent: str = "ChatAgent",
-    agent_correct: bool = True,
-    schema_valid: bool = True,
-    dispatchable: bool = True,
-    core_args_correct: bool | None = True,
-    provider_completed: bool = True,
+    **options: Any,
 ) -> RunOutcome:
+    """Build a bounded routing outcome for report fixtures."""
+    options = {
+        "selected_arguments": options.get("selected_arguments"),
+        "error_code": options.get("error_code"),
+        "predicted_agent": options.get("predicted_agent", "ChatAgent"),
+        "agent_correct": options.get("agent_correct", True),
+        "schema_valid": options.get("schema_valid", True),
+        "dispatchable": options.get("dispatchable", True),
+        "core_args_correct": options.get("core_args_correct", True),
+        "provider_completed": options.get("provider_completed", True),
+    }
     return RunOutcome(
         case_id=case_id,
         repeat_index=repeat_index,
         expected_agent="ChatAgent",
-        predicted_agent=predicted_agent,
+        predicted_agent=options["predicted_agent"],
         language="en",
-        agent_correct=agent_correct,
-        schema_valid=schema_valid,
-        dispatchable=dispatchable,
-        core_args_correct=core_args_correct,
-        provider_completed=provider_completed,
+        agent_correct=options["agent_correct"],
+        schema_valid=options["schema_valid"],
+        dispatchable=options["dispatchable"],
+        core_args_correct=options["core_args_correct"],
+        provider_completed=options["provider_completed"],
         attempts=1,
         latency_ms=12.5,
-        selected_arguments=selected_arguments or {"user_query": case_id},
-        error_code=error_code,
+        selected_arguments=options["selected_arguments"]
+        or {"user_query": case_id},
+        error_code=options["error_code"],
         validation_codes=("missing",),
     )
 
 
 def _context(
     dataset_path: Path,
-    *,
-    mode: Literal["quick", "benchmark"] = "benchmark",
-    repeat_count: int = 3,
-    dirty: bool = False,
-    provider_endpoint_hash: str = "endpoint-digest",
-    model_id: str = "routing-model",
+    **options: Any,
 ) -> ReportContext:
+    """Build a deterministic report context with bounded overrides."""
+    mode = options.get("mode", "benchmark")
+    repeat_count = options.get("repeat_count", 3)
+    dirty = options.get("dirty", False)
+    provider_endpoint_hash = options.get(
+        "provider_endpoint_hash", "endpoint-digest"
+    )
+    model_id = options.get("model_id", "routing-model")
     return ReportContext(
         mode=mode,
         dataset_path=dataset_path,
@@ -122,6 +129,7 @@ def _complete_report(tmp_path: Path) -> dict[str, Any]:
 
 
 def test_collect_git_state_does_not_persist_changed_paths() -> None:
+    """Keep changed path contents out of persisted Git state."""
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **_kwargs: object) -> SimpleNamespace:
@@ -146,6 +154,7 @@ def test_collect_git_state_does_not_persist_changed_paths() -> None:
 def test_hashes_bind_exact_bytes_descriptions_and_not_endpoint_text(
     tmp_path: Path,
 ) -> None:
+    """Bind report hashes to exact bytes and not endpoint text."""
     dataset = tmp_path / "cases.jsonl"
     dataset.write_bytes(b"first\nsecond\n")
     assert (
@@ -154,7 +163,7 @@ def test_hashes_bind_exact_bytes_descriptions_and_not_endpoint_text(
     )
 
     changed: list[tuple[object, object, object]] = list(AGENT_TOOL_DEFINITIONS)
-    name, description, model = changed[0]
+    name, _description, model = changed[0]
     changed[0] = (
         name,
         SimpleNamespace(value="changed description"),
@@ -172,6 +181,7 @@ def test_hashes_bind_exact_bytes_descriptions_and_not_endpoint_text(
 def test_build_report_redacts_sensitive_values_and_sorts_runs(
     tmp_path: Path,
 ) -> None:
+    """Redact sensitive values and sort report runs deterministically."""
     dataset = tmp_path / "test_v1.jsonl"
     dataset.write_bytes(b"dataset\n")
     report = build_report(
@@ -258,6 +268,7 @@ def test_report_status_does_not_overclaim_current_accuracy(
     provider_completion: float,
     expected_headline: str,
 ) -> None:
+    """Avoid overclaiming current accuracy in report status."""
     dataset = tmp_path / "test_v1.jsonl"
     dataset.write_bytes(b"dataset\n")
     report = build_report(
@@ -319,6 +330,7 @@ def test_report_status_does_not_overclaim_current_accuracy(
 def test_only_clean_test_benchmark_can_claim_stable_baseline(
     tmp_path: Path,
 ) -> None:
+    """Allow a stable baseline only for a clean benchmark report."""
     dataset = tmp_path / "test_v1.jsonl"
     dataset.write_bytes(b"dataset\n")
     report = build_report(
@@ -347,6 +359,7 @@ def test_only_clean_test_benchmark_can_claim_stable_baseline(
 def test_incomplete_report_is_bounded_and_cannot_claim_thresholds(
     tmp_path: Path,
 ) -> None:
+    """Bound incomplete reports and prevent threshold claims."""
     dataset = tmp_path / "dev_v1.jsonl"
     dataset.write_bytes(b"dataset\n")
     report = build_report(
@@ -376,6 +389,7 @@ def test_incomplete_report_is_bounded_and_cannot_claim_thresholds(
 def test_write_report_pair_cleans_only_its_temporary_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Clean only the temporary artifact owned by one report write."""
     output_dir = tmp_path / "out"
     report = _complete_report(tmp_path)
 
@@ -393,6 +407,7 @@ def test_write_report_pair_cleans_only_its_temporary_file(
 def test_complete_report_rejects_empty_or_forged_metric_inventory(
     tmp_path: Path,
 ) -> None:
+    """Reject empty or forged metric inventories in complete reports."""
     dataset = tmp_path / "test_v1.jsonl"
     dataset.write_bytes(b"dataset\n")
     cases = [_case()]
@@ -409,6 +424,7 @@ def test_complete_report_rejects_empty_or_forged_metric_inventory(
 def test_writer_boundary_drops_sensitive_arguments_and_rejects_unknown_fields(
     tmp_path: Path,
 ) -> None:
+    """Drop sensitive arguments and reject unknown report fields."""
     report = _complete_report(tmp_path)
     raw = json.loads(json.dumps(report))
     raw["provenance"]["model_id"] = "provider.internal/v1"
@@ -437,6 +453,7 @@ def test_writer_boundary_drops_sensitive_arguments_and_rejects_unknown_fields(
 
 
 def test_writer_rejects_forged_complete_run_inventory(tmp_path: Path) -> None:
+    """Reject forged run counts and incomplete run records."""
     report = _complete_report(tmp_path)
     raw = json.loads(json.dumps(report))
     raw["metrics"]["completed_records"] = 2
@@ -455,6 +472,7 @@ def test_writer_rejects_forged_complete_run_inventory(tmp_path: Path) -> None:
     ["../escaped", "nested/name", "nested\\name", "..", "a..b"],
 )
 def test_writer_rejects_unsafe_stems(tmp_path: Path, stem: str) -> None:
+    """Reject path-traversal and non-basename report stems."""
     report = _complete_report(tmp_path)
     with pytest.raises(ValueError, match="direct ASCII basename"):
         write_report_pair(report, tmp_path / "out", stem)
@@ -462,18 +480,21 @@ def test_writer_rejects_unsafe_stems(tmp_path: Path, stem: str) -> None:
 
 
 def test_writer_rejects_absolute_stem(tmp_path: Path) -> None:
+    """Reject absolute report output stems."""
     report = _complete_report(tmp_path)
     with pytest.raises(ValueError, match="direct ASCII basename"):
         write_report_pair(report, tmp_path / "out", str(tmp_path / "escape"))
 
 
 def test_markdown_escapes_pipe_backslash_and_newline() -> None:
+    """Escape Markdown control characters in rendered values."""
     assert _format_markdown_value("a|b\\c\r\nd") == "a\\|b\\\\c\\r\\nd"
 
 
 def _fail_second_replace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Remove both artifacts when a new pair publish fails."""
     original_replace = Path.replace
     calls = 0
 
@@ -490,6 +511,7 @@ def _fail_second_replace(
 def test_pair_publish_rolls_back_without_existing_pair(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Restore the old pair when the second replacement fails."""
     report = _complete_report(tmp_path)
     output_dir = tmp_path / "new-pair"
     _fail_second_replace(monkeypatch)
@@ -504,6 +526,7 @@ def test_pair_publish_rolls_back_without_existing_pair(
 def test_pair_publish_restores_existing_pair_on_second_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Restore both existing artifacts after a failed replacement."""
     report = _complete_report(tmp_path)
     output_dir = tmp_path / "existing-pair"
     json_path, markdown_path = write_report_pair(report, output_dir, "run")
