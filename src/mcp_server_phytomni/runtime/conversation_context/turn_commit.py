@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from .review_support import _decode, _json, _now
 
 if TYPE_CHECKING:
-    from .store import StoredBusinessContext
+    StoredBusinessContext = Any
 
 __all__ = [
     "ContextVersionConflictError",

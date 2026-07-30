@@ -4,17 +4,14 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import sqlite3
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal
-from uuid import UUID
 
-from ...config.defaults import ApiConfig
 from ..sqlite import sqlite_connection
 from ..task_manager import resolve_tasks_db_path
 from .review_claim import (
@@ -65,17 +62,35 @@ from .review_reservation import (
     _ReviewReservationRequest,
 )
 from .review_support import (
-    _REVIEW_SETTLEMENT_CLAIM_TTL,
     _REVIEW_SETTLEMENT_FENCE_LIMIT,
     _REVIEW_SETTLEMENT_TOKEN_LIMIT,
     ReviewSettlementClaim,
-    _decode,
-    _json,
     _now,
     _review_candidate_thread_id,
     _ReviewCleanupEntry,
     _ReviewMarkerWriteRequest,
 )
+from .store_core import (
+    _context,
+    _init_db,
+    _register_review_candidate_locked,
+    _RegisterCandidateCall,
+    _staged_turn_matches,
+    _turn,
+    _upsert_review_checkpoint_cleanup,
+    _write,
+    begin_turn,
+    configure_store_types,
+    load_context,
+    load_turn,
+    register_review_candidate,
+    stage_turn,
+    write,
+)
+from .store_core import (
+    _pack_delta as _core_pack_delta,
+)
+from .store_facade import install_store_facades
 from .turn_commit import (
     ContextVersionConflictError,
     ConversationTombstonedError,
@@ -83,7 +98,6 @@ from .turn_commit import (
     _apply_staged_turn_locked,
     _commit_staged_turn,
     _CommitCall,
-    _unpack_delta,
 )
 
 # Preserve the historical public import and pickle path after support split.
@@ -96,118 +110,26 @@ ReviewSettlementClaim.__module__ = __name__
 
 logger = logging.getLogger(__name__)
 
-_CREATE_CONTEXTS = """
-CREATE TABLE IF NOT EXISTS conversation_contexts (
-    conversation_key TEXT PRIMARY KEY,
-    schema_version INTEGER NOT NULL,
-    context_version INTEGER NOT NULL,
-    ledger_cursor INTEGER NOT NULL,
-    ledger_version TEXT NOT NULL,
-    observed_mode TEXT NOT NULL,
-    context_json TEXT NOT NULL,
-    state TEXT NOT NULL CHECK (state IN ('active', 'tombstoned')),
-    checkpoint_cleanup_state TEXT NOT NULL CHECK (
-        checkpoint_cleanup_state IN ('not_requested', 'pending', 'complete')
-    ),
-    updated_at TEXT NOT NULL,
-    tombstoned_at TEXT
-)
-"""
-
-_CREATE_TURNS = """
-CREATE TABLE IF NOT EXISTS conversation_turns (
-    conversation_key TEXT NOT NULL,
-    turn_id TEXT NOT NULL,
-    operation TEXT NOT NULL,
-    base_context_version INTEGER NOT NULL,
-    state TEXT NOT NULL CHECK (
-        state IN ('in_progress', 'staged', 'committed', 'failed')
-    ),
-    selected_agent_id TEXT,
-    route_source TEXT,
-    result_json TEXT,
-    delta_json TEXT,
-    ledger_version TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    expires_at TEXT,
-    PRIMARY KEY (conversation_key, turn_id)
-)
-"""
-
-_CREATE_REVIEW_CHECKPOINT_CLEANUP = """
-CREATE TABLE IF NOT EXISTS conversation_review_checkpoint_cleanup (
-    conversation_key TEXT NOT NULL,
-    candidate_thread_id TEXT NOT NULL,
-    turn_id TEXT,
-    operation TEXT,
-    registered_at TEXT,
-    staged_at TEXT,
-    eligible_at TEXT,
-    tombstone_pending INTEGER NOT NULL DEFAULT 0 CHECK (
-        tombstone_pending IN (0, 1)
-    ),
-    PRIMARY KEY (conversation_key, candidate_thread_id)
-)
-"""
-
-_REVIEW_CLEANUP_ADD_COLUMN_STATEMENTS: tuple[tuple[str, str], ...] = (
-    (
-        "turn_id",
-        (
-            "ALTER TABLE conversation_review_checkpoint_cleanup "
-            "ADD COLUMN turn_id TEXT"
-        ),
-    ),
-    (
-        "operation",
-        (
-            "ALTER TABLE conversation_review_checkpoint_cleanup "
-            "ADD COLUMN operation TEXT"
-        ),
-    ),
-    (
-        "registered_at",
-        (
-            "ALTER TABLE conversation_review_checkpoint_cleanup "
-            "ADD COLUMN registered_at TEXT"
-        ),
-    ),
-    (
-        "staged_at",
-        (
-            "ALTER TABLE conversation_review_checkpoint_cleanup "
-            "ADD COLUMN staged_at TEXT"
-        ),
-    ),
-    (
-        "eligible_at",
-        (
-            "ALTER TABLE conversation_review_checkpoint_cleanup "
-            "ADD COLUMN eligible_at TEXT"
-        ),
-    ),
-    (
-        "tombstone_pending",
-        (
-            "ALTER TABLE conversation_review_checkpoint_cleanup "
-            "ADD COLUMN tombstone_pending INTEGER NOT NULL DEFAULT 0"
-        ),
-    ),
-)
-
 
 class StagedTurnConflictError(RuntimeError):
     """Raised when a retry proposes different terminal bytes."""
 
 
 @dataclass(frozen=True)
-class StoredBusinessContext:
+class _StoredBusinessContextBase:
+    """Stable leading fields for the durable context value object."""
+
     conversation_key: str
     schema_version: int
     context_version: int
     ledger_cursor: int
     ledger_version: str
+
+
+@dataclass(frozen=True)
+class StoredBusinessContext(_StoredBusinessContextBase):
+    """Durable versioned business context for one conversation."""
+
     observed_mode: str
     context: dict[str, Any]
     state: Literal["active", "tombstoned"]
@@ -217,12 +139,20 @@ class StoredBusinessContext:
 
 
 @dataclass(frozen=True)
-class StagedTurn:
+class _StagedTurnBase:
+    """Stable leading fields for a staged terminal proposal."""
+
     operation: str
     base_context_version: int
     selected_agent_id: str
     route_source: str
     result: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class StagedTurn(_StagedTurnBase):
+    """Terminal turn proposal persisted before an atomic commit."""
+
     delta: dict[str, Any]
     ledger_version: str
     schema_version: int
@@ -232,7 +162,9 @@ class StagedTurn:
 
 
 @dataclass(frozen=True)
-class StoredTurn:
+class _StoredTurnBase:
+    """Stable leading fields for a durable turn row."""
+
     conversation_key: str
     turn_id: str
     operation: str
@@ -240,6 +172,12 @@ class StoredTurn:
     state: Literal["in_progress", "staged", "committed", "failed"]
     selected_agent_id: str | None
     route_source: str | None
+
+
+@dataclass(frozen=True)
+class StoredTurn(_StoredTurnBase):
+    """Durable turn row returned by context-store reads."""
+
     result: dict[str, Any] | None
     delta: dict[str, Any] | None
     stage_metadata: dict[str, Any] | None
@@ -251,24 +189,70 @@ class StoredTurn:
 
 @dataclass(frozen=True)
 class BeginTurnResult:
+    """Result of creating or reusing an in-progress turn row."""
+
     created: bool
     context_version: int
     turn: StoredTurn
 
 
-def _pack_delta(staged: StagedTurn) -> str:
-    return _json(
-        {
-            "__conversation_context_store__": {
-                "schema_version": staged.schema_version,
-                "ledger_cursor": staged.ledger_cursor,
-                "observed_mode": staged.observed_mode,
-                "stage_metadata": staged.stage_metadata,
-            },
-            "value": staged.delta,
-        }
-    )
+StoredBusinessContext.__annotations__ = {
+    "conversation_key": str,
+    "schema_version": int,
+    "context_version": int,
+    "ledger_cursor": int,
+    "ledger_version": str,
+    "observed_mode": str,
+    "context": dict[str, Any],
+    "state": Literal["active", "tombstoned"],
+    "checkpoint_cleanup_state": Literal[
+        "not_requested", "pending", "complete"
+    ],
+    "updated_at": str,
+    "tombstoned_at": str | None,
+}
+StagedTurn.__annotations__ = {
+    "operation": str,
+    "base_context_version": int,
+    "selected_agent_id": str,
+    "route_source": str,
+    "result": dict[str, Any],
+    "delta": dict[str, Any],
+    "ledger_version": str,
+    "schema_version": int,
+    "ledger_cursor": int,
+    "observed_mode": str,
+    "stage_metadata": dict[str, Any],
+}
+StoredTurn.__annotations__ = {
+    "conversation_key": str,
+    "turn_id": str,
+    "operation": str,
+    "base_context_version": int,
+    "state": Literal["in_progress", "staged", "committed", "failed"],
+    "selected_agent_id": str | None,
+    "route_source": str | None,
+    "result": dict[str, Any] | None,
+    "delta": dict[str, Any] | None,
+    "stage_metadata": dict[str, Any] | None,
+    "ledger_version": str | None,
+    "created_at": str,
+    "updated_at": str,
+    "expires_at": str | None,
+}
 
+
+def _pack_delta(staged: StagedTurn) -> str:
+    """Preserve the historical private delta-packing import seam."""
+    return _core_pack_delta(staged)
+
+
+configure_store_types(
+    context_type=StoredBusinessContext,
+    turn_type=StoredTurn,
+    begin_turn_type=BeginTurnResult,
+    conflict_type=StagedTurnConflictError,
+)
 
 class ConversationContextStore:
     """Persist versioned context and one terminal proposal per turn."""
@@ -314,277 +298,61 @@ class ConversationContextStore:
         """Serialize checkpoint mutation and tombstone cleanup across workers."""
         return acquire_review_mutation_lock(self.db_path, timeout)
 
+    @staticmethod
+    def _connection(path: str):
+        """Return the shared SQLite connection policy for private helpers."""
+        return sqlite_connection(path)
+
     def _init_db(self) -> None:
-        with sqlite_connection(self.db_path) as connection:
-            connection.execute(_CREATE_CONTEXTS)
-            connection.execute(_CREATE_TURNS)
-            connection.execute(_CREATE_REVIEW_CHECKPOINT_CLEANUP)
-            cleanup_columns = {
-                row[1]
-                for row in connection.execute(
-                    "PRAGMA table_info(conversation_review_checkpoint_cleanup)"
-                )
-            }
-            for column, statement in _REVIEW_CLEANUP_ADD_COLUMN_STATEMENTS:
-                if column not in cleanup_columns:
-                    connection.execute(statement)
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_conversation_turns_expires_at "
-                "ON conversation_turns(expires_at)"
-            )
+        _init_db(self)
 
     @contextmanager
     def write(self):
-        with sqlite_connection(self.db_path) as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            try:
-                yield connection
-            except Exception:
-                connection.rollback()
-                raise
-            connection.commit()
+        with write(self) as connection:
+            yield connection
 
     @contextmanager
     def _write(self):
         """Compatibility alias for the public transaction context."""
-        with self.write() as connection:
+        with _write(self) as connection:
             yield connection
 
     @staticmethod
     def _context(row: sqlite3.Row | tuple[Any, ...]) -> StoredBusinessContext:
-        return StoredBusinessContext(
-            conversation_key=row[0],
-            schema_version=row[1],
-            context_version=row[2],
-            ledger_cursor=row[3],
-            ledger_version=row[4],
-            observed_mode=row[5],
-            context=json.loads(row[6]),
-            state=row[7],
-            checkpoint_cleanup_state=row[8],
-            updated_at=row[9],
-            tombstoned_at=row[10],
-        )
+        return _context(row)
 
     @staticmethod
     def _turn(row: tuple[Any, ...]) -> StoredTurn:
-        delta, _metadata, stage_metadata = _unpack_delta(row[8])
-        return StoredTurn(
-            conversation_key=row[0],
-            turn_id=row[1],
-            operation=row[2],
-            base_context_version=row[3],
-            state=row[4],
-            selected_agent_id=row[5],
-            route_source=row[6],
-            result=_decode(row[7]),
-            delta=delta,
-            stage_metadata=stage_metadata,
-            ledger_version=row[9],
-            created_at=row[10],
-            updated_at=row[11],
-            expires_at=row[12],
-        )
+        return _turn(row)
 
     def load_context(self, key: str) -> StoredBusinessContext | None:
-        with sqlite_connection(self.db_path) as connection:
-            row = connection.execute(
-                "SELECT conversation_key, schema_version, context_version, "
-                "ledger_cursor, ledger_version, observed_mode, context_json, "
-                "state, "
-                "checkpoint_cleanup_state, updated_at, tombstoned_at "
-                "FROM conversation_contexts WHERE conversation_key = ?",
-                (key,),
-            ).fetchone()
-        return None if row is None else self._context(row)
+        return load_context(self, key)
 
     def load_turn(self, key: str, turn_id: str) -> StoredTurn | None:
         """Load one turn without creating a new pending proposal."""
-        with sqlite_connection(self.db_path) as connection:
-            row = connection.execute(
-                "SELECT conversation_key, turn_id, operation, "
-                "base_context_version, state, selected_agent_id, "
-                "route_source, result_json, delta_json, ledger_version, "
-                "created_at, updated_at, expires_at FROM conversation_turns "
-                "WHERE conversation_key = ? AND turn_id = ?",
-                (key, turn_id),
-            ).fetchone()
-        return None if row is None else self._turn(row)
+        return load_turn(self, key, turn_id)
 
     def begin_turn(
         self, key: str, turn_id: str, operation: str, base_version: int
     ) -> BeginTurnResult:
-        now = _now()
-        with self._write() as connection:
-            context = connection.execute(
-                "SELECT conversation_key, schema_version, context_version, "
-                "ledger_cursor, ledger_version, observed_mode, context_json, "
-                "state, checkpoint_cleanup_state, updated_at, tombstoned_at "
-                "FROM conversation_contexts WHERE conversation_key = ?",
-                (key,),
-            ).fetchone()
-            current_version = 0 if context is None else context[2]
-            if context is not None and context[7] == "tombstoned":
-                raise ConversationTombstonedError(key)
-            existing = connection.execute(
-                "SELECT conversation_key, turn_id, operation, "
-                "base_context_version, state, selected_agent_id, "
-                "route_source, "
-                "result_json, delta_json, ledger_version, created_at, "
-                "updated_at, expires_at FROM conversation_turns "
-                "WHERE conversation_key = ? AND turn_id = ?",
-                (key, turn_id),
-            ).fetchone()
-            if existing is not None:
-                return BeginTurnResult(
-                    False, current_version, self._turn(existing)
-                )
-            connection.execute(
-                "INSERT INTO conversation_turns "
-                "(conversation_key, turn_id, operation, base_context_version, "
-                "state, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, 'in_progress', ?, ?)",
-                (key, turn_id, operation, base_version, now, now),
-            )
-            row = connection.execute(
-                "SELECT conversation_key, turn_id, operation, "
-                "base_context_version, state, selected_agent_id, "
-                "route_source, result_json, delta_json, "
-                "ledger_version, created_at, updated_at, expires_at "
-                "FROM conversation_turns WHERE conversation_key = ? "
-                "AND turn_id = ?",
-                (key, turn_id),
-            ).fetchone()
-        logger.debug("conversation turn begun")
-        return BeginTurnResult(True, current_version, self._turn(row))
+        return begin_turn(self, key, turn_id, operation, base_version)
 
     @staticmethod
     def _upsert_review_checkpoint_cleanup(
         connection: sqlite3.Connection,
         entry: _ReviewCleanupEntry,
     ) -> None:
-        """Record one bounded candidate before or during turn staging."""
-        connection.execute(
-            "INSERT OR IGNORE INTO conversation_review_checkpoint_cleanup "
-            "(conversation_key, candidate_thread_id, turn_id, operation, "
-            "registered_at, staged_at, eligible_at, tombstone_pending) "
-            "VALUES (?, ?, ?, ?, ?, ?, NULL, 0)",
-            (
-                entry.key,
-                entry.candidate,
-                entry.turn_id,
-                entry.operation,
-                entry.now,
-                entry.now if entry.staged else None,
-            ),
-        )
-        connection.execute(
-            "UPDATE conversation_review_checkpoint_cleanup SET "
-            "turn_id = COALESCE(turn_id, ?), "
-            "operation = COALESCE(operation, ?), "
-            "registered_at = COALESCE(registered_at, ?) "
-            "WHERE conversation_key = ? AND candidate_thread_id = ?",
-            (
-                entry.turn_id,
-                entry.operation,
-                entry.now,
-                entry.key,
-                entry.candidate,
-            ),
-        )
-        if entry.staged:
-            connection.execute(
-                "UPDATE conversation_review_checkpoint_cleanup SET "
-                "staged_at = COALESCE(staged_at, ?) "
-                "WHERE conversation_key = ? AND candidate_thread_id = ?",
-                (entry.now, entry.key, entry.candidate),
-            )
+        _upsert_review_checkpoint_cleanup(connection, entry)
 
     def _register_review_candidate_locked(
         self, entry: _ReviewCleanupEntry
     ) -> bool:
-        """Persist a validated candidate while the mutation lock is held."""
-        with self._write() as connection:
-            context = connection.execute(
-                "SELECT state FROM conversation_contexts "
-                "WHERE conversation_key = ?",
-                (entry.key,),
-            ).fetchone()
-            if context is not None and context[0] == "tombstoned":
-                return False
-            existing = connection.execute(
-                "SELECT tombstone_pending, turn_id, operation FROM "
-                "conversation_review_checkpoint_cleanup "
-                "WHERE conversation_key = ? AND candidate_thread_id = ?",
-                (entry.key, entry.candidate),
-            ).fetchone()
-            if existing is not None and existing[0]:
-                return False
-            if existing is not None and (
-                (existing[1] is not None and existing[1] != entry.turn_id)
-                or (
-                    existing[2] is not None
-                    and existing[2] != entry.operation
-                )
-            ):
-                return False
-            self._upsert_review_checkpoint_cleanup(connection, entry)
-        return True
+        return _register_review_candidate_locked(self, entry)
 
-    def register_review_candidate(
-        self,
-        key: str,
-        turn_id: str,
-        operation: str,
-        stable_thread_id: str,
-        candidate_thread_id: str,
-        *,
-        mutation_lock_held: bool = False,
+    def _register_review_candidate(
+        self, request: _RegisterCandidateCall
     ) -> bool:
-        """Register a candidate before Review can write its checkpoint.
-
-        Registration is intentionally separate from turn staging.  A graph
-        may create a checkpoint before the public result is stageable, so the
-        cleanup identity must already be durable at the graph boundary.
-        """
-        marker = {
-            "version": 1,
-            "operation": operation,
-            "stable_thread_id": stable_thread_id,
-            "candidate_thread_id": candidate_thread_id,
-            "turn_id": turn_id,
-            "report_revision": 0,
-            "settlement_state": "pending",
-        }
-        try:
-            UUID(key)
-        except (AttributeError, TypeError, ValueError):
-            return False
-        if operation not in {
-            "new_review",
-            "scope_change",
-        } or not self._marker_is_bounded(marker, key=key, turn_id=turn_id):
-            return False
-        if not mutation_lock_held:
-            with self.acquire_review_mutation_lock():
-                return self.register_review_candidate(
-                    key,
-                    turn_id,
-                    operation,
-                    stable_thread_id,
-                    candidate_thread_id,
-                    mutation_lock_held=True,
-                )
-        return self._register_review_candidate_locked(
-            _ReviewCleanupEntry(
-                key=key,
-                candidate=candidate_thread_id,
-                turn_id=turn_id,
-                operation=operation,
-                now=_now(),
-                staged=False,
-            )
-        )
+        return register_review_candidate(self, request)
 
     @staticmethod
     def _staged_turn_matches(
@@ -593,164 +361,22 @@ class ConversationContextStore:
         result_json: str,
         delta_json: str,
     ) -> bool:
-        """Check idempotent staging fields in their existing order."""
-        return all(
-            value == expected
-            for value, expected in (
-                (row[2], staged.operation),
-                (row[3], staged.base_context_version),
-                (row[5], staged.selected_agent_id),
-                (row[6], staged.route_source),
-                (row[7], result_json),
-                (row[8], delta_json),
-                (row[9], staged.ledger_version),
-            )
-        )
+        return _staged_turn_matches(row, staged, result_json, delta_json)
 
     def stage_turn(
         self, key: str, turn_id: str, staged: StagedTurn
     ) -> StoredTurn:
-        now = _now()
-        expires = (
-            datetime.fromisoformat(now)
-            + timedelta(hours=ApiConfig().API_RUN_TTL_OK_HOURS)
-        ).isoformat()
-        result_json, delta_json = _json(staged.result), _pack_delta(staged)
-        with self._write() as connection:
-            row = connection.execute(
-                "SELECT conversation_key, turn_id, operation, "
-                "base_context_version, state, selected_agent_id, "
-                "route_source, result_json, delta_json, "
-                "ledger_version, created_at, updated_at, expires_at "
-                "FROM conversation_turns WHERE conversation_key = ? "
-                "AND turn_id = ?",
-                (key, turn_id),
-            ).fetchone()
-            if row is None:
-                raise KeyError((key, turn_id))
-            if row[4] in {"staged", "committed"}:
-                if not self._staged_turn_matches(
-                    row, staged, result_json, delta_json
-                ):
-                    raise StagedTurnConflictError((key, turn_id))
-                marker = staged.stage_metadata.get("_review_settlement")
-                if isinstance(marker, Mapping):
-                    candidate = _review_candidate_thread_id(marker)
-                    operation = marker.get("operation")
-                    marker_turn_id = marker.get("turn_id")
-                    if (
-                        candidate is not None
-                        and isinstance(operation, str)
-                        and isinstance(marker_turn_id, str)
-                    ):
-                        self._upsert_review_checkpoint_cleanup(
-                            connection,
-                            _ReviewCleanupEntry(
-                                key=key,
-                                candidate=candidate,
-                                turn_id=marker_turn_id,
-                                operation=operation,
-                                now=now,
-                                staged=True,
-                            ),
-                        )
-                return self._turn(row)
-            if row[4] != "in_progress":
-                raise StagedTurnConflictError((key, turn_id))
-            connection.execute(
-                "UPDATE conversation_turns SET state='staged', "
-                "selected_agent_id=?, route_source=?, result_json=?, "
-                "delta_json=?, ledger_version=?, updated_at=?, expires_at=? "
-                "WHERE conversation_key=? AND turn_id=?",
-                (
-                    staged.selected_agent_id,
-                    staged.route_source,
-                    result_json,
-                    delta_json,
-                    staged.ledger_version,
-                    now,
-                    expires,
-                    key,
-                    turn_id,
-                ),
-            )
-            marker = staged.stage_metadata.get("_review_settlement")
-            if isinstance(marker, Mapping):
-                candidate = _review_candidate_thread_id(marker)
-                operation = marker.get("operation")
-                marker_turn_id = marker.get("turn_id")
-                if (
-                    candidate is not None
-                    and isinstance(operation, str)
-                    and isinstance(marker_turn_id, str)
-                ):
-                    self._upsert_review_checkpoint_cleanup(
-                        connection,
-                        _ReviewCleanupEntry(
-                            key=key,
-                            candidate=candidate,
-                            turn_id=marker_turn_id,
-                            operation=operation,
-                            now=now,
-                            staged=True,
-                        ),
-                    )
-            row = connection.execute(
-                "SELECT conversation_key, turn_id, operation, "
-                "base_context_version, state, selected_agent_id, "
-                "route_source, result_json, delta_json, ledger_version, "
-                "created_at, updated_at, expires_at FROM conversation_turns "
-                "WHERE conversation_key=? AND turn_id=?",
-                (key, turn_id),
-            ).fetchone()
-        logger.debug("conversation turn staged")
-        return self._turn(row)
+        return stage_turn(self, key, turn_id, staged)
 
-    def claim_review_settlement(
-        self,
-        key: str,
-        turn_id: str,
-        *,
-        now: datetime | str | None = None,
-        stale_after: timedelta = _REVIEW_SETTLEMENT_CLAIM_TTL,
-        expected_ledger_version: str | None = None,
-        expected_base_context_version: int | None = None,
+    def _claim_review_settlement(
+        self, request: _ReviewClaimRequest
     ) -> ReviewSettlementClaim:
-        """Claim a staged Review marker with a durable compare-and-set."""
-        return _claim_review_settlement(
-            self,
-            _ReviewClaimRequest(
-                key=key,
-                turn_id=turn_id,
-                now=now,
-                stale_after=stale_after,
-                expected_ledger_version=expected_ledger_version,
-                expected_base_context_version=expected_base_context_version,
-            ),
-        )
+        return _claim_review_settlement(self, request)
 
-    def reserve_review_settlement(
-        self,
-        key: str,
-        turn_id: str,
-        *,
-        claim_token: str,
-        fence_token: int,
-        expected_ledger_version: str | None = None,
-        expected_base_context_version: int | None = None,
+    def _reserve_review_settlement(
+        self, request: _ReviewReservationRequest
     ) -> ReviewSettlementClaim:
-        """Reserve the staged proposal before a private checkpoint write."""
-        return _reserve_review_settlement(
-            self,
-            _ReviewReservationRequest(
-                key=key,
-                turn_id=turn_id,
-                claim_token=claim_token,
-                fence_token=fence_token,
-                expected_ledger_version=expected_ledger_version,
-                expected_base_context_version=expected_base_context_version,
-            ),
-        )
+        return _reserve_review_settlement(self, request)
 
     def is_review_settlement_claim_active(
         self,
@@ -795,28 +421,10 @@ class ConversationContextStore:
             )
         )
 
-    def finalize_review_settlement(
-        self,
-        key: str,
-        turn_id: str,
-        *,
-        claim_token: str,
-        state: Literal["promoted", "rejected", "failed"],
-        report_revision: int | None = None,
-        fence_token: int | None = None,
+    def _finalize_review_settlement(
+        self, request: _ReviewFinalizeCall
     ) -> bool:
-        """Finalize only the worker that durably claimed a Review marker."""
-        return _finalize_review_settlement(
-            self,
-            _ReviewFinalizeCall(
-                key=key,
-                turn_id=turn_id,
-                claim_token=claim_token,
-                state=state,
-                report_revision=report_revision,
-                fence_token=fence_token,
-            ),
-        )
+        return _finalize_review_settlement(self, request)
 
     def mark_review_settlement_failed(
         self,
@@ -1104,6 +712,9 @@ class ConversationContextStore:
                 "WHERE conversation_key = ? AND candidate_thread_id = ?",
                 candidates,
             )
+
+
+install_store_facades(ConversationContextStore)
 
 
 # Install private marker seams without changing the public store class identity.
