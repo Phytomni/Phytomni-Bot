@@ -136,9 +136,7 @@ def _service(
 
 def test_review_metadata_path_bounds_match_field_contracts() -> None:
     """Path restrictions apply only to identities, not claim values."""
-    bounded_review_stage_field = getattr(
-        module, "_bounded_review_stage_field"
-    )
+    bounded_review_stage_field = getattr(module, "_bounded_review_stage_field")
     invalid_review_field = getattr(module, "_INVALID_REVIEW_FIELD")
     for key in (
         "operation",

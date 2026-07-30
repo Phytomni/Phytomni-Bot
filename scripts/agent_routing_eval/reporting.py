@@ -20,6 +20,19 @@ from typing import Any, Final, Literal, NamedTuple, cast
 
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 
+from .contracts import (
+    AGENT_ROW_KEYS as _AGENT_ROW_KEYS,
+)
+from .contracts import (
+    LANGUAGE_ROW_KEYS as _LANGUAGE_ROW_KEYS,
+)
+from .contracts import (
+    MAJORITY_KEYS as _MAJORITY_KEYS,
+)
+from .contracts import (
+    METRIC_KEY_ORDER,
+    validate_known_inventory,
+)
 from .dataset import AgentRoutingCase
 from .metrics import compute_metrics, thresholds_pass
 from .reporting_atomic import (
@@ -39,25 +52,7 @@ RunCommand = Callable[..., object]
 _CANONICAL_AGENTS: Final = tuple(
     name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
 )
-_METRIC_KEYS: Final = tuple(
-    [
-        "schema_version",
-        "case_count",
-        "planned_runs",
-        "completed_records",
-        "run_level",
-        "majority",
-        "per_agent",
-        "macro",
-        "by_language",
-        "confusion_matrix",
-        "stability",
-        "core_arguments",
-        "errors",
-        "provider_completion",
-        "latency_ms",
-    ]
-)
+_METRIC_KEYS: Final = METRIC_KEY_ORDER
 _SAFE_ERROR_CODES: Final = frozenset(
     [
         "provider_timeout_exhausted",
@@ -175,15 +170,7 @@ _SAFE_ARGUMENT_KEYS: Final = frozenset(
 )
 _METRIC_MAP_KEYS: Final = {
     "run_level": frozenset(["top1_accuracy", "dispatchable_accuracy"]),
-    "majority": frozenset(
-        [
-            "top1_correct",
-            "top1_accuracy",
-            "dispatchable_correct",
-            "dispatchable_accuracy",
-            "wilson_95",
-        ]
-    ),
+    "majority": _MAJORITY_KEYS,
     "macro": frozenset(["basis", "precision", "recall", "f1"]),
     "by_language": frozenset(["basis", "en", "zh"]),
     "confusion_matrix": frozenset({"basis", *_CANONICAL_AGENTS}),
@@ -192,18 +179,6 @@ _METRIC_MAP_KEYS: Final = {
     "errors": frozenset(["provider", "routing", "schema"]),
     "latency_ms": frozenset(["p50", "p95"]),
 }
-_AGENT_ROW_KEYS: Final = frozenset(
-    ["support", "predicted", "true_positive", "precision", "recall", "f1"]
-)
-_LANGUAGE_ROW_KEYS: Final = frozenset(
-    [
-        "case_count",
-        "top1_correct",
-        "top1_accuracy",
-        "dispatchable_correct",
-        "dispatchable_accuracy",
-    ]
-)
 _CONFUSION_ROW_KEYS: Final = frozenset(
     {
         *_CANONICAL_AGENTS,
@@ -540,34 +515,7 @@ def _validate_partial_inventory(
     repeat_count: int,
 ) -> None:
     """Validate the known portion of an incomplete run inventory."""
-    if repeat_count not in {1, 3}:
-        raise ValueError("repeat_count must be 1 or 3")
-    case_by_id: dict[str, AgentRoutingCase] = {}
-    for case in cases:
-        if case.case_id in case_by_id:
-            raise ValueError(f"duplicate case ID: {case.case_id}")
-        if case.expected_agent not in _CANONICAL_AGENTS:
-            raise ValueError(f"unknown expected agent: {case.expected_agent}")
-        case_by_id[case.case_id] = case
-    observed: set[tuple[str, int]] = set()
-    for outcome in outcomes:
-        key = (outcome.case_id, outcome.repeat_index)
-        if outcome.case_id not in case_by_id:
-            raise ValueError(f"outcome has unknown case ID: {outcome.case_id}")
-        if key in observed:
-            raise ValueError(
-                f"duplicate outcome: {outcome.case_id}/{outcome.repeat_index}"
-            )
-        if outcome.repeat_index not in range(1, repeat_count + 1):
-            raise ValueError(f"invalid repeat index: {outcome.repeat_index}")
-        case = case_by_id[outcome.case_id]
-        if outcome.expected_agent != case.expected_agent:
-            raise ValueError(
-                f"outcome expected agent mismatch: {outcome.case_id}"
-            )
-        if outcome.language != case.language:
-            raise ValueError(f"outcome language mismatch: {outcome.case_id}")
-        observed.add(key)
+    validate_known_inventory(cases, outcomes, repeat_count)
 
 
 def _safe_runs(outcomes: Sequence[RunOutcome]) -> list[dict[str, object]]:

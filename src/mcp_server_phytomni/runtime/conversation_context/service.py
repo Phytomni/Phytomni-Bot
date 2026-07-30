@@ -133,7 +133,8 @@ def _bounded_text(
 
 
 def _bounded_review_stage_field(key: str, candidate: object) -> object:
-    """Normalize one private Review stage field or return its invalid marker."""
+    """Normalize one private Review stage field or return its invalid
+    marker."""
     bounded: int | str | None
     if key in {"version", "report_revision"}:
         bounded = _bounded_integer(

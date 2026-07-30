@@ -22,6 +22,7 @@ from unittest.mock import Mock
 
 import httpx
 import pytest
+from tests.support.handler_fakes import review_success_result
 from tests.support.http_fakes import (
     assert_duplicate_attachment_response,
     install_rejection_handler,
@@ -444,11 +445,7 @@ async def test_native_sync_agents_keep_succeeded_envelope(
             return ReviewExecution(
                 run_id="native-review-sync",
                 status="succeeded",
-                result={
-                    "formatted": {"answer": "review ok", "metadata": {}},
-                    "execution": {"warnings": []},
-                    "raw": None,
-                },
+                result=review_success_result(),
             )
 
         monkeypatch.setattr(

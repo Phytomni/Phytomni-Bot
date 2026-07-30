@@ -84,9 +84,7 @@ def _review_settlement_identity(
     expected_turn_id: str | None,
 ) -> tuple[str, str]:
     """Validate stable and turn identities against the caller's namespace."""
-    stable = _required_thread_id(
-        metadata.get("stable_thread_id"), "stable"
-    )
+    stable = _required_thread_id(metadata.get("stable_thread_id"), "stable")
     turn_id = _required_turn_id(metadata.get("turn_id"))
     if expected_turn_id is not None and turn_id != expected_turn_id:
         raise _clarification_error(
@@ -144,11 +142,7 @@ def _review_settlement_revision(metadata: Mapping[str, Any]) -> int:
 
 def _valid_review_claim_text(value: object) -> bool:
     """Check one bounded textual claim field from durable marker metadata."""
-    return (
-        isinstance(value, str)
-        and bool(value.strip())
-        and len(value) <= 64
-    )
+    return isinstance(value, str) and bool(value.strip()) and len(value) <= 64
 
 
 def _valid_review_claim_fence(value: object) -> bool:
@@ -163,9 +157,7 @@ def _valid_review_claim_fence(value: object) -> bool:
 def _valid_review_claim_base_context(value: object) -> bool:
     """Check the base context version carried by a durable marker."""
     return (
-        not isinstance(value, bool)
-        and isinstance(value, int)
-        and value >= 0
+        not isinstance(value, bool) and isinstance(value, int) and value >= 0
     )
 
 
@@ -173,12 +165,15 @@ def _validate_review_settlement_claim(
     metadata: Mapping[str, Any], settlement_state: str
 ) -> None:
     """Validate claim fields only for markers already in-flight."""
-    claim_keys = (
-        "settlement_claim_token",
-        "settlement_claimed_at",
-        "settlement_fence",
-        "settlement_ledger_version",
-        "settlement_base_context_version",
+    claim_keys = tuple(
+        f"settlement_{suffix}"
+        for suffix in (
+            "claim_token",
+            "claimed_at",
+            "fence",
+            "ledger_version",
+            "base_context_version",
+        )
     )
     if settlement_state in {"settling", "promoting"}:
         if not all(
@@ -203,7 +198,9 @@ def _validate_review_settlement_claim(
             )
         return
     if any(key in metadata for key in claim_keys):
-        raise _clarification_error("Review settlement claim metadata is invalid.")
+        raise _clarification_error(
+            "Review settlement claim metadata is invalid."
+        )
 
 
 def _parse_review_settlement_metadata(
@@ -283,6 +280,8 @@ async def _load_restored_candidate_checkpoint(
         or document is None
         or not _usable_report_document(document)
     ):
-        raise _clarification_error("The Review candidate checkpoint is not ready.")
+        raise _clarification_error(
+            "The Review candidate checkpoint is not ready."
+        )
     restored_type = review_classes()[7]
     return restored_type(state, snapshot, document)

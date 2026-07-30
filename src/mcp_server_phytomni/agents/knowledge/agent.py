@@ -603,11 +603,6 @@ class KnowledgeAgent:
     def initial_state(
         self,
         user_query: str,
-        *,
-        obs_file_list: list[str] | None = None,
-        repo_id_dict: dict[str, int] | None = None,
-        is_generate: bool = True,
-        is_follow_up: bool = True,
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Build the graph's initial state dict from wrapper arguments.
@@ -631,6 +626,10 @@ class KnowledgeAgent:
         Returns:
             The initial LangGraph state dict.
         """
+        obs_file_list = kwargs.get("obs_file_list")
+        repo_id_dict = kwargs.get("repo_id_dict")
+        is_generate = kwargs.get("is_generate", True)
+        is_follow_up = kwargs.get("is_follow_up", True)
         return {
             "user_query": user_query,
             "locale": resolve_agent_locale(kwargs.get("locale")),

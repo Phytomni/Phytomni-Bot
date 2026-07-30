@@ -23,17 +23,20 @@ pytestmark = pytest.mark.unit
 
 def _legacy_db(path: Path, *, with_size: bool = False) -> None:
     """Create a pre-version-table memory schema fixture."""
-    columns = """
-        id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL,
-        kind TEXT NOT NULL,
-        content TEXT NOT NULL,
-        tags_json TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        expires_at TEXT,
-        revision INTEGER NOT NULL
-    """
+    column_specs = (
+        ("id", "TEXT PRIMARY KEY"),
+        ("user_id", "TEXT NOT NULL"),
+        ("kind", "TEXT NOT NULL"),
+        ("content", "TEXT NOT NULL"),
+        ("tags_json", "TEXT NOT NULL"),
+        ("created_at", "TEXT NOT NULL"),
+        ("updated_at", "TEXT NOT NULL"),
+        ("expires_at", "TEXT"),
+        ("revision", "INTEGER NOT NULL"),
+    )
+    columns = ",\n".join(
+        f"{name} {definition}" for name, definition in column_specs
+    )
     if with_size:
         columns += ", size_bytes INTEGER NOT NULL"
     with closed_sqlite_connection(path) as conn:

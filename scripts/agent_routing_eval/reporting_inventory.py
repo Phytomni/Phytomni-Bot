@@ -107,7 +107,9 @@ def _validate_timing(run: Mapping[str, object]) -> None:
         raise ValueError("complete report run contains invalid timing")
     if attempts < 0:
         raise ValueError("complete report run contains invalid timing")
-    if isinstance(latency_ms, bool) or not isinstance(latency_ms, (int, float)):
+    if isinstance(latency_ms, bool) or not isinstance(
+        latency_ms, (int, float)
+    ):
         raise ValueError("complete report run contains invalid timing")
     if not math.isfinite(float(latency_ms)) or latency_ms < 0:
         raise ValueError("complete report run contains invalid timing")

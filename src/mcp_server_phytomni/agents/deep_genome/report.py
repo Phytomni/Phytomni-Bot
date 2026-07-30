@@ -59,7 +59,7 @@ def _write(path: Path, text: str) -> None:
         fo.write(text)
 
 
-_WRITE_CAUGHT: tuple[type[Exception], ...] = (Exception,)
+_WRITE_CAUGHT: tuple[type[Exception], ...] = (OSError,)
 
 
 async def _write_async(path: Path, text: str) -> None:
@@ -70,7 +70,8 @@ async def _write_async(path: Path, text: str) -> None:
     daemon thread plus an event polled with ``sleep(0)`` preserves the
     off-loop write while keeping the graph progress deterministic there.
     """
-    finished = threading.Event()
+    finished = asyncio.Event()
+    loop = asyncio.get_running_loop()
     failures: list[Exception] = []
 
     def _run() -> None:
@@ -79,14 +80,10 @@ async def _write_async(path: Path, text: str) -> None:
         except _WRITE_CAUGHT as exc:
             failures.append(exc)
         finally:
-            finished.set()
+            loop.call_soon_threadsafe(finished.set)
 
     threading.Thread(target=_run, daemon=True).start()
-    # ``call_soon_threadsafe`` is unavailable in the affected runner, so
-    # this deliberate poll is the only completion signal that remains
-    # event-loop safe here.
-    while not finished.is_set():  # noqa: ASYNC110
-        await asyncio.sleep(0)
+    await finished.wait()
     if failures:
         raise failures[0]
 
@@ -303,10 +300,28 @@ def _assemble_final_report(state: DeepGenomeState) -> str:
     )
 
 
-# pylint: disable-next=too-few-public-methods
 class DeepGenomeReportMixin:
     """Report synthesis and finalization nodes for DeepGenome.
     Report stages share the consuming agent's stores, clients, and config."""
+
+    async def dispatch_knowledge_retrieve(
+        self: Any,
+        user_query: str,
+        repo_id_dict: dict[str, int],
+        locale: SupportedLocale | None = None,
+    ) -> dict[str, Any] | None:
+        """Retrieve one protocol context through the report seam."""
+        return await self._dispatch_knowledge_retrieve(
+            user_query, repo_id_dict, locale
+        )
+
+    async def dispatch_chat(
+        self: Any,
+        user_query: str,
+        locale: SupportedLocale | None = None,
+    ) -> dict[str, Any] | None:
+        """Run one report chat turn through the shared chat seam."""
+        return await self._dispatch_chat(user_query, locale)
 
     async def _dispatch_knowledge_retrieve(
         self: Any,

@@ -105,9 +105,7 @@ def _finalize_review_settlement_locked(
     )
 
 
-def _finalize_review_settlement(
-    self, request: _ReviewFinalizeCall
-) -> bool:
+def _finalize_review_settlement(self, request: _ReviewFinalizeCall) -> bool:
     """Finalize only the worker that durably claimed a Review marker."""
     if (
         not isinstance(request.claim_token, str)
@@ -143,9 +141,7 @@ def _finalize_review_settlement(
         )
 
 
-def _mark_review_settlement_failed(
-    self, request: _ReviewFailureCall
-) -> bool:
+def _mark_review_settlement_failed(self, request: _ReviewFailureCall) -> bool:
     """Persist a terminal failure for a malformed or abandoned marker."""
     if not request.mutation_lock_held:
         with getattr(self, "acquire_review_mutation_lock")():
@@ -172,9 +168,7 @@ def _mark_review_settlement_failed(
         return getattr(self, "_write_review_marker")(
             _review_marker_write_request(
                 connection,
-                _ReviewClaimIdentity(
-                    key=request.key, turn_id=request.turn_id
-                ),
+                _ReviewClaimIdentity(key=request.key, turn_id=request.turn_id),
                 decoded,
                 marker,
                 _now(),
@@ -198,9 +192,7 @@ def _update_review_settlement_metadata(
         return getattr(self, "_write_review_marker")(
             _review_marker_write_request(
                 connection,
-                _ReviewClaimIdentity(
-                    key=request.key, turn_id=request.turn_id
-                ),
+                _ReviewClaimIdentity(key=request.key, turn_id=request.turn_id),
                 decoded,
                 marker,
                 _now(),

@@ -79,21 +79,17 @@ class _FakeRelay:
     async def post_json(
         self,
         relay_path: str,
-        *,
-        json_body: Any,
-        message: str,
-        extra_headers: dict[str, str] | None = None,
-        request_timeout: float | None = None,
+        **kwargs: Any,
     ) -> Any:
         """Record a relay POST and return the canned response."""
         self.calls.append(
             {
                 "method": "POST",
                 "path": relay_path,
-                "body": json_body,
-                "message": message,
-                "extra_headers": extra_headers,
-                "timeout": request_timeout,
+                "body": kwargs.get("json_body"),
+                "message": kwargs.get("message"),
+                "extra_headers": kwargs.get("extra_headers"),
+                "timeout": kwargs.get("request_timeout"),
             }
         )
         return self.response

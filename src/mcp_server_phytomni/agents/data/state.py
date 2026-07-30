@@ -76,8 +76,8 @@ class DataState(TypedDict):
     final_response: dict
     chat_payload: dict[str, Any] | None
     chat_response: dict[str, Any] | None
-    pending_post_knowledge: str | None
     knowledge_payload: dict[str, Any] | None
+    pending_post_knowledge: str | None
     knowledge_response: dict[str, Any] | None
 
 

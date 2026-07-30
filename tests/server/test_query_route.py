@@ -17,18 +17,22 @@ import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 import httpx
 import pytest
+from tests.support.handler_fakes import (
+    network_run_arguments,
+    patch_handler_runtime,
+    patch_knowledge_agent,
+)
 
 import mcp_server_phytomni.api.app as api_app
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.expert import (
     ToolSelection,
 )
-from mcp_server_phytomni.agents.knowledge import agent as knowledge_agent
 from mcp_server_phytomni.agents.review import agent as review_agent
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.mcp import handlers as mcp_handlers
@@ -248,32 +252,13 @@ def _placeholder_override(**_kwargs: Any) -> object:
     return object()
 
 
-def _patch_handler_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Install the shared dependency-free handler runtime seam."""
-    monkeypatch.setattr(
-        mcp_handlers,
-        "load_handler_runtime",
-        lambda: SimpleNamespace(
-            sensitive=object(), obs_credentials=("a", "b")
-        ),
-    )
-
-
 def _patch_review_runtime(
     monkeypatch: pytest.MonkeyPatch,
     fake_agent: Any,
 ) -> None:
     """Route Review through the offline handler and a fake graph agent."""
     monkeypatch.setattr(mcp_handlers, "ReviewConfig", _placeholder_config)
-    _patch_handler_runtime(monkeypatch)
-    monkeypatch.setattr(
-        mcp_handlers, "scratch_server_dir", lambda *_args: "/tmp/review"
-    )
-    monkeypatch.setattr(
-        mcp_handlers, "chat_kwargs", lambda *_args, **_kwargs: {}
-    )
-    monkeypatch.setattr(mcp_handlers, "retrieve_kwargs", lambda _config: {})
-    monkeypatch.setattr(mcp_handlers, "obs_kwargs", lambda *_args: {})
+    patch_handler_runtime(monkeypatch, scratch_path="/tmp/review")
     monkeypatch.setattr(
         review_agent,
         "get_cached_agent",
@@ -330,7 +315,7 @@ class _ReviewFakeAgent:
             raise chat_error
         response = getattr(self.config, "chat_response", None)
         if callable(response):
-            return response(prompt)
+            return cast(dict[str, Any], response(prompt))
         return (
             response
             if response is not None
@@ -342,7 +327,8 @@ class _ReviewFakeAgent:
         return await self._chat(prompt)
 
     async def arun(self, **kwargs: Any) -> dict[str, Any]:
-        """Return or raise the configured graph outcome and record its thread."""
+        """Return or raise the configured graph outcome and record its
+        thread."""
         self.graph_calls += 1
         thread_id = kwargs.get("thread_id")
         self.graph_threads.append(thread_id)
@@ -354,7 +340,7 @@ class _ReviewFakeAgent:
             self.app.states[thread_id] = run_state
         response = getattr(self.config, "run_response", None)
         if callable(response):
-            return response(kwargs)
+            return cast(dict[str, Any], response(kwargs))
         if response is not None:
             return response
         return {
@@ -428,7 +414,8 @@ def _assert_data_projection(
 
 
 def _success_agent_body(agent: str, answer: str) -> dict[str, Any]:
-    """Return the minimal successful native-agent result used by route tests."""
+    """Return the minimal successful native-agent result used by route
+    tests."""
     return {
         "id": f"{agent}-run",
         "object": "agent.run",
@@ -445,36 +432,11 @@ def _patch_knowledge_runtime(
 ) -> None:
     """Install the offline Knowledge handler seams used by context tests."""
     monkeypatch.setattr(mcp_handlers, "KnowledgeConfig", _placeholder_config)
-    monkeypatch.setattr(
-        mcp_handlers,
-        "load_handler_runtime",
-        lambda: SimpleNamespace(
-            sensitive=object(), obs_credentials=("a", "b")
-        ),
-    )
-    monkeypatch.setattr(
-        mcp_handlers,
-        "scratch_server_dir",
-        lambda *_args: "/tmp/knowledge",
-    )
-    monkeypatch.setattr(
-        mcp_handlers, "chat_kwargs", lambda *_args, **_kwargs: {}
-    )
-    monkeypatch.setattr(mcp_handlers, "retrieve_kwargs", lambda _config: {})
-    monkeypatch.setattr(mcp_handlers, "obs_kwargs", lambda *_args: {})
-    monkeypatch.setattr(
-        knowledge_agent,
-        "get_cached_agent",
-        lambda *_args, **_kwargs: fake_agent,
-    )
-    monkeypatch.setattr(
-        knowledge_agent,
-        "_knowledge_config_with_overrides",
+    patch_handler_runtime(monkeypatch, scratch_path="/tmp/knowledge")
+    patch_knowledge_agent(
+        monkeypatch,
+        fake_agent,
         _placeholder_override,
-    )
-    monkeypatch.setattr(
-        knowledge_agent,
-        "_knowledge_sensitive_config_with_overrides",
         _placeholder_override,
     )
 
@@ -586,12 +548,7 @@ _BACKGROUND_EXPERT_CASES = (
         (
             "GeneNetworkAgent",
             "network",
-            {
-                "species_code": "osa",
-                "to_id": "TO:0000207",
-                "obs_file_list": [],
-                "resolve_to_id": False,
-            },
+            network_run_arguments(),
             {
                 "network_task": {
                     "task_id": "expert-launch-network",

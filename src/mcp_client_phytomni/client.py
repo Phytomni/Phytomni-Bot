@@ -43,6 +43,36 @@ DEFAULT_TOOL_TIMEOUT_SECONDS = 36000
 _FORWARDED_ENV_VARS = ("PHYTOMNI_LICENSE_KEY", "PHYTOMNI_TESTING")
 
 
+def _resolve_call_options(
+    args: tuple[Any, ...], kwargs: Mapping[str, Any]
+) -> tuple[int, Any, Any]:
+    """Normalize the historical optional MCP call arguments."""
+    names = (
+        "read_timeout_seconds",
+        "progress_callback",
+        "approval_decider",
+    )
+    options: dict[str, Any] = {
+        "read_timeout_seconds": DEFAULT_TOOL_TIMEOUT_SECONDS,
+        "progress_callback": None,
+        "approval_decider": None,
+    }
+    if len(args) > len(names):
+        raise TypeError("too many MCP call options")
+    options.update(zip(names, args, strict=False))
+    unknown = set(kwargs).difference(names)
+    if unknown:
+        raise TypeError(
+            "unexpected MCP call options: " + ", ".join(sorted(unknown))
+        )
+    options.update(kwargs)
+    return (
+        options["read_timeout_seconds"],
+        options["progress_callback"],
+        options["approval_decider"],
+    )
+
+
 class ToolCallError(RuntimeError):
     """Raised when an MCP tool returns an error result."""
 
@@ -300,10 +330,8 @@ class PhytomniMcpClient:
         self,
         tool_name: str,
         arguments: Mapping[str, Any],
-        *,
-        read_timeout_seconds: int = DEFAULT_TOOL_TIMEOUT_SECONDS,
-        progress_callback: Any = None,
-        approval_decider: Any = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> McpToolResponse:
         """Call one MCP tool and return raw plus formatted output.
 
@@ -324,6 +352,9 @@ class PhytomniMcpClient:
         Raises:
             ToolCallError: If the MCP tool returns an error result.
         """
+        read_timeout_seconds, progress_callback, approval_decider = (
+            _resolve_call_options(args, kwargs)
+        )
         session = self._require_session()
         previous_decider = self._approval_decider
         self._approval_decider = approval_decider

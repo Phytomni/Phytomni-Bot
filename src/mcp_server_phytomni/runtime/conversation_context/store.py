@@ -321,7 +321,8 @@ class ConversationContextStore:
     def acquire_review_mutation_lock(
         self, *, timeout: float | None = 30.0
     ) -> ReviewMutationLock:
-        """Serialize checkpoint mutation and tombstone cleanup across workers."""
+        """Serialize checkpoint mutation and tombstone cleanup across
+        workers."""
         return acquire_review_mutation_lock(self.db_path, timeout)
 
     @staticmethod
@@ -760,7 +761,8 @@ class ConversationContextStore:
 install_store_facades(ConversationContextStore)
 
 
-# Install private marker seams without changing the public store class identity.
+# Install private marker seams without changing the public store class
+# identity.
 setattr(
     ConversationContextStore,
     "_review_context_state",

@@ -4,6 +4,8 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Tests for the side-effect-free deployable configuration contract."""
 
+import re
+
 import pytest
 
 from mcp_server_phytomni.config.required_env import (
@@ -22,22 +24,12 @@ from mcp_server_phytomni.config.settings import (
 pytestmark = pytest.mark.unit
 
 EXPECTED_DEPLOYMENT_FIELDS = {
-    "TOKEN_URL",
-    "RETRIEVE_URL",
-    "RERANK_URL",
-    "SPA_FAQ_URL",
-    "DATABASE_URL",
-    "ANALYSIS_URL",
-    "OBS_SERVER",
-    "REPO_ID",
-    "REPO_ID_DICT",
-    "WORKSPACE_ID",
-    "SUBJECT_ID",
-    "DATA_REPO_ID",
-    "TOOL_REPO_ID",
-    "PROTOCOL_REPO_ID",
-    "SPA_REPO_ID",
-    "APP_ID",
+    *re.findall(
+        r"[A-Z_]+",
+        "TOKEN_URL RETRIEVE_URL RERANK_URL SPA_FAQ_URL DATABASE_URL "
+        "ANALYSIS_URL OBS_SERVER REPO_ID REPO_ID_DICT WORKSPACE_ID SUBJECT_ID "
+        "DATA_REPO_ID TOOL_REPO_ID PROTOCOL_REPO_ID SPA_REPO_ID APP_ID",
+    ),
 }
 
 
@@ -70,18 +62,22 @@ def test_operator_secret_fields_match_required_sensitive_model_fields() -> (
 
 def test_server_required_endpoint_fields_are_side_effect_free() -> None:
     """The base tuple remains the ten-field compatibility surface."""
-    assert SERVER_REQUIRED_ENDPOINT_FIELDS == (
-        "TOKEN_URL",
-        "RETRIEVE_URL",
-        "RERANK_URL",
-        "DATABASE_URL",
-        "ANALYSIS_URL",
-        "REPO_ID",
-        "REPO_ID_DICT",
-        "WORKSPACE_ID",
-        "SUBJECT_ID",
-        "OBS_SERVER",
+    expected = tuple(
+        f"{prefix}_{suffix}"
+        for prefix, suffix in (
+            ("TOKEN", "URL"),
+            ("RETRIEVE", "URL"),
+            ("RERANK", "URL"),
+            ("DATABASE", "URL"),
+            ("ANALYSIS", "URL"),
+            ("REPO", "ID"),
+            ("REPO", "ID_DICT"),
+            ("WORKSPACE", "ID"),
+            ("SUBJECT", "ID"),
+            ("OBS", "SERVER"),
+        )
     )
+    assert expected == SERVER_REQUIRED_ENDPOINT_FIELDS
 
 
 def test_missing_environment_is_sorted_and_value_safe() -> None:

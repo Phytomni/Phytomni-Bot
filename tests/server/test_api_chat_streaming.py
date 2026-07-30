@@ -19,10 +19,13 @@ from typing import (
     Any,
     cast,
 )
-from uuid import UUID
 
 import httpx
 import pytest
+from tests.support.http_fakes import (
+    build_instant_chat_context_envelope,
+    parse_sse_frames,
+)
 
 from mcp_server_phytomni.api import app as api_app
 from mcp_server_phytomni.api import streaming as streaming_runtime
@@ -48,34 +51,10 @@ pytestmark = pytest.mark.server
 def _conversation_envelope(*, turn_id: str = "21") -> ConversationEnvelopeV1:
     """Build one Instant V1 envelope for streaming tests."""
     return ConversationEnvelopeV1.model_validate(
-        {
-            "schema_version": 1,
-            "conversation_key": str(
-                UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")
-            ),
-            "dialogue_id": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8")),
-            "turn_id": turn_id,
-            "request_id": f"request-{turn_id}",
-            "operation": "append",
-            "mode": "instant",
-            "current_message": {
-                "content": "What is photosynthesis?",
-                "locale": "en-US",
-            },
-            "requested_agent_id": None,
-            "allowed_agent_ids": ["ChatAgent"],
-            "ledger_cursor": int(turn_id),
-            "ledger_version": "a" * 64,
-            "base_business_context_version": 0,
-            "history_delta": [
-                {
-                    "turn_id": turn_id,
-                    "role": "user",
-                    "content": "What is photosynthesis?",
-                }
-            ],
-            "artifact_refs": [],
-        }
+        build_instant_chat_context_envelope(
+            turn_id,
+            ledger_cursor=int(turn_id),
+        )
     )
 
 
@@ -85,7 +64,7 @@ def _extract_custom_context(body: str) -> dict[str, Any] | None:
     for chunk in body.split("\n\n"):
         if not chunk.startswith(marker):
             continue
-        payload = json.loads(chunk[len(marker) :])
+        payload = json.loads(chunk.removeprefix(marker))
         if payload.get("name") == "phyto.context_staged":
             value = payload.get("value")
             return value if isinstance(value, dict) else None
@@ -140,21 +119,7 @@ async def _consume_context_stage(
 
 def _stream_frames(body: str) -> list[tuple[str, dict[str, Any]]]:
     """Parse an SSE body into semantic ``(event, payload)`` pairs."""
-    frames: list[tuple[str, dict[str, Any]]] = []
-    marker = "event: "
-    for chunk in body.split("\n\n"):
-        if not chunk.startswith(marker):
-            continue
-        lines = chunk.splitlines()
-        if len(lines) < 2 or not lines[1].startswith("data: "):
-            continue
-        frames.append(
-            (
-                lines[0][len(marker) :],
-                json.loads(lines[1][len("data: ") :]),
-            )
-        )
-    return frames
+    return parse_sse_frames(body)
 
 
 async def test_stream_phyto_chat_emits_agui_frames(

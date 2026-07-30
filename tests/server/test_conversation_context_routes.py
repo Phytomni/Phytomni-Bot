@@ -22,6 +22,9 @@ from mcp_server_phytomni.api.routes import conversation_context
 from mcp_server_phytomni.runtime.conversation_context.projection import (
     agent_thread_id,
 )
+from mcp_server_phytomni.runtime.conversation_context.service_types import (
+    _SYNC_CONTEXT_AGENTS,
+)
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ConversationContextStore,
     ConversationTombstonedError,
@@ -515,7 +518,7 @@ async def test_review_settlement_rejects_arbitrary_thread_namespace(
     assert failed is not None
     assert failed.stage_metadata is not None
     assert (
-        failed.stage_metadata["_review_settlement"]["settlement_state"]
+        failed.stage_metadata["_review_settlement"].get("settlement_state")
         == "failed"
     )
 
@@ -575,7 +578,7 @@ async def test_review_stale_ledger_is_rejected_before_private_ack(
     executor = SpyExecutor()
     async with open_asgi_client(
         monkeypatch,
-        create_app(context_executor=executor),
+        app=create_app(context_executor=executor),
         base_url="http://api.context.test",
     ) as client:
         stale = await client.post(
@@ -717,6 +720,7 @@ async def test_tombstone_clears_state_and_deletes_sync_threads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Tombstone removes staged context and synchronous checkpoint threads."""
+
     class _Checkpointer:
         """Collect synchronous checkpoint deletions for tombstone tests."""
 
@@ -770,13 +774,7 @@ async def test_tombstone_clears_state_and_deletes_sync_threads(
         ).fetchone() == (0,)
     assert set(checkpointer.deleted_thread_ids()) == {
         agent_thread_id(_CONVERSATION_KEY, agent_id)
-        for agent_id in (
-            "ChatAgent",
-            "KnowledgeAgent",
-            "DataAgent",
-            "ReviewAgent",
-            "BriefGeneAgent",
-        )
+        for agent_id in _SYNC_CONTEXT_AGENTS
     }
     with pytest.raises(ConversationTombstonedError):
         store.begin_turn(str(_CONVERSATION_KEY), "3", "append", 1)
@@ -787,6 +785,7 @@ async def test_tombstone_deletes_durable_review_candidate_thread(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Tombstone cleanup includes candidate threads in staged metadata."""
+
     class _Checkpointer:
         """Collect candidate checkpoint deletions for tombstone tests."""
 
@@ -837,6 +836,7 @@ async def test_tombstone_retry_replays_durable_candidate_cleanup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failed cleanup retains the candidate thread for the next request."""
+
     class _Checkpointer:
         """Fail one cleanup attempt and retain its deletion history."""
 
@@ -900,6 +900,7 @@ async def test_tombstone_is_idempotent_and_retries_pending_cleanup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Cleanup failure retains retryable state and safe deletion."""
+
     class _Checkpointer:
         """Toggle a failing checkpoint cleanup for idempotence coverage."""
 

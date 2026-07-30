@@ -30,6 +30,7 @@ __all__ = [
     "BackgroundSubmissionLaunchError",
     "BackgroundSubmissionOutcome",
     "BackgroundSubmissionReservation",
+    "BACKGROUND_RUNTIME_ERRORS",
     "launch_background_submission",
     "reserve_background_submission",
 ]
@@ -43,13 +44,16 @@ class BackgroundSubmissionExecutionError(RuntimeError):
     """Stable internal signal for a post-acceptance submission failure."""
 
 
-_BACKGROUND_ERRORS: tuple[type[Exception], ...] = (
-    BackgroundSubmissionExecutionError,
+BACKGROUND_RUNTIME_ERRORS: tuple[type[Exception], ...] = (
     RuntimeError,
     ValueError,
     TypeError,
     OSError,
     sqlite3.Error,
+)
+_BACKGROUND_ERRORS: tuple[type[Exception], ...] = (
+    BackgroundSubmissionExecutionError,
+    *BACKGROUND_RUNTIME_ERRORS,
 )
 
 

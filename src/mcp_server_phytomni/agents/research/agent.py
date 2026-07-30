@@ -61,16 +61,16 @@ from ..shared.analysis import (
 from ..shared.analysis_storage import create_output_dir
 from ..shared.interop import (
     InteropAttempt,
+    a2a_pending_state_update,
     build_a2a_resume_draft,
+    completed_interop_evidence_update,
     has_interop_target_kind,
     initial_interop_state,
     interop_attempt_update,
-    interop_evidence_update,
-    interop_state_update,
-    make_interop_record,
     merge_a2a_pending_fields,
     project_a2a_evidence,
     require_a2a_result,
+    require_a2a_task_id,
     resolve_interop_dependencies,
     resolve_required_interop_dependencies,
     update_a2a_pending_from_result,
@@ -252,7 +252,7 @@ class InSilicoResearchAgents:
         analyst_agent: AnalystAgent | None = None,
         in_silico_config=IN_SILICO_CONFIG,
         sensitive_config: SensitiveConfig | None = None,
-        interop_dependencies: ResearchInteropDependencies | None = None,
+        **options: Any,
     ):
         """Initialize the InSilicoResearchAgents.
 
@@ -263,6 +263,12 @@ class InSilicoResearchAgents:
             in_silico_config: In silico research configuration object.
             sensitive_config: Sensitive configuration for credentials.
         """
+        interop_dependencies = options.pop("interop_dependencies", None)
+        if options:
+            raise TypeError(
+                "unexpected in-silico research options: "
+                + ", ".join(sorted(options))
+            )
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.in_silico_config = in_silico_config
         self.sensitive_config = sensitive_config or get_sensitive_config()
@@ -454,11 +460,7 @@ class InSilicoResearchAgents:
             )
         if result is not None:
             if result["status"] == "input_required":
-                task_id = result.get("task_id")
-                if not task_id:
-                    raise RuntimeError(
-                        "external A2A input-required response omitted task_id"
-                    )
+                task_id = require_a2a_task_id(result)
                 pending = merge_a2a_pending_fields(
                     {
                         "task_name": task.task_name,
@@ -512,10 +514,8 @@ class InSilicoResearchAgents:
                     True,
                 )
             )
-        return interop_evidence_update(
-            external,
-            status="completed",
-            latency_seconds=perf_counter() - started,
+        return completed_interop_evidence_update(
+            external, perf_counter() - started
         )
 
     async def extract_goals_node(self, state: InSilicoResearchState) -> dict:
@@ -683,19 +683,11 @@ class InSilicoResearchAgents:
             pending = cast(ResearchA2APending, external)
             return Command(
                 goto="research_a2a_resume_node",
-                update={
-                    "a2a_pending": [pending],
-                    "a2a_task_ids": {task_name: pending["task_id"]},
-                    **interop_state_update(
-                        make_interop_record(
-                            target_id=pending["target_id"],
-                            kind="a2a",
-                            capability=pending["capability"],
-                            status="input_required",
-                            latency_seconds=perf_counter() - started,
-                        )
-                    ),
-                },
+                update=a2a_pending_state_update(
+                    pending,
+                    task_key=task_name,
+                    latency_seconds=perf_counter() - started,
+                ),
             )
 
         async def submit_call() -> dict[str, Any]:
@@ -814,10 +806,8 @@ class InSilicoResearchAgents:
         )
         updates = _project_research_submission_updates(updates)
         updates.update(
-            interop_evidence_update(
-                evidence,
-                status="completed",
-                latency_seconds=perf_counter() - started,
+            completed_interop_evidence_update(
+                evidence, perf_counter() - started
             )
         )
         return updates

@@ -95,7 +95,8 @@ def _apply_staged_turn_locked(
     self, request: _StagedTurnCommitRequest
 ) -> sqlite3.Row | tuple[Any, ...]:
     """Apply staged data and return the updated context row."""
-    # Keep the historical bound-method signature; the operation is request-only.
+    # Keep the historical bound-method signature; the operation is
+    # request-only.
     del self
     data, metadata, _stage_metadata = _unpack_delta(request.turn[8])
     assert data is not None

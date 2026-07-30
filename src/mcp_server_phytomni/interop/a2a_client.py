@@ -100,7 +100,7 @@ def _remote_capability(
         raise InteropA2AClientError("invalid_capability", target_id)
     prefix = f"{target_id}__"
     remote_name = (
-        capability_id[len(prefix) :]
+        capability_id.removeprefix(prefix)
         if capability_id.startswith(prefix)
         else capability_id
     )

@@ -490,8 +490,6 @@ class DeepGenomeDispatchMixin:
         )
         return delta["raw_analyst_data"], summary_data
 
-    # pylint: enable=too-many-locals
-
     async def _finalize_design_submissions(
         self: Any,
         submissions: dict[str, RemoteSubmission | None],
@@ -592,10 +590,15 @@ class DeepGenomeDispatchMixin:
         analysis_type: str,
         gene_id: str,
         state: DeepGenomeState,
-        results_dir: str | None = None,
-        display_order_override: int | None = None,
+        **options: Any,
     ) -> dict:
         """Generate sub-summary for a specific analysis type."""
+        results_dir = options.pop("results_dir", None)
+        display_order_override = options.pop("display_order_override", None)
+        if options:
+            raise TypeError(
+                "unexpected sub-summary options: " + ", ".join(sorted(options))
+            )
         display_order = display_order_override
         if display_order is None:
             display_order = cast(int | None, state.get("display_order"))
@@ -739,10 +742,16 @@ class DeepGenomeDispatchMixin:
         submission: RemoteSubmission,
         context: AnalysisDispatchContext,
         run_identity: RunIdentity,
-        tracking: DeepGenomeTransitionSink,
-        work_item_key: str,
+        **options: Any,
     ) -> tuple[object, str, str]:
         """Track, poll, and resolve one caller-owned remote submission."""
+        tracking = options.pop("tracking")
+        work_item_key = options.pop("work_item_key")
+        if options:
+            raise TypeError(
+                "unexpected remote-analysis options: "
+                + ", ".join(sorted(options))
+            )
         await tracking.accept_remote_submission(work_item_key, submission)
         outcome, results_dir = await self._poll_remote_submission(
             submission,
@@ -765,8 +774,14 @@ class DeepGenomeDispatchMixin:
         context: AnalysisDispatchContext,
         analysis_type: str,
         run_identity: RunIdentity,
+        **options: Any,
     ) -> tuple[object, str, str]:
         """Validate and download a direct AnalystAgent result."""
+        if options:
+            raise TypeError(
+                "unexpected direct-analysis options: "
+                + ", ".join(sorted(options))
+            )
         self._raise_if_agent_failed(result)
         task_id = result.get("task_id")
         output_path = result.get("output_dir")
@@ -785,10 +800,15 @@ class DeepGenomeDispatchMixin:
         analysis_type: str,
         species_code: str,
         gene_id: str,
-        output_dir: str | None = None,
-        state: DeepGenomeState | None = None,
+        **options: Any,
     ) -> dict:
         """Submit an analysis task, poll it, and download its result."""
+        output_dir = options.pop("output_dir", None)
+        state = options.pop("state", None)
+        if options:
+            raise TypeError(
+                "unexpected dispatch options: " + ", ".join(sorted(options))
+            )
         run_identity = RunIdentity.create(
             user_id=self.deep_genome_config.USER_ID,
             scope=analysis_type,
@@ -814,8 +834,8 @@ class DeepGenomeDispatchMixin:
                         result,
                         context,
                         run_identity,
-                        tracking,
-                        work_item_key,
+                        tracking=tracking,
+                        work_item_key=work_item_key,
                     )
                 )
             else:

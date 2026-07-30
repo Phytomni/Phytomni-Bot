@@ -93,7 +93,9 @@ def _claim_request(values: Mapping[str, Any]) -> _ReviewClaimRequest:
     )
 
 
-def _reservation_request(values: Mapping[str, Any]) -> _ReviewReservationRequest:
+def _reservation_request(
+    values: Mapping[str, Any],
+) -> _ReviewReservationRequest:
     """Build the typed request for Review settlement reservation."""
     return _ReviewReservationRequest(
         key=values["key"],
@@ -119,8 +121,12 @@ def _finalize_request(values: Mapping[str, Any]) -> _ReviewFinalizeCall:
 
 def _signatures() -> tuple[inspect.Signature, ...]:
     """Return the four stable public signatures in installation order."""
-    self_parameter = _parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD)
-    key_parameter = _parameter("key", inspect.Parameter.POSITIONAL_OR_KEYWORD, "str")
+    self_parameter = _parameter(
+        "self", inspect.Parameter.POSITIONAL_OR_KEYWORD
+    )
+    key_parameter = _parameter(
+        "key", inspect.Parameter.POSITIONAL_OR_KEYWORD, "str"
+    )
     turn_parameter = _parameter(
         "turn_id", inspect.Parameter.POSITIONAL_OR_KEYWORD, "str"
     )
@@ -130,7 +136,9 @@ def _signatures() -> tuple[inspect.Signature, ...]:
                 self_parameter,
                 key_parameter,
                 turn_parameter,
-                _parameter("operation", inspect.Parameter.POSITIONAL_OR_KEYWORD, "str"),
+                _parameter(
+                    "operation", inspect.Parameter.POSITIONAL_OR_KEYWORD, "str"
+                ),
                 _parameter(
                     "stable_thread_id",
                     inspect.Parameter.POSITIONAL_OR_KEYWORD,
@@ -155,7 +163,12 @@ def _signatures() -> tuple[inspect.Signature, ...]:
                 self_parameter,
                 key_parameter,
                 turn_parameter,
-                _parameter("now", inspect.Parameter.KEYWORD_ONLY, "datetime | str | None", None),
+                _parameter(
+                    "now",
+                    inspect.Parameter.KEYWORD_ONLY,
+                    "datetime | str | None",
+                    None,
+                ),
                 _parameter(
                     "stale_after",
                     inspect.Parameter.KEYWORD_ONLY,
@@ -182,8 +195,12 @@ def _signatures() -> tuple[inspect.Signature, ...]:
                 self_parameter,
                 key_parameter,
                 turn_parameter,
-                _parameter("claim_token", inspect.Parameter.KEYWORD_ONLY, "str"),
-                _parameter("fence_token", inspect.Parameter.KEYWORD_ONLY, "int"),
+                _parameter(
+                    "claim_token", inspect.Parameter.KEYWORD_ONLY, "str"
+                ),
+                _parameter(
+                    "fence_token", inspect.Parameter.KEYWORD_ONLY, "int"
+                ),
                 _parameter(
                     "expected_ledger_version",
                     inspect.Parameter.KEYWORD_ONLY,
@@ -204,7 +221,9 @@ def _signatures() -> tuple[inspect.Signature, ...]:
                 self_parameter,
                 key_parameter,
                 turn_parameter,
-                _parameter("claim_token", inspect.Parameter.KEYWORD_ONLY, "str"),
+                _parameter(
+                    "claim_token", inspect.Parameter.KEYWORD_ONLY, "str"
+                ),
                 _parameter(
                     "state",
                     inspect.Parameter.KEYWORD_ONLY,
@@ -278,7 +297,10 @@ def install_store_facades(store_type: type[Any]) -> None:
             },
             private_name="_reserve_review_settlement",
             request_builder=_reservation_request,
-            doc="Reserve the staged proposal before a private checkpoint write.",
+            doc=(
+                "Reserve the staged proposal before a private checkpoint "
+                "write."
+            ),
         ),
         _FacadeSpec(
             name="finalize_review_settlement",
@@ -294,7 +316,10 @@ def install_store_facades(store_type: type[Any]) -> None:
             },
             private_name="_finalize_review_settlement",
             request_builder=_finalize_request,
-            doc="Finalize only the worker that durably claimed a Review marker.",
+            doc=(
+                "Finalize only the worker that durably claimed a Review "
+                "marker."
+            ),
         ),
     )
     for spec in specs:

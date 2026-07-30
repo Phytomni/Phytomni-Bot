@@ -146,9 +146,6 @@ async def _retrieve_cached(
     }
 
 
-# pylint: enable=too-many-arguments
-
-
 async def retrieve(user_query: str, **kwargs: Any) -> dict[str, Any]:
     """Retrieve and rerank documents for one user query."""
     options = RetrieveOptions.from_kwargs(kwargs)

@@ -12,6 +12,7 @@ from typing import Any, NamedTuple
 
 import httpx
 import pytest
+from tests.support.http_fakes import parse_sse_frames
 
 from mcp_server_phytomni.agents.shared.a2ui import A2UI_CUSTOM_NAME
 from mcp_server_phytomni.mcp import app as mcp_app
@@ -55,11 +56,9 @@ def _extract_custom_a2ui_fixture() -> Callable[[str], dict[str, Any] | None]:
 
     def extract(body: str) -> dict[str, Any] | None:
         """Return the A2UI object from an SSE body, if present."""
-        marker = "event: Custom\ndata: "
-        for chunk in body.split("\n\n"):
-            if not chunk.startswith(marker):
+        for event, payload in parse_sse_frames(body):
+            if event != "Custom":
                 continue
-            payload = json.loads(chunk[len(marker) :])
             if payload.get("name") == A2UI_CUSTOM_NAME:
                 value = payload.get("value")
                 return value if isinstance(value, dict) else None

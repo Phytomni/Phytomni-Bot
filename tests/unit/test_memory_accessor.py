@@ -22,7 +22,10 @@ from mcp_server_phytomni.runtime.memory.accessor import (
     resolve_memory_accessor,
 )
 from mcp_server_phytomni.runtime.memory.models import MemoryRecord, MemoryWrite
-from mcp_server_phytomni.runtime.memory.sqlite import MemoryStore
+from mcp_server_phytomni.runtime.memory.sqlite import (
+    MemoryListOptions,
+    MemoryStore,
+)
 from mcp_server_phytomni.runtime.request_context import request_context
 
 pytestmark = pytest.mark.unit
@@ -174,13 +177,11 @@ def test_store_failure_degrades_to_empty_without_raw_data_in_logs(
             self,
             user_id: str,
             *,
-            kind: str | None = None,
-            limit: int | None = None,
-            now: datetime | None = None,
-            include_expired: bool = False,
+            options: MemoryListOptions | None = None,
+            **legacy: Any,
         ) -> list[MemoryRecord]:
             """Raise the storage error the accessor must redact."""
-            _ = (user_id, kind, limit, now, include_expired)
+            _ = (user_id, options, legacy)
             raise OSError("backend unavailable")
 
     store = BrokenStore()

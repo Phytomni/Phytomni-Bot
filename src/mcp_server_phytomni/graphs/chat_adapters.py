@@ -159,3 +159,31 @@ def extract_chat_response(chat_output: Mapping[str, Any]) -> dict[str, Any]:
     """
     response = chat_output.get("response")
     return response if response is not None else {}
+
+
+def extract_chat_content(chat_output: Mapping[str, Any]) -> str | None:
+    """Return the first chat-completion content string, if present."""
+    response = extract_chat_response(chat_output)
+    choices = response.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first = choices[0]
+    if not isinstance(first, Mapping):
+        return None
+    message = first.get("message")
+    if not isinstance(message, Mapping):
+        return None
+    content = message.get("content")
+    return content if isinstance(content, str) else None
+
+
+async def invoke_chat_content(
+    chat_app: Any,
+    prompt: str,
+    chat_kwargs: Mapping[str, Any],
+) -> str | None:
+    """Invoke a compiled chat app and project its content string."""
+    output = await chat_app.ainvoke(
+        build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs)
+    )
+    return extract_chat_content(output)

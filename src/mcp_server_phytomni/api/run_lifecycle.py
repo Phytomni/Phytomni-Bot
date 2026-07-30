@@ -25,6 +25,7 @@ from typing import Any
 
 from fastapi import BackgroundTasks, HTTPException
 
+from ..runtime.background_submission import BACKGROUND_RUNTIME_ERRORS
 from ..runtime.checkpoint_backend import build_default_checkpointer
 from ..runtime.conversation_context.store import ConversationContextStore
 from ..runtime.deep_genome_store import DeepGenomeStore
@@ -66,16 +67,9 @@ __all__ = [
 
 
 _LOGGER = logging.getLogger(__name__)
-_RUN_GC_CAUGHT: tuple[type[Exception], ...] = (
-    RuntimeError,
-    ValueError,
-    TypeError,
-    OSError,
-    sqlite3.Error,
-)
+_RUN_GC_CAUGHT = BACKGROUND_RUNTIME_ERRORS
 _RUN_GC_LOCK = threading.Lock()
 _RUN_GC_ACTIVE = threading.Event()
-_RUN_GC_POLL_SECONDS = 0.01
 
 type PurgeRun = Callable[[], None]
 type ProjectRun = Callable[..., dict[str, Any]]
@@ -141,7 +135,7 @@ async def _close_checkpointer(
         result = closer()
         if inspect.isawaitable(result):
             await result
-    except (RuntimeError, ValueError, TypeError, OSError, sqlite3.Error) as exc:
+    except _RUN_GC_CAUGHT as exc:
         logger.warning(
             "Review candidate checkpointer close failed: %s",
             exc.__class__.__name__,
@@ -158,7 +152,7 @@ async def _delete_review_candidate_checkpoints(
     """Delete only durable candidate threads and return completed rows."""
     try:
         checkpointer = checkpointer_factory()
-    except (RuntimeError, ValueError, TypeError, OSError, sqlite3.Error) as exc:
+    except _RUN_GC_CAUGHT as exc:
         logger.warning(
             "Review candidate checkpoint cleanup unavailable: %s",
             exc.__class__.__name__,
@@ -179,13 +173,7 @@ async def _delete_review_candidate_checkpoints(
                 result = deleter(candidate_thread_id)
                 if inspect.isawaitable(result):
                     await result
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                OSError,
-                sqlite3.Error,
-            ) as exc:
+            except _RUN_GC_CAUGHT as exc:
                 logger.warning(
                     "Review candidate checkpoint cleanup failed: %s",
                     exc.__class__.__name__,
@@ -311,7 +299,8 @@ async def purge_expired_runs_best_effort_async(
     """Run the local purge off-loop and coalesce concurrent callers."""
     if not claim_run_gc():
         return
-    finished = threading.Event()
+    finished = asyncio.Event()
+    loop = asyncio.get_running_loop()
     failures: list[BaseException] = []
 
     def _run() -> None:
@@ -323,15 +312,14 @@ async def purge_expired_runs_best_effort_async(
             failures.append(exc)
         finally:
             release_run_gc()
-            finished.set()
+            loop.call_soon_threadsafe(finished.set)
 
     try:
         threading.Thread(target=_run, daemon=True).start()
     except RuntimeError:
         release_run_gc()
         raise
-    while not finished.is_set():  # noqa: ASYNC110
-        await asyncio.sleep(_RUN_GC_POLL_SECONDS)
+    await finished.wait()
     if failures:
         raise failures[0]
 

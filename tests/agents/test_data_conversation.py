@@ -63,12 +63,8 @@ def _result(
     raw_summary = cast(str | None, options.get("raw_summary"))
     formatted_answer = cast(str | None, options.get("formatted_answer"))
     dataset_ids = cast(list[str] | None, options.get("dataset_ids"))
-    table_id = cast(
-        str, options.get("table_id", "expression_table")
-    )
-    artifact_id = cast(
-        str, options.get("artifact_id", "artifact-expression")
-    )
+    table_id = cast(str, options.get("table_id", "expression_table"))
+    artifact_id = cast(str, options.get("artifact_id", "artifact-expression"))
     result: dict[str, object] = {
         "id": "run-data",
         "object": "agent.run",

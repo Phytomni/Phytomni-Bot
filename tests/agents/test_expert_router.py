@@ -348,9 +348,10 @@ def test_agent_openai_tool_specs_excludes_get_task_status() -> None:
 @pytest.fixture(autouse=True)
 def _reset_tool_choice_cache() -> Any:
     """Isolate the process-level unsupported-endpoint set per test."""
-    expert_router._TOOL_CHOICE_REQUIRED_UNSUPPORTED.clear()
+    unsupported = getattr(expert_router, "_TOOL_CHOICE_REQUIRED_UNSUPPORTED")
+    unsupported.clear()
     yield
-    expert_router._TOOL_CHOICE_REQUIRED_UNSUPPORTED.clear()
+    unsupported.clear()
 
 
 def _bad_request(message: str) -> BadRequestError:

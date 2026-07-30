@@ -52,9 +52,9 @@ async def test_sync_gc_boundary_propagates_worker_cancellation() -> None:
     async def cancelled() -> None:
         raise asyncio.CancelledError
 
-    boundary: Callable[
-        [Callable[[], Coroutine[Any, Any, Any]]], Any
-    ] = getattr(run_lifecycle, "_run_async_at_sync_boundary")
+    boundary: Callable[[Callable[[], Coroutine[Any, Any, Any]]], Any] = (
+        getattr(run_lifecycle, "_run_async_at_sync_boundary")
+    )
     with pytest.raises(asyncio.CancelledError):
         boundary(cancelled)
 
@@ -102,6 +102,26 @@ def _stage_lifecycle_turn(
     )
 
 
+def _review_settlement_marker(
+    stable_thread_id: str,
+    candidate_thread_id: str,
+    turn_id: str,
+) -> dict[str, object]:
+    """Build the bounded Review marker used by lifecycle fixtures."""
+    marker: dict[str, object] = {
+        "version": 1,
+        "operation": "new_review",
+    }
+    marker.update(
+        stable_thread_id=stable_thread_id,
+        candidate_thread_id=candidate_thread_id,
+        turn_id=turn_id,
+        report_revision=0,
+        settlement_state="pending",
+    )
+    return marker
+
+
 def _stage_review_turn(
     store: ConversationContextStore,
     key: str,
@@ -117,15 +137,9 @@ def _stage_review_turn(
         operation="new_review",
         selected_agent_id="ReviewAgent",
         stage_metadata={
-            "_review_settlement": {
-                "version": 1,
-                "operation": "new_review",
-                "stable_thread_id": stable_thread_id,
-                "candidate_thread_id": candidate_thread_id,
-                "turn_id": turn_id,
-                "report_revision": 0,
-                "settlement_state": "pending",
-            }
+            "_review_settlement": _review_settlement_marker(
+                stable_thread_id, candidate_thread_id, turn_id
+            )
         },
     )
     return stable_thread_id, candidate_thread_id
@@ -241,15 +255,9 @@ def test_failed_review_candidate_cleanup_retries_on_next_lifecycle_gc(
         operation="new_review",
         selected_agent_id="ReviewAgent",
         stage_metadata={
-            "_review_settlement": {
-                "version": 1,
-                "operation": "new_review",
-                "stable_thread_id": stable_thread_id,
-                "candidate_thread_id": candidate_thread_id,
-                "turn_id": review_turn_id,
-                "report_revision": 0,
-                "settlement_state": "pending",
-            }
+            "_review_settlement": _review_settlement_marker(
+                stable_thread_id, candidate_thread_id, review_turn_id
+            )
         },
     )
     with sqlite3.connect(db_path) as connection:
@@ -365,15 +373,9 @@ def test_lifecycle_gc_uses_the_persistent_checkpoint_backend_by_default(
         operation="new_review",
         selected_agent_id="ReviewAgent",
         stage_metadata={
-            "_review_settlement": {
-                "version": 1,
-                "operation": "new_review",
-                "stable_thread_id": stable_thread_id,
-                "candidate_thread_id": candidate_thread_id,
-                "turn_id": turn_id,
-                "report_revision": 0,
-                "settlement_state": "pending",
-            }
+            "_review_settlement": _review_settlement_marker(
+                stable_thread_id, candidate_thread_id, turn_id
+            )
         },
     )
     with sqlite3.connect(db_path) as connection:
@@ -437,15 +439,9 @@ async def test_async_lifecycle_gc_keeps_injected_checkpointer_caller_owned(
         operation="new_review",
         selected_agent_id="ReviewAgent",
         stage_metadata={
-            "_review_settlement": {
-                "version": 1,
-                "operation": "new_review",
-                "stable_thread_id": stable_thread_id,
-                "candidate_thread_id": candidate_thread_id,
-                "turn_id": turn_id,
-                "report_revision": 0,
-                "settlement_state": "pending",
-            }
+            "_review_settlement": _review_settlement_marker(
+                stable_thread_id, candidate_thread_id, turn_id
+            )
         },
     )
     with sqlite3.connect(db_path) as connection:

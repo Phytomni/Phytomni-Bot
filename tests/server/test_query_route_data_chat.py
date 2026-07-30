@@ -25,6 +25,10 @@ from tests.server.test_query_route import (
     pytest,
     server,
 )
+from tests.support.handler_fakes import (
+    patch_chat_completion_service,
+    patch_context_chat_runtime,
+)
 
 from mcp_server_phytomni.agents.chat import service as chat_service
 from mcp_server_phytomni.runtime.conversation_context.projection import (
@@ -206,33 +210,8 @@ async def test_context_expert_chat_keeps_thread_private_to_primary_call(
             ]
         }
 
-    monkeypatch.setattr(
-        mcp_handlers,
-        "load_chat_runtime",
-        lambda: (object(), object()),
-    )
-    monkeypatch.setattr(
-        mcp_handlers,
-        "scratch_server_dir",
-        lambda *_args: "/tmp/chat",
-    )
-    monkeypatch.setattr(
-        mcp_handlers,
-        "chat_call_kwargs",
-        lambda **kwargs: {
-            "user_query": kwargs["request"].user_query,
-            "locale": kwargs["request"].locale,
-            "obs_file_list": kwargs["request"].obs_file_list,
-        },
-    )
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.chat.service.phyto_chat",
-        fake_phyto_chat,
-    )
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.chat.service.get_prompt",
-        lambda *_args, **_kwargs: "follow-up",
-    )
+    patch_context_chat_runtime(monkeypatch, include_obs_file_list=True)
+    patch_chat_completion_service(monkeypatch, fake_phyto_chat)
     envelope = _conversation_envelope(
         requested_agent_id="ChatAgent",
         allowed_agent_ids=["ChatAgent"],

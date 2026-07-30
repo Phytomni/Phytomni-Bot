@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -13,10 +12,16 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException
 
+from ...runtime.conversation_context.locking import (
+    acquire_review_mutation_lock,
+)
 from ...runtime.conversation_context.projection import agent_thread_id
 from ...runtime.conversation_context.service import (
     _bounded_review_stage_metadata,
     review_settlement_metadata_from_turn,
+)
+from ...runtime.conversation_context.service_types import (
+    _SYNC_CONTEXT_AGENTS,
 )
 from ...runtime.conversation_context.store import (
     ContextVersionConflictError,
@@ -34,14 +39,6 @@ from ..schemas import (
 )
 
 logger = logging.getLogger(__name__)
-
-_SYNC_CONTEXT_AGENTS = (
-    "ChatAgent",
-    "KnowledgeAgent",
-    "DataAgent",
-    "ReviewAgent",
-    "BriefGeneAgent",
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,20 +74,6 @@ async def _delete_checkpoint_threads(
     for candidate_thread_id in dict.fromkeys(candidate_thread_ids):
         if candidate_thread_id not in stable_thread_ids:
             await checkpointer.adelete_thread(candidate_thread_id)
-
-
-async def _acquire_review_mutation_lock(
-    store: ConversationContextStore, *, wait_seconds: float = 30.0
-) -> Any:
-    """Poll a nonblocking durable lock without blocking the event loop."""
-    deadline = asyncio.get_running_loop().time() + wait_seconds
-    while True:
-        try:
-            return store.acquire_review_mutation_lock(timeout=0)
-        except ReviewMutationLockTimeoutError:
-            if asyncio.get_running_loop().time() >= deadline:
-                raise
-            await asyncio.sleep(0.01)
 
 
 async def _settle_review_turn(
@@ -271,7 +254,7 @@ async def _settle_review_context_route(
 ) -> ContextMutationResponse:
     """Acquire the mutation lock and settle one Review context turn."""
     try:
-        mutation_lock = await _acquire_review_mutation_lock(store)
+        mutation_lock = await acquire_review_mutation_lock(store)
     except ReviewMutationLockTimeoutError as exc:
         raise HTTPException(
             status_code=503, detail="Review settlement is busy"
@@ -294,7 +277,7 @@ async def _commit_context_route(
 ) -> ContextMutationResponse:
     """Acquire the mutation lock and commit a non-Review context turn."""
     try:
-        mutation_lock = await _acquire_review_mutation_lock(store)
+        mutation_lock = await acquire_review_mutation_lock(store)
     except ReviewMutationLockTimeoutError as exc:
         raise HTTPException(
             status_code=503, detail="context settlement is busy"
@@ -386,7 +369,7 @@ async def _tombstone_context_route(
     store = dependencies.get_store()
     key = str(payload.conversation_key)
     try:
-        mutation_lock = await _acquire_review_mutation_lock(store)
+        mutation_lock = await acquire_review_mutation_lock(store)
     except ReviewMutationLockTimeoutError as exc:
         raise HTTPException(
             status_code=503, detail="conversation deletion is busy"

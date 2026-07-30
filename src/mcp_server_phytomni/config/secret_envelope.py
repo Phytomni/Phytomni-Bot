@@ -151,9 +151,9 @@ def decrypt_env_blob(blob: bytes, license_key: str) -> dict[str, str]:
     if version != VERSION:
         raise SecretEnvelopeError(f"unsupported envelope version: {version}")
     off = len(MAGIC) + _VERSION_LEN
-    salt = blob[off : off + _SALT_LEN]
+    salt = blob[slice(off, off + _SALT_LEN)]
     off += _SALT_LEN
-    nonce = blob[off : off + _NONCE_LEN]
+    nonce = blob[slice(off, off + _NONCE_LEN)]
     off += _NONCE_LEN
     sealed = blob[off:]
     key = derive_key(license_key, salt)

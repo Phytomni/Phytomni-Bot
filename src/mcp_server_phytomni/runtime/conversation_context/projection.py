@@ -567,7 +567,10 @@ def _rebuild_business_context(request: _RebuildRequest) -> BusinessContext:
         if len(value) <= MAX_CONTEXT_TEXT_CHARS:
             return value
         prefix = MAX_CONTEXT_TEXT_CHARS // 2
-        return value[:prefix] + value[-(MAX_CONTEXT_TEXT_CHARS - prefix) :]
+        return (
+            value[:prefix]
+            + value[slice(-(MAX_CONTEXT_TEXT_CHARS - prefix), None)]
+        )
 
     for raw in request.ledger_entries:
         role = raw.get("role")

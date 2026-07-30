@@ -5,14 +5,17 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import AsyncGenerator, AsyncIterator
 from typing import Any, cast
-from uuid import UUID
 
 import pytest
 from fastapi import HTTPException
 from httpx import ConnectError, TimeoutException
+from tests.support.http_fakes import (
+    build_instant_chat_context_envelope,
+    expected_context_staged_value,
+    parse_sse_frames,
+)
 
 from mcp_server_phytomni.api import streaming
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
@@ -91,53 +94,16 @@ async def _direct_events(
 def _conversation_envelope(*, turn_id: str = "11") -> ConversationEnvelopeV1:
     """Build one Instant V1 envelope for direct streaming tests."""
     return ConversationEnvelopeV1.model_validate(
-        {
-            "schema_version": 1,
-            "conversation_key": str(
-                UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")
-            ),
-            "dialogue_id": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8")),
-            "turn_id": turn_id,
-            "request_id": f"request-{turn_id}",
-            "operation": "append",
-            "mode": "instant",
-            "current_message": {
-                "content": "What is photosynthesis?",
-                "locale": "en-US",
-            },
-            "requested_agent_id": None,
-            "allowed_agent_ids": ["ChatAgent"],
-            "ledger_cursor": int(turn_id),
-            "ledger_version": "a" * 64,
-            "base_business_context_version": 0,
-            "history_delta": [
-                {
-                    "turn_id": turn_id,
-                    "role": "user",
-                    "content": "What is photosynthesis?",
-                }
-            ],
-            "artifact_refs": [],
-        }
+        build_instant_chat_context_envelope(
+            turn_id,
+            ledger_cursor=int(turn_id),
+        )
     )
 
 
 def _stream_frames(body: str) -> list[tuple[str, dict[str, Any]]]:
     """Parse one SSE response body into ``(event, payload)`` pairs."""
-    frames: list[tuple[str, dict[str, Any]]] = []
-    for chunk in body.split("\n\n"):
-        if not chunk.startswith("event: "):
-            continue
-        lines = chunk.splitlines()
-        if len(lines) < 2 or not lines[1].startswith("data: "):
-            continue
-        frames.append(
-            (
-                lines[0][len("event: ") :],
-                json.loads(lines[1][len("data: ") :]),
-            )
-        )
-    return frames
+    return parse_sse_frames(body)
 
 
 async def _consume_disconnect_stream(
@@ -309,16 +275,7 @@ async def test_context_stream_inserts_bounded_custom_before_finish(
     assert frames[2][1] == {
         "type": "Custom",
         "name": "phyto.context_staged",
-        "value": {
-            "schema_version": 1,
-            "turn_id": "11",
-            "selected_agent_id": "ChatAgent",
-            "route_source": "instant_lock",
-            "proposed_business_context_version": 1,
-            "context_truncated": False,
-            "context_rebuilt": True,
-            "context_degraded": False,
-        },
+        "value": expected_context_staged_value("11"),
     }
 
 

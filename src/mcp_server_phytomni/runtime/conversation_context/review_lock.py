@@ -9,12 +9,13 @@ from __future__ import annotations
 import os
 import threading
 import time
-from typing import Self
+from typing import Any, Self
 
+fcntl: Any
 try:
     import fcntl
 except ImportError:  # pragma: no cover - the supported runtime is POSIX.
-    fcntl = None  # type: ignore[assignment]
+    fcntl = None
 
 __all__ = ["ReviewMutationLock", "ReviewMutationLockTimeoutError"]
 

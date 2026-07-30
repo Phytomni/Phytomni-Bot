@@ -88,6 +88,7 @@ def configure_store_types(
         }
     )
 
+
 _CREATE_CONTEXTS = """
 CREATE TABLE IF NOT EXISTS conversation_contexts (
     conversation_key TEXT PRIMARY KEY,
@@ -316,7 +317,13 @@ def load_turn(self: Any, key: str, turn_id: str):
     return None if row is None else getattr(self, "_turn")(row)
 
 
-def begin_turn(self: Any, key: str, turn_id: str, operation: str, base_version: int):
+def begin_turn(
+    self: Any,
+    key: str,
+    turn_id: str,
+    operation: str,
+    base_version: int,
+):
     """Create or return the durable in-progress record for one turn."""
     now = _now()
     with getattr(self, "_write")() as connection:
@@ -407,7 +414,9 @@ def _upsert_review_checkpoint_cleanup(
         )
 
 
-def _register_review_candidate_locked(self: Any, entry: _ReviewCleanupEntry) -> bool:
+def _register_review_candidate_locked(
+    self: Any, entry: _ReviewCleanupEntry
+) -> bool:
     """Persist a validated candidate while the mutation lock is held."""
     with getattr(self, "_write")() as connection:
         context = connection.execute(

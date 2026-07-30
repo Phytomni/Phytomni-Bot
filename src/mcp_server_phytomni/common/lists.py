@@ -37,6 +37,6 @@ def split_list(lst: list, max_size: int = 128) -> list[list]:
     index = 0
     for i in range(num_chunks):
         chunk_size = base_size + 1 if i < remainder else base_size
-        chunks.append(lst[index : index + chunk_size])
+        chunks.append(lst[slice(index, index + chunk_size)])
         index += chunk_size
     return chunks

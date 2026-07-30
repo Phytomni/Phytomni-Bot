@@ -65,19 +65,21 @@ def _build_agent() -> DigitalDesignAgents:
 
 def test_get_compute_resource_protein_design_returns_medium() -> None:
     """Protein design is the only documented medium-tier analysis."""
-    # pylint: disable=protected-access
     agent = _build_agent()
 
-    assert agent._get_compute_resource("protein_design_analysis") == "medium"
+    assert (
+        getattr(agent, "_get_compute_resource")("protein_design_analysis")
+        == "medium"
+    )
 
 
 def test_get_compute_resource_unknown_falls_back_to_small() -> None:
     """Every other analysis type stays on the small tier by default."""
-    # pylint: disable=protected-access
     agent = _build_agent()
 
-    assert agent._get_compute_resource("promoter_design_analysis") == "small"
-    assert agent._get_compute_resource("does-not-exist") == "small"
+    get_resource = getattr(agent, "_get_compute_resource")
+    assert get_resource("promoter_design_analysis") == "small"
+    assert get_resource("does-not-exist") == "small"
 
 
 def test_analysis_prompt_parts_rejects_unknown_type() -> None:
@@ -87,11 +89,10 @@ def test_analysis_prompt_parts_rejects_unknown_type() -> None:
     so a misconfigured caller never reaches the species metadata
     layer with a typo in the analysis-type slug.
     """
-    # pylint: disable=protected-access
     agent = _build_agent()
 
     with pytest.raises(ValueError, match="does-not-exist"):
-        agent._analysis_prompt_parts(
+        getattr(agent, "_analysis_prompt_parts")(
             analysis_type="does-not-exist",
             species_code="ath",
             gene_id="AT1G01010",

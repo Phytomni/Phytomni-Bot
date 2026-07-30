@@ -122,7 +122,7 @@ def test_update_request_info_enforces_owner_isolation(
 
 
 def test_settle_run_preserves_created_at(tmp_path: Path) -> None:
-    """settle_run updates status/result in place without touching created_at."""
+    """settle_run updates status/result without touching created_at."""
     registry, _, _ = _make_registry(tmp_path)
     spec = RunSpec("run-settle-1", "alice", "chat", "local")
     registry.create_run(spec, outcome=RunOutcome(status="running"))

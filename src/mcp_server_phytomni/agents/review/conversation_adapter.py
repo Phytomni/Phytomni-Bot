@@ -8,7 +8,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any
+from typing import Any, cast
 
 from ...runtime.conversation_context.models import (
     MAX_CONTEXT_TEXT_CHARS,
@@ -207,13 +207,20 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
     def prepare(
         self,
         projection: ContextProjection,
-        *,
-        snapshot: ReviewCheckpointSnapshot | Mapping[str, Any] | None = None,
-        allow_unresolved_section: bool = False,
-        report_document: ReviewReportDocument | None = None,
-        turn_id: str | None = None,
+        **options: Any,
     ) -> dict[str, Any]:
         """Classify and project one Review turn."""
+        snapshot = options.pop("snapshot", None)
+        allow_unresolved_section = options.pop(
+            "allow_unresolved_section", False
+        )
+        report_document = options.pop("report_document", None)
+        turn_id = options.pop("turn_id", None)
+        if options:
+            raise TypeError(
+                "unexpected review preparation options: "
+                + ", ".join(sorted(options))
+            )
         validated_turn_id = _required_turn_id(turn_id)
         self._stable_thread_id = projection.agent_thread_id
         self._thread_id = self._stable_thread_id
@@ -429,11 +436,18 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         metadata: Mapping[str, Any],
         agent: Any,
         result: Mapping[str, Any] | None = None,
-        *,
-        expected_stable_thread_id: str | None = None,
-        expected_turn_id: str | None = None,
+        **options: Any,
     ) -> None:
         """Reconstruct a pending turn from durable metadata after restart."""
+        expected_stable_thread_id = options.pop(
+            "expected_stable_thread_id", None
+        )
+        expected_turn_id = options.pop("expected_turn_id", None)
+        if options:
+            raise TypeError(
+                "unexpected review settlement options: "
+                + ", ".join(sorted(options))
+            )
         restored = _parse_review_settlement_metadata(
             metadata,
             expected_stable_thread_id=expected_stable_thread_id,
@@ -466,10 +480,16 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
             candidate_checkpoint = await _load_restored_candidate_checkpoint(
                 agent, restored.candidate_thread_id
             )
-            self._state.checkpoint.staged_snapshot = candidate_checkpoint.snapshot
-            self._state.checkpoint.report_document = candidate_checkpoint.document
+            self._state.checkpoint.staged_snapshot = (
+                candidate_checkpoint.snapshot
+            )
+            self._state.checkpoint.report_document = (
+                candidate_checkpoint.document
+            )
             assert candidate_checkpoint.document is not None
-            self._state.result.pending_report_text = candidate_checkpoint.document.text
+            self._state.result.pending_report_text = (
+                candidate_checkpoint.document.text
+            )
         projection = ContextProjection.model_construct(
             current_query="settlement",
             intent_kind="follow_up",
@@ -501,8 +521,8 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         )
         if restored.operation is ReviewConversationOperation.LOCAL_REVISION:
             self._state.result.pending_report_text = answer
-            self._state.checkpoint.report_document = _report_document_from_text(
-                answer
+            self._state.checkpoint.report_document = (
+                _report_document_from_text(answer)
             )
 
     def mark_failed(self) -> None:
@@ -622,7 +642,10 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         if self._state.result.pending_report_text is not None:
             values["summary_content"] = self._state.result.pending_report_text
         self._check_settlement_fence()
-        await _invoke_checkpoint_updater(updater, self.stable_thread_id, values)
+        typed_updater = cast(Callable[..., Awaitable[Any]], updater)
+        await _invoke_checkpoint_updater(
+            typed_updater, self.stable_thread_id, values
+        )
 
     async def _promote_candidate(self, revision: int) -> None:
         """Copy an isolated graph result after acknowledgement."""
@@ -654,7 +677,10 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         if self._state.result.pending_report_text is not None:
             values["summary_content"] = self._state.result.pending_report_text
         self._check_settlement_fence()
-        await _invoke_checkpoint_updater(updater, self.stable_thread_id, values)
+        typed_updater = cast(Callable[..., Awaitable[Any]], updater)
+        await _invoke_checkpoint_updater(
+            typed_updater, self.stable_thread_id, values
+        )
 
     async def discard_pending_candidate(self) -> None:
         """Delete an unacknowledged candidate without touching active state."""
@@ -723,7 +749,9 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         revised = await revise_section(
             section_id=section.section_id,
             section_text=section.text,
-            instruction=self._state.checkpoint.prepared.projection.current_query,
+            instruction=(
+                self._state.checkpoint.prepared.projection.current_query
+            ),
             evidence_summary=_evidence_summary(
                 self._state.checkpoint.prepared.snapshot
             ),
@@ -772,7 +800,9 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         )
         authorized = {
             item.artifact_id: item
-            for item in self._state.checkpoint.prepared.projection.artifact_refs
+            for item in (
+                self._state.checkpoint.prepared.projection.artifact_refs
+            )
         }
         if artifact_id in authorized:
             artifact_upserts.append(authorized[artifact_id])

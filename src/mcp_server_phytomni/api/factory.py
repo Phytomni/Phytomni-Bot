@@ -372,11 +372,11 @@ class _RouteAdapters:
         )
         return canonicalize_agent_run_body(response_body), status_code
 
-    def a2ui_enabled(self) -> bool:
+    def _a2ui_enabled(self) -> bool:
         """Read the current A2UI feature flag."""
         return _api_config().A2UI_ENABLED
 
-    def conversation_context_enabled(self) -> bool:
+    def _conversation_context_enabled(self) -> bool:
         """Read the current conversation-context protocol flag."""
         return _api_config().CONVERSATION_CONTEXT_V1_ENABLED
 
@@ -388,15 +388,20 @@ class _RouteAdapters:
         self,
         name: Any,
         arguments: dict[str, Any],
-        *,
-        conversation_messages: tuple[dict[str, str], ...] = (),
-        agent_thread_id: str | None = None,
-        private_agent_state: Mapping[str, Any] | None = None,
+        **options: Any,
     ) -> Any:
         """Invoke one tool through the request-time app compatibility seam."""
+        conversation_messages = options.pop("conversation_messages", ())
+        agent_thread_id = options.pop("agent_thread_id", None)
+        private_agent_state = options.pop("private_agent_state", None)
+        if options:
+            raise TypeError(
+                "unexpected tool invocation options: "
+                + ", ".join(sorted(options))
+            )
         return await _app_attr("invoke_tool_enveloped")(
-            name,
-            arguments,
+            name=name,
+            arguments=arguments,
             conversation_messages=conversation_messages,
             agent_thread_id=agent_thread_id,
             private_agent_state=private_agent_state,
@@ -404,17 +409,26 @@ class _RouteAdapters:
 
     async def invoke_agent_run(
         self,
-        *,
-        agent: str,
-        arguments: dict[str, Any],
-        conversation_messages: tuple[dict[str, str], ...] = (),
-        agent_thread_id: str | None = None,
-        private_agent_state: Mapping[str, Any] | None = None,
-        dialogue_id: str | None = None,
-        request_json: str | None = None,
-        debug: bool = False,
+        **options: Any,
     ) -> tuple[dict[str, Any], int]:
         """Invoke a native agent run through the app-level seam."""
+        try:
+            agent = options.pop("agent")
+            arguments = options.pop("arguments")
+        except KeyError as exc:
+            raise TypeError(
+                f"missing agent-run option: {exc.args[0]}"
+            ) from exc
+        conversation_messages = options.pop("conversation_messages", ())
+        agent_thread_id = options.pop("agent_thread_id", None)
+        private_agent_state = options.pop("private_agent_state", None)
+        dialogue_id = options.pop("dialogue_id", None)
+        request_json = options.pop("request_json", None)
+        debug = options.pop("debug", False)
+        if options:
+            raise TypeError(
+                "unexpected agent-run options: " + ", ".join(sorted(options))
+            )
         response_body, status_code = await _app_attr("_invoke_agent_run")(
             agent=agent,
             arguments=arguments,
@@ -557,7 +571,9 @@ def _build_agent_dependencies(
             remote_agent_slugs=_app_attr("_REMOTE_AGENT_SLUGS"),
             legacy_aliases=_app_attr("_LEGACY_ALIASES"),
             serialize_capability=_app_attr("serialize_agent_capability"),
-            conversation_context_enabled=adapters.conversation_context_enabled,
+            conversation_context_enabled=getattr(
+                adapters, "_conversation_context_enabled"
+            ),
         ),
         chat=agent_routes.AgentChatDependencies(
             input=agent_routes.AgentChatInputDependencies(
@@ -585,7 +601,7 @@ def _build_agent_dependencies(
             route_expert_query=adapters.expert_query,
         ),
         context=agent_routes.AgentContextDependencies(
-            enabled=adapters.conversation_context_enabled,
+            enabled=getattr(adapters, "_conversation_context_enabled"),
             executor=context_executor,
         ),
         upload=agent_routes.AgentUploadDependencies(
@@ -745,7 +761,7 @@ def _register_run_routes(
                 strip_run_result=adapters.strip_run_result,
             ),
             pause=run_routes.RunPauseDependencies(
-                a2ui_enabled=adapters.a2ui_enabled,
+                a2ui_enabled=getattr(adapters, "_a2ui_enabled"),
                 a2ui_max_response_bytes=adapters.a2ui_max_response_bytes,
                 resume_a2ui=adapters.resume_a2ui,
                 resume_review=adapters.resume_review,
@@ -761,12 +777,12 @@ def _register_conversation_context_routes(
     context_executor: ConversationContextExecutor,
 ) -> None:
     """Register authenticated V1 context mutation routes."""
-    if not adapters.conversation_context_enabled():
+    if not getattr(adapters, "_conversation_context_enabled")():
         return
     conversation_context_routes.register_conversation_context_routes(
         app,
         conversation_context_routes.ContextRouteDependencies(
-            enabled=adapters.conversation_context_enabled,
+            enabled=getattr(adapters, "_conversation_context_enabled"),
             require_agents=runtime.require_scope("agents"),
             get_store=runtime.get_conversation_context_store,
             acknowledge_review_settlement=(

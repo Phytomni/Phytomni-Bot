@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Any
@@ -18,12 +19,81 @@ from mcp_server_phytomni import server
 __all__ = [
     "assert_duplicate_attachment_response",
     "assert_degraded_tracking_response",
+    "build_instant_chat_context_envelope",
+    "expected_context_staged_value",
     "install_tool_handler",
     "install_rejection_handler",
     "open_asgi_client",
+    "parse_sse_frames",
 ]
 
 _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
+
+
+def build_instant_chat_context_envelope(
+    turn_id: str,
+    *,
+    ledger_cursor: int = 1,
+) -> dict[str, Any]:
+    """Build the shared Instant Chat V1 envelope fixture."""
+    return {
+        "schema_version": 1,
+        "conversation_key": "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7",
+        "dialogue_id": "018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8",
+        "turn_id": turn_id,
+        "request_id": f"request-{turn_id}",
+        "operation": "append",
+        "mode": "instant",
+        "current_message": {
+            "content": "What is photosynthesis?",
+            "locale": "en-US",
+        },
+        "requested_agent_id": None,
+        "allowed_agent_ids": ["ChatAgent"],
+        "ledger_cursor": ledger_cursor,
+        "ledger_version": "a" * 64,
+        "base_business_context_version": 0,
+        "history_delta": [
+            {
+                "turn_id": turn_id,
+                "role": "user",
+                "content": "What is photosynthesis?",
+            }
+        ],
+        "artifact_refs": [],
+    }
+
+
+def expected_context_staged_value(turn_id: str) -> dict[str, Any]:
+    """Return the canonical context-staged custom-frame value."""
+    return {
+        "schema_version": 1,
+        "turn_id": turn_id,
+        "selected_agent_id": "ChatAgent",
+        "route_source": "instant_lock",
+        "proposed_business_context_version": 1,
+        "context_truncated": False,
+        "context_rebuilt": True,
+        "context_degraded": False,
+    }
+
+
+def parse_sse_frames(body: str) -> list[tuple[str, dict[str, Any]]]:
+    """Parse an SSE response body into semantic event/payload pairs."""
+    frames: list[tuple[str, dict[str, Any]]] = []
+    for chunk in body.split("\n\n"):
+        lines = chunk.splitlines()
+        if len(lines) < 2 or not lines[0].startswith("event: "):
+            continue
+        if not lines[1].startswith("data: "):
+            continue
+        frames.append(
+            (
+                lines[0].removeprefix("event: "),
+                json.loads(lines[1].removeprefix("data: ")),
+            )
+        )
+    return frames
 
 
 def install_tool_handler(

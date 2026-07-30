@@ -12,7 +12,7 @@ import re
 import subprocess
 import textwrap
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +34,14 @@ _ENDPOINT_RE = re.compile(
     re.MULTILINE,
 )
 _PYLINT_VERSION = ("uv", "run", "pylint", "--version")
+
+
+@dataclass(frozen=True)
+class _PylintPathContext:
+    """Tracked-source context shared while resolving Pylint endpoints."""
+
+    root: Path
+    tracked: Sequence[Path]
 
 
 def validate_pylint_result(returncode: int, stdout: str, stderr: str) -> str:
@@ -161,14 +169,15 @@ def _endpoint_candidates(
 
 
 def _resolve_module(
-    root: Path,
+    context: _PylintPathContext,
     module: str,
     start: int,
     end: int,
-    tracked: Sequence[Path],
     source_hint: str | None,
 ) -> Path:
     """Resolve one Pylint endpoint using path and source evidence."""
+    root = context.root
+    tracked = context.tracked
     module_names = {module}
     if module.endswith(".__init__"):
         module_names.add(module[: -len(".__init__")])
@@ -186,8 +195,10 @@ def _resolve_module(
     direct = root / f"{module.replace('.', '/')}.py"
     if direct in tracked and direct.is_file():
         return direct
-    candidates = exact_matches or suffix_matches or tuple(
-        path for path in tracked if path.stem == module
+    candidates = (
+        exact_matches
+        or suffix_matches
+        or tuple(path for path in tracked if path.stem == module)
     )
     reported_candidates = candidates
     if source_hint is not None:
@@ -210,19 +221,19 @@ def _span_source(path: Path, start: int, end: int) -> str:
         raise CollectionError(
             f"Pylint span is outside {path.as_posix()}: {start}:{end}"
         )
-    snippet = "\n".join(lines[start - 1 : end])
+    snippet = "\n".join(lines[slice(start - 1, end)])
     return _normalize_span_source(snippet)
 
 
 def _span_endpoint(
-    root: Path,
+    context: _PylintPathContext,
     module: str,
     start: int,
     end: int,
-    tracked: Sequence[Path],
     source_hint: str | None,
 ) -> tuple[Path, Endpoint, str]:
-    path = _resolve_module(root, module, start, end, tracked, source_hint)
+    path = _resolve_module(context, module, start, end, source_hint)
+    root = context.root
     relative = _relative_path(root, path)
     normalized = _span_source(path, start, end)
     return path, Endpoint(relative, f"{start}:{end}", normalized), normalized
@@ -237,22 +248,21 @@ def _pair_endpoints(
             "R0801 diagnostic must contain exactly two source endpoints"
         )
     first_match, second_match = matches
-    source = message[second_match.end() :]
+    source = message[slice(second_match.end(), None)]
     source_hint = _normalize_span_source(source) if source.strip() else None
+    context = _PylintPathContext(root, tracked)
     first = _span_endpoint(
-        root,
+        context,
         first_match.group("module"),
         int(first_match.group("start")),
         int(first_match.group("end")),
-        tracked,
         source_hint,
     )
     second = _span_endpoint(
-        root,
+        context,
         second_match.group("module"),
         int(second_match.group("start")),
         int(second_match.group("end")),
-        tracked,
         source_hint,
     )
     if first[0] == second[0]:

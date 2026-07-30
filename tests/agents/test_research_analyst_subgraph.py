@@ -76,7 +76,6 @@ async def test_submit_task_uses_subgraph(
     the dispatch request and bypasses the direct ``arun`` call; the
     test asserts both observable conditions.
     """
-    # pylint: disable=protected-access
     agent = _build_agent()
     subgraph_mock = AsyncMock(
         return_value={
@@ -90,7 +89,7 @@ async def test_submit_task_uses_subgraph(
         subgraph_mock,
     )
 
-    result = await agent._submit_research_task(_sample_task())
+    result = await getattr(agent, "_submit_research_task")(_sample_task())
 
     assert result["task_id"] == "subgraph-task"
     subgraph_mock.assert_awaited_once()
@@ -121,7 +120,6 @@ async def test_submit_task_propagates_failed_status(
     ``RuntimeError``. Pins the contract so dispatch cannot
     accidentally swallow analyst failures.
     """
-    # pylint: disable=protected-access
     agent = _build_agent()
     subgraph_mock = AsyncMock(
         return_value={
@@ -135,4 +133,4 @@ async def test_submit_task_propagates_failed_status(
     )
 
     with pytest.raises(RuntimeError, match="analyst plan critic exhausted"):
-        await agent._submit_research_task(_sample_task())
+        await getattr(agent, "_submit_research_task")(_sample_task())

@@ -15,8 +15,8 @@ import importlib.util
 import os
 import socket
 import sys
-from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator
-from contextlib import AsyncExitStack, asynccontextmanager
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import AsyncExitStack
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Any, Self
@@ -43,16 +43,6 @@ from tests.support.http_fakes import open_asgi_client
 # top of the file (no E402 / C0413 / noqa needed). See that file's
 # module docstring for why the install must precede every
 # ``mcp_server_phytomni`` import.
-
-# pylint: disable=contextmanager-generator-missing-cleanup
-# W0135 is a documented false positive on the canonical
-# ``@asynccontextmanager`` + ``async with X() as y: yield y`` pattern
-# when the inner context manager is referenced through a closure
-# variable (as in ``_build_async_factory`` below). The decorator
-# already converts a thrown ``GeneratorExit`` into the proper
-# ``__aexit__`` call, so the warning never matches a real cleanup bug
-# in this fixture file. See ``docs/development/lint-exemptions.md``
-# for the full refactor cost / sunset analysis.
 
 TRUTHY_ENV_VALUES = {"1", "true", "yes", "on"}
 
@@ -330,24 +320,12 @@ def _build_async_factory(
 ) -> Callable[..., Any]:
     """Return a ``get_async_client``-shaped factory around the scripted client.
 
-    Lives at module scope (not nested inside the fixture) because
-    pylint's W0135 generator-missing-cleanup heuristic only trusts
-    `yield` inside `async with` when the enclosing function is itself
-    top-level — nesting two levels deep inside a fixture closure
-    confuses the inference and trips a false positive.
+    The returned callable constructs the scripted client directly, so the
+    production ``async with get_async_client()`` lifecycle remains explicit
+    without a generator-based context-manager wrapper.
     """
     client_cls = _build_scripted_client_class(behaviors, calls)
-
-    @asynccontextmanager
-    async def factory(
-        **factory_kwargs: Any,
-    ) -> AsyncGenerator[Any, None]:
-        """Yield one scripted client per call, ignoring factory kwargs."""
-        del factory_kwargs
-        async with client_cls() as opened:
-            yield opened
-
-    return factory
+    return client_cls
 
 
 @pytest.fixture
@@ -594,10 +572,10 @@ def _build_fake_obs_client() -> Any:
         def read(self, size: int = -1) -> bytes:
             """Return up to ``size`` bytes from the current position."""
             if size is None or size < 0:
-                chunk = self._data[self._pos :]
+                chunk = self._data[slice(self._pos, None)]
                 self._pos = len(self._data)
                 return chunk
-            chunk = self._data[self._pos : self._pos + size]
+            chunk = self._data[slice(self._pos, self._pos + size)]
             self._pos += len(chunk)
             return chunk
 

@@ -185,6 +185,18 @@ def interop_evidence_update(
     )
 
 
+def completed_interop_evidence_update(
+    evidence: Mapping[str, Any],
+    started: float,
+) -> dict[str, Any]:
+    """Summarize completed evidence using one monotonic start timestamp."""
+    return interop_evidence_update(
+        evidence,
+        status="completed",
+        latency_seconds=started,
+    )
+
+
 def interop_target_descriptor(
     dependencies: Any,
     target_ids: Sequence[str],
@@ -309,6 +321,16 @@ def require_a2a_result[T](result: T | None, label: str) -> T:
     return result
 
 
+def require_a2a_task_id(result: Mapping[str, Any]) -> str:
+    """Return the correlation id required by an input-required A2A result."""
+    task_id = result.get("task_id")
+    if not task_id:
+        raise RuntimeError(
+            "external A2A input-required response omitted task_id"
+        )
+    return str(task_id)
+
+
 def resolve_required_interop_dependencies[T](
     dependencies: T, sensitive_config: SensitiveConfig
 ) -> T | None:
@@ -364,6 +386,28 @@ def merge_a2a_pending_fields(
     }
 
 
+def a2a_pending_state_update(
+    pending: Mapping[str, Any],
+    *,
+    task_key: str,
+    latency_seconds: float,
+) -> dict[str, Any]:
+    """Build the common graph update for an input-required A2A result."""
+    return {
+        "a2a_pending": [pending],
+        "a2a_task_ids": {task_key: str(pending["task_id"])},
+        **interop_state_update(
+            make_interop_record(
+                target_id=str(pending["target_id"]),
+                kind="a2a",
+                capability=str(pending["capability"]),
+                status="input_required",
+                latency_seconds=latency_seconds,
+            )
+        ),
+    }
+
+
 def initial_interop_state(options: Mapping[str, Any]) -> dict[str, Any]:
     """Return shared graph-state fields for an interop-enabled run."""
     return {
@@ -379,7 +423,9 @@ def initial_interop_state(options: Mapping[str, Any]) -> dict[str, Any]:
 
 
 __all__ = [
+    "a2a_pending_state_update",
     "build_a2a_resume_draft",
+    "completed_interop_evidence_update",
     "has_interop_target_kind",
     "initial_interop_state",
     "InteropA2APending",
@@ -399,6 +445,7 @@ __all__ = [
     "require_a2a_result",
     "resolve_interop_dependencies",
     "resolve_required_interop_dependencies",
+    "require_a2a_task_id",
     "update_a2a_pending",
     "update_a2a_pending_from_result",
 ]

@@ -164,7 +164,7 @@ def project_review_interrupt(
         raise ReviewSurfaceProjectionError(
             "review surface validation failed"
         ) from exc
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:
         raise ReviewSurfaceProjectionError(
             "review surface projection failed"
         ) from exc

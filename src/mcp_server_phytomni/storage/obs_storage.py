@@ -43,9 +43,9 @@ def normalize_obs_object_key(obs_path: str, bucket_name: str) -> str:
     if path_value.startswith("obs://"):
         path_value = _strip_obs_scheme(path_value, bucket)
     elif path_value.startswith(f"{bucket}:/"):
-        path_value = path_value[len(f"{bucket}:/") :]
+        path_value = path_value.removeprefix(f"{bucket}:/")
     elif path_value.startswith(f"/obs/{bucket}/"):
-        path_value = path_value[len(f"/obs/{bucket}/") :]
+        path_value = path_value.removeprefix(f"/obs/{bucket}/")
     elif path_value == f"/obs/{bucket}":
         path_value = ""
     elif path_value.startswith("/obs/"):
@@ -53,7 +53,7 @@ def normalize_obs_object_key(obs_path: str, bucket_name: str) -> str:
             f"OBS path points outside bucket '{bucket}': {obs_path}"
         )
     elif path_value.startswith(f"/{bucket}/"):
-        path_value = path_value[len(f"/{bucket}/") :]
+        path_value = path_value.removeprefix(f"/{bucket}/")
     elif path_value == f"/{bucket}":
         path_value = ""
     elif path_value.startswith("/"):
@@ -192,11 +192,11 @@ def obsfs_or_sdk[T](
 
 def _strip_obs_scheme(path_value: str, bucket_name: str) -> str:
     """Strip the obs:// scheme and optional bucket prefix."""
-    without_scheme = path_value[len("obs://") :]
+    without_scheme = path_value.removeprefix("obs://")
     if without_scheme == bucket_name:
         return ""
     if without_scheme.startswith(f"{bucket_name}/"):
-        return without_scheme[len(f"{bucket_name}/") :]
+        return without_scheme.removeprefix(f"{bucket_name}/")
     return without_scheme
 
 

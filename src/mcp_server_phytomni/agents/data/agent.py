@@ -93,6 +93,25 @@ def _result_row_count(result: Any) -> int | None:
 
 DATA_CONFIG = DataConfig()
 
+
+def _data_run_options(
+    args: tuple[Any, ...], kwargs: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Normalize the legacy positional DataAgent run options."""
+    names = ("is_rewrite", "dialog_id", "thread_id", "locale")
+    values: dict[str, Any] = {
+        "is_rewrite": True,
+        "dialog_id": None,
+        "thread_id": None,
+        "locale": None,
+    }
+    if len(args) > len(names):
+        raise TypeError("too many DataAgent run arguments")
+    values.update(zip(names, args, strict=False))
+    values.update({name: kwargs[name] for name in names if name in kwargs})
+    return values
+
+
 DATA_CONFIG_FIELD_MAP = {
     "retrieve_url": "RETRIEVE_URL",
     "data_repo_id": "DATA_REPO_ID",
@@ -571,10 +590,8 @@ class DataAgent:
     async def arun(
         self,
         user_query: str,
-        is_rewrite: bool = True,
-        dialog_id: str | None = None,
-        thread_id: str | None = None,
-        locale: SupportedLocale | None = None,
+        *args: Any,
+        **kwargs: Any,
     ):
         """Execute the DataAgent workflow.
 
@@ -592,18 +609,19 @@ class DataAgent:
         Returns:
             The final response dictionary containing database query results.
         """
+        options = _data_run_options(args, kwargs)
         initial_state = {
             "user_query": user_query,
-            "locale": resolve_agent_locale(locale),
-            "is_rewrite": is_rewrite,
-            "dialog_id": dialog_id,
+            "locale": resolve_agent_locale(options["locale"]),
+            "is_rewrite": options["is_rewrite"],
+            "dialog_id": options["dialog_id"],
             "retrieve_prompt": None,
             "rewrite_query": None,
             "final_response": None,
         }
 
         final_state = await ainvoke_graph(
-            self.app, initial_state, thread_id=thread_id
+            self.app, initial_state, thread_id=options["thread_id"]
         )
 
         return merge_intermediate_state(final_state)

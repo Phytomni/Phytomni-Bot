@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -27,9 +26,14 @@ from tests.support.formatting_fakes import (
     design_task_payload,
     network_task_payload,
 )
+from tests.support.handler_fakes import (
+    patch_chat_completion_service,
+    patch_chat_runtime,
+    patch_handler_runtime,
+    patch_knowledge_agent,
+)
 
 import mcp_server_phytomni.agents.chat.service as chat_service
-from mcp_server_phytomni.agents.knowledge import agent as knowledge_agent
 from mcp_server_phytomni.mcp import app as mcp_app
 from mcp_server_phytomni.mcp import handlers as mcp_handlers
 from mcp_server_phytomni.mcp.result_formatting import FormattedToolResult
@@ -142,29 +146,11 @@ async def test_v1_history_reaches_chat_handler_through_raw_dispatch(
             ]
         }
 
-    monkeypatch.setattr(
-        mcp_handlers,
-        "load_chat_runtime",
-        lambda: (object(), object()),
-    )
-    monkeypatch.setattr(
-        mcp_handlers,
-        "scratch_server_dir",
-        lambda *_args: "/tmp/chat",
-    )
-    monkeypatch.setattr(
-        mcp_handlers,
-        "chat_call_kwargs",
+    patch_chat_runtime(
+        monkeypatch,
         lambda **kwargs: {"user_query": kwargs["request"].user_query},
     )
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.chat.service.phyto_chat",
-        fake_chat,
-    )
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.chat.service.get_prompt",
-        lambda *_args, **_kwargs: "follow-up",
-    )
+    patch_chat_completion_service(monkeypatch, fake_chat)
     history = (
         {"role": "user", "content": "U1"},
         {"role": "assistant", "content": "A1"},
@@ -189,13 +175,12 @@ async def test_v1_history_reaches_chat_handler_through_raw_dispatch(
         "conversation_messages": history,
         "thread_id": thread_id,
     }
-    assert captured[1] == {
-        "user_query": "follow-up",
-        "locale": "en-US",
-        "semaphore": None,
-        "prompt_file": chat_service.CHAT_CONFIG.PROMPT_FILE,
-        "conversation_messages": history,
-    }
+    follow_up = captured[1]
+    assert follow_up["user_query"] == "follow-up"
+    assert follow_up["locale"] == "en-US"
+    assert follow_up["semaphore"] is None
+    assert follow_up["prompt_file"] == chat_service.CHAT_CONFIG.PROMPT_FILE
+    assert follow_up["conversation_messages"] == history
     chat_fields = dict(getattr(mcp_app.ChatAgent, "model_fields", {}))
     assert "conversation_messages" not in chat_fields
 
@@ -212,23 +197,7 @@ async def test_v1_history_reaches_expert_handler_through_raw_dispatch(
         return {"choices": [{"message": {"content": "ok"}}]}
 
     monkeypatch.setattr(mcp_handlers, "KnowledgeConfig", object)
-    monkeypatch.setattr(
-        mcp_handlers,
-        "load_handler_runtime",
-        lambda: SimpleNamespace(
-            sensitive=object(), obs_credentials=("a", "b")
-        ),
-    )
-    monkeypatch.setattr(
-        mcp_handlers,
-        "scratch_server_dir",
-        lambda *_args: "/tmp/knowledge",
-    )
-    monkeypatch.setattr(
-        mcp_handlers, "chat_kwargs", lambda *_args, **_kwargs: {}
-    )
-    monkeypatch.setattr(mcp_handlers, "retrieve_kwargs", lambda _config: {})
-    monkeypatch.setattr(mcp_handlers, "obs_kwargs", lambda *_args: {})
+    patch_handler_runtime(monkeypatch, scratch_path="/tmp/knowledge")
     monkeypatch.setattr(
         mcp_handlers,
         "multi_retrieve_generate",
@@ -278,36 +247,11 @@ async def test_v1_history_reaches_knowledge_wrapper_without_leakage(
     fake_agent = FakeKnowledgeAgent()
 
     monkeypatch.setattr(mcp_handlers, "KnowledgeConfig", object)
-    monkeypatch.setattr(
-        mcp_handlers,
-        "load_handler_runtime",
-        lambda: SimpleNamespace(
-            sensitive=object(), obs_credentials=("a", "b")
-        ),
-    )
-    monkeypatch.setattr(
-        mcp_handlers,
-        "scratch_server_dir",
-        lambda *_args: "/tmp/knowledge",
-    )
-    monkeypatch.setattr(
-        mcp_handlers, "chat_kwargs", lambda *_args, **_kwargs: {}
-    )
-    monkeypatch.setattr(mcp_handlers, "retrieve_kwargs", lambda _config: {})
-    monkeypatch.setattr(mcp_handlers, "obs_kwargs", lambda *_args: {})
-    monkeypatch.setattr(
-        knowledge_agent,
-        "get_cached_agent",
-        lambda *_args, **_kwargs: fake_agent,
-    )
-    monkeypatch.setattr(
-        knowledge_agent,
-        "_knowledge_config_with_overrides",
+    patch_handler_runtime(monkeypatch, scratch_path="/tmp/knowledge")
+    patch_knowledge_agent(
+        monkeypatch,
+        fake_agent,
         lambda **_kwargs: object(),
-    )
-    monkeypatch.setattr(
-        knowledge_agent,
-        "_knowledge_sensitive_config_with_overrides",
         lambda **_kwargs: object(),
     )
     first_history = (

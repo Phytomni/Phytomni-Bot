@@ -260,7 +260,7 @@ def _sections_from_report_document(
             section_id=span.section_id,
             heading=span.heading,
             text=_bounded_text(
-                document.text[span.body_start : span.body_end],
+                document.text[slice(span.body_start, span.body_end)],
                 _MAX_SECTION_CHARS,
             ),
         )
@@ -282,9 +282,7 @@ def _section_from_report_row(
             row.get("subtopic") or row.get("heading") or row.get("title")
         )
         text_value = (
-            row.get("revised_report")
-            or row.get("text")
-            or row.get("content")
+            row.get("revised_report") or row.get("text") or row.get("content")
         )
     else:
         heading_value = None
@@ -338,9 +336,7 @@ def _section_values(state: Mapping[str, Any]) -> tuple[ReviewSection, ...]:
     count = max(len(dimensions), len(report_rows))
     for index in range(count):
         row = report_rows[index] if index < len(report_rows) else {}
-        section = _section_from_report_row(
-            row, index, dimensions, used_ids
-        )
+        section = _section_from_report_row(row, index, dimensions, used_ids)
         if section is None:
             continue
         sections.append(section)

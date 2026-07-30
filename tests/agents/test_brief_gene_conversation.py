@@ -421,9 +421,7 @@ async def test_new_identifier_replaces_active_gene_only_after_success(
     assert clarification["choices"][0]["message"]["content"]
     assert adapter.active_gene_id == "Os01g0177400"
 
-    async def resolve(
-        _query: str, **_kwargs: Any
-    ) -> BriefGeneResolveResult:
+    async def resolve(_query: str, **_kwargs: Any) -> BriefGeneResolveResult:
         return _resolved("AT1G01010")
 
     async def arun(**_kwargs: Any) -> dict[str, Any]:

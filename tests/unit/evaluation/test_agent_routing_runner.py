@@ -10,7 +10,7 @@ import asyncio
 import inspect
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 import pytest
 from scripts.agent_routing_eval import runner
@@ -37,6 +37,17 @@ from mcp_server_phytomni.runtime.locale import (
     current_effective_locale,
 )
 from mcp_server_phytomni.runtime.request_context import reset_request_var
+
+
+class _RunnerOptionsKwargs(TypedDict, total=False):
+    """Typed keyword sets used to exercise invalid runner bounds."""
+
+    repeat_count: int
+    concurrency: int
+    timeout_seconds: float
+    max_attempts: int
+    retry_delay_seconds: float
+
 
 pytestmark = pytest.mark.unit
 
@@ -587,6 +598,7 @@ def test_runner_cannot_reach_dispatch_seams(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Replacing MCP dispatch functions cannot affect selector evaluation."""
+
     def fail_dispatch(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("dispatch seam reached")
 
@@ -622,11 +634,11 @@ def test_runner_cannot_reach_dispatch_seams(
     ],
 )
 def test_runner_options_reject_out_of_contract_values(
-    kwargs: dict[str, object],
+    kwargs: _RunnerOptionsKwargs,
 ) -> None:
     """Runner bounds are fixed to the evaluation protocol."""
     with pytest.raises(ValueError):
-        RunnerOptions(**kwargs)  # type: ignore[arg-type]
+        RunnerOptions(**kwargs)
 
 
 def test_runner_module_has_no_api_or_dispatch_imports() -> None:

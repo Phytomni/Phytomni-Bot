@@ -13,6 +13,19 @@ from typing import Any, Final, Literal, cast
 
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 
+from .contracts import (
+    AGENT_ROW_KEYS as _AGENT_ROW_KEYS,
+)
+from .contracts import (
+    LANGUAGE_ROW_KEYS as _LANGUAGE_ROW_KEYS,
+)
+from .contracts import (
+    MAJORITY_KEYS as _MAJORITY_KEYS,
+)
+from .contracts import (
+    METRIC_KEY_ORDER,
+    validate_known_inventory,
+)
 from .dataset import AgentRoutingCase
 from .metrics_types import AgentValues as _AgentValues
 from .metrics_types import CaseProjection as _CaseProjection
@@ -95,48 +108,22 @@ def _validate_inventory(
     outcomes: Sequence[RunOutcome],
     repeat_count: int,
 ) -> dict[str, tuple[RunOutcome, ...]]:
-    if (
-        not isinstance(repeat_count, int)
-        or isinstance(repeat_count, bool)
-        or repeat_count not in {1, 3}
-    ):
-        raise ValueError("repeat_count must be 1 or 3")
-
-    case_by_id: dict[str, AgentRoutingCase] = {}
-    for case in cases:
-        if case.case_id in case_by_id:
-            raise ValueError(f"duplicate case ID: {case.case_id}")
+    case_by_id, actual_keys = validate_known_inventory(
+        cases, outcomes, repeat_count
+    )
+    for case in case_by_id.values():
         if case.expected_agent not in _CANONICAL_AGENTS:
             raise ValueError(f"unknown expected agent: {case.expected_agent}")
-        case_by_id[case.case_id] = case
 
     expected_keys = {
         (case_id, repeat_index)
         for case_id in case_by_id
         for repeat_index in range(1, repeat_count + 1)
     }
-    actual_keys: set[tuple[str, int]] = set()
     grouped: dict[str, list[RunOutcome]] = {
         case_id: [] for case_id in case_by_id
     }
     for item in outcomes:
-        key = (item.case_id, item.repeat_index)
-        if item.case_id not in case_by_id:
-            raise ValueError(f"outcome has unknown case ID: {item.case_id}")
-        if key in actual_keys:
-            raise ValueError(
-                f"duplicate outcome: {item.case_id}/{item.repeat_index}"
-            )
-        actual_keys.add(key)
-        case = case_by_id[item.case_id]
-        if item.repeat_index not in range(1, repeat_count + 1):
-            raise ValueError(f"invalid repeat index: {item.repeat_index}")
-        if item.expected_agent != case.expected_agent:
-            raise ValueError(
-                f"outcome expected agent mismatch: {item.case_id}"
-            )
-        if item.language != case.language:
-            raise ValueError(f"outcome language mismatch: {item.case_id}")
         if (
             not isinstance(item.latency_ms, (int, float))
             or isinstance(item.latency_ms, bool)
@@ -449,47 +436,8 @@ def _mapping(value: object) -> Mapping[str, object] | None:
     return cast(Mapping[str, object], value)
 
 
-_TOP_LEVEL_KEYS: Final = frozenset(
-    [
-        "schema_version",
-        "case_count",
-        "planned_runs",
-        "completed_records",
-        "run_level",
-        "majority",
-        "per_agent",
-        "macro",
-        "by_language",
-        "confusion_matrix",
-        "stability",
-        "core_arguments",
-        "errors",
-        "provider_completion",
-        "latency_ms",
-    ]
-)
+_TOP_LEVEL_KEYS: Final = frozenset(METRIC_KEY_ORDER)
 _RUN_LEVEL_KEYS: Final = frozenset(("top1_accuracy", "dispatchable_accuracy"))
-_MAJORITY_KEYS: Final = frozenset(
-    [
-        "top1_correct",
-        "top1_accuracy",
-        "dispatchable_correct",
-        "dispatchable_accuracy",
-        "wilson_95",
-    ]
-)
-_AGENT_ROW_KEYS: Final = frozenset(
-    ["support", "predicted", "true_positive", "precision", "recall", "f1"]
-)
-_LANGUAGE_ROW_KEYS: Final = frozenset(
-    [
-        "case_count",
-        "top1_correct",
-        "top1_accuracy",
-        "dispatchable_correct",
-        "dispatchable_accuracy",
-    ]
-)
 _MACRO_KEYS: Final = frozenset({"basis", "precision", "recall", "f1"})
 _STABILITY_KEYS: Final = frozenset({"exact", "modal_agreement"})
 _CORE_KEYS: Final = frozenset({"eligible", "correct", "accuracy"})
@@ -649,9 +597,7 @@ def _validate_majority(
     }
 
 
-def _validate_agent_row(
-    value: object, case_count: int
-) -> _AgentValues | None:
+def _validate_agent_row(value: object, case_count: int) -> _AgentValues | None:
     keys = ("support", "predicted", "true_positive")
     counts = _bounded_values(value, keys, case_count)
     row = _mapping_with_keys(value, _AGENT_ROW_KEYS)

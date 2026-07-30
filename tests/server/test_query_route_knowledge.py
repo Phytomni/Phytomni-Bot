@@ -15,10 +15,9 @@ from tests.server.test_query_route import (
     Path,
     SimpleNamespace,
     ToolSelection,
-    _conversation_envelope,
     _context_follow_up_envelope,
+    _conversation_envelope,
     _patch_knowledge_runtime,
-    _patch_handler_runtime,
     _post_context_route,
     _post_query_route,
     _success_agent_body,
@@ -29,6 +28,8 @@ from tests.server.test_query_route import (
     pytest,
     server,
 )
+from tests.support.chat_fakes import recent_knowledge_context
+from tests.support.handler_fakes import patch_handler_runtime
 
 from mcp_server_phytomni.agents.brief_gene import agent as brief_gene_agent
 from mcp_server_phytomni.runtime.conversation_context.projection import (
@@ -54,27 +55,20 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
     async def fake_knowledge_arun(**kwargs: Any) -> dict[str, Any]:
         """Capture Knowledge arguments and return a bounded answer."""
         calls.append(kwargs)
-        return {
-            "choices": [
+        message = {
+            "content": answer_marker,
+            "doc_list": [
                 {
-                    "message": {
-                        "content": answer_marker,
-                        "doc_list": [
-                            {
-                                "file_id": "doc-1",
-                                "title": "Paper 1.pdf",
-                                "content": (
-                                    "full report body that must " "not persist"
-                                ),
-                            }
-                        ],
-                        "follow_up_questions": [
-                            "What promoter evidence exists for OsDREB1?"
-                        ],
-                    }
+                    "file_id": "doc-1",
+                    "title": "Paper 1.pdf",
+                    "content": "full report body that must not persist",
                 }
-            ]
+            ],
+            "follow_up_questions": [
+                "What promoter evidence exists for OsDREB1?"
+            ],
         }
+        return {"choices": [{"message": message}]}
 
     _patch_knowledge_runtime(
         monkeypatch,
@@ -135,11 +129,7 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
             "is_follow_up": True,
             "locale": "en-US",
             "retrieval_query": "What evidence supports OsDREB1?",
-            "answer_context": (
-                "[recent turn 1]\nuser: Tell me about rice gene OsDREB1.\n\n"
-                "[recent turn 2]\nassistant: OsDREB1 improves drought "
-                "tolerance [1]."
-            ),
+            "answer_context": recent_knowledge_context(),
             "thread_id": context_agent_thread_id(
                 UUID(envelope["conversation_key"]), "KnowledgeAgent"
             ),
@@ -274,24 +264,18 @@ async def test_context_expert_brief_gene_turn_stages_bounded_context_delta(
     async def fake_brief_gene_arun(**kwargs: Any) -> dict[str, Any]:
         """Capture Brief Gene arguments and return a bounded report."""
         calls.append(kwargs)
-        return {
-            "choices": [
+        message = {
+            "content": ("# Brief Gene Analysis\n\n" "Rice gene summary [1]."),
+            "doc_list": [
                 {
-                    "message": {
-                        "content": (
-                            "# Brief Gene Analysis\n\n"
-                            "Rice gene summary [1]."
-                        ),
-                        "doc_list": [
-                            {
-                                "file_id": "paper-1",
-                                "title": "Paper 1",
-                                "content": "full report body",
-                            }
-                        ],
-                    }
+                    "file_id": "paper-1",
+                    "title": "Paper 1",
+                    "content": "full report body",
                 }
             ],
+        }
+        return {
+            "choices": [{"message": message}],
             "phytomni_state": {
                 "gene_id": "Os01g0177400",
                 "species_code": "osa",
@@ -328,7 +312,7 @@ async def test_context_expert_brief_gene_turn_stages_bounded_context_delta(
         "BriefGeneConfig",
         lambda: SimpleNamespace(MAX_CONCURRENCY=1),
     )
-    _patch_handler_runtime(monkeypatch)
+    patch_handler_runtime(monkeypatch, scratch_path="/tmp/knowledge")
     monkeypatch.setattr(
         mcp_handlers, "chat_kwargs", lambda *_args, **_kwargs: {}
     )

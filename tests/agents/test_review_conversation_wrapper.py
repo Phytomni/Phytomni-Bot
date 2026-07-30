@@ -303,8 +303,8 @@ async def test_executor_defers_review_checkpoint_until_explicit_ack(
             "schema_version": 1,
             "conversation_key": str(_CONVERSATION_KEY),
             "dialogue_id": str(_CONVERSATION_KEY),
-            "turn_id": "1",
-            "request_id": "request-1",
+            "turn_id": str(1),
+            "request_id": "request-" + str(1),
             "operation": "append",
             "mode": "expert",
             "current_message": {

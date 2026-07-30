@@ -57,16 +57,16 @@ from ..shared.analysis import (
 from ..shared.analysis_storage import get_data_list, resolve_data_list_key
 from ..shared.interop import (
     InteropAttempt,
+    a2a_pending_state_update,
     build_a2a_resume_draft,
+    completed_interop_evidence_update,
     has_interop_target_kind,
     initial_interop_state,
     interop_attempt_update,
-    interop_evidence_update,
-    interop_state_update,
-    make_interop_record,
     merge_a2a_pending_fields,
     project_a2a_evidence,
     require_a2a_result,
+    require_a2a_task_id,
     resolve_interop_dependencies,
     update_a2a_pending_from_result,
 )
@@ -270,7 +270,7 @@ class DigitalDesignAgents:
         analyst_agent: AnalystAgent | None = None,
         digital_design_config=DIGITAL_DESIGN_CONFIG,
         sensitive_config: SensitiveConfig | None = None,
-        interop_dependencies: DesignInteropDependencies | None = None,
+        **options: Any,
     ):
         """Initialize the DigitalDesignAgents.
 
@@ -283,6 +283,12 @@ class DigitalDesignAgents:
             interop_dependencies: Optional injected discovery/transport seams
                 used by offline interoperability tests.
         """
+        interop_dependencies = options.pop("interop_dependencies", None)
+        if options:
+            raise TypeError(
+                "unexpected digital-design options: "
+                + ", ".join(sorted(options))
+            )
         self.checkpointer = ensure_checkpointer(checkpointer)
         self.digital_design_config = digital_design_config
         self.sensitive_config = sensitive_config or get_sensitive_config()
@@ -460,13 +466,9 @@ class DigitalDesignAgents:
                 dependencies=dependencies,
             )
             if result is not None:
-                if result["status"] == "input_required":
-                    task_id = result.get("task_id")
-                    if not task_id:
-                        raise RuntimeError(
-                            "external A2A input-required response "
-                            "omitted task_id"
-                        )
+                result_status = result["status"]
+                if result_status == "input_required":
+                    task_id = require_a2a_task_id(result)
                     pending = merge_a2a_pending_fields(
                         {
                             "analysis_type": str(task["analysis_type"]),
@@ -582,21 +584,11 @@ class DigitalDesignAgents:
             pending = cast(DesignA2APending, external)
             return Command(
                 goto="design_a2a_resume_node",
-                update={
-                    "a2a_pending": [pending],
-                    "a2a_task_ids": {
-                        analysis_type: pending["task_id"],
-                    },
-                    **interop_state_update(
-                        make_interop_record(
-                            target_id=pending["target_id"],
-                            kind="a2a",
-                            capability=pending["capability"],
-                            status="input_required",
-                            latency_seconds=perf_counter() - started,
-                        )
-                    ),
-                },
+                update=a2a_pending_state_update(
+                    pending,
+                    task_key=analysis_type,
+                    latency_seconds=perf_counter() - started,
+                ),
             )
 
         evidence = (
@@ -659,10 +651,8 @@ class DigitalDesignAgents:
                 )
             else:
                 updates.update(
-                    interop_evidence_update(
-                        evidence,
-                        status="completed",
-                        latency_seconds=perf_counter() - started,
+                    completed_interop_evidence_update(
+                        evidence, perf_counter() - started
                     )
                 )
         return updates
@@ -672,10 +662,9 @@ class DigitalDesignAgents:
         state: DigitalDesignState,
     ) -> dict[str, Any]:
         """Resume one paused A2A planning exchange before local dispatch."""
-        pending_items = state.get("a2a_pending", [])
-        if not pending_items:
+        pending = next(iter(state.get("a2a_pending", ())), None)
+        if pending is None:
             return {}
-        pending = pending_items[0]
         started = perf_counter()
         task = {
             "analysis_type": pending["analysis_type"],
@@ -768,15 +757,12 @@ class DigitalDesignAgents:
                 captured_exceptions=(),
             ),
         )
-        updates = _project_design_submission_updates(updates)
-        updates.update(
-            interop_evidence_update(
-                evidence,
-                status="completed",
-                latency_seconds=perf_counter() - started,
-            )
-        )
-        return updates
+        return {
+            **_project_design_submission_updates(updates),
+            **completed_interop_evidence_update(
+                evidence, perf_counter() - started
+            ),
+        }
 
     async def arun(
         self,

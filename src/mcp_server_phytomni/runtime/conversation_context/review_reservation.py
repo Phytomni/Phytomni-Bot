@@ -81,8 +81,7 @@ def _review_reservation_inputs_valid(
     )
     fence_value: int | None = (
         fence_token
-        if not isinstance(fence_token, bool)
-        and isinstance(fence_token, int)
+        if not isinstance(fence_token, bool) and isinstance(fence_token, int)
         else None
     )
     return claim_value is not None and (
@@ -97,8 +96,7 @@ def _reserve_marker_state(
     """Advance a validated reservation marker in its open transaction."""
     state = request.marker.get("settlement_state")
     claim_matches = (
-        request.marker.get("settlement_claim_token")
-        == request.claim_token
+        request.marker.get("settlement_claim_token") == request.claim_token
         and getattr(self, "_marker_fence")(request.marker)
         == request.fence_token
     )
@@ -114,8 +112,7 @@ def _reserve_marker_state(
         return ReviewSettlementClaim("conflict")
     if (
         not claim_matches
-        or request.marker.get("settlement_ledger_version")
-        != request.row[1]
+        or request.marker.get("settlement_ledger_version") != request.row[1]
         or request.marker.get("settlement_base_context_version")
         != request.row[2]
     ):

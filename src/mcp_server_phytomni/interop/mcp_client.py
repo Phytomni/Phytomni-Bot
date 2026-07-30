@@ -197,7 +197,7 @@ def _remote_name(tool_name: object, target_id: str) -> str | None:
         return None
     for prefix in (f"{target_id}__", f"{target_id}_"):
         if tool_name.startswith(prefix):
-            remote_name = tool_name[len(prefix) :]
+            remote_name = tool_name.removeprefix(prefix)
             return remote_name or None
     return None
 

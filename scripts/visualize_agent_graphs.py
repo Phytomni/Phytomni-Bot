@@ -33,13 +33,11 @@ from typing import TYPE_CHECKING, Any
 # runtime modes.
 if TYPE_CHECKING:
     from scripts._visualize_bootstrap import (
-        SubgraphRegistry,
         build_default_registry,
         export_manifest,
     )
 else:
     from _visualize_bootstrap import (
-        SubgraphRegistry,
         build_default_registry,
         export_manifest,
     )
@@ -138,7 +136,7 @@ def _write_manifest(name: str, graph_app: Any, out_dir: Path) -> Path:
 
 
 def _select_names(
-    registry: SubgraphRegistry,
+    registry: Any,
     selected: str | None,
 ) -> tuple[str, ...]:
     """Return selected ids, or every registered id when omitted."""

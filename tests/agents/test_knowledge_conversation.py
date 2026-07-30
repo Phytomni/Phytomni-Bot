@@ -21,6 +21,7 @@ from mcp_server_phytomni.runtime.conversation_context.models import (
     ContextProjection,
     RoleTaggedTurn,
 )
+from tests.support.chat_fakes import recent_knowledge_turns
 
 pytestmark = pytest.mark.agent
 
@@ -52,18 +53,7 @@ def test_prepare_resolves_follow_up_into_standalone_retrieval_query() -> None:
     adapter = KnowledgeConversationAdapter()
 
     prepared = adapter.prepare(
-        _projection(
-            relevant_recent_turns=[
-                RoleTaggedTurn(
-                    role="user",
-                    content="Tell me about rice gene OsDREB1.",
-                ),
-                RoleTaggedTurn(
-                    role="assistant",
-                    content="OsDREB1 improves drought tolerance [1].",
-                ),
-            ]
-        )
+        _projection(relevant_recent_turns=recent_knowledge_turns())
     )
 
     assert prepared["user_query"] == "What evidence supports that?"

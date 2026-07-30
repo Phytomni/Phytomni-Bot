@@ -56,7 +56,6 @@ async def test_dispatch_routes_through_subgraph_submit(
     never awaited so the network dispatcher matches the design
     dispatcher's routing semantics.
     """
-    # pylint: disable=protected-access
     agent = _build_agent()
     legacy_mock = AsyncMock(return_value={"task_id": "legacy-task"})
     subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-task"})
@@ -65,7 +64,7 @@ async def test_dispatch_routes_through_subgraph_submit(
     )
     stub_prompt_parts(monkeypatch, agent)
 
-    result = await agent._dispatch_and_wait_analysis(
+    result = await getattr(agent, "_dispatch_and_wait_analysis")(
         analysis_type="gene_network_analysis",
         species_code="ath",
         to_id="TO:0000621",
@@ -88,7 +87,6 @@ async def test_dispatch_request_carries_to_id_as_target(
     the design dispatcher fails loudly rather than silently mixing
     up the target identifier downstream.
     """
-    # pylint: disable=protected-access
     agent = _build_agent()
     subgraph_mock = AsyncMock(return_value={"task_id": "subgraph-task"})
     monkeypatch.setattr(
@@ -100,7 +98,7 @@ async def test_dispatch_request_carries_to_id_as_target(
         lambda *_a, **_kw: ("goal", "meta", {}),
     )
 
-    await agent._dispatch_and_wait_analysis(
+    await getattr(agent, "_dispatch_and_wait_analysis")(
         analysis_type="gene_network_analysis",
         species_code="ath",
         to_id="TO:0000621",

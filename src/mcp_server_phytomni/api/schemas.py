@@ -504,8 +504,7 @@ class FileUploadResponse(BaseModel):
     created_at: int
     obs_path: str
 
-    @computed_field  # type: ignore[prop-decorator]
-    @property
+    @computed_field
     def path(self) -> str:
         """Alias of ``obs_path`` for chat-ai's ``obs_file_list`` builder."""
         return self.obs_path

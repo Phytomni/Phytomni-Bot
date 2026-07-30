@@ -272,7 +272,7 @@ def _resolve_conditionals(template: str, parameters: Mapping[str, Any]) -> str:
     keep_stack: list[tuple[str, bool]] = []
     pos = 0
     for match in _CONDITIONAL_RE.finditer(template):
-        frames[-1].append(template[pos : match.start()])
+        frames[-1].append(template[slice(pos, match.start())])
         pos = match.end()
         kind = match.group("kind")
         if kind is not None:

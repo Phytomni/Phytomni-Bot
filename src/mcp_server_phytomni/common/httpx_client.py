@@ -28,6 +28,7 @@ __all__ = [
     "aclose_shared_client",
     "get_async_client",
     "init_shared_client",
+    "resolve_request_timeout",
     "resolve_verify",
     "shared_client_initialised",
 ]
@@ -39,6 +40,18 @@ VerifyArg = bool | ssl.SSLContext
 # an UPPER_CASE constant (pylint C0103) — neither lint is suppressed.
 # The container identity stays fixed; only the ``client`` entry rebinds.
 _HTTPX_STATE: dict[str, AsyncClient | None] = {"client": None}
+
+
+def resolve_request_timeout(
+    request_timeout: float | None,
+    options: dict[str, Any],
+) -> float | None:
+    """Resolve the legacy ``timeout=`` spelling for async helpers."""
+    timeout = options.pop("timeout", request_timeout)
+    if options:
+        unexpected = next(iter(options))
+        raise TypeError(f"unexpected keyword argument: {unexpected}")
+    return timeout
 
 
 def resolve_verify(config: ServerConfig | None = None) -> VerifyArg:
@@ -131,7 +144,7 @@ def shared_client_initialised() -> bool:
 @asynccontextmanager
 async def get_async_client(
     *,
-    timeout: Any = None,  # noqa: ASYNC109
+    request_timeout: Any = None,
     config: ServerConfig | None = None,
     **client_kwargs: Any,
 ) -> AsyncGenerator[AsyncClient, None]:
@@ -152,11 +165,12 @@ async def get_async_client(
     ``client.get/post`` call site) — see ``init_shared_client``.
 
     Args:
-        timeout: Request timeout used when constructing an ephemeral
-            ``AsyncClient``. Ignored on the shared path.
+        request_timeout: Request timeout used when constructing an
+            ephemeral ``AsyncClient``. Ignored on the shared path.
         config: ServerConfig override (tests inject a built instance).
             Ignored on the shared path (which uses the config passed
             to ``init_shared_client``).
+        ``timeout=``: Backward-compatible request-timeout keyword.
         **client_kwargs: Additional ``AsyncClient`` keyword arguments;
             any non-empty value forces an ephemeral client.
 
@@ -170,6 +184,7 @@ async def get_async_client(
             verification is centrally managed and a per-call override
             would defeat the audit invariant.
     """
+    timeout = client_kwargs.pop("timeout", request_timeout)
     if "verify" in client_kwargs:
         raise TypeError(
             "get_async_client manages verify via ServerConfig; pass "

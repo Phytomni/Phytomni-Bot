@@ -120,6 +120,18 @@ class _PreparedStream:
 
 
 @dataclass(frozen=True)
+class _StreamPreparationRequest:
+    """Inputs needed to prepare and prime one ordinary stream."""
+
+    tool_name: str
+    arguments: dict[str, Any]
+    payload: ChatCompletionRequest
+    user_query: str
+    dependencies: StreamingDependencies
+    raw_event_factory: Callable[[str], AsyncIterator[AguiEvent]] | None = None
+
+
+@dataclass(frozen=True)
 class _PreparedContextStream:
     """Conversation-context state needed to finalize one V1 stream."""
 
@@ -252,48 +264,44 @@ def _prepare_request_info(
 
 
 async def _prepare_stream(
-    *,
-    tool_name: str,
-    arguments: dict[str, Any],
-    payload: ChatCompletionRequest,
-    user_query: str,
-    dependencies: StreamingDependencies,
-    raw_event_factory: Callable[[str], AsyncIterator[AguiEvent]] | None = None,
+    request: _StreamPreparationRequest,
 ) -> _PreparedStream:
     """Prepare, persist, prime, and shape one ordinary stream."""
-    agent_slug = dependencies.request.agent_slug(payload.model)
-    owner = dependencies.request.current_user() or "anonymous"
-    run_id = dependencies.request.new_run_id("run", agent_slug or "chat")
+    agent_slug = request.dependencies.request.agent_slug(request.payload.model)
+    owner = request.dependencies.request.current_user() or "anonymous"
+    run_id = request.dependencies.request.new_run_id(
+        "run", agent_slug or "chat"
+    )
     try:
         raw_events = (
-            raw_event_factory(run_id)
-            if raw_event_factory is not None
-            else dependencies.request.prepare_tool_stream(
-                tool_name,
-                arguments,
+            request.raw_event_factory(run_id)
+            if request.raw_event_factory is not None
+            else request.dependencies.request.prepare_tool_stream(
+                request.tool_name,
+                request.arguments,
                 run_id=run_id,
-                dialogue_id=payload.dialogue_id,
+                dialogue_id=request.payload.dialogue_id,
             )
         )
     except Exception as exc:
         raise stream_setup_error(exc, priming=False) from exc
 
     if agent_slug is not None:
-        dependencies.persistence.create_running_stream_run(
+        request.dependencies.persistence.create_running_stream_run(
             run_id,
             agent_slug,
             owner,
             _prepare_request_info(
-                payload=payload,
-                user_query=user_query,
-                tool_name=tool_name,
+                payload=request.payload,
+                user_query=request.user_query,
+                tool_name=request.tool_name,
             ),
         )
     try:
         primed = await prime_agui_stream(raw_events)
     except Exception as exc:
         if agent_slug is not None:
-            dependencies.persistence.settle_stream_run(
+            request.dependencies.persistence.settle_stream_run(
                 run_id,
                 owner,
                 "failed",
@@ -305,12 +313,14 @@ async def _prepare_stream(
     events = project_primed_stream(
         primed,
         run_id=run_id,
-        request_id=dependencies.request.current_request_id() or "unknown",
+        request_id=(
+            request.dependencies.request.current_request_id() or "unknown"
+        ),
         lifecycle_state=lifecycle_state,
     )
     accumulator = StreamAnswerAccumulator(
         events,
-        max_bytes=dependencies.persistence.stream_answer_max_bytes(),
+        max_bytes=request.dependencies.persistence.stream_answer_max_bytes(),
         lifecycle_state=lifecycle_state,
     )
     return _PreparedStream(
@@ -644,25 +654,27 @@ async def stream_chat_completion(
 
     try:
         prepared = await _prepare_stream(
-            tool_name=tool_name,
-            arguments=arguments,
-            payload=payload,
-            user_query=user_query,
-            dependencies=dependencies,
-            raw_event_factory=(
-                (
-                    lambda run_id: _prepare_contextual_raw_events(
-                        dependencies=dependencies,
-                        tool_name=tool_name,
-                        arguments=arguments,
-                        run_id=run_id,
-                        _payload=payload,
-                        context_stream=context_stream,
+            _StreamPreparationRequest(
+                tool_name=tool_name,
+                arguments=arguments,
+                payload=payload,
+                user_query=user_query,
+                dependencies=dependencies,
+                raw_event_factory=(
+                    (
+                        lambda run_id: _prepare_contextual_raw_events(
+                            dependencies=dependencies,
+                            tool_name=tool_name,
+                            arguments=arguments,
+                            run_id=run_id,
+                            _payload=payload,
+                            context_stream=context_stream,
+                        )
                     )
-                )
-                if context_stream is not None
-                else None
-            ),
+                    if context_stream is not None
+                    else None
+                ),
+            )
         )
     except Exception:
         if context_stream is not None:

@@ -154,8 +154,7 @@ def _prompt_context(
         + ("\n".join(f"- {item}" for item in snapshot.key_claims) or "none"),
         "[unresolved evidence gaps]\n"
         + (
-            "\n".join(f"- {item}" for item in snapshot.evidence_gaps)
-            or "none"
+            "\n".join(f"- {item}" for item in snapshot.evidence_gaps) or "none"
         ),
     ]
     if section is not None:

@@ -23,6 +23,7 @@ import httpx
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.routing import APIRoute
+from tests.support.handler_fakes import RunningResponseKwargs
 
 from mcp_server_phytomni.agents.brief_gene.resolve_query import (
     BriefGeneResolveError,
@@ -63,15 +64,16 @@ _OPENAPI_HASH = (
 
 def test_persisted_running_response_accepts_empty_child_list() -> None:
     """Persisted running responses may expose no child tasks yet."""
-    body = build_agent_run_response(
-        run_id="run-empty-child",
-        agent="analyst",
-        status="running",
-        task_ids=[],
-        result=empty_agent_result(),
-        persisted=True,
-        degraded_tracking=False,
-    )
+    response_kwargs: RunningResponseKwargs = {
+        "run_id": "run-empty-child",
+        "agent": "analyst",
+        "status": "running",
+        "task_ids": [],
+        "result": empty_agent_result(),
+        "persisted": True,
+        "degraded_tracking": False,
+    }
+    body = build_agent_run_response(**response_kwargs)
 
     assert body["id"] == body["run_id"] == "run-empty-child"
     assert not body["task_ids"]
@@ -727,20 +729,29 @@ def test_native_run_facade_preserves_signature_and_module_identity() -> None:
     assert signature.return_annotation == "tuple[dict[str, Any], int]"
     assert invoke.__module__ == api_app_module.__name__
     assert invoke.__qualname__ == "_invoke_agent_run"
-    assert invoke.__annotations__ == {
-        "agent": "str",
-        "arguments": "dict[str, Any]",
-        "conversation_messages": "tuple[dict[str, str], ...]",
-        "agent_thread_id": "str | None",
-        "private_agent_state": "Mapping[str, Any] | None",
-        "dialogue_id": "str | None",
-        "request_json": "str | None",
-        "debug": "bool",
-        "return": "tuple[dict[str, Any], int]",
-    }
+    annotations = invoke.__annotations__
+    expected_annotations = (
+        ("agent", "str"),
+        ("arguments", "dict[str, Any]"),
+        ("conversation_messages", "tuple[dict[str, str], ...]"),
+        ("agent_thread_id", "str | None"),
+        ("private_agent_state", "Mapping[str, Any] | None"),
+        ("dialogue_id", "str | None"),
+        ("request_json", "str | None"),
+        ("debug", "bool"),
+        ("return", "tuple[dict[str, Any], int]"),
+    )
+    assert tuple(annotations) == tuple(
+        name for name, _value in expected_annotations
+    )
+    assert all(
+        annotations[name] == value for name, value in expected_annotations
+    )
 
 
-def test_native_run_facade_binds_arguments_before_returning_coroutine() -> None:
+def test_native_run_facade_binds_arguments_before_returning_coroutine() -> (
+    None
+):
     """Keep the old async facade's immediate argument errors."""
     invoke = getattr(api_app_module, "_invoke_agent_run")
     with pytest.raises(TypeError):

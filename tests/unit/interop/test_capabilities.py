@@ -104,7 +104,7 @@ def test_capability_is_frozen_and_qualified_name_is_canonical() -> None:
     )
 
     with pytest.raises(FrozenInstanceError):
-        capability.remote_name = "other"  # type: ignore[misc]
+        setattr(capability, "remote_name", "other")
     with pytest.raises(InteropCapabilityError, match="invalid_qualified_name"):
         InteropCapability(
             target_id="peer-cap",

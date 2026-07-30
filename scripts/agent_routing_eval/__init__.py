@@ -31,6 +31,10 @@ description_sha256 = _reporting.description_sha256
 provider_endpoint_sha256 = _reporting.provider_endpoint_sha256
 write_report_pair = _reporting.write_report_pair
 
+_REPORTING_EXPORT_NAMES = tuple(
+    name for name in _reporting.__all__ if name != "RunCommand"
+)
+
 __all__ = [
     "AgentRoutingCase",
     "DatasetValidationError",
@@ -45,12 +49,5 @@ __all__ = [
     "NO_MAJORITY",
     "compute_metrics",
     "thresholds_pass",
-    "GitState",
-    "ReportContext",
-    "build_report",
-    "collect_git_state",
-    "dataset_sha256",
-    "description_sha256",
-    "provider_endpoint_sha256",
-    "write_report_pair",
+    *_REPORTING_EXPORT_NAMES,
 ]

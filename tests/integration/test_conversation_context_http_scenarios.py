@@ -8,8 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from tests.support.chat_fakes import install_chat_handler
-from tests.support.http_fakes import open_asgi_client
 from tests.integration.test_conversation_context_scenarios import (
     _ARTIFACT_A,
     _ARTIFACT_B,
@@ -20,6 +18,8 @@ from tests.integration.test_conversation_context_scenarios import (
     _outcome,
     _service,
 )
+from tests.support.chat_fakes import install_chat_handler
+from tests.support.http_fakes import open_asgi_client
 
 import mcp_server_phytomni.api.app as api_app
 from mcp_server_phytomni.agents.expert import ToolSelection
@@ -39,6 +39,9 @@ from mcp_server_phytomni.runtime.conversation_context.service import (
 )
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ConversationContextStore,
+)
+from mcp_server_phytomni.runtime.execution_defaults import (
+    empty_execution_projection,
 )
 
 pytestmark = pytest.mark.server
@@ -356,10 +359,9 @@ async def test_async_expert_selection_keeps_running_202_lifecycle(
         message="Submit the bounded analysis.",
         allowed_agent_ids=_CANONICAL_AGENT_IDS,
     )
+    context_app = create_app(context_executor=executor)
     async with open_asgi_client(
-        monkeypatch,
-        create_app(context_executor=executor),
-        base_url="http://api.context.test",
+        monkeypatch, context_app, base_url="http://api.context.test"
     ) as client:
         response = await client.post(
             "/v1/query/route",
@@ -372,30 +374,17 @@ async def test_async_expert_selection_keeps_running_202_lifecycle(
         )
 
     assert response.status_code == 202
+    expected_result = empty_execution_projection()
+    expected_result["execution"]["tasks"] = [
+        {"id": "task-opaque", "accepted": True}
+    ]
     assert response.json() == {
         "id": "run-opaque",
         "object": "agent.run",
         "agent": "analyst",
         "status": "running",
         "task_ids": ["task-opaque"],
-        "result": {
-            "formatted": {
-                "answer": "",
-                "follow_up_questions": [],
-                "references": [],
-                "tabular": {},
-                "metadata": {},
-            },
-            "execution": {
-                "tracking": {"degraded": False},
-                "warnings": [],
-                "tasks": [{"id": "task-opaque", "accepted": True}],
-                "artifacts": [],
-                "output_dirs": [],
-                "report": None,
-                "diagnostics": [],
-            },
-        },
+        "result": expected_result,
     }
     assert selected == {
         "allowed_tools": _CANONICAL_AGENT_IDS,

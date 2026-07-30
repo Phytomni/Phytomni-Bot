@@ -197,8 +197,8 @@ tests = ["tests/unit/test_example.py"]
     )
 
 
-def test_cross_file_scope_excludes_command_baseline_records() -> None:
-    """Partial cross-file checks do not stale command-level suppressions."""
+def test_cross_file_scope_keeps_project_registry_empty() -> None:
+    """Partial cross-file checks do not reintroduce closed exemptions."""
     registry = cli.load_registry(
         Path(__file__).resolve().parents[3]
         / "static-analysis-exemptions.toml",
@@ -206,14 +206,7 @@ def test_cross_file_scope_excludes_command_baseline_records() -> None:
     )
     scoped = getattr(cli, "_registry_for_scope")(registry, "cross-file")
 
-    assert scoped.exemptions
-    assert {
-        (item.tool, item.rule, item.mechanism.value)
-        for item in scoped.exemptions
-    } == {
-        ("pylint", "R0801", "diagnostic"),
-        ("pylint", "R0903", "diagnostic"),
-    }
+    assert not scoped.exemptions
 
 
 def test_check_pylint_reads_nul_paths_with_spaces(

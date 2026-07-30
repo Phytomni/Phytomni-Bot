@@ -17,6 +17,7 @@ from mcp_server_phytomni.agents.brief_gene.conversation import (
     BriefGeneConversationOperation,
 )
 from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
+from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 from mcp_server_phytomni.runtime.conversation_context.models import (
     ArtifactRefV1,
     ContextDelta,
@@ -54,17 +55,8 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     setattr(test_config, "_layer_marker_for_item", _layer_marker)
 
 
-_CANONICAL_AGENT_IDS = (
-    "ChatAgent",
-    "KnowledgeAgent",
-    "DataAgent",
-    "AnalystAgent",
-    "ReviewAgent",
-    "BriefGeneAgent",
-    "DeepGenomeAgent",
-    "InSilicoResearchAgent",
-    "DigitalDesignAgent",
-    "GeneNetworkAgent",
+_CANONICAL_AGENT_IDS = tuple(
+    name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
 )
 _ARTIFACT_A = ArtifactRefV1(
     artifact_id="artifact-owner-a",

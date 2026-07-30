@@ -21,14 +21,20 @@ from tests.support.chat_fakes import (
     chat_completion_payload,
     install_chat_handler,
     misplaced_reasoning_message,
+    recent_knowledge_context,
+    recent_knowledge_turns,
 )
+from tests.support.handler_fakes import (
+    patch_chat_completion_service,
+    patch_context_chat_runtime,
+)
+from tests.support.http_fakes import build_instant_chat_context_envelope
 
 import mcp_server_phytomni.agents.chat.service as chat_service
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.knowledge.conversation import (
     KnowledgeConversationAdapter,
 )
-from mcp_server_phytomni.mcp import handlers as mcp_handlers
 from mcp_server_phytomni.runtime.conversation_context.adapters import (
     canonical_agent_invocation,
 )
@@ -46,32 +52,7 @@ pytestmark = pytest.mark.server
 
 def _conversation_envelope(*, turn_id: str = "1") -> dict[str, Any]:
     """Build one Instant V1 envelope for a chat completion test."""
-    return {
-        "schema_version": 1,
-        "conversation_key": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")),
-        "dialogue_id": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8")),
-        "turn_id": turn_id,
-        "request_id": f"request-{turn_id}",
-        "operation": "append",
-        "mode": "instant",
-        "current_message": {
-            "content": "What is photosynthesis?",
-            "locale": "en-US",
-        },
-        "requested_agent_id": None,
-        "allowed_agent_ids": ["ChatAgent"],
-        "ledger_cursor": 1,
-        "ledger_version": "a" * 64,
-        "base_business_context_version": 0,
-        "history_delta": [
-            {
-                "turn_id": turn_id,
-                "role": "user",
-                "content": "What is photosynthesis?",
-            }
-        ],
-        "artifact_refs": [],
-    }
+    return build_instant_chat_context_envelope(turn_id)
 
 
 async def test_chat_completions_passthrough(
@@ -245,16 +226,7 @@ def test_knowledge_context_adapter_separates_query_from_context() -> None:
     prepared = adapter.prepare(
         ContextProjection(
             current_query="What evidence supports that?",
-            relevant_recent_turns=[
-                RoleTaggedTurn(
-                    role="user",
-                    content="Tell me about rice gene OsDREB1.",
-                ),
-                RoleTaggedTurn(
-                    role="assistant",
-                    content="OsDREB1 improves drought tolerance [1].",
-                ),
-            ],
+            relevant_recent_turns=recent_knowledge_turns(),
             agent_thread_id="ctx-" + "2" * 64,
             locale="en-US",
             token_budget=1024,
@@ -264,11 +236,7 @@ def test_knowledge_context_adapter_separates_query_from_context() -> None:
     assert prepared == {
         "user_query": "What evidence supports that?",
         "retrieval_query": "What evidence supports OsDREB1?",
-        "answer_context": (
-            "[recent turn 1]\nuser: Tell me about rice gene OsDREB1.\n\n"
-            "[recent turn 2]\nassistant: OsDREB1 improves drought "
-            "tolerance [1]."
-        ),
+        "answer_context": recent_knowledge_context(),
         "thread_id": "ctx-" + "2" * 64,
     }
 
@@ -332,32 +300,8 @@ async def test_chat_context_v1_stages_native_history_and_replays_turn(
             "content": "U2",
         },
     ]
-    monkeypatch.setattr(
-        mcp_handlers,
-        "load_chat_runtime",
-        lambda: (object(), object()),
-    )
-    monkeypatch.setattr(
-        mcp_handlers,
-        "scratch_server_dir",
-        lambda *_args: "/tmp/chat",
-    )
-    monkeypatch.setattr(
-        mcp_handlers,
-        "chat_call_kwargs",
-        lambda **kwargs: {
-            "user_query": kwargs["request"].user_query,
-            "locale": kwargs["request"].locale,
-        },
-    )
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.chat.service.phyto_chat",
-        fake_phyto_chat,
-    )
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.chat.service.get_prompt",
-        lambda *_args, **_kwargs: "follow-up",
-    )
+    patch_context_chat_runtime(monkeypatch)
+    patch_chat_completion_service(monkeypatch, fake_phyto_chat)
     first = await chat_completion(
         api_client,
         issued_api_key,

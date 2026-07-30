@@ -113,20 +113,15 @@ def test_ruff_enforces_import_grouping_and_sorting():
     }
 
 
-def test_flake8_uses_black_compatible_style_without_init_ignores():
-    """Verify flake8 uses black compatible style without init ignores."""
+def test_flake8_does_not_use_global_rule_ignores():
+    """Verify flake8 does not hide rules through global configuration."""
     root = Path(__file__).resolve().parents[2]
     parser = configparser.ConfigParser()
     parser.read(root / ".flake8", encoding="utf-8")
 
     flake8_config = parser["flake8"]
-    ignored_rules = {
-        rule.strip()
-        for rule in flake8_config["extend-ignore"].split(",")
-        if rule.strip()
-    }
-
-    assert ignored_rules == {"E203", "W503"}
+    assert "extend-ignore" not in flake8_config
+    assert "ignore" not in flake8_config
     assert "per-file-ignores" not in flake8_config
 
 

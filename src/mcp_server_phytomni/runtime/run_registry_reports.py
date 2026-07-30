@@ -158,7 +158,7 @@ def _listed_artifact_from_legacy_path(
     """Build an unknown-safe object record from a legacy public path."""
     prefix = output_dir.rstrip("/") + "/"
     relative_path = (
-        path[len(prefix) :]
+        path.removeprefix(prefix)
         if path.startswith(prefix)
         else PurePosixPath(path).name
     )

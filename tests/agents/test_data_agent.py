@@ -25,6 +25,17 @@ from mcp_server_phytomni.config.defaults import DataConfig
 from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.mcp.schemas import DataAgent as DataAgentSchema
 
+
+def _run_kwargs(
+    args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> dict[str, Any]:
+    """Normalize legacy positional and keyword fake-agent run options."""
+    return cast(
+        dict[str, Any],
+        getattr(data_agent_module, "_data_run_options")(args, kwargs),
+    )
+
+
 # ``agents.data.__init__`` re-exports the ``nl2sql`` *function*, which
 # shadows the submodule of the same name on the package; resolve the
 # real module from sys.modules so monkeypatch targets its globals.
@@ -284,10 +295,8 @@ async def test_rewrite_nl2sql_uses_dialog_id_as_thread_id(
         async def arun(
             self,
             user_query: str,
-            is_rewrite: bool = True,
-            dialog_id: str | None = None,
-            thread_id: str | None = None,
-            locale: str | None = None,
+            *args: Any,
+            **kwargs: Any,
         ) -> dict[str, object]:
             """Capture the graph invocation.
 
@@ -299,12 +308,10 @@ async def test_rewrite_nl2sql_uses_dialog_id_as_thread_id(
             Returns:
                 Minimal success payload.
             """
+            values = _run_kwargs(args, kwargs)
             captured["run"] = {
                 "user_query": user_query,
-                "is_rewrite": is_rewrite,
-                "dialog_id": dialog_id,
-                "thread_id": thread_id,
-                "locale": locale,
+                **values,
             }
             return {"ok": True}
 
@@ -367,18 +374,14 @@ async def test_rewrite_nl2sql_keeps_explicit_thread_and_dialog_ids(
         async def arun(
             self,
             user_query: str,
-            is_rewrite: bool = True,
-            dialog_id: str | None = None,
-            thread_id: str | None = None,
-            locale: str | None = None,
+            *args: Any,
+            **kwargs: Any,
         ) -> dict[str, object]:
             """Capture the graph invocation and return a success payload."""
+            values = _run_kwargs(args, kwargs)
             captured["run"] = {
                 "user_query": user_query,
-                "is_rewrite": is_rewrite,
-                "dialog_id": dialog_id,
-                "thread_id": thread_id,
-                "locale": locale,
+                **values,
             }
             return {"ok": True}
 

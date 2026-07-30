@@ -11,9 +11,10 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from pydantic import JsonValue
 from scripts.agent_routing_eval.dataset import AgentRoutingCase
 from scripts.agent_routing_eval.metrics import compute_metrics
 from scripts.agent_routing_eval.reporting import (
@@ -40,8 +41,8 @@ def _case(case_id: str = "case-a") -> AgentRoutingCase:
             "case_id": case_id,
             "question": f"Question text for {case_id}",
             "expected_agent": "ChatAgent",
-            "expected_core_args": {},
             "language": "en",
+            "expected_core_args": {},
             "source": {
                 "kind": "authored_chat",
                 "category": "general_knowledge",
@@ -68,24 +69,41 @@ def _outcome(
         "core_args_correct": options.get("core_args_correct", True),
         "provider_completed": options.get("provider_completed", True),
     }
-    return RunOutcome(
-        case_id=case_id,
-        repeat_index=repeat_index,
-        expected_agent="ChatAgent",
-        predicted_agent=options["predicted_agent"],
-        language="en",
-        agent_correct=options["agent_correct"],
-        schema_valid=options["schema_valid"],
-        dispatchable=options["dispatchable"],
-        core_args_correct=options["core_args_correct"],
-        provider_completed=options["provider_completed"],
-        attempts=1,
-        latency_ms=12.5,
-        selected_arguments=options["selected_arguments"]
-        or {"user_query": case_id},
-        error_code=options["error_code"],
-        validation_codes=("missing",),
+    selected_arguments = cast(
+        dict[str, JsonValue],
+        options["selected_arguments"] or {"user_query": case_id},
     )
+    return RunOutcome(
+        case_id,
+        repeat_index,
+        "ChatAgent",
+        options["predicted_agent"],
+        "en",
+        options["agent_correct"],
+        options["schema_valid"],
+        options["dispatchable"],
+        options["core_args_correct"],
+        options["provider_completed"],
+        1,
+        12.5,
+        selected_arguments,
+        options["error_code"],
+        ("missing",),
+    )
+
+
+def _provider_failure_options() -> dict[str, Any]:
+    """Return one explicit provider-failure outcome override mapping."""
+    return {
+        "predicted_agent": "__PROVIDER_ERROR__",
+        "agent_correct": False,
+        "schema_valid": False,
+        "dispatchable": False,
+        "core_args_correct": None,
+        "provider_completed": False,
+        "error_code": "provider_timeout_exhausted",
+        "selected_arguments": {},
+    }
 
 
 def _context(
@@ -281,14 +299,7 @@ def test_report_status_does_not_overclaim_current_accuracy(
                 _outcome(
                     "case-a",
                     1,
-                    predicted_agent="__PROVIDER_ERROR__",
-                    agent_correct=False,
-                    schema_valid=False,
-                    dispatchable=False,
-                    core_args_correct=None,
-                    provider_completed=False,
-                    error_code="provider_timeout_exhausted",
-                    selected_arguments={},
+                    **_provider_failure_options(),
                 ),
                 _outcome("case-a", 2),
                 _outcome("case-a", 3),
@@ -303,14 +314,7 @@ def test_report_status_does_not_overclaim_current_accuracy(
                     _outcome(
                         "case-a",
                         1,
-                        predicted_agent="__PROVIDER_ERROR__",
-                        agent_correct=False,
-                        schema_valid=False,
-                        dispatchable=False,
-                        core_args_correct=None,
-                        provider_completed=False,
-                        error_code="provider_timeout_exhausted",
-                        selected_arguments={},
+                        **_provider_failure_options(),
                     ),
                     _outcome("case-a", 2),
                     _outcome("case-a", 3),

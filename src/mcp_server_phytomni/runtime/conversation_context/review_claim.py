@@ -69,9 +69,7 @@ def _review_marker_context(
     )
 
 
-def _review_turn_row(
-    connection: Any, key: str, turn_id: str
-) -> Any:
+def _review_turn_row(connection: Any, key: str, turn_id: str) -> Any:
     """Load the bounded state row used by claim and reservation paths."""
     return connection.execute(
         "SELECT state, ledger_version, base_context_version, "
@@ -144,12 +142,8 @@ def _review_marker_context_for(
         marker, key=request.key, turn_id=request.turn_id
     ):
         return ReviewSettlementClaim("invalid")
-    identity = _ReviewClaimIdentity(
-        key=request.key, turn_id=request.turn_id
-    )
-    return _review_marker_context(
-        connection, identity, row, decoded, marker
-    )
+    identity = _ReviewClaimIdentity(key=request.key, turn_id=request.turn_id)
+    return _review_marker_context(connection, identity, row, decoded, marker)
 
 
 def _claim_marker_request(

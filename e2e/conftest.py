@@ -153,5 +153,5 @@ def _rewrite_str(value: str, published: Mapping[str, str]) -> str:
     """Rewrite one string if it starts with the demo placeholder prefix."""
     if not value.startswith(DEMO_PLACEHOLDER_PREFIX):
         return value
-    relative = value[len(DEMO_PLACEHOLDER_PREFIX) :]
+    relative = value.removeprefix(DEMO_PLACEHOLDER_PREFIX)
     return published.get(relative, value)

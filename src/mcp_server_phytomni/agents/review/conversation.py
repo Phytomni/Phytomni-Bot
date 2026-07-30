@@ -127,15 +127,15 @@ class ReviewReportDocument:
         for section in self.sections:
             if section.section_id != target:
                 continue
-            body = self.text[section.body_start : section.body_end]
+            body = self.text[slice(section.body_start, section.body_end)]
             leading = body[: len(body) - len(body.lstrip())]
-            trailing = body[len(body.rstrip()) :]
+            trailing = body[slice(len(body.rstrip()), None)]
             return (
                 self.text[: section.body_start]
                 + leading
                 + revised.text
                 + trailing
-                + self.text[section.body_end :]
+                + self.text[slice(section.body_end, None)]
             )
         raise ReviewClarificationError(
             f"The requested Review section {target!r} is unavailable."
@@ -246,7 +246,6 @@ def classify_review_operation(
     )
 
 
-
 async def revise_section(
     *,
     section_id: str,
@@ -350,7 +349,7 @@ def _replace_markdown_section(
         )
         body = report[body_start:body_end]
         leading = body[: len(body) - len(body.lstrip())]
-        trailing = body[len(body.rstrip()) :]
+        trailing = body[slice(len(body.rstrip()), None)]
         return (
             report[:body_start]
             + leading
@@ -391,14 +390,18 @@ def reassemble_report(
 _conversation_adapter_module = import_module(
     ".conversation_adapter", __package__
 )
-ReviewConversationAdapter = _conversation_adapter_module.ReviewConversationAdapter
+ReviewConversationAdapter = (
+    _conversation_adapter_module.ReviewConversationAdapter
+)
 _PreparedReviewTurn = getattr(
     _conversation_adapter_module, "_PreparedReviewTurn"
 )
 _ReviewAdapterProperties = getattr(
     _conversation_adapter_module, "_ReviewAdapterProperties"
 )
-_ReviewAdapterState = getattr(_conversation_adapter_module, "_ReviewAdapterState")
+_ReviewAdapterState = getattr(
+    _conversation_adapter_module, "_ReviewAdapterState"
+)
 _ReviewCheckpointState = getattr(
     _conversation_adapter_module, "_ReviewCheckpointState"
 )

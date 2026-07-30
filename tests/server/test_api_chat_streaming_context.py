@@ -11,6 +11,14 @@ from collections.abc import AsyncIterator
 from typing import Any, cast
 
 import pytest
+from tests.server.test_api_chat_streaming import (
+    _consume_context_stage,
+    _conversation_envelope,
+    _extract_custom_context,
+    _runtime_context_service,
+    _stream_frames,
+)
+from tests.support.http_fakes import expected_context_staged_value
 
 from mcp_server_phytomni.api import app as api_app
 from mcp_server_phytomni.api.app import _stream_chat_completion
@@ -28,13 +36,6 @@ from mcp_server_phytomni.runtime.conversation_context.store import (
 )
 from mcp_server_phytomni.runtime.request_context import request_context
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
-from tests.server.test_api_chat_streaming import (
-    _consume_context_stage,
-    _conversation_envelope,
-    _extract_custom_context,
-    _runtime_context_service,
-    _stream_frames,
-)
 
 pytestmark = pytest.mark.server
 
@@ -100,16 +101,9 @@ async def test_context_stream_stages_before_custom_and_then_finishes(
         '"name": "phyto.context_staged"'
     ) < accumulated.index("event: RunFinished\n")
     assert accumulated.count("event: RunFinished\n") == 1
-    assert _extract_custom_context(accumulated) == {
-        "schema_version": 1,
-        "turn_id": "21",
-        "selected_agent_id": "ChatAgent",
-        "route_source": "instant_lock",
-        "proposed_business_context_version": 1,
-        "context_truncated": False,
-        "context_rebuilt": True,
-        "context_degraded": False,
-    }
+    assert _extract_custom_context(accumulated) == (
+        expected_context_staged_value("21")
+    )
 
 
 async def test_context_stream_duplicate_turn_replays_without_reinvocation(
@@ -261,16 +255,9 @@ async def test_context_stream_committed_turn_replays_without_reinvocation(
         "RunFinished",
     ]
     assert second.count("event: RunFinished\n") == 1
-    assert _extract_custom_context(second) == {
-        "schema_version": 1,
-        "turn_id": "24",
-        "selected_agent_id": "ChatAgent",
-        "route_source": "instant_lock",
-        "proposed_business_context_version": 1,
-        "context_truncated": False,
-        "context_rebuilt": True,
-        "context_degraded": False,
-    }
+    assert _extract_custom_context(second) == (
+        expected_context_staged_value("24")
+    )
 
 
 async def test_context_stream_failure_emits_no_successful_context_metadata(

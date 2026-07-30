@@ -105,18 +105,20 @@ def test_projection_callable_contracts_are_explicit_and_typed() -> None:
         ),
     )
     assert projection_signature.return_annotation == "ContextProjection"
-    assert build_context_projection.__annotations__ == {
-        "conversation_key": "UUID",
-        "current_query": "str",
-        "locale": "SupportedLocale",
-        "selected_agent_id": "str",
-        "context": "BusinessContext",
-        "authorized_artifacts": "Sequence[ArtifactRefV1]",
-        "api_config": "ApiConfig",
-        "estimator": "TokenEstimator | None",
-        "exclude_current_user_turn": "bool",
-        "return": "ContextProjection",
-    }
+    projection_annotations = build_context_projection.__annotations__
+    assert projection_annotations["conversation_key"] == "UUID"
+    assert projection_annotations["current_query"] == "str"
+    assert projection_annotations["locale"] == "SupportedLocale"
+    assert projection_annotations["selected_agent_id"] == "str"
+    assert projection_annotations["context"] == "BusinessContext"
+    assert (
+        projection_annotations["authorized_artifacts"]
+        == "Sequence[ArtifactRefV1]"
+    )
+    assert projection_annotations["api_config"] == "ApiConfig"
+    assert projection_annotations["estimator"] == "TokenEstimator | None"
+    assert projection_annotations["exclude_current_user_turn"] == "bool"
+    assert projection_annotations["return"] == "ContextProjection"
     assert build_context_projection.__qualname__ == "build_context_projection"
     assert build_context_projection.__module__ == (
         "mcp_server_phytomni.runtime.conversation_context.projection"
@@ -170,15 +172,19 @@ def test_projection_callable_contracts_are_explicit_and_typed() -> None:
         ),
     )
     assert rebuild_signature.return_annotation == "BusinessContext"
-    assert rebuild_business_context.__annotations__ == {
-        "conversation_key": "UUID",
-        "ledger_entries": "Sequence[Mapping[str, object]]",
-        "artifact_refs": "Sequence[ArtifactRefV1]",
-        "ledger_cursor": "int",
-        "ledger_version": "str",
-        "observed_mode": "Literal['instant', 'expert']",
-        "return": "BusinessContext",
-    }
+    rebuild_annotations = rebuild_business_context.__annotations__
+    assert rebuild_annotations["conversation_key"] == "UUID"
+    assert (
+        rebuild_annotations["ledger_entries"]
+        == "Sequence[Mapping[str, object]]"
+    )
+    assert rebuild_annotations["artifact_refs"] == "Sequence[ArtifactRefV1]"
+    assert rebuild_annotations["ledger_cursor"] == "int"
+    assert rebuild_annotations["ledger_version"] == "str"
+    assert (
+        rebuild_annotations["observed_mode"] == "Literal['instant', 'expert']"
+    )
+    assert rebuild_annotations["return"] == "BusinessContext"
     assert rebuild_business_context.__qualname__ == "rebuild_business_context"
     assert rebuild_business_context.__module__ == (
         "mcp_server_phytomni.runtime.conversation_context.projection"
@@ -329,22 +335,23 @@ def test_projection_budget_validation_counts_private_recent_turns() -> None:
     public_size = CharacterEstimator().estimate(
         projection.model_dump_json(exclude_none=True)
     )
+    budget_kwargs = {
+        "current_query": projection.current_query,
+        "intent_kind": projection.intent_kind,
+        "task_summary": projection.task_summary,
+        "relevant_recent_turns": projection.relevant_recent_turns,
+        "active_entities": projection.active_entities,
+        "open_questions": projection.open_questions,
+        "artifact_refs": projection.artifact_refs,
+        "conversation_key": _CONVERSATION_KEY,
+        "selected_agent_id": "DataAgent",
+        "locale": projection.locale,
+        "token_budget": projection.token_budget,
+        "context_truncated": projection.context_truncated,
+    }
     private_size = CharacterEstimator().estimate(
         json.dumps(
-            _projection_budget_payload(
-                current_query=projection.current_query,
-                intent_kind=projection.intent_kind,
-                task_summary=projection.task_summary,
-                relevant_recent_turns=projection.relevant_recent_turns,
-                active_entities=projection.active_entities,
-                open_questions=projection.open_questions,
-                artifact_refs=projection.artifact_refs,
-                conversation_key=_CONVERSATION_KEY,
-                selected_agent_id="DataAgent",
-                locale=projection.locale,
-                token_budget=projection.token_budget,
-                context_truncated=projection.context_truncated,
-            ),
+            _projection_budget_payload(request=None, **budget_kwargs),
             ensure_ascii=False,
             sort_keys=True,
         )

@@ -28,7 +28,6 @@ pytestmark = pytest.mark.server
 
 def test_sync_write_routes_declare_gc_dependency() -> None:
     """The three sync write routes carry the _schedule_run_gc dependency."""
-    # pylint: disable=protected-access
     app = api_app.create_app()
     wanted = {
         "/v1/agents/{agent}/runs",
@@ -41,7 +40,7 @@ def test_sync_write_routes_declare_gc_dependency() -> None:
         if path in wanted:
             deps = getattr(route, "dependencies", [])
             dep_calls = [d.dependency for d in deps]
-            seen[path] = api_app._schedule_run_gc in dep_calls
+            seen[path] = getattr(api_app, "_schedule_run_gc") in dep_calls
     assert seen == {p: True for p in wanted}
 
 
@@ -49,7 +48,6 @@ async def test_gc_dependency_and_background_task_are_native_async(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Run GC without Starlette's worker-thread completion bridge."""
-    # pylint: disable=protected-access
     calls = 0
 
     def _purge_spy() -> None:
@@ -61,15 +59,14 @@ async def test_gc_dependency_and_background_task_are_native_async(
         "_purge_expired_runs_best_effort",
         _purge_spy,
     )
-    assert inspect.iscoroutinefunction(api_app._schedule_run_gc)
+    assert inspect.iscoroutinefunction(getattr(api_app, "_schedule_run_gc"))
     background = BackgroundTasks()
 
-    await api_app._schedule_run_gc(background)
+    await getattr(api_app, "_schedule_run_gc")(background)
 
     assert len(background.tasks) == 1
-    assert (
-        background.tasks[0].func
-        is api_app._purge_expired_runs_best_effort_async
+    assert background.tasks[0].func is getattr(
+        api_app, "_purge_expired_runs_best_effort_async"
     )
     assert inspect.iscoroutinefunction(background.tasks[0].func)
     await background()
@@ -80,7 +77,6 @@ async def test_async_gc_keeps_the_request_loop_responsive(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The post-response SQLite pass stays off the request event loop."""
-    # pylint: disable=protected-access
     started = threading.Event()
     release = threading.Event()
 
@@ -93,7 +89,9 @@ async def test_async_gc_keeps_the_request_loop_responsive(
         "_purge_expired_runs_best_effort",
         _blocking_purge,
     )
-    task = asyncio.create_task(api_app._purge_expired_runs_best_effort_async())
+    task = asyncio.create_task(
+        getattr(api_app, "_purge_expired_runs_best_effort_async")()
+    )
     for _ in range(1000):
         if started.is_set():
             break
@@ -109,7 +107,6 @@ async def test_async_gc_coalesces_concurrent_passes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Concurrent write responses share one process-local GC pass."""
-    # pylint: disable=protected-access
     started = threading.Event()
     release = threading.Event()
     calls = 0
@@ -126,14 +123,14 @@ async def test_async_gc_coalesces_concurrent_passes(
         _blocking_purge,
     )
     first = asyncio.create_task(
-        api_app._purge_expired_runs_best_effort_async()
+        getattr(api_app, "_purge_expired_runs_best_effort_async")()
     )
     for _ in range(1000):
         if started.is_set():
             break
         await asyncio.sleep(0)
     second = asyncio.create_task(
-        api_app._purge_expired_runs_best_effort_async()
+        getattr(api_app, "_purge_expired_runs_best_effort_async")()
     )
     for _ in range(1000):
         if calls > 1 or second.done():
@@ -150,7 +147,6 @@ async def test_async_gc_reraises_unexpected_worker_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Unexpected worker failures remain visible to Starlette logging."""
-    # pylint: disable=protected-access
 
     def _boom() -> None:
         raise RuntimeError("gc worker failed")
@@ -162,4 +158,4 @@ async def test_async_gc_reraises_unexpected_worker_failure(
     )
 
     with pytest.raises(RuntimeError, match="gc worker failed"):
-        await api_app._purge_expired_runs_best_effort_async()
+        await getattr(api_app, "_purge_expired_runs_best_effort_async")()

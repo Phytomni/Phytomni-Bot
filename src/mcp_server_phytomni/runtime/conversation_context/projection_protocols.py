@@ -51,14 +51,10 @@ class RebuildKwargs(TypedDict):
     ledger_entries: Annotated[
         Sequence[Mapping[str, object]], "rebuild-contract"
     ]
-    artifact_refs: Annotated[
-        Sequence[ArtifactRefV1], "rebuild-contract"
-    ]
+    artifact_refs: Annotated[Sequence[ArtifactRefV1], "rebuild-contract"]
     ledger_cursor: Annotated[int, "rebuild-contract"]
     ledger_version: Annotated[str, "rebuild-contract"]
-    observed_mode: Annotated[
-        Literal["instant", "expert"], "rebuild-contract"
-    ]
+    observed_mode: Annotated[Literal["instant", "expert"], "rebuild-contract"]
 
 
 class ProjectionBuilder(Protocol):

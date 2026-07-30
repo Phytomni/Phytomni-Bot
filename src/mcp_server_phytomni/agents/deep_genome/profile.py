@@ -20,6 +20,7 @@ from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
 
 from ...common.http import JsonPostRetry, require_json_object
+from ...common.httpx_client import resolve_request_timeout
 from ...config.defaults import DeepGenomeConfig
 from ..shared.sql import bi_query, sql_literal
 
@@ -35,7 +36,8 @@ _LOOKUP_CONFIG = DeepGenomeConfig()
 
 async def _post_bi_sql(
     sql: str,
-    timeout: float = _LOOKUP_CONFIG.TIMEOUT,  # noqa: ASYNC109
+    request_timeout: float = _LOOKUP_CONFIG.TIMEOUT,
+    **options: Any,
 ) -> dict[str, Any]:
     """Run one BI SQL query and return the JSON payload.
 
@@ -46,7 +48,8 @@ async def _post_bi_sql(
 
     Args:
         sql: SQL statement to execute.
-        timeout: Per-request timeout in seconds.
+        request_timeout: Per-request timeout in seconds.
+        **options: Backward-compatible ``timeout=`` keyword support.
 
     Returns:
         The decoded BI JSON payload.
@@ -58,6 +61,9 @@ async def _post_bi_sql(
             clear message instead of the opaque ``Expecting value:
             line 1 column 1 (char 0)``.
     """
+    timeout = resolve_request_timeout(request_timeout, options)
+    if timeout is None:
+        timeout = _LOOKUP_CONFIG.TIMEOUT
     try:
         data = await bi_query(
             sql,
@@ -87,14 +93,18 @@ async def _post_bi_sql(
 async def _cached_gene_symbol_lookup(
     species_code: str,
     gene_id: str,
-    timeout: float = _LOOKUP_CONFIG.TIMEOUT,  # noqa: ASYNC109
+    request_timeout: float = _LOOKUP_CONFIG.TIMEOUT,
+    **options: Any,
 ) -> list[str]:
     """Retrieve gene symbols for one species/gene pair."""
+    timeout = resolve_request_timeout(request_timeout, options)
+    if timeout is None:
+        timeout = _LOOKUP_CONFIG.TIMEOUT
     sql = (
         f"SELECT * FROM id_table WHERE gene_id = {sql_literal(gene_id)} "
         f"AND species_code = {sql_literal(species_code)}"
     )
-    response = await _post_bi_sql(sql, timeout)
+    response = await _post_bi_sql(sql, request_timeout=timeout)
     gene_symbol_list: list[str] = []
     if response["data"][0]["symbol"] is not None:
         cell_raw_value = response["data"][0]["symbol"]
@@ -111,9 +121,13 @@ async def _cached_gene_symbol_lookup(
 async def _cached_gene_annotation_lookup(
     species_code: str,
     gene_id: str,
-    timeout: float = _LOOKUP_CONFIG.TIMEOUT,  # noqa: ASYNC109
+    request_timeout: float = _LOOKUP_CONFIG.TIMEOUT,
+    **options: Any,
 ) -> dict[str, Any]:
     """Retrieve gene annotations for one species/gene pair."""
+    timeout = resolve_request_timeout(request_timeout, options)
+    if timeout is None:
+        timeout = _LOOKUP_CONFIG.TIMEOUT
     gene_literal = sql_literal(gene_id)
     species_literal = sql_literal(species_code)
     sql_list = (
@@ -132,7 +146,9 @@ async def _cached_gene_annotation_lookup(
         f"WHERE gene_id = {gene_literal} "
         f"AND species_code = {species_literal}",
     )
-    responses = [await _post_bi_sql(sql, timeout) for sql in sql_list]
+    responses = [
+        await _post_bi_sql(sql, request_timeout=timeout) for sql in sql_list
+    ]
     gene_anno_dict: dict[str, Any] = {}
     if responses[0]["data"]:
         gene_anno_dict.update({"description": responses[0]["data"]})
@@ -145,10 +161,27 @@ async def _cached_gene_annotation_lookup(
     return gene_anno_dict
 
 
-# pylint: disable-next=too-few-public-methods
 class DeepGenomeProfileMixin:
     """Gene annotation, network, and Part 1 profile nodes.
     Profile stages share the consuming agent's configuration and BI clients."""
+
+    async def gene_symbol(
+        self: Any,
+        species_code: str,
+        gene_id: str,
+        semaphore: asyncio.Semaphore | None = None,
+    ) -> list[str]:
+        """Return symbols for one gene through the profile lookup seam."""
+        return await self._gene_symbol(species_code, gene_id, semaphore)
+
+    async def gene_annotation(
+        self: Any,
+        species_code: str,
+        gene_id: str,
+        semaphore: asyncio.Semaphore | None = None,
+    ) -> dict[str, Any]:
+        """Return annotations for one gene through the profile lookup seam."""
+        return await self._gene_annotation(species_code, gene_id, semaphore)
 
     async def _gene_symbol(
         self: Any,

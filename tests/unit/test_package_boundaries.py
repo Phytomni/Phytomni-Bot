@@ -84,7 +84,7 @@ def _legacy_root_module(module_name: str) -> str | None:
     prefix = f"{PACKAGE_NAME}."
     if not module_name.startswith(prefix):
         return None
-    root_module = module_name[len(prefix) :].split(".", maxsplit=1)[0]
+    root_module = module_name.removeprefix(prefix).split(".", maxsplit=1)[0]
     if root_module in LEGACY_ROOT_MODULES:
         return root_module
     return None

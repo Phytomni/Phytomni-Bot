@@ -416,7 +416,7 @@ def _extract_token(
 ) -> str | None:
     """Pull the presented key from Bearer or X-API-Key headers."""
     if authorization and authorization.startswith("Bearer "):
-        token = authorization[len("Bearer ") :].strip()
+        token = authorization.removeprefix("Bearer ").strip()
         return token or None
     if x_api_key:
         token = x_api_key.strip()

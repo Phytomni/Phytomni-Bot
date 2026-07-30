@@ -31,6 +31,7 @@ from tests.server.test_query_route import (
 )
 from tests.support.chat_fakes import install_chat_handler
 from tests.support.expert_router_fakes import patch_expert_router
+from tests.support.handler_fakes import review_success_result
 
 import mcp_server_phytomni.api.a2a.messages as a2a_messages
 from mcp_server_phytomni.agents.expert import ToolSelectionError
@@ -398,11 +399,7 @@ async def test_expert_synchronous_selection_skips_background_launcher(
             return ReviewExecution(
                 run_id="expert-review-sync",
                 status="succeeded",
-                result={
-                    "formatted": {"answer": "review ok", "metadata": {}},
-                    "execution": {"warnings": []},
-                    "raw": None,
-                },
+                result=review_success_result(),
             )
 
         monkeypatch.setattr(api_app, "_run_review_with_interrupt", fake_review)

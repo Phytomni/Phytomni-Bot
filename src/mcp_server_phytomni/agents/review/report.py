@@ -129,11 +129,32 @@ class SupplementaryFormatState:
     counters: SupplementaryCounters
 
 
-# pylint: disable-next=too-few-public-methods
 class ReviewReportMixin:
     """Critique, revise, and citation-audit nodes for deep research.
     The report helpers share the review agent's configured retrieval context.
     """
+
+    async def feedback_rag(
+        self: Any,
+        subtopic_idx: int,
+        draft_content: str,
+        review_content: str,
+        raw_doc_list: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Run evidence feedback through the Review report seam."""
+        return await self._feedback_rag(
+            subtopic_idx,
+            draft_content,
+            review_content,
+            raw_doc_list,
+        )
+
+    def format_supplementary_results(
+        self: Any,
+        context: SupplementaryResultContext,
+    ) -> str:
+        """Format supplementary evidence through the report seam."""
+        return self._format_supplementary_results(context)
 
     async def _feedback_rag(
         self: Any,

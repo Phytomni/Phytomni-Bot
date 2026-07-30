@@ -83,7 +83,8 @@ def _app_module() -> Any:
 
 
 def _app_attr(name: str) -> Any:
-    """Resolve one private compatibility seam without static access warnings."""
+    """Resolve one private compatibility seam without static access
+    warnings."""
     return getattr(_app_module(), name)
 
 
@@ -110,9 +111,7 @@ def _project_submission_warnings(raw: Any) -> list[dict[str, Any]]:
     """Project safe remote-submission warnings into HTTP execution state."""
     if not isinstance(raw, Mapping):
         return []
-    return _app_attr("_project_warnings")(
-        raw.get("submission_warnings")
-    )
+    return _app_attr("_project_warnings")(raw.get("submission_warnings"))
 
 
 def _request_info_query(
@@ -136,7 +135,8 @@ def _preflight_agent_run(
     dialogue_id: str | None,
     request_json: str | None,
 ) -> _AgentRunPreflight:
-    """Validate structural inputs and capture request context before dispatch."""
+    """Validate structural inputs and capture request context before
+    dispatch."""
     app = _app_module()
     tool_name = _app_attr("_AGENT_SLUG_TO_TOOL").get(agent)
     if tool_name is None:

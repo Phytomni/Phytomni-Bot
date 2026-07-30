@@ -24,6 +24,7 @@ from ...agents.review.conversation import (
     ReviewConversationOperation,
 )
 from ...config.defaults import ApiConfig
+from .locking import acquire_review_mutation_lock
 from .models import BusinessContext, ContextProjection, ConversationEnvelopeV1
 from .projection import agent_thread_id
 from .service import (
@@ -41,7 +42,6 @@ from .settlement_facade import (
 )
 from .store import (
     ConversationContextStore,
-    ReviewMutationLockTimeoutError,
     ReviewSettlementClaim,
     StoredTurn,
 )
@@ -104,20 +104,6 @@ class _ReviewSettlementRuntime:
         default_factory=asyncio.Lock
     )
     max_pending_review_settlements: int = 256
-
-
-async def _acquire_review_mutation_lock(
-    store: ConversationContextStore, *, wait_seconds: float = 30.0
-) -> Any:
-    """Poll a nonblocking durable lock without blocking the event loop."""
-    deadline = asyncio.get_running_loop().time() + wait_seconds
-    while True:
-        try:
-            return store.acquire_review_mutation_lock(timeout=0)
-        except ReviewMutationLockTimeoutError:
-            if asyncio.get_running_loop().time() >= deadline:
-                raise
-            await asyncio.sleep(0.01)
 
 
 def _native_history_from_turns(
@@ -404,7 +390,7 @@ class ConversationContextExecutor:
             service = self._service_for_request()
             lock: Any | None = None
             if not request.mutation_lock_held:
-                lock = await _acquire_review_mutation_lock(service.store)
+                lock = await acquire_review_mutation_lock(service.store)
             try:
                 return await self._acknowledge_review_settlement_key_locked(
                     replace(request, mutation_lock_held=True)
@@ -476,7 +462,8 @@ class ConversationContextExecutor:
         staged_turn: StoredTurn | None,
         claim: ReviewSettlementClaim,
     ) -> _ReviewSettlementClaim:
-        """Validate a durable claim and reload its authoritative staged turn."""
+        """Validate a durable claim and reload its authoritative staged
+        turn."""
         key = request.key
         if claim.status == "invalid":
             service.store.mark_review_settlement_failed(
@@ -821,7 +808,7 @@ class ConversationContextExecutor:
                 }
             ):
                 store = self._service_for_request().store
-                mutation_lock = await _acquire_review_mutation_lock(store)
+                mutation_lock = await acquire_review_mutation_lock(store)
                 try:
                     stable_thread_id = review_adapter.stable_thread_id
                     candidate_thread_id = review_adapter.candidate_thread_id

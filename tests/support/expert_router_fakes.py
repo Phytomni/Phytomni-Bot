@@ -17,9 +17,7 @@ def patch_expert_router(
     router: ModuleType,
     completion: object,
     captured: dict[str, Any] | None = None,
-    *,
-    side_effects: list[object] | None = None,
-    calls: list[dict[str, Any]] | None = None,
+    **options: Any,
 ) -> None:
     """Patch one Expert router module with a canned completion.
 
@@ -33,6 +31,11 @@ def patch_expert_router(
         calls: If given, every call's kwargs is appended (all calls kept),
             so a test can assert on both the initial and the retry request.
     """
+    side_effects = options.pop("side_effects", None)
+    calls = options.pop("calls", None)
+    if options:
+        unexpected = ", ".join(sorted(options))
+        raise TypeError(f"unexpected router fake options: {unexpected}")
     scripted = list(side_effects or [])
 
     async def create(**kwargs: Any) -> object:

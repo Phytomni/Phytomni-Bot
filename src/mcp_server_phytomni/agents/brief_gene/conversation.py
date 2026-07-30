@@ -179,8 +179,8 @@ def _looks_like_gene_identifier(token: str) -> bool:
         original_suffix = normalized
         for prefix, _species in _IDENTIFIER_PREFIXES:
             if suffix.startswith(prefix):
-                suffix = suffix[len(prefix) :]
-                original_suffix = original_suffix[len(prefix) :]
+                suffix = suffix.removeprefix(prefix)
+                original_suffix = original_suffix.removeprefix(prefix)
                 break
         return any(char.isdigit() for char in suffix) or (
             suffix.isalpha() and original_suffix.isupper()
@@ -228,8 +228,8 @@ def _active_from_projection(
     report_revision = 0
     for entity in projection.active_entities:
         if entity.entity_id.startswith(_GENE_ENTITY_PREFIX):
-            candidate = (
-                entity.label or entity.entity_id[len(_GENE_ENTITY_PREFIX) :]
+            candidate = entity.label or entity.entity_id.removeprefix(
+                _GENE_ENTITY_PREFIX
             )
             if _looks_like_gene_identifier(candidate):
                 gene_id = candidate[:_MAX_GENE_ID_CHARS]
@@ -237,25 +237,27 @@ def _active_from_projection(
             species_code = _normalize_species(entity.label)
             if species_code is None:
                 species_code = _normalize_species(
-                    entity.entity_id[len(_SPECIES_ENTITY_PREFIX) :]
+                    entity.entity_id.removeprefix(_SPECIES_ENTITY_PREFIX)
                 )
         elif entity.entity_id.startswith(_EVIDENCE_ENTITY_PREFIX):
             value = _opaque_text(
                 entity.label
-                or entity.entity_id[len(_EVIDENCE_ENTITY_PREFIX) :]
+                or entity.entity_id.removeprefix(_EVIDENCE_ENTITY_PREFIX)
             )
             if value and value not in evidence:
                 evidence.append(value)
         elif entity.entity_id.startswith(_ARTIFACT_ENTITY_PREFIX):
             value = _opaque_text(
                 entity.label
-                or entity.entity_id[len(_ARTIFACT_ENTITY_PREFIX) :],
+                or entity.entity_id.removeprefix(_ARTIFACT_ENTITY_PREFIX),
                 128,
             )
             if value:
                 artifact_id = value
         elif entity.entity_id.startswith(_REPORT_REVISION_ENTITY_PREFIX):
-            suffix = entity.entity_id[len(_REPORT_REVISION_ENTITY_PREFIX) :]
+            suffix = entity.entity_id.removeprefix(
+                _REPORT_REVISION_ENTITY_PREFIX
+            )
             if suffix.isdigit():
                 report_revision = max(0, int(suffix))
     if artifact_id is None and len(projection.artifact_refs) == 1:
@@ -523,18 +525,14 @@ def _semantic_id(prefix: str, value: str, *, limit: int = 128) -> str:
 
 def _clarification_result(message: str) -> dict[str, Any]:
     """Shape one bounded clarification in the legacy chat envelope."""
-    return {
-        "choices": [
-            {
-                "message": {
-                    "content": _bounded_text(message, _MAX_SUMMARY_CHARS),
-                    "doc_list": [],
-                    "total": 10000,
-                    "follow_up_questions": [],
-                }
-            }
-        ]
+    content = _bounded_text(message, _MAX_SUMMARY_CHARS)
+    message_payload = {
+        "content": content,
+        "doc_list": [],
+        "total": 10000,
+        "follow_up_questions": [],
     }
+    return {"choices": [{"message": message_payload}]}
 
 
 class BriefGeneConversationAdapter:
@@ -590,10 +588,10 @@ class BriefGeneConversationAdapter:
             {"file_id": reference} for reference in active.evidence_refs
         ]
         return {
+            "operation": operation,
             "user_query": projection.current_query,
             "locale": projection.locale,
             "thread_id": projection.agent_thread_id,
-            "operation": operation,
             "gene_id": (
                 explicit_gene_id
                 if operation

@@ -204,10 +204,7 @@ def test_commit_apply_seam_signature_is_preserved() -> None:
         getattr(ConversationContextStore, "_apply_staged_turn_locked")
     )
     assert tuple(signature.parameters) == ("self", "request")
-    assert (
-        signature.parameters["self"].annotation
-        is inspect.Parameter.empty
-    )
+    assert signature.parameters["self"].annotation is inspect.Parameter.empty
 
 
 def test_claim_expiry_keeps_static_base_clock_dispatch() -> None:
@@ -545,7 +542,7 @@ def test_review_candidate_registration_fails_closed_after_tombstone(
     )
     with sqlite3.connect(store.db_path) as connection:
         assert connection.execute(
-            "SELECT COUNT(*) FROM conversation_review_checkpoint_cleanup "
+            "SELECT COUNT(1) FROM conversation_review_checkpoint_cleanup "
             "WHERE conversation_key = ?",
             (key,),
         ).fetchone() == (0,)
@@ -752,7 +749,7 @@ def test_tombstone_fences_and_retains_review_candidate_threads(
     store.complete_checkpoint_cleanup(key)
     with sqlite3.connect(store.db_path) as connection:
         assert connection.execute(
-            "SELECT COUNT(*) FROM conversation_review_checkpoint_cleanup "
+            "SELECT COUNT(1) FROM conversation_review_checkpoint_cleanup "
             "WHERE conversation_key = ?",
             (key,),
         ).fetchone() == (0,)

@@ -7,6 +7,7 @@
 from collections.abc import Iterable
 from datetime import datetime
 from io import BytesIO
+from typing import Any
 
 class DocumentProperties:
     """Workbook metadata fields written by the demo generator."""
@@ -26,8 +27,9 @@ class DocumentProperties:
     @last_modified_by.setter
     def last_modified_by(self, _value: str | None) -> None:
         """Set the last modifier."""
-    lastModifiedBy = last_modified_by
 
+    def __getattr__(self, name: str) -> Any: ...
+    def __setattr__(self, name: str, value: Any) -> None: ...
     @property
     def created(self) -> datetime | None:
         """Return the creation timestamp."""
