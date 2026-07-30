@@ -281,6 +281,35 @@ class _ReviewCleanupEntry:
     staged: bool
 
 
+@dataclass(frozen=True)
+class _ReviewClaimIdentity:
+    """Conversation and turn identity for one Review claim."""
+
+    key: str
+    turn_id: str
+
+
+@dataclass(frozen=True)
+class _ReviewClaimTiming:
+    """Clock inputs for one Review claim transition."""
+
+    now_value: str
+    clock: datetime
+    stale_after: timedelta
+
+
+@dataclass(frozen=True)
+class _ReviewClaimMarkerRequest:
+    """Inputs for one validated Review marker claim transition."""
+
+    connection: sqlite3.Connection
+    identity: _ReviewClaimIdentity
+    row: sqlite3.Row | tuple[Any, ...]
+    decoded: dict[str, Any]
+    marker: dict[str, Any]
+    timing: _ReviewClaimTiming
+
+
 def _json(value: dict[str, Any]) -> str:
     return json.dumps(
         value, ensure_ascii=False, separators=(",", ":"), sort_keys=True
@@ -1003,6 +1032,129 @@ class ConversationContextStore:
             return True
         return clock - claimed_clock >= stale_after
 
+    @staticmethod
+    def _bounded_claim_parts(
+        token: object, claimed_at: object, fence: int | None
+    ) -> tuple[str, str, int] | None:
+        """Return validated token parts for an active claim."""
+        if not isinstance(token, str) or not token:
+            return None
+        if len(token) > _REVIEW_SETTLEMENT_TOKEN_LIMIT:
+            return None
+        if not isinstance(claimed_at, str) or not claimed_at:
+            return None
+        if len(claimed_at) > _REVIEW_SETTLEMENT_TIMESTAMP_LIMIT:
+            return None
+        if fence is None:
+            return None
+        return token, claimed_at, fence
+
+    def _claim_active_marker(
+        self,
+        request: _ReviewClaimMarkerRequest,
+        state: ReviewSettlementClaimStatus,
+    ) -> ReviewSettlementClaim:
+        """Refresh an expired settling/promoting marker claim."""
+        parts = self._bounded_claim_parts(
+            request.marker.get("settlement_claim_token"),
+            request.marker.get("settlement_claimed_at"),
+            self._marker_fence(request.marker),
+        )
+        if parts is None:
+            return ReviewSettlementClaim("invalid")
+        token, claimed_at, fence = parts
+        if not self._claim_is_expired(
+            claimed_at,
+            clock=request.timing.clock,
+            stale_after=request.timing.stale_after,
+        ):
+            return ReviewSettlementClaim(state, token, fence)
+        next_fence = fence + 1
+        if next_fence > _REVIEW_SETTLEMENT_FENCE_LIMIT:
+            return ReviewSettlementClaim("invalid")
+        claim_token = uuid4().hex
+        updated = dict(request.marker)
+        updated.update(
+            {
+                "settlement_state": "settling",
+                "settlement_claim_token": claim_token,
+                "settlement_claimed_at": request.timing.now_value,
+                "settlement_fence": next_fence,
+                "settlement_ledger_version": request.row[1],
+                "settlement_base_context_version": request.row[2],
+            }
+        )
+        if not self._write_review_marker(
+            request.connection,
+            request.identity.key,
+            request.identity.turn_id,
+            request.decoded,
+            updated,
+            request.timing.now_value,
+        ):
+            return ReviewSettlementClaim("invalid")
+        return ReviewSettlementClaim("claimed", claim_token, next_fence)
+
+    def _claim_pending_marker(
+        self, request: _ReviewClaimMarkerRequest
+    ) -> ReviewSettlementClaim:
+        """Create the first claim for a pending marker."""
+        if "settlement_claim_token" in request.marker or (
+            "settlement_claimed_at" in request.marker
+        ):
+            return ReviewSettlementClaim("invalid")
+        previous_fence = request.marker.get("settlement_fence", 0)
+        if (
+            isinstance(previous_fence, bool)
+            or not isinstance(previous_fence, int)
+            or previous_fence < 0
+            or previous_fence >= _REVIEW_SETTLEMENT_FENCE_LIMIT
+        ):
+            return ReviewSettlementClaim("invalid")
+        claim_token = uuid4().hex
+        fence = previous_fence + 1
+        updated = dict(request.marker)
+        updated.update(
+            {
+                "settlement_state": "settling",
+                "settlement_claim_token": claim_token,
+                "settlement_claimed_at": request.timing.now_value,
+                "settlement_fence": fence,
+                "settlement_ledger_version": request.row[1],
+                "settlement_base_context_version": request.row[2],
+            }
+        )
+        if not self._write_review_marker(
+            request.connection,
+            request.identity.key,
+            request.identity.turn_id,
+            request.decoded,
+            updated,
+            request.timing.now_value,
+        ):
+            return ReviewSettlementClaim("invalid")
+        return ReviewSettlementClaim("claimed", claim_token, fence)
+
+    def _claim_review_marker(
+        self, request: _ReviewClaimMarkerRequest
+    ) -> ReviewSettlementClaim:
+        """Advance a validated Review marker under its open transaction."""
+        state = request.marker.get("settlement_state")
+        if state not in {
+            "pending",
+            "settling",
+            "promoting",
+            "promoted",
+            "rejected",
+            "failed",
+        }:
+            return ReviewSettlementClaim("invalid")
+        if state in {"promoted", "rejected", "failed"}:
+            return ReviewSettlementClaim(state)
+        if state in {"settling", "promoting"}:
+            return self._claim_active_marker(request, state)
+        return self._claim_pending_marker(request)
+
     def claim_review_settlement(
         self,
         key: str,
@@ -1056,88 +1208,20 @@ class ConversationContextStore:
             decoded, marker = record
             if not self._marker_is_bounded(marker, key=key, turn_id=turn_id):
                 return ReviewSettlementClaim("invalid")
-            state = marker.get("settlement_state")
-            if state not in {
-                "pending",
-                "settling",
-                "promoting",
-                "promoted",
-                "rejected",
-                "failed",
-            }:
-                return ReviewSettlementClaim("invalid")
-            if state in {"promoted", "rejected", "failed"}:
-                return ReviewSettlementClaim(state)
-            if state in {"settling", "promoting"}:
-                token = marker.get("settlement_claim_token")
-                claimed_at = marker.get("settlement_claimed_at")
-                fence = self._marker_fence(marker)
-                if (
-                    not isinstance(token, str)
-                    or not token
-                    or len(token) > _REVIEW_SETTLEMENT_TOKEN_LIMIT
-                    or not isinstance(claimed_at, str)
-                    or not claimed_at
-                    or len(claimed_at) > _REVIEW_SETTLEMENT_TIMESTAMP_LIMIT
-                    or fence is None
-                ):
-                    return ReviewSettlementClaim("invalid")
-                if not self._claim_is_expired(
-                    claimed_at, clock=clock, stale_after=stale_after
-                ):
-                    return ReviewSettlementClaim(state, token, fence)
-                next_fence = fence + 1
-                if next_fence > _REVIEW_SETTLEMENT_FENCE_LIMIT:
-                    return ReviewSettlementClaim("invalid")
-                claim_token = uuid4().hex
-                updated = dict(marker)
-                updated.update(
-                    {
-                        "settlement_state": "settling",
-                        "settlement_claim_token": claim_token,
-                        "settlement_claimed_at": now_value,
-                        "settlement_fence": next_fence,
-                        "settlement_ledger_version": row[1],
-                        "settlement_base_context_version": row[2],
-                    }
+            return self._claim_review_marker(
+                _ReviewClaimMarkerRequest(
+                    connection=connection,
+                    identity=_ReviewClaimIdentity(key=key, turn_id=turn_id),
+                    row=row,
+                    decoded=decoded,
+                    marker=marker,
+                    timing=_ReviewClaimTiming(
+                        now_value=now_value,
+                        clock=clock,
+                        stale_after=stale_after,
+                    ),
                 )
-                if not self._write_review_marker(
-                    connection, key, turn_id, decoded, updated, now_value
-                ):
-                    return ReviewSettlementClaim("invalid")
-                return ReviewSettlementClaim(
-                    "claimed", claim_token, next_fence
-                )
-            if "settlement_claim_token" in marker or (
-                "settlement_claimed_at" in marker
-            ):
-                return ReviewSettlementClaim("invalid")
-            previous_fence = marker.get("settlement_fence", 0)
-            if (
-                isinstance(previous_fence, bool)
-                or not isinstance(previous_fence, int)
-                or previous_fence < 0
-                or previous_fence >= _REVIEW_SETTLEMENT_FENCE_LIMIT
-            ):
-                return ReviewSettlementClaim("invalid")
-            claim_token = uuid4().hex
-            fence = previous_fence + 1
-            updated = dict(marker)
-            updated.update(
-                {
-                    "settlement_state": "settling",
-                    "settlement_claim_token": claim_token,
-                    "settlement_claimed_at": now_value,
-                    "settlement_fence": fence,
-                    "settlement_ledger_version": row[1],
-                    "settlement_base_context_version": row[2],
-                }
             )
-            if not self._write_review_marker(
-                connection, key, turn_id, decoded, updated, now_value
-            ):
-                return ReviewSettlementClaim("invalid")
-            return ReviewSettlementClaim("claimed", claim_token, fence)
 
     def reserve_review_settlement(
         self,
