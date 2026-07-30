@@ -347,29 +347,41 @@ _REVIEW_MUTATION_LOCKS: dict[str, threading.Lock] = {}
 _REVIEW_MUTATION_LOCKS_GUARD = threading.Lock()
 
 
+def _bounded_stable_thread_id(value: object) -> str | None:
+    """Return a validated stable Review thread id, if bounded."""
+    if not isinstance(value, str):
+        return None
+    if len(value) != len("ctx-") + 64:
+        return None
+    if not value.startswith("ctx-"):
+        return None
+    if any(char not in "0123456789abcdef" for char in value[4:]):
+        return None
+    return value
+
+
+def _bounded_review_id(value: object, *, max_length: int) -> str | None:
+    """Return a path-free bounded Review marker id, if valid."""
+    if not isinstance(value, str):
+        return None
+    if not value or len(value) > max_length:
+        return None
+    if "/" in value or "\\" in value:
+        return None
+    return value
+
+
 def _review_candidate_thread_id(marker: Mapping[str, Any]) -> str | None:
     """Return only a deterministic, path-free candidate from a marker."""
     if marker.get("operation") not in {"new_review", "scope_change"}:
         return None
-    stable = marker.get("stable_thread_id")
-    turn_id = marker.get("turn_id")
-    candidate = marker.get("candidate_thread_id")
-    if (
-        not isinstance(stable, str)
-        or len(stable) != len("ctx-") + 64
-        or not stable.startswith("ctx-")
-        or not all(char in "0123456789abcdef" for char in stable[4:])
-        or not isinstance(turn_id, str)
-        or not turn_id
-        or len(turn_id) > 64
-        or "/" in turn_id
-        or "\\" in turn_id
-        or not isinstance(candidate, str)
-        or not candidate
-        or len(candidate) > _REVIEW_THREAD_ID_LIMIT
-        or "/" in candidate
-        or "\\" in candidate
-    ):
+    stable = _bounded_stable_thread_id(marker.get("stable_thread_id"))
+    turn_id = _bounded_review_id(marker.get("turn_id"), max_length=64)
+    candidate = _bounded_review_id(
+        marker.get("candidate_thread_id"),
+        max_length=_REVIEW_THREAD_ID_LIMIT,
+    )
+    if stable is None or turn_id is None or candidate is None:
         return None
     digest = hashlib.sha256(
         f"review-candidate-v1:{stable}:{turn_id}".encode()
@@ -898,23 +910,12 @@ class ConversationContextStore:
     @staticmethod
     def _marker_stable_thread_id(marker: Mapping[str, Any]) -> str | None:
         """Return a bounded stable Review thread identity."""
-        stable = marker.get("stable_thread_id")
-        if not isinstance(stable, str):
-            return None
-        if len(stable) != len("ctx-") + 64:
-            return None
-        if not stable.startswith("ctx-"):
-            return None
-        if any(char not in "0123456789abcdef" for char in stable[4:]):
-            return None
-        return stable
+        return _bounded_stable_thread_id(marker.get("stable_thread_id"))
 
     @staticmethod
     def _turn_id_is_bounded(turn_id: str) -> bool:
         """Reject turn identifiers that could escape the bounded marker."""
-        if not isinstance(turn_id, str) or not turn_id:
-            return False
-        return not (len(turn_id) > 64 or "/" in turn_id or "\\" in turn_id)
+        return _bounded_review_id(turn_id, max_length=64) is not None
 
     @staticmethod
     def _report_revision_is_bounded(marker: Mapping[str, Any]) -> bool:
