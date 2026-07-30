@@ -143,8 +143,8 @@ class ReviewReportDocument:
 
 
 @dataclass(frozen=True, slots=True)
-class ReviewCheckpointSnapshot:
-    """Bounded semantic data recovered from a Review graph checkpoint."""
+class _ReviewCheckpointSnapshotFields:
+    """Stable checkpoint fields shared by the public snapshot type."""
 
     research_question: str
     source_ids: tuple[str, ...] = ()
@@ -153,6 +153,12 @@ class ReviewCheckpointSnapshot:
     evidence_gaps: tuple[str, ...] = ()
     sections: tuple[ReviewSection, ...] = ()
     report_artifact_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewCheckpointSnapshot(_ReviewCheckpointSnapshotFields):
+    """Bounded semantic data recovered from a Review graph checkpoint."""
+
     report_revision: int = 0
 
     def section(self, section_id: str) -> ReviewSection | None:
