@@ -12,9 +12,6 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
-from contextlib import nullcontext
-from copy import deepcopy
-from dataclasses import asdict, dataclass
 from typing import Any
 
 from fastapi import (
@@ -25,65 +22,44 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS
 
-from ..agents.brief_gene.resolve_query import resolve_brief_gene_user_query
-from ..agents.deep_genome.resolve_query import resolve_deep_genome_user_query
-from ..agents.design.resolve_query import resolve_design_user_query
 from ..agents.expert import (
     ExpertProviderError,
     ExpertProviderTimeoutError,
     ExpertRoutingContractError,
     select_agent_tool,
 )
-from ..agents.network.resolve_query import resolve_network_user_query
 from ..common import logging_config as _logging_config
 from ..config.defaults import ApiConfig
 from ..interop import a2a_discovery as _a2a_discovery
 from ..interop import capabilities as _interop_capabilities
 from ..interop import registry as _interop_registry
 from ..mcp import app as _mcp_app
-from ..mcp.app import (
-    invoke_tool_enveloped,
-    prepare_tool_stream,
-    validate_tool_arguments,
-)
+from ..mcp.app import prepare_tool_stream
 from ..mcp.result_formatting import (
     resolve_debug,
     strip_agent_result,
     strip_chat_completion,
 )
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
+from ..runtime import stage_trace as _stage_trace
 from ..runtime import task_reconcile as _task_reconcile
-from ..runtime.background_submission import (
-    BackgroundSubmissionLaunchError,
-    BackgroundSubmissionOutcome,
-    launch_background_submission,
-    reserve_background_submission,
-)
 from ..runtime.locale import current_effective_locale
-from ..runtime.request_context import (
-    current_accepted_task_ids,
-    current_recorder_degraded,
-    current_request_user,
-    current_run_id,
-)
 from ..runtime.request_context import (
     current_request_id as _current_request_id,
 )
+from ..runtime.request_context import current_request_user
 from ..runtime.resume import ahas_checkpoint as _runtime_has_checkpoint
 from ..runtime.run_registry import (
     RunRecord,
     RunRegistry,
     RunRequestInfo,
 )
-from ..runtime.stage_trace import DataStage, trace_data_stage
-from ..runtime.submission_outcome import (
-    project_submission_warnings as _project_warnings,
-)
 from ..runtime.task_manager import resolve_tasks_db_path
 from ..version import __version__ as _package_version
 from . import a2ui_runtime, run_lifecycle
 from . import admin_auth as _admin_auth
 from . import agent_capabilities as _agent_capabilities
+from . import agent_runs as _agent_runs
 from . import app_support as _app_support
 from . import compat as _compat
 from . import factory as _factory
@@ -96,10 +72,7 @@ from .a2a import runtime as a2a_runtime
 from .a2a.executor import (
     A2ARegistration,
 )
-from .attachments import (
-    prepare_expert_arguments,
-    validate_native_attachments,
-)
+from .attachments import prepare_expert_arguments
 from .compat import (
     _a2ui_interrupt_body,
     _a2ui_runtime_dependencies,
@@ -114,8 +87,6 @@ from .compat import (
 from .lifecycle_contract import (
     SafeApiError,
     SafeErrorCode,
-    build_agent_run_response,
-    canonicalize_agent_run_body,
     empty_agent_result,
     expert_safe_error,
 )
@@ -123,12 +94,48 @@ from .openai_mapping import (
     to_chat_completion,
     tool_accepts_stream,
 )
-from .resolvers import (
-    ResolverDispatch,
-    apply_runs_resolver,
-)
 from .schemas import ChatCompletionRequest, ExpertQueryRequest, ResumeRequest
 from .stream_answer import resolve_stream_answer_max_bytes
+
+
+def _compatibility_export(name: str) -> Any:
+    """Preserve the original ``api.app`` module identity for moved seams."""
+    value = getattr(_agent_runs, name)
+    if hasattr(value, "__module__"):
+        value.__module__ = __name__
+    return value
+
+
+_AgentRunPreparation = _compatibility_export("_AgentRunPreparation")
+_AgentRunPreflight = _compatibility_export("_AgentRunPreflight")
+_background_agent_run_response = _compatibility_export(
+    "_background_agent_run_response"
+)
+_execute_background_agent_run = _compatibility_export(
+    "_execute_background_agent_run"
+)
+_format_agent_run_result = _compatibility_export("_format_agent_run_result")
+_invoke_agent_run = _compatibility_export("_invoke_agent_run")
+_prepare_agent_run = _compatibility_export("_prepare_agent_run")
+_preflight_agent_run = _compatibility_export("_preflight_agent_run")
+_remote_agent_run_response = _compatibility_export(
+    "_remote_agent_run_response"
+)
+_resolve_remote_run = _compatibility_export("_resolve_remote_run")
+_sync_agent_run_response = _compatibility_export("_sync_agent_run_response")
+BackgroundSubmissionLaunchError = _agent_runs.BackgroundSubmissionLaunchError
+BackgroundSubmissionOutcome = _agent_runs.BackgroundSubmissionOutcome
+apply_runs_resolver = _agent_runs.apply_runs_resolver
+invoke_tool_enveloped = _agent_runs.invoke_tool_enveloped
+launch_background_submission = _agent_runs.launch_background_submission
+reserve_background_submission = _agent_runs.reserve_background_submission
+resolve_brief_gene_user_query = _agent_runs.resolve_brief_gene_user_query
+resolve_deep_genome_user_query = _agent_runs.resolve_deep_genome_user_query
+resolve_design_user_query = _agent_runs.resolve_design_user_query
+resolve_network_user_query = _agent_runs.resolve_network_user_query
+validate_tool_arguments = _agent_runs.validate_tool_arguments
+DataStage = _stage_trace.DataStage
+trace_data_stage = _stage_trace.trace_data_stage
 
 # These assignments keep long-standing app-level monkeypatch seams available
 # after route wiring moved to ``api.factory``.
@@ -276,102 +283,6 @@ _LEGACY_ALIASES: dict[str, list[str]] = {
 _LOGGER = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True, slots=True)
-class _AgentRunPreparation:
-    """Resolved context shared by one native agent-run response."""
-
-    tool_name: str
-    owner: str
-    request_info: RunRequestInfo
-    resolve_meta: dict[str, Any]
-
-
-@dataclass(frozen=True, slots=True)
-class _AgentRunPreflight:
-    """Synchronous validation and immutable request context for one run."""
-
-    tool_name: str
-    owner: str
-    request_info: RunRequestInfo
-
-
-def _project_submission_warnings(raw: Any) -> list[dict[str, Any]]:
-    """Project safe remote-submission warnings into HTTP execution state."""
-    if not isinstance(raw, Mapping):
-        return []
-    return _project_warnings(raw.get("submission_warnings"))
-
-
-def _preflight_agent_run(
-    *,
-    agent: str,
-    arguments: dict[str, Any],
-    dialogue_id: str | None,
-    request_json: str | None,
-) -> _AgentRunPreflight:
-    """Validate structural inputs and capture request context
-    before dispatch."""
-    tool_name = _AGENT_SLUG_TO_TOOL.get(agent)
-    if tool_name is None:
-        raise HTTPException(
-            status_code=404, detail=f"agent not found: {agent}"
-        )
-    if agent in _BACKGROUND_SUBMISSION_AGENT_SLUGS:
-        validation_arguments = deepcopy(arguments)
-        if agent == "design" and validation_arguments.get("resolve_gene_id"):
-            validation_arguments.setdefault("species_code", "ath")
-            validation_arguments.setdefault("gene_id", "AT1G01010")
-        elif agent == "network" and validation_arguments.get("resolve_to_id"):
-            validation_arguments.setdefault("species_code", "osa")
-            validation_arguments.setdefault("to_id", "TO:0000001")
-        validate_tool_arguments(tool_name, validation_arguments)
-    owner = current_request_user() or "anonymous"
-    validate_native_attachments(
-        agent,
-        arguments,
-        owner=owner,
-        db_path=resolve_tasks_db_path(),
-    )
-    return _AgentRunPreflight(
-        tool_name=tool_name,
-        owner=owner,
-        request_info=RunRequestInfo(
-            dialogue_id=dialogue_id,
-            request_id=current_request_id(),
-            query=_request_info_query(arguments, request_json),
-            tool_name=tool_name,
-            model=None,
-            request_json=request_json,
-            locale=current_effective_locale(),
-        ),
-    )
-
-
-async def _prepare_agent_run(
-    *,
-    agent: str,
-    arguments: dict[str, Any],
-    preflight: _AgentRunPreflight,
-) -> _AgentRunPreparation:
-    """Resolve semantic arguments after structural preflight."""
-    resolve_meta = await apply_runs_resolver(
-        agent,
-        arguments,
-        dispatch=ResolverDispatch(
-            brief_gene_resolver=resolve_brief_gene_user_query,
-            deep_genome_resolver=resolve_deep_genome_user_query,
-            design_resolver=resolve_design_user_query,
-            network_resolver=resolve_network_user_query,
-        ),
-    )
-    return _AgentRunPreparation(
-        tool_name=preflight.tool_name,
-        owner=preflight.owner,
-        request_info=preflight.request_info,
-        resolve_meta=resolve_meta,
-    )
-
-
 def _routing_contract_error() -> SafeApiError:
     """Return one sanitized Expert routing contract failure."""
     return expert_safe_error(
@@ -380,308 +291,6 @@ def _routing_contract_error() -> SafeApiError:
         locale=current_effective_locale(),
         stage="routing",
         retryable=False,
-    )
-
-
-def _request_info_query(
-    arguments: Mapping[str, Any], request_json: str | None
-) -> str | None:
-    """Resolve the original query without trusting selected arguments."""
-    value = arguments.get("user_query")
-    if isinstance(value, str):
-        return value
-    try:
-        value = json.loads(request_json or "{}").get("user_query")
-    except (AttributeError, TypeError, ValueError):
-        return None
-    return value if isinstance(value, str) else None
-
-
-def _format_agent_run_result(
-    envelope: Any,
-    *,
-    resolve_meta: dict[str, Any],
-    debug: bool,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Build raw and default-projected result blocks from one envelope."""
-    formatted_dict = asdict(envelope.formatted)
-    if resolve_meta:
-        existing_meta = formatted_dict.get("metadata") or {}
-        if not isinstance(existing_meta, dict):
-            existing_meta = {}
-        formatted_dict["metadata"] = {**existing_meta, **resolve_meta}
-    execution = getattr(envelope, "execution", None)
-    if execution is None:
-        # Keep compatibility for narrow adapters that still provide the
-        # historical two-field envelope during the migration.
-        execution_dict: dict[str, Any] = {
-            "warnings": _project_submission_warnings(envelope.raw),
-        }
-    else:
-        execution_dict = asdict(execution)
-    result = {
-        "formatted": formatted_dict,
-        "execution": execution_dict,
-        "raw": envelope.raw,
-    }
-    response_result = result if debug else strip_agent_result(result)
-    return result, response_result
-
-
-async def _execute_background_agent_run(
-    *,
-    agent: str,
-    arguments: dict[str, Any],
-    preflight: _AgentRunPreflight,
-    debug: bool,
-) -> BackgroundSubmissionOutcome:
-    """Resolve, invoke, and project one already-reserved background run."""
-    prepared = await _prepare_agent_run(
-        agent=agent,
-        arguments=arguments,
-        preflight=preflight,
-    )
-    envelope = await invoke_tool_enveloped(prepared.tool_name, arguments)
-    result, _response_result = _format_agent_run_result(
-        envelope,
-        resolve_meta=prepared.resolve_meta,
-        debug=debug,
-    )
-    return BackgroundSubmissionOutcome(
-        accepted_task_ids=current_accepted_task_ids(),
-        # The detached worker persists this projection.  Debug is a public
-        # response option, never an authorization to retain raw agent output.
-        result=strip_agent_result(result),
-        degraded=current_recorder_degraded(),
-    )
-
-
-def _background_agent_run_response(
-    *,
-    agent: str,
-    arguments: dict[str, Any],
-    preflight: _AgentRunPreflight,
-    debug: bool,
-) -> tuple[dict[str, Any], int]:
-    """Reserve and launch one background run before returning 202."""
-    db_path = resolve_tasks_db_path()
-    worker_arguments = deepcopy(arguments)
-    reservation = reserve_background_submission(
-        agent=agent,
-        owner=preflight.owner,
-        request_info=preflight.request_info,
-        db_path=db_path,
-    )
-    launch_background_submission(
-        reservation,
-        lambda: _execute_background_agent_run(
-            agent=agent,
-            arguments=worker_arguments,
-            preflight=preflight,
-            debug=debug,
-        ),
-        db_path=db_path,
-    )
-    body = build_agent_run_response(
-        run_id=reservation.run_id,
-        agent=agent,
-        status="running",
-        task_ids=[],
-        result=empty_agent_result(),
-        persisted=True,
-        degraded_tracking=False,
-    )
-    return body, 202
-
-
-def _remote_agent_run_response(
-    *,
-    agent: str,
-    owner: str,
-    request_info: RunRequestInfo,
-    response_result: dict[str, Any],
-) -> tuple[dict[str, Any], int]:
-    """Shape the 202 submission response and expose tracking degradation."""
-    resolved = _resolve_remote_run(owner)
-    _stamp_remote_request_info(
-        run_id=resolved.run_id, owner=owner, request_info=request_info
-    )
-    result = (
-        empty_agent_result(degraded=True)
-        if resolved.degraded_tracking
-        else response_result
-    )
-    body = build_agent_run_response(
-        run_id=resolved.run_id,
-        agent=agent,
-        status="running",
-        task_ids=resolved.task_ids,
-        result=result,
-        persisted=resolved.persisted,
-        degraded_tracking=resolved.degraded_tracking,
-    )
-    return body, 202
-
-
-async def _sync_agent_run_response(
-    *,
-    agent: str,
-    owner: str,
-    request_info: RunRequestInfo,
-    result: dict[str, Any],
-    response_result: dict[str, Any],
-) -> tuple[dict[str, Any], int]:
-    """Persist and shape a terminal synchronous agent response."""
-    try:
-        persistence_context = (
-            trace_data_stage(
-                DataStage.RUN_PERSIST,
-                dependency="run_registry",
-            )
-            if agent == "data"
-            else nullcontext()
-        )
-        async with persistence_context:
-            run_id = _record_sync_run(
-                agent=agent,
-                owner=owner,
-                result=result,
-                request_info=request_info,
-            )
-    except run_lifecycle.RunPersistenceError as exc:
-        raise SafeApiError(
-            status_code=500,
-            code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
-            message="The completed run could not be persisted.",
-            stage="run_persist",
-            retryable=False,
-        ) from exc
-    canonical = canonicalize_agent_run_body(
-        {
-            "id": run_id,
-            "object": "agent.run",
-            "agent": agent,
-            "status": "succeeded",
-            "task_ids": [],
-            "result": response_result,
-        }
-    )
-    body = build_agent_run_response(
-        run_id=run_id,
-        agent=agent,
-        status="succeeded",
-        task_ids=(),
-        result=canonical["result"],
-        persisted=True,
-        degraded_tracking=canonical.get("degraded_tracking") is True,
-    )
-    return body, 200
-
-
-async def _invoke_agent_run(
-    *,
-    agent: str,
-    arguments: dict[str, Any],
-    conversation_messages: tuple[dict[str, str], ...] = (),
-    agent_thread_id: str | None = None,
-    private_agent_state: Mapping[str, Any] | None = None,
-    dialogue_id: str | None = None,
-    request_json: str | None = None,
-    debug: bool = False,
-) -> tuple[dict[str, Any], int]:
-    """Dispatch one native run through the shared lifecycle contract."""
-    preflight = _preflight_agent_run(
-        agent=agent,
-        arguments=arguments,
-        dialogue_id=dialogue_id,
-        request_json=request_json,
-    )
-    if agent in _BACKGROUND_SUBMISSION_AGENT_SLUGS:
-        try:
-            return _background_agent_run_response(
-                agent=agent,
-                arguments=arguments,
-                preflight=preflight,
-                debug=debug,
-            )
-        except BackgroundSubmissionLaunchError as exc:
-            raise SafeApiError(
-                status_code=500,
-                code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
-                message="The background run could not be started.",
-                stage="submission_start",
-                retryable=False,
-            ) from exc
-    prepared = await _prepare_agent_run(
-        agent=agent,
-        arguments=arguments,
-        preflight=preflight,
-    )
-    context_review = (
-        isinstance(private_agent_state, Mapping)
-        and private_agent_state.get("review_adapter") is not None
-    )
-    if agent == "review" and not context_review:
-        execution = await _run_review_with_interrupt(
-            arguments=arguments,
-            request_info=prepared.request_info,
-        )
-        return _review_run_body(execution, debug=debug), 200
-    try:
-        envelope = await invoke_tool_enveloped(
-            prepared.tool_name,
-            arguments,
-            conversation_messages=conversation_messages,
-            agent_thread_id=agent_thread_id,
-            private_agent_state=private_agent_state,
-        )
-        format_context = (
-            trace_data_stage(
-                DataStage.RESULT_FORMAT,
-                dependency="formatter",
-            )
-            if agent == "data"
-            else nullcontext()
-        )
-        async with format_context:
-            result, response_result = _format_agent_run_result(
-                envelope,
-                resolve_meta=prepared.resolve_meta,
-                debug=debug,
-            )
-        if agent in _REMOTE_AGENT_SLUGS:
-            return _remote_agent_run_response(
-                agent=agent,
-                owner=prepared.owner,
-                request_info=prepared.request_info,
-                response_result=response_result,
-            )
-        return await _sync_agent_run_response(
-            agent=agent,
-            owner=prepared.owner,
-            request_info=prepared.request_info,
-            result=result,
-            response_result=response_result,
-        )
-    except SafeApiError:
-        raise
-    except Exception as exc:
-        safe_error = (
-            _factory.project_data_stage_error(exc) if agent == "data" else None
-        )
-        if safe_error is None:
-            raise
-        raise safe_error from exc
-
-
-def _resolve_remote_run(owner: str) -> run_lifecycle.ResolvedRemoteRun:
-    """Compatibility seam for remote-run context recovery."""
-    return run_lifecycle.resolve_remote_run(
-        owner,
-        run_id=current_run_id(),
-        accepted_task_ids=current_accepted_task_ids(),
-        recorder_degraded=current_recorder_degraded(),
-        db_path=resolve_tasks_db_path(),
     )
 
 
