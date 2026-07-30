@@ -1256,7 +1256,75 @@ async def _load_restored_candidate_checkpoint(
     return _RestoredReviewCheckpoint(state, snapshot, document)
 
 
-class ReviewConversationAdapter:
+class _ReviewAdapterProperties:
+    """Expose stable read-only Review state independently of orchestration."""
+
+    _prepared: _PreparedReviewTurn | None
+    _active_snapshot: ReviewCheckpointSnapshot | None
+    _staged_snapshot: ReviewCheckpointSnapshot | None
+    _report_revision: int
+    _stable_thread_id: str | None
+    _candidate_thread_id: str | None
+    _execution_thread_id: str | None
+    _operation_successful: bool
+    _agent: Any | None
+
+    @property
+    def operation(self) -> ReviewConversationOperation | None:
+        """Return the prepared private operation, if any."""
+        return self._prepared.operation if self._prepared else None
+
+    @property
+    def snapshot(self) -> ReviewCheckpointSnapshot | None:
+        """Return the bounded checkpoint snapshot used for this turn."""
+        return self._prepared.snapshot if self._prepared else None
+
+    @property
+    def active_snapshot(self) -> ReviewCheckpointSnapshot | None:
+        """Return the last committed snapshot, excluding staged changes."""
+        return self._active_snapshot
+
+    @property
+    def staged_snapshot(self) -> ReviewCheckpointSnapshot | None:
+        """Return a candidate snapshot pending successful settlement."""
+        return self._staged_snapshot
+
+    @property
+    def report_revision(self) -> int:
+        """Return the last settled report artifact revision."""
+        return self._report_revision
+
+    @property
+    def stable_thread_id(self) -> str | None:
+        """Return the active Review checkpoint thread."""
+        return self._stable_thread_id
+
+    @property
+    def candidate_thread_id(self) -> str | None:
+        """Return the isolated checkpoint thread pending acknowledgement."""
+        return self._candidate_thread_id
+
+    @property
+    def execution_thread_id(self) -> str | None:
+        """Return the thread on which this turn may execute its graph."""
+        return self._execution_thread_id
+
+    @property
+    def settlement_ready(self) -> bool:
+        """Return whether this turn produced a candidate for settlement."""
+        if self._prepared is not None and self._prepared.operation in {
+            ReviewConversationOperation.NEW_REVIEW,
+            ReviewConversationOperation.SCOPE_CHANGE,
+        }:
+            return (
+                self._operation_successful
+                and self.candidate_thread_id is not None
+                and self._agent is not None
+            )
+        return self._operation_successful
+
+
+class ReviewConversationAdapter(_ReviewAdapterProperties):
     """Prepare bounded Review turns and produce bounded context deltas."""
 
     def __init__(self) -> None:
@@ -1421,60 +1489,6 @@ class ReviewConversationAdapter:
         if ordered:
             self._ordered_doc_list = ordered
         return prepared
-
-    @property
-    def operation(self) -> ReviewConversationOperation | None:
-        """Return the prepared private operation, if any."""
-        return self._prepared.operation if self._prepared else None
-
-    @property
-    def snapshot(self) -> ReviewCheckpointSnapshot | None:
-        """Return the bounded checkpoint snapshot used for this turn."""
-        return self._prepared.snapshot if self._prepared else None
-
-    @property
-    def active_snapshot(self) -> ReviewCheckpointSnapshot | None:
-        """Return the last committed snapshot, excluding staged changes."""
-        return self._active_snapshot
-
-    @property
-    def staged_snapshot(self) -> ReviewCheckpointSnapshot | None:
-        """Return a candidate snapshot pending successful settlement."""
-        return self._staged_snapshot
-
-    @property
-    def report_revision(self) -> int:
-        """Return the last settled report artifact revision."""
-        return self._report_revision
-
-    @property
-    def stable_thread_id(self) -> str | None:
-        """Return the active Review checkpoint thread."""
-        return self._stable_thread_id
-
-    @property
-    def candidate_thread_id(self) -> str | None:
-        """Return the isolated checkpoint thread pending acknowledgement."""
-        return self._candidate_thread_id
-
-    @property
-    def execution_thread_id(self) -> str | None:
-        """Return the thread on which this turn may execute its graph."""
-        return self._execution_thread_id
-
-    @property
-    def settlement_ready(self) -> bool:
-        """Return whether this turn produced a candidate for settlement."""
-        if self._prepared is not None and self._prepared.operation in {
-            ReviewConversationOperation.NEW_REVIEW,
-            ReviewConversationOperation.SCOPE_CHANGE,
-        }:
-            return (
-                self._operation_successful
-                and self.candidate_thread_id is not None
-                and self._agent is not None
-            )
-        return self._operation_successful
 
     def settlement_metadata(self) -> dict[str, Any] | None:
         """Return bounded private metadata persisted with one staged turn."""
