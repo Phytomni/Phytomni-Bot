@@ -1266,6 +1266,39 @@ class ConversationContextStore:
                 )
             )
 
+    def _reserve_row_failure(
+        self, request: _ReviewClaimLookupRequest
+    ) -> ReviewSettlementClaim | None:
+        """Return the first row precondition failure for reservation."""
+        context = request.connection.execute(
+            "SELECT context_version, state FROM conversation_contexts "
+            "WHERE conversation_key = ?",
+            (request.key,),
+        ).fetchone()
+        if context is not None and context[1] == "tombstoned":
+            return ReviewSettlementClaim("conflict")
+        if request.row[0] != "staged":
+            if request.row[0] == "committed":
+                record = self._review_record(request.row[3])
+                if (
+                    record is not None
+                    and record[1].get("settlement_state") == "promoted"
+                ):
+                    return ReviewSettlementClaim("promoted")
+            return ReviewSettlementClaim("conflict")
+        if (
+            request.expected_ledger_version is not None
+            and request.row[1] != request.expected_ledger_version
+        ) or (
+            request.expected_base_context_version is not None
+            and request.row[2] != request.expected_base_context_version
+        ):
+            return ReviewSettlementClaim("conflict")
+        current_version = 0 if context is None else context[0]
+        if current_version != request.row[2]:
+            return ReviewSettlementClaim("conflict")
+        return None
+
     def reserve_review_settlement(
         self,
         key: str,
@@ -1297,33 +1330,17 @@ class ConversationContextStore:
             ).fetchone()
             if row is None:
                 return ReviewSettlementClaim("missing")
-            context = connection.execute(
-                "SELECT context_version, state FROM conversation_contexts "
-                "WHERE conversation_key = ?",
-                (key,),
-            ).fetchone()
-            if context is not None and context[1] == "tombstoned":
-                return ReviewSettlementClaim("conflict")
-            if row[0] != "staged":
-                if row[0] == "committed":
-                    record = self._review_record(row[3])
-                    if (
-                        record is not None
-                        and record[1].get("settlement_state") == "promoted"
-                    ):
-                        return ReviewSettlementClaim("promoted")
-                return ReviewSettlementClaim("conflict")
-            if (
-                expected_ledger_version is not None
-                and row[1] != expected_ledger_version
-            ) or (
-                expected_base_context_version is not None
-                and row[2] != expected_base_context_version
-            ):
-                return ReviewSettlementClaim("conflict")
-            current_version = 0 if context is None else context[0]
-            if current_version != row[2]:
-                return ReviewSettlementClaim("conflict")
+            failure = self._reserve_row_failure(
+                _ReviewClaimLookupRequest(
+                    connection=connection,
+                    key=key,
+                    row=row,
+                    expected_ledger_version=expected_ledger_version,
+                    expected_base_context_version=expected_base_context_version,
+                )
+            )
+            if failure is not None:
+                return failure
             record = self._review_record(row[3])
             if record is None:
                 return ReviewSettlementClaim("invalid")
