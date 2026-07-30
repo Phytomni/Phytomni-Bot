@@ -402,6 +402,41 @@ def _sections_from_report_document(
     return tuple(item for item in sections if item.text or item.heading)
 
 
+def _section_from_report_row(
+    row: object,
+    index: int,
+    dimensions: tuple[str, ...],
+    used_ids: set[str],
+) -> ReviewSection | None:
+    """Convert one legacy report row into a bounded uniquely named section."""
+    if isinstance(row, Mapping):
+        heading_value = (
+            row.get("subtopic") or row.get("heading") or row.get("title")
+        )
+        text_value = (
+            row.get("revised_report")
+            or row.get("text")
+            or row.get("content")
+        )
+    else:
+        heading_value = None
+        text_value = row
+    heading = _bounded_text(
+        heading_value
+        or (dimensions[index] if index < len(dimensions) else ""),
+        256,
+    )
+    text = _bounded_text(text_value, _MAX_SECTION_CHARS)
+    if not heading and not text:
+        return None
+    heading = heading or f"Section {index + 1}"
+    section_id = _slug(heading) or f"section-{index + 1}"
+    if section_id in used_ids:
+        section_id = f"{section_id}-{index + 1}"
+    used_ids.add(section_id)
+    return ReviewSection(section_id, heading, text)
+
+
 def _section_values(state: Mapping[str, Any]) -> tuple[ReviewSection, ...]:
     """Extract section text from revised reports without the full summary."""
     dimensions = _bounded_items(
@@ -435,32 +470,12 @@ def _section_values(state: Mapping[str, Any]) -> tuple[ReviewSection, ...]:
     count = max(len(dimensions), len(report_rows))
     for index in range(count):
         row = report_rows[index] if index < len(report_rows) else {}
-        if isinstance(row, Mapping):
-            heading_value = (
-                row.get("subtopic") or row.get("heading") or row.get("title")
-            )
-            text_value = (
-                row.get("revised_report")
-                or row.get("text")
-                or row.get("content")
-            )
-        else:
-            heading_value = None
-            text_value = row
-        heading = _bounded_text(
-            heading_value
-            or (dimensions[index] if index < len(dimensions) else ""),
-            256,
+        section = _section_from_report_row(
+            row, index, dimensions, used_ids
         )
-        text = _bounded_text(text_value, _MAX_SECTION_CHARS)
-        if not heading and not text:
+        if section is None:
             continue
-        heading = heading or f"Section {index + 1}"
-        section_id = _slug(heading) or f"section-{index + 1}"
-        if section_id in used_ids:
-            section_id = f"{section_id}-{index + 1}"
-        used_ids.add(section_id)
-        sections.append(ReviewSection(section_id, heading, text))
+        sections.append(section)
     return tuple(sections[:_MAX_HEADINGS])
 
 
