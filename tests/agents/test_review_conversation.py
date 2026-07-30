@@ -13,6 +13,7 @@ import sqlite3
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, fields
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
@@ -105,11 +106,121 @@ def _projection(query: str, *, active: bool = True) -> ContextProjection:
     )
 
 
+def _agent_with_app(app: Any) -> SimpleNamespace:
+    """Return a lightweight agent double exposing the supplied graph app."""
+    return SimpleNamespace(app=app)
+
+
+def _attach_agent(adapter: ReviewConversationAdapter, agent: Any) -> None:
+    """Attach a graph double through the compatibility facade seam."""
+    getattr(adapter, "attach_agent")(agent)
+
+
+def _stateful_review_agent(
+    stable_state: Mapping[str, Any],
+    candidate_state: Mapping[str, Any] | None = None,
+    *,
+    record_update_values: bool = True,
+) -> SimpleNamespace:
+    """Build a graph double with durable state and promotion seams.
+
+    The returned namespace mirrors the small subset of a Review agent used by
+    restart, promotion, and candidate-cleanup tests.  Keeping the closures in
+    one helper avoids inflating each test's local-variable complexity while
+    preserving the same mutable state and call recording.
+    """
+    states: dict[str, dict[str, Any]] = {_THREAD_ID: dict(stable_state)}
+    updates: list[Any] = []
+    deleted: list[str] = []
+    graph_threads: list[str | None] = []
+
+    async def aget_state(config: dict[str, Any]) -> dict[str, Any]:
+        """Read stable or candidate state for the current graph thread."""
+        thread_id = config["configurable"]["thread_id"]
+        return states.get(thread_id, {})
+
+    async def aupdate_state(
+        config: dict[str, Any], *, values: dict[str, Any]
+    ) -> None:
+        """Record and apply a durable promotion update."""
+        await asyncio.sleep(0)
+        thread_id = config["configurable"]["thread_id"]
+        if record_update_values:
+            updates.append((thread_id, values))
+        else:
+            updates.append(thread_id)
+        states.setdefault(thread_id, {}).update(values)
+
+    async def adelete_thread(thread_id: str) -> None:
+        """Record candidate cleanup and remove its transient state."""
+        deleted.append(thread_id)
+        states.pop(thread_id, None)
+
+    async def arun(**kwargs: Any) -> dict[str, Any]:
+        """Write candidate state and return a bounded public answer."""
+        if candidate_state is None:
+            raise AssertionError("this graph double does not run a candidate")
+        thread_id = kwargs["thread_id"]
+        graph_threads.append(thread_id)
+        states[thread_id] = dict(candidate_state)
+        return {
+            "choices": [{"message": {"content": "Current public answer."}}],
+            "phytomni_state": candidate_state,
+        }
+
+    return SimpleNamespace(
+        app=SimpleNamespace(
+            states=states,
+            updates=updates,
+            deleted=deleted,
+            aget_state=aget_state,
+            aupdate_state=aupdate_state,
+            adelete_thread=adelete_thread,
+        ),
+        graph_threads=graph_threads,
+        arun=arun,
+    )
+
+
+def _seed_review_settlement(
+    tmp_path: Any,
+    turn_id: str,
+) -> tuple[str, ConversationContextStore, dict[str, Any]]:
+    """Create the minimal staged Review turn used by claim tests."""
+    prepared = ReviewConversationAdapter()
+    prepared.prepare(
+        _projection("Review maize heat tolerance", active=False),
+        turn_id=turn_id,
+    )
+    _attach_agent(prepared, object())
+    metadata = prepared.settlement_metadata()
+    assert metadata is not None
+    key = str(_CONVERSATION_KEY)
+    store = ConversationContextStore(str(tmp_path / "context.sqlite"))
+    store.begin_turn(key, turn_id, "append", 0)
+    store.stage_turn(
+        key,
+        turn_id,
+        StagedTurn(
+            operation="append",
+            base_context_version=0,
+            selected_agent_id="ReviewAgent",
+            route_source="explicit_selection",
+            result={"choices": [{"message": {"content": "answer"}}]},
+            delta={},
+            ledger_version="a" * 64,
+            schema_version=1,
+            ledger_cursor=1,
+            observed_mode="expert",
+            stage_metadata={"_review_settlement": metadata},
+        ),
+    )
+    return key, store, metadata
+
+
 def test_legacy_review_adapter_pickle_loads_after_facade_split() -> None:
     """Load a pre-split adapter pickle through the compatibility facade."""
-    restored = pickle.loads(
-        base64.b64decode(_LEGACY_REVIEW_ADAPTER_PICKLE)
-    )
+    restored = pickle.loads(base64.b64decode(_LEGACY_REVIEW_ADAPTER_PICKLE))
 
     assert isinstance(restored, ReviewConversationAdapter)
     assert restored.operation is ReviewConversationOperation.FOLLOW_UP
@@ -528,13 +639,11 @@ def test_prepare_requires_turn_id_for_every_review_operation(
 async def test_prepare_from_agent_rejects_stale_snapshot() -> None:
     """A request-local checkpoint never substitutes for the stable thread."""
 
-    class EmptyApp:
-        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
-            return {}
+    async def aget_state(_config: dict[str, Any]) -> dict[str, Any]:
+        """Return no checkpoint for the stale-snapshot probe."""
+        return {}
 
-    class EmptyAgent:
-        def __init__(self) -> None:
-            self.app = EmptyApp()
+    empty_agent = _agent_with_app(SimpleNamespace(aget_state=aget_state))
 
     projection = _projection("What evidence supports that claim?")
     adapter = ReviewConversationAdapter()
@@ -545,7 +654,7 @@ async def test_prepare_from_agent_rejects_stale_snapshot() -> None:
     with pytest.raises(ReviewClarificationError, match="checkpoint"):
         await adapter.prepare_from_agent(
             projection,
-            EmptyAgent(),
+            empty_agent,
             _THREAD_ID,
             turn_id="stale-stable",
         )
@@ -555,20 +664,18 @@ async def test_prepare_from_agent_rejects_stale_snapshot() -> None:
 async def test_prepare_from_agent_does_not_reuse_a_prior_turn_id() -> None:
     """A missing current envelope identity cannot run a new Review graph."""
 
-    class EmptyApp:
-        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
-            return {}
+    async def aget_state(_config: dict[str, Any]) -> dict[str, Any]:
+        """Return no checkpoint for the stale-turn probe."""
+        return {}
 
-    class EmptyAgent:
-        def __init__(self) -> None:
-            self.app = EmptyApp()
+    empty_agent = _agent_with_app(SimpleNamespace(aget_state=aget_state))
 
     projection = _projection("Review maize heat tolerance", active=False)
     adapter = ReviewConversationAdapter()
     adapter.prepare(projection, turn_id="stale-turn")
 
     with pytest.raises(ReviewClarificationError, match="turn id"):
-        await adapter.prepare_from_agent(projection, EmptyAgent(), _THREAD_ID)
+        await adapter.prepare_from_agent(projection, empty_agent, _THREAD_ID)
 
 
 @pytest.mark.asyncio
@@ -587,22 +694,20 @@ async def test_prepare_from_agent_requires_turn_id_before_checkpoint_read(
     """Every context operation fails before reading without turn identity."""
     reads = 0
 
-    class EmptyApp:
-        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
-            nonlocal reads
-            reads += 1
-            return _checkpoint_state()
+    async def aget_state(_config: dict[str, Any]) -> dict[str, Any]:
+        """Record an attempted checkpoint read and return the fixture state."""
+        nonlocal reads
+        reads += 1
+        return _checkpoint_state()
 
-    class EmptyAgent:
-        def __init__(self) -> None:
-            self.app = EmptyApp()
+    empty_agent = _agent_with_app(SimpleNamespace(aget_state=aget_state))
 
     projection = _projection(
         query, active=query != "Review maize heat tolerance"
     )
     with pytest.raises(ReviewClarificationError, match="turn id"):
         await ReviewConversationAdapter().prepare_from_agent(
-            projection, EmptyAgent(), _THREAD_ID
+            projection, empty_agent, _THREAD_ID
         )
     assert reads == 0
 
@@ -611,18 +716,16 @@ async def test_prepare_from_agent_requires_turn_id_before_checkpoint_read(
 async def test_missing_candidate_fails_readiness_before_settlement() -> None:
     """A successful public answer cannot stage without a durable candidate."""
 
-    class EmptyApp:
-        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
-            return {}
+    async def aget_state(_config: dict[str, Any]) -> dict[str, Any]:
+        """Return no candidate checkpoint for the readiness probe."""
+        return {}
 
-    class EmptyAgent:
-        def __init__(self) -> None:
-            self.app = EmptyApp()
+    empty_agent = _agent_with_app(SimpleNamespace(aget_state=aget_state))
 
     projection = _projection("Review maize heat tolerance", active=False)
     adapter = ReviewConversationAdapter()
     await adapter.prepare_from_agent(
-        projection, EmptyAgent(), _THREAD_ID, turn_id="10"
+        projection, empty_agent, _THREAD_ID, turn_id="10"
     )
     adapter.capture_result(
         {"choices": [{"message": {"content": "Current answer."}}]}
@@ -676,22 +779,18 @@ async def test_restore_settlement_rejects_malformed_metadata(
     """Restart reconstruction rejects malformed private metadata."""
     reads = 0
 
-    class NoReadApp:
-        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
-            nonlocal reads
-            reads += 1
-            raise AssertionError(
-                "malformed metadata must not read a checkpoint"
-            )
+    async def aget_state(_config: dict[str, Any]) -> dict[str, Any]:
+        """Fail if malformed metadata reaches the checkpoint reader."""
+        nonlocal reads
+        reads += 1
+        raise AssertionError("malformed metadata must not read a checkpoint")
 
-    class Agent:
-        def __init__(self) -> None:
-            self.app = NoReadApp()
+    agent = _agent_with_app(SimpleNamespace(aget_state=aget_state))
 
     with pytest.raises(ReviewClarificationError, match=message):
         await ReviewConversationAdapter().restore_settlement(
             metadata,
-            Agent(),
+            agent,
             {"choices": [{"message": {"content": "Current answer."}}]},
         )
     assert reads == 0
@@ -701,15 +800,13 @@ async def test_restore_settlement_rejects_malformed_metadata(
 async def test_restore_settlement_requires_a_ready_candidate_report() -> None:
     """A durable candidate without a current report cannot be promoted."""
 
-    class App:
-        async def aget_state(self, config: dict[str, Any]) -> dict[str, Any]:
-            if config["configurable"]["thread_id"] == _THREAD_ID:
-                return _checkpoint_state()
-            return {"original_user_query": "Review candidate"}
+    async def aget_state(config: dict[str, Any]) -> dict[str, Any]:
+        """Return the stable snapshot and an incomplete candidate state."""
+        if config["configurable"]["thread_id"] == _THREAD_ID:
+            return _checkpoint_state()
+        return {"original_user_query": "Review candidate"}
 
-    class Agent:
-        def __init__(self) -> None:
-            self.app = App()
+    agent = _agent_with_app(SimpleNamespace(aget_state=aget_state))
 
     candidate = f"{_THREAD_ID}:candidate"
     with pytest.raises(ReviewClarificationError, match="candidate checkpoint"):
@@ -723,7 +820,7 @@ async def test_restore_settlement_requires_a_ready_candidate_report() -> None:
                 "report_revision": 4,
                 "settlement_state": "pending",
             },
-            Agent(),
+            agent,
             {"choices": [{"message": {"content": "Current answer."}}]},
         )
 
@@ -734,16 +831,14 @@ async def test_restore_settlement_requires_the_active_report_document() -> (
 ):
     """A follow-up cannot be reconstructed from a semantic snapshot alone."""
 
-    class App:
-        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
-            return {
-                "original_user_query": "Review drought tolerance in rice",
-                "research_dimensions": ["Evidence"],
-            }
+    async def aget_state(_config: dict[str, Any]) -> dict[str, Any]:
+        """Return a semantic snapshot without the required report document."""
+        return {
+            "original_user_query": "Review drought tolerance in rice",
+            "research_dimensions": ["Evidence"],
+        }
 
-    class Agent:
-        def __init__(self) -> None:
-            self.app = App()
+    agent = _agent_with_app(SimpleNamespace(aget_state=aget_state))
 
     with pytest.raises(ReviewClarificationError, match="report document"):
         await ReviewConversationAdapter().restore_settlement(
@@ -756,7 +851,7 @@ async def test_restore_settlement_requires_the_active_report_document() -> (
                 "report_revision": 4,
                 "settlement_state": "pending",
             },
-            Agent(),
+            agent,
             {"choices": [{"message": {"content": "Current answer."}}]},
         )
 
@@ -775,31 +870,12 @@ async def test_review_ack_reconstructs_from_durable_metadata_after_restart(
         "report_revision": 4,
     }
 
-    class FakeApp:
-        def __init__(self) -> None:
-            self.states = {
-                _THREAD_ID: dict(stable_state),
-            }
-            self.updates: list[str] = []
-
-        async def aget_state(self, config: dict[str, Any]) -> dict[str, Any]:
-            return self.states.get(config["configurable"]["thread_id"], {})
-
-        async def aupdate_state(
-            self, config: dict[str, Any], *, values: dict[str, Any]
-        ) -> None:
-            await asyncio.sleep(0)
-            thread_id = config["configurable"]["thread_id"]
-            self.updates.append(thread_id)
-            self.states.setdefault(thread_id, {}).update(values)
-
-    class FakeAgent:
-        def __init__(self) -> None:
-            self.app = FakeApp()
-
-    agent = FakeAgent()
+    agent = _stateful_review_agent(
+        stable_state,
+        record_update_values=False,
+    )
     prepared = ReviewConversationAdapter()
-    prepared.attach_agent(agent)
+    _attach_agent(prepared, agent)
     prepared.prepare(
         _projection("Review maize heat tolerance", active=False), turn_id="10"
     )
@@ -906,49 +982,26 @@ async def test_review_ack_claim_serializes_separate_executors(
     tmp_path: Any,
 ) -> None:
     """Separate workers share one durable Review claim boundary."""
-    prepared = ReviewConversationAdapter()
-    prepared.prepare(
-        _projection("Review maize heat tolerance", active=False),
-        turn_id="worker-1",
-    )
-    prepared.attach_agent(object())
-    metadata = prepared.settlement_metadata()
-    assert metadata is not None
-    key = str(_CONVERSATION_KEY)
-    db_path = tmp_path / "context.sqlite"
-    store = ConversationContextStore(str(db_path))
-    store.begin_turn(key, "worker-1", "append", 0)
-    store.stage_turn(
-        key,
-        "worker-1",
-        StagedTurn(
-            operation="append",
-            base_context_version=0,
-            selected_agent_id="ReviewAgent",
-            route_source="explicit_selection",
-            result={"choices": [{"message": {"content": "answer"}}]},
-            delta={},
-            ledger_version="a" * 64,
-            schema_version=1,
-            ledger_cursor=1,
-            observed_mode="expert",
-            stage_metadata={"_review_settlement": metadata},
-        ),
-    )
+    key, store, _metadata = _seed_review_settlement(tmp_path, "worker-1")
     started = asyncio.Event()
     release = asyncio.Event()
     settle_calls = 0
 
     class FakeAdapter:
+        """Adapter double that blocks one settlement until released."""
+
         report_revision = 1
 
         def mark_failed(self) -> None:
+            """Keep the failed branch side-effect free for this probe."""
             return None
 
         async def discard_pending_candidate(self) -> None:
+            """Keep candidate cleanup side-effect free for this probe."""
             return None
 
         async def settle_async(self, _success: bool) -> int:
+            """Block promotion so a second executor must wait on the claim."""
             nonlocal settle_calls
             settle_calls += 1
             started.set()
@@ -962,7 +1015,7 @@ async def test_review_ack_claim_serializes_separate_executors(
 
     def executor() -> ConversationContextExecutor:
         return ConversationContextExecutor(
-            store_factory=lambda: ConversationContextStore(str(db_path)),
+            store_factory=lambda: ConversationContextStore(store.db_path),
             select_agent=lambda *_args, **_kwargs: pytest.fail(
                 "settlement must not route"
             ),
@@ -1005,7 +1058,7 @@ async def test_review_ack_fence_blocks_promotion_after_tombstone(
         _projection("Review maize heat tolerance", active=False),
         turn_id="fenced-1",
     )
-    prepared.attach_agent(object())
+    _attach_agent(prepared, object())
     metadata = prepared.settlement_metadata()
     assert metadata is not None
     key = str(_CONVERSATION_KEY)
@@ -1034,21 +1087,27 @@ async def test_review_ack_fence_blocks_promotion_after_tombstone(
     settle_calls = 0
 
     class FencedAdapter:
+        """Adapter double that verifies a settlement fence before promotion."""
+
         report_revision = 1
 
         def __init__(self) -> None:
             self._fence: Any = None
 
         def set_settlement_fence(self, fence: Any) -> None:
+            """Store the claim fence installed by the executor."""
             self._fence = fence
 
         def mark_failed(self) -> None:
+            """Keep the failed branch side-effect free for this probe."""
             return None
 
         async def discard_pending_candidate(self) -> None:
+            """Keep candidate cleanup side-effect free for this probe."""
             return None
 
         async def settle_async(self, _success: bool) -> int:
+            """Release the blocked promotion only while its claim is valid."""
             nonlocal settle_calls
             settle_calls += 1
             started.set()
@@ -1101,7 +1160,7 @@ async def test_review_loader_failure_persists_terminal_failed_marker(
         _projection("Review maize heat tolerance", active=False),
         turn_id="loader-failure",
     )
-    prepared.attach_agent(object())
+    _attach_agent(prepared, object())
     metadata = prepared.settlement_metadata()
     assert metadata is not None
     key = str(_CONVERSATION_KEY)
@@ -1218,13 +1277,13 @@ async def test_load_review_checkpoint_uses_the_derived_thread_id() -> None:
     """Review checkpoint reads stay on the agent-private thread."""
     captured: dict[str, Any] = {}
 
-    class FakeApp:
-        async def aget_state(self, config: dict[str, Any]) -> dict[str, Any]:
-            captured.update(config)
-            return _checkpoint_state()
+    async def aget_state(config: dict[str, Any]) -> dict[str, Any]:
+        """Capture the graph config and return the bounded checkpoint."""
+        captured.update(config)
+        return _checkpoint_state()
 
     snapshot = await load_review_checkpoint(
-        type("FakeAgent", (), {"app": FakeApp()})(),
+        _agent_with_app(SimpleNamespace(aget_state=aget_state)),
         _THREAD_ID,
     )
 
@@ -1244,28 +1303,32 @@ async def test_review_wrapper_answers_follow_up_without_running_the_graph(
     adapter.prepare(projection, snapshot=snapshot, turn_id="follow-up-3")
     captured: dict[str, str] = {}
 
-    class FakeAgent:
-        class FakeApp:
-            async def aget_state(
-                self, _config: dict[str, Any]
-            ) -> dict[str, Any]:
-                return _checkpoint_state()
+    async def aget_state(_config: dict[str, Any]) -> dict[str, Any]:
+        """Return the active checkpoint for the follow-up chat probe."""
+        return _checkpoint_state()
 
-        def __init__(self) -> None:
-            self.app = self.FakeApp()
+    async def _chat(prompt: str) -> dict[str, Any]:
+        """Capture the bounded prompt and return a synthetic answer."""
+        captured["prompt"] = prompt
+        return {"choices": [{"message": {"content": "Bounded answer."}}]}
 
-        async def _chat(self, prompt: str) -> dict[str, Any]:
-            captured["prompt"] = prompt
-            return {"choices": [{"message": {"content": "Bounded answer."}}]}
+    async def chat(prompt: str) -> dict[str, Any]:
+        """Expose the public chat seam used by the follow-up path."""
+        return await _chat(prompt)
 
-        async def chat(self, prompt: str) -> dict[str, Any]:
-            return await self._chat(prompt)
+    async def arun(**_kwargs: Any) -> dict[str, Any]:
+        """Fail if the follow-up path reruns the Review graph."""
+        raise AssertionError("follow-up must not rerun the Review graph")
 
-        async def arun(self, **_kwargs: Any) -> dict[str, Any]:
-            raise AssertionError("follow-up must not rerun the Review graph")
+    fake_agent = SimpleNamespace(
+        app=SimpleNamespace(aget_state=aget_state),
+        _chat=_chat,
+        chat=chat,
+        arun=arun,
+    )
 
     monkeypatch.setattr(
-        review_agent, "get_cached_agent", lambda *_args: FakeAgent()
+        review_agent, "get_cached_agent", lambda *_args: fake_agent
     )
     result = await review_agent.review_agent_function(
         user_query=projection.current_query,
@@ -1288,12 +1351,14 @@ async def test_review_wrapper_marks_clarification_failed(
     adapter = ReviewConversationAdapter()
     adapter.prepare(projection, turn_id="clarification-1")
 
-    class FakeAgent:
-        async def arun(self, **_kwargs: Any) -> dict[str, Any]:
-            raise ReviewClarificationError("graph clarification")
+    async def arun(**_kwargs: Any) -> dict[str, Any]:
+        """Raise the graph clarification used by this failure-path probe."""
+        raise ReviewClarificationError("graph clarification")
+
+    fake_agent = SimpleNamespace(arun=arun)
 
     monkeypatch.setattr(
-        review_agent, "get_cached_agent", lambda *_args: FakeAgent()
+        review_agent, "get_cached_agent", lambda *_args: fake_agent
     )
     result = await review_agent.review_agent_function(
         user_query=projection.current_query,
@@ -1392,13 +1457,15 @@ async def test_review_wrapper_forwards_private_thread_id_without_schema_change(
     """The compatibility wrapper passes stable thread IDs to ``arun``."""
     captured: dict[str, Any] = {}
 
-    class FakeAgent:
-        async def arun(self, **kwargs: Any) -> dict[str, Any]:
-            captured.update(kwargs)
-            return {"ok": True}
+    async def arun(**kwargs: Any) -> dict[str, Any]:
+        """Capture wrapper kwargs and return a successful synthetic result."""
+        captured.update(kwargs)
+        return {"ok": True}
+
+    fake_agent = SimpleNamespace(arun=arun)
 
     monkeypatch.setattr(
-        review_agent, "get_cached_agent", lambda *_args: FakeAgent()
+        review_agent, "get_cached_agent", lambda *_args: fake_agent
     )
     result = await review_agent.review_agent_function(
         user_query="Review drought tolerance in rice",
@@ -1444,23 +1511,25 @@ async def test_executor_defers_review_checkpoint_until_explicit_ack(
         }
     )
 
-    class FakeApp:
-        def __init__(self) -> None:
-            self.updates: list[dict[str, Any]] = []
+    updates: list[dict[str, Any]] = []
 
-        async def aget_state(self, _config: dict[str, Any]) -> dict[str, Any]:
-            return _checkpoint_state()
+    async def aget_state(_config: dict[str, Any]) -> dict[str, Any]:
+        """Return the stable checkpoint used by the Review adapter."""
+        return _checkpoint_state()
 
-        async def aupdate_state(
-            self, _config: dict[str, Any], *, values: dict[str, Any]
-        ) -> None:
-            self.updates.append(values)
+    async def aupdate_state(
+        _config: dict[str, Any], *, values: dict[str, Any]
+    ) -> None:
+        """Record updates while keeping state changes explicit in the test."""
+        updates.append(values)
 
-    class FakeAgent:
-        def __init__(self) -> None:
-            self.app = FakeApp()
-
-    fake_agent = FakeAgent()
+    fake_agent = _agent_with_app(
+        SimpleNamespace(
+            updates=updates,
+            aget_state=aget_state,
+            aupdate_state=aupdate_state,
+        )
+    )
     captured: dict[str, Any] = {}
     store = ConversationContextStore(str(tmp_path / "context.sqlite"))
 
@@ -1512,13 +1581,13 @@ async def test_executor_defers_review_checkpoint_until_explicit_ack(
 
     assert prepared.status is PrepareStatus.RETURN_STAGED
     adapter = captured["adapter"]
-    assert fake_agent.app.updates == []
+    assert not fake_agent.app.updates
     assert adapter.report_revision == 4
     assert (
         await executor.acknowledge_review_settlement(envelope, accepted=False)
         is True
     )
-    assert fake_agent.app.updates == []
+    assert not fake_agent.app.updates
     assert adapter.report_revision == 4
     assert adapter.active_snapshot is not None
     assert (
@@ -1538,7 +1607,7 @@ async def test_executor_defers_review_checkpoint_until_explicit_ack(
     )
     accepted_envelope = envelope.model_copy(update={"turn_id": "2"})
     await executor.defer_review_settlement(accepted_envelope, accepted_adapter)
-    assert fake_agent.app.updates == []
+    assert not fake_agent.app.updates
     assert (
         await executor.acknowledge_review_settlement(
             accepted_envelope, accepted=True
@@ -1592,43 +1661,7 @@ async def test_new_review_promotes_after_ack_and_discards_on_reject(
         "report_revision": 0,
     }
 
-    class FakeApp:
-        def __init__(self) -> None:
-            self.states: dict[str, dict[str, Any]] = {_THREAD_ID: stable_state}
-            self.updates: list[tuple[str, dict[str, Any]]] = []
-            self.deleted: list[str] = []
-
-        async def aget_state(self, config: dict[str, Any]) -> dict[str, Any]:
-            thread_id = config["configurable"]["thread_id"]
-            return self.states.get(thread_id, {})
-
-        async def aupdate_state(
-            self, config: dict[str, Any], *, values: dict[str, Any]
-        ) -> None:
-            thread_id = config["configurable"]["thread_id"]
-            self.updates.append((thread_id, values))
-            self.states.setdefault(thread_id, {}).update(values)
-
-        async def adelete_thread(self, thread_id: str) -> None:
-            self.deleted.append(thread_id)
-            self.states.pop(thread_id, None)
-
-    class FakeAgent:
-        def __init__(self) -> None:
-            self.app = FakeApp()
-            self.graph_threads: list[str | None] = []
-
-        async def arun(self, **kwargs: Any) -> dict[str, Any]:
-            self.graph_threads.append(kwargs["thread_id"])
-            self.app.states[kwargs["thread_id"]] = candidate_state.copy()
-            return {
-                "choices": [
-                    {"message": {"content": "Current public answer."}}
-                ],
-                "phytomni_state": candidate_state,
-            }
-
-    fake_agent = FakeAgent()
+    fake_agent = _stateful_review_agent(stable_state, candidate_state)
     monkeypatch.setattr(
         review_agent, "get_cached_agent", lambda *_args: fake_agent
     )
@@ -1661,7 +1694,7 @@ async def test_new_review_promotes_after_ack_and_discards_on_reject(
         ),
     )
     await executor.defer_review_settlement(envelope, adapter)
-    assert fake_agent.app.updates == []
+    assert not fake_agent.app.updates
     assert fake_agent.app.states[_THREAD_ID] == stable_before_ack
     assert (
         await executor.acknowledge_review_settlement(envelope, accepted=True)
@@ -1718,34 +1751,37 @@ async def test_failed_review_ack_discards_candidate_without_stable_advance(
     }
 
     class FailingApp:
+        """Graph-app double that fails during durable promotion."""
+
         def __init__(self) -> None:
             self.states = {_THREAD_ID: dict(stable_state)}
             self.updates: list[str] = []
             self.deleted: list[str] = []
 
         async def aget_state(self, config: dict[str, Any]) -> dict[str, Any]:
+            """Read stable or candidate state for the failure-path probe."""
             thread_id = config["configurable"]["thread_id"]
             return self.states.get(thread_id, candidate_state)
 
         async def aupdate_state(
             self, config: dict[str, Any], *, values: dict[str, Any]
         ) -> None:
+            """Record the attempted update, then raise the synthetic outage."""
             self.updates.append(config["configurable"]["thread_id"])
+            del values
             raise RuntimeError("ledger acknowledgement lost")
 
         async def adelete_thread(self, thread_id: str) -> None:
+            """Record candidate cleanup requests from the failed ack path."""
             self.deleted.append(thread_id)
-
-    class FailingAgent:
-        def __init__(self) -> None:
-            self.app = FailingApp()
 
     projection = _projection(
         "Start a new review of maize heat tolerance", active=True
     )
     adapter = ReviewConversationAdapter()
     adapter.prepare(projection, turn_id="9")
-    agent = FailingAgent()
+    failing_app = FailingApp()
+    agent = _agent_with_app(failing_app)
     await adapter.prepare_from_agent(
         projection, agent, _THREAD_ID, turn_id="9"
     )
