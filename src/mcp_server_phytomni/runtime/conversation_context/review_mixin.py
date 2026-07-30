@@ -116,7 +116,9 @@ def _write_review_marker(
     _cls,
     request: _ReviewMarkerWriteRequest,
 ) -> bool:
-    delta_json = _with_review_record(request.decoded, request.marker)
+    delta_json = getattr(_cls, "_with_review_record")(
+        request.decoded, request.marker
+    )
     if delta_json is None:
         return False
     request.connection.execute(
@@ -180,15 +182,15 @@ def _bounded_marker_fields(
     _cls, marker: Mapping[str, Any], turn_id: str
 ) -> tuple[str, str] | None:
     """Validate marker fields shared by every Review settlement state."""
-    operation = _marker_operation(marker)
-    stable = _marker_stable_thread_id(marker)
+    operation = getattr(_cls, "_marker_operation")(marker)
+    stable = getattr(_cls, "_marker_stable_thread_id")(marker)
     if operation is None or stable is None:
         return None
     if marker.get("turn_id") != turn_id:
         return None
-    if not _turn_id_is_bounded(turn_id):
+    if not getattr(_cls, "_turn_id_is_bounded")(turn_id):
         return None
-    if not _report_revision_is_bounded(marker):
+    if not getattr(_cls, "_report_revision_is_bounded")(marker):
         return None
     return operation, stable
 
@@ -223,13 +225,13 @@ def _marker_is_bounded(
     _cls, marker: Mapping[str, Any], *, key: str, turn_id: str
 ) -> bool:
     """Reject marker identities that cannot belong to this staged row."""
-    fields = _bounded_marker_fields(_cls, marker, turn_id)
+    fields = getattr(_cls, "_bounded_marker_fields")(marker, turn_id)
     if fields is None:
         return False
     operation, stable = fields
-    return _stable_marker_matches_key(
+    return getattr(_cls, "_stable_marker_matches_key")(
         stable, key
-    ) and _marker_candidate_is_bounded(marker, operation)
+    ) and getattr(_cls, "_marker_candidate_is_bounded")(marker, operation)
 
 
 def _claim_is_expired(
@@ -246,7 +248,9 @@ def _claim_row_failure(
     _self, request: _ReviewClaimLookupRequest
 ) -> ReviewSettlementClaim | None:
     """Return the first durable row precondition failure, if any."""
-    context = _review_context_state(request.connection, request.key)
+    context = getattr(_self, "_review_context_state")(
+        request.connection, request.key
+    )
     failure: ReviewSettlementClaim | None = None
     if context is not None and context[1] == "tombstoned":
         failure = ReviewSettlementClaim("conflict")

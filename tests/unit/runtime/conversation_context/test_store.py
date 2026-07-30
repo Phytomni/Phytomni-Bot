@@ -7,11 +7,13 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Barrier
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -19,6 +21,10 @@ import pytest
 from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
 from mcp_server_phytomni.runtime.conversation_context.projection import (
     agent_thread_id,
+)
+from mcp_server_phytomni.runtime.conversation_context.review_support import (
+    _ReviewClaimLookupRequest,
+    _ReviewMarkerWriteRequest,
 )
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ContextVersionConflictError,
@@ -68,6 +74,116 @@ def _staged(
         ledger_cursor=9,
         observed_mode="instant",
         stage_metadata=stage_metadata or {},
+    )
+
+
+def test_review_classmethod_seams_preserve_subclass_dispatch() -> None:
+    """Review classmethod seams retain private subclass overrides."""
+    stable_thread_id = "ctx-" + "a" * 64
+    marker = {
+        "version": 1,
+        "operation": "new_review",
+        "stable_thread_id": stable_thread_id,
+        "turn_id": "turn-1",
+        "report_revision": 0,
+    }
+
+    class OverrideStore(ConversationContextStore):
+        @staticmethod
+        def _marker_operation(_marker: Mapping[str, Any]) -> str:
+            return "custom"
+
+        @staticmethod
+        def _marker_candidate_is_bounded(
+            _marker: Mapping[str, Any], operation: str
+        ) -> bool:
+            return operation == "custom"
+
+        @staticmethod
+        def _stable_marker_matches_key(_stable: str, _key: str) -> bool:
+            return True
+
+    assert getattr(OverrideStore, "_bounded_marker_fields")(
+        marker, "turn-1"
+    ) == (
+        "custom",
+        stable_thread_id,
+    )
+    assert getattr(OverrideStore, "_marker_is_bounded")(
+        marker, key="not-a-uuid", turn_id="turn-1"
+    )
+
+
+def test_review_marker_write_preserves_subclass_dispatch() -> None:
+    """Review marker writes use a subclass's private encoder override."""
+    connection = sqlite3.connect(":memory:")
+    connection.execute(
+        "CREATE TABLE conversation_turns ("
+        "delta_json TEXT, updated_at TEXT, conversation_key TEXT, turn_id TEXT"
+        ")"
+    )
+    connection.execute(
+        "INSERT INTO conversation_turns VALUES (?, ?, ?, ?)",
+        ("before", "before", "key", "turn"),
+    )
+
+    class OverrideStore(ConversationContextStore):
+        @staticmethod
+        def _with_review_record(
+            _decoded: dict[str, Any], _marker: Mapping[str, Any]
+        ) -> str:
+            return "encoded-by-subclass"
+
+    request = _ReviewMarkerWriteRequest(
+        connection=connection,
+        key="key",
+        turn_id="turn",
+        decoded={},
+        marker={},
+        now="now",
+    )
+    assert getattr(OverrideStore, "_write_review_marker")(request)
+    assert connection.execute(
+        "SELECT delta_json, updated_at FROM conversation_turns"
+    ).fetchone() == ("encoded-by-subclass", "now")
+
+
+def test_review_claim_row_failure_preserves_instance_dispatch() -> None:
+    """Review claim preconditions use an instance's private state override."""
+
+    class OverrideStore(ConversationContextStore):
+        @staticmethod
+        def _review_context_state(
+            _connection: sqlite3.Connection, _key: str
+        ) -> tuple[int, str]:
+            return (0, "tombstoned")
+
+    request = _ReviewClaimLookupRequest(
+        connection=sqlite3.connect(":memory:"),
+        key="key",
+        row=("staged", "ledger", 0, "delta"),
+        expected_ledger_version=None,
+        expected_base_context_version=None,
+    )
+    instance = object.__new__(OverrideStore)
+    failure = getattr(instance, "_claim_row_failure")(request)
+    assert failure is not None
+    assert failure.status == "conflict"
+
+
+def test_claim_expiry_keeps_static_base_clock_dispatch() -> None:
+    """Claim expiry keeps the store's original static clock semantics."""
+
+    class OverrideStore(ConversationContextStore):
+        @staticmethod
+        def _claim_datetime(_value: datetime | str | None) -> datetime:
+            raise AssertionError("static claim expiry must ignore overrides")
+
+    now = datetime.now(UTC)
+    assert getattr(OverrideStore, "_claim_is_expired")(
+        (now - timedelta(minutes=1)).isoformat(),
+        clock=now,
+        stale_after=timedelta(seconds=1),
     )
 
 
