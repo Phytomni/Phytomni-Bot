@@ -654,98 +654,12 @@ async def _execute_context_expert(
         _envelope: ConversationEnvelopeV1,
         dispatch: ContextAgentInvocation,
     ) -> AgentOutcome:
-        slug = _slug_for_tool(selected_agent_id, dependencies)
-        if selected_agent_id in {"KnowledgeAgent", "ReviewAgent"}:
-            clarification = dispatch.private_agent_state.get(
-                "clarification_message"
-            )
-            if isinstance(clarification, str) and clarification.strip():
-                if selected_agent_id != "ReviewAgent":
-                    return AgentOutcome(
-                        result=_clarification_agent_run(slug, clarification),
-                        context_delta=ContextDelta(),
-                    )
-                return AgentOutcome(
-                    result=_clarification_agent_run(slug, clarification),
-                    status="failed",
-                )
-        arguments = dict(dispatch.arguments)
-        if dependencies.chat.input.tool_accepts_obs(selected_agent_id):
-            arguments["obs_file_list"] = list(payload.obs_file_list)
-        private_agent_state = dict(dispatch.private_agent_state)
-        adapter = None
-        if selected_agent_id == "KnowledgeAgent":
-            adapter = private_agent_state.pop("knowledge_adapter", None)
-        elif selected_agent_id == "DataAgent":
-            adapter = private_agent_state.get("data_adapter")
-        elif selected_agent_id == "BriefGeneAgent":
-            adapter = private_agent_state.get("brief_gene_adapter")
-        elif selected_agent_id == "ReviewAgent":
-            adapter = private_agent_state.get("review_adapter")
-        execution_thread_id = dispatch.agent_thread_id
-        if selected_agent_id == "ReviewAgent" and adapter is not None:
-            execution_thread_id = getattr(
-                adapter, "execution_thread_id", execution_thread_id
-            )
-        body, status_code = await dependencies.native.invoke_agent_run(
-            agent=slug,
-            arguments=arguments,
-            conversation_messages=dispatch.conversation_messages,
-            agent_thread_id=(
-                execution_thread_id
-                if selected_agent_id
-                in {"ChatAgent", "KnowledgeAgent", "DataAgent", "ReviewAgent"}
-                else None
-            ),
-            private_agent_state=private_agent_state or None,
-            dialogue_id=payload.dialogue_id,
-            request_json=payload.model_dump_json(),
-            debug=dependencies.chat.projection.resolve_debug(None),
+        return await _invoke_context_expert_agent(
+            selected_agent_id=selected_agent_id,
+            dispatch=dispatch,
+            payload=payload,
+            dependencies=dependencies,
         )
-        if status_code != 200 or body.get("status") != "succeeded":
-            return AgentOutcome(result=body, status="running")
-        outcome = AgentOutcome(
-            result=body,
-        )
-        if selected_agent_id == "KnowledgeAgent" and adapter is not None:
-            return AgentOutcome(
-                result=body,
-                context_delta=adapter.delta(body),
-            )
-        if selected_agent_id == "DataAgent" and adapter is not None:
-            return AgentOutcome(
-                result=body,
-                context_delta=adapter.delta(body),
-            )
-        if selected_agent_id == "BriefGeneAgent" and adapter is not None:
-            return AgentOutcome(
-                result=body,
-                context_delta=adapter.delta(body),
-            )
-        if selected_agent_id == "ReviewAgent" and adapter is not None:
-            if not getattr(adapter, "settlement_ready", False):
-                return AgentOutcome(
-                    result=body,
-                    status="failed",
-                )
-            if not await adapter.validate_settlement_candidate():
-                return AgentOutcome(
-                    result=body,
-                    status="failed",
-                )
-            settlement_metadata = adapter.settlement_metadata()
-            if settlement_metadata is None:
-                adapter.mark_failed()
-                return AgentOutcome(
-                    result=body,
-                    status="failed",
-                )
-            return AgentOutcome(
-                result=body,
-                context_delta=adapter.delta(body),
-                private_stage_metadata=settlement_metadata,
-            )
-        return outcome
 
     async def delegate_async(
         selected_agent_id: str,
@@ -779,6 +693,134 @@ async def _execute_context_expert(
             detail="router did not resolve one permitted agent",
         ) from exc
     return _context_response(prepared, envelope)
+
+
+def _context_clarification_outcome(
+    selected_agent_id: str,
+    slug: str,
+    dispatch: ContextAgentInvocation,
+) -> AgentOutcome | None:
+    """Return a terminal clarification outcome when one was requested."""
+    if selected_agent_id not in {"KnowledgeAgent", "ReviewAgent"}:
+        return None
+    clarification = dispatch.private_agent_state.get("clarification_message")
+    if not isinstance(clarification, str) or not clarification.strip():
+        return None
+    status = "failed" if selected_agent_id == "ReviewAgent" else "succeeded"
+    delta = ContextDelta() if status == "succeeded" else None
+    return AgentOutcome(
+        result=_clarification_agent_run(slug, clarification),
+        status=status,
+        context_delta=delta,
+    )
+
+
+def _context_adapter(
+    selected_agent_id: str,
+    private_agent_state: dict[str, Any],
+) -> Any:
+    """Extract the adapter belonging to one selected context agent."""
+    if selected_agent_id == "KnowledgeAgent":
+        return private_agent_state.pop("knowledge_adapter", None)
+    adapter_keys = {
+        "DataAgent": "data_adapter",
+        "BriefGeneAgent": "brief_gene_adapter",
+        "ReviewAgent": "review_adapter",
+    }
+    key = adapter_keys.get(selected_agent_id)
+    return None if key is None else private_agent_state.get(key)
+
+
+def _context_execution_thread_id(
+    selected_agent_id: str,
+    dispatch: ContextAgentInvocation,
+    adapter: Any,
+) -> str | None:
+    """Select the durable execution thread for a context invocation."""
+    thread_id = dispatch.agent_thread_id
+    if selected_agent_id == "ReviewAgent" and adapter is not None:
+        thread_id = getattr(adapter, "execution_thread_id", thread_id)
+    if selected_agent_id in {
+        "ChatAgent",
+        "KnowledgeAgent",
+        "DataAgent",
+        "ReviewAgent",
+    }:
+        return thread_id
+    return None
+
+
+async def _context_success_outcome(
+    selected_agent_id: str,
+    body: dict[str, Any],
+    adapter: Any,
+) -> AgentOutcome:
+    """Shape a successful native response and any context delta."""
+    if adapter is None:
+        outcome = AgentOutcome(result=body)
+    elif selected_agent_id != "ReviewAgent":
+        outcome = AgentOutcome(
+            result=body,
+            context_delta=(
+                adapter.delta(body)
+                if selected_agent_id
+                in {"KnowledgeAgent", "DataAgent", "BriefGeneAgent"}
+                else None
+            ),
+        )
+    elif (
+        not getattr(adapter, "settlement_ready", False)
+        or not await adapter.validate_settlement_candidate()
+    ):
+        outcome = AgentOutcome(result=body, status="failed")
+    else:
+        settlement_metadata = adapter.settlement_metadata()
+        if settlement_metadata is None:
+            adapter.mark_failed()
+            outcome = AgentOutcome(result=body, status="failed")
+        else:
+            outcome = AgentOutcome(
+                result=body,
+                context_delta=adapter.delta(body),
+                private_stage_metadata=settlement_metadata,
+            )
+    return outcome
+
+
+async def _invoke_context_expert_agent(
+    *,
+    selected_agent_id: str,
+    dispatch: ContextAgentInvocation,
+    payload: ExpertQueryRequest,
+    dependencies: AgentRouteDependencies,
+) -> AgentOutcome:
+    """Invoke one selected Expert agent and shape its context outcome."""
+    slug = _slug_for_tool(selected_agent_id, dependencies)
+    clarification = _context_clarification_outcome(
+        selected_agent_id, slug, dispatch
+    )
+    if clarification is not None:
+        return clarification
+    arguments = dict(dispatch.arguments)
+    if dependencies.chat.input.tool_accepts_obs(selected_agent_id):
+        arguments["obs_file_list"] = list(payload.obs_file_list)
+    private_agent_state = dict(dispatch.private_agent_state)
+    adapter = _context_adapter(selected_agent_id, private_agent_state)
+    body, status_code = await dependencies.native.invoke_agent_run(
+        agent=slug,
+        arguments=arguments,
+        conversation_messages=dispatch.conversation_messages,
+        agent_thread_id=_context_execution_thread_id(
+            selected_agent_id, dispatch, adapter
+        ),
+        private_agent_state=private_agent_state or None,
+        dialogue_id=payload.dialogue_id,
+        request_json=payload.model_dump_json(),
+        debug=dependencies.chat.projection.resolve_debug(None),
+    )
+    if status_code != 200 or body.get("status") != "succeeded":
+        return AgentOutcome(result=body, status="running")
+    return await _context_success_outcome(selected_agent_id, body, adapter)
 
 
 def _slug_for_tool(
