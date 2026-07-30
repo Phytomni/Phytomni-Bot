@@ -35,6 +35,10 @@ from .service import (
     _bounded_review_stage_metadata,
     review_settlement_metadata_from_turn,
 )
+from .settlement_facade import (
+    ReviewSettlementForTurnRequest,
+    install_review_settlement_facade,
+)
 from .store import (
     ConversationContextStore,
     ReviewMutationLockTimeoutError,
@@ -51,17 +55,6 @@ class ContextAgentInvocation:
     conversation_messages: tuple[dict[str, str], ...]
     agent_thread_id: str
     private_agent_state: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True, slots=True)
-class _ReviewSettlementRequest:
-    """Inputs shared by the private Review acknowledgment helpers."""
-
-    key: tuple[str, str]
-    accepted: bool
-    staged_turn: StoredTurn | None
-    expected_ledger_version: str | None
-    mutation_lock_held: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -301,6 +294,8 @@ def native_history_from_context(
 class ConversationContextExecutor:
     """Run one shared service with request-local HTTP transport callbacks."""
 
+    acknowledge_review_settlement_for_turn: Callable[..., Awaitable[bool]]
+
     def __init__(
         self,
         *,
@@ -430,7 +425,7 @@ class ConversationContextExecutor:
     def _claim_review_settlement_state(
         self,
         service: ConversationContextService,
-        request: _ReviewSettlementRequest,
+        request: ReviewSettlementForTurnRequest,
     ) -> _ReviewSettlementClaim:
         """Load and claim durable Review metadata before adapter I/O."""
         key = request.key
@@ -439,14 +434,14 @@ class ConversationContextExecutor:
         metadata = review_settlement_metadata_from_turn(staged_turn)
         if metadata is None or current_turn is None:
             terminal_result = (
-                False if current_turn is None and metadata is not None else None
+                False
+                if current_turn is None and metadata is not None
+                else None
             )
             return _ReviewSettlementClaim(
                 staged_turn=staged_turn, terminal_result=terminal_result
             )
-        bounded = _bounded_review_stage_metadata(
-            metadata, allow_terminal=True
-        )
+        bounded = _bounded_review_stage_metadata(metadata, allow_terminal=True)
         expected_stable = self._expected_review_stable_thread_id(key)
         if (
             bounded is None
@@ -486,7 +481,7 @@ class ConversationContextExecutor:
     @staticmethod
     def _review_settlement_claim_result(
         service: ConversationContextService,
-        request: _ReviewSettlementRequest,
+        request: ReviewSettlementForTurnRequest,
         staged_turn: StoredTurn | None,
         claim: ReviewSettlementClaim,
     ) -> _ReviewSettlementClaim:
@@ -539,22 +534,24 @@ class ConversationContextExecutor:
         adapter: ReviewConversationAdapter,
     ) -> None:
         """Give the adapter a live fence check before private writes."""
-        if claim.claim_token is None:
+        claim_token = claim.claim_token
+        if claim_token is None:
             return
+        fence_token = claim.claim_fence
         set_fence = getattr(adapter, "set_settlement_fence", None)
         if callable(set_fence):
             set_fence(
                 lambda: service.store.is_review_settlement_claim_active(
                     *key,
-                    claim_token=claim.claim_token,
-                    fence_token=claim.claim_fence,
+                    claim_token=claim_token,
+                    fence_token=fence_token,
                 )
             )
 
     async def _reject_review_settlement(
         self,
         service: ConversationContextService,
-        request: _ReviewSettlementRequest,
+        request: ReviewSettlementForTurnRequest,
         claim: _ReviewSettlementClaim,
         adapter: ReviewConversationAdapter,
     ) -> bool:
@@ -592,7 +589,7 @@ class ConversationContextExecutor:
     async def _accept_review_settlement(
         self,
         service: ConversationContextService,
-        request: _ReviewSettlementRequest,
+        request: ReviewSettlementForTurnRequest,
         claim: _ReviewSettlementClaim,
         adapter: ReviewConversationAdapter,
     ) -> bool:
@@ -649,7 +646,7 @@ class ConversationContextExecutor:
     async def _settle_review_adapter(
         self,
         service: ConversationContextService,
-        request: _ReviewSettlementRequest,
+        request: ReviewSettlementForTurnRequest,
         claim: _ReviewSettlementClaim,
         adapter: ReviewConversationAdapter,
     ) -> bool:
@@ -676,7 +673,7 @@ class ConversationContextExecutor:
     ) -> bool:
         """Apply one durable Review acknowledgment by conversation identity."""
         service = self._service_for_request()
-        request = _ReviewSettlementRequest(
+        request = ReviewSettlementForTurnRequest(
             key=key,
             accepted=accepted,
             staged_turn=staged_turn,
@@ -719,23 +716,16 @@ class ConversationContextExecutor:
             mutation_lock_held=mutation_lock_held,
         )
 
-    async def acknowledge_review_settlement_for_turn(
-        self,
-        conversation_key: str,
-        turn_id: str,
-        *,
-        accepted: bool,
-        staged_turn: StoredTurn | None = None,
-        expected_ledger_version: str | None = None,
-        mutation_lock_held: bool = False,
+    async def _acknowledge_review_settlement_for_turn(
+        self, request: ReviewSettlementForTurnRequest
     ) -> bool:
         """Acknowledge Review from the HTTP settlement route after restart."""
         return await self._acknowledge_review_settlement_key(
-            (conversation_key, turn_id),
-            accepted=accepted,
-            staged_turn=staged_turn,
-            expected_ledger_version=expected_ledger_version,
-            mutation_lock_held=mutation_lock_held,
+            request.key,
+            accepted=request.accepted,
+            staged_turn=request.staged_turn,
+            expected_ledger_version=request.expected_ledger_version,
+            mutation_lock_held=request.mutation_lock_held,
         )
 
     async def execute(
@@ -833,18 +823,19 @@ class ConversationContextExecutor:
             )
         if selected_agent_id == "ReviewAgent":
             adapter = dispatch.private_agent_state.get("review_adapter")
-            self._bindings.review_adapter.set(
+            review_adapter = (
                 adapter
                 if isinstance(adapter, ReviewConversationAdapter)
                 else None
             )
+            self._bindings.review_adapter.set(review_adapter)
             review_operation = (
-                adapter.operation
-                if isinstance(adapter, ReviewConversationAdapter)
+                review_adapter.operation
+                if review_adapter is not None
                 else None
             )
             if (
-                isinstance(adapter, ReviewConversationAdapter)
+                review_adapter is not None
                 and review_operation is not None
                 and review_operation
                 in {
@@ -855,20 +846,21 @@ class ConversationContextExecutor:
                 store = self._service_for_request().store
                 mutation_lock = await _acquire_review_mutation_lock(store)
                 try:
-                    registered = (
-                        adapter.stable_thread_id is not None
-                        and adapter.candidate_thread_id is not None
-                        and store.register_review_candidate(
+                    stable_thread_id = review_adapter.stable_thread_id
+                    candidate_thread_id = review_adapter.candidate_thread_id
+                    if stable_thread_id is None or candidate_thread_id is None:
+                        registered = False
+                    else:
+                        registered = store.register_review_candidate(
                             str(envelope.conversation_key),
                             envelope.turn_id,
                             review_operation.value,
-                            adapter.stable_thread_id,
-                            adapter.candidate_thread_id,
+                            stable_thread_id,
+                            candidate_thread_id,
                             mutation_lock_held=True,
                         )
-                    )
                     if not registered:
-                        adapter.mark_failed()
+                        review_adapter.mark_failed()
                         return AgentOutcome(
                             result={"status": "failed"}, status="failed"
                         )
@@ -897,6 +889,9 @@ class ConversationContextExecutor:
         arguments.setdefault("user_query", envelope.current_message.content)
         arguments["locale"] = envelope.current_message.locale
         return await invoke(selected_agent_id, envelope, arguments)
+
+
+install_review_settlement_facade(ConversationContextExecutor)
 
 
 __all__ = [

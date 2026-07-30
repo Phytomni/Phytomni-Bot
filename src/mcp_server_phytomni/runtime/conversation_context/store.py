@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
@@ -254,8 +254,14 @@ configure_store_types(
     conflict_type=StagedTurnConflictError,
 )
 
+
 class ConversationContextStore:
     """Persist versioned context and one terminal proposal per turn."""
+
+    register_review_candidate: Callable[..., bool]
+    claim_review_settlement: Callable[..., ReviewSettlementClaim]
+    reserve_review_settlement: Callable[..., ReviewSettlementClaim]
+    finalize_review_settlement: Callable[..., bool]
 
     if TYPE_CHECKING:
         _review_context_state = staticmethod(_review_context_state)
@@ -794,7 +800,9 @@ setattr(
     staticmethod(_bounded_claim_parts),
 )
 setattr(ConversationContextStore, "_claim_active_marker", _claim_active_marker)
-setattr(ConversationContextStore, "_claim_pending_marker", _claim_pending_marker)
+setattr(
+    ConversationContextStore, "_claim_pending_marker", _claim_pending_marker
+)
 setattr(ConversationContextStore, "_claim_review_marker", _claim_review_marker)
 setattr(ConversationContextStore, "_reserve_row_failure", _reserve_row_failure)
 setattr(
@@ -802,7 +810,9 @@ setattr(
     "_review_reservation_inputs_valid",
     staticmethod(_review_reservation_inputs_valid),
 )
-setattr(ConversationContextStore, "_reserve_marker_state", _reserve_marker_state)
+setattr(
+    ConversationContextStore, "_reserve_marker_state", _reserve_marker_state
+)
 setattr(
     ConversationContextStore,
     "_finalize_review_settlement_locked",
