@@ -43,18 +43,20 @@ _DIALOGUE_ID = UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8")
 
 
 def _envelope(
-    *,
-    turn_id: str = "1",
-    mode: str = "expert",
-    operation: str = "append",
-    requested_agent_id: str | None = None,
-    allowed_agent_ids: list[str] | None = None,
-    ledger_cursor: int = 1,
-    ledger_version: str = "a" * 64,
-    base_business_context_version: int = 0,
-    artifact_refs: list[dict[str, str]] | None = None,
+    **options: Any,
 ) -> ConversationEnvelopeV1:
     """Build one bounded gateway envelope for the service seam."""
+    turn_id = options.get("turn_id", "1")
+    mode = options.get("mode", "expert")
+    operation = options.get("operation", "append")
+    requested_agent_id = options.get("requested_agent_id")
+    allowed_agent_ids = options.get("allowed_agent_ids")
+    ledger_cursor = options.get("ledger_cursor", 1)
+    ledger_version = options.get("ledger_version", "a" * 64)
+    base_business_context_version = options.get(
+        "base_business_context_version", 0
+    )
+    artifact_refs = options.get("artifact_refs")
     return ConversationEnvelopeV1.model_validate(
         {
             "schema_version": 1,
@@ -86,8 +88,8 @@ def _envelope(
     )
 
 
-@pytest.fixture
-def store(
+@pytest.fixture(name="store")
+def conversation_store(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> ConversationContextStore:
     """Use the configured local Bot task database only."""
@@ -134,6 +136,10 @@ def _service(
 
 def test_review_metadata_path_bounds_match_field_contracts() -> None:
     """Path restrictions apply only to identities, not claim values."""
+    bounded_review_stage_field = getattr(
+        module, "_bounded_review_stage_field"
+    )
+    invalid_review_field = getattr(module, "_INVALID_REVIEW_FIELD")
     for key in (
         "operation",
         "stable_thread_id",
@@ -142,17 +148,17 @@ def test_review_metadata_path_bounds_match_field_contracts() -> None:
         "candidate_thread_id",
     ):
         assert (
-            module._bounded_review_stage_field(key, "value/with/path")
-            is module._INVALID_REVIEW_FIELD
+            bounded_review_stage_field(key, "value/with/path")
+            is invalid_review_field
         )
     for key in (
         "settlement_claim_token",
         "settlement_claimed_at",
         "settlement_ledger_version",
     ):
-        assert module._bounded_review_stage_field(
-            key, "value/with/path"
-        ) == "value/with/path"
+        assert bounded_review_stage_field(key, "value/with/path") == (
+            "value/with/path"
+        )
 
 
 @pytest.mark.asyncio

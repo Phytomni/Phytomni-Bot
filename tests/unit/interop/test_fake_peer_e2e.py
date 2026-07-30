@@ -378,6 +378,10 @@ class _FakeMCPServer:
         self.server_names.append(server_name)
         return list(type(self).tools)
 
+    def server_name_history(self) -> tuple[str | None, ...]:
+        """Return an immutable record of adapter server-name lookups."""
+        return tuple(self.server_names)
+
 
 def _mcp_tool(
     name: str,
@@ -436,7 +440,7 @@ async def test_fake_mcp_server_discovery_then_invocation() -> None:
     assert result == "gene=AT1G01010"
     assert len(_FakeMCPServer.instances) == 2
     assert all(
-        instance.server_names == [target.id]
+        instance.server_name_history() == (target.id,)
         for instance in _FakeMCPServer.instances
     )
 

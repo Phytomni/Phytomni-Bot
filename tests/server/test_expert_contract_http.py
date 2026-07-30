@@ -110,13 +110,13 @@ def _contract_shape(body: dict[str, Any]) -> dict[str, Any]:
 async def _wait_for_run(
     db_path: str,
     run_id: str,
-    *,
-    owner: str = "u1",
-    task_ids: set[str] | None = None,
-    status: str | None = None,
-    attempts: int = 100,
+    **options: Any,
 ) -> RunRecord:
     """Poll one owned run without sleeping the event loop thread."""
+    owner = options.get("owner", "u1")
+    task_ids = options.get("task_ids")
+    status = options.get("status")
+    attempts = options.get("attempts", 100)
     registry = RunRegistry(db_path)
     for _ in range(attempts):
         record = registry.get_run(run_id, owner=owner)
@@ -152,6 +152,51 @@ class _FailureCase:
     expected_status: int
     expected_code: str
     retryable: bool
+
+
+def _parity_handler(case: _ParityCase) -> Any:
+    """Build the direct/Expert fake handler for one parity case."""
+    calls = 0
+
+    def submission_payload(call_number: int) -> dict[str, Any]:
+        """Return the canonical remote payload for one invocation."""
+        task_id = f"expert-parity-{case.slug}-{call_number}"
+        if case.slug == "analyst":
+            return {"task_id": task_id, "output_dir": "tenant/expert-parity"}
+        if case.slug == "research":
+            return {
+                "task_ids": [task_id],
+                "output_dir": "tenant/expert-parity",
+            }
+        if case.slug == "network":
+            return {
+                "network_task": {
+                    "task_id": task_id,
+                    "output_dir": "tenant/expert-parity",
+                }
+            }
+        if case.slug == "design":
+            return {
+                "design_task_result": [
+                    {
+                        "task_id": task_id,
+                        "output_dir": "tenant/expert-parity",
+                    }
+                ]
+            }
+        raise AssertionError(f"unexpected background slug: {case.slug}")
+
+    async def fake(_args: Any) -> dict[str, Any]:
+        """Return the selected case's sync or remote response."""
+        nonlocal calls
+        calls += 1
+        if case.expected_status == 202:
+            return submission_payload(calls)
+        return {"answer": f"answer-{calls}", "doc_list": []}
+
+    if case.expected_status == 202:
+        return records_submission(case.slug)(fake)
+    return fake
 
 
 _PARITY_CASES = (
@@ -288,75 +333,22 @@ async def test_expert_uses_native_run_contract(
     case: _ParityCase,
 ) -> None:
     """Expert and direct native runs expose the same envelope structure."""
-    tool_name = case.tool_name
-    slug = case.slug
-    expected_status = case.expected_status
-    calls = 0
-
-    def _submission_payload(
-        call_number: int,
-    ) -> tuple[dict[str, Any], set[str]]:
-        task_id = f"expert-parity-{slug}-{call_number}"
-        if slug == "analyst":
-            return (
-                {"task_id": task_id, "output_dir": "tenant/expert-parity"},
-                {task_id},
-            )
-        if slug == "research":
-            return (
-                {
-                    "task_ids": [task_id],
-                    "output_dir": "tenant/expert-parity",
-                },
-                {task_id},
-            )
-        if slug == "network":
-            return (
-                {
-                    "network_task": {
-                        "task_id": task_id,
-                        "output_dir": "tenant/expert-parity",
-                    }
-                },
-                {task_id},
-            )
-        if slug == "design":
-            return (
-                {
-                    "design_task_result": [
-                        {
-                            "task_id": task_id,
-                            "output_dir": "tenant/expert-parity",
-                        }
-                    ]
-                },
-                {task_id},
-            )
-        raise AssertionError(f"unexpected background slug: {slug}")
-
-    async def fake(_args: Any) -> dict[str, Any]:
-        nonlocal calls
-        calls += 1
-        if expected_status == 202:
-            payload, _ = _submission_payload(calls)
-            return payload
-        return {"answer": f"answer-{calls}", "doc_list": []}
-
-    handler = (
-        records_submission(slug)(fake) if expected_status == 202 else fake
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        case.tool_name,
+        _parity_handler(case),
     )
-    monkeypatch.setitem(server.TOOL_HANDLERS, tool_name, handler)
 
     direct = await api_client.post(
-        f"/v1/agents/{slug}/runs",
+        f"/v1/agents/{case.slug}/runs",
         headers=_auth(issued_api_key),
         json={"arguments": case.native_args},
     )
-    assert direct.status_code == expected_status
+    assert direct.status_code == case.expected_status
     direct_body = direct.json()
     direct_record: RunRecord | None = None
-    if expected_status == 202:
-        direct_task_ids = {f"expert-parity-{slug}-1"}
+    if case.expected_status == 202:
+        direct_task_ids = {f"expert-parity-{case.slug}-1"}
         assert direct_body["id"] == direct_body["run_id"]
         assert direct_body["task_ids"] == []
         assert direct_body["result"] == empty_agent_result()
@@ -366,21 +358,21 @@ async def test_expert_uses_native_run_contract(
             task_ids=direct_task_ids,
             status="running",
         )
-        assert direct_record.spec.agent == slug
+        assert direct_record.spec.agent == case.slug
 
-    _patch_selection(monkeypatch, tool_name, case.selected_args)
+    _patch_selection(monkeypatch, case.tool_name, case.selected_args)
     routed = await _post_forced_expert(
         api_client,
         issued_api_key,
-        tool_name,
+        case.tool_name,
     )
 
-    assert routed.status_code == expected_status
+    assert routed.status_code == case.expected_status
     routed_body = routed.json()
-    assert routed_body["agent"] == slug
+    assert routed_body["agent"] == case.slug
     assert routed_body["agent"] != "expert"
-    if expected_status == 202:
-        routed_task_ids = {f"expert-parity-{slug}-2"}
+    if case.expected_status == 202:
+        routed_task_ids = {f"expert-parity-{case.slug}-2"}
         assert routed_body["id"] == routed_body["run_id"]
         assert routed_body["task_ids"] == []
         assert routed_body["result"] == empty_agent_result()
@@ -391,12 +383,12 @@ async def test_expert_uses_native_run_contract(
             status="running",
         )
         assert routed_record.spec.run_id == routed_body["run_id"]
-        assert routed_record.spec.agent == slug
+        assert routed_record.spec.agent == case.slug
         assert (
             routed_record.request_info.request_id
             == routed.headers["X-Request-Id"]
         )
-        assert routed_record.request_info.tool_name == tool_name
+        assert routed_record.request_info.tool_name == case.tool_name
         assert routed_record.request_info.query is None
         assert routed_record.request_info.request_json is None
         assert direct_record is not None

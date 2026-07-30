@@ -76,12 +76,12 @@ def _stage_lifecycle_turn(
     store: ConversationContextStore,
     key: str,
     turn_id: str,
-    *,
-    operation: str,
-    selected_agent_id: str,
-    stage_metadata: dict[str, object] | None = None,
+    **options: Any,
 ) -> None:
     """Stage a compact row for the production retention contract test."""
+    operation = options["operation"]
+    selected_agent_id = options["selected_agent_id"]
+    stage_metadata = options.get("stage_metadata")
     store.begin_turn(key, turn_id, operation, 0)
     store.stage_turn(
         key,
@@ -102,22 +102,18 @@ def _stage_lifecycle_turn(
     )
 
 
-def test_normal_lifecycle_gc_purges_staged_context_and_review_candidate(
-    tmp_path: Path,
-) -> None:
-    """Normal run GC expires rows and deletes only the Review candidate."""
-    db_path = tmp_path / "lifecycle.sqlite"
-    store = ConversationContextStore(str(db_path))
-    key = "00000000-0000-0000-0000-000000000011"
-    review_turn_id = "review-turn"
+def _stage_review_turn(
+    store: ConversationContextStore,
+    key: str,
+    turn_id: str,
+) -> tuple[str, str]:
+    """Stage one Review turn and return its stable/candidate thread IDs."""
     stable_thread_id = agent_thread_id(UUID(key), "ReviewAgent")
-    candidate_thread_id = _candidate_thread_id(
-        stable_thread_id, review_turn_id
-    )
+    candidate_thread_id = _candidate_thread_id(stable_thread_id, turn_id)
     _stage_lifecycle_turn(
         store,
         key,
-        review_turn_id,
+        turn_id,
         operation="new_review",
         selected_agent_id="ReviewAgent",
         stage_metadata={
@@ -126,11 +122,53 @@ def test_normal_lifecycle_gc_purges_staged_context_and_review_candidate(
                 "operation": "new_review",
                 "stable_thread_id": stable_thread_id,
                 "candidate_thread_id": candidate_thread_id,
-                "turn_id": review_turn_id,
+                "turn_id": turn_id,
                 "report_revision": 0,
                 "settlement_state": "pending",
             }
         },
+    )
+    return stable_thread_id, candidate_thread_id
+
+
+def _run_normal_lifecycle_gc(
+    db_path: Path,
+    registry_calls: list[str],
+    deleted_candidates: list[str],
+) -> bool:
+    """Run normal GC with a recorder and return saver ownership state."""
+
+    def registry_factory(path: str) -> SimpleNamespace:
+        registry_calls.append(path)
+        return SimpleNamespace(purge_expired=lambda: 0)
+
+    async def delete_thread(thread_id: str) -> None:
+        deleted_candidates.append(thread_id)
+
+    checkpointer = SimpleNamespace(adelete_thread=delete_thread, closed=False)
+
+    async def close() -> None:
+        checkpointer.closed = True
+
+    checkpointer.close = close
+    run_lifecycle.purge_expired_runs_best_effort(
+        db_path=str(db_path),
+        registry_factory=registry_factory,
+        checkpointer_factory=lambda: checkpointer,
+    )
+    return checkpointer.closed
+
+
+def test_normal_lifecycle_gc_purges_staged_context_and_review_candidate(
+    tmp_path: Path,
+) -> None:
+    """Normal run GC expires rows and deletes only the Review candidate."""
+    db_path = tmp_path / "lifecycle.sqlite"
+    store = ConversationContextStore(str(db_path))
+    key = "00000000-0000-0000-0000-000000000011"
+    review_turn_id = "review-turn"
+    stable_thread_id, candidate_thread_id = _stage_review_turn(
+        store, key, review_turn_id
     )
     _stage_lifecycle_turn(
         store,
@@ -141,27 +179,8 @@ def test_normal_lifecycle_gc_purges_staged_context_and_review_candidate(
     )
     future_key = "00000000-0000-0000-0000-000000000013"
     future_turn_id = "future-review-turn"
-    future_stable_thread_id = agent_thread_id(UUID(future_key), "ReviewAgent")
-    future_candidate_thread_id = _candidate_thread_id(
-        future_stable_thread_id, future_turn_id
-    )
-    _stage_lifecycle_turn(
-        store,
-        future_key,
-        future_turn_id,
-        operation="new_review",
-        selected_agent_id="ReviewAgent",
-        stage_metadata={
-            "_review_settlement": {
-                "version": 1,
-                "operation": "new_review",
-                "stable_thread_id": future_stable_thread_id,
-                "candidate_thread_id": future_candidate_thread_id,
-                "turn_id": future_turn_id,
-                "report_revision": 0,
-                "settlement_state": "pending",
-            }
-        },
+    _future_stable_thread_id, future_candidate_thread_id = _stage_review_turn(
+        store, future_key, future_turn_id
     )
     with sqlite3.connect(db_path) as connection:
         connection.execute(
@@ -171,28 +190,11 @@ def test_normal_lifecycle_gc_purges_staged_context_and_review_candidate(
         )
 
     registry_calls: list[str] = []
-
-    def registry_factory(path: str) -> SimpleNamespace:
-        registry_calls.append(path)
-        return SimpleNamespace(purge_expired=lambda: 0)
-
     deleted_candidates: list[str] = []
-
-    async def delete_thread(thread_id: str) -> None:
-        deleted_candidates.append(thread_id)
-
-    checkpointer = SimpleNamespace(adelete_thread=delete_thread)
-    checkpointer.closed = False
-
-    async def close() -> None:
-        checkpointer.closed = True
-
-    checkpointer.close = close
-
-    run_lifecycle.purge_expired_runs_best_effort(
-        db_path=str(db_path),
-        registry_factory=registry_factory,
-        checkpointer_factory=lambda: checkpointer,
+    checkpointer_closed = _run_normal_lifecycle_gc(
+        db_path,
+        registry_calls,
+        deleted_candidates,
     )
 
     assert registry_calls == [str(db_path)]
@@ -200,7 +202,7 @@ def test_normal_lifecycle_gc_purges_staged_context_and_review_candidate(
     assert store.load_turn(key, "chat-turn") is None
     assert deleted_candidates == [candidate_thread_id]
     assert stable_thread_id not in deleted_candidates
-    assert not checkpointer.closed
+    assert not checkpointer_closed
     assert store.load_turn(future_key, future_turn_id) is not None
     with sqlite3.connect(db_path) as connection:
         assert connection.execute(
@@ -268,6 +270,7 @@ def test_failed_review_candidate_cleanup_retries_on_next_lifecycle_gc(
     checkpointer = SimpleNamespace(adelete_thread=delete_thread)
 
     def registry_factory(path: str) -> SimpleNamespace:
+        del path
         return SimpleNamespace(purge_expired=lambda: 0)
 
     def run_purge() -> None:
@@ -328,6 +331,7 @@ def test_registered_candidate_survives_tombstone_until_retry_gc(
         created_threads.discard(thread_id)
 
     def registry_factory(path: str) -> SimpleNamespace:
+        del path
         return SimpleNamespace(purge_expired=lambda: 0)
 
     run_lifecycle.purge_expired_runs_best_effort(
@@ -452,17 +456,22 @@ async def test_async_lifecycle_gc_keeps_injected_checkpointer_caller_owned(
         )
 
     class SharedCheckpointer:
+        """Track whether lifecycle GC closes a caller-owned saver."""
+
         closed = False
 
         async def adelete_thread(self, thread_id: str) -> None:
+            """Delete only the candidate selected by lifecycle GC."""
             assert thread_id == candidate_thread_id
 
         async def close(self) -> None:
+            """Record an attempted close for the ownership assertion."""
             self.closed = True
 
     shared = SharedCheckpointer()
 
     def registry_factory(path: str) -> SimpleNamespace:
+        del path
         return SimpleNamespace(purge_expired=lambda: 0)
 
     await run_lifecycle.purge_expired_runs_best_effort_async(

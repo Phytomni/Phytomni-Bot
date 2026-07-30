@@ -8,6 +8,7 @@ import asyncio
 import sqlite3
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 import httpx
@@ -33,8 +34,8 @@ _CONVERSATION_KEY = UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")
 _LEDGER_VERSION = "a" * 64
 
 
-@pytest.fixture
-async def context_client(
+@pytest.fixture(name="context_client")
+async def enabled_context_client(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> AsyncIterator[tuple[httpx.AsyncClient, str, ConversationContextStore]]:
@@ -337,23 +338,28 @@ async def test_settlement_route_invokes_injected_review_ack_before_commit(
     key = ApiKeyStore(str(keys_db)).create(user_id="u1").api_key
 
     class SpyExecutor:
+        """Record Review acknowledgement before context commit."""
+
         def __init__(self) -> None:
+            """Initialize call and pre-ack context snapshots."""
             self.calls: list[tuple[str, str, bool, str]] = []
             self.context_versions_at_ack: list[int | None] = []
 
         async def execute(self, **_kwargs: object) -> object:
+            """Reject accidental Expert execution in this route test."""
             raise AssertionError("the route test does not invoke Expert")
 
         async def acknowledge_review_settlement_for_turn(
             self,
             conversation_key: str,
             turn_id: str,
-            *,
-            accepted: bool,
-            staged_turn: object,
-            expected_ledger_version: str | None = None,
-            mutation_lock_held: bool = False,
+            **options: Any,
         ) -> bool:
+            """Promote the staged marker and record the public call shape."""
+            accepted = options["accepted"]
+            staged_turn = options["staged_turn"]
+            expected_ledger_version = options.get("expected_ledger_version")
+            mutation_lock_held = options.get("mutation_lock_held", False)
             assert expected_ledger_version == _LEDGER_VERSION
             assert mutation_lock_held is True
             _promote_review_marker(store, conversation_key, turn_id)
@@ -436,19 +442,23 @@ async def test_review_promotion_failure_does_not_commit_shared_context(
     _stage_turn(store, review_metadata=metadata)
 
     class FailingExecutor:
+        """Reject private Review promotion while retaining staged state."""
+
         async def execute(self, **_kwargs: object) -> object:
+            """Reject accidental Expert execution in this route test."""
             raise AssertionError("the route test does not invoke Expert")
 
         async def acknowledge_review_settlement_for_turn(
             self,
             conversation_key: str,
             _turn_id: str,
-            *,
-            accepted: bool,
-            staged_turn: object,
-            expected_ledger_version: str | None = None,
-            mutation_lock_held: bool = False,
+            **options: Any,
         ) -> bool:
+            """Fail private promotion after checking the lock boundary."""
+            accepted = options["accepted"]
+            staged_turn = options["staged_turn"]
+            expected_ledger_version = options.get("expected_ledger_version")
+            mutation_lock_held = options.get("mutation_lock_held", False)
             assert accepted is True
             assert expected_ledger_version == _LEDGER_VERSION
             assert mutation_lock_held is True
@@ -535,21 +545,25 @@ async def test_review_stale_ledger_is_rejected_before_private_ack(
     _stage_turn(store, review_metadata=metadata)
 
     class SpyExecutor:
+        """Count acknowledgements while stale requests are rejected."""
+
         calls = 0
 
         async def execute(self, **_kwargs: object) -> object:
+            """Reject accidental Expert execution in this route test."""
             raise AssertionError("the route test does not invoke Expert")
 
         async def acknowledge_review_settlement_for_turn(
             self,
             _conversation_key: str,
             _turn_id: str,
-            *,
-            accepted: bool,
-            staged_turn: object,
-            expected_ledger_version: str | None = None,
-            mutation_lock_held: bool = False,
+            **options: Any,
         ) -> bool:
+            """Count the accepted request and promote its marker."""
+            accepted = options["accepted"]
+            staged_turn = options["staged_turn"]
+            expected_ledger_version = options.get("expected_ledger_version")
+            mutation_lock_held = options.get("mutation_lock_held", False)
             assert accepted is True
             assert staged_turn is not None
             assert expected_ledger_version == _LEDGER_VERSION
@@ -619,19 +633,23 @@ async def test_review_reservation_serializes_competing_context_commit(
     release = asyncio.Event()
 
     class BlockingExecutor:
+        """Hold Review acknowledgement while a competing turn waits."""
+
         async def execute(self, **_kwargs: object) -> object:
+            """Reject accidental Expert execution in this route test."""
             raise AssertionError("the route test does not invoke Expert")
 
         async def acknowledge_review_settlement_for_turn(
             self,
             _conversation_key: str,
             _turn_id: str,
-            *,
-            accepted: bool,
-            staged_turn: object,
-            expected_ledger_version: str | None = None,
-            mutation_lock_held: bool = False,
+            **options: Any,
         ) -> bool:
+            """Hold the mutation lock until the competing request is queued."""
+            accepted = options["accepted"]
+            staged_turn = options["staged_turn"]
+            expected_ledger_version = options.get("expected_ledger_version")
+            mutation_lock_held = options.get("mutation_lock_held", False)
             assert accepted is True
             assert staged_turn is not None
             assert expected_ledger_version == _LEDGER_VERSION
@@ -700,11 +718,19 @@ async def test_tombstone_clears_state_and_deletes_sync_threads(
 ) -> None:
     """Tombstone removes staged context and synchronous checkpoint threads."""
     class _Checkpointer:
+        """Collect synchronous checkpoint deletions for tombstone tests."""
+
         def __init__(self) -> None:
+            """Start with no deleted checkpoint threads."""
             self.deleted: list[str] = []
 
         async def adelete_thread(self, thread_id: str) -> None:
+            """Record one checkpoint deletion."""
             self.deleted.append(thread_id)
+
+        def deleted_thread_ids(self) -> tuple[str, ...]:
+            """Return an immutable deletion snapshot for assertions."""
+            return tuple(self.deleted)
 
     client, key, store = context_client
     _stage_turn(store)
@@ -742,7 +768,7 @@ async def test_tombstone_clears_state_and_deletes_sync_threads(
             "WHERE conversation_key = ?",
             (str(_CONVERSATION_KEY),),
         ).fetchone() == (0,)
-    assert set(checkpointer.deleted) == {
+    assert set(checkpointer.deleted_thread_ids()) == {
         agent_thread_id(_CONVERSATION_KEY, agent_id)
         for agent_id in (
             "ChatAgent",
@@ -762,11 +788,19 @@ async def test_tombstone_deletes_durable_review_candidate_thread(
 ) -> None:
     """Tombstone cleanup includes candidate threads in staged metadata."""
     class _Checkpointer:
+        """Collect candidate checkpoint deletions for tombstone tests."""
+
         def __init__(self) -> None:
+            """Start with no deleted candidate threads."""
             self.deleted: list[str] = []
 
         async def adelete_thread(self, thread_id: str) -> None:
+            """Record one candidate checkpoint deletion."""
             self.deleted.append(thread_id)
+
+        def deleted_thread_ids(self) -> tuple[str, ...]:
+            """Return an immutable deletion snapshot for assertions."""
+            return tuple(self.deleted)
 
     client, key, store = context_client
     stable_thread = agent_thread_id(_CONVERSATION_KEY, "ReviewAgent")
@@ -795,7 +829,7 @@ async def test_tombstone_deletes_durable_review_candidate_thread(
     )
 
     assert response.status_code == 200
-    assert candidate_thread in checkpointer.deleted
+    assert candidate_thread in checkpointer.deleted_thread_ids()
 
 
 async def test_tombstone_retry_replays_durable_candidate_cleanup(
@@ -804,14 +838,22 @@ async def test_tombstone_retry_replays_durable_candidate_cleanup(
 ) -> None:
     """A failed cleanup retains the candidate thread for the next request."""
     class _Checkpointer:
+        """Fail one cleanup attempt and retain its deletion history."""
+
         def __init__(self) -> None:
+            """Start in failing mode with no deleted candidates."""
             self.fail = True
             self.deleted: list[str] = []
 
         async def adelete_thread(self, thread_id: str) -> None:
+            """Record a deletion and optionally fail the cleanup attempt."""
             self.deleted.append(thread_id)
             if self.fail:
                 raise RuntimeError("checkpoint cleanup unavailable")
+
+        def deleted_thread_ids(self) -> tuple[str, ...]:
+            """Return an immutable deletion snapshot for assertions."""
+            return tuple(self.deleted)
 
     client, key, store = context_client
     stable_thread = agent_thread_id(_CONVERSATION_KEY, "ReviewAgent")
@@ -847,7 +889,7 @@ async def test_tombstone_retry_replays_durable_candidate_cleanup(
 
     assert first.status_code == 200
     assert second.status_code == 200
-    assert candidate_thread in checkpointer.deleted
+    assert candidate_thread in checkpointer.deleted_thread_ids()
     complete = store.load_context(str(_CONVERSATION_KEY))
     assert complete is not None
     assert complete.checkpoint_cleanup_state == "complete"
@@ -859,11 +901,18 @@ async def test_tombstone_is_idempotent_and_retries_pending_cleanup(
 ) -> None:
     """Cleanup failure retains retryable state and safe deletion."""
     class _Checkpointer:
+        """Toggle a failing checkpoint cleanup for idempotence coverage."""
+
         fail = True
 
         async def adelete_thread(self, _thread_id: str) -> None:
+            """Raise while failure mode is enabled."""
             if self.fail:
                 raise RuntimeError("private checkpoint failure")
+
+        def set_failure(self, enabled: bool) -> None:
+            """Enable or disable the simulated cleanup failure."""
+            self.fail = enabled
 
     client, key, store = context_client
     checkpointer = _Checkpointer()
@@ -877,7 +926,7 @@ async def test_tombstone_is_idempotent_and_retries_pending_cleanup(
         json=_tombstone_payload(),
     )
     pending = store.load_context(str(_CONVERSATION_KEY))
-    checkpointer.fail = False
+    checkpointer.set_failure(False)
     retried = await client.post(
         "/v1/conversation-context/tombstone",
         headers=_headers(key),

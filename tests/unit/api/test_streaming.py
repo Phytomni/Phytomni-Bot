@@ -140,6 +140,31 @@ def _stream_frames(body: str) -> list[tuple[str, dict[str, Any]]]:
     return frames
 
 
+async def _consume_disconnect_stream(
+    response: Any,
+    payload: ChatCompletionRequest,
+    db_path: str,
+) -> tuple[str, str, str, ConversationContextStore]:
+    """Close an SSE body after its text and return the persisted-turn seam."""
+    body = cast(AsyncGenerator[str, None], response.body_iterator)
+    seen: list[str] = []
+    async for line in body:
+        seen.append(line)
+        if "event: TextMessageEnd\n" not in line:
+            continue
+        await body.aclose()
+        break
+    with pytest.raises(StopAsyncIteration):
+        await anext(body)
+
+    rendered = "".join(seen)
+    assert payload.conversation is not None
+    conversation_data = vars(payload.conversation)
+    key = str(conversation_data["conversation_key"])
+    turn_id = conversation_data["turn_id"]
+    return rendered, key, turn_id, ConversationContextStore(db_path)
+
+
 def _dependencies(settlements: list[tuple[str, str, str, dict[str, Any]]]):
     """Build explicit request, A2UI, and persistence seams for one test."""
 
@@ -396,24 +421,9 @@ async def test_context_stream_disconnect_before_stage_marks_turn_failed(
         user_query="adapter query",
         dependencies=dependencies,
     )
-    body = cast(AsyncGenerator[str, None], response.body_iterator)
-    seen: list[str] = []
-    async for line in body:
-        seen.append(line)
-        if "event: TextMessageEnd\n" not in line:
-            continue
-        await body.aclose()
-        break
-    with pytest.raises(StopAsyncIteration):
-        await anext(body)
-
-    rendered = "".join(seen)
-    assert payload.conversation is not None
-    conversation = payload.conversation
-    conversation_data = vars(conversation)
-    key = str(conversation_data["conversation_key"])
-    turn_id = conversation_data["turn_id"]
-    store = ConversationContextStore(db_path)
+    rendered, key, turn_id, store = await _consume_disconnect_stream(
+        response, payload, db_path
+    )
 
     assert '"name": "phyto.context_staged"' not in rendered
     assert "event: RunFinished\n" not in rendered

@@ -40,8 +40,8 @@ from mcp_server_phytomni.runtime.sqlite import sqlite_connection
 pytestmark = pytest.mark.unit
 
 
-@pytest.fixture
-def store(
+@pytest.fixture(name="store")
+def conversation_store(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> ConversationContextStore:
@@ -53,17 +53,17 @@ def store(
 
 
 def _staged(
-    *,
-    operation: str = "append",
-    base_context_version: int = 0,
-    selected_agent_id: str = "ChatAgent",
-    route_source: str = "instant_lock",
-    result: dict[str, object] | None = None,
-    delta: dict[str, object] | None = None,
-    ledger_version: str = "a" * 64,
-    stage_metadata: dict[str, object] | None = None,
+    **options: Any,
 ) -> StagedTurn:
     """Return one valid, intentionally unordered terminal proposal."""
+    operation = options.get("operation", "append")
+    base_context_version = options.get("base_context_version", 0)
+    selected_agent_id = options.get("selected_agent_id", "ChatAgent")
+    route_source = options.get("route_source", "instant_lock")
+    result = options.get("result")
+    delta = options.get("delta")
+    ledger_version = options.get("ledger_version", "a" * 64)
+    stage_metadata = options.get("stage_metadata")
     return StagedTurn(
         operation=operation,
         base_context_version=base_context_version,
@@ -91,6 +91,8 @@ def test_review_classmethod_seams_preserve_subclass_dispatch() -> None:
     }
 
     class OverrideStore(ConversationContextStore):
+        """Override marker interpretation for subclass dispatch coverage."""
+
         @staticmethod
         def _marker_operation(_marker: Mapping[str, Any]) -> str:
             return "custom"
@@ -130,6 +132,8 @@ def test_review_marker_write_preserves_subclass_dispatch() -> None:
     )
 
     class OverrideStore(ConversationContextStore):
+        """Override marker encoding for subclass dispatch coverage."""
+
         @staticmethod
         def _with_review_record(
             _decoded: dict[str, Any], _marker: Mapping[str, Any]
@@ -154,6 +158,8 @@ def test_review_claim_row_failure_preserves_instance_dispatch() -> None:
     """Review claim preconditions use an instance's private state override."""
 
     class OverrideStore(ConversationContextStore):
+        """Override claim state for instance dispatch coverage."""
+
         @staticmethod
         def _review_context_state(
             _connection: sqlite3.Connection, _key: str
@@ -208,6 +214,8 @@ def test_claim_expiry_keeps_static_base_clock_dispatch() -> None:
     """Claim expiry keeps the store's original static clock semantics."""
 
     class OverrideStore(ConversationContextStore):
+        """Keep claim expiry independent of overridable clock helpers."""
+
         @staticmethod
         def _claim_datetime(_value: datetime | str | None) -> datetime:
             raise AssertionError("static claim expiry must ignore overrides")

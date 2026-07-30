@@ -239,10 +239,14 @@ def test_projection_trims_in_documented_priority_order() -> None:
     """Query truncates before context admission under a tight budget."""
 
     class CharacterEstimator:
+        """Count characters as a deterministic test-token estimate."""
+
         def estimate(self, text: str) -> int:
+            """Return the character count for one text value."""
             return len(text)
 
         def estimate_many(self, texts: Sequence[str]) -> int:
+            """Return the combined character count for several values."""
             return sum(self.estimate(text) for text in texts)
 
     projection = build_context_projection(
@@ -301,10 +305,14 @@ def test_projection_budget_validation_counts_private_recent_turns() -> None:
     """Final validation budgets the private turn payload, not public dumps."""
 
     class CharacterEstimator:
+        """Count characters as a deterministic test-token estimate."""
+
         def estimate(self, text: str) -> int:
+            """Return the character count for one text value."""
             return len(text)
 
         def estimate_many(self, texts: Sequence[str]) -> int:
+            """Return the combined character count for several values."""
             return sum(self.estimate(text) for text in texts)
 
     projection = build_context_projection(

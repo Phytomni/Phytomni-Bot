@@ -53,6 +53,7 @@ async def _wait_until(
 async def test_launch_returns_before_operation_finishes(
     tmp_path: Path,
 ) -> None:
+    """Launch returns immediately while preserving request context."""
     db_path = str(tmp_path / "tasks.db")
     reservation = reserve_background_submission(
         agent="analyst",
@@ -151,6 +152,7 @@ async def test_worker_failure_settles_owned_run_without_raw_error(
     tmp_path: Path,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Worker failures settle safely without persisting raw errors."""
     db_path = str(tmp_path / "tasks.db")
     reservation = reserve_background_submission(
         agent="design",
@@ -200,7 +202,7 @@ async def test_degraded_tracking_fails_with_safe_accepted_projection(
     assert record is not None
     assert record.status == "failed"
     assert record.error == "background_submission_tracking_failed"
-    assert record.task_ids == ()
+    assert not record.task_ids
     assert record.result is not None
     assert record.result["execution"] == {
         "tracking": {"degraded": True},
@@ -351,6 +353,7 @@ async def test_terminal_reconciliation_owns_projection_race(
 
 @pytest.mark.asyncio
 async def test_cancelled_worker_settles_run_failed(tmp_path: Path) -> None:
+    """Cancelled workers settle their owned run as failed."""
     db_path = str(tmp_path / "tasks.db")
     reservation = reserve_background_submission(
         agent="network",
@@ -373,6 +376,7 @@ async def test_cancelled_worker_settles_run_failed(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_active_reservation_cannot_launch_twice(tmp_path: Path) -> None:
+    """A live reservation rejects a second background launch."""
     db_path = str(tmp_path / "tasks.db")
     reservation = reserve_background_submission(
         agent="analyst",
@@ -405,6 +409,7 @@ def test_task_creation_failure_compensates_reserved_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Task creation errors compensate the reserved registry row."""
     db_path = str(tmp_path / "tasks.db")
     reservation = reserve_background_submission(
         agent="research",
@@ -440,6 +445,7 @@ def test_task_creation_compensation_init_failure_is_sanitized(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Compensation initialization errors remain sanitized."""
     db_path = str(tmp_path / "tasks.db")
     reservation = reserve_background_submission(
         agent="research",
@@ -482,6 +488,7 @@ async def test_worker_registry_init_failure_settles_and_deregisters(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    """Worker registry initialization failures settle and deregister."""
     db_path = str(tmp_path / "tasks.db")
     reservation = reserve_background_submission(
         agent="research",
@@ -526,6 +533,7 @@ def test_reservation_storage_failure_is_sanitized(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Reservation storage failures expose only a stable public error."""
     db_path = str(tmp_path / "tasks.db")
 
     def fail_reserve(*_args: Any, **_kwargs: Any) -> None:

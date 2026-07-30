@@ -614,6 +614,7 @@ async def test_background_agent_returns_reserved_run_before_handler_finishes(
     tasks_db_path: str,
     case: _RemoteCase,
 ) -> None:
+    """Return the reserved run while the handler remains in flight."""
     release = asyncio.Event()
     started = asyncio.Event()
 
@@ -739,13 +740,16 @@ async def test_background_run_settles_failed_when_recorder_fails(
 ) -> None:
     """A child persistence failure settles the reserved run failed."""
 
-    def _raising_create_run(*_args: Any, **_kwargs: Any) -> None:
+    def _raising_persistence(*_args: Any, **_kwargs: Any) -> None:
         """Simulate the persistence failure the contract handles."""
         raise sqlite3.OperationalError("disk I/O error")
 
     def _exploding_registry_factory(_db_path: str) -> SimpleNamespace:
-        """Stand in for ``RunRegistry(db_path)`` so create_run raises."""
-        return SimpleNamespace(create_run=_raising_create_run)
+        """Stand in for ``RunRegistry(db_path)`` at either recorder seam."""
+        return SimpleNamespace(
+            create_run=_raising_persistence,
+            record_reserved_submissions=_raising_persistence,
+        )
 
     monkeypatch.setattr(
         submit_recorder_module, "RunRegistry", _exploding_registry_factory
@@ -783,8 +787,8 @@ async def test_background_run_settles_failed_when_recorder_fails(
     else:
         pytest.fail("background recorder failure did not settle")
     assert record is not None
-    assert record.task_ids == ()
-    assert record.error == "background_submission_failed"
+    assert not record.task_ids
+    assert record.error == "background_submission_tracking_failed"
 
 
 async def test_background_debug_raw_never_persists_or_logs(

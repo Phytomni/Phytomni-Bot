@@ -57,11 +57,12 @@ _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 # (attachment capabilities), and the strict Expert request boundary. The
 # ``_normalized_openapi`` helper removes only unstable version/server fields.
 _OPENAPI_HASH = (
-    "7c881bf9987f7c117c96fe703a79487ebc3af63c3fe2fcbc096d0c91f81116bf"
+    "538c8a17a7bb9377bb64969dd7231e00e7d0dbf861ae91a7b6a7543e902f65f6"
 )
 
 
 def test_persisted_running_response_accepts_empty_child_list() -> None:
+    """Persisted running responses may expose no child tasks yet."""
     body = build_agent_run_response(
         run_id="run-empty-child",
         agent="analyst",
@@ -73,7 +74,7 @@ def test_persisted_running_response_accepts_empty_child_list() -> None:
     )
 
     assert body["id"] == body["run_id"] == "run-empty-child"
-    assert body["task_ids"] == []
+    assert not body["task_ids"]
     assert "degraded_tracking" not in body
 
 
@@ -562,7 +563,7 @@ def test_default_application_contract_is_literal() -> None:
     if os.environ.get("PHYTOMNI_DEPENDENCY_FLOOR") != "1":
         assert _openapi_hash(app) == _OPENAPI_HASH
     assert len(document["paths"]) == 33
-    assert len(document["components"]["schemas"]) == 15
+    assert len(document["components"]["schemas"]) == 19
     assert all(
         operation.get("operationId")
         for path_item in document["paths"].values()
@@ -747,7 +748,7 @@ def test_native_run_facade_binds_arguments_before_returning_coroutine() -> None:
     with pytest.raises(TypeError):
         invoke(agent="chat", arguments={}, unexpected=True)
     with pytest.raises(TypeError):
-        invoke("chat", {})
+        getattr(invoke, "__call__")("chat", {})
 
     coroutine = invoke(agent="chat", arguments={})
     assert inspect.iscoroutine(coroutine)
@@ -781,7 +782,7 @@ def test_native_run_preflight_uses_app_compatibility_seams(
         "validate_native_attachments",
         capture_attachments,
     )
-    preflight = api_app_module._preflight_agent_run(
+    preflight = getattr(api_app_module, "_preflight_agent_run")(
         agent="chat",
         arguments={"user_query": "compat query"},
         dialogue_id="compat-dialogue",

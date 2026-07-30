@@ -83,6 +83,19 @@ class NativeResolverContext:
 
 
 @dataclass(frozen=True)
+class NativeResolverObservation:
+    """Observed response and resolver state for one scenario assertion."""
+
+    response: httpx.Response
+    case: NativeResolverCase
+    scenario: str
+    captured: dict[str, Any]
+    resolver_calls: list[str]
+    arguments: dict[str, Any]
+    tasks_db_path: str
+
+
+@dataclass(frozen=True)
 class NativeRunHandlerSpec:
     """Handler and request data for one native route fixture."""
 
@@ -195,6 +208,121 @@ async def post_recorded_analyst_run(
     )
 
 
+def _assert_resolved_metadata(
+    metadata: dict[str, Any],
+    observation: NativeResolverObservation,
+) -> None:
+    """Assert the metadata and resolver calls for a resolved scenario."""
+    expected = observation.case.expected
+    assert observation.captured["species_code"] == expected.species_code
+    assert observation.captured["gene_id"] == expected.resolved_gene_id
+    assert observation.resolver_calls == [expected.resolved_raw_query]
+    assert metadata.get("original_query") == expected.resolved_raw_query
+    assert metadata.get("resolved_gene_id") == expected.resolved_gene_id
+    assert metadata.get("resolved_species_code") == expected.species_code
+    assert metadata.get("resolve_gene_id") is True
+
+
+async def _wait_for_background_record(
+    observation: NativeResolverObservation,
+) -> RunRecord:
+    """Wait until a background resolver run reaches its expected state."""
+    body = observation.response.json()
+    assert body["task_ids"] == []
+    assert body["run_id"]
+    registry = RunRegistry(observation.tasks_db_path)
+    record: RunRecord | None = None
+    for _ in range(100):
+        record = registry.get_run(body["run_id"], owner="u1")
+        if record is not None:
+            if observation.scenario in {"resolved", "passthrough"} and (
+                record.task_ids
+            ):
+                break
+            if observation.scenario in {"missing", "failure", "blank"} and (
+                record.status == "failed"
+            ):
+                break
+        await asyncio.sleep(0)
+    else:
+        pytest.fail("background resolver run did not settle")
+    assert record is not None
+    return record
+
+
+def _assert_background_resolver_success(
+    observation: NativeResolverObservation,
+    record: RunRecord,
+) -> None:
+    """Assert a successful background resolver projection."""
+    if observation.scenario == "resolved":
+        assert record.result is not None
+        metadata = record.result["formatted"].get("metadata") or {}
+        _assert_resolved_metadata(metadata, observation)
+        return
+    assert observation.captured["gene_id"] == (
+        observation.case.expected.resolved_gene_id
+    )
+    assert not observation.resolver_calls
+
+
+def _assert_background_resolver_failure(
+    observation: NativeResolverObservation,
+    record: RunRecord,
+) -> None:
+    """Assert a safely sanitized background resolver failure."""
+    assert record.status == "failed"
+    assert not record.task_ids
+    assert record.error == "background_submission_failed"
+    assert observation.case.expected.failure_message not in record.error
+    assert observation.case.expected.blank_message not in record.error
+    if observation.scenario == "missing":
+        assert not observation.resolver_calls
+    else:
+        assert observation.resolver_calls == [
+            observation.arguments["user_query"]
+        ]
+    assert "gene_id" not in observation.captured
+
+
+async def _assert_background_resolver_observation(
+    observation: NativeResolverObservation,
+) -> None:
+    """Assert the accepted-run contract for a background resolver call."""
+    assert observation.response.status_code == 202
+    record = await _wait_for_background_record(observation)
+    if observation.scenario in {"resolved", "passthrough"}:
+        _assert_background_resolver_success(observation, record)
+    else:
+        _assert_background_resolver_failure(observation, record)
+
+
+def _assert_sync_resolver_observation(
+    observation: NativeResolverObservation,
+) -> None:
+    """Assert the direct-response contract for a synchronous resolver call."""
+    expected = observation.case.expected
+    if observation.scenario == "resolved":
+        assert observation.response.status_code == 202
+        body = observation.response.json()
+        metadata = body["result"]["formatted"].get("metadata") or {}
+        _assert_resolved_metadata(metadata, observation)
+        return
+    if observation.scenario == "passthrough":
+        assert observation.response.status_code == 202
+        assert observation.captured["gene_id"] == expected.resolved_gene_id
+        assert not observation.resolver_calls
+        return
+    assert_invalid_argument_response(observation.response)
+    if observation.scenario == "missing":
+        assert not observation.resolver_calls
+    else:
+        assert observation.resolver_calls == [
+            observation.arguments["user_query"]
+        ]
+    assert "gene_id" not in observation.captured
+
+
 async def assert_native_resolver_case(
     context: NativeResolverContext,
     case: NativeResolverCase,
@@ -237,99 +365,19 @@ async def assert_native_resolver_case(
     response = await post_native_run(
         context.api_client, context.issued_api_key, case.spec.slug, arguments
     )
-
+    observation = NativeResolverObservation(
+        response=response,
+        case=case,
+        scenario=scenario,
+        captured=captured,
+        resolver_calls=resolver_calls,
+        arguments=arguments,
+        tasks_db_path=context.tasks_db_path,
+    )
     if case.spec.background_submission:
-        assert response.status_code == 202
-        body = response.json()
-        assert body["task_ids"] == []
-        assert body["run_id"]
-        registry = RunRegistry(context.tasks_db_path)
-        record: RunRecord | None = None
-        for _ in range(100):
-            record = registry.get_run(body["run_id"], owner="u1")
-            if record is not None:
-                if scenario in {"resolved", "passthrough"} and record.task_ids:
-                    break
-                if scenario in {"missing", "failure", "blank"} and (
-                    record.status == "failed"
-                ):
-                    break
-            await asyncio.sleep(0)
-        else:
-            pytest.fail("background resolver run did not settle")
-
-        assert record is not None
-        if scenario == "resolved":
-            assert captured["species_code"] == case.expected.species_code
-            assert captured["gene_id"] == case.expected.resolved_gene_id
-            assert resolver_calls == [case.expected.resolved_raw_query]
-            assert record.result is not None
-            metadata = record.result["formatted"].get("metadata") or {}
-            assert (
-                metadata.get("original_query")
-                == case.expected.resolved_raw_query
-            )
-            assert (
-                metadata.get("resolved_gene_id")
-                == case.expected.resolved_gene_id
-            )
-            assert (
-                metadata.get("resolved_species_code")
-                == case.expected.species_code
-            )
-            assert metadata.get("resolve_gene_id") is True
-            return
-        if scenario == "passthrough":
-            assert captured["gene_id"] == case.expected.resolved_gene_id
-            assert not resolver_calls
-            return
-
-        assert record.status == "failed"
-        assert record.task_ids == ()
-        assert record.error == "background_submission_failed"
-        assert case.expected.failure_message not in record.error
-        assert case.expected.blank_message not in record.error
-        if scenario == "missing":
-            assert not resolver_calls
-        else:
-            assert resolver_calls == [arguments["user_query"]]
-        assert "gene_id" not in captured
-        return
-
-    if scenario == "resolved":
-        assert response.status_code == 202
-        body = response.json()
-        assert captured["species_code"] == case.expected.species_code
-        assert captured["gene_id"] == case.expected.resolved_gene_id
-        assert resolver_calls == [case.expected.resolved_raw_query]
-        metadata = body["result"]["formatted"].get("metadata") or {}
-        assert (
-            metadata.get("original_query") == case.expected.resolved_raw_query
-        )
-        assert (
-            metadata.get("resolved_gene_id") == case.expected.resolved_gene_id
-        )
-        assert (
-            metadata.get("resolved_species_code") == case.expected.species_code
-        )
-        assert metadata.get("resolve_gene_id") is True
-        return
-
-    if scenario == "passthrough":
-        assert response.status_code == 202
-        assert captured["gene_id"] == case.expected.resolved_gene_id
-        assert not resolver_calls
-        return
-
-    assert response.status_code == 400
-    body = response.json()
-    assert body["error"]["code"] == "invalid_argument"
-    assert body["error"]["message"] == "invalid request"
-    if scenario == "missing":
-        assert not resolver_calls
+        await _assert_background_resolver_observation(observation)
     else:
-        assert resolver_calls == [arguments["user_query"]]
-    assert "gene_id" not in captured
+        _assert_sync_resolver_observation(observation)
 
 
 def make_native_resolver_test(

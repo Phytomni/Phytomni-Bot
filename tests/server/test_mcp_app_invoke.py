@@ -259,12 +259,21 @@ async def test_v1_history_reaches_knowledge_wrapper_without_leakage(
     """Back-to-back Knowledge dispatches keep handler history isolated."""
 
     class FakeKnowledgeAgent:
+        """Capture wrapper calls without retaining state across invocations."""
+
         def __init__(self) -> None:
+            """Initialize the call capture list."""
             self.calls: list[dict[str, Any]] = []
 
         async def arun(self, **kwargs: Any) -> dict[str, Any]:
+            """Record one wrapper call and return a minimal response."""
             self.calls.append(kwargs)
             return {"choices": [{"message": {"content": "ok"}}]}
+
+        @property
+        def call_count(self) -> int:
+            """Return the number of wrapper calls observed."""
+            return len(self.calls)
 
     fake_agent = FakeKnowledgeAgent()
 
@@ -326,6 +335,7 @@ async def test_v1_history_reaches_knowledge_wrapper_without_leakage(
         arguments,
     )
 
+    assert fake_agent.call_count == 3
     assert fake_agent.calls[0]["conversation_messages"] == first_history
     assert fake_agent.calls[1]["conversation_messages"] == second_history
     assert fake_agent.calls[2]["conversation_messages"] == ()

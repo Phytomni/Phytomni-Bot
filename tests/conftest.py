@@ -626,6 +626,13 @@ def _build_fake_obs_client() -> Any:
         def __init__(self, **kwargs: Any) -> None:
             _FakeObsClient.captured = {"init": kwargs}
 
+        @classmethod
+        def reset_state(cls) -> None:
+            """Clear captured calls and seeded OBS objects between tests."""
+            cls.captured = {}
+            cls.objects = {}
+            cls.pages = []
+
         def __getattr__(self, name: str) -> Any:
             """Map OBS SDK camelCase methods to snake-case fakes."""
             sdk_ops = {
@@ -681,6 +688,7 @@ def _build_fake_obs_client() -> Any:
                 requestId="request-id",
             )
 
+    _FakeObsClient.reset_state()
     return _FakeObsClient
 
 
