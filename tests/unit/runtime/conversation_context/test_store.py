@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 import sqlite3
@@ -189,6 +190,18 @@ def test_review_reservation_preflight_preserves_subclass_dispatch() -> None:
         "key", "turn", claim_token="token", fence_token=1
     )
     assert result.status == "invalid"
+
+
+def test_commit_apply_seam_signature_is_preserved() -> None:
+    """The extracted commit seam keeps its historical bound signature."""
+    signature = inspect.signature(
+        getattr(ConversationContextStore, "_apply_staged_turn_locked")
+    )
+    assert tuple(signature.parameters) == ("self", "request")
+    assert (
+        signature.parameters["self"].annotation
+        is inspect.Parameter.empty
+    )
 
 
 def test_claim_expiry_keeps_static_base_clock_dispatch() -> None:

@@ -92,9 +92,11 @@ def _unpack_delta(
 
 
 def _apply_staged_turn_locked(
-    _store: object, request: _StagedTurnCommitRequest
+    self, request: _StagedTurnCommitRequest
 ) -> sqlite3.Row | tuple[Any, ...]:
     """Apply staged data and return the updated context row."""
+    # Keep the historical bound-method signature; the operation is request-only.
+    del self
     data, metadata, _stage_metadata = _unpack_delta(request.turn[8])
     assert data is not None
     schema_version = metadata["schema_version"]
