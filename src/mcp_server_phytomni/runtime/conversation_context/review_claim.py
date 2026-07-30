@@ -99,6 +99,40 @@ def _review_claim_lookup(
     )
 
 
+def _review_marker_context_for(
+    self, connection: Any, request: Any, failure_method: str
+) -> ReviewSettlementClaim | _ReviewMarkerContext:
+    """Load and validate one staged Review marker for a transition."""
+    row = _review_turn_row(connection, request.key, request.turn_id)
+    if row is None:
+        return ReviewSettlementClaim("missing")
+    failure = getattr(self, failure_method)(
+        _review_claim_lookup(
+            connection,
+            request.key,
+            row,
+            request.expected_ledger_version,
+            request.expected_base_context_version,
+        )
+    )
+    if failure is not None:
+        return failure
+    record = getattr(self, "_review_record")(row[3])
+    if record is None:
+        return ReviewSettlementClaim("invalid")
+    decoded, marker = record
+    if not getattr(self, "_marker_is_bounded")(
+        marker, key=request.key, turn_id=request.turn_id
+    ):
+        return ReviewSettlementClaim("invalid")
+    identity = _ReviewClaimIdentity(
+        key=request.key, turn_id=request.turn_id
+    )
+    return _review_marker_context(
+        connection, identity, row, decoded, marker
+    )
+
+
 def _claim_marker_request(
     context: _ReviewMarkerContext,
     timing: _ReviewClaimTiming,
@@ -262,34 +296,11 @@ def _claim_review_settlement(
     clock = getattr(self, "_claim_datetime")(request.now)
     now_value = clock.isoformat()
     with getattr(self, "_write")() as connection:
-        row = _review_turn_row(connection, request.key, request.turn_id)
-        if row is None:
-            return ReviewSettlementClaim("missing")
-        failure = getattr(self, "_claim_row_failure")(
-            _review_claim_lookup(
-                connection,
-                request.key,
-                row,
-                request.expected_ledger_version,
-                request.expected_base_context_version,
-            )
+        context = _review_marker_context_for(
+            self, connection, request, "_claim_row_failure"
         )
-        if failure is not None:
-            return failure
-        record = getattr(self, "_review_record")(row[3])
-        if record is None:
-            return ReviewSettlementClaim("invalid")
-        decoded, marker = record
-        if not getattr(self, "_marker_is_bounded")(
-            marker, key=request.key, turn_id=request.turn_id
-        ):
-            return ReviewSettlementClaim("invalid")
-        identity = _ReviewClaimIdentity(
-            key=request.key, turn_id=request.turn_id
-        )
-        context = _review_marker_context(
-            connection, identity, row, decoded, marker
-        )
+        if isinstance(context, ReviewSettlementClaim):
+            return context
         return getattr(self, "_claim_review_marker")(
             _claim_marker_request(
                 context,

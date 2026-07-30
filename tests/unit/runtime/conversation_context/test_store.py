@@ -172,6 +172,23 @@ def test_review_claim_row_failure_preserves_instance_dispatch() -> None:
     assert failure.status == "conflict"
 
 
+def test_review_reservation_preflight_preserves_subclass_dispatch() -> None:
+    """Reservation preflight uses an instance's private override."""
+
+    class OverrideStore(ConversationContextStore):
+        @staticmethod
+        def _review_reservation_inputs_valid(
+            _claim_token: object, _fence_token: object
+        ) -> bool:
+            return False
+
+    instance = object.__new__(OverrideStore)
+    result = instance.reserve_review_settlement(
+        "key", "turn", claim_token="token", fence_token=1
+    )
+    assert result.status == "invalid"
+
+
 def test_claim_expiry_keeps_static_base_clock_dispatch() -> None:
     """Claim expiry keeps the store's original static clock semantics."""
 

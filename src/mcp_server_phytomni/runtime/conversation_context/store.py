@@ -22,12 +22,7 @@ from .review_claim import (
     _claim_pending_marker,
     _claim_review_marker,
     _claim_review_settlement,
-    _reservation_marker_request,
-    _review_claim_lookup,
-    _review_marker_context,
-    _review_turn_row,
     _ReviewClaimRequest,
-    _write_reservation_marker,
 )
 from .review_lock import (
     ReviewMutationLock,
@@ -53,6 +48,13 @@ from .review_mixin import (
     _with_review_record,
     _write_review_marker,
 )
+from .review_reservation import (
+    _reserve_marker_state,
+    _reserve_review_settlement,
+    _reserve_row_failure,
+    _review_reservation_inputs_valid,
+    _ReviewReservationRequest,
+)
 from .review_support import (
     _REVIEW_SETTLEMENT_CLAIM_TTL,
     _REVIEW_SETTLEMENT_FENCE_LIMIT,
@@ -63,11 +65,9 @@ from .review_support import (
     _now,
     _review_candidate_thread_id,
     _ReviewClaimIdentity,
-    _ReviewClaimLookupRequest,
     _ReviewCleanupEntry,
     _ReviewFinalizeRequest,
     _ReviewMarkerWriteRequest,
-    _ReviewReservationMarkerRequest,
 )
 
 # Preserve the historical public import and pickle path after support split.
@@ -334,6 +334,11 @@ class ConversationContextStore:
         _claim_active_marker = _claim_active_marker
         _claim_pending_marker = _claim_pending_marker
         _claim_review_marker = _claim_review_marker
+        _reserve_row_failure = _reserve_row_failure
+        _review_reservation_inputs_valid = staticmethod(
+            _review_reservation_inputs_valid
+        )
+        _reserve_marker_state = _reserve_marker_state
 
     def __init__(self, db_path: str | None = None) -> None:
         self.db_path = db_path or resolve_tasks_db_path()
@@ -760,94 +765,6 @@ class ConversationContextStore:
             ),
         )
 
-    def _reserve_row_failure(
-        self, request: _ReviewClaimLookupRequest
-    ) -> ReviewSettlementClaim | None:
-        """Return the first row precondition failure for reservation."""
-        context = self._review_context_state(request.connection, request.key)
-        if context is not None and context[1] == "tombstoned":
-            return ReviewSettlementClaim("conflict")
-        if request.row[0] != "staged":
-            if request.row[0] == "committed":
-                record = self._review_record(request.row[3])
-                if (
-                    record is not None
-                    and record[1].get("settlement_state") == "promoted"
-                ):
-                    return ReviewSettlementClaim("promoted")
-            return ReviewSettlementClaim("conflict")
-        if (
-            request.expected_ledger_version is not None
-            and request.row[1] != request.expected_ledger_version
-        ) or (
-            request.expected_base_context_version is not None
-            and request.row[2] != request.expected_base_context_version
-        ):
-            return ReviewSettlementClaim("conflict")
-        current_version = 0 if context is None else context[0]
-        if current_version != request.row[2]:
-            return ReviewSettlementClaim("conflict")
-        return None
-
-    @staticmethod
-    def _review_reservation_inputs_valid(
-        claim_token: object, fence_token: object
-    ) -> bool:
-        """Validate reservation tokens before opening the write transaction."""
-        claim_value: str | None = (
-            claim_token
-            if isinstance(claim_token, str)
-            and bool(claim_token)
-            and len(claim_token) <= _REVIEW_SETTLEMENT_TOKEN_LIMIT
-            else None
-        )
-        fence_value: int | None = (
-            fence_token
-            if not isinstance(fence_token, bool)
-            and isinstance(fence_token, int)
-            else None
-        )
-        return claim_value is not None and (
-            fence_value is not None
-            and 1 <= fence_value <= _REVIEW_SETTLEMENT_FENCE_LIMIT
-        )
-
-    def _reserve_marker_state(
-        self, request: _ReviewReservationMarkerRequest
-    ) -> ReviewSettlementClaim:
-        """Advance a validated reservation marker in its open transaction."""
-        state = request.marker.get("settlement_state")
-        claim_matches = (
-            request.marker.get("settlement_claim_token")
-            == request.claim_token
-            and self._marker_fence(request.marker) == request.fence_token
-        )
-        if state == "promoting":
-            return ReviewSettlementClaim(
-                "promoting" if claim_matches else "conflict",
-                request.claim_token if claim_matches else None,
-                request.fence_token if claim_matches else None,
-            )
-        if state != "settling":
-            if state in {"promoted", "rejected", "failed"}:
-                return ReviewSettlementClaim(state)
-            return ReviewSettlementClaim("conflict")
-        if (
-            not claim_matches
-            or request.marker.get("settlement_ledger_version")
-            != request.row[1]
-            or request.marker.get("settlement_base_context_version")
-            != request.row[2]
-        ):
-            return ReviewSettlementClaim("conflict")
-        updated = dict(request.marker)
-        updated["settlement_state"] = "promoting"
-        if not _write_reservation_marker(self, request, updated):
-            return ReviewSettlementClaim("invalid")
-        return ReviewSettlementClaim(
-            "promoting", request.claim_token, request.fence_token
-        )
-
     def reserve_review_settlement(
         self,
         key: str,
@@ -859,39 +776,17 @@ class ConversationContextStore:
         expected_base_context_version: int | None = None,
     ) -> ReviewSettlementClaim:
         """Reserve the staged proposal before a private checkpoint write."""
-        if not self._review_reservation_inputs_valid(claim_token, fence_token):
-            return ReviewSettlementClaim("invalid")
-        with self._write() as connection:
-            row = _review_turn_row(connection, key, turn_id)
-            if row is None:
-                return ReviewSettlementClaim("missing")
-            failure = self._reserve_row_failure(
-                _review_claim_lookup(
-                    connection,
-                    key,
-                    row,
-                    expected_ledger_version,
-                    expected_base_context_version,
-                )
-            )
-            if failure is not None:
-                return failure
-            record = self._review_record(row[3])
-            if record is None:
-                return ReviewSettlementClaim("invalid")
-            decoded, marker = record
-            if not self._marker_is_bounded(marker, key=key, turn_id=turn_id):
-                return ReviewSettlementClaim("invalid")
-            identity = _ReviewClaimIdentity(key=key, turn_id=turn_id)
-            return self._reserve_marker_state(
-                _reservation_marker_request(
-                    _review_marker_context(
-                        connection, identity, row, decoded, marker
-                    ),
-                    claim_token,
-                    fence_token,
-                )
-            )
+        return _reserve_review_settlement(
+            self,
+            _ReviewReservationRequest(
+                key=key,
+                turn_id=turn_id,
+                claim_token=claim_token,
+                fence_token=fence_token,
+                expected_ledger_version=expected_ledger_version,
+                expected_base_context_version=expected_base_context_version,
+            ),
+        )
 
     def is_review_settlement_claim_active(
         self,
@@ -1559,6 +1454,13 @@ setattr(
 setattr(ConversationContextStore, "_claim_active_marker", _claim_active_marker)
 setattr(ConversationContextStore, "_claim_pending_marker", _claim_pending_marker)
 setattr(ConversationContextStore, "_claim_review_marker", _claim_review_marker)
+setattr(ConversationContextStore, "_reserve_row_failure", _reserve_row_failure)
+setattr(
+    ConversationContextStore,
+    "_review_reservation_inputs_valid",
+    staticmethod(_review_reservation_inputs_valid),
+)
+setattr(ConversationContextStore, "_reserve_marker_state", _reserve_marker_state)
 
 
 __all__ = [
