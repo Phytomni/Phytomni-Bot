@@ -1835,6 +1835,70 @@ class ConversationContextStore:
                 (_now(), key, turn_id),
             )
 
+    def _prepare_tombstone_candidates(
+        self, connection: sqlite3.Connection, key: str, now: str
+    ) -> set[str]:
+        """Collect candidates and fail pending Review markers.
+
+        The caller owns the transaction and mutation lock.
+        """
+        candidates = {
+            row[0]
+            for row in connection.execute(
+                "SELECT candidate_thread_id "
+                "FROM conversation_review_checkpoint_cleanup "
+                "WHERE conversation_key = ?",
+                (key,),
+            ).fetchall()
+        }
+        turn_rows = connection.execute(
+            "SELECT turn_id, delta_json FROM conversation_turns "
+            "WHERE conversation_key = ?",
+            (key,),
+        ).fetchall()
+        for turn_id, delta_json in turn_rows:
+            record = self._review_record(delta_json)
+            if record is None:
+                continue
+            decoded, marker = record
+            candidate = _review_candidate_thread_id(marker)
+            if candidate is not None:
+                candidates.add(candidate)
+                operation = marker.get("operation")
+                if not isinstance(operation, str):
+                    operation = "new_review"
+                self._upsert_review_checkpoint_cleanup(
+                    connection,
+                    _ReviewCleanupEntry(
+                        key=key,
+                        candidate=candidate,
+                        turn_id=turn_id,
+                        operation=operation,
+                        now=now,
+                        staged=True,
+                    ),
+                )
+            if marker.get("settlement_state") in {
+                "pending",
+                "settling",
+                "promoting",
+            }:
+                failed_marker = dict(marker)
+                failed_marker["settlement_state"] = "failed"
+                failed_marker.pop("settlement_claim_token", None)
+                failed_marker.pop("settlement_claimed_at", None)
+                self._write_review_marker(
+                    _ReviewMarkerWriteRequest(
+                        connection=connection,
+                        key=key,
+                        turn_id=turn_id,
+                        decoded=decoded,
+                        marker=failed_marker,
+                        now=now,
+                    )
+                )
+        return candidates
+
     def tombstone(
         self, key: str, *, mutation_lock_held: bool = False
     ) -> tuple[str, ...]:
@@ -1843,61 +1907,9 @@ class ConversationContextStore:
                 return self.tombstone(key, mutation_lock_held=True)
         now = _now()
         with self._write() as connection:
-            candidates = {
-                row[0]
-                for row in connection.execute(
-                    "SELECT candidate_thread_id "
-                    "FROM conversation_review_checkpoint_cleanup "
-                    "WHERE conversation_key = ?",
-                    (key,),
-                ).fetchall()
-            }
-            turn_rows = connection.execute(
-                "SELECT turn_id, delta_json FROM conversation_turns "
-                "WHERE conversation_key = ?",
-                (key,),
-            ).fetchall()
-            for turn_id, delta_json in turn_rows:
-                record = self._review_record(delta_json)
-                if record is None:
-                    continue
-                decoded, marker = record
-                candidate = _review_candidate_thread_id(marker)
-                if candidate is not None:
-                    candidates.add(candidate)
-                    operation = marker.get("operation")
-                    if not isinstance(operation, str):
-                        operation = "new_review"
-                    self._upsert_review_checkpoint_cleanup(
-                        connection,
-                        _ReviewCleanupEntry(
-                            key=key,
-                            candidate=candidate,
-                            turn_id=turn_id,
-                            operation=operation,
-                            now=now,
-                            staged=True,
-                        ),
-                    )
-                if marker.get("settlement_state") in {
-                    "pending",
-                    "settling",
-                    "promoting",
-                }:
-                    failed_marker = dict(marker)
-                    failed_marker["settlement_state"] = "failed"
-                    failed_marker.pop("settlement_claim_token", None)
-                    failed_marker.pop("settlement_claimed_at", None)
-                    self._write_review_marker(
-                        _ReviewMarkerWriteRequest(
-                            connection=connection,
-                            key=key,
-                            turn_id=turn_id,
-                            decoded=decoded,
-                            marker=failed_marker,
-                            now=now,
-                        )
-                    )
+            candidates = self._prepare_tombstone_candidates(
+                connection, key, now
+            )
             connection.execute(
                 "UPDATE conversation_review_checkpoint_cleanup SET "
                 "tombstone_pending = 1 WHERE conversation_key = ?",
