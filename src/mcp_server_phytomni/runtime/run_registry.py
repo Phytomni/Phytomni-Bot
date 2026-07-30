@@ -16,8 +16,7 @@ import contextlib
 import inspect
 import json
 import sqlite3
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from .run_registry_models import (
@@ -48,6 +47,7 @@ from .run_registry_models import (
     _now_iso,
     local_run_spec,
 )
+from .run_registry_protocols import _ReservedSubmissionRequest
 from .run_registry_reports import (
     ReportArtifactSources,
     any_degraded,
@@ -59,7 +59,6 @@ from .run_registry_reports import (
 from .run_registry_views import RunRegistryViewsMixin, _row_to_record
 from .sqlite import sqlite_transaction
 from .task_manager import (
-    Submission,
     TaskManager,
     _expires_at_for,
     resolve_tasks_db_path,
@@ -126,16 +125,8 @@ def purge_run_children(
     )
 
 
-@dataclass(frozen=True, slots=True)
-class _ReservedSubmissionRequest:
-    """Validated inputs for one reserved-run submission projection."""
-
-    run_id: str
-    owner: str
-    agent: str
-    submissions: Sequence[Submission]
-    result: dict[str, Any]
-    now: str
+if TYPE_CHECKING:
+    from .run_registry_protocols import RecordReservedSubmissionsCallable
 
 
 class RunRegistry(RunRegistryViewsMixin):
@@ -158,7 +149,7 @@ class RunRegistry(RunRegistryViewsMixin):
     if TYPE_CHECKING:
         # Runtime installation below keeps the historical explicit signature
         # while this annotation preserves the public static call seam.
-        record_reserved_submissions: Callable[..., bool]
+        record_reserved_submissions: RecordReservedSubmissionsCallable
 
     def _init_db(self) -> None:
         """Create the ``runs`` table and shared indices if missing.

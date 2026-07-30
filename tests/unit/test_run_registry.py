@@ -54,7 +54,7 @@ def _make_registry(tmp_path: Path) -> tuple[RunRegistry, TaskManager, str]:
 
 def test_record_reserved_submissions_preserves_public_signature() -> None:
     """The compatibility facade keeps class and bound call signatures."""
-    method = RunRegistry.record_reserved_submissions
+    method = getattr(RunRegistry, "record_reserved_submissions")
     assert str(inspect.signature(method)) == (
         "(self, run_id: 'str', *, owner: 'str', agent: 'str', "
         "submissions: 'Sequence[Submission]', result: 'dict[str, Any]', "
@@ -67,15 +67,14 @@ def test_record_reserved_submissions_preserves_public_signature() -> None:
         "submissions: 'Sequence[Submission]', result: 'dict[str, Any]', "
         "now: 'str') -> 'bool'"
     )
-    assert method.__annotations__ == {
-        "run_id": "str",
-        "owner": "str",
-        "agent": "str",
-        "submissions": "Sequence[Submission]",
-        "result": "dict[str, Any]",
-        "now": "str",
-        "return": "bool",
+    signature = inspect.signature(method)
+    expected_annotations = {
+        name: parameter.annotation
+        for name, parameter in signature.parameters.items()
+        if name != "self"
     }
+    expected_annotations["return"] = signature.return_annotation
+    assert method.__annotations__ == expected_annotations
     assert method.__qualname__ == "RunRegistry.record_reserved_submissions"
     assert method.__module__ == RunRegistry.__module__
 
