@@ -705,6 +705,83 @@ def test_application_routes_keep_shared_mcp_seams() -> None:
     assert "_apply_runs_resolver" not in run_source
 
 
+def test_native_run_facade_preserves_signature_and_module_identity() -> None:
+    """Keep the app-level native-run seam's callable metadata stable."""
+    invoke = getattr(api_app_module, "_invoke_agent_run")
+    signature = inspect.signature(invoke)
+    assert tuple(signature.parameters) == (
+        "agent",
+        "arguments",
+        "conversation_messages",
+        "agent_thread_id",
+        "private_agent_state",
+        "dialogue_id",
+        "request_json",
+        "debug",
+    )
+    assert all(
+        parameter.kind is inspect.Parameter.KEYWORD_ONLY
+        for parameter in signature.parameters.values()
+    )
+    assert signature.return_annotation == "tuple[dict[str, Any], int]"
+    assert invoke.__module__ == api_app_module.__name__
+    assert invoke.__qualname__ == "_invoke_agent_run"
+    assert invoke.__annotations__ == {
+        "agent": "str",
+        "arguments": "dict[str, Any]",
+        "conversation_messages": "tuple[dict[str, str], ...]",
+        "agent_thread_id": "str | None",
+        "private_agent_state": "Mapping[str, Any] | None",
+        "dialogue_id": "str | None",
+        "request_json": "str | None",
+        "debug": "bool",
+        "return": "tuple[dict[str, Any], int]",
+    }
+
+
+def test_native_run_preflight_uses_app_compatibility_seams(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Moved preflight keeps request-context and attachment seams patchable."""
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(
+        api_app_module, "current_request_user", lambda: "compat-owner"
+    )
+    monkeypatch.setattr(
+        api_app_module, "current_request_id", lambda: "compat-request"
+    )
+    monkeypatch.setattr(
+        api_app_module,
+        "resolve_tasks_db_path",
+        lambda: "compat-db",
+    )
+
+    def capture_attachments(*args: Any, **kwargs: Any) -> None:
+        """Capture the compatibility seam's owner and database inputs."""
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(
+        api_app_module,
+        "validate_native_attachments",
+        capture_attachments,
+    )
+    preflight = api_app_module._preflight_agent_run(
+        agent="chat",
+        arguments={"user_query": "compat query"},
+        dialogue_id="compat-dialogue",
+        request_json=None,
+    )
+
+    assert preflight.owner == "compat-owner"
+    assert preflight.request_info.request_id == "compat-request"
+    assert captured["args"] == ("chat", {"user_query": "compat query"})
+    assert captured["kwargs"] == {
+        "owner": "compat-owner",
+        "db_path": "compat-db",
+    }
+
+
 @pytest.mark.parametrize(
     "case",
     (

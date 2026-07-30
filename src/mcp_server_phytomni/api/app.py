@@ -41,13 +41,10 @@ from ..mcp.result_formatting import (
     strip_chat_completion,
 )
 from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
+from ..runtime import request_context as _request_context
 from ..runtime import stage_trace as _stage_trace
 from ..runtime import task_reconcile as _task_reconcile
 from ..runtime.locale import current_effective_locale
-from ..runtime.request_context import (
-    current_request_id as _current_request_id,
-)
-from ..runtime.request_context import current_request_user
 from ..runtime.resume import ahas_checkpoint as _runtime_has_checkpoint
 from ..runtime.run_registry import (
     RunRecord,
@@ -61,6 +58,7 @@ from . import admin_auth as _admin_auth
 from . import agent_capabilities as _agent_capabilities
 from . import agent_runs as _agent_runs
 from . import app_support as _app_support
+from . import attachments as _attachments
 from . import compat as _compat
 from . import factory as _factory
 from . import file_upload as _file_upload
@@ -134,13 +132,19 @@ resolve_deep_genome_user_query = _agent_runs.resolve_deep_genome_user_query
 resolve_design_user_query = _agent_runs.resolve_design_user_query
 resolve_network_user_query = _agent_runs.resolve_network_user_query
 validate_tool_arguments = _agent_runs.validate_tool_arguments
+_project_warnings = getattr(_agent_runs, "_project_warnings")
+validate_native_attachments = _attachments.validate_native_attachments
 DataStage = _stage_trace.DataStage
 trace_data_stage = _stage_trace.trace_data_stage
 
 # These assignments keep long-standing app-level monkeypatch seams available
 # after route wiring moved to ``api.factory``.
 invoke_tool_streamed = _mcp_app.invoke_tool_streamed
-current_request_id = _current_request_id
+current_accepted_task_ids = _request_context.current_accepted_task_ids
+current_recorder_degraded = _request_context.current_recorder_degraded
+current_request_id = _request_context.current_request_id
+current_request_user = _request_context.current_request_user
+current_run_id = _request_context.current_run_id
 reconcile_task_log = _task_reconcile.reconcile_task_log
 discover_external_a2a_capabilities = (
     _a2a_discovery.discover_external_a2a_capabilities

@@ -18,6 +18,7 @@ from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from importlib import import_module
+from inspect import Parameter, Signature
 from typing import Any
 
 from fastapi import HTTPException
@@ -34,20 +35,12 @@ from ..runtime.background_submission import (
     launch_background_submission,
     reserve_background_submission,
 )
-from ..runtime.request_context import (
-    current_accepted_task_ids,
-    current_recorder_degraded,
-    current_request_id,
-    current_request_user,
-    current_run_id,
-)
 from ..runtime.run_registry import RunRequestInfo
 from ..runtime.stage_trace import DataStage
 from ..runtime.submission_outcome import (
     project_submission_warnings as _project_warnings,
 )
 from . import run_lifecycle
-from .attachments import validate_native_attachments
 from .lifecycle_contract import (
     SafeApiError,
     SafeErrorCode,
@@ -69,6 +62,7 @@ __all__ = [
     "resolve_design_user_query",
     "resolve_network_user_query",
     "validate_tool_arguments",
+    "_project_warnings",
     "_AgentRunPreparation",
     "_AgentRunPreflight",
     "_background_agent_run_response",
@@ -116,7 +110,9 @@ def _project_submission_warnings(raw: Any) -> list[dict[str, Any]]:
     """Project safe remote-submission warnings into HTTP execution state."""
     if not isinstance(raw, Mapping):
         return []
-    return _project_warnings(raw.get("submission_warnings"))
+    return _app_attr("_project_warnings")(
+        raw.get("submission_warnings")
+    )
 
 
 def _request_info_query(
@@ -155,9 +151,9 @@ def _preflight_agent_run(
         elif agent == "network" and validation_arguments.get("resolve_to_id"):
             validation_arguments.setdefault("species_code", "osa")
             validation_arguments.setdefault("to_id", "TO:0000001")
-        validate_tool_arguments(tool_name, validation_arguments)
-    owner = current_request_user() or "anonymous"
-    validate_native_attachments(
+        _app_attr("validate_tool_arguments")(tool_name, validation_arguments)
+    owner = _app_attr("current_request_user")() or "anonymous"
+    _app_attr("validate_native_attachments")(
         agent,
         arguments,
         owner=owner,
@@ -168,7 +164,7 @@ def _preflight_agent_run(
         owner=owner,
         request_info=RunRequestInfo(
             dialogue_id=dialogue_id,
-            request_id=current_request_id(),
+            request_id=_app_attr("current_request_id")(),
             query=_request_info_query(arguments, request_json),
             tool_name=tool_name,
             model=None,
@@ -256,11 +252,11 @@ async def _execute_background_agent_run(
         debug=debug,
     )
     return BackgroundSubmissionOutcome(
-        accepted_task_ids=current_accepted_task_ids(),
+        accepted_task_ids=_app_attr("current_accepted_task_ids")(),
         # The detached worker persists this projection.  Debug is a public
         # response option, never an authorization to retain raw agent output.
         result=strip_agent_result(result),
-        degraded=current_recorder_degraded(),
+        degraded=_app_attr("current_recorder_degraded")(),
     )
 
 
@@ -390,9 +386,9 @@ def _resolve_remote_run(owner: str) -> run_lifecycle.ResolvedRemoteRun:
     """Compatibility seam for remote-run context recovery."""
     return run_lifecycle.resolve_remote_run(
         owner,
-        run_id=current_run_id(),
-        accepted_task_ids=current_accepted_task_ids(),
-        recorder_degraded=current_recorder_degraded(),
+        run_id=_app_attr("current_run_id")(),
+        accepted_task_ids=_app_attr("current_accepted_task_ids")(),
+        recorder_degraded=_app_attr("current_recorder_degraded")(),
         db_path=_app_attr("resolve_tasks_db_path")(),
     )
 
@@ -508,3 +504,62 @@ async def _invoke_prepared_agent_run(
 async def _invoke_agent_run(**kwargs: Any) -> tuple[dict[str, Any], int]:
     """Dispatch one native run through the shared lifecycle contract."""
     return await _invoke_agent_run_request(kwargs)
+
+
+_INVOKE_AGENT_RUN_ANNOTATIONS = {
+    "agent": "str",
+    "arguments": "dict[str, Any]",
+    "conversation_messages": "tuple[dict[str, str], ...]",
+    "agent_thread_id": "str | None",
+    "private_agent_state": "Mapping[str, Any] | None",
+    "dialogue_id": "str | None",
+    "request_json": "str | None",
+    "debug": "bool",
+    "return": "tuple[dict[str, Any], int]",
+}
+_INVOKE_AGENT_RUN_SIGNATURE = Signature(
+    [
+        Parameter("agent", Parameter.KEYWORD_ONLY, annotation="str"),
+        Parameter(
+            "arguments",
+            Parameter.KEYWORD_ONLY,
+            annotation="dict[str, Any]",
+        ),
+        Parameter(
+            "conversation_messages",
+            Parameter.KEYWORD_ONLY,
+            annotation="tuple[dict[str, str], ...]",
+            default=(),
+        ),
+        Parameter(
+            "agent_thread_id",
+            Parameter.KEYWORD_ONLY,
+            annotation="str | None",
+            default=None,
+        ),
+        Parameter(
+            "private_agent_state",
+            Parameter.KEYWORD_ONLY,
+            annotation="Mapping[str, Any] | None",
+            default=None,
+        ),
+        Parameter(
+            "dialogue_id",
+            Parameter.KEYWORD_ONLY,
+            annotation="str | None",
+            default=None,
+        ),
+        Parameter(
+            "request_json",
+            Parameter.KEYWORD_ONLY,
+            annotation="str | None",
+            default=None,
+        ),
+        Parameter(
+            "debug", Parameter.KEYWORD_ONLY, annotation="bool", default=False
+        ),
+    ],
+    return_annotation="tuple[dict[str, Any], int]",
+)
+setattr(_invoke_agent_run, "__annotations__", _INVOKE_AGENT_RUN_ANNOTATIONS)
+setattr(_invoke_agent_run, "__signature__", _INVOKE_AGENT_RUN_SIGNATURE)
