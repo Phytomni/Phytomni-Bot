@@ -1338,6 +1338,29 @@ class ConversationContextStore:
             return ReviewSettlementClaim("conflict")
         return None
 
+    @staticmethod
+    def _review_reservation_inputs_valid(
+        claim_token: object, fence_token: object
+    ) -> bool:
+        """Validate reservation tokens before opening the write transaction."""
+        claim_value: str | None = (
+            claim_token
+            if isinstance(claim_token, str)
+            and bool(claim_token)
+            and len(claim_token) <= _REVIEW_SETTLEMENT_TOKEN_LIMIT
+            else None
+        )
+        fence_value: int | None = (
+            fence_token
+            if not isinstance(fence_token, bool)
+            and isinstance(fence_token, int)
+            else None
+        )
+        return claim_value is not None and (
+            fence_value is not None
+            and 1 <= fence_value <= _REVIEW_SETTLEMENT_FENCE_LIMIT
+        )
+
     def reserve_review_settlement(
         self,
         key: str,
@@ -1349,15 +1372,7 @@ class ConversationContextStore:
         expected_base_context_version: int | None = None,
     ) -> ReviewSettlementClaim:
         """Reserve the staged proposal before a private checkpoint write."""
-        if (
-            not isinstance(claim_token, str)
-            or not claim_token
-            or len(claim_token) > _REVIEW_SETTLEMENT_TOKEN_LIMIT
-            or isinstance(fence_token, bool)
-            or not isinstance(fence_token, int)
-            or fence_token < 1
-            or fence_token > _REVIEW_SETTLEMENT_FENCE_LIMIT
-        ):
+        if not self._review_reservation_inputs_valid(claim_token, fence_token):
             return ReviewSettlementClaim("invalid")
         with self._write() as connection:
             row = connection.execute(
