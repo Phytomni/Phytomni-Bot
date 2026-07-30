@@ -535,6 +535,10 @@ async def test_context_expert_review_follow_up_and_revision_use_adapter(
             )
             return {"choices": [{"message": {"content": content}}]}
 
+        async def chat(self, prompt: str) -> dict[str, Any]:
+            """Expose the public Review chat seam used by production."""
+            return await self._chat(prompt)
+
         async def arun(self, **_kwargs: Any) -> dict[str, Any]:
             self.graph_calls += 1
             raise AssertionError(
@@ -897,6 +901,10 @@ async def test_context_expert_review_empty_local_revision_does_not_settle(
         async def _chat(self, _prompt: str) -> dict[str, Any]:
             return {"choices": [{"message": {"content": ""}}]}
 
+        async def chat(self, prompt: str) -> dict[str, Any]:
+            """Expose the public Review chat seam used by production."""
+            return await self._chat(prompt)
+
         async def arun(self, **_kwargs: Any) -> dict[str, Any]:
             self.graph_calls += 1
             raise AssertionError("empty local revision must not rerun graph")
@@ -966,6 +974,10 @@ async def test_context_expert_review_empty_follow_up_fails_without_staging(
         async def _chat(self, _prompt: str) -> dict[str, Any]:
             return {"choices": [{"message": {"content": ""}}]}
 
+        async def chat(self, prompt: str) -> dict[str, Any]:
+            """Expose the public Review chat seam used by production."""
+            return await self._chat(prompt)
+
         async def arun(self, **_kwargs: Any) -> dict[str, Any]:
             raise AssertionError("empty follow-up must not rerun graph")
 
@@ -1032,6 +1044,10 @@ async def test_context_expert_review_unknown_section_clarification_fails_turn(
 
         async def _chat(self, _prompt: str) -> dict[str, Any]:
             raise AssertionError("unknown section must clarify before chat")
+
+        async def chat(self, prompt: str) -> dict[str, Any]:
+            """Expose the public Review chat seam used by production."""
+            return await self._chat(prompt)
 
         async def arun(self, **_kwargs: Any) -> dict[str, Any]:
             raise AssertionError("unknown section must not rerun graph")

@@ -493,7 +493,12 @@ def test_context_lifecycle_purge_failure_preserves_run_gc(
         def fail(_now: object) -> None:
             raise sqlite3.OperationalError("context database is locked")
 
-        return SimpleNamespace(purge_expired_staged=fail)
+        return SimpleNamespace(
+            acquire_review_mutation_lock=lambda: SimpleNamespace(
+                release=lambda: None
+            ),
+            purge_expired_staged=fail,
+        )
 
     monkeypatch.setattr(
         run_lifecycle, "ConversationContextStore", failing_context_factory

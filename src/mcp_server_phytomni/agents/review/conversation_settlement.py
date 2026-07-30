@@ -118,12 +118,12 @@ def _review_settlement_candidate(
         candidate = _required_thread_id(candidate_value, "candidate")
         if candidate != _candidate_thread_id(stable, turn_id):
             raise _clarification_error(
-                "Review settlement candidate is not turn-scoped."
+                "Review settlement candidate checkpoint is not turn-scoped."
             )
         return candidate
     if candidate_value is not None:
         raise _clarification_error(
-            "Review settlement has an unexpected candidate thread."
+            "Review settlement has an unexpected candidate checkpoint thread."
         )
     return None
 
