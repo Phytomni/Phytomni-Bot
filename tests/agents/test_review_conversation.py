@@ -197,7 +197,9 @@ def test_review_snapshot_preserves_direct_dataclass_metadata() -> None:
         "report_revision",
     ]
     assert list(ReviewCheckpointSnapshot.__annotations__) == field_names
-    assert ReviewCheckpointSnapshot.__slots__ == tuple(field_names)
+    assert getattr(ReviewCheckpointSnapshot, "__slots__", ()) == tuple(
+        field_names
+    )
     assert not hasattr(snapshot, "__dict__")
     assert list(asdict(snapshot)) == field_names
 
