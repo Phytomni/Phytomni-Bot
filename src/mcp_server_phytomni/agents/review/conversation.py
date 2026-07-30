@@ -15,7 +15,7 @@ import inspect
 import json
 import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import Any, cast
 
@@ -193,6 +193,41 @@ class _RestoredReviewCheckpoint:
     state: object
     snapshot: ReviewCheckpointSnapshot | None
     document: ReviewReportDocument | None
+
+
+@dataclass(slots=True)
+class _ReviewCheckpointState:
+    """Mutable checkpoint state owned by one Review adapter."""
+
+    prepared: _PreparedReviewTurn | None = None
+    active_snapshot: ReviewCheckpointSnapshot | None = None
+    staged_snapshot: ReviewCheckpointSnapshot | None = None
+    report_revision: int = 0
+    settled: bool = False
+    operation_successful: bool = False
+    report_document: ReviewReportDocument | None = None
+
+
+@dataclass(slots=True)
+class _ReviewResultState:
+    """Mutable result and cleanup state owned by one Review adapter."""
+
+    last_revised_section: RevisedSection | None = None
+    captured_result: dict[str, Any] = field(default_factory=dict)
+    candidate_discarded: bool = False
+    pending_report_text: str | None = None
+    ordered_doc_list: list[dict[str, Any]] = field(default_factory=list)
+    settlement_fence: Callable[[], bool] | None = None
+
+
+@dataclass(slots=True)
+class _ReviewAdapterState:
+    """Mutable report and settlement state owned by one Review adapter."""
+
+    checkpoint: _ReviewCheckpointState = field(
+        default_factory=_ReviewCheckpointState
+    )
+    result: _ReviewResultState = field(default_factory=_ReviewResultState)
 
 
 ChatSeam = Callable[[str], Awaitable[Mapping[str, Any] | str | None]]
@@ -1259,40 +1294,38 @@ async def _load_restored_candidate_checkpoint(
 class _ReviewAdapterProperties:
     """Expose stable read-only Review state independently of orchestration."""
 
-    _prepared: _PreparedReviewTurn | None
-    _active_snapshot: ReviewCheckpointSnapshot | None
-    _staged_snapshot: ReviewCheckpointSnapshot | None
-    _report_revision: int
+    _state: _ReviewAdapterState
     _stable_thread_id: str | None
     _candidate_thread_id: str | None
     _execution_thread_id: str | None
-    _operation_successful: bool
     _agent: Any | None
 
     @property
     def operation(self) -> ReviewConversationOperation | None:
         """Return the prepared private operation, if any."""
-        return self._prepared.operation if self._prepared else None
+        prepared = self._state.checkpoint.prepared
+        return prepared.operation if prepared else None
 
     @property
     def snapshot(self) -> ReviewCheckpointSnapshot | None:
         """Return the bounded checkpoint snapshot used for this turn."""
-        return self._prepared.snapshot if self._prepared else None
+        prepared = self._state.checkpoint.prepared
+        return prepared.snapshot if prepared else None
 
     @property
     def active_snapshot(self) -> ReviewCheckpointSnapshot | None:
         """Return the last committed snapshot, excluding staged changes."""
-        return self._active_snapshot
+        return self._state.checkpoint.active_snapshot
 
     @property
     def staged_snapshot(self) -> ReviewCheckpointSnapshot | None:
         """Return a candidate snapshot pending successful settlement."""
-        return self._staged_snapshot
+        return self._state.checkpoint.staged_snapshot
 
     @property
     def report_revision(self) -> int:
         """Return the last settled report artifact revision."""
-        return self._report_revision
+        return self._state.checkpoint.report_revision
 
     @property
     def stable_thread_id(self) -> str | None:
@@ -1312,45 +1345,34 @@ class _ReviewAdapterProperties:
     @property
     def settlement_ready(self) -> bool:
         """Return whether this turn produced a candidate for settlement."""
-        if self._prepared is not None and self._prepared.operation in {
+        prepared = self._state.checkpoint.prepared
+        if prepared is not None and prepared.operation in {
             ReviewConversationOperation.NEW_REVIEW,
             ReviewConversationOperation.SCOPE_CHANGE,
         }:
             return (
-                self._operation_successful
+                self._state.checkpoint.operation_successful
                 and self.candidate_thread_id is not None
                 and self._agent is not None
             )
-        return self._operation_successful
+        return self._state.checkpoint.operation_successful
 
 
 class ReviewConversationAdapter(_ReviewAdapterProperties):
     """Prepare bounded Review turns and produce bounded context deltas."""
 
     def __init__(self) -> None:
-        self._prepared: _PreparedReviewTurn | None = None
-        self._active_snapshot: ReviewCheckpointSnapshot | None = None
-        self._staged_snapshot: ReviewCheckpointSnapshot | None = None
-        self._last_revised_section: RevisedSection | None = None
-        self._captured_result: dict[str, Any] = {}
-        self._report_revision = 0
-        self._settled = False
-        self._operation_successful = False
-        self._report_document: ReviewReportDocument | None = None
+        self._state = _ReviewAdapterState()
         self._agent: Any | None = None
         self._thread_id: str | None = None
         self._stable_thread_id: str | None = None
         self._execution_thread_id: str | None = None
         self._candidate_thread_id: str | None = None
         self._turn_id: str | None = None
-        self._candidate_discarded = False
-        self._pending_report_text: str | None = None
-        self._ordered_doc_list: list[dict[str, Any]] = []
-        self._settlement_fence: Callable[[], bool] | None = None
 
     def set_settlement_fence(self, fence: Callable[[], bool]) -> None:
         """Install the durable claim check used immediately before writes."""
-        self._settlement_fence = fence
+        self._state.result.settlement_fence = fence
 
     def attach_agent(self, agent: Any) -> None:
         """Attach the graph agent used by durable settlement operations."""
@@ -1358,7 +1380,8 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
 
     def _check_settlement_fence(self) -> None:
         """Fail closed when tombstone or another worker revoked the claim."""
-        if self._settlement_fence is not None and not self._settlement_fence():
+        fence = self._state.result.settlement_fence
+        if fence is not None and not fence():
             raise RuntimeError("Review settlement claim was fenced")
 
     def prepare(
@@ -1375,18 +1398,18 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         self._stable_thread_id = projection.agent_thread_id
         self._thread_id = self._stable_thread_id
         self._turn_id = validated_turn_id
-        self._report_document = None
-        self._ordered_doc_list = []
+        self._state.checkpoint.report_document = None
+        self._state.result.ordered_doc_list = []
         if snapshot is not None and not isinstance(
             snapshot, ReviewCheckpointSnapshot
         ):
-            self._ordered_doc_list = _reference_metadata(snapshot)
+            self._state.result.ordered_doc_list = _reference_metadata(snapshot)
             report_document = extract_review_report_document(snapshot)
             snapshot = extract_review_checkpoint(snapshot)
         elif report_document is None and self._agent is None:
-            self._report_document = None
+            self._state.checkpoint.report_document = None
         if report_document is not None:
-            self._report_document = report_document
+            self._state.checkpoint.report_document = report_document
         operation = classify_review_operation(
             projection.current_query,
             projection=projection,
@@ -1407,21 +1430,23 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
                 raise ReviewClarificationError(
                     f"The requested Review section {section_id!r} is unknown."
                 )
-        self._prepared = _PreparedReviewTurn(
+        self._state.checkpoint.prepared = _PreparedReviewTurn(
             projection=projection,
             operation=operation,
             snapshot=snapshot,
             section=section,
         )
-        self._active_snapshot = snapshot
-        self._staged_snapshot = _staged_scope_snapshot(
+        self._state.checkpoint.active_snapshot = snapshot
+        self._state.checkpoint.staged_snapshot = _staged_scope_snapshot(
             projection, snapshot, operation
         )
-        self._last_revised_section = None
-        self._captured_result = {}
-        self._report_revision = snapshot.report_revision if snapshot else 0
-        self._settled = False
-        self._operation_successful = (
+        self._state.result.last_revised_section = None
+        self._state.result.captured_result = {}
+        self._state.checkpoint.report_revision = (
+            snapshot.report_revision if snapshot else 0
+        )
+        self._state.checkpoint.settled = False
+        self._state.checkpoint.operation_successful = (
             operation is not ReviewConversationOperation.LOCAL_REVISION
         )
         if operation in {
@@ -1436,8 +1461,8 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         else:
             self._candidate_thread_id = None
             self._execution_thread_id = self._stable_thread_id
-        self._candidate_discarded = False
-        self._pending_report_text = None
+        self._state.result.candidate_discarded = False
+        self._state.result.pending_report_text = None
         prompt_context = _prompt_context(snapshot, section=section)
         return {
             "user_query": projection.current_query,
@@ -1452,7 +1477,7 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
             "report_artifact_id": (
                 snapshot.report_artifact_id if snapshot else None
             ),
-            "report_revision": self._report_revision,
+            "report_revision": self._state.checkpoint.report_revision,
         }
 
     async def prepare_from_agent(
@@ -1487,7 +1512,7 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         )
         ordered = _reference_metadata(state)
         if ordered:
-            self._ordered_doc_list = ordered
+            self._state.result.ordered_doc_list = ordered
         return prepared
 
     def settlement_metadata(self) -> dict[str, Any] | None:
@@ -1513,7 +1538,7 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
             "stable_thread_id": self.stable_thread_id[:512],
             "candidate_thread_id": candidate[:512] if candidate else None,
             "turn_id": self._turn_id[:64],
-            "report_revision": self._report_revision,
+            "report_revision": self._state.checkpoint.report_revision,
             "settlement_state": "pending",
         }
 
@@ -1536,9 +1561,9 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         ):
             self.mark_failed()
             return False
-        self._staged_snapshot = snapshot
-        self._report_document = document
-        self._pending_report_text = document.text
+        self._state.checkpoint.staged_snapshot = snapshot
+        self._state.checkpoint.report_document = document
+        self._state.result.pending_report_text = document.text
         return True
 
     async def _validate_active_settlement(
@@ -1557,8 +1582,8 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         if snapshot is None or not _usable_report_document(document):
             self.mark_failed()
             return False
-        self._active_snapshot = snapshot
-        self._report_document = document
+        self._state.checkpoint.active_snapshot = snapshot
+        self._state.checkpoint.report_document = document
         return operation in {
             ReviewConversationOperation.FOLLOW_UP,
             ReviewConversationOperation.LOCAL_REVISION,
@@ -1604,24 +1629,24 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
             restored.candidate_thread_id or self._stable_thread_id
         )
         self._turn_id = restored.turn_id
-        self._report_revision = restored.report_revision
-        self._settled = False
-        self._candidate_discarded = False
-        self._operation_successful = True
+        self._state.checkpoint.report_revision = restored.report_revision
+        self._state.checkpoint.settled = False
+        self._state.result.candidate_discarded = False
+        self._state.checkpoint.operation_successful = True
         stable_checkpoint = await _load_restored_stable_checkpoint(
             agent, restored.operation, self._stable_thread_id
         )
-        self._active_snapshot = stable_checkpoint.snapshot
-        self._report_document = stable_checkpoint.document
+        self._state.checkpoint.active_snapshot = stable_checkpoint.snapshot
+        self._state.checkpoint.report_document = stable_checkpoint.document
         candidate_checkpoint: _RestoredReviewCheckpoint | None = None
         if restored.candidate_thread_id is not None:
             candidate_checkpoint = await _load_restored_candidate_checkpoint(
                 agent, restored.candidate_thread_id
             )
-            self._staged_snapshot = candidate_checkpoint.snapshot
-            self._report_document = candidate_checkpoint.document
+            self._state.checkpoint.staged_snapshot = candidate_checkpoint.snapshot
+            self._state.checkpoint.report_document = candidate_checkpoint.document
             assert candidate_checkpoint.document is not None
-            self._pending_report_text = candidate_checkpoint.document.text
+            self._state.result.pending_report_text = candidate_checkpoint.document.text
         projection = ContextProjection.model_construct(
             current_query="settlement",
             intent_kind="follow_up",
@@ -1637,43 +1662,45 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
             token_budget=1,
             context_truncated=False,
         )
-        self._prepared = _PreparedReviewTurn(
+        self._state.checkpoint.prepared = _PreparedReviewTurn(
             projection=projection,
             operation=restored.operation,
             snapshot=stable_checkpoint.snapshot,
             section=None,
         )
         if candidate_checkpoint is None:
-            self._staged_snapshot = None
-            self._pending_report_text = None
-        self._ordered_doc_list = _reference_metadata(
+            self._state.checkpoint.staged_snapshot = None
+            self._state.result.pending_report_text = None
+        self._state.result.ordered_doc_list = _reference_metadata(
             candidate_checkpoint.state
             if candidate_checkpoint is not None
             else stable_checkpoint.state
         )
         if restored.operation is ReviewConversationOperation.LOCAL_REVISION:
-            self._pending_report_text = answer
-            self._report_document = _report_document_from_text(answer)
+            self._state.result.pending_report_text = answer
+            self._state.checkpoint.report_document = _report_document_from_text(
+                answer
+            )
 
     def mark_failed(self) -> None:
         """Discard any candidate produced by a failed or incomplete turn."""
-        self._operation_successful = False
-        self._staged_snapshot = None
-        self._pending_report_text = None
+        self._state.checkpoint.operation_successful = False
+        self._state.checkpoint.staged_snapshot = None
+        self._state.result.pending_report_text = None
 
     def capture_result(self, result: Mapping[str, Any]) -> None:
         """Capture only bounded metadata from a completed Review result."""
-        if self._prepared is None:
+        if self._state.checkpoint.prepared is None:
             raise RuntimeError("prepare must run before capture_result")
-        if not self._operation_successful:
+        if not self._state.checkpoint.operation_successful:
             return
         ordered = _reference_metadata(result)
         if ordered:
-            self._ordered_doc_list = ordered
+            self._state.result.ordered_doc_list = ordered
         answer = _answer_from_result(result)
         captured_answer = (
             _bounded_text(answer, _MAX_SUMMARY_CHARS)
-            if self._prepared.operation
+            if self._state.checkpoint.prepared.operation
             is ReviewConversationOperation.FOLLOW_UP
             else ""
         )
@@ -1682,7 +1709,7 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         if not _usable_response_text(answer):
             self.mark_failed()
             return
-        self._captured_result = {
+        self._state.result.captured_result = {
             "result": {
                 "formatted": {
                     "answer": captured_answer,
@@ -1691,54 +1718,59 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
             }
         }
         if document is not None and document.text:
-            self._report_document = document
-            self._pending_report_text = document.text
+            self._state.checkpoint.report_document = document
+            self._state.result.pending_report_text = document.text
         if checkpoint is not None:
-            self._staged_snapshot = checkpoint
-        if self._last_revised_section is not None:
-            base = self._active_snapshot or self._prepared.snapshot
+            self._state.checkpoint.staged_snapshot = checkpoint
+        if self._state.result.last_revised_section is not None:
+            base = (
+                self._state.checkpoint.active_snapshot
+                or self._state.checkpoint.prepared.snapshot
+            )
             if base is not None:
-                self._staged_snapshot = _replace_section(
-                    base, self._last_revised_section
+                self._state.checkpoint.staged_snapshot = _replace_section(
+                    base, self._state.result.last_revised_section
                 )
         if (
-            self._prepared.operation
+            self._state.checkpoint.prepared.operation
             is ReviewConversationOperation.LOCAL_REVISION
         ):
             if not _answer_from_result(result):
                 self.mark_failed()
-            elif self._report_document is not None:
-                self._pending_report_text = (
-                    self._report_document.replace(self._last_revised_section)
-                    if self._last_revised_section is not None
+            elif self._state.checkpoint.report_document is not None:
+                self._state.result.pending_report_text = (
+                    self._state.checkpoint.report_document.replace(
+                        self._state.result.last_revised_section
+                    )
+                    if self._state.result.last_revised_section is not None
                     else None
                 )
 
     def settle(self, success: bool) -> int:
         """Advance the report revision only after successful settlement."""
-        if not success or not self._operation_successful:
-            self._staged_snapshot = None
-            return self._report_revision
-        if not self._settled:
-            self._report_revision += 1
-            if self._staged_snapshot is not None:
-                self._active_snapshot = replace(
-                    self._staged_snapshot,
-                    report_revision=self._report_revision,
+        if not success or not self._state.checkpoint.operation_successful:
+            self._state.checkpoint.staged_snapshot = None
+            return self._state.checkpoint.report_revision
+        if not self._state.checkpoint.settled:
+            self._state.checkpoint.report_revision += 1
+            if self._state.checkpoint.staged_snapshot is not None:
+                self._state.checkpoint.active_snapshot = replace(
+                    self._state.checkpoint.staged_snapshot,
+                    report_revision=self._state.checkpoint.report_revision,
                 )
-            self._settled = True
-        return self._report_revision
+            self._state.checkpoint.settled = True
+        return self._state.checkpoint.report_revision
 
     async def settle_async(self, success: bool) -> int:
         """Settle the candidate and persist private report state."""
-        prepared = self._prepared
+        prepared = self._state.checkpoint.prepared
         if prepared is None:
             raise RuntimeError("prepare must run before settle_async")
-        if not success or not self._operation_successful:
+        if not success or not self._state.checkpoint.operation_successful:
             return self.settle(False)
-        if self._settled:
-            return self._report_revision
-        next_revision = self._report_revision + 1
+        if self._state.checkpoint.settled:
+            return self._state.checkpoint.report_revision
+        next_revision = self._state.checkpoint.report_revision + 1
         self._check_settlement_fence()
         if prepared.operation in {
             ReviewConversationOperation.NEW_REVIEW,
@@ -1764,8 +1796,8 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
                 )
             return
         values: dict[str, Any] = {"report_revision": revision}
-        if self._pending_report_text is not None:
-            values["summary_content"] = self._pending_report_text
+        if self._state.result.pending_report_text is not None:
+            values["summary_content"] = self._state.result.pending_report_text
         self._check_settlement_fence()
         await _invoke_checkpoint_updater(updater, self.stable_thread_id, values)
 
@@ -1796,15 +1828,15 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
             )
         values = dict(candidate_values)
         values["report_revision"] = revision
-        if self._pending_report_text is not None:
-            values["summary_content"] = self._pending_report_text
+        if self._state.result.pending_report_text is not None:
+            values["summary_content"] = self._state.result.pending_report_text
         self._check_settlement_fence()
         await _invoke_checkpoint_updater(updater, self.stable_thread_id, values)
 
     async def discard_pending_candidate(self) -> None:
         """Delete an unacknowledged candidate without touching active state."""
         if (
-            self._candidate_discarded
+            self._state.result.candidate_discarded
             or self._agent is None
             or self.candidate_thread_id is None
         ):
@@ -1820,18 +1852,18 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
             )
             if inspect.isawaitable(result):
                 await result
-        self._candidate_discarded = True
+        self._state.result.candidate_discarded = True
 
     def follow_up_prompt(self) -> str:
         """Build the bounded prompt for an existing-claim follow-up."""
-        if self._prepared is None:
+        if self._state.checkpoint.prepared is None:
             raise RuntimeError("prepare must run before follow_up_prompt")
-        context = _prompt_context(self._prepared.snapshot)
+        context = _prompt_context(self._state.checkpoint.prepared.snapshot)
         return (
             "Answer the current Review follow-up using only bounded context. "
             "Do not reconstruct or quote the complete prior report.\n\n"
             f"{context}\n\n[current question]\n"
-            f"{self._prepared.projection.current_query}"
+            f"{self._state.checkpoint.prepared.projection.current_query}"
         )[:_MAX_PROMPT_CHARS]
 
     async def follow_up(
@@ -1839,7 +1871,7 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         chat: ChatSeam,
     ) -> dict[str, Any]:
         """Answer a follow-up through Review's existing chat seam."""
-        if self._prepared is None:
+        if self._state.checkpoint.prepared is None:
             raise RuntimeError("prepare must run before follow_up")
         response = await chat(self.follow_up_prompt())
         answer = _response_text(response)
@@ -1857,52 +1889,57 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         chat: ChatSeam,
     ) -> dict[str, Any]:
         """Revise only the validated section and reassemble the report."""
-        if self._prepared is None or self._prepared.section is None:
+        if (
+            self._state.checkpoint.prepared is None
+            or self._state.checkpoint.prepared.section is None
+        ):
             raise ReviewClarificationError(
                 "Please name an active Review section to revise."
             )
-        section = self._prepared.section
+        section = self._state.checkpoint.prepared.section
         revised = await revise_section(
             section_id=section.section_id,
             section_text=section.text,
-            instruction=self._prepared.projection.current_query,
-            evidence_summary=_evidence_summary(self._prepared.snapshot),
+            instruction=self._state.checkpoint.prepared.projection.current_query,
+            evidence_summary=_evidence_summary(
+                self._state.checkpoint.prepared.snapshot
+            ),
             chat=chat,
         )
-        self._last_revised_section = revised
+        self._state.result.last_revised_section = revised
         report_source: ReviewReportDocument | Sequence[ReviewSection] = (
-            self._report_document
-            if self._report_document is not None
+            self._state.checkpoint.report_document
+            if self._state.checkpoint.report_document is not None
             else (
-                self._prepared.snapshot.sections
-                if self._prepared.snapshot is not None
+                self._state.checkpoint.prepared.snapshot.sections
+                if self._state.checkpoint.prepared.snapshot is not None
                 else (section,)
             )
         )
         report = reassemble_report(report_source, revised)
-        self._pending_report_text = report
-        self._operation_successful = bool(report.strip())
+        self._state.result.pending_report_text = report
+        self._state.checkpoint.operation_successful = bool(report.strip())
         return self._answer_result(
             report, ReviewConversationOperation.LOCAL_REVISION
         )
 
     def delta(self, result: Mapping[str, Any] | None = None) -> ContextDelta:
         """Convert a successful Review result into bounded metadata."""
-        if self._prepared is None:
+        if self._state.checkpoint.prepared is None:
             raise RuntimeError("prepare must run before delta")
-        result = result or self._captured_result
+        result = result or self._state.result.captured_result
         snapshot = (
-            self._staged_snapshot
-            if self._prepared.operation
+            self._state.checkpoint.staged_snapshot
+            if self._state.checkpoint.prepared.operation
             in {
                 ReviewConversationOperation.NEW_REVIEW,
                 ReviewConversationOperation.SCOPE_CHANGE,
             }
-            else self._prepared.snapshot
+            else self._state.checkpoint.prepared.snapshot
         )
         summary = _review_summary(
-            self._prepared.operation,
-            self._prepared.projection,
+            self._state.checkpoint.prepared.operation,
+            self._state.checkpoint.prepared.projection,
             snapshot,
             result,
         )
@@ -1912,7 +1949,7 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         )
         authorized = {
             item.artifact_id: item
-            for item in self._prepared.projection.artifact_refs
+            for item in self._state.checkpoint.prepared.projection.artifact_refs
         }
         if artifact_id in authorized:
             artifact_upserts.append(authorized[artifact_id])
@@ -1922,7 +1959,9 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
             artifact_upserts=artifact_upserts,
             agent_memory_update=PerAgentMemory(
                 agent_id="ReviewAgent",
-                thread_id=self._prepared.projection.agent_thread_id,
+                thread_id=(
+                    self._state.checkpoint.prepared.projection.agent_thread_id
+                ),
                 summary=summary[:MAX_CONTEXT_TEXT_CHARS],
                 checkpoint_ref=(
                     artifact_id if artifact_id in authorized else None
@@ -1942,7 +1981,8 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
                     "message": {
                         "content": content,
                         "doc_list": [
-                            dict(item) for item in self._ordered_doc_list
+                            dict(item)
+                            for item in self._state.result.ordered_doc_list
                         ],
                         "total": 10000,
                         "follow_up_questions": [],
@@ -1952,11 +1992,14 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
             "phytomni_state": {
                 "review_operation": operation.value,
                 "report_artifact_id": (
-                    self._prepared.snapshot.report_artifact_id
-                    if self._prepared and self._prepared.snapshot
+                    self._state.checkpoint.prepared.snapshot.report_artifact_id
+                    if (
+                        self._state.checkpoint.prepared
+                        and self._state.checkpoint.prepared.snapshot
+                    )
                     else None
                 ),
-                "report_revision": self._report_revision,
+                "report_revision": self._state.checkpoint.report_revision,
             },
         }
 
