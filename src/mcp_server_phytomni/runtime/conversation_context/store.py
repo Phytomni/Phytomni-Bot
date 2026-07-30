@@ -336,6 +336,19 @@ class _StagedTurnCommitRequest:
 
 
 @dataclass(frozen=True)
+class _ReviewReservationMarkerRequest:
+    """Inputs for advancing one validated Review reservation marker."""
+
+    connection: sqlite3.Connection
+    identity: _ReviewClaimIdentity
+    row: sqlite3.Row | tuple[Any, ...]
+    decoded: dict[str, Any]
+    marker: dict[str, Any]
+    claim_token: str
+    fence_token: int
+
+
+@dataclass(frozen=True)
 class _ReviewClaimLookupRequest:
     """Inputs for precondition checks before a Review marker claim."""
 
@@ -1361,6 +1374,51 @@ class ConversationContextStore:
             and 1 <= fence_value <= _REVIEW_SETTLEMENT_FENCE_LIMIT
         )
 
+    def _reserve_marker_state(
+        self, request: _ReviewReservationMarkerRequest
+    ) -> ReviewSettlementClaim:
+        """Advance a validated reservation marker in its open transaction."""
+        state = request.marker.get("settlement_state")
+        claim_matches = (
+            request.marker.get("settlement_claim_token")
+            == request.claim_token
+            and self._marker_fence(request.marker) == request.fence_token
+        )
+        if state == "promoting":
+            return ReviewSettlementClaim(
+                "promoting" if claim_matches else "conflict",
+                request.claim_token if claim_matches else None,
+                request.fence_token if claim_matches else None,
+            )
+        if state != "settling":
+            if state in {"promoted", "rejected", "failed"}:
+                return ReviewSettlementClaim(state)
+            return ReviewSettlementClaim("conflict")
+        if (
+            not claim_matches
+            or request.marker.get("settlement_ledger_version")
+            != request.row[1]
+            or request.marker.get("settlement_base_context_version")
+            != request.row[2]
+        ):
+            return ReviewSettlementClaim("conflict")
+        updated = dict(request.marker)
+        updated["settlement_state"] = "promoting"
+        if not self._write_review_marker(
+            _ReviewMarkerWriteRequest(
+                connection=request.connection,
+                key=request.identity.key,
+                turn_id=request.identity.turn_id,
+                decoded=request.decoded,
+                marker=updated,
+                now=_now(),
+            )
+        ):
+            return ReviewSettlementClaim("invalid")
+        return ReviewSettlementClaim(
+            "promoting", request.claim_token, request.fence_token
+        )
+
     def reserve_review_settlement(
         self,
         key: str,
@@ -1401,41 +1459,17 @@ class ConversationContextStore:
             decoded, marker = record
             if not self._marker_is_bounded(marker, key=key, turn_id=turn_id):
                 return ReviewSettlementClaim("invalid")
-            state = marker.get("settlement_state")
-            if state == "promoting":
-                if (
-                    marker.get("settlement_claim_token") == claim_token
-                    and self._marker_fence(marker) == fence_token
-                ):
-                    return ReviewSettlementClaim(
-                        "promoting", claim_token, fence_token
-                    )
-                return ReviewSettlementClaim("conflict")
-            if state != "settling":
-                if state in {"promoted", "rejected", "failed"}:
-                    return ReviewSettlementClaim(state)
-                return ReviewSettlementClaim("conflict")
-            if (
-                marker.get("settlement_claim_token") != claim_token
-                or self._marker_fence(marker) != fence_token
-                or marker.get("settlement_ledger_version") != row[1]
-                or marker.get("settlement_base_context_version") != row[2]
-            ):
-                return ReviewSettlementClaim("conflict")
-            updated = dict(marker)
-            updated["settlement_state"] = "promoting"
-            if not self._write_review_marker(
-                _ReviewMarkerWriteRequest(
+            return self._reserve_marker_state(
+                _ReviewReservationMarkerRequest(
                     connection=connection,
-                    key=key,
-                    turn_id=turn_id,
+                    identity=_ReviewClaimIdentity(key=key, turn_id=turn_id),
+                    row=row,
                     decoded=decoded,
-                    marker=updated,
-                    now=_now(),
+                    marker=marker,
+                    claim_token=claim_token,
+                    fence_token=fence_token,
                 )
-            ):
-                return ReviewSettlementClaim("invalid")
-            return ReviewSettlementClaim("promoting", claim_token, fence_token)
+            )
 
     def is_review_settlement_claim_active(
         self,
