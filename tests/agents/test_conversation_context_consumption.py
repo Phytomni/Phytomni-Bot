@@ -121,15 +121,14 @@ async def test_knowledge_compatibility_wrappers_forward_history(
 ) -> None:
     """Compatibility wrappers pass history into ``KnowledgeAgent.arun``."""
 
-    class FakeKnowledgeAgent:
-        def __init__(self) -> None:
-            self.calls: list[dict[str, Any]] = []
+    calls: list[dict[str, Any]] = []
 
-        async def arun(self, **kwargs: Any) -> dict[str, Any]:
-            self.calls.append(kwargs)
-            return {"choices": [{"message": {"content": "ok"}}]}
+    async def arun(**kwargs: Any) -> dict[str, Any]:
+        """Record compatibility-wrapper arguments and return a stub."""
+        calls.append(kwargs)
+        return {"choices": [{"message": {"content": "ok"}}]}
 
-    fake_agent = FakeKnowledgeAgent()
+    fake_agent = SimpleNamespace(calls=calls, arun=arun)
 
     monkeypatch.setattr(
         knowledge_agent,

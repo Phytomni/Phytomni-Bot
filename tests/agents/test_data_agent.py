@@ -357,7 +357,10 @@ async def test_rewrite_nl2sql_keeps_explicit_thread_and_dialog_ids(
     captured: dict[str, Any] = {}
 
     class FakeDataAgent:
+        """Fake DataAgent preserving the explicit thread-id contract."""
+
         def __init__(self, data_config, sensitive_config):
+            """Capture the config while discarding sensitive settings."""
             del sensitive_config
             captured["config"] = data_config
 
@@ -369,6 +372,7 @@ async def test_rewrite_nl2sql_keeps_explicit_thread_and_dialog_ids(
             thread_id: str | None = None,
             locale: str | None = None,
         ) -> dict[str, object]:
+            """Capture the graph invocation and return a success payload."""
             captured["run"] = {
                 "user_query": user_query,
                 "is_rewrite": is_rewrite,
@@ -377,6 +381,10 @@ async def test_rewrite_nl2sql_keeps_explicit_thread_and_dialog_ids(
                 "locale": locale,
             }
             return {"ok": True}
+
+        def captured_config(self) -> Any:
+            """Return the config captured by the fake constructor."""
+            return captured["config"]
 
     def no_cache(name, factory, fingerprint_values=None):
         del name, fingerprint_values

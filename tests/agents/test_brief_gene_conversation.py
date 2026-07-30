@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+from types import SimpleNamespace
 from typing import Any
 from uuid import UUID
 
@@ -273,14 +274,14 @@ async def test_first_gene_runs_resolver_and_full_workflow(
 
     calls: dict[str, Any] = {}
 
-    async def resolve(query: str, **kwargs: Any) -> BriefGeneResolveResult:
+    async def resolve(query: str, **_kwargs: Any) -> BriefGeneResolveResult:
         calls["resolver_query"] = query
         return _resolved(query)
 
-    class FakeAgent:
-        async def arun(self, **kwargs: Any) -> dict[str, Any]:
-            calls["arun"] = kwargs
-            return _full_result()
+    async def arun(**kwargs: Any) -> dict[str, Any]:
+        """Record the full-workflow invocation and return its fixture."""
+        calls["arun"] = kwargs
+        return _full_result()
 
     monkeypatch.setattr(
         brief_gene_agent, "resolve_brief_gene_user_query", resolve
@@ -288,7 +289,7 @@ async def test_first_gene_runs_resolver_and_full_workflow(
     monkeypatch.setattr(
         brief_gene_agent,
         "get_cached_agent",
-        lambda *args, **kwargs: FakeAgent(),
+        lambda *args, **kwargs: SimpleNamespace(arun=arun),
     )
 
     result = await brief_gene_agent.brief_gene_function(
@@ -315,17 +316,17 @@ async def test_follow_up_uses_active_context_without_resolver_or_full_graph(
     assert prepared["operation"] is BriefGeneConversationOperation.FOLLOW_UP
     calls: dict[str, Any] = {}
 
-    async def fail_resolve(*args: Any, **kwargs: Any) -> Any:
+    async def fail_resolve(*_args: Any, **_kwargs: Any) -> Any:
         calls["resolver"] = True
         raise AssertionError(
             "follow-up must not resolve the natural-language query"
         )
 
-    async def fail_full(*args: Any, **kwargs: Any) -> Any:
+    async def fail_full(*_args: Any, **_kwargs: Any) -> Any:
         calls["full"] = True
         raise AssertionError("follow-up must not invoke the full graph")
 
-    async def chat(prompt: str, **kwargs: Any) -> dict[str, Any]:
+    async def chat(prompt: str, **_kwargs: Any) -> dict[str, Any]:
         calls["prompt"] = prompt
         return {
             "choices": [
@@ -369,14 +370,14 @@ async def test_refresh_runs_full_workflow_for_active_gene(
     adapter.prepare(projection)
     calls: dict[str, Any] = {}
 
-    async def resolve(query: str, **kwargs: Any) -> BriefGeneResolveResult:
+    async def resolve(query: str, **_kwargs: Any) -> BriefGeneResolveResult:
         calls["resolver_query"] = query
         return _resolved(query)
 
-    class FakeAgent:
-        async def arun(self, **kwargs: Any) -> dict[str, Any]:
-            calls["arun"] = kwargs
-            return _full_result(revision=5)
+    async def arun(**kwargs: Any) -> dict[str, Any]:
+        """Record the refresh invocation and return its fixture."""
+        calls["arun"] = kwargs
+        return _full_result(revision=5)
 
     monkeypatch.setattr(
         brief_gene_agent, "resolve_brief_gene_user_query", resolve
@@ -384,7 +385,7 @@ async def test_refresh_runs_full_workflow_for_active_gene(
     monkeypatch.setattr(
         brief_gene_agent,
         "get_cached_agent",
-        lambda *args, **kwargs: FakeAgent(),
+        lambda *args, **kwargs: SimpleNamespace(arun=arun),
     )
 
     await brief_gene_agent.brief_gene_function(
@@ -406,7 +407,7 @@ async def test_new_identifier_replaces_active_gene_only_after_success(
     adapter = BriefGeneConversationAdapter()
     adapter.prepare(projection)
 
-    async def fail_resolve(*args: Any, **kwargs: Any) -> Any:
+    async def fail_resolve(*_args: Any, **_kwargs: Any) -> Any:
         raise BriefGeneResolveError("ambiguous")
 
     monkeypatch.setattr(
@@ -420,16 +421,18 @@ async def test_new_identifier_replaces_active_gene_only_after_success(
     assert clarification["choices"][0]["message"]["content"]
     assert adapter.active_gene_id == "Os01g0177400"
 
-    async def resolve(query: str, **kwargs: Any) -> BriefGeneResolveResult:
+    async def resolve(
+        _query: str, **_kwargs: Any
+    ) -> BriefGeneResolveResult:
         return _resolved("AT1G01010")
 
-    class FakeAgent:
-        async def arun(self, **kwargs: Any) -> dict[str, Any]:
-            return _full_result(
-                gene_id="AT1G01010",
-                species_code="ath",
-                artifact_id="new-report",
-            )
+    async def arun(**_kwargs: Any) -> dict[str, Any]:
+        """Return the successful replacement report fixture."""
+        return _full_result(
+            gene_id="AT1G01010",
+            species_code="ath",
+            artifact_id="new-report",
+        )
 
     monkeypatch.setattr(
         brief_gene_agent, "resolve_brief_gene_user_query", resolve
@@ -437,7 +440,7 @@ async def test_new_identifier_replaces_active_gene_only_after_success(
     monkeypatch.setattr(
         brief_gene_agent,
         "get_cached_agent",
-        lambda *args, **kwargs: FakeAgent(),
+        lambda *args, **kwargs: SimpleNamespace(arun=arun),
     )
     await brief_gene_agent.brief_gene_function(
         "AT1G01010",

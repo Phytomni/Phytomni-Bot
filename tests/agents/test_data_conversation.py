@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+from typing import cast
 from uuid import UUID
 
 import pytest
@@ -55,14 +56,19 @@ def _result(
     headers: list[str],
     rows: list[list[object]],
     summary: str,
-    aggregate_summary: str | object = _MISSING,
-    raw_summary: str | None = None,
-    formatted_answer: str | None = None,
-    dataset_ids: list[str] | None = None,
-    table_id: str = "expression_table",
-    artifact_id: str = "artifact-expression",
+    **options: object,
 ) -> dict[str, object]:
     """Build one native DataAgent run envelope for delta extraction."""
+    aggregate_summary = options.get("aggregate_summary", _MISSING)
+    raw_summary = cast(str | None, options.get("raw_summary"))
+    formatted_answer = cast(str | None, options.get("formatted_answer"))
+    dataset_ids = cast(list[str] | None, options.get("dataset_ids"))
+    table_id = cast(
+        str, options.get("table_id", "expression_table")
+    )
+    artifact_id = cast(
+        str, options.get("artifact_id", "artifact-expression")
+    )
     result: dict[str, object] = {
         "id": "run-data",
         "object": "agent.run",
