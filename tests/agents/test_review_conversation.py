@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import pickle
 import sqlite3
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -56,6 +58,32 @@ pytestmark = pytest.mark.agent
 _CONVERSATION_KEY = UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")
 _THREAD_ID = agent_thread_id(_CONVERSATION_KEY, "ReviewAgent")
 _FULL_REPORT = "FULL_PRIOR_REPORT_MUST_NOT_CROSS_THE_CONTEXT_BOUNDARY"
+_LEGACY_REVIEW_ADAPTER_PICKLE = (
+    "gASVYQUAAAAAAACMLm1jcF9zZXJ2ZXJfcGh5dG9tbmkuYWdlbnRzLnJldmlldy5jb252ZXJzYXRpb26U"
+    "jBlSZXZpZXdDb252ZXJzYXRpb25BZGFwdGVylJOUKYGUfZQojAZfc3RhdGWUaACME19SZXZpZXdBZGFw"
+    "dGVyU3RhdGWUk5QpgZROfZQojApjaGVja3BvaW50lGgAjBZfUmV2aWV3Q2hlY2twb2ludFN0YXRllJOU"
+    "KYGUTn2UKIwIcHJlcGFyZWSUaACME19QcmVwYXJlZFJldmlld1R1cm6Uk5QpgZRdlCiMN21jcF9zZXJ2"
+    "ZXJfcGh5dG9tbmkucnVudGltZS5jb252ZXJzYXRpb25fY29udGV4dC5tb2RlbHOUjBFDb250ZXh0UHJv"
+    "amVjdGlvbpSTlCmBlH2UKIwIX19kaWN0X1+UfZQojA1jdXJyZW50X3F1ZXJ5lIwgUmV2aWV3IGRyb3Vn"
+    "aHQgdG9sZXJhbmNlIGluIHJpY2WUjAtpbnRlbnRfa2luZJSMCWZvbGxvd191cJSMDHRhc2tfc3VtbWFy"
+    "eZSMAJSMFXJlbGV2YW50X3JlY2VudF90dXJuc5RdlIwTcmVsZXZhbnRfdXNlcl90dXJuc5RdlIwccmVs"
+    "ZXZhbnRfYXNzaXN0YW50X3N1bW1hcmllc5RdlIwPYWN0aXZlX2VudGl0aWVzlF2UjA5vcGVuX3F1ZXN0"
+    "aW9uc5RdlIwNYXJ0aWZhY3RfcmVmc5RdlIwPYWdlbnRfdGhyZWFkX2lklIxEY3R4LWViNzQxM2ZmMDQ4"
+    "ODBkMWYyYWU3NTU1YjRiNjFmNjNhZDA0ZWJmYjJkZDU3NWY0YTYxNTk0MGFjZDM0YzIyMTGUjAZsb2Nh"
+    "bGWUjAVlbi1VU5SMDHRva2VuX2J1ZGdldJRNABCMEWNvbnRleHRfdHJ1bmNhdGVklIl1jBJfX3B5ZGFu"
+    "dGljX2V4dHJhX1+UTowXX19weWRhbnRpY19maWVsZHNfc2V0X1+Uj5QoaCVoI2gxaCdoIWgtaC9oKWgf"
+    "aBtoK2gykIwUX19weWRhbnRpY19wcml2YXRlX1+UTnViaACMG1Jldmlld0NvbnZlcnNhdGlvbk9wZXJh"
+    "dGlvbpSTlGgehZRSlGgAjBhSZXZpZXdDaGVja3BvaW50U25hcHNob3SUk5QpgZRdlChoHCkpKSloAIwN"
+    "UmV2aWV3U2VjdGlvbpSTlCmBlF2UKIwKYmFja2dyb3VuZJSMCkJhY2tncm91bmSUjAdCb3VuZGVklGVi"
+    "hZROSwBlYk5lYowPYWN0aXZlX3NuYXBzaG90lGg9jA9zdGFnZWRfc25hcHNob3SUTowPcmVwb3J0X3Jl"
+    "dmlzaW9ulEsAjAdzZXR0bGVklImMFG9wZXJhdGlvbl9zdWNjZXNzZnVslIiMD3JlcG9ydF9kb2N1bWVu"
+    "dJROdYaUYowGcmVzdWx0lGgAjBJfUmV2aWV3UmVzdWx0U3RhdGWUk5QpgZROfZQojBRsYXN0X3Jldmlz"
+    "ZWRfc2VjdGlvbpROjA9jYXB0dXJlZF9yZXN1bHSUfZSME2NhbmRpZGF0ZV9kaXNjYXJkZWSUiYwTcGVu"
+    "ZGluZ19yZXBvcnRfdGV4dJROjBBvcmRlcmVkX2RvY19saXN0lF2UjBBzZXR0bGVtZW50X2ZlbmNllE51"
+    "hpRidYaUYowGX2FnZW50lE6MCl90aHJlYWRfaWSUaC6MEV9zdGFibGVfdGhyZWFkX2lklGgujBRfZXhl"
+    "Y3V0aW9uX3RocmVhZF9pZJRoLowUX2NhbmRpZGF0ZV90aHJlYWRfaWSUTowIX3R1cm5faWSUjAh0dXJu"
+    "LW9sZJR1Yi4="
+)
 
 
 def _projection(query: str, *, active: bool = True) -> ContextProjection:
@@ -74,6 +102,30 @@ def _projection(query: str, *, active: bool = True) -> ContextProjection:
         locale="en-US",
         token_budget=4096,
         context_truncated=False,
+    )
+
+
+def test_legacy_review_adapter_pickle_loads_after_facade_split() -> None:
+    """Load a pre-split adapter pickle through the compatibility facade."""
+    restored = pickle.loads(
+        base64.b64decode(_LEGACY_REVIEW_ADAPTER_PICKLE)
+    )
+
+    assert isinstance(restored, ReviewConversationAdapter)
+    assert restored.operation is ReviewConversationOperation.FOLLOW_UP
+    assert restored.snapshot is not None
+    assert restored.snapshot.research_question == (
+        "Review drought tolerance in rice"
+    )
+
+    state = getattr(restored, "_state")
+    assert type(state).__name__ == "_ReviewAdapterState"
+    checkpoint = getattr(state, "checkpoint")
+    result = getattr(state, "result")
+    assert type(checkpoint).__name__ == "_ReviewCheckpointState"
+    assert type(result).__name__ == "_ReviewResultState"
+    assert type(getattr(checkpoint, "prepared")).__name__ == (
+        "_PreparedReviewTurn"
     )
 
 
@@ -906,7 +958,7 @@ async def test_review_ack_claim_serializes_separate_executors(
     async def loader(
         _metadata: Mapping[str, Any], _staged_turn: StoredTurn
     ) -> ReviewConversationAdapter:
-        return FakeAdapter()  # type: ignore[return-value]
+        return FakeAdapter()
 
     def executor() -> ConversationContextExecutor:
         return ConversationContextExecutor(
@@ -1009,7 +1061,7 @@ async def test_review_ack_fence_blocks_promotion_after_tombstone(
     async def loader(
         _metadata: Mapping[str, Any], _staged_turn: StoredTurn
     ) -> ReviewConversationAdapter:
-        return FencedAdapter()  # type: ignore[return-value]
+        return FencedAdapter()
 
     executor = ConversationContextExecutor(
         store_factory=lambda: ConversationContextStore(str(db_path)),

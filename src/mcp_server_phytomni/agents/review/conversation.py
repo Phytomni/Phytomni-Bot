@@ -388,9 +388,23 @@ def reassemble_report(
     return "\n\n".join(rendered)
 
 
-ReviewConversationAdapter = import_module(
+_conversation_adapter_module = import_module(
     ".conversation_adapter", __package__
-).ReviewConversationAdapter
+)
+ReviewConversationAdapter = _conversation_adapter_module.ReviewConversationAdapter
+_PreparedReviewTurn = getattr(
+    _conversation_adapter_module, "_PreparedReviewTurn"
+)
+_ReviewAdapterProperties = getattr(
+    _conversation_adapter_module, "_ReviewAdapterProperties"
+)
+_ReviewAdapterState = getattr(_conversation_adapter_module, "_ReviewAdapterState")
+_ReviewCheckpointState = getattr(
+    _conversation_adapter_module, "_ReviewCheckpointState"
+)
+_ReviewResultState = getattr(
+    _conversation_adapter_module, "_ReviewResultState"
+)
 ReviewConversationAdapter.__module__ = __name__
 
 
