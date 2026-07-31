@@ -32,11 +32,14 @@ the subsequent gate-repair commits on top.
 The current convergence work has added compatibility-preserving fixes for
 the merged Data/Knowledge contracts, background settlement, Markdown gate
 parsing, OBS warning handling, and conversation-context coverage. The final
-full gate is still required on the post-record HEAD before cleanup. Until
-that proof is captured, retain the exact source worktree, source branch, and
-the five audited pre-existing stashes. The detached registration for
-`/tmp/phytomni-bot-mcp-gate` is stale and may be pruned only after the final
-gate.
+full gate completed at exact code/test SHA
+`4bf3e80b31de1fd7d075e77521de244a7125678f`: 4,063 passed, 8 deselected,
+88.29% total coverage, and all 140 `agents/*` modules above the 80% floor.
+This record update is documentation-only; its Markdown checks must remain
+green, and the current target is reported as a descendant of that tested SHA.
+The five audited pre-existing stashes remain retained until final metadata
+verification. The detached registration for
+`/tmp/phytomni-bot-mcp-gate` is stale and may be pruned after that proof.
 
 ## Global Constraints
 
