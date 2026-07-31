@@ -28,6 +28,7 @@ from ...common.responses import (
 )
 from ...config.defaults import DeepGenomeConfig
 from ...graphs.chat_adapters import build_chat_input, extract_chat_response
+from ...runtime.async_utils import wait_for_thread_event
 from ...runtime.deep_genome_store import (
     DeepGenomeStore,
     DeepGenomeTransitionError,
@@ -83,11 +84,7 @@ async def _write_async(path: Path, text: str) -> None:
             loop.call_soon_threadsafe(finished.set)
 
     threading.Thread(target=_run, daemon=True).start()
-    while not finished.is_set():
-        try:
-            await asyncio.wait_for(finished.wait(), timeout=0.01)
-        except TimeoutError:
-            continue
+    await wait_for_thread_event(finished)
     if failures:
         raise failures[0]
 

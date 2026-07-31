@@ -25,6 +25,7 @@ from typing import Any
 
 from fastapi import BackgroundTasks, HTTPException
 
+from ..runtime.async_utils import wait_for_thread_event
 from ..runtime.background_submission import BACKGROUND_RUNTIME_ERRORS
 from ..runtime.checkpoint_backend import build_default_checkpointer
 from ..runtime.conversation_context.store import ConversationContextStore
@@ -319,11 +320,7 @@ async def purge_expired_runs_best_effort_async(
     except RuntimeError:
         release_run_gc()
         raise
-    while not finished.is_set():
-        try:
-            await asyncio.wait_for(finished.wait(), timeout=0.01)
-        except TimeoutError:
-            continue
+    await wait_for_thread_event(finished)
     if failures:
         raise failures[0]
 
