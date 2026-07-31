@@ -209,27 +209,36 @@ def render_markdown(registry: Registry, counts: Mapping[str, int]) -> str:
     ]
     for key in sorted(counts):
         lines.append(f"| `{_md_cell(key)}` | {counts[key]} |")
-    lines.extend(
-        (
-            "",
-            "## Exact records",
-            "",
-            "".join(
-                (
-                    "| ID | Tool | Rule | Classification | ",
-                    "Mechanism | Target | Path | Symbol | ",
-                    "Fingerprint | Owner | Introduced | Review | ",
-                    "Expiry | Remediation | Tests |",
-                )
-            ),
-            "".join(
-                (
-                    "| --- | --- | --- | --- | --- | --- | --- | --- | ",
-                    "--- | --- | --- | --- | --- | --- | --- | --- |",
-                )
-            ),
+    lines.extend(("", "## Exact records", ""))
+    if registry.exemptions:
+        lines.extend(
+            (
+                "".join(
+                    (
+                        "| ID | Tool | Rule | Classification | ",
+                        "Mechanism | Target | Path | Symbol | ",
+                        "Fingerprint | Owner | Introduced | Review | ",
+                        "Expiry | Remediation | Tests |",
+                    )
+                ),
+                "".join(
+                    (
+                        "| --- | --- | --- | --- | --- | --- | --- | --- | ",
+                        "--- | --- | --- | --- | --- | --- | --- | --- |",
+                    )
+                ),
+            )
         )
-    )
+    else:
+        lines.extend(
+            (
+                "No exemption records are authorized.",
+                "",
+                "Record fields: ID, Tool, Rule, Classification, Mechanism, Target,",
+                "Path, Symbol, Fingerprint, Owner, Introduced, Review, Expiry,",
+                "Remediation, Tests.",
+            )
+        )
     for item in sorted(registry.exemptions, key=lambda value: value.id):
         expiry = item.expires_on.isoformat() if item.expires_on else "—"
         remediation = item.remediation or "—"

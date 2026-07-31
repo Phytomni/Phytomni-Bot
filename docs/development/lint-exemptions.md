@@ -19,4 +19,10 @@ uv run python scripts/check_static_analysis_exemptions.py render-docs
 
 ## Exact records
 
+No exemption records are authorized.
+
+Record fields: ID, Tool, Rule, Classification, Mechanism, Target,
+Path, Symbol, Fingerprint, Owner, Introduced, Review, Expiry,
+Remediation, Tests.
+
 ## Review fields
