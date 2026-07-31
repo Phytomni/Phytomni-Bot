@@ -301,7 +301,7 @@ async def test_context_expert_router_keeps_full_allowlist_and_async_202(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Automatic V1 routing preserves async candidates without staging them."""
+    """Automatic V1 routing stages its accepted async turn."""
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
     received: list[str] = []
@@ -373,8 +373,15 @@ async def test_context_expert_router_keeps_full_allowlist_and_async_202(
     )
 
     assert response.status_code == 202
-    assert response.json()["status"] == "running"
-    assert "conversation_context" not in response.json()
+    body = response.json()
+    assert body["status"] == "running"
+    assert body["conversation_context"]["selected_agent_id"] == (
+        "AnalystAgent"
+    )
+    assert body["conversation_context"]["route_source"] == "router"
+    assert body["conversation_context"]["route_reason_code"] == (
+        "ROUTER_SELECTED"
+    )
     assert received == allowed
     assert received_history == (
         {"role": "user", "content": "U1"},
