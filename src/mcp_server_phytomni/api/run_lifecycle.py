@@ -319,7 +319,11 @@ async def purge_expired_runs_best_effort_async(
     except RuntimeError:
         release_run_gc()
         raise
-    await finished.wait()
+    while not finished.is_set():
+        try:
+            await asyncio.wait_for(finished.wait(), timeout=0.01)
+        except TimeoutError:
+            continue
     if failures:
         raise failures[0]
 
