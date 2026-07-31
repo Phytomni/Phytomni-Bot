@@ -614,7 +614,9 @@ async def test_brief_gene_context_without_projection_clarifies() -> None:
 
 @pytest.mark.asyncio
 async def test_brief_gene_clarification_operation_is_not_stageable() -> None:
-    """Ambiguous operations return clarification and mark the adapter failed."""
+    """Ambiguous operations return clarification and mark the adapter
+    failed.
+    """
     projection = _projection("analyze a new gene", active=True)
     adapter = BriefGeneConversationAdapter()
     adapter.prepare(projection)
