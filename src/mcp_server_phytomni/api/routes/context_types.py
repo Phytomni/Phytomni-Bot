@@ -6,7 +6,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+from typing import Any
+
+from ...runtime.conversation_context.adapters import (
+    ConversationContextExecutor,
+)
+from ...runtime.conversation_context.models import ConversationEnvelopeV1
+from ...runtime.conversation_context.service import (
+    ContextStoreUnavailableError,
+    PreparedTurn,
+)
+from ..lifecycle_contract import conversation_context_unavailable_error
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,4 +31,24 @@ class ContextAgentRequest:
     obs_file_list: list[str] | None
 
 
-__all__ = ["ContextAgentRequest"]
+async def execute_context_lifecycle(
+    *,
+    executor: ConversationContextExecutor,
+    envelope: ConversationEnvelopeV1,
+    invoke: Callable[..., Awaitable[Any]],
+    delegate_async: Callable[..., Awaitable[Any]],
+    selected_arguments: Mapping[str, Any] | None = None,
+) -> PreparedTurn:
+    """Run one context turn and translate pre-outcome store failures."""
+    try:
+        return await executor.execute(
+            envelope=envelope,
+            invoke=invoke,
+            delegate_async=delegate_async,
+            selected_arguments=selected_arguments,
+        )
+    except ContextStoreUnavailableError as exc:
+        raise conversation_context_unavailable_error() from exc
+
+
+__all__ = ["ContextAgentRequest", "execute_context_lifecycle"]

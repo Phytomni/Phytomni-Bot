@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,9 @@ from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.api.schemas import AgentRunRequest
+from mcp_server_phytomni.runtime.conversation_context.store import (
+    ConversationContextStore,
+)
 
 pytestmark = pytest.mark.server
 
@@ -147,6 +151,110 @@ async def test_native_context_valid_envelope_is_rejected_when_flag_is_off(
 
     assert response.status_code == 404
     assert response.json()["error"]["message"] == "resource not found"
+
+
+@pytest.mark.parametrize(
+    ("agent", "tool_name"),
+    [("chat", "ChatAgent"), ("analyst", "AnalystAgent")],
+)
+async def test_native_context_store_failure_returns_retryable_503(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    agent: str,
+    tool_name: str,
+) -> None:
+    """Pre-invocation storage failures are safe and do not call agents."""
+    app, key = _native_context_setup(monkeypatch, tmp_path)
+    calls: list[dict[str, Any]] = []
+
+    async def fail_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        calls.append(kwargs)
+        raise AssertionError("context storage failed before agent invocation")
+
+    def fail_begin(*_args: object, **_kwargs: object) -> None:
+        raise sqlite3.OperationalError("private storage detail")
+
+    monkeypatch.setattr(api_app_module, "_invoke_agent_run", fail_invoke)
+    monkeypatch.setattr(ConversationContextStore, "begin_turn", fail_begin)
+    async with open_asgi_client(
+        monkeypatch, app, base_url="http://api.native-context.test"
+    ) as client:
+        response = await client.post(
+            f"/v1/agents/{agent}/runs",
+            headers={"Authorization": f"Bearer {key}"},
+            json=_native_request(agent, tool_name),
+        )
+
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["code"] == "conversation_context_unavailable"
+    assert error["message"] == "conversation context unavailable"
+    assert error["stage"] == "context"
+    assert error["retryable"] is True
+    assert "private storage detail" not in response.text
+    assert not calls
+
+
+@pytest.mark.parametrize(
+    ("agent", "tool_name", "status_code"),
+    [("chat", "ChatAgent", 200), ("analyst", "AnalystAgent", 202)],
+)
+async def test_native_context_preserves_outcome_when_stage_persistence_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    agent: str,
+    tool_name: str,
+    status_code: int,
+) -> None:
+    """Post-outcome stage loss keeps the original result and run identity."""
+    app, key = _native_context_setup(monkeypatch, tmp_path)
+    calls: list[dict[str, Any]] = []
+
+    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        calls.append(kwargs)
+        run_id = f"opaque-{agent}"
+        status = "running" if status_code == 202 else "succeeded"
+        return (
+            {
+                "id": run_id,
+                "run_id": run_id,
+                "object": "agent.run",
+                "agent": agent,
+                "status": status,
+                "task_ids": [],
+                "result": empty_agent_result(),
+            },
+            status_code,
+        )
+
+    def fail_stage(*_args: object, **_kwargs: object) -> None:
+        raise sqlite3.OperationalError("private storage detail")
+
+    monkeypatch.setattr(api_app_module, "_invoke_agent_run", fake_invoke)
+    monkeypatch.setattr(ConversationContextStore, "stage_turn", fail_stage)
+    request = _native_request(agent, tool_name)
+    async with open_asgi_client(
+        monkeypatch, app, base_url="http://api.native-context.test"
+    ) as client:
+        response = await client.post(
+            f"/v1/agents/{agent}/runs",
+            headers={"Authorization": f"Bearer {key}"},
+            json=request,
+        )
+        retry = await client.post(
+            f"/v1/agents/{agent}/runs",
+            headers={"Authorization": f"Bearer {key}"},
+            json=request,
+        )
+
+    assert response.status_code == status_code
+    body = response.json()
+    assert body["id"] == f"opaque-{agent}"
+    assert body["run_id"] == body["id"]
+    assert body["conversation_context_degraded"] is True
+    assert "conversation_context" not in body
+    assert retry.status_code == 409
+    assert len(calls) == 1
 
 
 @pytest.mark.parametrize(

@@ -5,10 +5,15 @@
 """Versioned multi-turn conversation context contracts."""
 
 from .models import ConversationEnvelopeV1
-from .service import AsyncAcceptanceError, AsyncAgentAcceptance
+from .service import (
+    AsyncAcceptanceError,
+    AsyncAgentAcceptance,
+    ContextStoreUnavailableError,
+)
 
 __all__ = [
     "AsyncAcceptanceError",
     "AsyncAgentAcceptance",
     "ConversationEnvelopeV1",
+    "ContextStoreUnavailableError",
 ]

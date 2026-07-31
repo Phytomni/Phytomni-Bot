@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -43,6 +44,7 @@ from .service_types import (
     AsyncAcceptanceError,
     AsyncAgentAcceptance,
     ContextStageMetadata,
+    ContextStoreUnavailableError,
     PreparedTurn,
     PrepareStatus,
 )
@@ -59,6 +61,7 @@ for _service_type in (
     AgentOutcome,
     AgentSelection,
     ContextStageMetadata,
+    ContextStoreUnavailableError,
     PrepareStatus,
     PreparedTurn,
 ):
@@ -566,7 +569,10 @@ class ConversationContextService:
             raise TypeError("envelope must be ConversationEnvelopeV1")
         key = self._key(envelope)
         async with self._lock(key):
-            prepared = await self._prepare_locked(envelope)
+            try:
+                prepared = await self._prepare_locked(envelope)
+            except (sqlite3.Error, OSError):
+                raise ContextStoreUnavailableError from None
             if prepared.status is not PrepareStatus.READY:
                 return prepared
             assert (
@@ -739,6 +745,7 @@ __all__ = [
     "AgentOutcome",
     "AgentSelection",
     "ContextStageMetadata",
+    "ContextStoreUnavailableError",
     "SettlementMismatchError",
     "PrepareStatus",
     "PreparedTurn",

@@ -49,7 +49,7 @@ from ..schemas import (
     FileUploadResponse,
     UploadPurpose,
 )
-from .context_types import ContextAgentRequest
+from .context_types import ContextAgentRequest, execute_context_lifecycle
 
 type AgentRun = Callable[..., Awaitable[tuple[dict[str, Any], int]]]
 type ChatResponse = Callable[..., Awaitable[Response]]
@@ -413,7 +413,8 @@ async def _execute_context_chat(
             "Instant context must not delegate asynchronously"
         )
 
-    prepared = await dependencies.context.executor.execute(
+    prepared = await execute_context_lifecycle(
+        executor=dependencies.context.executor,
         envelope=envelope,
         invoke=invoke,
         delegate_async=delegate_async,
@@ -447,7 +448,9 @@ def _context_response(
             status_code=500, detail="conversation context failed"
         )
     response = dict(prepared.result)
-    if prepared.stage is not None:
+    if prepared.context_persistence_degraded:
+        response["conversation_context_degraded"] = True
+    elif prepared.stage is not None:
         response["conversation_context"] = {
             "schema_version": 1,
             "turn_id": envelope.turn_id,
@@ -720,7 +723,8 @@ async def _execute_context_native(
         return AsyncAgentAcceptance(body, status_code)
 
     try:
-        prepared = await dependencies.context.executor.execute(
+        prepared = await execute_context_lifecycle(
+            executor=dependencies.context.executor,
             envelope=envelope,
             invoke=invoke,
             delegate_async=delegate_async,
@@ -776,7 +780,8 @@ async def _execute_context_expert(
         return AsyncAgentAcceptance(body, status_code)
 
     try:
-        prepared = await dependencies.context.executor.execute(
+        prepared = await execute_context_lifecycle(
+            executor=dependencies.context.executor,
             envelope=envelope,
             invoke=invoke,
             delegate_async=delegate_async,

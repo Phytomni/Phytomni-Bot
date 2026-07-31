@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import sqlite3
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, NamedTuple
 
@@ -31,6 +33,9 @@ from .store import StagedTurn, StoredTurn
 
 if TYPE_CHECKING:
     from .service import ConversationContextService
+
+
+_LOGGER = logging.getLogger(__name__)
 
 
 _DISPLAY_OUTPUT_KEYS = frozenset(
@@ -375,21 +380,36 @@ async def finish_sync_turn(
         delta,
         add_current_user_turn=not request.rebuilt,
     )
-    stored, stage = stage_outcome(
-        service,
-        _StageRequest(
-            key=request.key,
-            envelope=request.envelope,
+    try:
+        stored, stage = stage_outcome(
+            service,
+            _StageRequest(
+                key=request.key,
+                envelope=request.envelope,
+                result=request.outcome.result,
+                selection=request.selection,
+                route_source=request.route_source,
+                proposed=proposed,
+                rebuilt=request.rebuilt,
+                degraded=degraded,
+                context_truncated=request.projection.context_truncated,
+                review_metadata=review_metadata,
+            ),
+        )
+    except (sqlite3.Error, OSError) as exc:
+        _LOGGER.warning(
+            "conversation context stage degraded: stage=%s error=%s",
+            "sync",
+            exc.__class__.__name__,
+        )
+        return PreparedTurn(
+            PrepareStatus.READY,
+            context=proposed,
+            projection=request.projection,
+            stored_turn=request.prepared_turn.stored_turn,
             result=request.outcome.result,
-            selection=request.selection,
-            route_source=request.route_source,
-            proposed=proposed,
-            rebuilt=request.rebuilt,
-            degraded=degraded,
-            context_truncated=request.projection.context_truncated,
-            review_metadata=review_metadata,
-        ),
-    )
+            context_persistence_degraded=True,
+        )
     return PreparedTurn(
         PrepareStatus.RETURN_STAGED,
         context=proposed,
@@ -436,21 +456,35 @@ def finish_async_turn(
         ContextDelta(),
         add_current_user_turn=not request.rebuilt,
     )
-    stored, stage = stage_outcome(
-        service,
-        _StageRequest(
-            key=request.key,
-            envelope=request.envelope,
+    try:
+        stored, stage = stage_outcome(
+            service,
+            _StageRequest(
+                key=request.key,
+                envelope=request.envelope,
+                result=acceptance.result,
+                selection=request.selection,
+                route_source=request.route_source,
+                proposed=proposed,
+                rebuilt=request.rebuilt,
+                degraded=False,
+                context_truncated=False,
+                review_metadata=None,
+            ),
+        )
+    except (sqlite3.Error, OSError) as exc:
+        _LOGGER.warning(
+            "conversation context stage degraded: stage=%s error=%s",
+            "async",
+            exc.__class__.__name__,
+        )
+        return PreparedTurn(
+            PrepareStatus.READY,
+            context=proposed,
+            stored_turn=request.prepared_turn.stored_turn,
             result=acceptance.result,
-            selection=request.selection,
-            route_source=request.route_source,
-            proposed=proposed,
-            rebuilt=request.rebuilt,
-            degraded=False,
-            context_truncated=False,
-            review_metadata=None,
-        ),
-    )
+            context_persistence_degraded=True,
+        )
     return PreparedTurn(
         PrepareStatus.RETURN_STAGED,
         context=proposed,

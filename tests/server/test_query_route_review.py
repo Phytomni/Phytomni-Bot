@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+
 from tests.server.test_query_route import (
     _REVIEW_REPORT,
     UUID,
@@ -15,6 +17,7 @@ from tests.server.test_query_route import (
     SimpleNamespace,
     _conversation_envelope,
     _patch_review_runtime,
+    _post_context_route,
     _post_query_route,
     _review_checkpoint_state,
     _review_context_envelope,
@@ -32,6 +35,37 @@ from mcp_server_phytomni.runtime.conversation_context.projection import (
 )
 
 pytestmark = pytest.mark.server
+
+
+@pytest.mark.asyncio
+async def test_context_expert_store_failure_returns_retryable_503(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Expert context storage failure stops before agent dispatch."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "context.sqlite"))
+
+    def fail_begin(*_args: object, **_kwargs: object) -> None:
+        raise sqlite3.OperationalError("private storage detail")
+
+    monkeypatch.setattr(ConversationContextStore, "begin_turn", fail_begin)
+    envelope = _conversation_envelope(
+        requested_agent_id="DataAgent",
+        allowed_agent_ids=["DataAgent"],
+    )
+    response = await _post_context_route(
+        api_client, issued_api_key, "DataAgent", envelope
+    )
+
+    assert response.status_code == 503
+    error = response.json()["error"]
+    assert error["code"] == "conversation_context_unavailable"
+    assert error["stage"] == "context"
+    assert error["retryable"] is True
+    assert "private storage detail" not in response.text
 
 
 @pytest.mark.parametrize(

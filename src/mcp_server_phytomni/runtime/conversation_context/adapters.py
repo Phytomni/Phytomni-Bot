@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -33,6 +34,7 @@ from .service import (
     AgentOutcome,
     AgentSelection,
     AsyncAgentAcceptance,
+    ContextStoreUnavailableError,
     ConversationContextService,
     PreparedTurn,
     PrepareStatus,
@@ -711,7 +713,11 @@ class ConversationContextExecutor:
         )
         review_token = self._bindings.review_adapter.set(None)
         try:
-            prepared = await self._service_for_request().execute_turn(envelope)
+            try:
+                service = self._service_for_request()
+            except (sqlite3.Error, OSError):
+                raise ContextStoreUnavailableError from None
+            prepared = await service.execute_turn(envelope)
             adapter = self._bindings.review_adapter.get()
             if adapter is not None:
                 ready_to_stage = (

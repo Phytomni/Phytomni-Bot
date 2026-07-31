@@ -65,6 +65,10 @@ class AsyncAcceptanceError(RuntimeError):
     """An async delegate returned no durable accepted-run identity."""
 
 
+class ContextStoreUnavailableError(RuntimeError):
+    """Context persistence failed before an agent outcome existed."""
+
+
 @dataclass(frozen=True)
 class _ContextStageRoute:
     """Routing fields shared by durable stage metadata."""
@@ -96,6 +100,7 @@ class PreparedTurn:
     stored_turn: StoredTurn | None = None
     result: dict[str, Any] | None = None
     stage: ContextStageMetadata | None = None
+    context_persistence_degraded: bool = False
 
 
 __all__ = [
@@ -104,6 +109,7 @@ __all__ = [
     "AgentOutcome",
     "AgentSelection",
     "ContextStageMetadata",
+    "ContextStoreUnavailableError",
     "PrepareStatus",
     "PreparedTurn",
 ]

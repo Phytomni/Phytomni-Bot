@@ -180,6 +180,10 @@ _MESSAGES: Final[dict[str, dict[SupportedLocale, str]]] = {
         "en-US": "The selected agent arguments are invalid.",
         "zh-CN": "所选智能体参数无效。",
     },
+    "conversation_context_unavailable": {
+        "en-US": "Conversation context is unavailable.",
+        "zh-CN": "对话上下文不可用。",
+    },
     "attachment_not_found": {
         "en-US": "The requested attachment was not found.",
         "zh-CN": "未找到请求的附件。",

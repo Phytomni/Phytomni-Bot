@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from collections.abc import Awaitable, Callable
 from functools import partial
 from pathlib import Path
@@ -858,6 +859,76 @@ async def test_async_acceptance_replay_does_not_delegate_twice(
     assert committed_retry.status is PrepareStatus.RETURN_COMMITTED
     assert first.result == staged_retry.result == committed_retry.result
     assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_sync_result_survives_context_stage_failure(
+    store: ConversationContextStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A terminal result remains valid when context staging cannot persist."""
+    invoked = 0
+
+    async def invoke(*_args: object) -> AgentOutcome:
+        nonlocal invoked
+        invoked += 1
+        return AgentOutcome(result={"answer": "terminal"})
+
+    def fail_stage(*_args: object, **_kwargs: object) -> None:
+        raise sqlite3.OperationalError("private storage detail")
+
+    monkeypatch.setattr(store, "stage_turn", fail_stage)
+    service = _service(store, invoke=invoke)
+    envelope = _envelope()
+    prepared = await service.execute_turn(envelope)
+    retry = await service.execute_turn(envelope)
+
+    assert prepared.result == {"answer": "terminal"}
+    assert prepared.stage is None
+    assert prepared.context_persistence_degraded is True
+    assert retry.status is PrepareStatus.IN_PROGRESS
+    assert invoked == 1
+
+
+@pytest.mark.asyncio
+async def test_async_acceptance_survives_context_stage_failure(
+    store: ConversationContextStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An accepted async run remains opaque after context staging loss."""
+    delegated = 0
+
+    async def delegate(
+        _agent: str, _envelope: ConversationEnvelopeV1
+    ) -> AsyncAgentAcceptance:
+        nonlocal delegated
+        delegated += 1
+        return AsyncAgentAcceptance(
+            result={"id": "run-1", "run_id": "run-1", "status": "running"},
+            status_code=202,
+        )
+
+    def fail_stage(*_args: object, **_kwargs: object) -> None:
+        raise sqlite3.OperationalError("private storage detail")
+
+    monkeypatch.setattr(store, "stage_turn", fail_stage)
+    service = _service(store, delegate=delegate)
+    envelope = _envelope(
+        requested_agent_id="DeepGenomeAgent",
+        allowed_agent_ids=["DeepGenomeAgent"],
+    )
+    prepared = await service.execute_turn(envelope)
+    retry = await service.execute_turn(envelope)
+
+    assert prepared.result == {
+        "id": "run-1",
+        "run_id": "run-1",
+        "status": "running",
+    }
+    assert prepared.stage is None
+    assert prepared.context_persistence_degraded is True
+    assert retry.status is PrepareStatus.IN_PROGRESS
+    assert delegated == 1
 
 
 @pytest.mark.asyncio

@@ -34,6 +34,7 @@ __all__ = [
     "build_agent_run_response",
     "canonicalize_agent_run_body",
     "canonicalize_run_record",
+    "conversation_context_unavailable_error",
     "empty_agent_result",
     "expert_safe_error",
     "run_persistence_error",
@@ -55,6 +56,7 @@ class SafeErrorCode(StrEnum):
     SELECTED_AGENT_INVALID_ARGUMENT = "selected_agent_invalid_argument"
     UPSTREAM_FAILED = "upstream_failed"
     UPSTREAM_TIMEOUT = "upstream_timeout"
+    CONVERSATION_CONTEXT_UNAVAILABLE = "conversation_context_unavailable"
 
 
 class LifecycleInvariantError(RuntimeError):
@@ -104,6 +106,17 @@ def run_persistence_error() -> SafeApiError:
         code=SafeErrorCode.RUN_PERSISTENCE_FAILED.value,
         message="run persistence failed",
         stage="persistence",
+    )
+
+
+def conversation_context_unavailable_error() -> SafeApiError:
+    """Return the retryable public error for pre-outcome context failure."""
+    return SafeApiError(
+        status_code=503,
+        code=SafeErrorCode.CONVERSATION_CONTEXT_UNAVAILABLE.value,
+        message="conversation context unavailable",
+        stage="context",
+        retryable=True,
     )
 
 
