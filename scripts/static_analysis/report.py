@@ -234,9 +234,9 @@ def render_markdown(registry: Registry, counts: Mapping[str, int]) -> str:
             (
                 "No exemption records are authorized.",
                 "",
-                "Record fields: ID, Tool, Rule, Classification, Mechanism, Target,",
-                "Path, Symbol, Fingerprint, Owner, Introduced, Review, Expiry,",
-                "Remediation, Tests.",
+                "Record fields: ID, Tool, Rule, Classification, Mechanism,",
+                "Target, Path, Symbol, Fingerprint, Owner, Introduced,",
+                "Review, Expiry, Remediation, Tests.",
             )
         )
     for item in sorted(registry.exemptions, key=lambda value: value.id):
