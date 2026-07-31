@@ -938,17 +938,24 @@ expected forced member. Also verify these strict failures before rollout:
 
 - Missing, empty, duplicate, unknown, or over-ten `allowed_tools`, and a
   non-member `forced_tool`, return `422`.
-- A model response with no choice, no tool call, multiple calls, a malformed
-  call structure (for example, no function), a call outside `allowed_tools`,
-  or a call that disobeys `forced_tool` returns `502` and invokes no agent.
+- A genuine contract violation -- multiple calls, a malformed call structure
+  (for example, no function), a call outside `allowed_tools`, or a call that
+  disobeys `forced_tool` -- returns `502` and invokes no agent.
+- A model *decline* (no choice or no tool call) is not a violation: when
+  `allowed_tools` includes `ChatAgent` the route degrades to a ChatAgent
+  dispatch with the original `user_query` injected; otherwise it returns
+  `502` with no dispatch. The degrade is opt-in and gated on the trusted
+  allowlist.
 - Malformed or non-object function arguments are extracted arguments, not a
   malformed call structure; selected-agent schema validation of those arguments
   returns `400`. Absent or insufficient `agents` scope returns `401` / `403`.
 
-Do not mask these failures with a ChatAgent fallback, retry by broadening the
-allowlist, or treat a browser-supplied list as a permission grant. Inspect the
-Web-authenticated allowlist and the Bot's sanitized router warning, correct the
-upstream permission or model contract, then repeat the smoke test.
+Do not mask a genuine *violation* with a ChatAgent fallback, retry by
+broadening the allowlist, or treat a browser-supplied list as a permission
+grant. (A model decline with `ChatAgent` in the trusted allowlist is the one
+sanctioned degrade, not a mask.) Inspect the Web-authenticated allowlist and
+the Bot's sanitized router warning, correct the upstream permission or model
+contract, then repeat the smoke test.
 
 The stable error mapping used by incident triage is:
 
@@ -1399,16 +1406,16 @@ raw logs into a ticket intended for a customer.
 The producer manifest is `.phytomni-artifacts.json` and must use version `1.0`
 with relative POSIX paths. The exact role set is:
 
-| Role                | Report context | Operator meaning                 |
+| Role | Report context | Operator meaning |
 | ------------------- | -------------- | -------------------------------- |
-| `scientific_report` | eligible       | Report prose.                    |
-| `scientific_table`  | eligible       | Scientific table.                |
-| `scientific_text`   | eligible       | Scientific notes or text.        |
-| `scientific_figure` | excluded       | Downloadable figure only.        |
-| `input`             | excluded       | Input material.                  |
-| `execution_log`     | excluded       | Operational log.                 |
-| `diagnostic`        | excluded       | Diagnostic or manifest metadata. |
-| `unknown`           | excluded       | Unproven producer meaning.       |
+| `scientific_report` | eligible | Report prose. |
+| `scientific_table` | eligible | Scientific table. |
+| `scientific_text` | eligible | Scientific notes or text. |
+| `scientific_figure` | excluded | Downloadable figure only. |
+| `input` | excluded | Input material. |
+| `execution_log` | excluded | Operational log. |
+| `diagnostic` | excluded | Diagnostic or manifest metadata. |
+| `unknown` | excluded | Unproven producer meaning. |
 
 Admission is fail-closed: missing or invalid manifests and undeclared objects
 become `unknown`, while the manifest itself is `diagnostic`. The report reader

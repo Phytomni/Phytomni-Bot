@@ -13,6 +13,7 @@ from .router import (
     ExpertProviderError,
     ExpertProviderTimeoutError,
     ExpertRoutingContractError,
+    ExpertRoutingDeclinedError,
     ExpertRoutingOptions,
     ToolSelection,
     ToolSelectionError,
@@ -29,6 +30,7 @@ __all__ = (
     "ToolSelection",
     "ExpertRoutingOptions",
     "ExpertRoutingContractError",
+    "ExpertRoutingDeclinedError",
     "ExpertProviderTimeoutError",
     "ExpertProviderError",
 )

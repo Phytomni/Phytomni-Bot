@@ -187,6 +187,10 @@ the acceptance vocabulary:
    admission failure has no upload or downstream dispatch side effect.
 1. **Strict router outside allowlist returns 502 and zero dispatch**: verify
    the contract error and the absence of an upstream call.
+1. **Strict decline degrades to chat only when allowed**: verify a model
+   decline (no tool call) dispatches ChatAgent with the injected `user_query`
+   when `allowed_tools` includes `ChatAgent`, and returns 502 with zero
+   dispatch when it does not.
 1. **Instant makes no /v1/query/route call**: verify direct Instant execution
    does not invoke the compatibility router.
 1. **Literal @Agent in Instant has no routing side effect**: verify ordinary

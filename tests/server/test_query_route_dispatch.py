@@ -518,8 +518,8 @@ async def test_literal_agent_mention_stays_on_chat_surface(
 @pytest.mark.parametrize(
     "case",
     [
-        (_router_completion(empty_choices=True), ["ChatAgent"], None),
-        (_router_completion(), ["ChatAgent"], None),
+        (_router_completion(empty_choices=True), ["DataAgent"], None),
+        (_router_completion(), ["DataAgent"], None),
         (
             _router_completion(("ChatAgent", "{}"), ("DataAgent", "{}")),
             ["ChatAgent", "DataAgent"],
@@ -529,8 +529,8 @@ async def test_literal_agent_mention_stays_on_chat_surface(
         (_router_completion(("DataAgent", "{}")), ["ChatAgent"], None),
     ],
     ids=(
-        "no-choice",
-        "no-call",
+        "decline-no-chat",
+        "decline-empty-no-chat",
         "multiple-calls",
         "unknown-call",
         "outside-allowlist",
@@ -543,6 +543,13 @@ async def test_route_strict_failures_never_invoke_agent(
     case: tuple[SimpleNamespace, list[str], str | None],
 ) -> None:
     """Non-forced strict selector contract failures stop before dispatch.
+
+    A model *decline* (no choice / no tool call) is only a failure when the
+    caller did not authorize ``ChatAgent``; these cases use a chat-less
+    allowlist so the decline stays a 502 (the chat-degrade path is covered
+    by ``test_route_strict_decline_degrades_to_chat_when_allowed``). Genuine
+    violations -- multiple, unknown, or out-of-allowlist calls -- always 502
+    regardless of the allowlist.
 
     A forced route is intentionally NOT a failure case here: a pinned
     ``@agent`` is coerced to the forced tool and does dispatch even when the
@@ -779,7 +786,16 @@ async def test_route_no_selection_returns_sanitized_502(
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Strict routing does not fall back when the selector returns nothing."""
+    """The defensive ``selection is None`` branch stays a sanitized 502.
+
+    In production strict ``select_agent_tool`` never returns ``None`` -- it
+    raises ``ExpertRoutingDeclinedError`` on a decline -- so this exercises
+    the
+    defensive guard, which must not leak the query or allowlist even though
+    ``ChatAgent`` is authorized. The chat-degrade path keys off the decline
+    exception, not this sentinel (see
+    ``test_route_strict_decline_degrades_to_chat_when_allowed``).
+    """
     _patch_select(monkeypatch, None)
 
     response = await _post_query_route(
@@ -802,13 +818,62 @@ async def test_route_no_selection_returns_sanitized_502(
     assert "DataAgent" not in response.text
 
 
+async def test_route_strict_decline_degrades_to_chat_when_allowed(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """A strict decline degrades to ChatAgent when the caller allowed it.
+
+    Drives the real router: the endpoint returns no tool call (the shape the
+    ``required`` -> ``auto`` downgrade produces on a decline), so the router
+    raises ``ExpertRoutingDeclinedError``. Because ``ChatAgent`` is in the
+    allowlist, the route degrades to a chat dispatch and injects the original
+    ``user_query`` (which ``prepare_expert_arguments`` never synthesizes),
+    resolving to the ``chat`` slug rather than a 502.
+    """
+    captured: dict[str, Any] = {}
+    install_chat_handler(monkeypatch, captured, content="declined to chat")
+    patch_expert_router(
+        monkeypatch, expert_router, _router_completion(empty_choices=True)
+    )
+
+    response = await _post_query_route(
+        api_client,
+        issued_api_key,
+        {
+            "user_query": "what is photosynthesis",
+            "allowed_tools": ["ChatAgent", "DataAgent"],
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    # The original query is injected verbatim for the degraded chat turn,
+    # and the decline resolves to the chat slug rather than a 502.
+    assert captured["user_query"] == "what is photosynthesis"
+    assert (body["object"], body["agent"], body["status"]) == (
+        "agent.run",
+        "chat",
+        "succeeded",
+    )
+    record = RunRegistry(tasks_db_path).list_runs(owner="u1")[0]
+    assert record.spec.agent == "chat"
+
+
 async def test_legacy_a2a_no_selection_cannot_relax_strict_route(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
     tasks_db_path: str,
 ) -> None:
-    """Legacy A2A optional selection cannot become strict-route fallback."""
+    """Legacy A2A optional selection cannot become strict-route fallback.
+
+    The strict route uses a chat-less allowlist so its own decline stays a
+    502; the point is that the legacy A2A ``None`` selection is fully
+    isolated from the strict path and never relaxes it into a dispatch.
+    """
     legacy_calls: list[str] = []
 
     async def legacy_no_selection(text: str) -> None:
@@ -851,7 +916,7 @@ async def test_legacy_a2a_no_selection_cannot_relax_strict_route(
         issued_api_key,
         {
             "user_query": "strict question",
-            "allowed_tools": ["ChatAgent", "DataAgent"],
+            "allowed_tools": ["DataAgent", "KnowledgeAgent"],
         },
     )
 
@@ -859,7 +924,7 @@ async def test_legacy_a2a_no_selection_cannot_relax_strict_route(
     assert response.json()["error"]["code"] == ("routing_contract_violation")
     assert captured == {
         "tool_choice": "required",
-        "allowed_order": ("ChatAgent", "DataAgent"),
+        "allowed_order": ("DataAgent", "KnowledgeAgent"),
     }
     assert legacy_calls == ["legacy question"]
     assert invoked == 0

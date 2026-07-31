@@ -21,6 +21,7 @@ from openai import BadRequestError
 
 from mcp_server_phytomni.agents.expert import (
     ExpertRoutingContractError,
+    ExpertRoutingDeclinedError,
     ExpertRoutingOptions,
     ToolSelection,
     ToolSelectionError,
@@ -182,6 +183,68 @@ async def test_select_expert_tool_rejects_malformed_arguments(
                 completion=fake_completion,
             ),
         )
+
+
+@pytest.mark.parametrize(
+    "completion",
+    [
+        SimpleNamespace(choices=[]),
+        _completion(content="just chatting"),
+        _completion(tool_calls=[]),
+    ],
+    ids=("empty-choices", "content-only", "empty-tool-calls"),
+)
+async def test_select_expert_tool_decline_raises_declined(
+    completion: object,
+) -> None:
+    """A strict decline raises the distinct ``ExpertRoutingDeclinedError``.
+
+    An empty-choice or tool-call-free completion is the model answering
+    directly rather than a contract fault, so the strict seam raises the
+    narrower ``ExpertRoutingDeclinedError`` (a ``ToolSelectionError`` subclass
+    the HTTP layer catches first to degrade to chat) rather than a bare
+    ``ToolSelectionError``.
+    """
+
+    async def fake_completion(**_kwargs: Any) -> object:
+        return completion
+
+    with pytest.raises(ExpertRoutingDeclinedError):
+        await select_expert_tool(
+            user_query="route this",
+            history=[],
+            options=ExpertRoutingOptions(
+                allowed_tools=("ChatAgent",),
+                forced_tool=None,
+                locale="en-US",
+                completion=fake_completion,
+            ),
+        )
+
+
+async def test_select_expert_tool_genuine_violation_not_declined() -> None:
+    """A real contract violation stays a plain ``ToolSelectionError``.
+
+    An out-of-allowlist pick is a genuine fault, not a decline, so it must
+    NOT raise ``ExpertRoutingDeclinedError`` -- otherwise the HTTP layer would
+    wrongly degrade a misbehaving selector to chat.
+    """
+
+    async def fake_completion(**_kwargs: Any) -> object:
+        return _completion(tool_calls=[_tool_call("DataAgent", "{}")])
+
+    with pytest.raises(ToolSelectionError) as exc_info:
+        await select_expert_tool(
+            user_query="route this",
+            history=[],
+            options=ExpertRoutingOptions(
+                allowed_tools=("ChatAgent",),
+                forced_tool=None,
+                locale="en-US",
+                completion=fake_completion,
+            ),
+        )
+    assert not isinstance(exc_info.value, ExpertRoutingDeclinedError)
 
 
 _FORCED_TOOL_ARGUMENTS = (

@@ -80,7 +80,11 @@ Initial review date: `2026-08-01`.
 
 The registered bridge is legacy A2A optional selection. Its Bot behavior is
 all-schema `tool_choice=auto` with optional selection: a no-selection result
-keeps the existing ChatAgent fallback. Strict-route access is forbidden for
-this bridge until the consumer sends `allowed_tools` and `forced_tool`. No
-consumer names are asserted without evidence. The rollback is to keep Web
-`bot.expert_enabled=false`.
+keeps the existing ChatAgent fallback. The strict `/v1/query/route` contract
+now has its own opt-in chat degrade: a genuine model *decline* (no tool call)
+resolves to a ChatAgent dispatch only when the caller's trusted `allowed_tools`
+includes `ChatAgent`, and otherwise stays a `502`. This is distinct from the
+legacy bridge, which still requires no `allowed_tools`/`forced_tool`; the two
+paths remain isolated (a legacy `None` selection never relaxes the strict
+route). No consumer names are asserted without evidence. The rollback is to
+keep Web `bot.expert_enabled=false`.

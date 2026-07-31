@@ -35,6 +35,7 @@ __all__ = [
     "ExpertCompletion",
     "ExpertProviderError",
     "ExpertProviderTimeoutError",
+    "ExpertRoutingDeclinedError",
     "ExpertRoutingOptions",
     "ExpertRoutingContractError",
     "ToolSelection",
@@ -77,6 +78,20 @@ class ExpertRoutingContractError(RuntimeError):
 
 class ToolSelectionError(ExpertRoutingContractError):
     """Backward-compatible name for selector contract violations."""
+
+
+class ExpertRoutingDeclinedError(ToolSelectionError):
+    """The routing model answered directly instead of picking a tool.
+
+    A distinct, non-fault outcome of the strict path: the model returned no
+    tool call (a content-only or empty-choice completion), which on the real
+    endpoint follows the ``required`` -> ``auto`` downgrade and simply means
+    "this turn is plain chat". It subclasses ``ToolSelectionError`` so every
+    existing broad handler still treats a decline as a contract error; the
+    HTTP Expert boundary catches it first to degrade to the chat agent when
+    the caller allowed one. Genuine violations (multiple, malformed, or
+    out-of-allowlist tool calls) keep raising ``ToolSelectionError``.
+    """
 
 
 class ExpertProviderError(RuntimeError):
@@ -356,13 +371,17 @@ def _selection_from_completion(
     choices = getattr(completion, "choices", None)
     if not choices:
         if request.strict:
-            raise ToolSelectionError("routing model returned no choice")
+            raise ExpertRoutingDeclinedError(
+                "routing model returned no choice"
+            )
         return None
     message = _field(choices[0], "message")
     tool_calls = _field(message, "tool_calls") or []
     if not tool_calls:
         if request.strict:
-            raise ToolSelectionError("routing model returned no tool call")
+            raise ExpertRoutingDeclinedError(
+                "routing model returned no tool call"
+            )
         return None
     if request.strict and len(tool_calls) != 1:
         raise ToolSelectionError(
