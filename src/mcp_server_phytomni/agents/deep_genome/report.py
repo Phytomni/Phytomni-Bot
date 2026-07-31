@@ -83,7 +83,8 @@ async def _write_async(path: Path, text: str) -> None:
             loop.call_soon_threadsafe(finished.set)
 
     threading.Thread(target=_run, daemon=True).start()
-    await finished.wait()
+    while not finished.is_set():
+        await asyncio.sleep(0)
     if failures:
         raise failures[0]
 
