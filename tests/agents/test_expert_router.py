@@ -439,10 +439,16 @@ async def test_routing_unrelated_400_is_not_retried(
     assert [call["tool_choice"] for call in calls] == ["required"]
 
 
-async def test_routing_forced_tool_400_is_not_downgraded(
+async def test_routing_forced_tool_400_downgrades_to_single_tool_auto(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A forced named tool_choice that 400s is not downgraded to 'auto'."""
+    """A forced named tool_choice that 400s retries with a narrowed auto call.
+
+    On an endpoint that rejects a named ``tool_choice`` the forced route
+    downgrades to ``"auto"`` but first narrows the offered tools to only the
+    forced tool, so ``"auto"`` degrades to "pick that one or none". The
+    forced-tool guarantee is preserved by ``_selection_from_completion``.
+    """
     calls: list[dict[str, Any]] = []
     patch_expert_router(
         monkeypatch,
@@ -452,16 +458,24 @@ async def test_routing_forced_tool_400_is_not_downgraded(
         calls=calls,
     )
 
-    with pytest.raises(expert_router.ExpertProviderError):
-        await select_agent_tool(
-            "route this",
-            allowed_tools=["ChatAgent"],
-            forced_tool="ChatAgent",
-        )
+    result = await select_agent_tool(
+        "route this",
+        allowed_tools=["ChatAgent", "KnowledgeAgent", "DataAgent"],
+        forced_tool="ChatAgent",
+    )
 
-    # Only the bare 'required' sentinel is eligible for downgrade.
-    assert len(calls) == 1
+    assert result == ToolSelection("ChatAgent", {})
+    # First attempt: the named forced choice over the full allowlist.
     assert calls[0]["tool_choice"] == {
         "type": "function",
         "function": {"name": "ChatAgent"},
     }
+    assert [t["function"]["name"] for t in calls[0]["tools"]] == [
+        "ChatAgent",
+        "KnowledgeAgent",
+        "DataAgent",
+    ]
+    # Retry: 'auto' over a tool surface narrowed to only the forced tool,
+    # so the model cannot honor the 'auto' choice with a different agent.
+    assert calls[1]["tool_choice"] == "auto"
+    assert [t["function"]["name"] for t in calls[1]["tools"]] == ["ChatAgent"]

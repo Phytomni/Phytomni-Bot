@@ -214,12 +214,16 @@ async def complete_expert_routing(
     the HTTP layer maps the typed outcome to the public safe error envelope.
 
     Some OpenAI-compatible endpoints (e.g. the Huawei pangu ``mastudio``
-    deployment) reject ``tool_choice="required"`` with an HTTP 400 while
-    honoring ``"auto"``. When that specific 400 is seen the endpoint is
-    recorded and the call retried once with ``"auto"``; later strict calls to
-    it skip straight to ``"auto"``. The strict single-tool guarantee is
-    preserved by ``_selection_from_completion``, which still rejects a missing
-    tool call under ``request.strict``.
+    deployment) reject a constrained ``tool_choice`` -- both the bare
+    ``"required"`` sentinel and a named ``{"type": "function", ...}`` choice --
+    with an HTTP 400 while honoring ``"auto"``. When that specific 400 is seen
+    the endpoint is recorded and the call retried once with ``"auto"``; a named
+    choice additionally narrows the offered tools to only the forced tool so
+    ``"auto"`` degrades to "pick that tool or none". Later constrained calls to
+    a recorded endpoint skip straight to the narrowed ``"auto"`` form. The
+    strict single-tool and forced-tool guarantees are preserved by
+    ``_selection_from_completion``, which still rejects a missing tool call
+    under ``request.strict`` and a selection that is not the forced tool.
     """
     sensitive = get_sensitive_config()
     base_url = sensitive.BASE_URL or None
@@ -228,38 +232,74 @@ async def complete_expert_routing(
         base_url=base_url,
     )
     base_url_key = base_url or ""
+    forced_name = _forced_tool_name(tool_choice)
+    constrained = tool_choice == "required" or forced_name is not None
     effective_choice = tool_choice
-    if (
-        tool_choice == "required"
-        and base_url_key in _TOOL_CHOICE_REQUIRED_UNSUPPORTED
-    ):
+    effective_tools = tools
+    if constrained and base_url_key in _TOOL_CHOICE_REQUIRED_UNSUPPORTED:
         effective_choice = "auto"
+        if forced_name is not None:
+            effective_tools = _narrow_tools(tools, forced_name)
 
-    async def _create(choice: Any) -> Any:
+    async def _create(choice: Any, offered: list[dict[str, Any]]) -> Any:
         return await client.chat.completions.create(
             model=sensitive.MODEL_ID,
             messages=cast(Any, messages),
-            tools=cast(Any, tools),
+            tools=cast(Any, offered),
             tool_choice=choice,
         )
 
     try:
-        return await _create(effective_choice)
+        return await _create(effective_choice, effective_tools)
     except (APITimeoutError, httpx.TimeoutException, TimeoutError) as exc:
         raise ExpertProviderTimeoutError() from exc
     except BadRequestError as exc:
-        if effective_choice == "required" and _rejects_required_tool_choice(
-            exc
+        if (
+            effective_choice != "auto"
+            and constrained
+            and _rejects_required_tool_choice(exc)
         ):
             _TOOL_CHOICE_REQUIRED_UNSUPPORTED.add(base_url_key)
             _LOGGER.warning(
-                "Endpoint rejected tool_choice='required'; "
+                "Endpoint rejected constrained tool_choice; "
                 "retrying once with 'auto'."
             )
-            return await _complete_with_auto_fallback(_create)
+            retry_tools = (
+                _narrow_tools(tools, forced_name)
+                if forced_name is not None
+                else tools
+            )
+            return await _complete_with_auto_fallback(_create, retry_tools)
         raise ExpertProviderError() from exc
     except APIError as exc:
         raise ExpertProviderError() from exc
+
+
+def _forced_tool_name(tool_choice: Any) -> str | None:
+    """Return the forced tool name when ``tool_choice`` is a named choice."""
+    if isinstance(tool_choice, Mapping):
+        function = tool_choice.get("function")
+        if isinstance(function, Mapping):
+            name = function.get("name")
+            if isinstance(name, str) and name:
+                return name
+    return None
+
+
+def _narrow_tools(
+    tools: list[dict[str, Any]], forced_name: str
+) -> list[dict[str, Any]]:
+    """Keep only the forced tool's spec so ``"auto"`` cannot drift.
+
+    Falls back to the full list if the forced tool is somehow absent, so the
+    retry never sends an empty tool surface.
+    """
+    narrowed = [
+        spec
+        for spec in tools
+        if _field(spec.get("function"), "name") == forced_name
+    ]
+    return narrowed or tools
 
 
 def _rejects_required_tool_choice(exc: BadRequestError) -> bool:
@@ -268,11 +308,12 @@ def _rejects_required_tool_choice(exc: BadRequestError) -> bool:
 
 
 async def _complete_with_auto_fallback(
-    create: Callable[[Any], Awaitable[Any]],
+    create: Callable[[Any, list[dict[str, Any]]], Awaitable[Any]],
+    tools: list[dict[str, Any]],
 ) -> Any:
     """Retry a routing completion with ``tool_choice="auto"``."""
     try:
-        return await create("auto")
+        return await create("auto", tools)
     except (APITimeoutError, httpx.TimeoutException, TimeoutError) as exc:
         raise ExpertProviderTimeoutError() from exc
     except APIError as exc:
