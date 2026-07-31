@@ -19,6 +19,25 @@ worktree-state verification.
 **Tech Stack:** Git, zsh, CodeGraph, Python 3.12-3.14, uv, pytest, and
 `scripts/validate_local.sh`.
 
+## Current Execution Record (2026-07-31)
+
+The live refs supersede the initial dry-merge assumptions above. The target
+was rechecked at `0fe6a9cd9460f4bbbc9eb1f642787351190e1428`, and the source
+tip is `4ecc06f47bb2eeaf7ef2018a8d8310bd5dba87a1`. The source is already a
+full ancestor of `release/0.1.4` (`git rev-list --left-right --count` is
+`264 0`), so no second merge commit, integration branch, or cherry-pick is
+required. The release branch retains the complete source history and carries
+the subsequent gate-repair commits on top.
+
+The current convergence work has added compatibility-preserving fixes for
+the merged Data/Knowledge contracts, background settlement, Markdown gate
+parsing, OBS warning handling, and conversation-context coverage. The final
+full gate is still required on the post-record HEAD before cleanup. Until
+that proof is captured, retain the exact source worktree, source branch, and
+the five audited pre-existing stashes. The detached registration for
+`/tmp/phytomni-bot-mcp-gate` is stale and may be pruned only after the final
+gate.
+
 ## Global Constraints
 
 - Target branch: `release/0.1.4`.
