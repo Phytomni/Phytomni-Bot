@@ -361,6 +361,16 @@ def _bad_request(message: str) -> BadRequestError:
     return BadRequestError(message, response=response, body=None)
 
 
+# The real Huawei pangu ``mastudio`` endpoint rejects a named tool_choice with
+# a generic ``PANGU.3342`` 400 whose text does NOT mention "tool_choice", and
+# rejects "required" with a validation 400 that does. Endpoint detection must
+# not depend on the text: any 400 on a constrained choice triggers the auto
+# fallback.
+_PANGU_3342 = (
+    "Error code: 400 - {'error': {'code': 'PANGU.3342', "
+    "'type': 'BadRequestError', 'message': 'Failed to invoke the "
+    "inference service. please check the details field.'}}"
+)
 _REQUIRED_REJECTION = (
     'tool_choice must either be a named tool or "auto". '
     'tool_choice="required" is not supported'
@@ -370,13 +380,45 @@ _REQUIRED_REJECTION = (
 async def test_routing_falls_back_to_auto_on_required_rejection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A 400 on 'required' retries once with 'auto' and succeeds."""
+    """A 400 on 'required' retries once with 'auto' over the full tools."""
     calls: list[dict[str, Any]] = []
     patch_expert_router(
         monkeypatch,
         expert_router,
         _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
         side_effects=[_bad_request(_REQUIRED_REJECTION)],
+        calls=calls,
+    )
+
+    result = await select_agent_tool(
+        "route this",
+        allowed_tools=["KnowledgeAgent", "ChatAgent"],
+    )
+
+    assert result == ToolSelection("ChatAgent", {})
+    assert [call["tool_choice"] for call in calls] == ["required", "auto"]
+    # The retry keeps the full allowlist; narrowing to one tool makes the
+    # model return an empty tool call on the real endpoint.
+    assert [t["function"]["name"] for t in calls[1]["tools"]] == [
+        "KnowledgeAgent",
+        "ChatAgent",
+    ]
+
+
+async def test_routing_falls_back_on_pangu_3342_without_tool_choice_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A constrained 400 whose text omits 'tool_choice' still falls back.
+
+    The real ``PANGU.3342`` rejection does not mention ``tool_choice``; the
+    fallback must key off the constrained choice, not the error text.
+    """
+    calls: list[dict[str, Any]] = []
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
+        side_effects=[_bad_request(_PANGU_3342)],
         calls=calls,
     )
 
@@ -420,10 +462,14 @@ async def test_routing_caches_unsupported_endpoint(
     assert [call["tool_choice"] for call in second_calls] == ["auto"]
 
 
-async def test_routing_unrelated_400_is_not_retried(
+async def test_routing_auto_400_is_not_retried(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A 400 unrelated to tool_choice surfaces without an auto retry."""
+    """A 400 on an unconstrained 'auto' call surfaces with no further retry.
+
+    Only a constrained choice ('required' or a named tool) is eligible for
+    the auto downgrade; a 400 already on 'auto' has nowhere to fall back to.
+    """
     calls: list[dict[str, Any]] = []
     patch_expert_router(
         monkeypatch,
@@ -434,48 +480,90 @@ async def test_routing_unrelated_400_is_not_retried(
     )
 
     with pytest.raises(expert_router.ExpertProviderError):
-        await select_agent_tool("route this", allowed_tools=["ChatAgent"])
+        # No allowlist -> unconstrained 'auto' request.
+        await select_agent_tool("route this", history=[])
 
-    assert [call["tool_choice"] for call in calls] == ["required"]
+    assert [call["tool_choice"] for call in calls] == ["auto"]
 
 
-async def test_routing_forced_tool_400_downgrades_to_single_tool_auto(
+async def test_routing_forced_tool_400_coerces_auto_pick_to_forced(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A forced named tool_choice that 400s retries with a narrowed auto call.
+    """A forced route that 400s downgrades to auto and coerces the pick.
 
-    On an endpoint that rejects a named ``tool_choice`` the forced route
-    downgrades to ``"auto"`` but first narrows the offered tools to only the
-    forced tool, so ``"auto"`` degrades to "pick that one or none". The
-    forced-tool guarantee is preserved by ``_selection_from_completion``.
+    The real endpoint rejects a named ``tool_choice`` and, once retried with
+    ``"auto"`` over the full allowlist, may autonomously pick a *different*
+    tool. Because the caller pinned ``forced_tool``, the final selection is
+    coerced back to it -- the user's explicit ``@agent`` wins.
     """
     calls: list[dict[str, Any]] = []
     patch_expert_router(
         monkeypatch,
         expert_router,
-        _completion(tool_calls=[_tool_call("ChatAgent", "{}")]),
-        side_effects=[_bad_request(_REQUIRED_REJECTION)],
+        # On the auto retry the model autonomously picks ChatAgent.
+        _completion(
+            tool_calls=[_tool_call("ChatAgent", '{"user_query": "q"}')]
+        ),
+        side_effects=[_bad_request(_PANGU_3342)],
         calls=calls,
     )
 
     result = await select_agent_tool(
         "route this",
         allowed_tools=["ChatAgent", "KnowledgeAgent", "DataAgent"],
-        forced_tool="ChatAgent",
+        forced_tool="KnowledgeAgent",
     )
 
-    assert result == ToolSelection("ChatAgent", {})
+    # The user forced KnowledgeAgent, so that is the final selection even
+    # though the model picked ChatAgent under the degraded auto retry.
+    assert result is not None
+    assert result.tool_name == "KnowledgeAgent"
     # First attempt: the named forced choice over the full allowlist.
     assert calls[0]["tool_choice"] == {
         "type": "function",
-        "function": {"name": "ChatAgent"},
+        "function": {"name": "KnowledgeAgent"},
     }
-    assert [t["function"]["name"] for t in calls[0]["tools"]] == [
+    # Retry: 'auto' over the FULL allowlist (narrowing makes the model
+    # return an empty tool call on the real endpoint).
+    assert calls[1]["tool_choice"] == "auto"
+    assert [t["function"]["name"] for t in calls[1]["tools"]] == [
         "ChatAgent",
         "KnowledgeAgent",
         "DataAgent",
     ]
-    # Retry: 'auto' over a tool surface narrowed to only the forced tool,
-    # so the model cannot honor the 'auto' choice with a different agent.
+
+
+async def test_routing_forced_tool_400_empty_pick_still_coerces_to_forced(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A forced route survives an empty auto retry by minting the forced pick.
+
+    On the real endpoint ``"auto"`` over a single narrowed tool can return no
+    tool call at all; over the full allowlist the model may still decline. A
+    forced route must not 502 in that case -- it mints the forced selection.
+    """
+    calls: list[dict[str, Any]] = []
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        # The auto retry returns a content-only completion (no tool call).
+        _completion(content="no tool needed"),
+        side_effects=[_bad_request(_PANGU_3342)],
+        calls=calls,
+    )
+
+    result = await select_agent_tool(
+        "route this",
+        allowed_tools=["KnowledgeAgent", "ChatAgent"],
+        forced_tool="KnowledgeAgent",
+    )
+
+    assert result is not None
+    assert result.tool_name == "KnowledgeAgent"
+    assert result.arguments == {}
+    # Forced first attempt is the named dict; then the auto retry.
+    assert calls[0]["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "KnowledgeAgent"},
+    }
     assert calls[1]["tool_choice"] == "auto"
-    assert [t["function"]["name"] for t in calls[1]["tools"]] == ["ChatAgent"]

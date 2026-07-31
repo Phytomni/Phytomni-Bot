@@ -527,11 +527,6 @@ async def test_literal_agent_mention_stays_on_chat_surface(
         ),
         (_router_completion(("MissingAgent", "{}")), ["ChatAgent"], None),
         (_router_completion(("DataAgent", "{}")), ["ChatAgent"], None),
-        (
-            _router_completion(("DataAgent", "{}")),
-            ["ChatAgent", "DataAgent"],
-            "ChatAgent",
-        ),
     ],
     ids=(
         "no-choice",
@@ -539,7 +534,6 @@ async def test_literal_agent_mention_stays_on_chat_surface(
         "multiple-calls",
         "unknown-call",
         "outside-allowlist",
-        "forced-mismatch",
     ),
 )
 async def test_route_strict_failures_never_invoke_agent(
@@ -548,7 +542,13 @@ async def test_route_strict_failures_never_invoke_agent(
     monkeypatch: pytest.MonkeyPatch,
     case: tuple[SimpleNamespace, list[str], str | None],
 ) -> None:
-    """Real strict selector contract failures stop before dispatch."""
+    """Non-forced strict selector contract failures stop before dispatch.
+
+    A forced route is intentionally NOT a failure case here: a pinned
+    ``@agent`` is coerced to the forced tool and does dispatch even when the
+    model returns a different or empty tool call (see
+    ``test_route_forced_mismatch_coerces_and_dispatches``).
+    """
     completion, allowed_tools, forced_tool = case
     invoked = 0
 
@@ -576,6 +576,57 @@ async def test_route_strict_failures_never_invoke_agent(
             "type": "function",
             "function": {"name": forced_tool},
         }
+
+
+async def test_route_forced_mismatch_coerces_and_dispatches(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A forced route coerces a mismatched model pick to the forced tool.
+
+    On an endpoint that rejects a named ``tool_choice`` the router downgrades
+    to ``"auto"`` and the model may autonomously pick a different tool. The
+    pinned ``@agent`` still wins: the mismatched selection is coerced to the
+    forced tool and dispatched to its native slug rather than surfacing a 502.
+    """
+    invoked: list[dict[str, Any]] = []
+
+    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        invoked.append(kwargs)
+        return (
+            {
+                "id": f"route-{kwargs['agent']}",
+                "object": "agent.run",
+                "agent": kwargs["agent"],
+                "status": "succeeded",
+                "task_ids": [],
+                "result": empty_agent_result(),
+            },
+            200,
+        )
+
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
+    # Real router: the model picks DataAgent, but the caller forced Knowledge.
+    patch_expert_router(
+        monkeypatch,
+        expert_router,
+        _router_completion(("DataAgent", '{"user_query":"q"}')),
+    )
+
+    response = await _post_query_route(
+        api_client,
+        issued_api_key,
+        {
+            "user_query": "q",
+            "allowed_tools": ["KnowledgeAgent", "DataAgent"],
+            "forced_tool": "KnowledgeAgent",
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(invoked) == 1
+    assert invoked[0]["agent"] == "knowledge"
 
 
 @pytest.mark.parametrize(
