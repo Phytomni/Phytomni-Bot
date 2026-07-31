@@ -9,22 +9,47 @@ Start from the table below, or browse a category directly.
 
 ## I want to… → Read
 
-| I want to…                                         | Read                                                               |
-| -------------------------------------------------- | ------------------------------------------------------------------ |
-| Look up an environment variable                    | [reference/configuration.md](reference/configuration.md)           |
-| Look up an HTTP endpoint                           | [reference/http-api.md](reference/http-api.md)                     |
-| Look up an MCP tool                                | [reference/mcp-tools.md](reference/mcp-tools.md)                   |
-| Look up a CLI command                              | [reference/cli.md](reference/cli.md)                               |
-| Read DeepGenome response shapes                    | [contracts/deep-genome/README.md](contracts/deep-genome/README.md) |
-| Understand the architecture                        | [explanation/architecture.md](explanation/architecture.md)         |
-| Understand the agent graphs                        | [explanation/agent-graphs.md](explanation/agent-graphs.md)         |
-| Deploy, or build a customer image                  | [guides/deployment.md](guides/deployment.md)                       |
-| Set up for local development                       | [guides/development.md](guides/development.md)                     |
-| Operate the HTTP service                           | [ops/http-api-runbook.md](ops/http-api-runbook.md)                 |
-| Upgrade 0.1.2 → 0.1.3                              | [ops/upgrading.md](ops/upgrading.md)                               |
-| Upgrade 0.1.1 → 0.1.2                              | [ops/upgrading.md](ops/upgrading.md)                               |
-| See release history                                | [../CHANGELOG.md](../CHANGELOG.md)                                 |
-| Read the static-analysis exemption approval ledger | [development/lint-exemptions.md](development/lint-exemptions.md)   |
+- **I want to…:** Look up an environment variable
+  **Read:** [reference/configuration.md](reference/configuration.md)
+
+- **I want to…:** Look up an HTTP endpoint
+  **Read:** [reference/http-api.md](reference/http-api.md)
+
+- **I want to…:** Look up an MCP tool
+  **Read:** [reference/mcp-tools.md](reference/mcp-tools.md)
+
+- **I want to…:** Look up a CLI command
+  **Read:** [reference/cli.md](reference/cli.md)
+
+- **I want to…:** Read DeepGenome response shapes
+  **Read:** [contracts/deep-genome/README.md](contracts/deep-genome/README.md)
+
+- **I want to…:** Understand the architecture
+  **Read:** [explanation/architecture.md](explanation/architecture.md)
+
+- **I want to…:** Understand the agent graphs
+  **Read:** [explanation/agent-graphs.md](explanation/agent-graphs.md)
+
+- **I want to…:** Deploy, or build a customer image
+  **Read:** [guides/deployment.md](guides/deployment.md)
+
+- **I want to…:** Set up for local development
+  **Read:** [guides/development.md](guides/development.md)
+
+- **I want to…:** Operate the HTTP service
+  **Read:** [ops/http-api-runbook.md](ops/http-api-runbook.md)
+
+- **I want to…:** Upgrade 0.1.2 → 0.1.3
+  **Read:** [ops/upgrading.md](ops/upgrading.md)
+
+- **I want to…:** Upgrade 0.1.1 → 0.1.2
+  **Read:** [ops/upgrading.md](ops/upgrading.md)
+
+- **I want to…:** See release history
+  **Read:** [../CHANGELOG.md](../CHANGELOG.md)
+
+- **I want to…:** Read the static-analysis exemption approval ledger
+  **Read:** [development/lint-exemptions.md](development/lint-exemptions.md)
 
 ## Where docs live
 

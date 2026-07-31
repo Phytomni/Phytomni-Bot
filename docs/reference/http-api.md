@@ -17,18 +17,45 @@ settings. SQLite stores are local-only because network filesystems can
 deadlock under SQLite WAL. See [Configuration](configuration.md) for the
 canonical variable matrix.
 
-| Setting              | Env                                          | Default                           |
-| -------------------- | -------------------------------------------- | --------------------------------- |
-| API bind host        | `API_HOST`                                   | `127.0.0.1`                       |
-| API bind port        | `API_PORT`                                   | `8080`                            |
-| API key store        | `API_KEYS_DB_PATH` / `PHYTOMNI_API_KEYS_DB`  | `.cache/phytomni/api_keys.sqlite` |
-| Runs and tasks store | `API_TASKS_DB_PATH` / `PHYTOMNI_TASKS_DB`    | `server_tasks.db`                 |
-| Memory CRUD flag     | `MEMORY_ENABLED` / `PHYTOMNI_MEMORY_ENABLED` | `false` (disabled)                |
-| Memory store         | `MEMORY_DB_PATH` / `PHYTOMNI_MEMORY_DB_PATH` | `.cache/phytomni/memory.sqlite`   |
-| Checkpoint store     | beside the runs/tasks store                  | `checkpoints.db`                  |
-| Per-key req/min      | `API_RATE_LIMIT_PER_MIN`                     | `120` (`<= 0` disables)           |
-| Succeeded-run TTL    | `API_RUN_TTL_OK_HOURS`                       | `24`                              |
-| Failed-run TTL       | `API_RUN_TTL_FAIL_DAYS`                      | `7`                               |
+- **Setting:** API bind host
+  **Env:** `API_HOST`
+  **Default:** `127.0.0.1`
+
+- **Setting:** API bind port
+  **Env:** `API_PORT`
+  **Default:** `8080`
+
+- **Setting:** API key store
+  **Env:** `API_KEYS_DB_PATH` / `PHYTOMNI_API_KEYS_DB`
+  **Default:** `.cache/phytomni/api_keys.sqlite`
+
+- **Setting:** Runs and tasks store
+  **Env:** `API_TASKS_DB_PATH` / `PHYTOMNI_TASKS_DB`
+  **Default:** `server_tasks.db`
+
+- **Setting:** Memory CRUD flag
+  **Env:** `MEMORY_ENABLED` / `PHYTOMNI_MEMORY_ENABLED`
+  **Default:** `false` (disabled)
+
+- **Setting:** Memory store
+  **Env:** `MEMORY_DB_PATH` / `PHYTOMNI_MEMORY_DB_PATH`
+  **Default:** `.cache/phytomni/memory.sqlite`
+
+- **Setting:** Checkpoint store
+  **Env:** beside the runs/tasks store
+  **Default:** `checkpoints.db`
+
+- **Setting:** Per-key req/min
+  **Env:** `API_RATE_LIMIT_PER_MIN`
+  **Default:** `120` (`<= 0` disables)
+
+- **Setting:** Succeeded-run TTL
+  **Env:** `API_RUN_TTL_OK_HOURS`
+  **Default:** `24`
+
+- **Setting:** Failed-run TTL
+  **Env:** `API_RUN_TTL_FAIL_DAYS`
+  **Default:** `7`
 
 The runs table and tasks table share one SQLite file so the submit-side
 writer and the run-status reader address the same source of truth.
@@ -64,7 +91,14 @@ X-API-Key: ptm_...
 Every response carries an `X-Request-Id`. Errors on native routes use:
 
 ```json
-{"error": {"code": "invalid_argument", "message": "invalid request", "request_id": "...", "retryable": false}}
+{
+  "error": {
+    "code": "invalid_argument",
+    "message": "invalid request",
+    "request_id": "...",
+    "retryable": false
+  }
+}
 ```
 
 Over-budget callers get `429` with `Retry-After`. SSE streaming is
@@ -121,53 +155,269 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
 
 ## Endpoints
 
-| Method   | Path                                     | Auth  | Purpose                                                                                                                                                                                                 |
-| -------- | ---------------------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/healthz`                               | no    | Liveness, no dependencies.                                                                                                                                                                              |
-| `GET`    | `/readyz`                                | no    | Readiness, checks local store directories without creating files.                                                                                                                                       |
-| `GET`    | `/.well-known/agent-card.json`           | no\*  | Opt-in A2A v1 Agent Card; route exists only when `A2A_ENABLED=1`.                                                                                                                                       |
-| `POST`   | `/a2a`                                   | yes\* | Opt-in A2A v1 JSON-RPC `SendMessage` / `SendStreamingMessage` / `GetTask`; requires `A2A-Version: 1.0` and the `agents` scope.                                                                          |
-| `GET`    | `/v1/interop/capabilities`               | yes   | Opt-in sanitized MCP/A2A capability discovery; route exists only when `INTEROP_ENABLED=1`, accepts no query overrides, and requires the `agents` scope.                                                 |
-| `GET`    | `/v1/models`                             | yes   | Lists OpenAI-compatible model ids.                                                                                                                                                                      |
-| `POST`   | `/v1/chat/completions`                   | yes   | OpenAI-compatible chat endpoint.                                                                                                                                                                        |
-| `GET`    | `/v1/agents`                             | yes   | Lists native agent-run slugs; each row carries `legacy_aliases` and additive `capabilities`.                                                                                                            |
-| `POST`   | `/v1/agents/{agent}/runs`                | yes   | Invokes one agent by slug.                                                                                                                                                                              |
-| `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing: an LLM selects the agent for a query and returns its `agent.run` envelope with the resolved slug.                                                                            |
-| `GET`    | `/v1/memories`                           | yes   | Lists live memory records in the authenticated user's namespace; route exists only when `MEMORY_ENABLED=1`.                                                                                             |
-| `POST`   | `/v1/memories`                           | yes   | Creates one memory record; `user_id` is taken from the API key context and cannot be supplied in the body.                                                                                              |
-| `GET`    | `/v1/memories/export`                    | yes   | Exports all live records owned by the authenticated user, subject to the per-user item bound; expired or foreign records are excluded.                                                                  |
-| `GET`    | `/v1/memories/audit`                     | svc   | Lists digest-only memory mutation records; requires the configured service token and exists only when `MEMORY_ENABLED=1`.                                                                               |
-| `GET`    | `/v1/memories/{memory_id}`               | yes   | Returns one live owner-scoped memory record.                                                                                                                                                            |
-| `PUT`    | `/v1/memories/{memory_id}`               | yes   | Replaces one memory with optimistic concurrency; requires `If-Match: <revision>`.                                                                                                                       |
-| `DELETE` | `/v1/memories/{memory_id}`               | yes   | Deletes one owner-scoped memory idempotently; an optional `If-Match` checks its revision.                                                                                                               |
-| `GET`    | `/v1/runs/{run_id}`                      | yes   | Returns one owner-isolated run state.                                                                                                                                                                   |
-| `POST`   | `/v1/runs/{thread_id}/resume`            | yes   | Resumes a ReviewAgent run paused at a human approval interrupt.                                                                                                                                         |
-| `POST`   | `/v1/runs/{run_id}/a2ui-actions`         | yes   | Resumes a ChatAgent or ReviewAgent run paused on an A2UI confirm surface (`input_required`).                                                                                                            |
-| `GET`    | `/v1/runs/{run_id}/logs`                 | yes   | Returns reconciled task logs for a run.                                                                                                                                                                 |
-| `GET`    | `/v1/runs`                               | yes   | Lists owner-scoped runs newest-first.                                                                                                                                                                   |
-| `POST`   | `/v1/files`                              | yes   | Stores one multipart upload in OBS and returns the public path.                                                                                                                                         |
-| `POST`   | `/v1/api-keys`                           | svc   | Mints a per-user `ptm_...` API key.                                                                                                                                                                     |
-| `GET`    | `/v1/api-keys`                           | svc   | Lists per-user keys (metadata only); optional `?user_id=` filter.                                                                                                                                       |
-| `DELETE` | `/v1/api-keys/{prefix}`                  | svc   | Revokes the key with the given public prefix.                                                                                                                                                           |
-| `GET`    | `/v1/relay/audit`                        | svc   | Lists relay audit records (service token); filters by user, key prefix, service, status, and time range.                                                                                                |
-| `GET`    | `/v1/relay/audit/{request_id}`           | svc   | Fetches relay audit records by request id (service token).                                                                                                                                              |
-| `GET`    | `/v1/relay/healthz`                      | no    | Liveness probe for the relay; no auth, only the relay-enabled guard; returns `{"status": "ok"}` when relay is enabled and `404` when relay is disabled.                                                 |
-| `POST`   | `/v1/relay/llm/chat/completions`         | relay | Chat LLM relay (transparent); injects the operator `Authorization: Bearer` key.                                                                                                                         |
-| `POST`   | `/v1/relay/coder/chat/completions`       | relay | Coder model relay (transparent); injects the operator coder Bearer key.                                                                                                                                 |
-| `POST`   | `/v1/relay/embed/embeddings`             | relay | Embedding relay (transparent); injects the operator embed Bearer key (OpenAI shape, OQ-001).                                                                                                            |
-| `POST`   | `/v1/relay/retrieve/search`              | relay | Knowledge retrieve relay (envelope); no operator credential injected.                                                                                                                                   |
-| `POST`   | `/v1/relay/rerank/rank`                  | relay | Knowledge rerank relay (envelope); no operator credential injected.                                                                                                                                     |
-| `POST`   | `/v1/relay/database/nl2sql`              | relay | NL2SQL relay (envelope); injects the operator IAM `X-Auth-Token`.                                                                                                                                       |
-| `POST`   | `/v1/relay/bi/query`                     | relay | BI relay (envelope); server-side-terminated — the operator runs `gauss_query` against GaussDB, no credential forwarded.                                                                                 |
-| `GET`    | `/v1/relay/obs/object`                   | relay | OBS object download relay; streams a tenant-namespace-confined object (key re-validated to `agent_data/{user_data,uploads}/<key user id>/`) under a response-size budget, via operator OBS credentials. |
-| `GET`    | `/v1/relay/obs/list`                     | relay | OBS object list relay; enumerates keys under the caller tenant's output root (`agent_data/user_data/<key user id>/`) via operator OBS credentials.                                                      |
-| `PUT`    | `/v1/relay/obs/object`                   | relay | OBS object upload relay; writes the request body at a tenant-namespace-confined key via operator OBS credentials.                                                                                       |
-| `PUT`    | `/v1/relay/obs/dir`                      | relay | OBS dir-marker relay; creates a zero-byte directory marker at a tenant-namespace-confined key via operator OBS credentials.                                                                             |
-| `POST`   | `/v1/relay/analysis/tasks`               | relay | Analysis-platform submit relay (envelope); injects the operator IAM `X-Auth-Token` for the analysis region.                                                                                             |
-| `GET`    | `/v1/relay/analysis/{task_id}`           | relay | Analysis task-status relay (envelope); validates the task id and injects the operator IAM `X-Auth-Token`.                                                                                               |
-| `GET`    | `/v1/relay/analysis/{task_id}/logs`      | relay | Analysis task-log relay (envelope); injects IAM `X-Auth-Token` and forwards only the `task_name` query key.                                                                                             |
-| `POST`   | `/v1/relay/analysis/{task_id}/terminate` | relay | Analysis task-terminate relay (envelope); validates the task id and injects the operator IAM `X-Auth-Token`.                                                                                            |
-| `GET`    | `/v1/relay/spa-faq/{repo_id}`            | relay | SPA-FAQ relay (envelope); validates the repo id, injects the operator IAM `X-Auth-Token`, forwards only `question`/`page_size`/`page_num`, and bypasses the host proxy.                                 |
+- **Method:** `GET`
+  **Path:** `/healthz`
+  **Auth:** no
+  **Purpose:** Liveness, no dependencies.
+
+- **Method:** `GET`
+  **Path:** `/readyz`
+  **Auth:** no
+  **Purpose:** Readiness, checks local store directories without creating files.
+
+- **Method:** `GET`
+  **Path:** `/.well-known/agent-card.json`
+  **Auth:** no\*
+  **Purpose:** Opt-in A2A v1 Agent Card; route exists only when `A2A_ENABLED=1`.
+
+- **Method:** `POST`
+  **Path:** `/a2a`
+  **Auth:** yes\*
+  **Purpose:** Opt-in A2A v1 JSON-RPC `SendMessage` / `SendStreamingMessage` /
+  `GetTask`; requires `A2A-Version: 1.0` and the `agents` scope.
+
+- **Method:** `GET`
+  **Path:** `/v1/interop/capabilities`
+  **Auth:** yes
+  **Purpose:** Opt-in sanitized MCP/A2A capability discovery; route exists only
+  when `INTEROP_ENABLED=1`, accepts no query overrides, and
+  requires the `agents`
+  scope.
+
+- **Method:** `GET`
+  **Path:** `/v1/models`
+  **Auth:** yes
+  **Purpose:** Lists OpenAI-compatible model ids.
+
+- **Method:** `POST`
+  **Path:** `/v1/chat/completions`
+  **Auth:** yes
+  **Purpose:** OpenAI-compatible chat endpoint.
+
+- **Method:** `GET`
+  **Path:** `/v1/agents`
+  **Auth:** yes
+  **Purpose:** Lists native agent-run slugs; each row carries `legacy_aliases`
+  and additive `capabilities`.
+
+- **Method:** `POST`
+  **Path:** `/v1/agents/{agent}/runs`
+  **Auth:** yes
+  **Purpose:** Invokes one agent by slug.
+
+- **Method:** `POST`
+  **Path:** `/v1/query/route`
+  **Auth:** yes
+  **Purpose:** Autonomous Expert routing: an LLM selects the agent for a query
+  and returns its `agent.run` envelope with the resolved slug.
+
+- **Method:** `GET`
+  **Path:** `/v1/memories`
+  **Auth:** yes
+  **Purpose:** Lists live memory records in the authenticated user's namespace;
+  route exists only when `MEMORY_ENABLED=1`.
+
+- **Method:** `POST`
+  **Path:** `/v1/memories`
+  **Auth:** yes
+  **Purpose:** Creates one memory record; `user_id` is taken from the API key
+  context and cannot be supplied in the body.
+
+- **Method:** `GET`
+  **Path:** `/v1/memories/export`
+  **Auth:** yes
+  **Purpose:** Exports all live records owned by the authenticated user, subject
+  to the per-user item bound; expired or foreign records are
+  excluded.
+
+- **Method:** `GET`
+  **Path:** `/v1/memories/audit`
+  **Auth:** svc
+  **Purpose:** Lists digest-only memory mutation records; requires the
+  configured service token and exists only when `MEMORY_ENABLED=1`.
+
+- **Method:** `GET`
+  **Path:** `/v1/memories/{memory_id}`
+  **Auth:** yes
+  **Purpose:** Returns one live owner-scoped memory record.
+
+- **Method:** `PUT`
+  **Path:** `/v1/memories/{memory_id}`
+  **Auth:** yes
+  **Purpose:** Replaces one memory with optimistic concurrency; requires
+  `If-Match: <revision>`.
+
+- **Method:** `DELETE`
+  **Path:** `/v1/memories/{memory_id}`
+  **Auth:** yes
+  **Purpose:** Deletes one owner-scoped memory idempotently; an optional
+  `If-Match` checks its revision.
+
+- **Method:** `GET`
+  **Path:** `/v1/runs/{run_id}`
+  **Auth:** yes
+  **Purpose:** Returns one owner-isolated run state.
+
+- **Method:** `POST`
+  **Path:** `/v1/runs/{thread_id}/resume`
+  **Auth:** yes
+  **Purpose:** Resumes a ReviewAgent run paused at a human approval interrupt.
+
+- **Method:** `POST`
+  **Path:** `/v1/runs/{run_id}/a2ui-actions`
+  **Auth:** yes
+  **Purpose:** Resumes a ChatAgent or ReviewAgent run paused on an A2UI confirm
+  surface (`input_required`).
+
+- **Method:** `GET`
+  **Path:** `/v1/runs/{run_id}/logs`
+  **Auth:** yes
+  **Purpose:** Returns reconciled task logs for a run.
+
+- **Method:** `GET`
+  **Path:** `/v1/runs`
+  **Auth:** yes
+  **Purpose:** Lists owner-scoped runs newest-first.
+
+- **Method:** `POST`
+  **Path:** `/v1/files`
+  **Auth:** yes
+  **Purpose:** Stores one multipart upload in OBS and returns the public path.
+
+- **Method:** `POST`
+  **Path:** `/v1/api-keys`
+  **Auth:** svc
+  **Purpose:** Mints a per-user `ptm_...` API key.
+
+- **Method:** `GET`
+  **Path:** `/v1/api-keys`
+  **Auth:** svc
+  **Purpose:** Lists per-user keys (metadata only); optional `?user_id=` filter.
+
+- **Method:** `DELETE`
+  **Path:** `/v1/api-keys/{prefix}`
+  **Auth:** svc
+  **Purpose:** Revokes the key with the given public prefix.
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/audit`
+  **Auth:** svc
+  **Purpose:** Lists relay audit records (service token); filters by user, key
+  prefix, service, status, and time range.
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/audit/{request_id}`
+  **Auth:** svc
+  **Purpose:** Fetches relay audit records by request id (service token).
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/healthz`
+  **Auth:** no
+  **Purpose:** Liveness probe for the relay; no auth, only the relay-enabled
+  guard; returns `{"status": "ok"}` when relay is enabled and `404`
+  when relay is
+  disabled.
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/llm/chat/completions`
+  **Auth:** relay
+  **Purpose:** Chat LLM relay (transparent); injects the operator
+  `Authorization: Bearer` key.
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/coder/chat/completions`
+  **Auth:** relay
+  **Purpose:** Coder model relay (transparent); injects the operator coder
+  Bearer key.
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/embed/embeddings`
+  **Auth:** relay
+  **Purpose:** Embedding relay (transparent); injects the operator embed Bearer
+  key (OpenAI shape, OQ-001).
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/retrieve/search`
+  **Auth:** relay
+  **Purpose:** Knowledge retrieve relay (envelope); no operator credential
+  injected.
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/rerank/rank`
+  **Auth:** relay
+  **Purpose:** Knowledge rerank relay (envelope); no operator credential
+  injected.
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/database/nl2sql`
+  **Auth:** relay
+  **Purpose:** NL2SQL relay (envelope); injects the operator IAM `X-Auth-Token`.
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/bi/query`
+  **Auth:** relay
+  **Purpose:** BI relay (envelope); server-side-terminated — the operator runs
+  `gauss_query` against GaussDB, no credential forwarded.
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/obs/object`
+  **Auth:** relay
+  **Purpose:** OBS object download relay; streams a tenant-namespace-confined
+  object (key re-validated to
+  `agent_data/{user_data,uploads}/<key user id>/`)
+  under a response-size budget, via operator OBS credentials.
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/obs/list`
+  **Auth:** relay
+  **Purpose:** OBS object list relay; enumerates keys under the caller tenant's
+  output root (`agent_data/user_data/<key user id>/`) via operator
+  OBS
+  credentials.
+
+- **Method:** `PUT`
+  **Path:** `/v1/relay/obs/object`
+  **Auth:** relay
+  **Purpose:** OBS object upload relay; writes the request body at a
+  tenant-namespace-confined key via operator OBS credentials.
+
+- **Method:** `PUT`
+  **Path:** `/v1/relay/obs/dir`
+  **Auth:** relay
+  **Purpose:** OBS dir-marker relay; creates a zero-byte directory marker at a
+  tenant-namespace-confined key via operator OBS credentials.
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/analysis/tasks`
+  **Auth:** relay
+  **Purpose:** Analysis-platform submit relay (envelope); injects the operator
+  IAM `X-Auth-Token` for the analysis region.
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/analysis/{task_id}`
+  **Auth:** relay
+  **Purpose:** Analysis task-status relay (envelope); validates the task id and
+  injects the operator IAM `X-Auth-Token`.
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/analysis/{task_id}/logs`
+  **Auth:** relay
+  **Purpose:** Analysis task-log relay (envelope); injects IAM `X-Auth-Token`
+  and forwards only the `task_name` query key.
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/analysis/{task_id}/terminate`
+  **Auth:** relay
+  **Purpose:** Analysis task-terminate relay (envelope); validates the task id
+  and injects the operator IAM `X-Auth-Token`.
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/spa-faq/{repo_id}`
+  **Auth:** relay
+  **Purpose:** SPA-FAQ relay (envelope); validates the repo id, injects the
+  operator IAM `X-Auth-Token`, forwards only
+  `question`/`page_size`/`page_num`,
+  and bypasses the host proxy.
 
 `GET /v1/agents` returns one row per registered native slug; each
 row carries a `legacy_aliases: list[str]` carrying the historical
@@ -304,7 +554,8 @@ the ten dispatchable MCP tools as skills, Bearer `agents` authorization, and
 `streaming=true` / `pushNotifications=false`. `GetTaskStatus` is not an A2A
 skill.
 
-Phase 2 accepts `SendMessage`, `SendStreamingMessage`, and owner-scoped `GetTask`
+Phase 2 accepts `SendMessage`, `SendStreamingMessage`, and owner-scoped
+`GetTask`
 JSON-RPC methods. Every request must send
 `A2A-Version: 1.0` and an API key with the `agents` scope (scope-less legacy
 keys remain all-access). Business failures are returned as HTTP 200 JSON-RPC
@@ -314,7 +565,8 @@ HTTP 401/403/429. Supported message parts are:
 - `text`: mapped to the selected tool's `user_query` or `goal_description`;
 - `data`: a JSON object merged into the tool arguments.
 
-`raw` and URL parts, scalar/list data values, unknown `metadata.skill_id` values,
+`raw` and URL parts, scalar/list data values, unknown `metadata.skill_id`
+values,
 and conflicting structured values are rejected. `metadata.skill_id` is read
 from the JSON-RPC request metadata, not from nested message metadata. When it
 is absent, the legacy Expert router selects a tool from the text with all
@@ -586,12 +838,19 @@ owner-only path (no `user_id`) keeps its existing contract.
 The public run status is valid only when its durable backing condition is
 present:
 
-| Status           | Required durable condition                                   |
-| ---------------- | ------------------------------------------------------------ |
-| `input_required` | Persisted run plus a valid `v1.0` A2UI surface               |
-| `running`        | Persisted run, or real accepted tasks plus degraded tracking |
-| `succeeded`      | Persisted run plus the canonical result projection           |
-| `failed`         | Safe error projection with no private payload                |
+- **Status:** `input_required`
+  **Required durable condition:** Persisted run plus a valid `v1.0` A2UI surface
+
+- **Status:** `running`
+  **Required durable condition:** Persisted run, or real accepted tasks plus
+  degraded tracking
+
+- **Status:** `succeeded`
+  **Required durable condition:** Persisted run plus the canonical result
+  projection
+
+- **Status:** `failed`
+  **Required durable condition:** Safe error projection with no private payload
 
 Every error response uses the public `error` envelope with `code`, safe
 `message`, `request_id`, `stage` when applicable, and `retryable`. Internal
@@ -670,7 +929,8 @@ duplicate, malformed, or over-shape actions use the unified `400` envelope.
 Web still owns end-user identity and tenant selection; these Bot-side limits
 are an additional boundary, not an ownership substitute.
 
-Copyable A2UI downlink / uplink / success / `input_required` / error goldens live under
+Copyable A2UI downlink / uplink / success / `input_required` / error goldens
+live under
 [`docs/contracts/a2ui/`](../contracts/a2ui/README.md) for Web and Go
 gateway consumers: `chat_confirm`, `review_confirm`, `chat_form`,
 `chat_choice`, `review_form`, `review_choice`, plus
@@ -705,7 +965,8 @@ agent answer, or the short cancel string on Chat reject / form or
 choice cancel) plus `result.a2ui` when the pause carried a projected
 surface: the prior downlink cloned with `props.status: "submitted"`
 and `props.accepted`, `props.cancelled`, `props.fields`, or
-`props.selected` when applicable. Both `/resume` and `/a2ui-actions` attach `result.a2ui`
+`props.selected` when applicable. Both `/resume` and `/a2ui-actions` attach
+`result.a2ui`
 on success when projection was present. The two uplinks coexist for
 Review pauses — send only one per pause round; the first success wins
 and the second returns `409`. If the resumed graph pauses again, the
@@ -1079,18 +1340,21 @@ streaming-capable gate returns `400`.
 curl -N -s http://127.0.0.1:8080/v1/chat/completions \
   -H "Authorization: Bearer ptm_..." \
   -H 'Content-Type: application/json' \
-  -d '{"model":"phyto-chat","stream":true,"messages":[{"role":"user","content":"Explain C3 photosynthesis."}]}'
+  -d '{"model":"phyto-chat","stream":true,"messages":[{"role":"user",\
+"content":"Explain C3 photosynthesis."}]}'
 ```
 
 Auth, rate-limit, request-id, OBS-file processing, and message
 flattening all complete *before* the stream starts, so a
 `stream=true` request that fails any precondition surfaces as a
 normal JSON error envelope (`401` / `429` / `400`) instead of an
-empty `text/event-stream`. After the stream drains, the run record is settled from the wrapper
+empty `text/event-stream`. After the stream drains, the run record is settled
+from the wrapper
 `finally` block:
 
 - **ChatAgent (`phyto-chat`)**: `result` is
-  `{"formatted": {"answer": "<accumulated text>"}, "raw": null, "stream": true, "truncated": bool, "partial": bool}`.
+  `{"formatted": {"answer": "<accumulated text>"}, "raw": null,`
+  `"stream": true, "truncated": bool, "partial": bool}`.
   `answer` is the concatenation of every `TextMessageContent` delta,
   soft-capped by `STREAM_ANSWER_MAX_BYTES` / `PHYTOMNI_STREAM_ANSWER_MAX_BYTES`
   (default 1 MiB). The SSE wire stream is never truncated.
@@ -1149,10 +1413,18 @@ The HTTP layer can resolve a free-form `user_query` into the canonical
 identifier a downstream agent expects, before invoking the agent. Four
 agents support pre-shaping today:
 
-| Flag              | Eligible models / agents                                                       | Resolved fields                              | Metadata keys (on success)                                                             |
-| ----------------- | ------------------------------------------------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `resolve_gene_id` | `phyto-brief-gene` (chat path) / `brief_gene` / `deep_genome` / `design` slugs | canonical gene id (+ `species_code` on runs) | `original_query`, `resolved_gene_id`, `resolved_species_code`, `resolve_gene_id: true` |
-| `resolve_to_id`   | `network` slug only                                                            | Trait Ontology id + `species_code`           | `original_query`, `resolved_to_id`, `resolved_species_code`, `resolve_to_id: true`     |
+- **Flag:** `resolve_gene_id`
+  **Eligible models / agents:** `phyto-brief-gene` (chat path) / `brief_gene` /
+  `deep_genome` / `design` slugs
+  **Resolved fields:** canonical gene id (+ `species_code` on runs)
+  **Metadata keys (on success):** `original_query`, `resolved_gene_id`,
+  `resolved_species_code`, `resolve_gene_id:                                 true`
+
+- **Flag:** `resolve_to_id`
+  **Eligible models / agents:** `network` slug only
+  **Resolved fields:** Trait Ontology id + `species_code`
+  **Metadata keys (on success):** `original_query`, `resolved_to_id`,
+  `resolved_species_code`, `resolve_to_id: true`
 
 `resolve_gene_id` issues one structured LLM call (json_schema response
 format) and returns the single best canonical gene/transcript identifier
@@ -1233,7 +1505,8 @@ Both flags share the same misuse / failure contract:
 curl -s http://127.0.0.1:8080/v1/chat/completions \
   -H "Authorization: Bearer ptm_..." \
   -H 'Content-Type: application/json' \
-  -d '{"model":"phyto-brief-gene","resolve_gene_id":true,"messages":[{"role":"user","content":"What does AT5G42800 do in Arabidopsis?"}]}'
+  -d '{"model":"phyto-brief-gene","resolve_gene_id":true,"messages":[{"role":"user",\
+"content":"What does AT5G42800 do in Arabidopsis?"}]}'
 
 # Native runs — BriefGene (rewrites user_query)
 curl -s http://127.0.0.1:8080/v1/agents/brief_gene/runs \
@@ -1394,12 +1667,26 @@ The old `result.final_report`, `result.intermediate_report`,
 new producers must write the canonical blocks above. Clients must migrate as
 follows:
 
-| Deprecated field                                     | Canonical replacement                                                | Removal condition                                                |
-| ---------------------------------------------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `result.final_report` / `result.intermediate_report` | `formatted.answer` plus `execution.report.state`                     | Web/Go consumers render the canonical answer and state.          |
-| `result.artifacts`                                   | `execution.artifacts`                                                | Web/Go consumers use public descriptors and download references. |
-| `result.task_results` / `result.live_status`         | `execution.tasks`, `execution.warnings`, and `execution.diagnostics` | Operator diagnostics no longer depend on private child rows.     |
-| `result.degraded`                                    | `execution.tracking.degraded` and `execution.report.degraded`        | Clients branch only on the canonical degradation signals.        |
+- **Deprecated field:** `result.final_report` / `result.intermediate_report`
+  **Canonical replacement:** `formatted.answer` plus `execution.report.state`
+  **Removal condition:** Web/Go consumers render the canonical answer and state.
+
+- **Deprecated field:** `result.artifacts`
+  **Canonical replacement:** `execution.artifacts`
+  **Removal condition:** Web/Go consumers use public descriptors and download
+  references.
+
+- **Deprecated field:** `result.task_results` / `result.live_status`
+  **Canonical replacement:** `execution.tasks`, `execution.warnings`, and
+  `execution.diagnostics`
+  **Removal condition:** Operator diagnostics no longer depend on private child
+  rows.
+
+- **Deprecated field:** `result.degraded`
+  **Canonical replacement:** `execution.tracking.degraded` and
+  `execution.report.degraded`
+  **Removal condition:** Clients branch only on the canonical degradation
+  signals.
 
 These compatibility fields remain an external migration boundary until
 Web/Go consumers provide current acceptance evidence. They are not a reason to
@@ -1420,15 +1707,44 @@ and `log_status`, together with the universal outcome fields
 expose the sanitized `task_ids` tuple when their formatter supports it; the
 value contains only non-empty string task identifiers.
 
-| Agent                                         | Default-mode `formatted.metadata` keys                                                                                       |
-| --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| DataAgent                                     | `user_query`, `rewrite_query`, `is_rewrite`                                                                                  |
-| KnowledgeAgent / ReviewAgent / BriefGeneAgent | (cited; no extra metadata beyond stability note; BriefGeneAgent adds `degraded` on a recovered literature fault — see below) |
-| AnalystAgent                                  | `plan` (≤4 KB), `extracted_tools`, `method_context_keys`, `plan_retries`, plus task fields                                   |
-| DeepGenomeAgent                               | `task_id`, `output_dir`, `species_code`, `gene_id`, `compute_resource`, plus task fields                                     |
-| InSilicoResearchAgent                         | `task_ids`, `goals`, `output_dir`, `error`, plus task fields and optional `interop` / `degraded_interop`                     |
-| DigitalDesignAgent                            | `task_ids`, `goal_description` (≤256 B), plus task fields, `output_dirs`, and optional `interop` / `degraded_interop`        |
-| GeneNetworkAgent                              | `task_ids`, `goal_description` (≤256 B), plus task fields                                                                    |
+- **Agent:** DataAgent
+  **Default-mode `formatted.metadata` keys:** `user_query`, `rewrite_query`,
+  `is_rewrite`
+
+- **Agent:** KnowledgeAgent / ReviewAgent / BriefGeneAgent
+  **Default-mode `formatted.metadata` keys:** (cited; no extra metadata beyond
+  stability note; BriefGeneAgent
+  adds `degraded` on a recovered
+  literature fault —
+  see below)
+
+- **Agent:** AnalystAgent
+  **Default-mode `formatted.metadata` keys:** `plan` (≤4 KB), `extracted_tools`,
+  `method_context_keys`,
+  `plan_retries`, plus task fields
+
+- **Agent:** DeepGenomeAgent
+  **Default-mode `formatted.metadata` keys:** `task_id`, `output_dir`,
+  `species_code`, `gene_id`,
+  `compute_resource`, plus task
+  fields
+
+- **Agent:** InSilicoResearchAgent
+  **Default-mode `formatted.metadata` keys:** `task_ids`, `goals`, `output_dir`,
+  `error`, plus task fields and
+  optional `interop` /
+  `degraded_interop`
+
+- **Agent:** DigitalDesignAgent
+  **Default-mode `formatted.metadata` keys:** `task_ids`, `goal_description`
+  (≤256 B), plus task fields,
+  `output_dirs`, and optional
+  `interop` /
+  `degraded_interop`
+
+- **Agent:** GeneNetworkAgent
+  **Default-mode `formatted.metadata` keys:** `task_ids`, `goal_description`
+  (≤256 B), plus task fields
 
 Text fields exceeding their byte cap are truncated with a marker
 pointing to the full document in `raw.phytomni_state.<key>`.
@@ -1491,16 +1807,38 @@ Terminal report synthesis is producer-role based. The filename extension is
 never sufficient to grant scientific meaning. The eight exact manifest roles
 are:
 
-| Role                | `report_context_eligible` | Meaning                                                                   |
-| ------------------- | ------------------------- | ------------------------------------------------------------------------- |
-| `scientific_report` | `true`                    | Producer-declared report prose.                                           |
-| `scientific_table`  | `true`                    | Producer-declared scientific table.                                       |
-| `scientific_text`   | `true`                    | Producer-declared scientific text or notes.                               |
-| `scientific_figure` | `false`                   | Figure or image output; listed but not read into the first report prompt. |
-| `input`             | `false`                   | Input material copied or retained by the producer.                        |
-| `execution_log`     | `false`                   | Operational log; never scientific evidence.                               |
-| `diagnostic`        | `false`                   | Manifest or diagnostic metadata.                                          |
-| `unknown`           | `false`                   | No proven producer meaning.                                               |
+- **Role:** `scientific_report`
+  **`report_context_eligible`:** `true`
+  **Meaning:** Producer-declared report prose.
+
+- **Role:** `scientific_table`
+  **`report_context_eligible`:** `true`
+  **Meaning:** Producer-declared scientific table.
+
+- **Role:** `scientific_text`
+  **`report_context_eligible`:** `true`
+  **Meaning:** Producer-declared scientific text or notes.
+
+- **Role:** `scientific_figure`
+  **`report_context_eligible`:** `false`
+  **Meaning:** Figure or image output; listed but not read into the first report
+  prompt.
+
+- **Role:** `input`
+  **`report_context_eligible`:** `false`
+  **Meaning:** Input material copied or retained by the producer.
+
+- **Role:** `execution_log`
+  **`report_context_eligible`:** `false`
+  **Meaning:** Operational log; never scientific evidence.
+
+- **Role:** `diagnostic`
+  **`report_context_eligible`:** `false`
+  **Meaning:** Manifest or diagnostic metadata.
+
+- **Role:** `unknown`
+  **`report_context_eligible`:** `false`
+  **Meaning:** No proven producer meaning.
 
 The producer writes `.phytomni-artifacts.json` last in each output directory.
 It must validate against this bounded schema and list every other output once:
@@ -1588,7 +1926,8 @@ backend acceptance.
 unlike the generic background submission workers its terminal product is a
 local markdown report rather than an upstream-platform artifact. The
 coordinator persists a public snapshot after BriefGene and after each optional
-analysis transition. While the run is active, `GetTaskStatus.formatted.answer` and
+analysis transition. While the run is active, `GetTaskStatus.formatted.answer`
+and
 the `answer` field of `GET /v1/runs/{run_id}` select the latest nonblank
 intermediate report. After successful synthesis, the same answer is paired
 with `result.execution.report.state="final"`. Failed umbrellas retain their
@@ -1604,7 +1943,8 @@ succeeds, partial analysis failure is represented in the snapshot and does not
 hide the best report. A final report is published only after synthesis succeeds.
 
 Artifact-oriented consumers should read `result.execution.report` and retain
-the last accepted DeepGenome revision from `result.formatted.metadata.deep_genome`.
+the last accepted DeepGenome revision from
+`result.formatted.metadata.deep_genome`.
 Ignore stale or equal revisions, render `formatted.answer` while
 `stage=intermediate`, and switch permanently to the answer paired with
 `execution.report.state="final"` when `stage=final`. `degraded=true` and
@@ -1686,10 +2026,21 @@ A `202` body can legitimately return `id: null` with `task_ids: []` for
 two reasons. Both produce the same identity-empty shape, so clients
 distinguish them through the extra signals described here:
 
-| Cause                       | `id`   | `task_ids` | Body extras                                     | `result` extras                                       | Client follow-up                                                                                                |
-| --------------------------- | ------ | ---------- | ----------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Healthy submission          | `str`  | `[…]`      | —                                               | per-agent payload                                     | Poll `/v1/runs/{id}` for status.                                                                                |
-| Local registry write failed | `null` | `[]`       | `degraded_tracking: true` at the body top level | per-agent payload (the remote submission did succeed) | Treat the remote run as in-flight but not locally tracked; operators should reconcile from the upstream system. |
+- **Cause:** Healthy submission
+  **`id`:** `str`
+  **`task_ids`:** `[…]`
+  **Body extras:** —
+  **`result` extras:** per-agent payload
+  **Client follow-up:** Poll `/v1/runs/{id}` for status.
+
+- **Cause:** Local registry write failed
+  **`id`:** `null`
+  **`task_ids`:** `[]`
+  **Body extras:** `degraded_tracking: true` at the body top level
+  **`result` extras:** per-agent payload (the remote submission did succeed)
+  **Client follow-up:** Treat the remote run as in-flight but not locally
+  tracked; operators should reconcile from the upstream
+  system.
 
 The `degraded_tracking: true` body field is added only when the local
 SQLite chokepoint (`runtime.submit_recorder.record_submitted_task`) hit
@@ -1820,14 +2171,41 @@ validation failure returns `400`. Missing or insufficient scope returns
 
 The stable public error mappings for a validly authenticated request are:
 
-| Condition                                  | HTTP  | `error.code`                      | `error.stage`           | `retryable` |
-| ------------------------------------------ | ----- | --------------------------------- | ----------------------- | ----------- |
-| Invalid request body or allowlist          | `422` | `invalid_request`                 | -                       | `false`     |
-| Unsupported Expert attachment              | `422` | `attachment_not_supported`        | `attachment_validation` | `false`     |
-| Strict selector contract violation         | `502` | `routing_contract_violation`      | `routing`               | `false`     |
-| Routing provider timeout                   | `504` | `upstream_timeout`                | `routing`               | `true`      |
-| Routing provider failure                   | `502` | `routing_upstream_failed`         | `routing`               | `true`      |
-| Selected-agent argument validation failure | `400` | `selected_agent_invalid_argument` | `dispatch_validation`   | `false`     |
+- **Condition:** Invalid request body or allowlist
+  **HTTP:** `422`
+  **`error.code`:** `invalid_request`
+  **`error.stage`:** -
+  **`retryable`:** `false`
+
+- **Condition:** Unsupported Expert attachment
+  **HTTP:** `422`
+  **`error.code`:** `attachment_not_supported`
+  **`error.stage`:** `attachment_validation`
+  **`retryable`:** `false`
+
+- **Condition:** Strict selector contract violation
+  **HTTP:** `502`
+  **`error.code`:** `routing_contract_violation`
+  **`error.stage`:** `routing`
+  **`retryable`:** `false`
+
+- **Condition:** Routing provider timeout
+  **HTTP:** `504`
+  **`error.code`:** `upstream_timeout`
+  **`error.stage`:** `routing`
+  **`retryable`:** `true`
+
+- **Condition:** Routing provider failure
+  **HTTP:** `502`
+  **`error.code`:** `routing_upstream_failed`
+  **`error.stage`:** `routing`
+  **`retryable`:** `true`
+
+- **Condition:** Selected-agent argument validation failure
+  **HTTP:** `400`
+  **`error.code`:** `selected_agent_invalid_argument`
+  **`error.stage`:** `dispatch_validation`
+  **`retryable`:** `false`
 
 Public messages are fixed and localized by `locale` / `Accept-Language`; they
 never echo the query, allowlist, extracted arguments, provider payload, or

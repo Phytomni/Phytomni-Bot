@@ -48,18 +48,58 @@ The case IDs are lexicographically sorted. Development IDs run from
 `dev-<agent>-001` through `005`; test IDs run through `010` for every
 canonical agent.
 
-| Agent            | Development en/zh | Test en/zh | Source allocation                                                             |
-| ---------------- | ----------------- | ---------- | ----------------------------------------------------------------------------- |
-| Chat             | 3/2               | 5/5        | Authored non-research prompts                                                 |
-| Knowledge        | 3/2               | 5/5        | Dev: 1 Data 3 plus 4 Data 4; test: 2 Data 3 plus 8 Data 4                     |
-| Data             | 3/2               | 5/5        | Five disjoint Data 5 classifications in dev; ten in test                      |
-| Analyst          | 3/2               | 5/5        | All ten Data 6 Task/Query intents in test; five source-row paraphrases in dev |
-| Review           | 3/2               | 5/5        | Five disjoint Data 17 topics in dev; ten in test                              |
-| BriefGene        | 2/3               | 5/5        | Five disjoint Data 5 IDs in dev; ten in test                                  |
-| DeepGenome       | 2/3               | 5/5        | One Data 7 gene per species in dev; two in test                               |
-| InSilicoResearch | 2/3               | 5/5        | Five disjoint Data 4 references in dev; ten in test                           |
-| DigitalDesign    | 2/3               | 5/5        | One Data 7 gene per species in dev; two in test                               |
-| GeneNetwork      | 2/3               | 5/5        | Five disjoint trait mappings in dev; ten in test                              |
+- **Agent:** Chat
+  **Development en/zh:** 3/2
+  **Test en/zh:** 5/5
+  **Source allocation:** Authored non-research prompts
+
+- **Agent:** Knowledge
+  **Development en/zh:** 3/2
+  **Test en/zh:** 5/5
+  **Source allocation:** Dev: 1 Data 3 plus 4 Data 4; test: 2 Data 3 plus 8 Data
+  4
+
+- **Agent:** Data
+  **Development en/zh:** 3/2
+  **Test en/zh:** 5/5
+  **Source allocation:** Five disjoint Data 5 classifications in dev; ten in
+  test
+
+- **Agent:** Analyst
+  **Development en/zh:** 3/2
+  **Test en/zh:** 5/5
+  **Source allocation:** All ten Data 6 Task/Query intents in test; five
+  source-row paraphrases in dev
+
+- **Agent:** Review
+  **Development en/zh:** 3/2
+  **Test en/zh:** 5/5
+  **Source allocation:** Five disjoint Data 17 topics in dev; ten in test
+
+- **Agent:** BriefGene
+  **Development en/zh:** 2/3
+  **Test en/zh:** 5/5
+  **Source allocation:** Five disjoint Data 5 IDs in dev; ten in test
+
+- **Agent:** DeepGenome
+  **Development en/zh:** 2/3
+  **Test en/zh:** 5/5
+  **Source allocation:** One Data 7 gene per species in dev; two in test
+
+- **Agent:** InSilicoResearch
+  **Development en/zh:** 2/3
+  **Test en/zh:** 5/5
+  **Source allocation:** Five disjoint Data 4 references in dev; ten in test
+
+- **Agent:** DigitalDesign
+  **Development en/zh:** 2/3
+  **Test en/zh:** 5/5
+  **Source allocation:** One Data 7 gene per species in dev; two in test
+
+- **Agent:** GeneNetwork
+  **Development en/zh:** 2/3
+  **Test en/zh:** 5/5
+  **Source allocation:** Five disjoint trait mappings in dev; ten in test
 
 The five Data 7 species are Arabidopsis, soybean, rice, wheat, and maize.
 DeepGenome and DigitalDesign deliberately use the same per-species source
@@ -78,23 +118,110 @@ effective tillers. Every final Network question includes `Oryza sativa` and
 the exact active TO ID. No routing model or Network resolver was used to
 create these labels.
 
-| Case             | Workbook/sheet/row | Source trait phrase      | Species      | Active TO ID | Committed TO name |
-| ---------------- | ------------------ | ------------------------ | ------------ | ------------ | ----------------- |
-| dev-network-001  | Data 5/Sheet1/744  | plant height             | Oryza sativa | TO:0000207   | plant height      |
-| dev-network-002  | Data 5/Sheet1/748  | panicle number           | Oryza sativa | TO:0000152   | panicle number    |
-| dev-network-003  | Data 5/Sheet1/750  | yield                    | Oryza sativa | TO:0000371   | yield trait       |
-| dev-network-004  | Data 5/Sheet1/752  | grain length             | Oryza sativa | TO:0000734   | grain length      |
-| dev-network-005  | Data 5/Sheet1/753  | spikelet length          | Oryza sativa | TO:0002768   | spikelet length   |
-| test-network-001 | Data 5/Sheet1/747  | heading date             | Oryza sativa | TO:0000137   | days to heading   |
-| test-network-002 | Data 5/Sheet1/749  | effective panicle number | Oryza sativa | TO:0000152   | panicle number    |
-| test-network-003 | Data 5/Sheet1/751  | grain weight             | Oryza sativa | TO:0000590   | grain weight      |
-| test-network-004 | Data 5/Sheet1/754  | plant height             | Oryza sativa | TO:0000207   | plant height      |
-| test-network-005 | Data 5/Sheet1/756  | plant height             | Oryza sativa | TO:0000207   | plant height      |
-| test-network-006 | Data 5/Sheet1/757  | heading date             | Oryza sativa | TO:0000137   | days to heading   |
-| test-network-007 | Data 5/Sheet1/758  | panicle number           | Oryza sativa | TO:0000152   | panicle number    |
-| test-network-008 | Data 5/Sheet1/759  | effective panicle number | Oryza sativa | TO:0000152   | panicle number    |
-| test-network-009 | Data 5/Sheet1/760  | yield                    | Oryza sativa | TO:0000371   | yield trait       |
-| test-network-010 | Data 5/Sheet1/761  | grain weight             | Oryza sativa | TO:0000590   | grain weight      |
+- **Case:** dev-network-001
+  **Workbook/sheet/row:** Data 5/Sheet1/744
+  **Source trait phrase:** plant height
+  **Species:** Oryza sativa
+  **Active TO ID:** TO:0000207
+  **Committed TO name:** plant height
+
+- **Case:** dev-network-002
+  **Workbook/sheet/row:** Data 5/Sheet1/748
+  **Source trait phrase:** panicle number
+  **Species:** Oryza sativa
+  **Active TO ID:** TO:0000152
+  **Committed TO name:** panicle number
+
+- **Case:** dev-network-003
+  **Workbook/sheet/row:** Data 5/Sheet1/750
+  **Source trait phrase:** yield
+  **Species:** Oryza sativa
+  **Active TO ID:** TO:0000371
+  **Committed TO name:** yield trait
+
+- **Case:** dev-network-004
+  **Workbook/sheet/row:** Data 5/Sheet1/752
+  **Source trait phrase:** grain length
+  **Species:** Oryza sativa
+  **Active TO ID:** TO:0000734
+  **Committed TO name:** grain length
+
+- **Case:** dev-network-005
+  **Workbook/sheet/row:** Data 5/Sheet1/753
+  **Source trait phrase:** spikelet length
+  **Species:** Oryza sativa
+  **Active TO ID:** TO:0002768
+  **Committed TO name:** spikelet length
+
+- **Case:** test-network-001
+  **Workbook/sheet/row:** Data 5/Sheet1/747
+  **Source trait phrase:** heading date
+  **Species:** Oryza sativa
+  **Active TO ID:** TO:0000137
+  **Committed TO name:** days to heading
+
+- **Case:** test-network-002
+  **Workbook/sheet/row:** Data 5/Sheet1/749
+  **Source trait phrase:** effective panicle number
+  **Species:** Oryza sativa
+  **Active TO ID:** TO:0000152
+  **Committed TO name:** panicle number
+
+- **Case:** test-network-003
+  **Workbook/sheet/row:** Data 5/Sheet1/751
+  **Source trait phrase:** grain weight
+  **Species:** Oryza sativa
+  **Active TO ID:** TO:0000590
+  **Committed TO name:** grain weight
+
+- **Case:** test-network-004
+  **Workbook/sheet/row:** Data 5/Sheet1/754
+  **Source trait phrase:** plant height
+  **Species:** Oryza sativa
+  **Active TO ID:** TO:0000207
+  **Committed TO name:** plant height
+
+- **Case:** test-network-005
+  **Workbook/sheet/row:** Data 5/Sheet1/756
+  **Source trait phrase:** plant height
+  **Species:** Oryza sativa
+  **Active TO ID:** TO:0000207
+  **Committed TO name:** plant height
+
+- **Case:** test-network-006
+  **Workbook/sheet/row:** Data 5/Sheet1/757
+  **Source trait phrase:** heading date
+  **Species:** Oryza sativa
+  **Active TO ID:** TO:0000137
+  **Committed TO name:** days to heading
+
+- **Case:** test-network-007
+  **Workbook/sheet/row:** Data 5/Sheet1/758
+  **Source trait phrase:** panicle number
+  **Species:** Oryza sativa
+  **Active TO ID:** TO:0000152
+  **Committed TO name:** panicle number
+
+- **Case:** test-network-008
+  **Workbook/sheet/row:** Data 5/Sheet1/759
+  **Source trait phrase:** effective panicle number
+  **Species:** Oryza sativa
+  **Active TO ID:** TO:0000152
+  **Committed TO name:** panicle number
+
+- **Case:** test-network-009
+  **Workbook/sheet/row:** Data 5/Sheet1/760
+  **Source trait phrase:** yield
+  **Species:** Oryza sativa
+  **Active TO ID:** TO:0000371
+  **Committed TO name:** yield trait
+
+- **Case:** test-network-010
+  **Workbook/sheet/row:** Data 5/Sheet1/761
+  **Source trait phrase:** grain weight
+  **Species:** Oryza sativa
+  **Active TO ID:** TO:0000590
+  **Committed TO name:** grain weight
 
 Only active ontology IDs are permitted. A deprecated upstream identifier is
 not a valid gold label even where it appears in external material.
@@ -114,7 +241,12 @@ Verify every workbook coordinate against the source inputs:
 ```bash
 UV_CACHE_DIR=/tmp/phytomni-routing-uv \
   uv run --no-sync python -c \
-  "from pathlib import Path; from scripts.agent_routing_eval.dataset import load_dataset, verify_workbook_sources; root=Path('../manuscript/1.submittion/2025-11-31329A-Z_Source_Data/Supplementary Data'); cases=load_dataset(Path('evaluation/agent_routing/datasets/dev_v1.jsonl'))+load_dataset(Path('evaluation/agent_routing/datasets/test_v1.jsonl')); verify_workbook_sources(cases, root); print(f'verified {len(cases)} cases')"
+  "from pathlib import Path; from scripts.agent_routing_eval.dataset import (\
+load_dataset, verify_workbook_sources); root=Path('../manuscript/1.submittion/\
+2025-11-31329A-Z_Source_Data/Supplementary Data'); cases=load_dataset(\
+Path('evaluation/agent_routing/datasets/dev_v1.jsonl')) + load_dataset(\
+Path('evaluation/agent_routing/datasets/test_v1.jsonl')); \
+verify_workbook_sources(cases, root); print(f'verified {len(cases)} cases')"
 ```
 
 ## Selector Evaluation
@@ -139,7 +271,8 @@ schema/core-argument result are measured. Benchmark runs require a clean
 working tree unless `--allow-dirty` is supplied; that override records a
 diagnostic report rather than a stable baseline. `--enforce-thresholds` is
 available only for benchmark mode and changes threshold failure to exit code
+
 1. Exit codes are 0 for a completed run, 1 for an enforced threshold failure,
-2 for invalid configuration/data or a blocked dirty benchmark, and 3 for an
-incomplete or cancelled run. JSON and Markdown artifacts are written under
-`evaluation/agent_routing/results/`, which is intentionally ignored.
+   2 for invalid configuration/data or a blocked dirty benchmark, and 3 for an
+   incomplete or cancelled run. JSON and Markdown artifacts are written under
+   `evaluation/agent_routing/results/`, which is intentionally ignored.

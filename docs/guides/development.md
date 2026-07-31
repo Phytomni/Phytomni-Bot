@@ -236,7 +236,8 @@ Tracked Markdown files are checked for formatting and lint shape through
 documentation to code-owned surfaces:
 
 - Markdown relative links must point to existing tracked or workspace files.
-- `README.md` and [MCP Tool Reference](../reference/mcp-tools.md) must list every public
+- `README.md` and [MCP Tool Reference](../reference/mcp-tools.md) must list
+  every public
   MCP tool from `mcp/schemas.py`.
 - [HTTP API](../reference/http-api.md) and the
   [HTTP API Operations Runbook](../ops/http-api-runbook.md) must list every

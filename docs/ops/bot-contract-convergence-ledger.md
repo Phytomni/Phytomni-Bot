@@ -8,13 +8,15 @@ current-SHA packet must be regenerated after the last Bot commit.
 Baseline branch: `release/0.1.4`\
 Baseline SHA: `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac`
 
-Allowed statuses: `Unknown`, `Needs Verification`, `Bot Ready`, `External Pending`, `Accepted`, `Blocked`, `Rejected`.
+Allowed statuses: `Unknown`, `Needs Verification`, `Bot Ready`,
+`External Pending`, `Accepted`, `Blocked`, `Rejected`.
 
 ## Current Bot evidence packet
 
 Evidence base SHA: `edcf25d7` (Task 3 acceptance assets; not the final
 current-SHA packet)\
-Capability golden SHA256: `b13f327b1dd1012ef24936cf3183bd37a19d0e1e8ec3dd7a5115352d0ea492b5`
+Capability golden SHA256:
+`b13f327b1dd1012ef24936cf3183bd37a19d0e1e8ec3dd7a5115352d0ea492b5`
 
 The [Bot contract acceptance runbook](bot-contract-acceptance-runbook.md) is
 the authoritative current-SHA procedure. The focused packet, full local gate,
@@ -44,7 +46,8 @@ UV_CACHE_DIR=/tmp/phytomni-uv-cache uv run pytest \
 
 Focused result: `235 passed in 1.43s`. The Task 9 packet also passed
 `mdformat --check`, `pymarkdown scan`, and `git diff --check`. The full
-`UV_CACHE_DIR=/tmp/phytomni-uv-cache make scoped` gate passed with `2202 passed`; the secret scan and static-analysis exemption reconciliation were
+`UV_CACHE_DIR=/tmp/phytomni-uv-cache make scoped` gate passed with
+`2202 passed`; the secret scan and static-analysis exemption reconciliation were
 clean. The public-document sentinel scan returned no matches.
 
 Expert Task 6 focused completion command:
@@ -92,70 +95,659 @@ acceptance remain pending; feature flags stay dark.
 
 ### Scientific report capability rows
 
-| Bot row                         | Report states           | Artifacts           | Degraded outcomes   | Status           |
-| ------------------------------- | ----------------------- | ------------------- | ------------------- | ---------------- |
-| `analyst`                       | `final`                 | `true`              | `true`              | Bot Ready        |
-| `research`                      | `final`                 | `true`              | `true`              | Bot Ready        |
-| `design`                        | `final`                 | `true`              | `true`              | Bot Ready        |
-| `network`                       | `final`                 | `true`              | `true`              | Bot Ready        |
-| `deep_genome`                   | `intermediate`, `final` | `true`              | `true`              | Bot Ready        |
-| Web/Go/report-history migration | external acceptance     | external acceptance | external acceptance | External Pending |
+- **Bot row:** `analyst`
+  **Report states:** `final`
+  **Artifacts:** `true`
+  **Degraded outcomes:** `true`
+  **Status:** Bot Ready
+
+- **Bot row:** `research`
+  **Report states:** `final`
+  **Artifacts:** `true`
+  **Degraded outcomes:** `true`
+  **Status:** Bot Ready
+
+- **Bot row:** `design`
+  **Report states:** `final`
+  **Artifacts:** `true`
+  **Degraded outcomes:** `true`
+  **Status:** Bot Ready
+
+- **Bot row:** `network`
+  **Report states:** `final`
+  **Artifacts:** `true`
+  **Degraded outcomes:** `true`
+  **Status:** Bot Ready
+
+- **Bot row:** `deep_genome`
+  **Report states:** `intermediate`, `final`
+  **Artifacts:** `true`
+  **Degraded outcomes:** `true`
+  **Status:** Bot Ready
+
+- **Bot row:** Web/Go/report-history migration
+  **Report states:** external acceptance
+  **Artifacts:** external acceptance
+  **Degraded outcomes:** external acceptance
+  **Status:** External Pending
 
 ## Requirement ledger
 
-| Requirement                        | Source                              | SHA                                        | Environment | Command                    | Exit/result                                                                         | Sample                                  | Owner           | Status             | Blocker                                                        | Rollback                    |
-| ---------------------------------- | ----------------------------------- | ------------------------------------------ | ----------- | -------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------- | --------------- | ------------------ | -------------------------------------------------------------- | --------------------------- |
-| Section 6 locale                   | Spec 6; locale Tasks 1-5            | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | locale packet              | 216 focused; 2202 scoped                                                            | synthetic locale                        | Locale plan     | Bot Ready          | Web/Go consumer acceptance external                            | revert locale commits       |
-| Section 7 capabilities/attachments | Spec 7; locale Tasks 6-9            | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | capability packet          | 216 focused; 2202 scoped                                                            | ten-agent matrix                        | Locale plan     | Bot Ready          | Web/Go consumer acceptance external                            | revert registry commits     |
-| Section 8 response projection      | Spec 8; projection Tasks 1-2        | `b23d5dba15e1108c5c431f4e66a7f0a2b02ebbf3` | local       | projection packet          | 235 focused; 2173 scoped                                                            | canonical agent.run                     | Projection plan | Bot Ready          | Web/Go acceptance external                                     | retain compatibility fields |
-| Section 9 lifecycle                | Spec 9; lifecycle Tasks 1-8         | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | completion packet          | 239 focused; 2202 scoped                                                            | sanitized Review run                    | Lifecycle plan  | Bot Ready          | Web/Go and supported-version acceptance external               | revert lifecycle commits    |
-| Section 10 Review/Chat A2UI        | Spec 10; lifecycle Tasks 5-8        | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | A2UI packet                | 239 focused; 2202 scoped                                                            | pause golden                            | Lifecycle plan  | Bot Ready          | external A2UI consumer acceptance                              | keep flags dark             |
-| Section 11 artifacts/reports       | Spec 11; projection Tasks 3-8       | `b23d5dba15e1108c5c431f4e66a7f0a2b02ebbf3` | local       | report packet              | 235 focused; 2173 scoped                                                            | role manifest                           | Projection plan | Bot Ready          | Web/Go acceptance external                                     | revert report commits       |
-| Section 12 Expert                  | Spec 12; Expert Tasks 1-6           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | Expert packet              | 97 focused; 2202 scoped                                                             | strict selector + A2A boundary          | Expert plan     | Bot Ready          | Web/Go paired acceptance and A2A consumer constraints external | keep route dark             |
-| Section 13 errors                  | Spec 13; lifecycle/Expert/Data      | `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac` | local       | safe error packet          | lifecycle, Expert, and locale mappings covered; final packet pending                | safe error body                         | Lifecycle plan  | Needs Verification | current-SHA packet not regenerated                             | revert mapping commits      |
-| Section 14 DataAgent               | Spec 14; Data Tasks 1-5             | `c1ff3c1cc7c71ad3792a4eb4724c05cb9d5b3463` | local/ext   | incident ledger/replay     | facts frozen; authorized replay completed; provider contract pending                | stage event                             | Data plan       | External Pending   | provider interpretation absent                                 | no behavior change          |
-| Section 15 Analyst                 | Spec 15; Data Tasks 6-7             | `7556596188c564fef0eb41cc3f9f7d22b06f5064` | local/ext   | correlation probe          | new-run correlation covered; historical L2 remains pending                          | run/task IDs                            | Data plan       | External Pending   | historical L2 external                                         | no historical write         |
-| Phase 0 evidence freeze            | Index orchestration Task 1          | `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac` | local       | ledger schema tests        | In progress                                                                         | this ledger                             | Acceptance plan | Needs Verification | baseline commit pending                                        | remove ledger commit        |
-| Phase 1 Lifecycle P0 exit          | Index Phase 1                       | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | lifecycle packet           | 239 focused; 2202 scoped                                                            | focused logs                            | Lifecycle plan  | Bot Ready          | Web/Go and supported-version acceptance external               | revert phase commits        |
-| Phase 2 Locale/Attachments exit    | Index Phase 2                       | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | locale packet              | 216 focused; 2202 scoped                                                            | capability golden                       | Locale plan     | Bot Ready          | Web/Go consumer acceptance external                            | revert phase commits        |
-| Phase 3 Scientific Projection exit | Index Phase 3                       | `b23d5dba15e1108c5c431f4e66a7f0a2b02ebbf3` | local       | projection packet          | 235 focused; 2173 scoped                                                            | report golden                           | Projection plan | Bot Ready          | Web/Go acceptance external                                     | revert phase commits        |
-| Phase 4 Expert exit                | Index Phase 4                       | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | Expert packet              | 97 focused; 2202 scoped                                                             | strict route and compatibility register | Expert plan     | Bot Ready          | Web/Go paired acceptance; legacy A2A constraints external      | keep route dark             |
-| Phase 5 DataAgent exit             | Index Phase 5                       | `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac` | external    | Data packet                | Not started                                                                         | trace evidence                          | Data plan       | External Pending   | root-cause gate absent                                         | no behavior change          |
-| Phase 6 Current-SHA Bot Ready      | Index Phase 6; acceptance Tasks 3-5 | `edcf25d7`                                 | local/CI    | final packet               | Task 3 assets; final focused/full/matrix packet pending                             | SHA manifest                            | Acceptance plan | Needs Verification | final post-doc SHA and matrix not captured                     | keep flags dark             |
-| Phase 7 Migration Cleanup          | Index Phase 7; acceptance Task 7    | `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac` | external    | bridge packet              | Not eligible                                                                        | accepted-row proof                      | Acceptance plan | External Pending   | Web/Go/staging absent                                          | bridge rollback             |
-| B1                                 | Spec 22; lifecycle Task 7           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | test_a2ui_actions_http.py  | 239 focused; 2202 scoped                                                            | action envelope                         | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | revert action contract      |
-| B2                                 | Spec 22; lifecycle Task 7           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | A2UI HTTP tests            | 239 focused; 2202 scoped                                                            | synthetic action                        | Lifecycle plan  | Bot Ready          | external consumer absent                                       | revert action contract      |
-| B3                                 | Spec 22; lifecycle Task 7           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | A2UI review tests          | 239 focused; 2202 scoped                                                            | rejected confirm                        | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | preserve rejection          |
-| B4                                 | Spec 22; lifecycle Task 8           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | contract fixtures          | 239 focused; 2202 scoped                                                            | form submit/cancel                      | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | revert form projection      |
-| B5                                 | Spec 22; lifecycle Task 8           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | contract fixtures          | 239 focused; 2202 scoped                                                            | choice submit/cancel                    | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | revert choice projection    |
-| B6                                 | Spec 22; lifecycle Task 7           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | A2UI terminal tests        | 239 focused; 2202 scoped                                                            | submitted answer                        | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | revert terminal projection  |
-| B7                                 | Spec 22; lifecycle Task 8           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | Review form tests          | 239 focused; 2202 scoped                                                            | submitted fields                        | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | revert field projection     |
-| B8                                 | Spec 22; lifecycle Task 7           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | multi-turn tests           | 239 focused; 2202 scoped                                                            | fresh interrupt                         | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | revert pause projection     |
-| B9                                 | Spec 22; lifecycle Task 7           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | multi-turn tests           | 239 focused; 2202 scoped                                                            | two pause rounds                        | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | keep N=2 bound              |
-| B10                                | Spec 22; lifecycle Task 7           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | test_a2ui_runtime.py       | 239 focused; 2202 scoped                                                            | round-two surface                       | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | revert loop bound           |
-| B11                                | Spec 22; lifecycle Task 6           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | test_run_registry.py       | 239 focused; 2202 scoped                                                            | action audit                            | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | revert audit schema         |
-| B12                                | Spec 22; lifecycle Task 7           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | A2UI HTTP tests            | 239 focused; 2202 scoped                                                            | replay 409                              | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | revert claim path           |
-| B13                                | Spec 22; lifecycle Task 6           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | test_run_registry.py       | 239 focused; 2202 scoped                                                            | atomic claim                            | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | revert CAS transaction      |
-| B14                                | Spec 22; lifecycle Task 7           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | A2UI matrix                | 239 focused; 2202 scoped                                                            | owner/surface/checkpoint                | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | revert validation           |
-| B15                                | Spec 22; lifecycle Task 6           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | audit projection tests     | 239 focused; 2202 scoped                                                            | safe audit columns                      | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | revert audit exposure       |
-| B16                                | Spec 22; lifecycle Task 8           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | lifecycle invariant tests  | 239 focused; 2202 scoped                                                            | file-backed restart                     | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | revert restart seam         |
-| B17                                | Spec 22; lifecycle Task 8           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | contract fixtures          | 239 focused; 2202 scoped                                                            | input_required body                     | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | revert fixture              |
-| B18                                | Spec 22; lifecycle limits           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | test_a2ui_limits.py        | 239 focused; 2202 scoped                                                            | exact/+1 budgets                        | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | keep limits unchanged       |
-| C1                                 | Spec 23; acceptance Task 5          | `edcf25d7`                                 | local/CI    | current-SHA capture        | script implemented; final packet pending                                            | SHA manifest                            | Acceptance plan | Needs Verification | final post-doc SHA and matrix not captured                     | discard stale artifact      |
-| C2                                 | Spec 23; locale Task 6              | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | capability golden          | 216 focused; 2202 scoped                                                            | ten-agent matrix                        | Locale plan     | Bot Ready          | Web/Go consumer acceptance external                            | revert registry             |
-| C3                                 | Spec 23; locale/Expert plans        | `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac` | local       | streaming capability test  | source gate exists; focused regression added; final packet pending                  | streaming list                          | Expert plan     | Needs Verification | current-SHA packet not regenerated                             | keep behavior               |
-| C4                                 | Spec 23; lifecycle limits           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | test_a2ui_limits.py        | 239 focused; 2202 scoped                                                            | 64 KiB exact/+1                         | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | keep ingress cap            |
-| C5                                 | Spec 23; lifecycle limits           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | test_a2ui_limits.py        | 239 focused; 2202 scoped                                                            | 1 MiB exact/+1                          | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | keep response cap           |
-| C6                                 | Spec 23; lifecycle Task 5           | `48e4da0f9a6feaa190b5e267b58e6edf3667e743` | local       | test_a2ui_review_http.py   | 239 focused; 2202 scoped                                                            | flag-off Review                         | Lifecycle plan  | Bot Ready          | external consumer acceptance                                   | keep flag dark              |
-| C7                                 | Spec 23; streaming/projection       | `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac` | local       | streaming packet           | accumulated answer persistence and HTTP history tests present; final packet pending | accumulated answer                      | Projection plan | Needs Verification | current-SHA packet not regenerated                             | revert stream projection    |
-| C8                                 | Spec 23; projection plan            | `b23d5dba15e1108c5c431f4e66a7f0a2b02ebbf3` | local       | execution packet           | 235 focused; 2173 scoped                                                            | no raw/provider                         | Projection plan | Bot Ready          | Web/Go acceptance external                                     | revert projection           |
-| C9                                 | Spec 23; projection Task 8          | `b23d5dba15e1108c5c431f4e66a7f0a2b02ebbf3` | local       | DeepGenome capability test | 235 focused; 2173 scoped                                                            | bounded report                          | Projection plan | Bot Ready          | Web/Go acceptance external                                     | preserve canonical result   |
-| C10                                | Spec 23; acceptance Tasks 4-5       | `edcf25d7`                                 | local/CI    | full gate/worktree         | scoped gate passed; final full gate pending                                         | clean SHA packet                        | Acceptance plan | Needs Verification | final post-doc SHA and full gate not captured                  | discard stale packet        |
-| Bot Ready definition               | Spec 25.1; acceptance Tasks 4-5     | `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac` | local/CI    | final evidence packet      | Not ready                                                                           | checklist                               | Acceptance plan | Needs Verification | phases absent                                                  | keep flags dark             |
-| Accepted definition                | Spec 25.2; acceptance Tasks 6-8     | `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac` | external    | paired evidence            | Not accepted                                                                        | paired SHA                              | Acceptance plan | External Pending   | Web/Go/staging absent                                          | no activation               |
-| Data exact-query gate              | Spec 14; Data Tasks 1-5             | `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac` | local/ext   | guarded replay             | authorized replay completed; provider contract unresolved                           | stage trace                             | Data plan       | External Pending   | provider owner interpretation absent                           | no behavior fix             |
-| Analyst new-run correlation        | Spec 15; Data Task 6                | `7556596188c564fef0eb41cc3f9f7d22b06f5064` | local       | identity tests             | 107 focused; 2174 scoped                                                            | run/task IDs                            | Data plan       | Bot Ready          | historical L2 external                                         | revert correlation          |
-| Analyst historical L2 boundary     | Spec 15; Data Task 7                | `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac` | external    | read-only probe            | read-only packet implemented; execution still not authorized                        | match status                            | Data plan       | External Pending   | owner approval absent                                          | zero writes                 |
+- **Requirement:** Section 6 locale
+  **Source:** Spec 6; locale Tasks 1-5
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** locale packet
+  **Exit/result:** 216 focused; 2202 scoped
+  **Sample:** synthetic locale
+  **Owner:** Locale plan
+  **Status:** Bot Ready
+  **Blocker:** Web/Go consumer acceptance external
+  **Rollback:** revert locale commits
+
+- **Requirement:** Section 7 capabilities/attachments
+  **Source:** Spec 7; locale Tasks 6-9
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** capability packet
+  **Exit/result:** 216 focused; 2202 scoped
+  **Sample:** ten-agent matrix
+  **Owner:** Locale plan
+  **Status:** Bot Ready
+  **Blocker:** Web/Go consumer acceptance external
+  **Rollback:** revert registry commits
+
+- **Requirement:** Section 8 response projection
+  **Source:** Spec 8; projection Tasks 1-2
+  **SHA:** `b23d5dba15e1108c5c431f4e66a7f0a2b02ebbf3`
+  **Environment:** local
+  **Command:** projection packet
+  **Exit/result:** 235 focused; 2173 scoped
+  **Sample:** canonical agent.run
+  **Owner:** Projection plan
+  **Status:** Bot Ready
+  **Blocker:** Web/Go acceptance external
+  **Rollback:** retain compatibility fields
+
+- **Requirement:** Section 9 lifecycle
+  **Source:** Spec 9; lifecycle Tasks 1-8
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** completion packet
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** sanitized Review run
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** Web/Go and supported-version acceptance external
+  **Rollback:** revert lifecycle commits
+
+- **Requirement:** Section 10 Review/Chat A2UI
+  **Source:** Spec 10; lifecycle Tasks 5-8
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** A2UI packet
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** pause golden
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external A2UI consumer acceptance
+  **Rollback:** keep flags dark
+
+- **Requirement:** Section 11 artifacts/reports
+  **Source:** Spec 11; projection Tasks 3-8
+  **SHA:** `b23d5dba15e1108c5c431f4e66a7f0a2b02ebbf3`
+  **Environment:** local
+  **Command:** report packet
+  **Exit/result:** 235 focused; 2173 scoped
+  **Sample:** role manifest
+  **Owner:** Projection plan
+  **Status:** Bot Ready
+  **Blocker:** Web/Go acceptance external
+  **Rollback:** revert report commits
+
+- **Requirement:** Section 12 Expert
+  **Source:** Spec 12; Expert Tasks 1-6
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** Expert packet
+  **Exit/result:** 97 focused; 2202 scoped
+  **Sample:** strict selector + A2A boundary
+  **Owner:** Expert plan
+  **Status:** Bot Ready
+  **Blocker:** Web/Go paired acceptance and A2A consumer constraints external
+  **Rollback:** keep route dark
+
+- **Requirement:** Section 13 errors
+  **Source:** Spec 13; lifecycle/Expert/Data
+  **SHA:** `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac`
+  **Environment:** local
+  **Command:** safe error packet
+  **Exit/result:** lifecycle, Expert, and locale mappings covered; final packet
+  pending
+  **Sample:** safe error body
+  **Owner:** Lifecycle plan
+  **Status:** Needs Verification
+  **Blocker:** current-SHA packet not regenerated
+  **Rollback:** revert mapping commits
+
+- **Requirement:** Section 14 DataAgent
+  **Source:** Spec 14; Data Tasks 1-5
+  **SHA:** `c1ff3c1cc7c71ad3792a4eb4724c05cb9d5b3463`
+  **Environment:** local/ext
+  **Command:** incident ledger/replay
+  **Exit/result:** facts frozen; authorized replay completed; provider contract
+  pending
+  **Sample:** stage event
+  **Owner:** Data plan
+  **Status:** External Pending
+  **Blocker:** provider interpretation absent
+  **Rollback:** no behavior change
+
+- **Requirement:** Section 15 Analyst
+  **Source:** Spec 15; Data Tasks 6-7
+  **SHA:** `7556596188c564fef0eb41cc3f9f7d22b06f5064`
+  **Environment:** local/ext
+  **Command:** correlation probe
+  **Exit/result:** new-run correlation covered; historical L2 remains pending
+  **Sample:** run/task IDs
+  **Owner:** Data plan
+  **Status:** External Pending
+  **Blocker:** historical L2 external
+  **Rollback:** no historical write
+
+- **Requirement:** Phase 0 evidence freeze
+  **Source:** Index orchestration Task 1
+  **SHA:** `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac`
+  **Environment:** local
+  **Command:** ledger schema tests
+  **Exit/result:** In progress
+  **Sample:** this ledger
+  **Owner:** Acceptance plan
+  **Status:** Needs Verification
+  **Blocker:** baseline commit pending
+  **Rollback:** remove ledger commit
+
+- **Requirement:** Phase 1 Lifecycle P0 exit
+  **Source:** Index Phase 1
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** lifecycle packet
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** focused logs
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** Web/Go and supported-version acceptance external
+  **Rollback:** revert phase commits
+
+- **Requirement:** Phase 2 Locale/Attachments exit
+  **Source:** Index Phase 2
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** locale packet
+  **Exit/result:** 216 focused; 2202 scoped
+  **Sample:** capability golden
+  **Owner:** Locale plan
+  **Status:** Bot Ready
+  **Blocker:** Web/Go consumer acceptance external
+  **Rollback:** revert phase commits
+
+- **Requirement:** Phase 3 Scientific Projection exit
+  **Source:** Index Phase 3
+  **SHA:** `b23d5dba15e1108c5c431f4e66a7f0a2b02ebbf3`
+  **Environment:** local
+  **Command:** projection packet
+  **Exit/result:** 235 focused; 2173 scoped
+  **Sample:** report golden
+  **Owner:** Projection plan
+  **Status:** Bot Ready
+  **Blocker:** Web/Go acceptance external
+  **Rollback:** revert phase commits
+
+- **Requirement:** Phase 4 Expert exit
+  **Source:** Index Phase 4
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** Expert packet
+  **Exit/result:** 97 focused; 2202 scoped
+  **Sample:** strict route and compatibility register
+  **Owner:** Expert plan
+  **Status:** Bot Ready
+  **Blocker:** Web/Go paired acceptance; legacy A2A constraints external
+  **Rollback:** keep route dark
+
+- **Requirement:** Phase 5 DataAgent exit
+  **Source:** Index Phase 5
+  **SHA:** `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac`
+  **Environment:** external
+  **Command:** Data packet
+  **Exit/result:** Not started
+  **Sample:** trace evidence
+  **Owner:** Data plan
+  **Status:** External Pending
+  **Blocker:** root-cause gate absent
+  **Rollback:** no behavior change
+
+- **Requirement:** Phase 6 Current-SHA Bot Ready
+  **Source:** Index Phase 6; acceptance Tasks 3-5
+  **SHA:** `edcf25d7`
+  **Environment:** local/CI
+  **Command:** final packet
+  **Exit/result:** Task 3 assets; final focused/full/matrix packet pending
+  **Sample:** SHA manifest
+  **Owner:** Acceptance plan
+  **Status:** Needs Verification
+  **Blocker:** final post-doc SHA and matrix not captured
+  **Rollback:** keep flags dark
+
+- **Requirement:** Phase 7 Migration Cleanup
+  **Source:** Index Phase 7; acceptance Task 7
+  **SHA:** `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac`
+  **Environment:** external
+  **Command:** bridge packet
+  **Exit/result:** Not eligible
+  **Sample:** accepted-row proof
+  **Owner:** Acceptance plan
+  **Status:** External Pending
+  **Blocker:** Web/Go/staging absent
+  **Rollback:** bridge rollback
+
+- **Requirement:** B1
+  **Source:** Spec 22; lifecycle Task 7
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** test_a2ui_actions_http.py
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** action envelope
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** revert action contract
+
+- **Requirement:** B2
+  **Source:** Spec 22; lifecycle Task 7
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** A2UI HTTP tests
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** synthetic action
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer absent
+  **Rollback:** revert action contract
+
+- **Requirement:** B3
+  **Source:** Spec 22; lifecycle Task 7
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** A2UI review tests
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** rejected confirm
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** preserve rejection
+
+- **Requirement:** B4
+  **Source:** Spec 22; lifecycle Task 8
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** contract fixtures
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** form submit/cancel
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** revert form projection
+
+- **Requirement:** B5
+  **Source:** Spec 22; lifecycle Task 8
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** contract fixtures
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** choice submit/cancel
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** revert choice projection
+
+- **Requirement:** B6
+  **Source:** Spec 22; lifecycle Task 7
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** A2UI terminal tests
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** submitted answer
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** revert terminal projection
+
+- **Requirement:** B7
+  **Source:** Spec 22; lifecycle Task 8
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** Review form tests
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** submitted fields
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** revert field projection
+
+- **Requirement:** B8
+  **Source:** Spec 22; lifecycle Task 7
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** multi-turn tests
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** fresh interrupt
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** revert pause projection
+
+- **Requirement:** B9
+  **Source:** Spec 22; lifecycle Task 7
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** multi-turn tests
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** two pause rounds
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** keep N=2 bound
+
+- **Requirement:** B10
+  **Source:** Spec 22; lifecycle Task 7
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** test_a2ui_runtime.py
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** round-two surface
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** revert loop bound
+
+- **Requirement:** B11
+  **Source:** Spec 22; lifecycle Task 6
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** test_run_registry.py
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** action audit
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** revert audit schema
+
+- **Requirement:** B12
+  **Source:** Spec 22; lifecycle Task 7
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** A2UI HTTP tests
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** replay 409
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** revert claim path
+
+- **Requirement:** B13
+  **Source:** Spec 22; lifecycle Task 6
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** test_run_registry.py
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** atomic claim
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** revert CAS transaction
+
+- **Requirement:** B14
+  **Source:** Spec 22; lifecycle Task 7
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** A2UI matrix
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** owner/surface/checkpoint
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** revert validation
+
+- **Requirement:** B15
+  **Source:** Spec 22; lifecycle Task 6
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** audit projection tests
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** safe audit columns
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** revert audit exposure
+
+- **Requirement:** B16
+  **Source:** Spec 22; lifecycle Task 8
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** lifecycle invariant tests
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** file-backed restart
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** revert restart seam
+
+- **Requirement:** B17
+  **Source:** Spec 22; lifecycle Task 8
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** contract fixtures
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** input_required body
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** revert fixture
+
+- **Requirement:** B18
+  **Source:** Spec 22; lifecycle limits
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** test_a2ui_limits.py
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** exact/+1 budgets
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** keep limits unchanged
+
+- **Requirement:** C1
+  **Source:** Spec 23; acceptance Task 5
+  **SHA:** `edcf25d7`
+  **Environment:** local/CI
+  **Command:** current-SHA capture
+  **Exit/result:** script implemented; final packet pending
+  **Sample:** SHA manifest
+  **Owner:** Acceptance plan
+  **Status:** Needs Verification
+  **Blocker:** final post-doc SHA and matrix not captured
+  **Rollback:** discard stale artifact
+
+- **Requirement:** C2
+  **Source:** Spec 23; locale Task 6
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** capability golden
+  **Exit/result:** 216 focused; 2202 scoped
+  **Sample:** ten-agent matrix
+  **Owner:** Locale plan
+  **Status:** Bot Ready
+  **Blocker:** Web/Go consumer acceptance external
+  **Rollback:** revert registry
+
+- **Requirement:** C3
+  **Source:** Spec 23; locale/Expert plans
+  **SHA:** `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac`
+  **Environment:** local
+  **Command:** streaming capability test
+  **Exit/result:** source gate exists; focused regression added; final packet
+  pending
+  **Sample:** streaming list
+  **Owner:** Expert plan
+  **Status:** Needs Verification
+  **Blocker:** current-SHA packet not regenerated
+  **Rollback:** keep behavior
+
+- **Requirement:** C4
+  **Source:** Spec 23; lifecycle limits
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** test_a2ui_limits.py
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** 64 KiB exact/+1
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** keep ingress cap
+
+- **Requirement:** C5
+  **Source:** Spec 23; lifecycle limits
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** test_a2ui_limits.py
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** 1 MiB exact/+1
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** keep response cap
+
+- **Requirement:** C6
+  **Source:** Spec 23; lifecycle Task 5
+  **SHA:** `48e4da0f9a6feaa190b5e267b58e6edf3667e743`
+  **Environment:** local
+  **Command:** test_a2ui_review_http.py
+  **Exit/result:** 239 focused; 2202 scoped
+  **Sample:** flag-off Review
+  **Owner:** Lifecycle plan
+  **Status:** Bot Ready
+  **Blocker:** external consumer acceptance
+  **Rollback:** keep flag dark
+
+- **Requirement:** C7
+  **Source:** Spec 23; streaming/projection
+  **SHA:** `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac`
+  **Environment:** local
+  **Command:** streaming packet
+  **Exit/result:** accumulated answer persistence and HTTP history tests
+  present; final packet pending
+  **Sample:** accumulated answer
+  **Owner:** Projection plan
+  **Status:** Needs Verification
+  **Blocker:** current-SHA packet not regenerated
+  **Rollback:** revert stream projection
+
+- **Requirement:** C8
+  **Source:** Spec 23; projection plan
+  **SHA:** `b23d5dba15e1108c5c431f4e66a7f0a2b02ebbf3`
+  **Environment:** local
+  **Command:** execution packet
+  **Exit/result:** 235 focused; 2173 scoped
+  **Sample:** no raw/provider
+  **Owner:** Projection plan
+  **Status:** Bot Ready
+  **Blocker:** Web/Go acceptance external
+  **Rollback:** revert projection
+
+- **Requirement:** C9
+  **Source:** Spec 23; projection Task 8
+  **SHA:** `b23d5dba15e1108c5c431f4e66a7f0a2b02ebbf3`
+  **Environment:** local
+  **Command:** DeepGenome capability test
+  **Exit/result:** 235 focused; 2173 scoped
+  **Sample:** bounded report
+  **Owner:** Projection plan
+  **Status:** Bot Ready
+  **Blocker:** Web/Go acceptance external
+  **Rollback:** preserve canonical result
+
+- **Requirement:** C10
+  **Source:** Spec 23; acceptance Tasks 4-5
+  **SHA:** `edcf25d7`
+  **Environment:** local/CI
+  **Command:** full gate/worktree
+  **Exit/result:** scoped gate passed; final full gate pending
+  **Sample:** clean SHA packet
+  **Owner:** Acceptance plan
+  **Status:** Needs Verification
+  **Blocker:** final post-doc SHA and full gate not captured
+  **Rollback:** discard stale packet
+
+- **Requirement:** Bot Ready definition
+  **Source:** Spec 25.1; acceptance Tasks 4-5
+  **SHA:** `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac`
+  **Environment:** local/CI
+  **Command:** final evidence packet
+  **Exit/result:** Not ready
+  **Sample:** checklist
+  **Owner:** Acceptance plan
+  **Status:** Needs Verification
+  **Blocker:** phases absent
+  **Rollback:** keep flags dark
+
+- **Requirement:** Accepted definition
+  **Source:** Spec 25.2; acceptance Tasks 6-8
+  **SHA:** `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac`
+  **Environment:** external
+  **Command:** paired evidence
+  **Exit/result:** Not accepted
+  **Sample:** paired SHA
+  **Owner:** Acceptance plan
+  **Status:** External Pending
+  **Blocker:** Web/Go/staging absent
+  **Rollback:** no activation
+
+- **Requirement:** Data exact-query gate
+  **Source:** Spec 14; Data Tasks 1-5
+  **SHA:** `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac`
+  **Environment:** local/ext
+  **Command:** guarded replay
+  **Exit/result:** authorized replay completed; provider contract unresolved
+  **Sample:** stage trace
+  **Owner:** Data plan
+  **Status:** External Pending
+  **Blocker:** provider owner interpretation absent
+  **Rollback:** no behavior fix
+
+- **Requirement:** Analyst new-run correlation
+  **Source:** Spec 15; Data Task 6
+  **SHA:** `7556596188c564fef0eb41cc3f9f7d22b06f5064`
+  **Environment:** local
+  **Command:** identity tests
+  **Exit/result:** 107 focused; 2174 scoped
+  **Sample:** run/task IDs
+  **Owner:** Data plan
+  **Status:** Bot Ready
+  **Blocker:** historical L2 external
+  **Rollback:** revert correlation
+
+- **Requirement:** Analyst historical L2 boundary
+  **Source:** Spec 15; Data Task 7
+  **SHA:** `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac`
+  **Environment:** external
+  **Command:** read-only probe
+  **Exit/result:** read-only packet implemented; execution still not authorized
+  **Sample:** match status
+  **Owner:** Data plan
+  **Status:** External Pending
+  **Blocker:** owner approval absent
+  **Rollback:** zero writes
 
 ## Local reconciliation note
 
@@ -168,13 +760,40 @@ replayed without unrelated static-analysis findings.
 
 ## Handoff dispositions
 
-| Handoff                                            | Authority       | Disposition                                            | Owner plan                          | Status             | Evidence                                                         |
-| -------------------------------------------------- | --------------- | ------------------------------------------------------ | ----------------------------------- | ------------------ | ---------------------------------------------------------------- |
-| `2026-07-15-a2ui-bot-contract-handoff.md`          | provenance-only | migrated into lifecycle/A2UI contract                  | Lifecycle/A2UI plan                 | Needs Verification | lifecycle commits and focused packet                             |
-| `2026-07-18-bot-head-web-compatibility-handoff.md` | provenance-only | migrated into projection and acceptance scope          | Projection/acceptance plans         | External Pending   | paired Web/Go evidence absent                                    |
-| `2026-07-21-real-user-feedback-bot-handoff.md`     | provenance-only | split across locale, reports, and Data/Analyst tracks  | Locale, reports, Data/Analyst plans | Needs Verification | complete packet absent                                           |
-| `2026-07-24-instant-expert-routing-bot-handoff.md` | provenance-only | migrated into strict selector/lifecycle/error contract | Expert plan                         | Bot Ready          | `48e4da0f`; 97 focused; 2202 scoped; external activation pending |
-| `2026-07-24-dataagent-bot-handoff.md`              | provenance-only | retained as evidence-only Data/Analyst input           | Data/Analyst plan                   | External Pending   | incident facts frozen; replay and owner evidence absent          |
+- **Handoff:** `2026-07-15-a2ui-bot-contract-handoff.md`
+  **Authority:** provenance-only
+  **Disposition:** migrated into lifecycle/A2UI contract
+  **Owner plan:** Lifecycle/A2UI plan
+  **Status:** Needs Verification
+  **Evidence:** lifecycle commits and focused packet
+
+- **Handoff:** `2026-07-18-bot-head-web-compatibility-handoff.md`
+  **Authority:** provenance-only
+  **Disposition:** migrated into projection and acceptance scope
+  **Owner plan:** Projection/acceptance plans
+  **Status:** External Pending
+  **Evidence:** paired Web/Go evidence absent
+
+- **Handoff:** `2026-07-21-real-user-feedback-bot-handoff.md`
+  **Authority:** provenance-only
+  **Disposition:** split across locale, reports, and Data/Analyst tracks
+  **Owner plan:** Locale, reports, Data/Analyst plans
+  **Status:** Needs Verification
+  **Evidence:** complete packet absent
+
+- **Handoff:** `2026-07-24-instant-expert-routing-bot-handoff.md`
+  **Authority:** provenance-only
+  **Disposition:** migrated into strict selector/lifecycle/error contract
+  **Owner plan:** Expert plan
+  **Status:** Bot Ready
+  **Evidence:** `48e4da0f`; 97 focused; 2202 scoped; external activation pending
+
+- **Handoff:** `2026-07-24-dataagent-bot-handoff.md`
+  **Authority:** provenance-only
+  **Disposition:** retained as evidence-only Data/Analyst input
+  **Owner plan:** Data/Analyst plan
+  **Status:** External Pending
+  **Evidence:** incident facts frozen; replay and owner evidence absent
 
 ## Migration policy
 

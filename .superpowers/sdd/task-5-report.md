@@ -11,8 +11,8 @@ unwired.
 ## Changes
 
 - Return an explicit `committed` or `already_applied` result from atomic staged
-  settlement, retaining ledger matching, conflict handling, and `BEGIN
-  IMMEDIATE` locking.
+  settlement, retaining ledger matching, conflict handling, and
+  `BEGIN IMMEDIATE` locking.
 - Add a synchronized two-store settlement regression that proves concurrent
   duplicate requests produce one result of each state.
 - Cover authenticated keys without `agents` scope and malformed or extra V1

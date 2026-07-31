@@ -12,12 +12,25 @@ or equal revisions instead of replacing a visible report with older content.
 
 ## Report states
 
-| Fixture                                                          | Meaning                                                                                                                                         |
-| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`running.json`](running.json)                                   | BriefGene succeeded, an `intermediate_report` is visible, and optional analysis work is still running.                                          |
-| [`partial-final.json`](partial-final.json)                       | At least one usable analysis completed, synthesis produced `final_report`, and optional failures are exposed through `degraded` and `failures`. |
-| [`failed-with-intermediate.json`](failed-with-intermediate.json) | BriefGene succeeded, later work or final synthesis failed, and the last `intermediate_report` remains available while `final_report` is null.   |
-| [`brief-gene-failed.json`](brief-gene-failed.json)               | Required BriefGene failed before optional submission; both reports are null and the report stage is `waiting_for_brief_gene`.                   |
+- **Fixture:** [`running.json`](running.json)
+  **Meaning:** BriefGene succeeded, an `intermediate_report` is visible, and
+  optional analysis work is still running.
+
+- **Fixture:** [`partial-final.json`](partial-final.json)
+  **Meaning:** At least one usable analysis completed, synthesis produced
+  `final_report`, and optional failures are exposed through
+  `degraded` and
+  `failures`.
+
+- **Fixture:** [`failed-with-intermediate.json`](failed-with-intermediate.json)
+  **Meaning:** BriefGene succeeded, later work or final synthesis failed, and
+  the last `intermediate_report` remains available while
+  `final_report` is null.
+
+- **Fixture:** [`brief-gene-failed.json`](brief-gene-failed.json)
+  **Meaning:** Required BriefGene failed before optional submission; both
+  reports are null and the report stage is
+  `waiting_for_brief_gene`.
 
 `intermediate_report` becomes visible after the required BriefGene profile and
 after each accepted optional-analysis transition. `final_report` appears only

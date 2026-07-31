@@ -15,23 +15,68 @@ cp src/mcp_server_phytomni/config/.env.example \
 
 Common variables:
 
-| Variable            | Required | Purpose                                                                                                                                                 |
-| ------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DOMAIN_NAME`       | yes      | Huawei IAM domain name.                                                                                                                                 |
-| `USER_NAME`         | yes      | Huawei IAM user name.                                                                                                                                   |
-| `USER_PASSWORD`     | yes      | Huawei IAM password.                                                                                                                                    |
-| `ACCESS_KEY_ID`     | yes      | OBS access key id.                                                                                                                                      |
-| `SECRET_ACCESS_KEY` | yes      | OBS secret access key.                                                                                                                                  |
-| `BASE_URL`          | yes      | Primary LLM base URL.                                                                                                                                   |
-| `MODEL_ID`          | yes      | Primary LLM model id.                                                                                                                                   |
-| `API_KEY`           | yes      | Primary outbound LLM API key.                                                                                                                           |
-| `CODER_URL`         | yes      | Coder model base URL.                                                                                                                                   |
-| `CODER_MODEL`       | yes      | Coder model id.                                                                                                                                         |
-| `CODER_API_KEY`     | yes      | Coder model API key.                                                                                                                                    |
-| `EMBED_URL`         | yes      | Embedding service base URL.                                                                                                                             |
-| `EMBED_MODEL`       | yes      | Embedding model id.                                                                                                                                     |
-| `EMBED_API_KEY`     | yes      | Embedding service API key.                                                                                                                              |
-| `GAUSS_DSN`         | yes      | Direct GaussDB DSN for the BI query path. Required outside relay mode; sealed in the encrypted envelope. URL-encode special characters in the password. |
+- **Variable:** `DOMAIN_NAME`
+  **Required:** yes
+  **Purpose:** Huawei IAM domain name.
+
+- **Variable:** `USER_NAME`
+  **Required:** yes
+  **Purpose:** Huawei IAM user name.
+
+- **Variable:** `USER_PASSWORD`
+  **Required:** yes
+  **Purpose:** Huawei IAM password.
+
+- **Variable:** `ACCESS_KEY_ID`
+  **Required:** yes
+  **Purpose:** OBS access key id.
+
+- **Variable:** `SECRET_ACCESS_KEY`
+  **Required:** yes
+  **Purpose:** OBS secret access key.
+
+- **Variable:** `BASE_URL`
+  **Required:** yes
+  **Purpose:** Primary LLM base URL.
+
+- **Variable:** `MODEL_ID`
+  **Required:** yes
+  **Purpose:** Primary LLM model id.
+
+- **Variable:** `API_KEY`
+  **Required:** yes
+  **Purpose:** Primary outbound LLM API key.
+
+- **Variable:** `CODER_URL`
+  **Required:** yes
+  **Purpose:** Coder model base URL.
+
+- **Variable:** `CODER_MODEL`
+  **Required:** yes
+  **Purpose:** Coder model id.
+
+- **Variable:** `CODER_API_KEY`
+  **Required:** yes
+  **Purpose:** Coder model API key.
+
+- **Variable:** `EMBED_URL`
+  **Required:** yes
+  **Purpose:** Embedding service base URL.
+
+- **Variable:** `EMBED_MODEL`
+  **Required:** yes
+  **Purpose:** Embedding model id.
+
+- **Variable:** `EMBED_API_KEY`
+  **Required:** yes
+  **Purpose:** Embedding service API key.
+
+- **Variable:** `GAUSS_DSN`
+  **Required:** yes
+  **Purpose:** Direct GaussDB DSN for the BI query path. Required outside relay
+  mode; sealed in the encrypted envelope. URL-encode special
+  characters in the
+  password.
 
 `GAUSS_DSN` is the current direct BI path. No runtime flag re-enables the
 removed BI HTTP client; a legacy deployment must install the prior binary and
@@ -104,64 +149,295 @@ must match the user id the operator bound to the relay key, since the
 operator's OBS relay confines each key to its own tenant namespace). See
 `config/.env.customer.example` for the minimal child variable set.
 
-| Variable           | Aliased as                  | Purpose                                                                                                      |
-| ------------------ | --------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `TOKEN_URL`        | `PHYTOMNI_TOKEN_URL`        | IAM token-acquisition endpoint (legacy default: `iam.cn-southwest-2.myhuaweicloud.com/v3/auth/tokens`).      |
-| `RETRIEVE_URL`     | `PHYTOMNI_RETRIEVE_URL`     | Document-retrieval endpoint used by KnowledgeAgent / DataAgent / AnalystAgent.                               |
-| `RERANK_URL`       | `PHYTOMNI_RERANK_URL`       | Document-reranking endpoint used downstream of `RETRIEVE_URL`.                                               |
-| `SPA_FAQ_URL`      | `PHYTOMNI_SPA_FAQ_URL`      | SPA-faq lookup template; expects `{repo_id}` substitution.                                                   |
-| `DATABASE_URL`     | `PHYTOMNI_DATABASE_URL`     | NL-query database endpoint; the legacy default embedded the workspace UUID directly inside the URL path.     |
-| `ANALYSIS_URL`     | `PHYTOMNI_ANALYSIS_URL`     | EI-Health workflow endpoint; the legacy default embedded project and job UUIDs directly inside the URL path. |
-| `OBS_SERVER`       | `PHYTOMNI_OBS_SERVER`       | OBS regional host (legacy default: `obs.cn-east-3.myhuaweicloud.com`).                                       |
-| `REPO_ID`          | `PHYTOMNI_REPO_ID`          | Primary knowledge-repo UUID.                                                                                 |
-| `REPO_ID_DICT`     | `PHYTOMNI_REPO_ID_DICT`     | JSON-string `{ "<repo_uuid>": <token_budget>, ... }`; parsed into a `Dict[str, int]` by pydantic-settings.   |
-| `WORKSPACE_ID`     | `PHYTOMNI_WORKSPACE_ID`     | Workspace UUID used by NL-query and analysis paths.                                                          |
-| `SUBJECT_ID`       | `PHYTOMNI_SUBJECT_ID`       | NL-query database subject / schema UUID.                                                                     |
-| `DATA_REPO_ID`     | `PHYTOMNI_DATA_REPO_ID`     | DataAgent retrieval repo UUID.                                                                               |
-| `TOOL_REPO_ID`     | `PHYTOMNI_TOOL_REPO_ID`     | Analyst tool-retrieval repo UUID.                                                                            |
-| `PROTOCOL_REPO_ID` | `PHYTOMNI_PROTOCOL_REPO_ID` | DeepGenome protocol-retrieval repo UUID.                                                                     |
-| `SPA_REPO_ID`      | `PHYTOMNI_SPA_REPO_ID`      | DeepGenome SPA-repo UUID feeding into `SPA_FAQ_URL`.                                                         |
-| `APP_ID`           | `PHYTOMNI_APP_ID`           | JSON-string `{ "small": "<uuid>", "medium": "<uuid>", "large": "<uuid>" }`; analyst compute-tier app-id map. |
+- **Variable:** `TOKEN_URL`
+  **Aliased as:** `PHYTOMNI_TOKEN_URL`
+  **Purpose:** IAM token-acquisition endpoint (legacy default:
+  `iam.cn-southwest-2.myhuaweicloud.com/v3/auth/tokens`).
 
-The aliasing matches the existing `PHYTOMNI_TLS_VERIFY` / `PHYTOMNI_CA_BUNDLE` convention so deployments may use the prefixed form when other `PHYTOMNI_*` variables already dominate the runtime environment. The two `Dict`-valued entries (`REPO_ID_DICT` and `APP_ID`) ship as JSON strings (e.g. `PHYTOMNI_REPO_ID_DICT='{"a34b...77b":128,"ec3...b":64}'`, `PHYTOMNI_APP_ID='{"small":"<uuid>","medium":"<uuid>","large":"<uuid>"}'`) so a single env var carries the full map.
+- **Variable:** `RETRIEVE_URL`
+  **Aliased as:** `PHYTOMNI_RETRIEVE_URL`
+  **Purpose:** Document-retrieval endpoint used by KnowledgeAgent / DataAgent /
+  AnalystAgent.
+
+- **Variable:** `RERANK_URL`
+  **Aliased as:** `PHYTOMNI_RERANK_URL`
+  **Purpose:** Document-reranking endpoint used downstream of `RETRIEVE_URL`.
+
+- **Variable:** `SPA_FAQ_URL`
+  **Aliased as:** `PHYTOMNI_SPA_FAQ_URL`
+  **Purpose:** SPA-faq lookup template; expects `{repo_id}` substitution.
+
+- **Variable:** `DATABASE_URL`
+  **Aliased as:** `PHYTOMNI_DATABASE_URL`
+  **Purpose:** NL-query database endpoint; the legacy default embedded the
+  workspace UUID directly inside the URL path.
+
+- **Variable:** `ANALYSIS_URL`
+  **Aliased as:** `PHYTOMNI_ANALYSIS_URL`
+  **Purpose:** EI-Health workflow endpoint; the legacy default embedded project
+  and job UUIDs directly inside the URL path.
+
+- **Variable:** `OBS_SERVER`
+  **Aliased as:** `PHYTOMNI_OBS_SERVER`
+  **Purpose:** OBS regional host (legacy default:
+  `obs.cn-east-3.myhuaweicloud.com`).
+
+- **Variable:** `REPO_ID`
+  **Aliased as:** `PHYTOMNI_REPO_ID`
+  **Purpose:** Primary knowledge-repo UUID.
+
+- **Variable:** `REPO_ID_DICT`
+  **Aliased as:** `PHYTOMNI_REPO_ID_DICT`
+  **Purpose:** JSON-string `{ "<repo_uuid>": <token_budget>, ... }`; parsed into
+  a `Dict[str, int]` by pydantic-settings.
+
+- **Variable:** `WORKSPACE_ID`
+  **Aliased as:** `PHYTOMNI_WORKSPACE_ID`
+  **Purpose:** Workspace UUID used by NL-query and analysis paths.
+
+- **Variable:** `SUBJECT_ID`
+  **Aliased as:** `PHYTOMNI_SUBJECT_ID`
+  **Purpose:** NL-query database subject / schema UUID.
+
+- **Variable:** `DATA_REPO_ID`
+  **Aliased as:** `PHYTOMNI_DATA_REPO_ID`
+  **Purpose:** DataAgent retrieval repo UUID.
+
+- **Variable:** `TOOL_REPO_ID`
+  **Aliased as:** `PHYTOMNI_TOOL_REPO_ID`
+  **Purpose:** Analyst tool-retrieval repo UUID.
+
+- **Variable:** `PROTOCOL_REPO_ID`
+  **Aliased as:** `PHYTOMNI_PROTOCOL_REPO_ID`
+  **Purpose:** DeepGenome protocol-retrieval repo UUID.
+
+- **Variable:** `SPA_REPO_ID`
+  **Aliased as:** `PHYTOMNI_SPA_REPO_ID`
+  **Purpose:** DeepGenome SPA-repo UUID feeding into `SPA_FAQ_URL`.
+
+- **Variable:** `APP_ID`
+  **Aliased as:** `PHYTOMNI_APP_ID`
+  **Purpose:** JSON-string `{ "small": "<uuid>", "medium": "<uuid>",`
+  `"large": "<uuid>" }`; analyst compute-tier app-id map.
+
+The aliasing matches the existing `PHYTOMNI_TLS_VERIFY` / `PHYTOMNI_CA_BUNDLE`
+convention so deployments may use the prefixed form when other `PHYTOMNI_*`
+variables already dominate the runtime environment. The two `Dict`-valued
+entries (`REPO_ID_DICT` and `APP_ID`) ship as JSON strings (e.g.
+`PHYTOMNI_REPO_ID_DICT='{"a34b...77b":128,"ec3...b":64}'`,
+`PHYTOMNI_APP_ID='{"small":"<uuid>","medium":"<uuid>","large":"<uuid>"}'`) so a
+single env var carries the full map.
 
 ## HTTP API Variables
 
-| Variable                     | Default                           | Sensitive? | Purpose                                                                                                                                                                                                                                                  |
-| ---------------------------- | --------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `API_HOST`                   | `127.0.0.1`                       | no         | Uvicorn bind address.                                                                                                                                                                                                                                    |
-| `API_PORT`                   | `8080`                            | no         | Uvicorn bind port.                                                                                                                                                                                                                                       |
-| `API_GRACEFUL_SHUTDOWN`      | `30`                              | no         | Uvicorn graceful-shutdown drain window in seconds; kept shorter than systemd's `TimeoutStopSec`.                                                                                                                                                         |
-| `API_KEYS_DB_PATH`           | `.cache/phytomni/api_keys.sqlite` | no         | Per-user API key SQLite store.                                                                                                                                                                                                                           |
-| `PHYTOMNI_API_KEYS_DB`       | unset                             | no         | Backward-compatible API key store alias.                                                                                                                                                                                                                 |
-| `API_TASKS_DB_PATH`          | `server_tasks.db`                 | no         | Runs and tasks SQLite store.                                                                                                                                                                                                                             |
-| `PHYTOMNI_TASKS_DB`          | unset                             | no         | Backward-compatible runs/tasks store alias.                                                                                                                                                                                                              |
-| `MEMORY_ENABLED`             | `false`                           | no         | Opt-in user-scoped memory CRUD plus bounded read-only agent recall; accepts `PHYTOMNI_MEMORY_ENABLED`. Disabled deployments do not mount routes or open the memory database.                                                                             |
-| `MEMORY_DB_PATH`             | `.cache/phytomni/memory.sqlite`   | no         | Single-instance local SQLite path for memory records; accepts `PHYTOMNI_MEMORY_DB_PATH` and must point to a persistent local filesystem, never a network filesystem.                                                                                     |
-| `API_SERVICE_TOKEN`          | unset                             | yes        | Service-to-service token gating `/v1/api-keys` admin routes; unset disables them with `503 admin path not enabled`.                                                                                                                                      |
-| `PHYTOMNI_API_SERVICE_TOKEN` | unset                             | yes        | Backward-compatible service token alias.                                                                                                                                                                                                                 |
-| `API_UPLOAD_MAX_BYTES`       | `26214400`                        | no         | Per-file ceiling for `POST /v1/files`, in bytes (25 MiB); oversize uploads return `413`.                                                                                                                                                                 |
-| `API_UPLOAD_PREFIX`          | `agent_data/uploads`              | no         | OBS object-key prefix below the bucket root for `POST /v1/files` upload outputs.                                                                                                                                                                         |
-| `API_REQUEST_TIMEOUT`        | `600.0`                           | no         | Per-request timeout in seconds.                                                                                                                                                                                                                          |
-| `API_RATE_LIMIT_PER_MIN`     | `120`                             | no         | Per-key request budget per minute; `<= 0` disables.                                                                                                                                                                                                      |
-| `API_RUN_TTL_OK_HOURS`       | `24`                              | no         | Retention for succeeded runs.                                                                                                                                                                                                                            |
-| `API_RUN_TTL_FAIL_DAYS`      | `7`                               | no         | Retention for failed runs.                                                                                                                                                                                                                               |
-| `STREAM_ANSWER_MAX_BYTES`    | `1048576`                         | no         | Soft UTF-8 byte cap for ordinary streamed-agent answer persistence in the run registry (1 MiB); the live SSE wire stream is never truncated. Accepts `PHYTOMNI_STREAM_ANSWER_MAX_BYTES`.                                                                 |
-| `A2UI_ENABLED`               | `false`                           | no         | When true, ChatAgent streamed chat may emit A2UI confirm surfaces and accept actions on `POST /v1/runs/{run_id}/a2ui-actions`. Accepts `PHYTOMNI_A2UI_ENABLED`.                                                                                          |
-| `A2UI_TOOL_CALL`             | `false`                           | no         | Reserved for future A2UI tool-call emit on the chat path; unused in the default P4-1 confirm slice. Accepts `PHYTOMNI_A2UI_TOOL_CALL`.                                                                                                                   |
-| `A2A_ENABLED`                | `false`                           | no         | Feature flag for the A2A v1 JSON-RPC surface; disabled by default and requires `A2A_PUBLIC_BASE_URL` when enabled. Accepts `PHYTOMNI_A2A_ENABLED`.                                                                                                       |
-| `A2A_PUBLIC_BASE_URL`        | `unset`                           | no         | Absolute HTTP(S) public URL prefix used to build the A2A Agent Card and `/a2a` interface; trailing slashes are removed. Accepts `PHYTOMNI_A2A_PUBLIC_BASE_URL`.                                                                                          |
-| `INTEROP_ENABLED`            | `false`                           | no         | Feature flag for outbound MCP/A2A target loading, the read-only `/v1/interop/capabilities` route, and request-level Research/Design delegation; each request still opts in with `interop_mode`; disabled by default. Accepts `PHYTOMNI_INTEROP_ENABLED`. |
-| `INTEROP_TARGETS`            | `[]`                              | yes        | JSON array of operator-owned target definitions. It may contain fixed URLs or absolute stdio commands, but never headers/tokens; requests may name only a target id. Accepts `PHYTOMNI_INTEROP_TARGETS`.                                                 |
-| `MEMORY_MAX_ITEMS`           | `100`                             | no         | Maximum live records retained per user namespace; bounded to `1..10000`. Accepts `PHYTOMNI_MEMORY_MAX_ITEMS`.                                                                                                                                            |
-| `MEMORY_MAX_CONTENT_BYTES`   | `16384`                           | no         | Maximum UTF-8 bytes in one memory record; bounded to `1..16384`. Accepts `PHYTOMNI_MEMORY_MAX_CONTENT_BYTES`.                                                                                                                                            |
-| `MEMORY_MAX_TOTAL_BYTES`     | `1048576`                         | no         | Maximum policy-counted bytes in one user namespace; bounded to `1..16777216`. Accepts `PHYTOMNI_MEMORY_MAX_TOTAL_BYTES`.                                                                                                                                 |
-| `MEMORY_MAX_RETRIEVAL`       | `20`                              | no         | Maximum records returned to one graph recall; bounded to `1..1000` and cannot exceed `MEMORY_MAX_ITEMS`. Accepts `PHYTOMNI_MEMORY_MAX_RETRIEVAL`.                                                                                                        |
-| `MEMORY_GRAPH_MAX_BYTES`     | `65536`                           | no         | Maximum UTF-8 bytes returned to one graph recall; bounded to `1..1048576`. Accepts `PHYTOMNI_MEMORY_GRAPH_MAX_BYTES`.                                                                                                                                    |
-| `INTEROP_MAX_TARGETS`        | `64`                              | no         | Maximum operator registry entries accepted at startup/lazy load; bounded to `1..256`, with excess entries rejected. Accepts `PHYTOMNI_INTEROP_MAX_TARGETS`.                                                                                              |
-| `INTEROP_CACHE_MAX_ENTRIES`  | `256`                             | no         | Maximum successful discovery projections kept per process; bounded to `1..4096`, with oldest insertion evicted first. Accepts `PHYTOMNI_INTEROP_CACHE_MAX_ENTRIES`.                                                                                      |
-| `A2A_MAX_HISTORY_MESSAGES`   | `32`                              | no         | Maximum messages projected by `GetTask`; bounded to `0..256`, where `0` disables history projection. Accepts `PHYTOMNI_A2A_MAX_HISTORY_MESSAGES`.                                                                                                        |
-| `A2A_MAX_ARTIFACT_BYTES`     | `262144`                          | no         | Maximum UTF-8 bytes in one local A2A answer artifact; bounded to `1024..16777216`. Accepts `PHYTOMNI_A2A_MAX_ARTIFACT_BYTES`.                                                                                                                            |
+- **Variable:** `API_HOST`
+  **Default:** `127.0.0.1`
+  **Sensitive?:** no
+  **Purpose:** Uvicorn bind address.
+
+- **Variable:** `API_PORT`
+  **Default:** `8080`
+  **Sensitive?:** no
+  **Purpose:** Uvicorn bind port.
+
+- **Variable:** `API_GRACEFUL_SHUTDOWN`
+  **Default:** `30`
+  **Sensitive?:** no
+  **Purpose:** Uvicorn graceful-shutdown drain window in seconds; kept shorter
+  than systemd's `TimeoutStopSec`.
+
+- **Variable:** `API_KEYS_DB_PATH`
+  **Default:** `.cache/phytomni/api_keys.sqlite`
+  **Sensitive?:** no
+  **Purpose:** Per-user API key SQLite store.
+
+- **Variable:** `PHYTOMNI_API_KEYS_DB`
+  **Default:** unset
+  **Sensitive?:** no
+  **Purpose:** Backward-compatible API key store alias.
+
+- **Variable:** `API_TASKS_DB_PATH`
+  **Default:** `server_tasks.db`
+  **Sensitive?:** no
+  **Purpose:** Runs and tasks SQLite store.
+
+- **Variable:** `PHYTOMNI_TASKS_DB`
+  **Default:** unset
+  **Sensitive?:** no
+  **Purpose:** Backward-compatible runs/tasks store alias.
+
+- **Variable:** `MEMORY_ENABLED`
+  **Default:** `false`
+  **Sensitive?:** no
+  **Purpose:** Opt-in user-scoped memory CRUD plus bounded read-only agent
+  recall; accepts `PHYTOMNI_MEMORY_ENABLED`. Disabled deployments
+  do not mount
+  routes or open the memory database.
+
+- **Variable:** `MEMORY_DB_PATH`
+  **Default:** `.cache/phytomni/memory.sqlite`
+  **Sensitive?:** no
+  **Purpose:** Single-instance local SQLite path for memory records; accepts
+  `PHYTOMNI_MEMORY_DB_PATH` and must point to a persistent local
+  filesystem, never
+  a network filesystem.
+
+- **Variable:** `API_SERVICE_TOKEN`
+  **Default:** unset
+  **Sensitive?:** yes
+  **Purpose:** Service-to-service token gating `/v1/api-keys` admin routes;
+  unset disables them with `503 admin path not enabled`.
+
+- **Variable:** `PHYTOMNI_API_SERVICE_TOKEN`
+  **Default:** unset
+  **Sensitive?:** yes
+  **Purpose:** Backward-compatible service token alias.
+
+- **Variable:** `API_UPLOAD_MAX_BYTES`
+  **Default:** `26214400`
+  **Sensitive?:** no
+  **Purpose:** Per-file ceiling for `POST /v1/files`, in bytes (25 MiB);
+  oversize uploads return `413`.
+
+- **Variable:** `API_UPLOAD_PREFIX`
+  **Default:** `agent_data/uploads`
+  **Sensitive?:** no
+  **Purpose:** OBS object-key prefix below the bucket root for `POST /v1/files`
+  upload outputs.
+
+- **Variable:** `API_REQUEST_TIMEOUT`
+  **Default:** `600.0`
+  **Sensitive?:** no
+  **Purpose:** Per-request timeout in seconds.
+
+- **Variable:** `API_RATE_LIMIT_PER_MIN`
+  **Default:** `120`
+  **Sensitive?:** no
+  **Purpose:** Per-key request budget per minute; `<= 0` disables.
+
+- **Variable:** `API_RUN_TTL_OK_HOURS`
+  **Default:** `24`
+  **Sensitive?:** no
+  **Purpose:** Retention for succeeded runs.
+
+- **Variable:** `API_RUN_TTL_FAIL_DAYS`
+  **Default:** `7`
+  **Sensitive?:** no
+  **Purpose:** Retention for failed runs.
+
+- **Variable:** `STREAM_ANSWER_MAX_BYTES`
+  **Default:** `1048576`
+  **Sensitive?:** no
+  **Purpose:** Soft UTF-8 byte cap for ordinary streamed-agent answer
+  persistence in the run registry (1 MiB); the live SSE wire stream
+  is never
+  truncated. Accepts `PHYTOMNI_STREAM_ANSWER_MAX_BYTES`.
+
+- **Variable:** `A2UI_ENABLED`
+  **Default:** `false`
+  **Sensitive?:** no
+  **Purpose:** When true, ChatAgent streamed chat may emit A2UI confirm surfaces
+  and accept actions on `POST /v1/runs/{run_id}/a2ui-actions`.
+  Accepts
+  `PHYTOMNI_A2UI_ENABLED`.
+
+- **Variable:** `A2UI_TOOL_CALL`
+  **Default:** `false`
+  **Sensitive?:** no
+  **Purpose:** Reserved for future A2UI tool-call emit on the chat path; unused
+  in the default P4-1 confirm slice. Accepts
+  `PHYTOMNI_A2UI_TOOL_CALL`.
+
+- **Variable:** `A2A_ENABLED`
+  **Default:** `false`
+  **Sensitive?:** no
+  **Purpose:** Feature flag for the A2A v1 JSON-RPC surface; disabled by default
+  and requires `A2A_PUBLIC_BASE_URL` when enabled. Accepts
+  `PHYTOMNI_A2A_ENABLED`.
+
+- **Variable:** `A2A_PUBLIC_BASE_URL`
+  **Default:** `unset`
+  **Sensitive?:** no
+  **Purpose:** Absolute HTTP(S) public URL prefix used to build the A2A Agent
+  Card and `/a2a` interface; trailing slashes are removed. Accepts
+  `PHYTOMNI_A2A_PUBLIC_BASE_URL`.
+
+- **Variable:** `INTEROP_ENABLED`
+  **Default:** `false`
+  **Sensitive?:** no
+  **Purpose:** Feature flag for outbound MCP/A2A target loading, the read-only
+  `/v1/interop/capabilities` route, and request-level
+  Research/Design delegation;
+  each request still opts in with `interop_mode`; disabled by
+  default. Accepts
+  `PHYTOMNI_INTEROP_ENABLED`.
+
+- **Variable:** `INTEROP_TARGETS`
+  **Default:** `[]`
+  **Sensitive?:** yes
+  **Purpose:** JSON array of operator-owned target definitions. It may contain
+  fixed URLs or absolute stdio commands, but never headers/tokens;
+  requests may
+  name only a target id. Accepts `PHYTOMNI_INTEROP_TARGETS`.
+
+- **Variable:** `MEMORY_MAX_ITEMS`
+  **Default:** `100`
+  **Sensitive?:** no
+  **Purpose:** Maximum live records retained per user namespace; bounded to
+  `1..10000`. Accepts `PHYTOMNI_MEMORY_MAX_ITEMS`.
+
+- **Variable:** `MEMORY_MAX_CONTENT_BYTES`
+  **Default:** `16384`
+  **Sensitive?:** no
+  **Purpose:** Maximum UTF-8 bytes in one memory record; bounded to `1..16384`.
+  Accepts `PHYTOMNI_MEMORY_MAX_CONTENT_BYTES`.
+
+- **Variable:** `MEMORY_MAX_TOTAL_BYTES`
+  **Default:** `1048576`
+  **Sensitive?:** no
+  **Purpose:** Maximum policy-counted bytes in one user namespace; bounded to
+  `1..16777216`. Accepts `PHYTOMNI_MEMORY_MAX_TOTAL_BYTES`.
+
+- **Variable:** `MEMORY_MAX_RETRIEVAL`
+  **Default:** `20`
+  **Sensitive?:** no
+  **Purpose:** Maximum records returned to one graph recall; bounded to
+  `1..1000` and cannot exceed `MEMORY_MAX_ITEMS`. Accepts
+  `PHYTOMNI_MEMORY_MAX_RETRIEVAL`.
+
+- **Variable:** `MEMORY_GRAPH_MAX_BYTES`
+  **Default:** `65536`
+  **Sensitive?:** no
+  **Purpose:** Maximum UTF-8 bytes returned to one graph recall; bounded to
+  `1..1048576`. Accepts `PHYTOMNI_MEMORY_GRAPH_MAX_BYTES`.
+
+- **Variable:** `INTEROP_MAX_TARGETS`
+  **Default:** `64`
+  **Sensitive?:** no
+  **Purpose:** Maximum operator registry entries accepted at startup/lazy load;
+  bounded to `1..256`, with excess entries rejected. Accepts
+  `PHYTOMNI_INTEROP_MAX_TARGETS`.
+
+- **Variable:** `INTEROP_CACHE_MAX_ENTRIES`
+  **Default:** `256`
+  **Sensitive?:** no
+  **Purpose:** Maximum successful discovery projections kept per process;
+  bounded to `1..4096`, with oldest insertion evicted first.
+  Accepts
+  `PHYTOMNI_INTEROP_CACHE_MAX_ENTRIES`.
+
+- **Variable:** `A2A_MAX_HISTORY_MESSAGES`
+  **Default:** `32`
+  **Sensitive?:** no
+  **Purpose:** Maximum messages projected by `GetTask`; bounded to `0..256`,
+  where `0` disables history projection. Accepts
+  `PHYTOMNI_A2A_MAX_HISTORY_MESSAGES`.
+
+- **Variable:** `A2A_MAX_ARTIFACT_BYTES`
+  **Default:** `262144`
+  **Sensitive?:** no
+  **Purpose:** Maximum UTF-8 bytes in one local A2A answer artifact; bounded to
+  `1024..16777216`. Accepts `PHYTOMNI_A2A_MAX_ARTIFACT_BYTES`.
 
 ### Attachment Invocation Limits
 
@@ -203,13 +479,40 @@ and only then expose the route or request option to clients. Disabling a flag
 removes the new surface but does not delete its local SQLite data or in-memory
 run rows.
 
-| Surface          | Enable                                                      | Disable / rollback                                                                     | State retained while disabled                                                |
-| ---------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| A2UI Chat/Review | `A2UI_ENABLED=1`                                            | Set `A2UI_ENABLED=0`, restart, and stop sending new A2UI actions.                      | `server_tasks.db` and `checkpoints.db`; inspect paused runs before rollback. |
-| A2A server       | `A2A_ENABLED=1` plus `A2A_PUBLIC_BASE_URL`                  | Set `A2A_ENABLED=0`, restart, and verify the card and `/a2a` return `404`.             | Run/task rows and checkpoints; no new A2A requests are accepted.             |
-| Outbound interop | `INTEROP_ENABLED=1` plus registry/credentials               | Set `INTEROP_ENABLED=0`, restart, and verify `/v1/interop/capabilities` returns `404`. | No persistent discovery state; the process cache is discarded on restart.    |
-| Explicit memory  | `MEMORY_ENABLED=1` plus a persistent local `MEMORY_DB_PATH` | Set `MEMORY_ENABLED=0`, restart, and verify memory routes return `404`.                | The memory SQLite file and audit rows; agents stop opening the store.        |
-| Credential relay | `RELAY_ENABLED=1`                                           | Set `RELAY_ENABLED=0`; this kill-switch is re-read per request.                        | Relay audit SQLite rows; no new relay call is admitted.                      |
+- **Surface:** A2UI Chat/Review
+  **Enable:** `A2UI_ENABLED=1`
+  **Disable / rollback:** Set `A2UI_ENABLED=0`, restart, and stop sending new
+  A2UI actions.
+  **State retained while disabled:** `server_tasks.db` and `checkpoints.db`;
+  inspect paused runs before rollback.
+
+- **Surface:** A2A server
+  **Enable:** `A2A_ENABLED=1` plus `A2A_PUBLIC_BASE_URL`
+  **Disable / rollback:** Set `A2A_ENABLED=0`, restart, and verify the card and
+  `/a2a` return `404`.
+  **State retained while disabled:** Run/task rows and checkpoints; no new A2A
+  requests are accepted.
+
+- **Surface:** Outbound interop
+  **Enable:** `INTEROP_ENABLED=1` plus registry/credentials
+  **Disable / rollback:** Set `INTEROP_ENABLED=0`, restart, and verify
+  `/v1/interop/capabilities` returns `404`.
+  **State retained while disabled:** No persistent discovery state; the process
+  cache is discarded on restart.
+
+- **Surface:** Explicit memory
+  **Enable:** `MEMORY_ENABLED=1` plus a persistent local `MEMORY_DB_PATH`
+  **Disable / rollback:** Set `MEMORY_ENABLED=0`, restart, and verify memory
+  routes return `404`.
+  **State retained while disabled:** The memory SQLite file and audit rows;
+  agents stop opening the store.
+
+- **Surface:** Credential relay
+  **Enable:** `RELAY_ENABLED=1`
+  **Disable / rollback:** Set `RELAY_ENABLED=0`; this kill-switch is re-read per
+  request.
+  **State retained while disabled:** Relay audit SQLite rows; no new relay call
+  is admitted.
 
 The flag-off path is the compatibility fallback for every opt-in surface. A
 rollback must not remove or rename the corresponding database file: a later
@@ -280,11 +583,23 @@ enable delegation by itself. `InSilicoResearchAgent` and
 `DigitalDesignAgent` must opt in on each request with `interop_mode` and an
 allowlisted `interop_targets` list:
 
-| `interop_mode` | Request behavior                                                                                                      | Result signal                                                                            |
-| -------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `off`          | Never discovers or invokes external MCP/A2A targets; use the local Analyst path.                                      | No `metadata.interop` record.                                                            |
-| `auto`         | Attempts an eligible target, then continues locally when discovery, timeout, transport, or evidence collection fails. | `metadata.degraded_interop=true` plus a `status="degraded"` record when fallback occurs. |
-| `required`     | Requires bounded external evidence before local Analyst submission.                                                   | Failure is surfaced; the request never reports local pseudo-success.                     |
+- **`interop_mode`:** `off`
+  **Request behavior:** Never discovers or invokes external MCP/A2A targets; use
+  the local Analyst path.
+  **Result signal:** No `metadata.interop` record.
+
+- **`interop_mode`:** `auto`
+  **Request behavior:** Attempts an eligible target, then continues locally when
+  discovery, timeout, transport, or evidence collection
+  fails.
+  **Result signal:** `metadata.degraded_interop=true` plus a `status="degraded"`
+  record when fallback occurs.
+
+- **`interop_mode`:** `required`
+  **Request behavior:** Requires bounded external evidence before local Analyst
+  submission.
+  **Result signal:** Failure is surfaced; the request never reports local
+  pseudo-success.
 
 An A2A `input-required` response pauses the graph before local submission and
 is resumed through the normal HTTP/MCP run resume adapter. Formatted metadata
@@ -300,18 +615,63 @@ UUIDs*) and operator secrets (see *Encrypted Customer Envelope*) — there
 is no relay-specific secret. Every variable accepts an unprefixed or
 `PHYTOMNI_RELAY_*` alias.
 
-| Variable                         | Default                              | Sensitive? | Purpose                                                                                                         |
-| -------------------------------- | ------------------------------------ | ---------- | --------------------------------------------------------------------------------------------------------------- |
-| `RELAY_ENABLED`                  | `false`                              | no         | Expose `/v1/relay/*`; re-read every request so a disable is an instant kill-switch.                             |
-| `RELAY_AUDIT_DB_PATH`            | `.cache/phytomni/relay_audit.sqlite` | no         | Local relay audit SQLite store; keep on a local disk (WAL deadlocks on network filesystems).                    |
-| `RELAY_AUDIT_RETENTION_DAYS`     | `90`                                 | no         | Age in days after which audit rows are eligible for cleanup.                                                    |
-| `RELAY_REQUEST_MAX_BYTES`        | `10485760`                           | no         | Max relayed request body in bytes; over-limit returns `413` without buffering the whole body.                   |
-| `RELAY_REQUEST_AUDIT_MAX_BYTES`  | `65536`                              | no         | Max UTF-8 bytes retained in the sanitized request-body audit copy; separate from the client-facing request cap. |
-| `RELAY_RESPONSE_AUDIT_MAX_BYTES` | `10485760`                           | no         | Max upstream response bytes copied into the audit; the client-facing response is never truncated.               |
-| `RELAY_RESPONSE_MAX_BYTES`       | `1073741824`                         | no         | Max OBS object size the download relay streams back before returning `413`; distinct from the request-body cap. |
-| `RELAY_TIMEOUT_SECONDS`          | `600.0`                              | no         | Per-request upstream timeout and the total wall-clock ceiling for a streamed forward.                           |
-| `RELAY_RATE_LIMIT_PER_MIN`       | `60`                                 | no         | Per-key relay request budget per minute (separate from `API_RATE_LIMIT_PER_MIN`); over-limit `429`.             |
-| `RELAY_MAX_CONCURRENT_PER_KEY`   | `8`                                  | no         | Max in-flight relay forwards per key; excess returns `503`.                                                     |
+- **Variable:** `RELAY_ENABLED`
+  **Default:** `false`
+  **Sensitive?:** no
+  **Purpose:** Expose `/v1/relay/*`; re-read every request so a disable is an
+  instant kill-switch.
+
+- **Variable:** `RELAY_AUDIT_DB_PATH`
+  **Default:** `.cache/phytomni/relay_audit.sqlite`
+  **Sensitive?:** no
+  **Purpose:** Local relay audit SQLite store; keep on a local disk (WAL
+  deadlocks on network filesystems).
+
+- **Variable:** `RELAY_AUDIT_RETENTION_DAYS`
+  **Default:** `90`
+  **Sensitive?:** no
+  **Purpose:** Age in days after which audit rows are eligible for cleanup.
+
+- **Variable:** `RELAY_REQUEST_MAX_BYTES`
+  **Default:** `10485760`
+  **Sensitive?:** no
+  **Purpose:** Max relayed request body in bytes; over-limit returns `413`
+  without buffering the whole body.
+
+- **Variable:** `RELAY_REQUEST_AUDIT_MAX_BYTES`
+  **Default:** `65536`
+  **Sensitive?:** no
+  **Purpose:** Max UTF-8 bytes retained in the sanitized request-body audit
+  copy; separate from the client-facing request cap.
+
+- **Variable:** `RELAY_RESPONSE_AUDIT_MAX_BYTES`
+  **Default:** `10485760`
+  **Sensitive?:** no
+  **Purpose:** Max upstream response bytes copied into the audit; the
+  client-facing response is never truncated.
+
+- **Variable:** `RELAY_RESPONSE_MAX_BYTES`
+  **Default:** `1073741824`
+  **Sensitive?:** no
+  **Purpose:** Max OBS object size the download relay streams back before
+  returning `413`; distinct from the request-body cap.
+
+- **Variable:** `RELAY_TIMEOUT_SECONDS`
+  **Default:** `600.0`
+  **Sensitive?:** no
+  **Purpose:** Per-request upstream timeout and the total wall-clock ceiling for
+  a streamed forward.
+
+- **Variable:** `RELAY_RATE_LIMIT_PER_MIN`
+  **Default:** `60`
+  **Sensitive?:** no
+  **Purpose:** Per-key relay request budget per minute (separate from
+  `API_RATE_LIMIT_PER_MIN`); over-limit `429`.
+
+- **Variable:** `RELAY_MAX_CONCURRENT_PER_KEY`
+  **Default:** `8`
+  **Sensitive?:** no
+  **Purpose:** Max in-flight relay forwards per key; excess returns `503`.
 
 Rate, concurrency, and retention state are per worker, so the effective
 per-key ceilings scale with the worker count. See
@@ -320,10 +680,13 @@ procedures and `docs/reference/http-api.md` *Relay* for the route contracts.
 
 ## Cache and Registry Variables
 
-| Variable            | Default                             | Purpose                                                  |
-| ------------------- | ----------------------------------- | -------------------------------------------------------- |
-| `PHYTOMNI_CACHE_DB` | `.cache/phytomni/func_cache.sqlite` | Function cache SQLite path.                              |
-| `PHYTOMNI_TESTING`  | unset                               | Set to `1` only in tests to disable real `.env` loading. |
+- **Variable:** `PHYTOMNI_CACHE_DB`
+  **Default:** `.cache/phytomni/func_cache.sqlite`
+  **Purpose:** Function cache SQLite path.
+
+- **Variable:** `PHYTOMNI_TESTING`
+  **Default:** unset
+  **Purpose:** Set to `1` only in tests to disable real `.env` loading.
 
 Function caches stay on local disk even when obsfs is available because
 SQLite over a network filesystem can deadlock under WAL locking.
@@ -353,10 +716,17 @@ it.
 
 ## Network and TLS Variables
 
-| Variable              | Default | Sensitive? | Purpose                                                                                               |
-| --------------------- | ------- | ---------- | ----------------------------------------------------------------------------------------------------- |
-| `PHYTOMNI_TLS_VERIFY` | `true`  | no         | Disable peer certificate verification when set to `0`/`false`/`no` (dev or pinned on-prem only).      |
-| `PHYTOMNI_CA_BUNDLE`  | unset   | no         | Absolute path to a PEM CA bundle. Honoured when verification is on; ignored when verification is off. |
+- **Variable:** `PHYTOMNI_TLS_VERIFY`
+  **Default:** `true`
+  **Sensitive?:** no
+  **Purpose:** Disable peer certificate verification when set to
+  `0`/`false`/`no` (dev or pinned on-prem only).
+
+- **Variable:** `PHYTOMNI_CA_BUNDLE`
+  **Default:** unset
+  **Sensitive?:** no
+  **Purpose:** Absolute path to a PEM CA bundle. Honoured when verification is
+  on; ignored when verification is off.
 
 Every async HTTP call in `mcp_server_phytomni` should flow through
 `common.httpx_client.get_async_client`, which reads these settings once
@@ -369,14 +739,41 @@ real CA bundle instead.
 
 ## Server Tuning Variables
 
-| Variable                | Default | Sensitive? | Purpose                                                                                       |
-| ----------------------- | ------- | ---------- | --------------------------------------------------------------------------------------------- |
-| `TIMEOUT`               | `600.0` | no         | General agent/provider request timeout; separate from local polling and remote job ceilings.  |
-| `MAX_POLL`              | `86400` | no         | Maximum local polling duration for long-running Analyst/DeepGenome work.                      |
-| `ANALYSIS_JOB_TIMEOUT`  | `86400` | no         | Maximum duration sent to the remote analysis platform for one submitted job.                  |
-| `GAUSS_COMMAND_TIMEOUT` | `30.0`  | no         | Per-query timeout in seconds for the direct GaussDB pool (`agents/shared/gauss.py`).          |
-| `HTTP_MAX_CONNECTIONS`  | `100`   | no         | Max total connections for the shared `httpx.AsyncClient` pool (`common/httpx_client.py`).     |
-| `HTTP_MAX_KEEPALIVE`    | `50`    | no         | Max keepalive connections for the shared `httpx.AsyncClient` pool (`common/httpx_client.py`). |
+- **Variable:** `TIMEOUT`
+  **Default:** `600.0`
+  **Sensitive?:** no
+  **Purpose:** General agent/provider request timeout; separate from local
+  polling and remote job ceilings.
+
+- **Variable:** `MAX_POLL`
+  **Default:** `86400`
+  **Sensitive?:** no
+  **Purpose:** Maximum local polling duration for long-running
+  Analyst/DeepGenome work.
+
+- **Variable:** `ANALYSIS_JOB_TIMEOUT`
+  **Default:** `86400`
+  **Sensitive?:** no
+  **Purpose:** Maximum duration sent to the remote analysis platform for one
+  submitted job.
+
+- **Variable:** `GAUSS_COMMAND_TIMEOUT`
+  **Default:** `30.0`
+  **Sensitive?:** no
+  **Purpose:** Per-query timeout in seconds for the direct GaussDB pool
+  (`agents/shared/gauss.py`).
+
+- **Variable:** `HTTP_MAX_CONNECTIONS`
+  **Default:** `100`
+  **Sensitive?:** no
+  **Purpose:** Max total connections for the shared `httpx.AsyncClient` pool
+  (`common/httpx_client.py`).
+
+- **Variable:** `HTTP_MAX_KEEPALIVE`
+  **Default:** `50`
+  **Sensitive?:** no
+  **Purpose:** Max keepalive connections for the shared `httpx.AsyncClient` pool
+  (`common/httpx_client.py`).
 
 These are `ServerConfig` fields read once at startup. `GAUSS_COMMAND_TIMEOUT`
 bounds each direct GaussDB query so a stuck backend cannot hold a pooled
@@ -387,9 +784,11 @@ churning TCP/TLS handshakes. Leave them unset to accept the defaults.
 
 ## Retrieval Tuning Variables
 
-| Variable                      | Default | Sensitive? | Purpose                                                                                          |
-| ----------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------------------ |
-| `PHYTOMNI_RERANK_CONCURRENCY` | `16`    | no         | Max concurrent rerank HTTP requests per process event loop. `0` or negative disables throttling. |
+- **Variable:** `PHYTOMNI_RERANK_CONCURRENCY`
+  **Default:** `16`
+  **Sensitive?:** no
+  **Purpose:** Max concurrent rerank HTTP requests per process event loop. `0`
+  or negative disables throttling.
 
 The throttle is process-internal: each running event loop holds its own
 `asyncio.Semaphore`, shared across every rerank-capable agent
@@ -404,16 +803,37 @@ under the backend's hard-failure knee. Accepts the unprefixed
 
 ## Live E2E Variables
 
-| Variable                                | Default           | Purpose                                                       |
-| --------------------------------------- | ----------------- | ------------------------------------------------------------- |
-| `PHYTOMNI_RUN_INTEGRATION`              | unset             | Set to `1` to allow integration tests.                        |
-| `PHYTOMNI_ALLOW_NETWORK`                | unset             | Set to `1` to allow network tests.                            |
-| `PHYTOMNI_E2E_SUBMIT_TIMEOUT_SECONDS`   | `1800`            | Submit timeout for async tool calls.                          |
-| `PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS`     | `600`             | Polling deadline for one async task.                          |
-| `PHYTOMNI_E2E_TASKS_DB`                 | `server_tasks.db` | Override the task registry used by e2e polling.               |
-| `PHYTOMNI_E2E_RUN_KA_UPLOAD`            | unset             | Set to `1` to include the slow KnowledgeAgent upload variant. |
-| `PHYTOMNI_E2E_API_STARTUP_SECONDS`      | `120`             | HTTP API e2e startup health-gate budget.                      |
-| `PHYTOMNI_E2E_API_READ_TIMEOUT_SECONDS` | `1200`            | HTTP API e2e per-request read timeout.                        |
+- **Variable:** `PHYTOMNI_RUN_INTEGRATION`
+  **Default:** unset
+  **Purpose:** Set to `1` to allow integration tests.
+
+- **Variable:** `PHYTOMNI_ALLOW_NETWORK`
+  **Default:** unset
+  **Purpose:** Set to `1` to allow network tests.
+
+- **Variable:** `PHYTOMNI_E2E_SUBMIT_TIMEOUT_SECONDS`
+  **Default:** `1800`
+  **Purpose:** Submit timeout for async tool calls.
+
+- **Variable:** `PHYTOMNI_E2E_POLL_TIMEOUT_SECONDS`
+  **Default:** `600`
+  **Purpose:** Polling deadline for one async task.
+
+- **Variable:** `PHYTOMNI_E2E_TASKS_DB`
+  **Default:** `server_tasks.db`
+  **Purpose:** Override the task registry used by e2e polling.
+
+- **Variable:** `PHYTOMNI_E2E_RUN_KA_UPLOAD`
+  **Default:** unset
+  **Purpose:** Set to `1` to include the slow KnowledgeAgent upload variant.
+
+- **Variable:** `PHYTOMNI_E2E_API_STARTUP_SECONDS`
+  **Default:** `120`
+  **Purpose:** HTTP API e2e startup health-gate budget.
+
+- **Variable:** `PHYTOMNI_E2E_API_READ_TIMEOUT_SECONDS`
+  **Default:** `1200`
+  **Purpose:** HTTP API e2e per-request read timeout.
 
 ## Do Not Commit
 

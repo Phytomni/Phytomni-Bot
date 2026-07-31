@@ -19,8 +19,10 @@ src/mcp_server_phytomni/
   api/
     app.py                   FastAPI application factory for the HTTP service
     server.py                uvicorn launcher for the external HTTP API
-    auth.py                  SQLite-backed API key store and inbound auth resolver
-    admin_auth.py            Service-token auth for /v1/api-keys management routes
+    auth.py                  SQLite-backed API key store and inbound auth
+    resolver
+    admin_auth.py            Service-token auth for /v1/api-keys management
+    routes
     keys.py                  Admin CLI for the per-user API key store
     openai_mapping.py        OpenAI-compatible chat mapping helpers
     ratelimit.py             In-process per-key sliding-window rate limiter
@@ -49,8 +51,10 @@ src/mcp_server_phytomni/
     research/                In-silico research decomposition workflow
     design/                  Digital design workflow
     network/                 Gene network workflow
-    environment/             Environment LangGraph subgraph (region VCI), not MCP-bridged
-    evolution/               Evolution LangGraph subgraph (taxonomy-driven), not MCP-bridged
+    environment/             Environment LangGraph subgraph (region VCI), not
+    MCP-bridged
+    evolution/               Evolution LangGraph subgraph (taxonomy-driven), not
+    MCP-bridged
     shared/
       analysis.py            Cross-agent Analyst-backed analysis helpers
       analysis_storage.py    Cross-agent storage and OBS path helpers
@@ -59,17 +63,21 @@ src/mcp_server_phytomni/
       parallel_dispatch.py   Shared StateGraph builder for parallel agents
       sql.py                 Shared SQL literal escaping helper
   graphs/
-    loader.py                Declarative graph manifest loader (Pydantic + allowlist)
+    loader.py                Declarative graph manifest loader (Pydantic +
+    allowlist)
     allowlist.py             Allowed subgraph identifiers for the loader
     adapters.py              Helpers for embedding compiled subgraphs in parents
     manifests/               JSON subgraph composition manifests
   runtime/
     langgraph_runner.py      Shared LangGraph invocation helpers
     agent_registry.py        Reusable agent registry keyed by safe config
-    request_context.py       Per-request user, run, and recorder-degraded contextvars
-    memory/                   Explicit user memory models, local SQLite store, and read accessor
+    request_context.py       Per-request user, run, and recorder-degraded
+    contextvars
+    memory/                   Explicit user memory models, local SQLite store,
+    and read accessor
     run_registry.py          HTTP API parent-run registry
-    submit_recorder.py       Submit-handler chokepoint: persists run + task rows; logs and flags degraded_tracking on SQLite write failure
+    submit_recorder.py       Submit-handler chokepoint: persists run + task
+    rows; logs and flags degraded_tracking on SQLite write failure
     task_manager.py          Task lifecycle helper
     task_reconcile.py        Per-task status reconciliation against backend
     terminal_artifacts.py    Terminal-payload artifact persistence helpers
@@ -96,14 +104,16 @@ src/mcp_server_phytomni/
     defaults.py              Non-secret defaults, agent config classes,
                              and Pydantic schemas for static datasets
     settings.py              Environment and secret loading
-    secret_envelope.py       AES-256-GCM envelope for the encrypted .env.encrypted
+    secret_envelope.py       AES-256-GCM envelope for the encrypted
+    .env.encrypted
     relay_mode.py            Customer relay-mode flag detection (leaf module)
     overrides.py             Wrapper argument to config override helpers
     data_loaders.py          Validated loaders for the static datasets
     .prompts.yaml            Prompt templates
     species_data_list.json   Species metadata
     region_map.json          Region metadata
-    to_ontology.json         Plant Trait Ontology catalog for the network resolver
+    to_ontology.json         Plant Trait Ontology catalog for the network
+    resolver
   func_cache/                SQLite-backed function cache package
 src/mcp_client_phytomni/
   client.py                  PhytomniMcpClient, PhytomniToolRouter, and
@@ -354,7 +364,10 @@ in the path and a cross-tenant reuse never exposes a prior caller's namespace.
 A dedup hit does not hand the caller the prior tenant's `task_id`. Instead it
 mints a fresh caller-owned task id (and a corresponding run row) and records it
 with `tasks.source_task_id` holding the prior tenant's remote task id.
-`source_task_id` is used server-side only by `runtime/task_reconcile.py: reconcile_task` to probe live status (`probe_id = row["source_task_id"] or task_id`); it is never returned to the client. The caller therefore receives
+`source_task_id` is used server-side only by
+`runtime/task_reconcile.py: reconcile_task` to probe live status
+(`probe_id = row["source_task_id"] or task_id`); it is never returned to the
+client. The caller therefore receives
 their own run id and task id at HTTP 202, exactly like a fresh submission —
 there is no `dedup_hit`/`id=null` passthrough for reuse on this path.
 

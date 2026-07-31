@@ -74,14 +74,17 @@ resolves from the declared dependency ranges.
    key:
 
    ```bash
+   check='import json,sys; rows=json.load(sys.stdin)["data"]; '
+   check+='assert len(rows)==10 and all("capabilities" in row for row in rows); '
+   check+='print("10 agents with capabilities")'
    curl -fsS -H "Authorization: Bearer $KEY" \
      http://127.0.0.1:8080/v1/agents \
-     | python -c 'import json,sys; rows=json.load(sys.stdin)["data"]; assert len(rows)==10 and all("capabilities" in row for row in rows); print("10 agents with capabilities")'
+     | python -c "$check"
    ```
 
-   The check must print `10 agents with capabilities`. It validates the
-   additive discovery shape only; do not use it as a substitute for an
-   external agent execution test.
+The check must print `10 agents with capabilities`. It validates the
+additive discovery shape only; do not use it as a substitute for an
+external agent execution test.
 
 1. Run readiness and one authenticated model-list smoke check as described in
    [Health Checks](http-api-runbook.md#health-checks).
@@ -117,13 +120,45 @@ The following matrix is the rollout contract for the opt-in surfaces. “Restart
 means restart each API worker after the environment change; the relay flag is
 the one exception because it is evaluated per request.
 
-| Surface          | 0.1.3 default | Persistent state                            | Flag-off rollback                                                     | Multi-worker limitation                                          |
-| ---------------- | ------------- | ------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| A2UI Chat/Review | Off           | `server_tasks.db`, `checkpoints.db`         | Disable and restart; drain or abandon paused A2UI runs first.         | Checkpoint file is local; pin resume traffic to one worker.      |
-| A2A server       | Off           | Run/task registry and checkpoints           | Disable and restart; card and `/a2a` disappear without deleting rows. | A2A correlations and checkpoints are process/local-store scoped. |
-| Outbound interop | Off           | None (discovery cache is in-process)        | Disable and restart; no external call or discovery route remains.     | Each worker has its own cache and target registry instance.      |
-| Explicit memory  | Off           | `MEMORY_DB_PATH` SQLite plus mutation audit | Disable and restart; routes vanish and the file remains untouched.    | One local SQLite instance is not a shared multi-worker store.    |
-| Credential relay | Off           | Relay audit SQLite                          | Disable immediately; routes return `404` on the next request.         | Rate/concurrency/audit-retention state is per worker.            |
+- **Surface:** A2UI Chat/Review
+  **0.1.3 default:** Off
+  **Persistent state:** `server_tasks.db`, `checkpoints.db`
+  **Flag-off rollback:** Disable and restart; drain or abandon paused A2UI runs
+  first.
+  **Multi-worker limitation:** Checkpoint file is local; pin resume traffic to
+  one worker.
+
+- **Surface:** A2A server
+  **0.1.3 default:** Off
+  **Persistent state:** Run/task registry and checkpoints
+  **Flag-off rollback:** Disable and restart; card and `/a2a` disappear without
+  deleting rows.
+  **Multi-worker limitation:** A2A correlations and checkpoints are
+  process/local-store scoped.
+
+- **Surface:** Outbound interop
+  **0.1.3 default:** Off
+  **Persistent state:** None (discovery cache is in-process)
+  **Flag-off rollback:** Disable and restart; no external call or discovery
+  route remains.
+  **Multi-worker limitation:** Each worker has its own cache and target registry
+  instance.
+
+- **Surface:** Explicit memory
+  **0.1.3 default:** Off
+  **Persistent state:** `MEMORY_DB_PATH` SQLite plus mutation audit
+  **Flag-off rollback:** Disable and restart; routes vanish and the file remains
+  untouched.
+  **Multi-worker limitation:** One local SQLite instance is not a shared
+  multi-worker store.
+
+- **Surface:** Credential relay
+  **0.1.3 default:** Off
+  **Persistent state:** Relay audit SQLite
+  **Flag-off rollback:** Disable immediately; routes return `404` on the next
+  request.
+  **Multi-worker limitation:** Rate/concurrency/audit-retention state is per
+  worker.
 
 The C6.4 limit knobs are projection/admission controls only. Changing them does
 not rewrite existing memory rows, run answers, A2A artifacts, or checkpoints;
@@ -142,7 +177,8 @@ rollback.
 1. Enable one surface at a time on a canary worker. For A2A, configure and
    verify `A2A_PUBLIC_BASE_URL`; for interop, validate the target registry and
    encrypted credentials; for memory, use a persistent local SQLite path.
-1. Run the surface-specific smoke checks in the [operator runbook](http-api-runbook.md),
+1. Run the surface-specific smoke checks in the [operator
+   runbook](http-api-runbook.md),
    observe logs and resource usage, and only then roll the same environment to
    the remaining workers.
 1. To roll a surface back, set its flag off and restart (or set
@@ -190,12 +226,21 @@ migrated.
 
 ### What Changed
 
-| Change                                      | Operator action                                                                                       |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `GAUSS_DSN` now required outside relay mode | Provision the secret before starting 0.1.2 (relay children are exempt — see "Required Action" below). |
-| `BI_URL` / `BI_TOKEN` removed               | Delete both keys from your env. Harmless if left in place; they no longer do anything.                |
-| `asyncpg` new dependency                    | None — pulled automatically by `uv pip install -e .` / `uv pip install -e ".[dev,demo]"`.             |
-| Four optional reliability knobs added       | None — all are defaulted-safe. See "Optional Reliability Knobs" below.                                |
+- **Change:** `GAUSS_DSN` now required outside relay mode
+  **Operator action:** Provision the secret before starting 0.1.2 (relay
+  children are exempt — see "Required Action" below).
+
+- **Change:** `BI_URL` / `BI_TOKEN` removed
+  **Operator action:** Delete both keys from your env. Harmless if left in
+  place; they no longer do anything.
+
+- **Change:** `asyncpg` new dependency
+  **Operator action:** None — pulled automatically by `uv pip install -e .` /
+  `uv pip install -e ".[dev,demo]"`.
+
+- **Change:** Four optional reliability knobs added
+  **Operator action:** None — all are defaulted-safe. See "Optional Reliability
+  Knobs" below.
 
 ### Required Action: Provision `GAUSS_DSN`
 
@@ -226,7 +271,7 @@ value into an image layer.
 See [Configuration](../reference/configuration.md) for the full variable
 contract, including the authoritative `GAUSS_DSN` row.
 
-### Deploy Sequence
+### Deploy Sequence (0.1.1 → 0.1.2)
 
 1. Stop the service (`systemctl stop phytomni-api`, or your process
    supervisor's equivalent).
@@ -278,12 +323,22 @@ change is stateless), so no backfill or schema step is required.
 Four new knobs are available; all are defaulted-safe, so an unchanged env
 boots and behaves identically to before this release.
 
-| Knob                    | Default | Purpose                                                             |
-| ----------------------- | ------- | ------------------------------------------------------------------- |
-| `GAUSS_COMMAND_TIMEOUT` | `30.0`  | Per-query timeout (seconds) for the direct GaussDB connection pool. |
-| `HTTP_MAX_CONNECTIONS`  | `100`   | Max total connections in the shared `httpx.AsyncClient` pool.       |
-| `HTTP_MAX_KEEPALIVE`    | `50`    | Max keepalive connections in the shared `httpx.AsyncClient` pool.   |
-| `API_GRACEFUL_SHUTDOWN` | `30`    | Uvicorn graceful-shutdown drain window (seconds).                   |
+- **Knob:** `GAUSS_COMMAND_TIMEOUT`
+  **Default:** `30.0`
+  **Purpose:** Per-query timeout (seconds) for the direct GaussDB connection
+  pool.
+
+- **Knob:** `HTTP_MAX_CONNECTIONS`
+  **Default:** `100`
+  **Purpose:** Max total connections in the shared `httpx.AsyncClient` pool.
+
+- **Knob:** `HTTP_MAX_KEEPALIVE`
+  **Default:** `50`
+  **Purpose:** Max keepalive connections in the shared `httpx.AsyncClient` pool.
+
+- **Knob:** `API_GRACEFUL_SHUTDOWN`
+  **Default:** `30`
+  **Purpose:** Uvicorn graceful-shutdown drain window (seconds).
 
 Tune `API_GRACEFUL_SHUTDOWN` only if you also tune systemd's
 `TimeoutStopSec`; keep the drain window shorter than `TimeoutStopSec` so

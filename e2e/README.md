@@ -63,8 +63,10 @@ succeeded analyst-class task exposes `final_report`; Design and Network also
 expose their real artifact/output paths. Offline mocks validate the shape; this
 does not prove live backend acceptance.
 
-See [`../docs/reference/http-api.md`](../docs/reference/http-api.md) for the full
-envelope contract and [`../docs/reference/mcp-tools.md`](../docs/reference/mcp-tools.md)
+See [`../docs/reference/http-api.md`](../docs/reference/http-api.md) for the
+full
+envelope contract and
+[`../docs/reference/mcp-tools.md`](../docs/reference/mcp-tools.md)
 for the per-tool formatted view.
 
 ## Setup

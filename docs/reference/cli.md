@@ -71,7 +71,8 @@ The `--api-url` option overrides `PHYTOMNI_API_URL` for one invocation:
 ```text
 phytomni [--api-url URL] submit <agent> '<arguments-json>'
 phytomni [--api-url URL] status <run_id>
-phytomni [--api-url URL] follow <run_id> [--poll-interval 5.0] [--wait-timeout 3600.0]
+phytomni [--api-url URL] follow <run_id> [--poll-interval 5.0] [--wait-timeout
+3600.0]
 ```
 
 `submit` writes only the accepted run id to stdout. Accepted task ids and the

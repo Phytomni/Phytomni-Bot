@@ -53,7 +53,8 @@ Or inspect tools through the bundled CLI:
 
 ```bash
 phytomni list-tools
-phytomni call ChatAgent '{"user_query": "Explain C3 photosynthesis.", "obs_file_list": []}'
+phytomni call ChatAgent \
+  '{"user_query": "Explain C3 photosynthesis.", "obs_file_list": []}'
 ```
 
 `phytomni call` prints `formatted.answer` first, then optional tabular /
@@ -144,8 +145,10 @@ bytes per upload, and 52,428,800 bytes in total. Repeated paths, foreign
 owners, unregistered managed paths, unsupported channels, and metadata
 mismatches fail closed. Existing preconfigured OBS paths in `data_list` are a
 separate legacy policy and are not user-upload registration evidence. See the
-[HTTP attachment contract](docs/reference/http-api.md#attachment-invocation-contract)
-and [operator runbook](docs/ops/http-api-runbook.md#attachment-preflight-and-orphan-review)
+[HTTP attachment
+contract](docs/reference/http-api.md#attachment-invocation-contract)
+and [operator
+runbook](docs/ops/http-api-runbook.md#attachment-preflight-and-orphan-review)
 for the capability matrix, stable error codes, and orphan review boundary.
 
 HTTP streaming has two explicit failure boundaries. The API eagerly prepares
@@ -192,11 +195,14 @@ external evidence is available, while `required` fails closed. Enabling or
 changing the registry requires an API process restart; the flag is off by
 default.
 
-| Capability                                | 0.1.3 status                         |
-| ----------------------------------------- | ------------------------------------ |
-| A2A Agent Card and `/a2a` server          | Opt-in core                          |
-| Calls to external MCP tools or A2A agents | Explicit opt-in from Research/Design |
-| User-scoped memory CRUD API               | Opt-in; bounded read-only recall     |
+- **Capability:** A2A Agent Card and `/a2a` server
+  **0.1.3 status:** Opt-in core
+
+- **Capability:** Calls to external MCP tools or A2A agents
+  **0.1.3 status:** Explicit opt-in from Research/Design
+
+- **Capability:** User-scoped memory CRUD API
+  **0.1.3 status:** Opt-in; bounded read-only recall
 
 Internal `phyto.progress.phase` values are stage labels, not A2A task states.
 The A2A status adapter maps task lifecycle state independently. Outbound
@@ -213,21 +219,67 @@ for detailed argument semantics, async behavior, and demo payload links.
 To attach a document, upload it with `POST /v1/files` on the HTTP API,
 then put the returned `obs_path` into `obs_file_list`. Demo upload
 samples live under [`demo_data/`](demo_data/). Details:
-[MCP Tool Reference — Uploading documents](docs/reference/mcp-tools.md#uploading-documents-for-obs_file_list).
+[MCP Tool Reference — Uploading
+documents](docs/reference/mcp-tools.md#uploading-documents-for-obs_file_list).
 
-| Tool                    | Kind  | Required arguments                               | Purpose                                                                                                                                           |
-| ----------------------- | ----- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ChatAgent`             | sync  | `user_query`, `obs_file_list`                    | General plant science chat with optional document context.                                                                                        |
-| `KnowledgeAgent`        | sync  | `user_query`, `obs_file_list`                    | Literature retrieval and RAG-based synthesis.                                                                                                     |
-| `DataAgent`             | sync  | `user_query`                                     | Natural-language SQL query rewriting and database search.                                                                                         |
-| `ReviewAgent`           | sync  | `user_query`, `obs_file_list`                    | Multi-step literature review and deep research generation.                                                                                        |
-| `BriefGeneAgent`        | sync  | `user_query`                                     | Rich gene preamble (introduction + Gene Profiles with Basic Genomic Information and four analytical sections) from BI annotations and literature. |
-| `AnalystAgent`          | async | `goal_description`, `data_list`, `obs_file_list` | Bioinformatics workflow retrieval, planning, submission, and status handling.                                                                     |
-| `DeepGenomeAgent`       | async | `species_code`, `gene_id`                        | Multi-omics gene function analysis.                                                                                                               |
-| `InSilicoResearchAgent` | async | `user_query`, `data_list`, `obs_file_list`       | Decompose papers or research goals into computational tasks.                                                                                      |
-| `DigitalDesignAgent`    | async | `species_code`, `gene_id`, `obs_file_list`       | Protein and promoter design workflows.                                                                                                            |
-| `GeneNetworkAgent`      | async | `species_code`, `to_id`, `obs_file_list`         | Gene network analysis for species and trait ontology IDs.                                                                                         |
-| `GetTaskStatus`         | sync  | `task_id`                                        | Non-blocking status lookup for a previously submitted async task.                                                                                 |
+- **Tool:** `ChatAgent`
+  **Kind:** sync
+  **Required arguments:** `user_query`, `obs_file_list`
+  **Purpose:** General plant science chat with optional document context.
+
+- **Tool:** `KnowledgeAgent`
+  **Kind:** sync
+  **Required arguments:** `user_query`, `obs_file_list`
+  **Purpose:** Literature retrieval and RAG-based synthesis.
+
+- **Tool:** `DataAgent`
+  **Kind:** sync
+  **Required arguments:** `user_query`
+  **Purpose:** Natural-language SQL query rewriting and database search.
+
+- **Tool:** `ReviewAgent`
+  **Kind:** sync
+  **Required arguments:** `user_query`, `obs_file_list`
+  **Purpose:** Multi-step literature review and deep research generation.
+
+- **Tool:** `BriefGeneAgent`
+  **Kind:** sync
+  **Required arguments:** `user_query`
+  **Purpose:** Rich gene preamble (introduction + Gene Profiles with Basic
+  Genomic Information and four analytical sections) from BI
+  annotations and
+  literature.
+
+- **Tool:** `AnalystAgent`
+  **Kind:** async
+  **Required arguments:** `goal_description`, `data_list`, `obs_file_list`
+  **Purpose:** Bioinformatics workflow retrieval, planning, submission, and
+  status handling.
+
+- **Tool:** `DeepGenomeAgent`
+  **Kind:** async
+  **Required arguments:** `species_code`, `gene_id`
+  **Purpose:** Multi-omics gene function analysis.
+
+- **Tool:** `InSilicoResearchAgent`
+  **Kind:** async
+  **Required arguments:** `user_query`, `data_list`, `obs_file_list`
+  **Purpose:** Decompose papers or research goals into computational tasks.
+
+- **Tool:** `DigitalDesignAgent`
+  **Kind:** async
+  **Required arguments:** `species_code`, `gene_id`, `obs_file_list`
+  **Purpose:** Protein and promoter design workflows.
+
+- **Tool:** `GeneNetworkAgent`
+  **Kind:** async
+  **Required arguments:** `species_code`, `to_id`, `obs_file_list`
+  **Purpose:** Gene network analysis for species and trait ontology IDs.
+
+- **Tool:** `GetTaskStatus`
+  **Kind:** sync
+  **Required arguments:** `task_id`
+  **Purpose:** Non-blocking status lookup for a previously submitted async task.
 
 Async tools submit work to a backend and return a `task_id`. A missing
 or blank `task_id` is formatted as a failed submit (not
@@ -378,9 +430,11 @@ for the approval and remediation contract.
 
 ## Documentation
 
-- [Architecture](docs/explanation/architecture.md): package layout, MCP dispatch,
+- [Architecture](docs/explanation/architecture.md): package layout, MCP
+  dispatch,
   LangGraph wrappers, configuration ownership, and cache policy.
-- [Agent Graphs](docs/explanation/agent-graphs.md): subgraph registry, schema-mismatch
+- [Agent Graphs](docs/explanation/agent-graphs.md): subgraph registry,
+  schema-mismatch
   adapter, graph manifest export, and the visualization command.
 - [MCP Tool Reference](docs/reference/mcp-tools.md): public tool arguments,
   sync/async behavior, status polling, and demo payload links.

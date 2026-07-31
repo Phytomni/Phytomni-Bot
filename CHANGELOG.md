@@ -2,8 +2,10 @@
 
 All notable changes to **Phytomni-Bot** are recorded here. Versions are dated
 snapshots of `main`; each entry maps to one or more commits landed in that
-window. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+window. The format follows [Keep a
+Changelog](https://keepachangelog.com/en/1.1.0/)
+and this project adheres to [Semantic
+Versioning](https://semver.org/spec/v2.0.0.html).
 Newest first.
 
 > **Conventions.** "MCP surface" = the stdio tool API; "HTTP API" = the
@@ -224,8 +226,10 @@ is additive. Full commit range: `adaa874..1f8f628`.
 
 - **Direct GaussDB BI path** — a `GAUSS_DSN` secret + `asyncpg` dependency and a
   `gauss_query` seam with a per-event-loop connection pool replace the HTTP BI
-  backend. In relay mode the `/v1/relay/bi/query` route is server-side-terminated
-  (the operator runs the query locally; no credential is forwarded to the child).
+  backend. In relay mode the `/v1/relay/bi/query` route is
+  server-side-terminated
+  (the operator runs the query locally; no credential is forwarded to the
+  child).
 - **Expert routing endpoint** — `POST /v1/query/route` runs one in-process
   OpenAI tool-calling completion over the shared agent tool specs to pick an
   agent per request, then delegates to the native run path. Falls back to chat
@@ -277,7 +281,8 @@ is additive. Full commit range: `adaa874..1f8f628`.
   added a guard against their return.
 - **Blocking Path methods moved off the event loop** — `deep_genome` report file
   writes and other blocking `Path` calls run in a thread.
-- **GaussDB pool per-query timeout** — bounds a query that would otherwise hold a
+- **GaussDB pool per-query timeout** — bounds a query that would otherwise hold
+  a
   connection indefinitely.
 - **Admin response models wired to their routes** — the four dormant admin
   response models now back their routes via `response_model=`.
@@ -304,7 +309,8 @@ Additive throughout — no required operator action. Full commit range:
 - **In-flight umbrella live-task registry** — `runtime/live_tasks.py` lets
   `GetTaskStatus` and `GET /v1/runs/{run_id}` distinguish a live `deep_genome`
   umbrella from a dead one; a dead umbrella reconciles to `failed`.
-- **`RERANK_CONCURRENCY` deployment knob** — a per-event-loop semaphore throttles
+- **`RERANK_CONCURRENCY` deployment knob** — a per-event-loop semaphore
+  throttles
   concurrent rerank HTTP requests; `0` or negative disables throttling.
 
 ### Changed

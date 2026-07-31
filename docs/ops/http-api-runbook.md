@@ -21,7 +21,8 @@ Covered:
 Out of scope:
 
 - The stdio MCP server, `python -m mcp_server_phytomni.server`.
-- Agent business-field semantics. Use [MCP Tool Reference](../reference/mcp-tools.md)
+- Agent business-field semantics. Use [MCP Tool
+  Reference](../reference/mcp-tools.md)
   for tool arguments and demo payloads.
 - Building encrypted customer envelopes. Use
   [Deployment and Storage](../guides/deployment.md) for that workflow.
@@ -43,20 +44,37 @@ historical repair remain separately authorized operations.
 the in-process agent packages, but operators can start, stop, and restart
 the HTTP service without managing a local MCP client session.
 
-| Process   | Entry point                            | Transport                     | Main consumers                  |
-| --------- | -------------------------------------- | ----------------------------- | ------------------------------- |
-| HTTP API  | `phytomni-api`                         | TCP, default `127.0.0.1:8080` | Remote clients and integrations |
-| stdio MCP | `python -m mcp_server_phytomni.server` | stdin/stdout                  | Local MCP clients               |
+- **Process:** HTTP API
+  **Entry point:** `phytomni-api`
+  **Transport:** TCP, default `127.0.0.1:8080`
+  **Main consumers:** Remote clients and integrations
+
+- **Process:** stdio MCP
+  **Entry point:** `python -m mcp_server_phytomni.server`
+  **Transport:** stdin/stdout
+  **Main consumers:** Local MCP clients
 
 Local runtime files:
 
-| Resource         | Default path                        | Purpose                                   |
-| ---------------- | ----------------------------------- | ----------------------------------------- |
-| API key store    | `.cache/phytomni/api_keys.sqlite`   | Per-user API key hashes and metadata.     |
-| Runs/tasks store | `server_tasks.db`                   | Run tracking and child task linkage.      |
-| Checkpoint store | `checkpoints.db`                    | ReviewAgent pause points for `/resume`.   |
-| Memory store     | `.cache/phytomni/memory.sqlite`     | Opt-in user-scoped memory records.        |
-| Function cache   | `.cache/phytomni/func_cache.sqlite` | Cached LLM/retrieval/database primitives. |
+- **Resource:** API key store
+  **Default path:** `.cache/phytomni/api_keys.sqlite`
+  **Purpose:** Per-user API key hashes and metadata.
+
+- **Resource:** Runs/tasks store
+  **Default path:** `server_tasks.db`
+  **Purpose:** Run tracking and child task linkage.
+
+- **Resource:** Checkpoint store
+  **Default path:** `checkpoints.db`
+  **Purpose:** ReviewAgent pause points for `/resume`.
+
+- **Resource:** Memory store
+  **Default path:** `.cache/phytomni/memory.sqlite`
+  **Purpose:** Opt-in user-scoped memory records.
+
+- **Resource:** Function cache
+  **Default path:** `.cache/phytomni/func_cache.sqlite`
+  **Purpose:** Cached LLM/retrieval/database primitives.
 
 Defaults are relative to the process working directory. In systemd or
 container deployments, pin `WorkingDirectory=` or configure absolute store
@@ -180,53 +198,259 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
 
 ## Endpoint Inventory
 
-| Method   | Path                                     | Auth  | Operational use                                                                                                                                    |
-| -------- | ---------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET`    | `/healthz`                               | no    | Process liveness.                                                                                                                                  |
-| `GET`    | `/readyz`                                | no    | Store-directory writability check.                                                                                                                 |
-| `GET`    | `/.well-known/agent-card.json`           | no\*  | Opt-in A2A v1 Agent Card; only present when `A2A_ENABLED=1`.                                                                                       |
-| `POST`   | `/a2a`                                   | yes\* | Opt-in A2A v1 `SendMessage` / `SendStreamingMessage` / `GetTask`; requires `A2A-Version: 1.0` and the `agents` scope.                              |
-| `GET`    | `/v1/interop/capabilities`               | yes   | Opt-in sanitized MCP/A2A capability discovery; only present when `INTEROP_ENABLED=1`, accepts no query overrides, and requires the `agents` scope. |
-| `GET`    | `/v1/models`                             | yes   | Authenticated liveness and model map check.                                                                                                        |
-| `POST`   | `/v1/chat/completions`                   | yes   | OpenAI-compatible chat-like agents.                                                                                                                |
-| `GET`    | `/v1/agents`                             | yes   | Native agent slug discovery; rows carry `legacy_aliases` and additive `capabilities`.                                                              |
-| `POST`   | `/v1/agents/{agent}/runs`                | yes   | Native agent submission.                                                                                                                           |
-| `POST`   | `/v1/query/route`                        | yes   | Autonomous Expert routing; one extra routing-LLM call resolves the agent per request.                                                              |
-| `GET`    | `/v1/memories`                           | yes   | Lists live owner-scoped memory records; route exists only when `MEMORY_ENABLED=1`.                                                                 |
-| `POST`   | `/v1/memories`                           | yes   | Creates one memory using the authenticated API-key namespace.                                                                                      |
-| `GET`    | `/v1/memories/export`                    | yes   | Exports all live records in the authenticated owner's namespace; expired and foreign rows are excluded.                                            |
-| `GET`    | `/v1/memories/audit`                     | svc   | Lists digest-only memory mutations for service-token operators.                                                                                    |
-| `GET`    | `/v1/memories/{memory_id}`               | yes   | Owner-scoped live memory lookup.                                                                                                                   |
-| `PUT`    | `/v1/memories/{memory_id}`               | yes   | Replaces a memory with an `If-Match` revision check.                                                                                               |
-| `DELETE` | `/v1/memories/{memory_id}`               | yes   | Idempotent owner-scoped delete; optional `If-Match` revision check.                                                                                |
-| `GET`    | `/v1/runs/{run_id}`                      | yes   | Owner-scoped run lookup.                                                                                                                           |
-| `POST`   | `/v1/runs/{thread_id}/resume`            | yes   | Resume a ReviewAgent human-approval pause.                                                                                                         |
-| `POST`   | `/v1/runs/{run_id}/a2ui-actions`         | yes   | Resume a ChatAgent or ReviewAgent A2UI confirm pause (`input_required`).                                                                           |
-| `GET`    | `/v1/runs/{run_id}/logs`                 | yes   | Reconciled task logs for a run.                                                                                                                    |
-| `GET`    | `/v1/runs`                               | yes   | Owner-scoped + service-token delegated listing.                                                                                                    |
-| `POST`   | `/v1/files`                              | yes   | Per-user multipart upload (25 MiB ceiling).                                                                                                        |
-| `POST`   | `/v1/api-keys`                           | svc   | Mint a per-user `ptm_...` API key (service tok).                                                                                                   |
-| `GET`    | `/v1/api-keys`                           | svc   | List per-user keys (metadata only).                                                                                                                |
-| `DELETE` | `/v1/api-keys/{prefix}`                  | svc   | Revoke the key with the given public prefix.                                                                                                       |
-| `GET`    | `/v1/relay/audit`                        | svc   | List relay audit records (service token); filter by user, key prefix, service, status, time.                                                       |
-| `GET`    | `/v1/relay/audit/{request_id}`           | svc   | Fetch relay audit records by request id (service token).                                                                                           |
-| `GET`    | `/v1/relay/healthz`                      | yes   | Liveness probe for the relay; returns `{"status": "ok"}` when relay is enabled.                                                                    |
-| `POST`   | `/v1/relay/llm/chat/completions`         | relay | Chat LLM relay (transparent, Bearer-injected).                                                                                                     |
-| `POST`   | `/v1/relay/coder/chat/completions`       | relay | Coder model relay (transparent, Bearer-injected).                                                                                                  |
-| `POST`   | `/v1/relay/embed/embeddings`             | relay | Embedding relay (transparent, Bearer-injected; OQ-001).                                                                                            |
-| `POST`   | `/v1/relay/retrieve/search`              | relay | Knowledge retrieve relay (envelope, no credential).                                                                                                |
-| `POST`   | `/v1/relay/rerank/rank`                  | relay | Knowledge rerank relay (envelope, no credential).                                                                                                  |
-| `POST`   | `/v1/relay/database/nl2sql`              | relay | NL2SQL relay (envelope, IAM `X-Auth-Token`).                                                                                                       |
-| `POST`   | `/v1/relay/bi/query`                     | relay | BI relay (envelope); server-side-terminated, no credential forwarded.                                                                              |
-| `GET`    | `/v1/relay/obs/object`                   | relay | OBS object download relay (operator OBS credentials; streamed under a response-size budget, key confined to the caller tenant namespace).          |
-| `GET`    | `/v1/relay/obs/list`                     | relay | OBS object list relay (operator OBS credentials; prefix confined to the caller tenant output root).                                                |
-| `PUT`    | `/v1/relay/obs/object`                   | relay | OBS object upload relay (operator OBS credentials; key confined to the caller tenant namespace).                                                   |
-| `PUT`    | `/v1/relay/obs/dir`                      | relay | OBS dir-marker relay (operator OBS credentials; key confined to the caller tenant namespace).                                                      |
-| `POST`   | `/v1/relay/analysis/tasks`               | relay | Analysis-platform submit relay (envelope, IAM `X-Auth-Token`).                                                                                     |
-| `GET`    | `/v1/relay/analysis/{task_id}`           | relay | Analysis task-status relay (envelope, IAM `X-Auth-Token`; task id validated).                                                                      |
-| `GET`    | `/v1/relay/analysis/{task_id}/logs`      | relay | Analysis task-log relay (envelope, IAM; only the `task_name` query key is forwarded).                                                              |
-| `POST`   | `/v1/relay/analysis/{task_id}/terminate` | relay | Analysis task-terminate relay (envelope, IAM `X-Auth-Token`; task id validated).                                                                   |
-| `GET`    | `/v1/relay/spa-faq/{repo_id}`            | relay | SPA-FAQ relay (envelope, IAM `X-Auth-Token`; repo id validated; proxy-bypass; `question`/`page_size`/`page_num` only).                             |
+- **Method:** `GET`
+  **Path:** `/healthz`
+  **Auth:** no
+  **Operational use:** Process liveness.
+
+- **Method:** `GET`
+  **Path:** `/readyz`
+  **Auth:** no
+  **Operational use:** Store-directory writability check.
+
+- **Method:** `GET`
+  **Path:** `/.well-known/agent-card.json`
+  **Auth:** no\*
+  **Operational use:** Opt-in A2A v1 Agent Card; only present when
+  `A2A_ENABLED=1`.
+
+- **Method:** `POST`
+  **Path:** `/a2a`
+  **Auth:** yes\*
+  **Operational use:** Opt-in A2A v1 `SendMessage` / `SendStreamingMessage` /
+  `GetTask`; requires `A2A-Version: 1.0` and the `agents`
+  scope.
+
+- **Method:** `GET`
+  **Path:** `/v1/interop/capabilities`
+  **Auth:** yes
+  **Operational use:** Opt-in sanitized MCP/A2A capability discovery; only
+  present when `INTEROP_ENABLED=1`, accepts no query
+  overrides, and requires the
+  `agents` scope.
+
+- **Method:** `GET`
+  **Path:** `/v1/models`
+  **Auth:** yes
+  **Operational use:** Authenticated liveness and model map check.
+
+- **Method:** `POST`
+  **Path:** `/v1/chat/completions`
+  **Auth:** yes
+  **Operational use:** OpenAI-compatible chat-like agents.
+
+- **Method:** `GET`
+  **Path:** `/v1/agents`
+  **Auth:** yes
+  **Operational use:** Native agent slug discovery; rows carry `legacy_aliases`
+  and additive `capabilities`.
+
+- **Method:** `POST`
+  **Path:** `/v1/agents/{agent}/runs`
+  **Auth:** yes
+  **Operational use:** Native agent submission.
+
+- **Method:** `POST`
+  **Path:** `/v1/query/route`
+  **Auth:** yes
+  **Operational use:** Autonomous Expert routing; one extra routing-LLM call
+  resolves the agent per request.
+
+- **Method:** `GET`
+  **Path:** `/v1/memories`
+  **Auth:** yes
+  **Operational use:** Lists live owner-scoped memory records; route exists only
+  when `MEMORY_ENABLED=1`.
+
+- **Method:** `POST`
+  **Path:** `/v1/memories`
+  **Auth:** yes
+  **Operational use:** Creates one memory using the authenticated API-key
+  namespace.
+
+- **Method:** `GET`
+  **Path:** `/v1/memories/export`
+  **Auth:** yes
+  **Operational use:** Exports all live records in the authenticated owner's
+  namespace; expired and foreign rows are excluded.
+
+- **Method:** `GET`
+  **Path:** `/v1/memories/audit`
+  **Auth:** svc
+  **Operational use:** Lists digest-only memory mutations for service-token
+  operators.
+
+- **Method:** `GET`
+  **Path:** `/v1/memories/{memory_id}`
+  **Auth:** yes
+  **Operational use:** Owner-scoped live memory lookup.
+
+- **Method:** `PUT`
+  **Path:** `/v1/memories/{memory_id}`
+  **Auth:** yes
+  **Operational use:** Replaces a memory with an `If-Match` revision check.
+
+- **Method:** `DELETE`
+  **Path:** `/v1/memories/{memory_id}`
+  **Auth:** yes
+  **Operational use:** Idempotent owner-scoped delete; optional `If-Match`
+  revision check.
+
+- **Method:** `GET`
+  **Path:** `/v1/runs/{run_id}`
+  **Auth:** yes
+  **Operational use:** Owner-scoped run lookup.
+
+- **Method:** `POST`
+  **Path:** `/v1/runs/{thread_id}/resume`
+  **Auth:** yes
+  **Operational use:** Resume a ReviewAgent human-approval pause.
+
+- **Method:** `POST`
+  **Path:** `/v1/runs/{run_id}/a2ui-actions`
+  **Auth:** yes
+  **Operational use:** Resume a ChatAgent or ReviewAgent A2UI confirm pause
+  (`input_required`).
+
+- **Method:** `GET`
+  **Path:** `/v1/runs/{run_id}/logs`
+  **Auth:** yes
+  **Operational use:** Reconciled task logs for a run.
+
+- **Method:** `GET`
+  **Path:** `/v1/runs`
+  **Auth:** yes
+  **Operational use:** Owner-scoped + service-token delegated listing.
+
+- **Method:** `POST`
+  **Path:** `/v1/files`
+  **Auth:** yes
+  **Operational use:** Per-user multipart upload (25 MiB ceiling).
+
+- **Method:** `POST`
+  **Path:** `/v1/api-keys`
+  **Auth:** svc
+  **Operational use:** Mint a per-user `ptm_...` API key (service tok).
+
+- **Method:** `GET`
+  **Path:** `/v1/api-keys`
+  **Auth:** svc
+  **Operational use:** List per-user keys (metadata only).
+
+- **Method:** `DELETE`
+  **Path:** `/v1/api-keys/{prefix}`
+  **Auth:** svc
+  **Operational use:** Revoke the key with the given public prefix.
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/audit`
+  **Auth:** svc
+  **Operational use:** List relay audit records (service token); filter by user,
+  key prefix, service, status, time.
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/audit/{request_id}`
+  **Auth:** svc
+  **Operational use:** Fetch relay audit records by request id (service token).
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/healthz`
+  **Auth:** yes
+  **Operational use:** Liveness probe for the relay; returns `{"status": "ok"}`
+  when relay is enabled.
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/llm/chat/completions`
+  **Auth:** relay
+  **Operational use:** Chat LLM relay (transparent, Bearer-injected).
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/coder/chat/completions`
+  **Auth:** relay
+  **Operational use:** Coder model relay (transparent, Bearer-injected).
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/embed/embeddings`
+  **Auth:** relay
+  **Operational use:** Embedding relay (transparent, Bearer-injected; OQ-001).
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/retrieve/search`
+  **Auth:** relay
+  **Operational use:** Knowledge retrieve relay (envelope, no credential).
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/rerank/rank`
+  **Auth:** relay
+  **Operational use:** Knowledge rerank relay (envelope, no credential).
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/database/nl2sql`
+  **Auth:** relay
+  **Operational use:** NL2SQL relay (envelope, IAM `X-Auth-Token`).
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/bi/query`
+  **Auth:** relay
+  **Operational use:** BI relay (envelope); server-side-terminated, no
+  credential forwarded.
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/obs/object`
+  **Auth:** relay
+  **Operational use:** OBS object download relay (operator OBS credentials;
+  streamed under a response-size budget, key confined to
+  the caller tenant
+  namespace).
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/obs/list`
+  **Auth:** relay
+  **Operational use:** OBS object list relay (operator OBS credentials; prefix
+  confined to the caller tenant output root).
+
+- **Method:** `PUT`
+  **Path:** `/v1/relay/obs/object`
+  **Auth:** relay
+  **Operational use:** OBS object upload relay (operator OBS credentials; key
+  confined to the caller tenant namespace).
+
+- **Method:** `PUT`
+  **Path:** `/v1/relay/obs/dir`
+  **Auth:** relay
+  **Operational use:** OBS dir-marker relay (operator OBS credentials; key
+  confined to the caller tenant namespace).
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/analysis/tasks`
+  **Auth:** relay
+  **Operational use:** Analysis-platform submit relay (envelope, IAM
+  `X-Auth-Token`).
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/analysis/{task_id}`
+  **Auth:** relay
+  **Operational use:** Analysis task-status relay (envelope, IAM `X-Auth-Token`;
+  task id validated).
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/analysis/{task_id}/logs`
+  **Auth:** relay
+  **Operational use:** Analysis task-log relay (envelope, IAM; only the
+  `task_name` query key is forwarded).
+
+- **Method:** `POST`
+  **Path:** `/v1/relay/analysis/{task_id}/terminate`
+  **Auth:** relay
+  **Operational use:** Analysis task-terminate relay (envelope, IAM
+  `X-Auth-Token`; task id validated).
+
+- **Method:** `GET`
+  **Path:** `/v1/relay/spa-faq/{repo_id}`
+  **Auth:** relay
+  **Operational use:** SPA-FAQ relay (envelope, IAM `X-Auth-Token`; repo id
+  validated; proxy-bypass;
+  `question`/`page_size`/`page_num` only).
 
 ### Native agent capability discovery
 
@@ -316,7 +540,9 @@ curl -fsS -H "Authorization: Bearer $BOB_KEY" \
 
 Keep the `revision` from the create/get response and send it as
 `If-Match` on updates (and optionally deletes). Missing or malformed update
-headers are `428` / `400`; a stale revision is `409`. A `503 memory store unavailable` means the SQLite path is corrupt, inaccessible, or locked beyond
+headers are `428` / `400`; a stale revision is `409`. A
+`503 memory store unavailable` means the SQLite path is corrupt, inaccessible,
+or locked beyond
 the configured busy timeout; fix the local volume and restart rather than
 deleting the database. Back up the memory database separately from
 `server_tasks.db` and `checkpoints.db`.
@@ -442,23 +668,28 @@ surface or make outbound calls to other agents. Enable it on one canary first:
 
    ```bash
    curl -fsS "$HOST/.well-known/agent-card.json" \
-     | jq -e '(.supportedInterfaces | length) == 1 and (.supportedInterfaces[0].url | endswith("/a2a"))'
+     | jq -e '(.supportedInterfaces | length) == 1 and \
+       (.supportedInterfaces[0].url | endswith("/a2a"))'
    ```
 
 1. Use a key with the `agents` scope and send a small `SendMessage` smoke with
    `A2A-Version: 1.0`:
 
    ```bash
+   payload='{"jsonrpc":"2.0","id":"smoke-1",'
+   payload+=' "method":"SendMessage","params":{"message":'
+   payload+=' "messageId":"msg-1","contextId":"smoke",'
+   payload+=' "role":"ROLE_USER","parts":[{"text":"Reply with one sentence."}]}}}'
    curl -fsS -X POST "$HOST/a2a" \
      -H "Authorization: Bearer $KEY" \
      -H "A2A-Version: 1.0" \
      -H 'Content-Type: application/a2a+json' \
-     -d '{"jsonrpc":"2.0","id":"smoke-1","method":"SendMessage","params":{"message":{"messageId":"msg-1","contextId":"smoke","role":"ROLE_USER","parts":[{"text":"Reply with one sentence."}]}}}'
+     -d "$payload"
    ```
 
-   A successful business response is HTTP 200 with a JSON-RPC result. A 400
-   means the version header or request shape is wrong; a 403 means the key is
-   missing the `agents` scope.
+A successful business response is HTTP 200 with a JSON-RPC result. A 400
+means the version header or request shape is wrong; a 403 means the key is
+missing the `agents` scope.
 
 1. For streaming, repeat the smoke with `SendStreamingMessage` and verify the
    SSE stream ends in one terminal status. For `INPUT_REQUIRED`, use the same
@@ -478,11 +709,28 @@ from `ApiConfig` and should be changed one worker at a time, followed by a
 restart and a focused smoke. The hard ranges prevent an accidental unbounded
 override.
 
-| Surface                | Settings and safe defaults                                                                                                                            | Operator symptom when exceeded                                                            |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Memory writes/recall   | `MEMORY_MAX_ITEMS=100`, `MEMORY_MAX_CONTENT_BYTES=16384`, `MEMORY_MAX_TOTAL_BYTES=1048576`, `MEMORY_MAX_RETRIEVAL=20`, `MEMORY_GRAPH_MAX_BYTES=65536` | API writes reject the policy violation; graph recall is bounded/truncated.                |
-| Interop registry/cache | `INTEROP_MAX_TARGETS=64`, `INTEROP_CACHE_MAX_ENTRIES=256`                                                                                             | An over-sized registry fails closed; successful discovery entries evict oldest-first.     |
-| A2A projections        | `A2A_MAX_HISTORY_MESSAGES=32`, `A2A_MAX_ARTIFACT_BYTES=262144`                                                                                        | `GetTask` history and local answer artifacts are capped; the underlying run is unchanged. |
+- **Surface:** Memory writes/recall
+  **Settings and safe defaults:** `MEMORY_MAX_ITEMS=100`,
+  `MEMORY_MAX_CONTENT_BYTES=16384`,
+  `MEMORY_MAX_TOTAL_BYTES=1048576`,
+  `MEMORY_MAX_RETRIEVAL=20`,
+  `MEMORY_GRAPH_MAX_BYTES=65536`
+  **Operator symptom when exceeded:** API writes reject the policy violation;
+  graph recall is bounded/truncated.
+
+- **Surface:** Interop registry/cache
+  **Settings and safe defaults:** `INTEROP_MAX_TARGETS=64`,
+  `INTEROP_CACHE_MAX_ENTRIES=256`
+  **Operator symptom when exceeded:** An over-sized registry fails closed;
+  successful discovery entries evict
+  oldest-first.
+
+- **Surface:** A2A projections
+  **Settings and safe defaults:** `A2A_MAX_HISTORY_MESSAGES=32`,
+  `A2A_MAX_ARTIFACT_BYTES=262144`
+  **Operator symptom when exceeded:** `GetTask` history and local answer
+  artifacts are capped; the underlying run
+  is unchanged.
 
 Do not raise these values to hide a slow or memory-heavy backend. Check worker
 RSS, SQLite disk growth, and request latency first. The interop cache and A2A
@@ -515,10 +763,10 @@ and output path:
 
 ```bash
 PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
-  uv run python scripts/dataagent_root_cause_probe.py \
-  --base-url "$PHYTOMNI_E2E_BASE_URL" \
-  --api-key-env PHYTOMNI_E2E_API_KEY \
-  --output /tmp/dataagent-root-cause-20260724.json
+uv run python scripts/dataagent_root_cause_probe.py \
+--base-url "$PHYTOMNI_E2E_BASE_URL" \
+--api-key-env PHYTOMNI_E2E_API_KEY \
+--output /tmp/dataagent-root-cause-20260724.json
 ```
 
 The command returns exit `2` when either guard or an input is invalid, exit
@@ -545,7 +793,8 @@ ReviewAgent rows in `input_required`. The body is
 `{"approved": bool, "edits": string | null}`. When `A2UI_ENABLED` is on,
 the interrupt draft may also carry `a2ui` beside the text summary.
 Expect `404` for unknown or foreign runs, `409` for terminal / non-paused
-runs, FastAPI `422` for malformed bodies, and `409 no pause point for run` if the registry row
+runs, FastAPI `422` for malformed bodies, and `409 no pause point for run` if
+the registry row
 exists but the graph checkpoint does not. If a resumed review pauses
 again, the response stays `status: "input_required"` and returns the
 next `interrupt.thread_id` / `interrupt.draft`. Success may include
@@ -703,14 +952,41 @@ upstream permission or model contract, then repeat the smoke test.
 
 The stable error mapping used by incident triage is:
 
-| Condition                                  | HTTP  | `error.code`                      | `error.stage`           | `retryable` |
-| ------------------------------------------ | ----- | --------------------------------- | ----------------------- | ----------- |
-| Invalid request body or allowlist          | `422` | `invalid_request`                 | -                       | `false`     |
-| Unsupported Expert attachment              | `422` | `attachment_not_supported`        | `attachment_validation` | `false`     |
-| Strict selector contract violation         | `502` | `routing_contract_violation`      | `routing`               | `false`     |
-| Routing provider timeout                   | `504` | `upstream_timeout`                | `routing`               | `true`      |
-| Routing provider failure                   | `502` | `routing_upstream_failed`         | `routing`               | `true`      |
-| Selected-agent argument validation failure | `400` | `selected_agent_invalid_argument` | `dispatch_validation`   | `false`     |
+- **Condition:** Invalid request body or allowlist
+  **HTTP:** `422`
+  **`error.code`:** `invalid_request`
+  **`error.stage`:** -
+  **`retryable`:** `false`
+
+- **Condition:** Unsupported Expert attachment
+  **HTTP:** `422`
+  **`error.code`:** `attachment_not_supported`
+  **`error.stage`:** `attachment_validation`
+  **`retryable`:** `false`
+
+- **Condition:** Strict selector contract violation
+  **HTTP:** `502`
+  **`error.code`:** `routing_contract_violation`
+  **`error.stage`:** `routing`
+  **`retryable`:** `false`
+
+- **Condition:** Routing provider timeout
+  **HTTP:** `504`
+  **`error.code`:** `upstream_timeout`
+  **`error.stage`:** `routing`
+  **`retryable`:** `true`
+
+- **Condition:** Routing provider failure
+  **HTTP:** `502`
+  **`error.code`:** `routing_upstream_failed`
+  **`error.stage`:** `routing`
+  **`retryable`:** `true`
+
+- **Condition:** Selected-agent argument validation failure
+  **HTTP:** `400`
+  **`error.code`:** `selected_agent_invalid_argument`
+  **`error.stage`:** `dispatch_validation`
+  **`retryable`:** `false`
 
 The `422` attachment case is evaluated before dispatch. Attachments can be
 forwarded only to `chat`, `knowledge`, and `review`; do not put
@@ -937,7 +1213,8 @@ The server-side BI path has three independent read-only layers:
   with connect, schema usage, and select privileges only; it must not create,
   write, or alter data, and `default_transaction_read_only=on` should be set.
 
-Pool return executes `RESET ALL` to clear session settings and does not use UNLISTEN,
+Pool return executes `RESET ALL` to clear session settings and does not use
+UNLISTEN,
 which GaussDB does not support. A reset or query failure is surfaced
 with fixed public text; logs contain only the request correlation id and
 exception class, never SQL, DSNs, response bodies, or driver messages.
@@ -1360,8 +1637,10 @@ Impact: `GET /v1/runs?dialogue_id=...` will **not** return this call,
 and `GET /v1/runs/{run_id}` cannot be used to replay it. The customer
 has the answer, but the run history has a gap.
 
-Check server logs for `sync run bookkeeping write failed for agent <slug>: <ExceptionClass>` (logged at WARNING level by `_record_sync_run`). The
-underlying cause is almost always a `sqlite3.Error` or `OSError` on the
+Check server logs for
+`sync run bookkeeping write failed for agent <slug>: <ExceptionClass>` (logged
+at WARNING level by `_record_sync_run`). The underlying cause is almost always
+a `sqlite3.Error` or `OSError` on the
 `server_tasks.db` file — check disk fullness, WAL checkpoint health,
 and file permissions. Once the store is healthy, subsequent calls
 resume writing normally; the lost run row cannot be recovered (it was
@@ -1383,10 +1662,13 @@ fell into its `nogeneid` fallback prompt.
 Advise the client to set `resolve_gene_id: true` on the request:
 
 ```bash
+payload='{"model":"phyto-brief-gene","resolve_gene_id":true,'
+payload+=' "messages":[{"role":"user","content":"What does '
+payload+='AT5G42800 do in Arabidopsis?"}]}'
 curl -fsS -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' \
   "$HOST/v1/chat/completions" \
-  -d '{"model":"phyto-brief-gene","resolve_gene_id":true,"messages":[{"role":"user","content":"What does AT5G42800 do in Arabidopsis?"}]}'
+  -d "$payload"
 
 curl -fsS -H "Authorization: Bearer $KEY" \
   -H 'Content-Type: application/json' \
@@ -1439,7 +1721,8 @@ Stored uploads live under
 `agent_data/uploads/{user_id}/{request_id}/{file_id}/{safe_filename}`
 in OBS. There is no automatic GC. An object left by a
 `upload_metadata_failed` response is not advertised and may have no
-`user_uploads` row; use [Attachment Preflight And Orphan Review](#attachment-preflight-and-orphan-review)
+`user_uploads` row; use [Attachment Preflight And Orphan
+Review](#attachment-preflight-and-orphan-review)
 to correlate request, object-store, and registry evidence before any
 operator-approved cleanup.
 
@@ -1447,12 +1730,25 @@ operator-approved cleanup.
 
 Common failures:
 
-| Error                                | Meaning                                                                                           | Fix                                                                                                                                                             |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SecretEnvelopeError`                | Wrong license key, damaged `.env.encrypted`, or an envelope sealed from a non-UTF-8 / BOM `.env`. | Verify `PHYTOMNI_LICENSE_KEY`; if the message names a UTF-8 / BOM problem, rebuild the envelope from a UTF-8 (no-BOM) source. Otherwise redeliver the envelope. |
-| `RuntimeError` resolving environment | No plaintext `.env`, no encrypted envelope, no testing mode.                                      | Provide one supported config source.                                                                                                                            |
-| `PermissionError` on SQLite path     | Store directory is not writable.                                                                  | Fix permissions or configure absolute store paths.                                                                                                              |
-| `OSError: [Errno 98]`                | Port already bound.                                                                               | Free the port or change `API_PORT`.                                                                                                                             |
+- **Error:** `SecretEnvelopeError`
+  **Meaning:** Wrong license key, damaged `.env.encrypted`, or an envelope
+  sealed from a non-UTF-8 / BOM `.env`.
+  **Fix:** Verify `PHYTOMNI_LICENSE_KEY`; if the message names a UTF-8 / BOM
+  problem, rebuild the envelope from a UTF-8 (no-BOM) source. Otherwise
+  redeliver
+  the envelope.
+
+- **Error:** `RuntimeError` resolving environment
+  **Meaning:** No plaintext `.env`, no encrypted envelope, no testing mode.
+  **Fix:** Provide one supported config source.
+
+- **Error:** `PermissionError` on SQLite path
+  **Meaning:** Store directory is not writable.
+  **Fix:** Fix permissions or configure absolute store paths.
+
+- **Error:** `OSError: [Errno 98]`
+  **Meaning:** Port already bound.
+  **Fix:** Free the port or change `API_PORT`.
 
 If `/readyz` returns 200 but authenticated endpoints return 500, inspect
 stderr or `journalctl -u phytomni-api` and escalate with the request id from

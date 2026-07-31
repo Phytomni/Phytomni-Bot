@@ -90,7 +90,8 @@ Phytomni-Bot ships to trusted customers as a Docker image that consumes the
 operator's Huawei resources and LLM quota. The plaintext `.env` must never
 enter the image. Instead, each customer gets a per-customer encrypted
 envelope. (The plaintext-first resolution order in
-[configuration.md](../reference/configuration.md#resolution-order) is dev-side only;
+[configuration.md](../reference/configuration.md#resolution-order) is dev-side
+only;
 `.dockerignore` blocks plaintext `.env` from build contexts so customer
 images reach the encrypted fallback unconditionally.)
 
@@ -108,7 +109,8 @@ The input `.env` must be valid UTF-8 **without** a byte-order mark (BOM).
 and exit code `4`, so a mis-encoded source file (common on Chinese Windows
 build hosts) cannot be sealed into an image — where it would otherwise
 surface as a cryptic `UnicodeDecodeError` at customer startup. See
-[configuration.md](../reference/configuration.md#encrypted-customer-envelope) for the
+[configuration.md](../reference/configuration.md#encrypted-customer-envelope)
+for the
 full encoding contract.
 
 The output is an AES-256-GCM blob with `PHYBOT01` magic and a

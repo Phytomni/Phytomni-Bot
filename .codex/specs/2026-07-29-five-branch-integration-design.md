@@ -61,10 +61,10 @@ captured HEAD remains current.
 For each convergence round:
 
 1. Capture the current target tip as `Tn`.
-2. Ensure the isolated candidate contains `Tn`, the source tip, and the
+1. Ensure the isolated candidate contains `Tn`, the source tip, and the
    integration-only documentation commits.
-3. Resolve any new semantic conflicts and run the full merged-result gate.
-4. Re-read `release/0.1.4` after the gate:
+1. Resolve any new semantic conflicts and run the full merged-result gate.
+1. Re-read `release/0.1.4` after the gate:
    - if it still equals `Tn`, the candidate is eligible to land;
    - if it advanced normally from `Tn`, merge that new target tip into the
      isolated candidate and repeat the full gate; or
@@ -105,18 +105,21 @@ Before creating the source merge commit:
 
 1. Resolve and record the current target SHA, source SHA, merge base, branch
    divergence, worktree registrations, and target worktree status.
-2. Confirm that the source worktree is clean.
-3. Confirm that the source branch is not already an ancestor of the target.
+
+1. Confirm that the source worktree is clean.
+
+1. Confirm that the source branch is not already an ancestor of the target.
    If it is already integrated, skip the merge and proceed to final
    verification and cleanup.
-4. Run the authoritative full local gate on the clean source tip:
+
+1. Run the authoritative full local gate on the clean source tip:
 
    ```bash
    UV_CACHE_DIR=/tmp/phytomni-five-source-cache \
      ./scripts/validate_local.sh
    ```
 
-5. Stop without merging or deleting anything if the source gate fails.
+1. Stop without merging or deleting anything if the source gate fails.
 
 No existing stash may be popped or dropped. No unrelated worktree may be
 removed or pruned.
@@ -182,18 +185,18 @@ Immediately before advancing `release/0.1.4`:
 
 1. Re-read the target worktree status, including staged, unstaged, and
    untracked paths.
-2. Create a clearly named safety stash for those changes, including untracked
+1. Create a clearly named safety stash for those changes, including untracked
    files but excluding ignored local configuration and secrets.
-3. Confirm that the stash's first parent matches the captured target HEAD,
+1. Confirm that the stash's first parent matches the captured target HEAD,
    the target HEAD did not move during stashing, the worktree is clean, and
    the safety stash exists.
-4. Fast-forward `release/0.1.4` to the verified integration SHA. Do not create
+1. Fast-forward `release/0.1.4` to the verified integration SHA. Do not create
    a second merge commit and do not force-update the branch.
-5. Restore the safety stash with its index state.
-6. Verify that the intended staged, unstaged, and untracked path states are
+1. Restore the safety stash with its index state.
+1. Verify that the intended staged, unstaged, and untracked path states are
    restored.
-7. Retain the safety stash until restoration has been checked successfully.
-8. After successful restoration verification, drop only the newly created
+1. Retain the safety stash until restoration has been checked successfully.
+1. After successful restoration verification, drop only the newly created
    safety stash. Match its recorded object ID to the current stash reflog,
    verify the resolved selector still names that object, and then drop that
    selector. Do not assume a fixed `stash@{n}` position and do not touch any
@@ -218,16 +221,19 @@ Cleanup is allowed only after the merged SHA is green, the target contains
 the source tip, and the target worktree has been restored.
 
 1. Reconfirm that the source worktree is clean.
-2. Remove only the registered source worktree:
+
+1. Remove only the registered source worktree:
 
    ```text
    /home/xieshang/Workdir/1.phytomni/Phytomni-Web/.worktrees/Phytomni-Bot-five-sync
    ```
 
-3. Delete `codex/five-sync-agent-multiturn` with safe branch deletion.
-4. Remove the temporary integration worktree and delete its branch only
+1. Delete `codex/five-sync-agent-multiturn` with safe branch deletion.
+
+1. Remove the temporary integration worktree and delete its branch only
    after `release/0.1.4` contains the integration tip.
-5. Verify that neither deleted branch remains registered in `git branch` or
+
+1. Verify that neither deleted branch remains registered in `git branch` or
    `git worktree list`.
 
 Do not run a broad worktree prune. In particular, leave the unrelated stale

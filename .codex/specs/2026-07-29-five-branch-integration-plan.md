@@ -51,7 +51,7 @@ worktree-state verification.
   assignments and re-resolve dynamic refs; never guess or reuse an unverified
   SHA from terminal scrollback.
 
----
+______________________________________________________________________
 
 ## File Structure and Merge Responsibilities
 
@@ -137,7 +137,7 @@ Private conversation inputs must remain absent from public Pydantic MCP
 schemas. `validate_tool_arguments()` must remain independently callable
 without invoking a handler.
 
----
+______________________________________________________________________
 
 ### Task 1: Capture the live baseline and verify the source branch
 
@@ -149,6 +149,7 @@ without invoking a handler.
 **Interfaces:**
 
 - Consumes: the three local branch refs and registered worktrees.
+
 - Produces: immutable `SOURCE_SHA`, initial `TARGET_SHA`, clean-source proof,
   merge-base evidence, and a green source-gate result.
 
@@ -176,8 +177,10 @@ git worktree list --porcelain
 Expected:
 
 - all three branches resolve;
+
 - the target and source remain divergent unless another integration already
   landed; and
+
 - both named worktrees are registered at their declared paths.
 
 - [ ] **Step 2: Verify source and integration worktrees are clean**
@@ -245,7 +248,7 @@ test -z "$(git -C "$SOURCE_WORKTREE" status --porcelain)"
 Expected: all three checks pass. A moved or dirty source invalidates the gate
 and requires restarting Task 1 with a new `SOURCE_SHA`.
 
----
+______________________________________________________________________
 
 ### Task 2: Anchor the integration branch and create the semantic merge
 
@@ -267,6 +270,7 @@ and requires restarting Task 1 with a new `SOURCE_SHA`.
 **Interfaces:**
 
 - Consumes: Task 1's immutable source tip and the current target tip.
+
 - Produces: one merge commit containing both complete histories and all
   semantically combined conflict resolutions, or a documentation-only
   descendant when the source was already integrated.
@@ -425,20 +429,26 @@ Apply these exact rules:
 
 1. Keep target `validate_tool_arguments()` unchanged as the single model and
    handler-existence validation seam.
-2. Use the private keyword-only signatures from the Interfaces section.
-3. In `invoke_tool_raw()`, call:
+
+1. Use the private keyword-only signatures from the Interfaces section.
+
+1. In `invoke_tool_raw()`, call:
 
    ```python
    tool_name = _tool_name(name)
    args = validate_tool_arguments(tool_name, arguments)
    ```
 
-4. Bind all three private contextvars before handler invocation.
-5. Invoke `TOOL_HANDLERS[tool_name](args)` once.
-6. Reset private state, thread ID, and messages in a `finally` block.
-7. Forward all three private values from `invoke_tool_enveloped()` to
+1. Bind all three private contextvars before handler invocation.
+
+1. Invoke `TOOL_HANDLERS[tool_name](args)` once.
+
+1. Reset private state, thread ID, and messages in a `finally` block.
+
+1. Forward all three private values from `invoke_tool_enveloped()` to
    `invoke_tool_raw()`.
-8. Keep citation enrichment and envelope construction unchanged.
+
+1. Keep citation enrichment and envelope construction unchanged.
 
 Do not add private fields to any public MCP request model.
 
@@ -455,11 +465,15 @@ _background_agent_run_response _sync_agent_run_response"
 Apply these exact rules:
 
 1. Use the full private-context signature from the Interfaces section.
-2. Keep target `_preflight_agent_run()` before all dispatch.
-3. Keep target background-agent early return and
+
+1. Keep target `_preflight_agent_run()` before all dispatch.
+
+1. Keep target background-agent early return and
    `BackgroundSubmissionLaunchError` projection.
-4. Keep target `_prepare_agent_run()` after the background branch.
-5. Calculate:
+
+1. Keep target `_prepare_agent_run()` after the background branch.
+
+1. Calculate:
 
    ```python
    context_review = (
@@ -468,11 +482,13 @@ Apply these exact rules:
    )
    ```
 
-6. Enter `_run_review_with_interrupt()` only for Review without the private
+1. Enter `_run_review_with_interrupt()` only for Review without the private
    context adapter.
-7. Inside the target's `try` block, call `invoke_tool_enveloped()` with all
+
+1. Inside the target's `try` block, call `invoke_tool_enveloped()` with all
    three private context arguments.
-8. Keep target Data result-format tracing, remote-agent response projection,
+
+1. Keep target Data result-format tracing, remote-agent response projection,
    awaited `_sync_agent_run_response()`, `SafeApiError` passthrough, and
    Data-stage safe-error mapping.
 
@@ -556,10 +572,14 @@ Run:
 ```bash
 git commit \
   -m '🔀 Merge: Integrate conversation context branch' \
-  -m '- context spot: integrate bounded V1 conversation state and multi-turn agent behavior.' \
-  -m '- runtime spot: retain background submission, safe error, tracing, and envelope contracts.' \
-  -m '- test spot: combine validation, context isolation, routing, and DataAgent regressions.' \
-  -m '- provenance spot: preserve the complete source and release histories without squashing.'
+  -m '- context spot: integrate bounded V1 conversation state and multi-turn \
+agent behavior.' \
+  -m '- runtime spot: retain background submission, safe error, tracing, and \
+envelope contracts.' \
+  -m '- test spot: combine validation, context isolation, routing, and \
+DataAgent regressions.' \
+  -m '- provenance spot: preserve the complete source and release histories \
+without squashing.'
 ```
 
 Expected when `SOURCE_ALREADY_INTEGRATED=0`: the secret-scan hook passes and
@@ -575,7 +595,7 @@ git merge-base --is-ancestor "$TARGET_SHA" "$MERGE_SHA"
 test -z "$(git status --porcelain)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 3: Run the merged gate and converge on the moving target
 
@@ -587,6 +607,7 @@ test -z "$(git status --porcelain)"
 **Interfaces:**
 
 - Consumes: Task 2's merge SHA and the live target ref.
+
 - Produces: `VERIFIED_CANDIDATE_SHA`, `TESTED_TARGET_SHA`, and a full-gate
   result no more than three convergence rounds old.
 
@@ -641,7 +662,8 @@ git diff --check
 git commit \
   -m '🔀 Merge: Converge release branch updates' \
   -m '- target spot: incorporate the latest normal release/0.1.4 advance.' \
-  -m '- integration spot: retain the verified conversation-context merge ancestry.' \
+  -m '- integration spot: retain the verified conversation-context merge \
+ancestry.' \
   -m '- verification spot: rerun affected focused tests before the next full gate.'
 CANDIDATE_TARGET_SHA="$CURRENT_TARGET_SHA"
 ```
@@ -699,9 +721,12 @@ Interpretation:
 Stop conditions:
 
 - target stable after a green round: continue;
+
 - target advances after convergence round 3: stop before landing and request
   a short writer pause;
+
 - non-fast-forward target rewrite: stop and retain all branches/worktrees;
+
 - any gate failure: stop and retain the candidate for diagnosis.
 
 - [ ] **Step 5: Capture final candidate evidence**
@@ -720,7 +745,7 @@ git show -s --format='%H%n%P%n%s%n%b' "$VERIFIED_CANDIDATE_SHA"
 Expected: both ancestry checks pass, the integration worktree is clean, and
 the recorded SHA is exactly the green candidate.
 
----
+______________________________________________________________________
 
 ### Task 4: Land the verified candidate and restore target WIP
 
@@ -734,6 +759,7 @@ the recorded SHA is exactly the green candidate.
 **Interfaces:**
 
 - Consumes: Task 3's verified candidate and tested target SHA.
+
 - Produces: landed merge SHA, restored WIP state, and post-landing ancestry
   classification.
 
@@ -797,12 +823,12 @@ Expected: `rc=0` and `HEAD` equals the verified candidate.
 If `rc` is nonzero:
 
 1. do not force-update the branch;
-2. restore the safety stash with
+1. restore the safety stash with
    `git stash apply --index "$SAFETY_STASH_OID"` when one exists;
-3. verify the restored status exactly as in Step 4;
-4. when restoration succeeds, drop only the new stash with Step 5's
+1. verify the restored status exactly as in Step 4;
+1. when restoration succeeds, drop only the new stash with Step 5's
    object-ID lookup; and
-5. return to Task 3 with the new target tip.
+1. return to Task 3 with the new target tip.
 
 If restoration fails, retain the safety stash and stop.
 
@@ -874,7 +900,7 @@ Expected: both checks pass.
 - If either ancestry check fails, stop cleanup and retain the source branch
   and source worktree.
 
----
+______________________________________________________________________
 
 ### Task 5: Delete only the integrated source and temporary resources
 
@@ -891,6 +917,7 @@ Expected: both checks pass.
 
 - Consumes: Task 4's landed/source ancestry proof and restored target
   worktree.
+
 - Produces: final local branch/worktree state with no remote changes.
 
 - [ ] **Step 1: Reconfirm cleanup eligibility**
@@ -960,11 +987,17 @@ Expected:
 
 - neither local `codex/five-sync-agent-multiturn` nor
   `codex/five-integration` exists;
+
 - neither removed worktree path is registered;
+
 - `/tmp/phytomni-bot-mcp-gate` remains untouched;
+
 - the target retains the source and landed merge ancestry;
+
 - the target worktree still shows the restored unrelated WIP;
+
 - no pre-existing stash changed; and
+
 - no remote ref changed.
 
 - [ ] **Step 6: Report the exact verification boundary**
