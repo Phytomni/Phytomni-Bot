@@ -28,6 +28,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.requests import Request
 
 from ...config.defaults import ApiConfig, ServerConfig
+from ...runtime.async_utils import wait_for_thread_future
 from ...runtime.request_context import current_request_id
 from ...storage import obs_relay_ops
 from ...storage.obs_storage import (
@@ -91,7 +92,7 @@ async def _run_obs_op(
 
 async def _wait_obs_future(future: Future[Any]) -> Any:
     """Await one worker future without blocking the event loop."""
-    return await asyncio.wrap_future(future)
+    return await wait_for_thread_future(future)
 
 
 def _next_stream_chunk(iterator: Iterator[bytes]) -> bytes | None:

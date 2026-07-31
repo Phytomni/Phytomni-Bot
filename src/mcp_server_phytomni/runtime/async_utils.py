@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import Future
+from typing import Any
 
 
 async def wait_for_thread_event(event: asyncio.Event) -> None:
@@ -21,3 +23,20 @@ async def wait_for_thread_event(event: asyncio.Event) -> None:
             await asyncio.wait_for(event.wait(), timeout=0.01)
         except TimeoutError:
             continue
+
+
+async def wait_for_thread_future(future: Future[Any]) -> Any:
+    """Wait for a worker-thread future without relying on wakeup callbacks.
+
+    A few supported asyncio runners can miss the callback that
+    ``asyncio.wrap_future`` installs when the same executor is reused for
+    sequential operations. Bounded polling keeps the loop responsive and
+    lets the caller retain normal cancellation and exception propagation.
+    """
+    wrapped = asyncio.wrap_future(future)
+    while not future.done():
+        try:
+            await asyncio.wait_for(asyncio.shield(wrapped), timeout=0.01)
+        except TimeoutError:
+            continue
+    return future.result()

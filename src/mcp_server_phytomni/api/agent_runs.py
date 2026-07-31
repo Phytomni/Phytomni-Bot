@@ -30,6 +30,7 @@ from ..agents.network.resolve_query import resolve_network_user_query
 from ..mcp.app import invoke_tool_enveloped, validate_tool_arguments
 from ..mcp.result_formatting import strip_agent_result
 from ..runtime.background_submission import (
+    BackgroundSubmissionExecutionError,
     BackgroundSubmissionLaunchError,
     BackgroundSubmissionOutcome,
     launch_background_submission,
@@ -240,12 +241,19 @@ async def _execute_background_agent_run(
 ) -> BackgroundSubmissionOutcome:
     """Resolve, invoke, and project one already-reserved background run."""
     app = _app_module()
-    prepared = await _app_attr("_prepare_agent_run")(
-        agent=agent,
-        arguments=arguments,
-        preflight=preflight,
-    )
-    envelope = await app.invoke_tool_enveloped(prepared.tool_name, arguments)
+    try:
+        prepared = await _app_attr("_prepare_agent_run")(
+            agent=agent,
+            arguments=arguments,
+            preflight=preflight,
+        )
+        envelope = await app.invoke_tool_enveloped(
+            prepared.tool_name, arguments
+        )
+    except HTTPException as exc:
+        raise BackgroundSubmissionExecutionError(
+            "background agent preparation failed"
+        ) from exc
     result, _response_result = _app_attr("_format_agent_run_result")(
         envelope,
         resolve_meta=prepared.resolve_meta,
@@ -453,13 +461,25 @@ async def _invoke_prepared_agent_run(
         )
         return _app_attr("_review_run_body")(execution, debug=debug), 200
     try:
-        envelope = await app.invoke_tool_enveloped(
-            prepared.tool_name,
-            arguments,
-            conversation_messages=request.get("conversation_messages", ()),
-            agent_thread_id=request.get("agent_thread_id"),
-            private_agent_state=private_agent_state,
-        )
+        if (
+            request.get("conversation_messages", ())
+            or request.get("agent_thread_id") is not None
+            or private_agent_state is not None
+        ):
+            envelope = await app.invoke_tool_enveloped(
+                prepared.tool_name,
+                arguments,
+                conversation_messages=request.get("conversation_messages", ()),
+                agent_thread_id=request.get("agent_thread_id"),
+                private_agent_state=private_agent_state,
+            )
+        else:
+            # Keep the historical two-argument seam usable for narrow
+            # adapters that do not need private native-run context.
+            envelope = await app.invoke_tool_enveloped(
+                prepared.tool_name,
+                arguments,
+            )
         format_context = (
             _app_attr("trace_data_stage")(
                 DataStage.RESULT_FORMAT,
