@@ -14,12 +14,12 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 import pytest
+from tests.support.markdown import parse_bold_records
 
 from mcp_server_phytomni.api.a2a.card import build_agent_card
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.config.defaults import ApiConfig
 from mcp_server_phytomni.mcp.schemas import PhytomniAgents
-from tests.support.markdown import parse_bold_records
 
 pytestmark = pytest.mark.unit
 
