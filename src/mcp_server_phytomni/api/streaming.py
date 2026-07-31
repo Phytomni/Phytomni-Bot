@@ -50,6 +50,7 @@ from ..runtime.conversation_context.adapters import (
 from ..runtime.conversation_context.models import ContextDelta
 from ..runtime.conversation_context.projection import build_context_projection
 from ..runtime.conversation_context.service import (
+    AsyncAgentAcceptance,
     ConversationContextService,
     PreparedTurn,
     PrepareStatus,
@@ -373,7 +374,7 @@ async def _unsupported_context_invoke(
 
 async def _unsupported_context_delegate_async(
     _selected_agent_id: str, _envelope: Any
-) -> dict[str, object]:
+) -> AsyncAgentAcceptance:
     """Instant V1 streaming must not delegate asynchronously."""
     raise AssertionError("instant stream unexpectedly delegated async work")
 

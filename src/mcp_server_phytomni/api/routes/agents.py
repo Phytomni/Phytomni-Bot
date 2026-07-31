@@ -32,6 +32,7 @@ from ...runtime.conversation_context.models import (
 )
 from ...runtime.conversation_context.service import (
     AgentOutcome,
+    AsyncAgentAcceptance,
     PreparedTurn,
     PrepareStatus,
 )
@@ -406,7 +407,7 @@ async def _execute_context_chat(
         _selected_agent_id: str,
         _envelope: ConversationEnvelopeV1,
         _arguments: dict[str, Any],
-    ) -> dict[str, Any]:
+    ) -> AsyncAgentAcceptance:
         raise AssertionError(
             "Instant context must not delegate asynchronously"
         )
@@ -665,21 +666,21 @@ async def _execute_context_expert(
         selected_agent_id: str,
         _envelope: ConversationEnvelopeV1,
         arguments: dict[str, Any],
-    ) -> dict[str, Any]:
+    ) -> AsyncAgentAcceptance:
         slug = _slug_for_tool(selected_agent_id, dependencies)
         if dependencies.chat.input.tool_accepts_obs(selected_agent_id):
             arguments = {
                 **arguments,
                 "obs_file_list": list(payload.obs_file_list),
             }
-        body, _status_code = await dependencies.native.invoke_agent_run(
+        body, status_code = await dependencies.native.invoke_agent_run(
             agent=slug,
             arguments=arguments,
             dialogue_id=payload.dialogue_id,
             request_json=payload.model_dump_json(),
             debug=dependencies.chat.projection.resolve_debug(None),
         )
-        return body
+        return AsyncAgentAcceptance(body, status_code)
 
     try:
         prepared = await dependencies.context.executor.execute(

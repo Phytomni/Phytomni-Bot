@@ -5,5 +5,10 @@
 """Versioned multi-turn conversation context contracts."""
 
 from .models import ConversationEnvelopeV1
+from .service import AsyncAcceptanceError, AsyncAgentAcceptance
 
-__all__ = ["ConversationEnvelopeV1"]
+__all__ = [
+    "AsyncAcceptanceError",
+    "AsyncAgentAcceptance",
+    "ConversationEnvelopeV1",
+]

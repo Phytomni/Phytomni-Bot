@@ -16,6 +16,7 @@ from tests.integration.test_conversation_context_scenarios import (
     _ARTIFACT_A,
     _ARTIFACT_B,
     _CANONICAL_AGENT_IDS,
+    _async_acceptance_delegate,
     _commit,
     _conversation_key,
     _envelope,
@@ -39,6 +40,7 @@ from mcp_server_phytomni.runtime.conversation_context.models import (
 from mcp_server_phytomni.runtime.conversation_context.service import (
     AgentOutcome,
     AgentSelection,
+    AsyncAgentAcceptance,
     PrepareStatus,
 )
 from mcp_server_phytomni.runtime.conversation_context.store import (
@@ -49,6 +51,11 @@ from mcp_server_phytomni.runtime.execution_defaults import (
 )
 
 pytestmark = pytest.mark.server
+
+
+def _context_app(executor: ConversationContextExecutor) -> Any:
+    """Build a context-enabled app without repeating route setup syntax."""
+    return create_app(context_executor=executor)
 
 
 async def test_permission_revocation_blocks_explicit_and_automatic_selection(
@@ -65,8 +72,7 @@ async def test_permission_revocation_blocks_explicit_and_automatic_selection(
         invoked += 1
         return _outcome("KnowledgeAgent")
 
-    async def delegate(*_args: Any, **_kwargs: Any) -> dict[str, object]:
-        return {"status": "running", "run_id": "run-opaque"}
+    delegate = _async_acceptance_delegate()
 
     service = _service(
         tmp_path, router=router, invoke=invoke, delegate_async=delegate
@@ -120,8 +126,7 @@ async def test_bot_restart_rebuilds_from_bounded_go_summaries_and_runs_once(
         invoked += 1
         return _outcome(agent)
 
-    async def delegate(*_args: Any, **_kwargs: Any) -> dict[str, object]:
-        return {"status": "running", "run_id": "run-opaque"}
+    delegate = _async_acceptance_delegate()
 
     service = _service(
         tmp_path, router=router, invoke=invoke, delegate_async=delegate
@@ -193,8 +198,7 @@ async def test_browser_and_go_retry_reuses_one_staged_turn_and_invocation(
         invoked += 1
         return _outcome(agent)
 
-    async def delegate(*_args: Any, **_kwargs: Any) -> dict[str, object]:
-        return {"status": "running", "run_id": "run-opaque"}
+    delegate = _async_acceptance_delegate()
 
     service = _service(
         tmp_path, router=router, invoke=invoke, delegate_async=delegate
@@ -221,7 +225,7 @@ async def test_chat_cancellation_fails_turn_without_assistant_summary(
     async def invoke(*_args: Any, **_kwargs: Any) -> AgentOutcome:
         raise asyncio.CancelledError
 
-    async def delegate(*_args: Any, **_kwargs: Any) -> dict[str, object]:
+    async def delegate(*_args: Any, **_kwargs: Any) -> AsyncAgentAcceptance:
         raise AssertionError("Chat cancellation must not delegate")
 
     service = _service(
@@ -257,8 +261,7 @@ async def test_cross_owner_boundary_isolates_dialogues_and_artifacts(
         )
         return _outcome(agent)
 
-    async def delegate(*_args: Any, **_kwargs: Any) -> dict[str, object]:
-        return {"status": "running", "run_id": "run-opaque"}
+    delegate = _async_acceptance_delegate()
 
     service = _service(
         tmp_path, router=router, invoke=invoke, delegate_async=delegate
@@ -304,12 +307,12 @@ async def test_async_expert_selection_keeps_running_202_lifecycle(
     """The public Expert route maps an async selection to HTTP 202."""
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "conversation.sqlite"
-    keys_path = tmp_path / "keys.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
-    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(keys_path))
-    key = ApiKeyStore(str(keys_path)).create(user_id="u1").api_key
-    selected: dict[str, Any] = {}
-    invoked: dict[str, Any] = {}
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(tmp_path / "keys.sqlite"))
+    key = (
+        ApiKeyStore(str(tmp_path / "keys.sqlite")).create(user_id="u1").api_key
+    )
+    observed: dict[str, Any] = {}
 
     async def select_agent(
         _query: str,
@@ -318,8 +321,8 @@ async def test_async_expert_selection_keeps_running_202_lifecycle(
         allowed_tools: Any,
         forced_tool: Any,
     ) -> ToolSelection:
-        selected["allowed_tools"] = tuple(allowed_tools)
-        selected["forced_tool"] = forced_tool
+        observed["allowed_tools"] = tuple(allowed_tools)
+        observed["forced_tool"] = forced_tool
         return ToolSelection(
             "AnalystAgent",
             {
@@ -335,7 +338,7 @@ async def test_async_expert_selection_keeps_running_202_lifecycle(
         arguments: dict[str, Any],
         **kwargs: Any,
     ) -> tuple[dict[str, Any], int]:
-        invoked.update(
+        observed.update(
             agent=agent,
             arguments=arguments,
             conversation_messages=kwargs["conversation_messages"],
@@ -343,6 +346,7 @@ async def test_async_expert_selection_keeps_running_202_lifecycle(
         return (
             {
                 "id": "run-opaque",
+                "run_id": "run-opaque",
                 "object": "agent.run",
                 "agent": agent,
                 "status": "running",
@@ -363,9 +367,10 @@ async def test_async_expert_selection_keeps_running_202_lifecycle(
         message="Submit the bounded analysis.",
         allowed_agent_ids=_CANONICAL_AGENT_IDS,
     )
-    context_app = create_app(context_executor=executor)
     async with open_asgi_client(
-        monkeypatch, context_app, base_url="http://api.context.test"
+        monkeypatch,
+        _context_app(executor),
+        base_url="http://api.context.test",
     ) as client:
         response = await client.post(
             "/v1/query/route",
@@ -376,35 +381,135 @@ async def test_async_expert_selection_keeps_running_202_lifecycle(
                 "conversation": envelope.model_dump(mode="json"),
             },
         )
+        settled = await client.post(
+            "/v1/conversation-context/settle",
+            headers={"Authorization": f"Bearer {key}"},
+            json={
+                "schema_version": 1,
+                "conversation_key": str(envelope.conversation_key),
+                "turn_id": envelope.turn_id,
+                "ledger_version": envelope.ledger_version,
+            },
+        )
 
     assert response.status_code == 202
     expected_result = empty_execution_projection()
     expected_result["execution"]["tasks"] = [
         {"id": "task-opaque", "accepted": True}
     ]
-    assert response.json() == {
+    body = response.json()
+    context = body.pop("conversation_context")
+    assert body == {
         "id": "run-opaque",
+        "run_id": "run-opaque",
         "object": "agent.run",
         "agent": "analyst",
         "status": "running",
         "task_ids": ["task-opaque"],
         "result": expected_result,
     }
-    assert selected == {
+    assert context["schema_version"] == 1
+    assert context["turn_id"] == "1"
+    assert context["selected_agent_id"] == "AnalystAgent"
+    assert context["route_source"] == "router"
+    assert context["route_reason_code"] == "ROUTER_SELECTED"
+    assert context["base_business_context_version"] == 0
+    assert context["proposed_business_context_version"] == 1
+    assert context["last_applied_ledger_cursor"] == 1
+    assert context["context_truncated"] is False
+    assert context["context_rebuilt"] is True
+    assert context["context_degraded"] is False
+    assert {
+        key: observed[key] for key in ("allowed_tools", "forced_tool")
+    } == {
         "allowed_tools": _CANONICAL_AGENT_IDS,
         "forced_tool": None,
     }
-    assert invoked == {
+    assert {
+        key: observed[key]
+        for key in ("agent", "arguments", "conversation_messages")
+    } == {
         "agent": "analyst",
         "arguments": {
             "goal_description": "Submit the bounded analysis.",
             "data_list": {},
             "obs_file_list": [],
-            "user_query": "Submit the bounded analysis.",
             "locale": "en-US",
         },
         "conversation_messages": (),
     }
+
+    assert settled.status_code == 200
+    assert settled.json() == {
+        "schema_version": 1,
+        "state": "committed",
+        "context_version": 1,
+    }
+
+
+async def test_explicit_async_expert_selection_records_explicit_route_source(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An explicitly requested async agent bypasses the Expert router."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    db_path = tmp_path / "conversation.sqlite"
+    keys_path = tmp_path / "keys.sqlite"
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(keys_path))
+    key = ApiKeyStore(str(keys_path)).create(user_id="u1").api_key
+
+    async def forbidden_select(*_args: Any, **_kwargs: Any) -> ToolSelection:
+        raise AssertionError("explicit selection must not invoke the router")
+
+    async def fake_invoke_agent_run(
+        *,
+        agent: str,
+        **_kwargs: Any,
+    ) -> tuple[dict[str, Any], int]:
+        return (
+            {
+                "id": "run-explicit",
+                "run_id": "run-explicit",
+                "object": "agent.run",
+                "agent": agent,
+                "status": "running",
+                "task_ids": ["task-explicit"],
+                "result": {"formatted": {}},
+            },
+            202,
+        )
+
+    executor = ConversationContextExecutor(
+        store_factory=lambda: ConversationContextStore(str(db_path)),
+        select_agent=forbidden_select,
+    )
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke_agent_run)
+    envelope = _envelope(
+        key=_conversation_key(12),
+        turn_id="1",
+        message="Submit the explicit analysis.",
+        requested_agent_id="AnalystAgent",
+        allowed_agent_ids=_CANONICAL_AGENT_IDS,
+    )
+    async with open_asgi_client(
+        monkeypatch, _context_app(executor), base_url="http://api.context.test"
+    ) as client:
+        response = await client.post(
+            "/v1/query/route",
+            headers={"Authorization": f"Bearer {key}"},
+            json={
+                "user_query": "ignored by explicit V1 dispatch",
+                "allowed_tools": list(_CANONICAL_AGENT_IDS),
+                "conversation": envelope.model_dump(mode="json"),
+            },
+        )
+
+    assert response.status_code == 202
+    context = response.json()["conversation_context"]
+    assert context["selected_agent_id"] == "AnalystAgent"
+    assert context["route_source"] == "explicit_selection"
+    assert context["route_reason_code"] == "EXPLICIT_SELECTION"
 
 
 async def test_legacy_request_and_response_shape_stay_v0_when_context_is_off(

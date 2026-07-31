@@ -30,6 +30,7 @@ from .projection import (
 )
 from .review_support import _REVIEW_SETTLEMENT_STATES
 from .service_execution import (
+    _AsyncTurnRequest,
     _SyncTurnRequest,
     delegate_async_turn,
     finish_sync_turn,
@@ -39,6 +40,8 @@ from .service_execution import (
 from .service_types import (
     AgentOutcome,
     AgentSelection,
+    AsyncAcceptanceError,
+    AsyncAgentAcceptance,
     ContextStageMetadata,
     PreparedTurn,
     PrepareStatus,
@@ -51,6 +54,8 @@ from .store import (
 )
 
 for _service_type in (
+    AsyncAcceptanceError,
+    AsyncAgentAcceptance,
     AgentOutcome,
     AgentSelection,
     ContextStageMetadata,
@@ -322,7 +327,7 @@ Invoker = Callable[
     [str, ConversationEnvelopeV1, ContextProjection], Awaitable[AgentOutcome]
 ]
 AsyncDelegator = Callable[
-    [str, ConversationEnvelopeV1], Awaitable[dict[str, object]]
+    [str, ConversationEnvelopeV1], Awaitable[AsyncAgentAcceptance]
 ]
 
 
@@ -579,7 +584,16 @@ class ConversationContextService:
                     "selected agent is outside the envelope allowlist"
                 )
             delegated = await delegate_async_turn(
-                self, key, envelope, context, selection
+                self,
+                _AsyncTurnRequest(
+                    key=key,
+                    envelope=envelope,
+                    context=context,
+                    rebuilt=rebuilt,
+                    selection=selection,
+                    route_source=route_source,
+                    prepared_turn=prepared,
+                ),
             )
             if delegated is not None:
                 return delegated
@@ -719,12 +733,14 @@ class ConversationContextService:
 
 
 __all__ = [
+    "AsyncAcceptanceError",
+    "AsyncAgentAcceptance",
+    "ConversationContextService",
     "AgentOutcome",
     "AgentSelection",
     "ContextStageMetadata",
-    "ConversationContextService",
+    "SettlementMismatchError",
     "PrepareStatus",
     "PreparedTurn",
-    "SettlementMismatchError",
     "review_settlement_metadata_from_turn",
 ]

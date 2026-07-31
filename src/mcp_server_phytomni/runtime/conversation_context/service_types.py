@@ -54,6 +54,18 @@ class AgentOutcome:
 
 
 @dataclass(frozen=True)
+class AsyncAgentAcceptance:
+    """Transport proof for one durably accepted asynchronous run."""
+
+    result: dict[str, Any]
+    status_code: int
+
+
+class AsyncAcceptanceError(RuntimeError):
+    """An async delegate returned no durable accepted-run identity."""
+
+
+@dataclass(frozen=True)
 class _ContextStageRoute:
     """Routing fields shared by durable stage metadata."""
 
@@ -87,6 +99,8 @@ class PreparedTurn:
 
 
 __all__ = [
+    "AsyncAcceptanceError",
+    "AsyncAgentAcceptance",
     "AgentOutcome",
     "AgentSelection",
     "ContextStageMetadata",

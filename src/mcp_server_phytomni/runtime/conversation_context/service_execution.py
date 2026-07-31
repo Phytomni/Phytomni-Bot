@@ -21,6 +21,8 @@ from .service_types import (
     _SYNC_CONTEXT_AGENTS,
     AgentOutcome,
     AgentSelection,
+    AsyncAcceptanceError,
+    AsyncAgentAcceptance,
     ContextStageMetadata,
     PreparedTurn,
     PrepareStatus,
@@ -146,26 +148,19 @@ async def select_agent_for_turn(
 
 async def delegate_async_turn(
     service: ConversationContextService,
-    key: str,
-    envelope: ConversationEnvelopeV1,
-    context: BusinessContext,
-    selection: AgentSelection,
+    request: _AsyncTurnRequest,
 ) -> PreparedTurn | None:
-    """Run an asynchronous-only agent, or return ``None`` for sync ones."""
-    if selection.selected_agent_id in _SYNC_CONTEXT_AGENTS:
+    """Run and stage an asynchronous-only agent, or return ``None``."""
+    if request.selection.selected_agent_id in _SYNC_CONTEXT_AGENTS:
         return None
     try:
-        result = await service.delegate_async(
-            selection.selected_agent_id, envelope
+        acceptance = await service.delegate_async(
+            request.selection.selected_agent_id, request.envelope
         )
     except BaseException:
-        service.store.mark_turn_failed(key, envelope.turn_id)
+        service.store.mark_turn_failed(request.key, request.envelope.turn_id)
         raise
-    return PreparedTurn(
-        PrepareStatus.READY,
-        context=context,
-        result=result,
-    )
+    return finish_async_turn(service, request, acceptance)
 
 
 async def invoke_sync_turn(
@@ -237,17 +232,17 @@ def context_delta_for_outcome(
 
 
 class _StageRequest(NamedTuple):
-    """Values needed to persist one staged synchronous outcome."""
+    """Values needed to persist one staged agent outcome."""
 
     key: str
     envelope: ConversationEnvelopeV1
-    projection: ContextProjection
-    outcome: AgentOutcome
+    result: dict[str, Any]
     selection: AgentSelection
     route_source: str
     proposed: BusinessContext
     rebuilt: bool
     degraded: bool
+    context_truncated: bool
     review_metadata: dict[str, Any] | None
 
 
@@ -265,6 +260,18 @@ class _SyncTurnRequest(NamedTuple):
     outcome: AgentOutcome
 
 
+class _AsyncTurnRequest(NamedTuple):
+    """Values carried from preparation into async acceptance settlement."""
+
+    key: str
+    envelope: ConversationEnvelopeV1
+    context: BusinessContext
+    rebuilt: bool
+    selection: AgentSelection
+    route_source: str
+    prepared_turn: PreparedTurn
+
+
 def stage_outcome(
     service: ConversationContextService,
     request: _StageRequest,
@@ -272,8 +279,6 @@ def stage_outcome(
     """Persist the proposed context and return its public stage metadata."""
     key = request.key
     envelope = request.envelope
-    projection = request.projection
-    outcome = request.outcome
     selection = request.selection
     route_source = request.route_source
     proposed = request.proposed
@@ -286,7 +291,7 @@ def stage_outcome(
             envelope.base_business_context_version + 1
         ),
         last_applied_ledger_cursor=envelope.ledger_cursor,
-        context_truncated=projection.context_truncated,
+        context_truncated=request.context_truncated,
         context_rebuilt=request.rebuilt,
         context_degraded=request.degraded,
     )
@@ -313,7 +318,7 @@ def stage_outcome(
             base_context_version=envelope.base_business_context_version,
             selected_agent_id=selection.selected_agent_id,
             route_source=route_source,
-            result=outcome.result,
+            result=request.result,
             delta=proposed.model_dump(mode="json"),
             ledger_version=envelope.ledger_version,
             schema_version=proposed.schema_version,
@@ -375,13 +380,13 @@ async def finish_sync_turn(
         _StageRequest(
             key=request.key,
             envelope=request.envelope,
-            projection=request.projection,
-            outcome=request.outcome,
+            result=request.outcome.result,
             selection=request.selection,
             route_source=request.route_source,
             proposed=proposed,
             rebuilt=request.rebuilt,
             degraded=degraded,
+            context_truncated=request.projection.context_truncated,
             review_metadata=review_metadata,
         ),
     )
@@ -395,10 +400,72 @@ async def finish_sync_turn(
     )
 
 
+def _durable_async_run_id(
+    acceptance: AsyncAgentAcceptance,
+) -> str | None:
+    """Return a run id only when the native 202 contract is proven."""
+    result = acceptance.result
+    run_id = result.get("run_id")
+    if (
+        acceptance.status_code != 202
+        or result.get("status") != "running"
+        or not isinstance(run_id, str)
+        or not run_id
+        or result.get("id") != run_id
+    ):
+        return None
+    return run_id
+
+
+def finish_async_turn(
+    service: ConversationContextService,
+    request: _AsyncTurnRequest,
+    acceptance: AsyncAgentAcceptance,
+) -> PreparedTurn:
+    """Advance and stage context after durable async acceptance."""
+    if request.prepared_turn.stored_turn is None:
+        raise AsyncAcceptanceError("async turn was not durably prepared")
+    if _durable_async_run_id(acceptance) is None:
+        service.store.mark_turn_failed(request.key, request.envelope.turn_id)
+        raise AsyncAcceptanceError(
+            "async agent response did not prove durable running acceptance"
+        )
+    proposed = service.advance_context(
+        request.context,
+        request.envelope,
+        ContextDelta(),
+        add_current_user_turn=not request.rebuilt,
+    )
+    stored, stage = stage_outcome(
+        service,
+        _StageRequest(
+            key=request.key,
+            envelope=request.envelope,
+            result=acceptance.result,
+            selection=request.selection,
+            route_source=request.route_source,
+            proposed=proposed,
+            rebuilt=request.rebuilt,
+            degraded=False,
+            context_truncated=False,
+            review_metadata=None,
+        ),
+    )
+    return PreparedTurn(
+        PrepareStatus.RETURN_STAGED,
+        context=proposed,
+        projection=None,
+        stored_turn=stored,
+        result=acceptance.result,
+        stage=stage,
+    )
+
+
 __all__ = [
     "_metadata_only_delta",
     "context_delta_for_outcome",
     "delegate_async_turn",
+    "finish_async_turn",
     "finish_sync_turn",
     "invoke_sync_turn",
     "review_metadata_for_outcome",

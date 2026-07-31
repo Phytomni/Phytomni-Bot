@@ -30,6 +30,8 @@ from mcp_server_phytomni.runtime.conversation_context.projection import (
 from mcp_server_phytomni.runtime.conversation_context.service import (
     AgentOutcome,
     AgentSelection,
+    AsyncAcceptanceError,
+    AsyncAgentAcceptance,
     ConversationContextService,
     PrepareStatus,
     SettlementMismatchError,
@@ -105,7 +107,7 @@ def _service(
     *,
     router: Callable[..., Awaitable[AgentSelection]] | None = None,
     invoke: Callable[..., Awaitable[AgentOutcome]] | None = None,
-    delegate: Callable[..., Awaitable[dict[str, object]]] | None = None,
+    delegate: Callable[..., Awaitable[AsyncAgentAcceptance]] | None = None,
 ) -> ConversationContextService:
     """Create an injected service with deterministic terminal output."""
 
@@ -125,8 +127,11 @@ def _service(
 
     async def default_delegate(
         _agent: str, _envelope: ConversationEnvelopeV1
-    ) -> dict[str, object]:
-        return {"status": "accepted", "run_id": "run-1"}
+    ) -> AsyncAgentAcceptance:
+        return AsyncAgentAcceptance(
+            result={"id": "run-1", "run_id": "run-1", "status": "running"},
+            status_code=202,
+        )
 
     return ConversationContextService(
         store,
@@ -736,10 +741,10 @@ async def test_review_settlement_metadata_is_durable_but_not_public(
 
 
 @pytest.mark.asyncio
-async def test_async_agent_delegates_without_projection_or_staging(
+async def test_async_agent_stages_durable_acceptance_without_projection(
     store: ConversationContextStore,
 ) -> None:
-    """Non-eligible Expert agents retain their accepted-run lifecycle."""
+    """A durable async acceptance advances only bounded context metadata."""
     invoked = False
 
     async def invoke(*_args: object) -> AgentOutcome:
@@ -754,10 +759,105 @@ async def test_async_agent_delegates_without_projection_or_staging(
     )
     result = await service.execute_turn(envelope)
 
-    assert result.result == {"status": "accepted", "run_id": "run-1"}
-    assert result.stage is None
+    assert result.status is PrepareStatus.RETURN_STAGED
     assert result.projection is None
+    assert result.stage is not None
+    assert result.stage.selected_agent_id == "DeepGenomeAgent"
+    assert result.stage.route_source == "explicit_selection"
+    assert result.stage.context_truncated is False
+    assert result.result is not None
+    assert result.result["run_id"] == "run-1"
+    assert result.context is not None
+    assert result.context.recent_user_turns == ["keep rice samples"]
+    assert "run-1" not in result.context.model_dump_json()
     assert invoked is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "acceptance",
+    [
+        AsyncAgentAcceptance(
+            result={"id": "", "run_id": "", "status": "running"},
+            status_code=202,
+        ),
+        AsyncAgentAcceptance(
+            result={"id": "run-1", "run_id": "run-2", "status": "running"},
+            status_code=202,
+        ),
+        AsyncAgentAcceptance(
+            result={"id": "run-1", "run_id": "run-1", "status": "failed"},
+            status_code=202,
+        ),
+        AsyncAgentAcceptance(
+            result={"id": "run-1", "run_id": "run-1", "status": "running"},
+            status_code=200,
+        ),
+    ],
+)
+async def test_async_acceptance_must_prove_durable_run(
+    store: ConversationContextStore,
+    acceptance: AsyncAgentAcceptance,
+) -> None:
+    """Malformed or non-202 async responses never stage context."""
+
+    async def delegate(
+        _agent: str, _envelope: ConversationEnvelopeV1
+    ) -> AsyncAgentAcceptance:
+        return acceptance
+
+    service = _service(store, delegate=delegate)
+    envelope = _envelope(
+        requested_agent_id="DeepGenomeAgent",
+        allowed_agent_ids=["ChatAgent", "DeepGenomeAgent"],
+    )
+
+    with pytest.raises(AsyncAcceptanceError):
+        await service.execute_turn(envelope)
+
+    stored = store.load_turn(str(_CONVERSATION_KEY), envelope.turn_id)
+    assert stored is not None
+    assert stored.state == "failed"
+    assert stored.result is None
+    assert stored.stage_metadata is None
+    assert store.load_context(str(_CONVERSATION_KEY)) is None
+
+
+@pytest.mark.asyncio
+async def test_async_acceptance_replay_does_not_delegate_twice(
+    store: ConversationContextStore,
+) -> None:
+    """Staged and committed async retries replay the original run identity."""
+    calls = 0
+
+    async def delegate(
+        _agent: str, _envelope: ConversationEnvelopeV1
+    ) -> AsyncAgentAcceptance:
+        nonlocal calls
+        calls += 1
+        return AsyncAgentAcceptance(
+            result={"id": "run-1", "run_id": "run-1", "status": "running"},
+            status_code=202,
+        )
+
+    service = _service(store, delegate=delegate)
+    envelope = _envelope(
+        requested_agent_id="DeepGenomeAgent",
+        allowed_agent_ids=["ChatAgent", "DeepGenomeAgent"],
+    )
+
+    first = await service.execute_turn(envelope)
+    staged_retry = await service.execute_turn(
+        envelope.model_copy(update={"request_id": "request-retry"})
+    )
+    await service.acknowledge_settlement(envelope, "b" * 64)
+    committed_retry = await service.execute_turn(envelope)
+
+    assert first.status is PrepareStatus.RETURN_STAGED
+    assert staged_retry.status is PrepareStatus.RETURN_STAGED
+    assert committed_retry.status is PrepareStatus.RETURN_COMMITTED
+    assert first.result == staged_retry.result == committed_retry.result
+    assert calls == 1
 
 
 @pytest.mark.asyncio

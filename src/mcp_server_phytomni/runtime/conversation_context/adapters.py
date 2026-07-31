@@ -32,6 +32,7 @@ from .projection import agent_thread_id
 from .service import (
     AgentOutcome,
     AgentSelection,
+    AsyncAgentAcceptance,
     ConversationContextService,
     PreparedTurn,
     PrepareStatus,
@@ -75,7 +76,7 @@ SyncInvoker = Callable[
 ]
 AsyncInvoker = Callable[
     [str, ConversationEnvelopeV1, dict[str, Any]],
-    Awaitable[dict[str, Any]],
+    Awaitable[AsyncAgentAcceptance],
 ]
 RouterSelector = Callable[..., Awaitable[ToolSelection | None]]
 StoreFactory = Callable[[], ConversationContextStore]
@@ -700,11 +701,14 @@ class ConversationContextExecutor:
         envelope: ConversationEnvelopeV1,
         invoke: SyncInvoker,
         delegate_async: AsyncInvoker,
+        selected_arguments: Mapping[str, Any] | None = None,
     ) -> PreparedTurn:
         """Bind one transport and execute the durable context lifecycle."""
         sync_token = self._bindings.sync_invoker.set(invoke)
         async_token = self._bindings.async_invoker.set(delegate_async)
-        arguments_token = self._bindings.selected_arguments.set({})
+        arguments_token = self._bindings.selected_arguments.set(
+            dict(selected_arguments or {})
+        )
         review_token = self._bindings.review_adapter.set(None)
         try:
             prepared = await self._service_for_request().execute_turn(envelope)
@@ -847,13 +851,12 @@ class ConversationContextExecutor:
         self,
         selected_agent_id: str,
         envelope: ConversationEnvelopeV1,
-    ) -> dict[str, Any]:
+    ) -> AsyncAgentAcceptance:
         invoke = self._bindings.async_invoker.get()
         if invoke is None:
             raise RuntimeError("context async invoker is unavailable")
         arguments = dict(self._bindings.selected_arguments.get() or {})
-        arguments.setdefault("user_query", envelope.current_message.content)
-        arguments["locale"] = envelope.current_message.locale
+        arguments.setdefault("locale", envelope.current_message.locale)
         return await invoke(selected_agent_id, envelope, arguments)
 
 

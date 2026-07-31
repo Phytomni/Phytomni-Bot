@@ -34,6 +34,7 @@ from mcp_server_phytomni.runtime.conversation_context.projection import (
 from mcp_server_phytomni.runtime.conversation_context.service import (
     AgentOutcome,
     AgentSelection,
+    AsyncAgentAcceptance,
     ConversationContextService,
     PrepareStatus,
 )
@@ -137,7 +138,7 @@ def _service(
     *,
     router: Callable[..., Awaitable[AgentSelection]],
     invoke: Callable[..., Awaitable[AgentOutcome]],
-    delegate_async: Callable[..., Awaitable[dict[str, object]]],
+    delegate_async: Callable[..., Awaitable[AsyncAgentAcceptance]],
 ) -> ConversationContextService:
     """Construct a service with an isolated durable Bot store."""
     return ConversationContextService(
@@ -173,6 +174,20 @@ def _outcome(
         context_delta=delta or ContextDelta(),
         private_stage_metadata=private_stage_metadata,
     )
+
+
+def _async_acceptance_delegate(
+    run_id: str = "run-opaque",
+) -> Callable[..., Awaitable[AsyncAgentAcceptance]]:
+    """Return the shared durable acceptance fake for async agents."""
+
+    async def delegate(*_args: Any, **_kwargs: Any) -> AsyncAgentAcceptance:
+        return AsyncAgentAcceptance(
+            result={"id": run_id, "run_id": run_id, "status": "running"},
+            status_code=202,
+        )
+
+    return delegate
 
 
 def _knowledge_data_review_invoke(
@@ -502,7 +517,7 @@ async def test_instant_chat_keeps_pronoun_continuity_and_chat_lock(
         )
         return _outcome(agent, delta=delta)
 
-    async def delegate(*_args: Any, **_kwargs: Any) -> dict[str, object]:
+    async def delegate(*_args: Any, **_kwargs: Any) -> AsyncAgentAcceptance:
         raise AssertionError("Instant Chat must not delegate asynchronously")
 
     service = _service(
@@ -556,8 +571,7 @@ async def test_expert_forced_then_automatic_uses_fresh_complete_allowlist(
         invoked.append(agent)
         return _outcome(agent)
 
-    async def delegate(*_args: Any, **_kwargs: Any) -> dict[str, object]:
-        return {"status": "running", "run_id": "run-opaque"}
+    delegate = _async_acceptance_delegate()
 
     service = _service(
         tmp_path, router=router, invoke=invoke, delegate_async=delegate
@@ -605,8 +619,7 @@ async def test_knowledge_data_review_preserve_refs_without_full_text(
     async def router(*_args: Any, **_kwargs: Any) -> AgentSelection:
         return AgentSelection("ChatAgent", "ROUTER")
 
-    async def delegate(*_args: Any, **_kwargs: Any) -> dict[str, object]:
-        return {"status": "running", "run_id": "run-opaque"}
+    delegate = _async_acceptance_delegate()
 
     key = _conversation_key(3)
     service = _service(
@@ -678,8 +691,7 @@ async def test_brief_gene_context_reuses_and_replaces_identifier(
     async def router(*_args: Any, **_kwargs: Any) -> AgentSelection:
         return AgentSelection("BriefGeneAgent", "ROUTER")
 
-    async def delegate(*_args: Any, **_kwargs: Any) -> dict[str, object]:
-        return {"status": "running", "run_id": "run-opaque"}
+    delegate = _async_acceptance_delegate()
 
     service = _service(
         tmp_path,
