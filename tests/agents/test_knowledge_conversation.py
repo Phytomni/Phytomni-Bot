@@ -12,6 +12,9 @@ from typing import Any, cast
 import pytest
 
 from mcp_server_phytomni.agents.knowledge import agent as knowledge_agent
+from mcp_server_phytomni.agents.knowledge import (
+    conversation as knowledge_conversation,
+)
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
 from mcp_server_phytomni.agents.knowledge.conversation import (
     KnowledgeClarificationError,
@@ -35,12 +38,16 @@ def _projection(
     current_query: str = "What evidence supports that?",
     active_entities: list[ContextEntity] | None = None,
     relevant_recent_turns: list[RoleTaggedTurn] | None = None,
+    task_summary: str = "",
+    open_questions: list[str] | None = None,
 ) -> ContextProjection:
     """Build one bounded Knowledge projection for adapter tests."""
     return ContextProjection(
         current_query=current_query,
+        task_summary=task_summary,
         active_entities=active_entities or [],
         relevant_recent_turns=relevant_recent_turns or [],
+        open_questions=open_questions or [],
         agent_thread_id="ctx-" + "1" * 64,
         locale="en-US",
         token_budget=1024,
@@ -263,3 +270,93 @@ def test_delta_replaces_prior_active_topic_after_explicit_switch() -> None:
 
     assert [item.label for item in delta.entity_upserts] == ["OsNAC6"]
     assert delta.entity_removals == ["knowledge:osdreb1"]
+
+
+def test_knowledge_helpers_cover_bounded_and_raw_result_paths() -> None:
+    """Exercise the bounded helper fallbacks and raw response shapes."""
+    assert knowledge_conversation._bounded_text(None) == ""
+    assert knowledge_conversation._candidate_tokens(
+        "OsDREB1 OsDREB1 evidence"
+    ) == ["OsDREB1"]
+    projection = _projection(
+        current_query="Which pathway is involved?",
+        task_summary="The active drought-response task.",
+        active_entities=[
+            ContextEntity(
+                entity_id="knowledge:osdreb1",
+                entity_type="gene",
+                label="OsDREB1",
+            )
+        ],
+        open_questions=["Which tissues respond?"],
+    )
+    fragments = knowledge_conversation._answer_context_fragments(projection)
+    assert "[task summary]" in fragments[0]
+    assert "[open questions]" in fragments[-1]
+    assert knowledge_conversation._explicit_topic(
+        "Tell me about OsDREB1", candidates=["OsDREB1"]
+    ) == ("OsDREB1", False)
+    assert (
+        knowledge_conversation._standalone_query(
+            "How is it expressed?", "OsDREB1"
+        )
+        == "How is it expressed about OsDREB1?"
+    )
+    raw_result = {
+        "result": {
+            "formatted": {"answer": ""},
+            "raw": {"choices": [{"message": {"content": "raw answer"}}]},
+        }
+    }
+    assert knowledge_conversation._answer_text(raw_result) == "raw answer"
+    assert (
+        knowledge_conversation._answer_text(
+            {"choices": [{"message": {"content": "top answer"}}]}
+        )
+        == "top answer"
+    )
+    follow_up_result = {
+        "result": {
+            "raw": {
+                "choices": [
+                    {"message": {"follow_up_questions": ["Next?", "", 1]}}
+                ]
+            }
+        }
+    }
+    assert knowledge_conversation._follow_up_questions(follow_up_result) == [
+        "Next?"
+    ]
+
+
+def test_knowledge_topic_removals_skip_non_gene_and_same_topic() -> None:
+    """Only prior gene topics different from the new topic are removed."""
+    projection = _projection(
+        current_query="Tell me about OsNAC6.",
+        active_entities=[
+            ContextEntity(
+                entity_id="knowledge:osdreb1",
+                entity_type="gene",
+                label="OsDREB1",
+            ),
+            ContextEntity(
+                entity_id="knowledge:osnac6",
+                entity_type="gene",
+                label="OsNAC6",
+            ),
+            ContextEntity(
+                entity_id="knowledge:osa",
+                entity_type="species",
+                label="osa",
+            ),
+        ],
+    )
+    assert knowledge_conversation._topic_entity_removals(
+        projection, topic_label="OsNAC6", is_new_topic=True
+    ) == ("knowledge:osdreb1",)
+
+
+def test_knowledge_delta_requires_prepare() -> None:
+    """Delta construction cannot run before a turn has been prepared."""
+    with pytest.raises(RuntimeError, match="prepare must run"):
+        KnowledgeConversationAdapter().delta({})

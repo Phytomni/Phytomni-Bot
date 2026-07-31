@@ -215,11 +215,13 @@ async def test_brief_gene_function_runs_brief_workflow(
 
     result = await brief_gene_agent.brief_gene_function(
         user_query="AtPHYB function",
+        thread_id="thread-brief-1",
     )
 
     assert result == {"ok": True}
     arun = captured["arun"]["kwargs"]
     assert arun["user_query"] == "AtPHYB function"
+    assert arun["thread_id"] == "thread-brief-1"
 
 
 async def test_gene_function_runs_deep_genome_workflow(

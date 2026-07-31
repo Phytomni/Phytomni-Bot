@@ -14,6 +14,7 @@ import pytest
 
 from mcp_server_phytomni.agents.brief_gene import agent as brief_gene_agent
 from mcp_server_phytomni.agents.brief_gene.conversation import (
+    BriefGeneClarificationError,
     BriefGeneConversationAdapter,
     BriefGeneConversationOperation,
     classify_brief_gene_operation,
@@ -596,3 +597,161 @@ async def test_brief_gene_handler_forwards_private_context(
     assert captured["thread_id"] == _THREAD_ID
     assert captured["conversation_adapter"] is adapter
     assert captured["conversation_projection"] is projection
+
+
+@pytest.mark.asyncio
+async def test_brief_gene_context_without_projection_clarifies() -> None:
+    """A missing projection cannot silently start a report workflow."""
+    adapter = BriefGeneConversationAdapter()
+
+    result = await brief_gene_agent.brief_gene_function(
+        "Os01g0177400", conversation_adapter=adapter
+    )
+
+    assert result["choices"][0]["message"]["content"]
+    assert adapter.settlement_ready is False
+
+
+@pytest.mark.asyncio
+async def test_brief_gene_clarification_operation_is_not_stageable() -> None:
+    """Ambiguous operations return clarification and mark the adapter failed."""
+    projection = _projection("analyze a new gene", active=True)
+    adapter = BriefGeneConversationAdapter()
+    adapter.prepare(projection)
+
+    result = await brief_gene_agent.brief_gene_function(
+        projection.current_query,
+        conversation_adapter=adapter,
+        conversation_projection=projection,
+    )
+
+    assert result["choices"][0]["message"]["content"]
+    assert adapter.settlement_ready is False
+
+
+@pytest.mark.asyncio
+async def test_brief_gene_follow_up_clarification_error_is_stable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed follow-up is converted into a bounded clarification."""
+    projection = _projection("Where is it expressed?", active=True)
+    adapter = BriefGeneConversationAdapter()
+    adapter.prepare(projection)
+
+    async def fail_chat(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise BriefGeneClarificationError("follow-up unavailable")
+
+    monkeypatch.setattr(brief_gene_agent, "invoke_brief_gene_chat", fail_chat)
+    result = await brief_gene_agent.brief_gene_function(
+        projection.current_query,
+        conversation_adapter=adapter,
+        conversation_projection=projection,
+    )
+
+    assert (
+        "follow-up unavailable" in result["choices"][0]["message"]["content"]
+    )
+    assert adapter.settlement_ready is False
+
+
+@pytest.mark.asyncio
+async def test_brief_gene_report_without_resolver_query_clarifies() -> None:
+    """Report execution refuses to run when no identifier was prepared."""
+    runtime = brief_gene_agent._build_brief_gene_runtime(None, {})
+    adapter = BriefGeneConversationAdapter()
+
+    result = await brief_gene_agent._run_brief_gene_conversation_report(
+        adapter, runtime, None
+    )
+
+    assert result["choices"][0]["message"]["content"]
+    assert adapter.settlement_ready is False
+
+
+@pytest.mark.asyncio
+async def test_brief_gene_report_failure_marks_adapter_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An agent exception is propagated only after failure is recorded."""
+    projection = _projection("Os01g0177400")
+    adapter = BriefGeneConversationAdapter()
+    adapter.prepare(projection)
+
+    async def resolve(*_args: Any, **_kwargs: Any) -> BriefGeneResolveResult:
+        return _resolved()
+
+    async def fail_arun(**_kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError("report failed")
+
+    monkeypatch.setattr(
+        brief_gene_agent, "resolve_brief_gene_user_query", resolve
+    )
+    monkeypatch.setattr(
+        brief_gene_agent,
+        "get_cached_agent",
+        lambda *args, **kwargs: SimpleNamespace(arun=fail_arun),
+    )
+
+    with pytest.raises(RuntimeError, match="report failed"):
+        await brief_gene_agent.brief_gene_function(
+            projection.current_query,
+            conversation_adapter=adapter,
+            conversation_projection=projection,
+        )
+    assert adapter.settlement_ready is False
+
+
+@pytest.mark.asyncio
+async def test_brief_gene_unusable_report_returns_clarification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty report result is not captured as successful context."""
+    projection = _projection("Os01g0177400")
+    adapter = BriefGeneConversationAdapter()
+
+    async def resolve(*_args: Any, **_kwargs: Any) -> BriefGeneResolveResult:
+        return _resolved()
+
+    async def empty_arun(**_kwargs: Any) -> dict[str, Any]:
+        return {}
+
+    monkeypatch.setattr(
+        brief_gene_agent, "resolve_brief_gene_user_query", resolve
+    )
+    monkeypatch.setattr(
+        brief_gene_agent,
+        "get_cached_agent",
+        lambda *args, **kwargs: SimpleNamespace(arun=empty_arun),
+    )
+
+    result = await brief_gene_agent.brief_gene_function(
+        projection.current_query,
+        conversation_adapter=adapter,
+        conversation_projection=projection,
+    )
+
+    assert "usable report" in result["choices"][0]["message"]["content"]
+    assert adapter.settlement_ready is False
+
+
+def test_brief_gene_stream_seed_uses_shared_initial_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The stdio progress seed uses the cached app and shared state helper."""
+    captured: dict[str, Any] = {}
+
+    def fake_get_cached_agent(*args: Any, **kwargs: Any) -> Any:
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return SimpleNamespace(app="brief-app")
+
+    monkeypatch.setattr(
+        brief_gene_agent, "get_cached_agent", fake_get_cached_agent
+    )
+    args = SimpleNamespace(user_query="Os01g0177400", locale="en-US")
+
+    app, state = brief_gene_agent.brief_gene_stream_seed(args)
+
+    assert app == "brief-app"
+    assert state["user_query"] == "Os01g0177400"
+    assert captured["args"][0] == "BriefGeneAgent"
