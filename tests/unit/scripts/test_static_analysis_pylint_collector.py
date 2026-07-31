@@ -143,7 +143,7 @@ def test_r0801_resolves_real_partial_source_hint(
     """A real incomplete Pylint excerpt still selects the runtime model."""
     interop = _ROOT / "tests/unit/interop/test_models.py"
     runtime = _ROOT / "tests/unit/runtime/conversation_context/test_models.py"
-    review = _ROOT / "tests/agents/test_review_conversation.py"
+    review = _ROOT / "tests/agents/test_review_conversation_wrapper.py"
     monkeypatch.setattr(
         "scripts.static_analysis.collectors.pylint.tracked_git_files",
         lambda _root, _patterns: (interop, runtime, review),
@@ -152,13 +152,11 @@ def test_r0801_resolves_real_partial_source_hint(
         {
             "message-id": "R0801",
             "path": "tests/unit/runtime/conversation_context/test_models.py",
-            "line": 37,
+            "line": 42,
             "message": (
                 "Similar lines in 2 files\n"
-                "==test_models:[37:42]\n"
-                "==tests.agents.test_review_conversation:[1344:1349]\n"
-                '        "turn_id": "1",\n'
-                '        "request_id": "request-1",\n'
+                "==test_models:[42:44]\n"
+                "==tests.agents.test_review_conversation_wrapper:[308:310]\n"
                 '        "operation": "append",\n'
                 '        "mode": "expert",\n'
                 '        "current_message": {\n'
@@ -171,7 +169,9 @@ def test_r0801_resolves_real_partial_source_hint(
     assert finding.path == (
         "tests/unit/runtime/conversation_context/test_models.py"
     )
-    assert finding.peer_path == "tests/agents/test_review_conversation.py"
+    assert (
+        finding.peer_path == "tests/agents/test_review_conversation_wrapper.py"
+    )
 
 
 def test_r0903_resolves_the_class_symbol() -> None:

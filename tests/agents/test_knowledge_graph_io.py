@@ -58,6 +58,9 @@ def test_knowledge_input_required_keys_are_only_user_query() -> None:
         {
             "locale",
             "obs_file_list",
+            "conversation_messages",
+            "retrieval_query",
+            "answer_context",
             "repo_id_dict",
             "is_generate",
             "is_follow_up",

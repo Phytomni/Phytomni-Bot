@@ -186,10 +186,7 @@ def test_shared_checker_owns_source_suppression_inventory():
 
     assert result.returncode == 0, result.stderr
     document = json.loads(result.stdout)
-    assert any(
-        item["tool"] == "pylint" and item["mechanism"] == "inline"
-        for item in document["unregistered"]
-    )
+    assert document["unregistered"] == []
 
 
 def test_init_files_with_imports_declare_all():

@@ -46,7 +46,8 @@ def test_pytest_default_run_is_offline_and_strict():
     pytest_options = _pyproject()["tool"]["pytest"]["ini_options"]
 
     assert pytest_options["testpaths"] == ["tests"]
-    assert pytest_options["pythonpath"] == ["src"]
+    assert pytest_options["pythonpath"] == ["src", "."]
+    assert "--import-mode=importlib" in pytest_options["addopts"]
     assert pytest_options["asyncio_default_fixture_loop_scope"] == "function"
     assert "--strict-config" in pytest_options["addopts"]
     assert "--strict-markers" in pytest_options["addopts"]

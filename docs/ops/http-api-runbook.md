@@ -1213,9 +1213,9 @@ The server-side BI path has three independent read-only layers:
   with connect, schema usage, and select privileges only; it must not create,
   write, or alter data, and `default_transaction_read_only=on` should be set.
 
-Pool return executes `RESET ALL` to clear session settings and does not use
-UNLISTEN,
-which GaussDB does not support. A reset or query failure is surfaced
+Pool return executes `RESET ALL` to clear session settings.
+It does not use UNLISTEN because GaussDB does not support it. A reset or
+query failure is surfaced
 with fixed public text; logs contain only the request correlation id and
 exception class, never SQL, DSNs, response bodies, or driver messages.
 

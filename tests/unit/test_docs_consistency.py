@@ -39,10 +39,14 @@ ARCHITECTURE_DOCS = tuple(
 )
 INLINE_LINK_PATTERN = re.compile(r"!?\[[^\]]+\]\(([^)]+)\)")
 FENCED_BLOCK_PATTERN = re.compile(r"```.*?```", re.DOTALL)
+INLINE_CODE_PATTERN = re.compile(r"`[^`\n]+`")
 README_TOOL_PATTERN = re.compile(r"\| `([^`]+)`\s+\|")
 MCP_TOOL_PATTERN = re.compile(r"\|\s*`([^`]+)`\s*\|\s*(?:sync|async)\s*\|")
 ENDPOINT_ROW_PATTERN = re.compile(
     r"\|\s*`(GET|POST)`\s*\|\s*`([^`]+)`\s*\|", re.MULTILINE
+)
+BOLD_FIELD_PATTERN = re.compile(
+    r"^\s*(?:-\s+)?\*\*(?P<key>[^*]+):\*\*\s*(?P<value>.*)$"
 )
 
 
@@ -59,8 +63,9 @@ def _git_ls_files(*patterns: str) -> list[Path]:
 
 
 def _strip_fenced_blocks(markdown: str) -> str:
-    """Remove fenced code blocks before Markdown link extraction."""
-    return FENCED_BLOCK_PATTERN.sub("", markdown)
+    """Remove code blocks and spans before Markdown link extraction."""
+    without_fences = FENCED_BLOCK_PATTERN.sub("", markdown)
+    return INLINE_CODE_PATTERN.sub("", without_fences)
 
 
 def _read_architecture_docs() -> str:
@@ -99,10 +104,61 @@ def _public_tool_names() -> set[str]:
     }
 
 
+def _markdown_bullet_records(
+    text: str, first_key: str
+) -> list[dict[str, str]]:
+    """Parse wrapped bold-field records used by the Markdown gate."""
+    records: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    last_key: str | None = None
+    for line in text.splitlines():
+        match = BOLD_FIELD_PATTERN.match(line)
+        if match:
+            key = match.group("key")
+            if key == first_key:
+                if current is not None:
+                    records.append(current)
+                current = {}
+            if current is not None:
+                current[key] = match.group("value").strip().strip("`")
+                last_key = key
+            continue
+        if (
+            current is not None
+            and last_key is not None
+            and line.strip()
+            and not line.lstrip().startswith("-")
+        ):
+            current[last_key] = (
+                (f"{current[last_key]} {line.strip()}").strip().strip("`")
+            )
+    if current is not None:
+        records.append(current)
+    return records
+
+
+def _capability_status(text: str, capability: str, status: str) -> bool:
+    """Return whether a capability has the expected release status."""
+    table_pattern = re.compile(
+        rf"\|\s*{re.escape(capability)}\s*\|\s*" rf"{re.escape(status)}\s*\|"
+    )
+    bullet_pattern = re.compile(
+        rf"-\s+\*\*Capability:\*\*\s*{re.escape(capability)}\s+"
+        rf"\*\*0\.1\.3 status:\*\*\s*{re.escape(status)}"
+    )
+    return bool(table_pattern.search(text) or bullet_pattern.search(text))
+
+
 def _documented_endpoint_pairs(path: Path) -> set[tuple[str, str]]:
-    """Return endpoint pairs from a Markdown endpoint inventory table."""
+    """Return endpoint pairs from a Markdown table or field inventory."""
     text = path.read_text(encoding="utf-8")
-    return set(ENDPOINT_ROW_PATTERN.findall(text))
+    pairs = set(ENDPOINT_ROW_PATTERN.findall(text))
+    pairs.update(
+        (record["Method"], record["Path"])
+        for record in _markdown_bullet_records(text, "Method")
+        if record.get("Method") in {"GET", "POST"} and "Path" in record
+    )
+    return pairs
 
 
 def _api_endpoint_pairs() -> set[tuple[str, str]]:
@@ -176,11 +232,21 @@ def test_readme_and_mcp_reference_list_public_tools() -> None:
         for match in README_TOOL_PATTERN.findall(readme_text)
         if match.endswith("Agent") or match == "GetTaskStatus"
     }
+    readme_tools.update(
+        record["Tool"]
+        for record in _markdown_bullet_records(readme_text, "Tool")
+        if "Tool" in record
+    )
 
     reference_text = (ROOT / "docs/reference/mcp-tools.md").read_text(
         encoding="utf-8"
     )
     reference_tools = set(MCP_TOOL_PATTERN.findall(reference_text))
+    reference_tools.update(
+        record["Tool"]
+        for record in _markdown_bullet_records(reference_text, "Tool")
+        if "Tool" in record
+    )
 
     assert readme_tools == tool_names
     assert reference_tools == tool_names
@@ -406,21 +472,20 @@ def test_readme_matches_the_current_interoperability_boundary() -> None:
     route_paths = {getattr(route, "path", "") for route in create_app().routes}
 
     assert "/a2a" not in route_paths
-    assert re.search(
-        r"\|\s*Calls to external MCP tools or A2A agents\s*\|\s*"
-        r"Explicit opt-in from Research/Design\s*\|",
+    assert _capability_status(
         readme,
+        "Calls to external MCP tools or A2A agents",
+        "Explicit opt-in from Research/Design",
     )
-    assert re.search(
-        r"\|\s*User-scoped memory CRUD API\s*\|\s*"
-        r"Opt-in; bounded read-only recall\s*\|",
+    assert _capability_status(
         readme,
+        "User-scoped memory CRUD API",
+        "Opt-in; bounded read-only recall",
     )
     assert "PHYTOMNI_INTEROP_ENABLED" in readme
     assert "/v1/interop/capabilities" in readme
-    assert re.search(
-        r"\|\s*A2A Agent Card and `/a2a` server\s*\|\s*Opt-in core\s*\|",
-        readme,
+    assert _capability_status(
+        readme, "A2A Agent Card and `/a2a` server", "Opt-in core"
     )
     public_schemas = (
         ROOT / "src/mcp_server_phytomni/mcp/schemas.py"

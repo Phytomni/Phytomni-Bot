@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -50,6 +51,9 @@ REGISTER_COLUMNS = {
     "Exit condition",
     "Rollback",
 }
+_BOLD_FIELD_PATTERN = re.compile(
+    r"^\s*(?:-\s+)?\*\*(?P<key>[^*]+):\*\*\s*(?P<value>.*)$"
+)
 EXPECTED_HANDOFFS = {
     "2026-07-15-a2ui-bot-contract-handoff.md": "Lifecycle/A2UI plan",
     "2026-07-18-bot-head-web-compatibility-handoff.md": (
@@ -113,7 +117,7 @@ STAGING_SMOKES = (
 
 
 def _table_rows(path: Path, heading: str) -> list[dict[str, str]]:
-    """Parse the first Markdown table following a heading."""
+    """Parse a table or wrapped field records following a heading."""
     lines = path.read_text(encoding="utf-8").splitlines()
     try:
         start = next(
@@ -138,9 +142,45 @@ def _table_rows(path: Path, heading: str) -> list[dict[str, str]]:
             continue
         table.append(cells)
 
-    assert table, f"missing table after {heading}"
-    headers = table[0]
-    return [dict(zip(headers, row, strict=True)) for row in table[1:]]
+    if table:
+        headers = table[0]
+        return [dict(zip(headers, row, strict=True)) for row in table[1:]]
+
+    first_key = {
+        "## Requirement ledger": "Requirement",
+        "## Handoff dispositions": "Handoff",
+        "## Compatibility register": "Bridge",
+    }[heading]
+    rows: list[dict[str, str]] = []
+    current: dict[str, str] | None = None
+    last_key: str | None = None
+    for line in lines[slice(start + 1, None)]:
+        if line.startswith("## "):
+            break
+        match = _BOLD_FIELD_PATTERN.match(line)
+        if match:
+            key = match.group("key")
+            if key == first_key:
+                if current is not None:
+                    rows.append(current)
+                current = {}
+            if current is not None:
+                current[key] = match.group("value").strip().strip("`")
+                last_key = key
+            continue
+        if (
+            current is not None
+            and last_key is not None
+            and line.strip()
+            and not line.lstrip().startswith("-")
+        ):
+            current[last_key] = (
+                (f"{current[last_key]} {line.strip()}").strip().strip("`")
+            )
+    if current is not None:
+        rows.append(current)
+    assert rows, f"missing table or wrapped records after {heading}"
+    return rows
 
 
 def parse_requirement_ledger(path: Path = LEDGER) -> list[dict[str, str]]:

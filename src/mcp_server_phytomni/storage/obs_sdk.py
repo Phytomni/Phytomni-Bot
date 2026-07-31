@@ -14,8 +14,8 @@ other warnings continue to propagate as errors.
 
 from __future__ import annotations
 
+import importlib
 import warnings
-from importlib import import_module
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
@@ -32,13 +32,14 @@ _VENDOR_WARNING_MODULE = r".*(?:obs[.](?:const|client)|const|client).*"
 def _load_sdk_symbols() -> dict[str, type[Any]]:
     """Load the OBS symbols while containing only its known syntax warning."""
     with warnings.catch_warnings():
+        warnings.simplefilter("error", SyntaxWarning)
         warnings.filterwarnings(
             "ignore",
             message=_VENDOR_WARNING_MESSAGE,
             category=SyntaxWarning,
             module=_VENDOR_WARNING_MODULE,
         )
-        sdk = import_module("obs")
+        sdk = importlib.import_module("obs")
     return {
         "ObsClient": cast("type[Any]", sdk.ObsClient),
         "GetObjectHeader": cast("type[Any]", sdk.GetObjectHeader),

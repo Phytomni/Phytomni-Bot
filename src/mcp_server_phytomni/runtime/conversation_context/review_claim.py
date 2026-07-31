@@ -9,8 +9,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from secrets import token_hex
 from typing import Any
-from uuid import uuid4
 
 from .review_support import (
     _REVIEW_SETTLEMENT_FENCE_LIMIT,
@@ -218,7 +218,7 @@ def _claim_active_marker(
     next_fence = fence + 1
     if next_fence > _REVIEW_SETTLEMENT_FENCE_LIMIT:
         return ReviewSettlementClaim("invalid")
-    claim_token = uuid4().hex
+    claim_token = token_hex(16)
     updated = dict(request.marker)
     updated.update(
         {
@@ -259,7 +259,7 @@ def _claim_pending_marker(
         or previous_fence >= _REVIEW_SETTLEMENT_FENCE_LIMIT
     ):
         return ReviewSettlementClaim("invalid")
-    claim_token = uuid4().hex
+    claim_token = token_hex(16)
     fence = previous_fence + 1
     updated = dict(request.marker)
     updated.update(
