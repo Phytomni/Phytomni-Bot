@@ -1591,6 +1591,89 @@ mirrored in `formatted.metadata.output_dir` for single-task consumers).
 `raw.phytomni_state` carries the LangGraph intermediate state for
 agents that populate it.
 
+### Native conversation context V1 (HTTP-private)
+
+`AgentRunRequest.conversation` is an additive, HTTP-only field on
+`POST /v1/agents/{slug}/runs`:
+
+```json
+{
+  "arguments": {"user_query": "bounded execution input"},
+  "conversation": {"schema_version": 1, "...": "ConversationEnvelopeV1"}
+}
+```
+
+The complete sanitized request and response examples live in
+`tests/fixtures/conversation_context/v1.json`. The envelope is validated
+before run reservation or agent invocation. Its `mode` must be `expert`,
+`requested_agent_id` must equal the canonical tool represented by the URL
+slug, and that tool must be present in the ordered `allowed_agent_ids` list.
+An unknown slug retains the normal `404`; a valid envelope with
+`CONVERSATION_CONTEXT_V1_ENABLED` disabled retains the context-disabled
+`404`. The URL selects the native agent directly: this path does not invoke
+the Expert router.
+
+All ten canonical native slugs accept the envelope. `chat`, `knowledge`,
+`data`, `review`, and `brief_gene` use synchronous adapters and return a
+terminal `200` response. `analyst`, `deep_genome`, `research`, `design`, and
+`network` use the existing durable submission lifecycle and return the
+original accepted `202` response. The route and mode are explicit even when
+the execution arguments contain a separate `user_query`: the envelope's
+`current_message` is the bounded user turn retained in context, while
+`arguments` remains the authority for validated tool inputs and resolver
+fields.
+
+A successful response adds one bounded top-level `conversation_context`
+object:
+
+```json
+{
+  "schema_version": 1,
+  "turn_id": "42",
+  "selected_agent_id": "DataAgent",
+  "route_source": "explicit_selection",
+  "route_reason_code": "EXPLICIT_SELECTION",
+  "base_business_context_version": 3,
+  "proposed_business_context_version": 4,
+  "last_applied_ledger_cursor": 18,
+  "context_truncated": false,
+  "context_rebuilt": false,
+  "context_degraded": false
+}
+```
+
+The five synchronous adapters stage terminal metadata after the agent result
+is available. An asynchronous turn is accepted only after the existing run
+path has durably persisted a non-empty run identity and returned
+`status="running"` with HTTP `202`; the Bot then stages the bounded user turn
+with an empty metadata delta. No assistant answer, report, table, SQL, task
+id, URL, path, credential, or background result is written to business
+context. There is no later asynchronous context update when the worker
+finishes, fails, is cancelled, or times out.
+
+The first request owns the turn before invocation. A concurrent duplicate
+returns `409 conversation_context_turn_in_progress`. A retry for a staged or
+committed turn replays the stored result and stage without invoking or
+submitting the agent again. The caller acknowledges a staged proposal through
+`POST /v1/conversation-context/settle`; settlement advances the context
+version, and the existing tombstone path remains the deletion boundary.
+
+Context persistence failures are split by outcome. If preparation or dedupe
+storage fails before an agent outcome exists, the request returns a sanitized
+retryable `503` with `error.code=conversation_context_unavailable` and
+`error.stage=context`, and no agent is called. If staging fails after a valid
+synchronous result or accepted asynchronous result, the original `200` or
+`202` body is preserved, no false stage is emitted, and the body carries only
+`conversation_context_degraded: true`. The client must not resubmit solely
+because this marker is present; the accepted run identity and existing
+idempotency record remain authoritative.
+
+Without `conversation`, native runs keep their V0 request and response
+projection. The private field is absent from the public MCP schemas, and MCP
+stdio tools do not accept or emit this envelope. The feature remains dark
+until `CONVERSATION_CONTEXT_V1_ENABLED` is enabled by the authorized
+operator.
+
 ### Scientific and execution result projection
 
 Default HTTP run responses separate scientific content from operational
@@ -2178,6 +2261,16 @@ Request body:
 - A sync agent returns `200` with `status="succeeded"`; a remote agent
   returns `202` with `status="running"` plus `task_ids`, exactly like the
   native runs path (poll `GET /v1/runs/{id}`).
+
+When the optional private `conversation` envelope is present, the same V1
+context lifecycle is applied after selection. Explicit native selection
+keeps `route_source=explicit_selection`; autonomous selection keeps the
+router-derived source and reason code. Synchronous selections stage after
+the terminal result, while asynchronous selections stage only after the
+existing `202` run is durably accepted. Without the envelope, this route
+retains its V0 behavior. See the native-run contract above and the canonical
+fixture at `tests/fixtures/conversation_context/v1.json` for the bounded
+response shapes.
 
 Invalid allowlists (missing, empty, over ten entries, duplicate, or unknown
 canonical names), a non-member `forced_tool`, and unknown body keys are

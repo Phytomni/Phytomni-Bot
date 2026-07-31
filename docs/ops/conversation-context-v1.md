@@ -16,18 +16,22 @@ per-agent memory, route selection metadata, stable agent threads, and context
 delta staging/settlement. Bot does not authenticate end users, decide user
 permissions, or authorize artifact ownership. Those are Go responsibilities.
 
-The current V1 scope is synchronous Chat, Knowledge, Data, Review, and Brief
-Gene. Asynchronous agents retain their existing `202` response and run/task
-lifecycle.
+The V1 scope covers all ten canonical native slugs. Chat, Knowledge, Data,
+Review, and Brief Gene stage terminal metadata at HTTP `200`; Analyst,
+DeepGenome, Research, Design, and Network stage a metadata-only proposal at
+durable HTTP `202` acceptance. The later background outcome does not update or
+roll back the accepted conversation turn.
 
 ## Protocol surfaces
 
 - `GET /v1/agents` advertises `conversation_context: [1]` only when the Bot
   capability is enabled. With the flag off, normal V0 capability behavior remains
   available and V1 is not advertised.
-- `POST /v1/chat/completions` and `POST /v1/query/route` accept a validated V1
-  envelope when Go has enabled the contract. They return bounded route/stage
-  metadata; display answers are not context metadata.
+- `POST /v1/chat/completions`, `POST /v1/query/route`, and
+  `POST /v1/agents/{slug}/runs` accept a validated V1 envelope when Go has
+  enabled the contract. They return bounded route/stage metadata; display
+  answers are not context metadata. Native runs pin selection to the URL
+  slug and do not invoke the Expert router.
 - `POST /v1/conversation-context/settle` acknowledges one staged Go turn by
   conversation key, turn ID, and ledger version. It returns only bounded mutation
   state and context version.

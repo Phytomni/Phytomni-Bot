@@ -150,6 +150,87 @@
       "context_truncated": false,
       "context_rebuilt": false,
       "context_degraded": true
+    },
+    "native_sync_agent_run": {
+      "id": "run-sync-opaque",
+      "run_id": "run-sync-opaque",
+      "object": "agent.run",
+      "agent": "data",
+      "status": "succeeded",
+      "task_ids": [],
+      "result": {
+        "formatted": {
+          "answer": "",
+          "follow_up_questions": [],
+          "references": [],
+          "tabular": {},
+          "output_dirs": [],
+          "metadata": {}
+        }
+      },
+      "conversation_context": {
+        "schema_version": 1,
+        "turn_id": "1",
+        "selected_agent_id": "DataAgent",
+        "route_source": "explicit_selection",
+        "route_reason_code": "EXPLICIT_SELECTION",
+        "base_business_context_version": 0,
+        "proposed_business_context_version": 1,
+        "last_applied_ledger_cursor": 1,
+        "context_truncated": false,
+        "context_rebuilt": true,
+        "context_degraded": false
+      }
+    },
+    "native_async_accepted_run": {
+      "id": "run-opaque",
+      "run_id": "run-opaque",
+      "object": "agent.run",
+      "agent": "analyst",
+      "status": "running",
+      "task_ids": [],
+      "result": {
+        "formatted": {
+          "answer": "",
+          "follow_up_questions": [],
+          "references": [],
+          "tabular": {},
+          "output_dirs": [],
+          "metadata": {}
+        }
+      },
+      "conversation_context": {
+        "schema_version": 1,
+        "turn_id": "1",
+        "selected_agent_id": "AnalystAgent",
+        "route_source": "explicit_selection",
+        "route_reason_code": "EXPLICIT_SELECTION",
+        "base_business_context_version": 0,
+        "proposed_business_context_version": 1,
+        "last_applied_ledger_cursor": 1,
+        "context_truncated": false,
+        "context_rebuilt": true,
+        "context_degraded": false
+      }
+    },
+    "native_context_degraded_run": {
+      "id": "run-opaque",
+      "run_id": "run-opaque",
+      "object": "agent.run",
+      "agent": "analyst",
+      "status": "running",
+      "task_ids": [],
+      "result": {
+        "formatted": {
+          "answer": "",
+          "follow_up_questions": [],
+          "references": [],
+          "tabular": {},
+          "output_dirs": [],
+          "metadata": {}
+        }
+      },
+      "conversation_context_degraded": true
     }
   }
 }

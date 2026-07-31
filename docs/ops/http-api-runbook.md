@@ -500,6 +500,158 @@ The complete deterministic golden is
 `b13f327b1dd1012ef24936cf3183bd37a19d0e1e8ec3dd7a5115352d0ea492b5`). The
 descriptor is a capability preflight, not an authorization grant.
 
+### Native conversation-context V1 probes (non-production only)
+
+Conversation context is dark by default. Run these probes only during a
+time-bounded, owner-approved non-production window with
+`CONVERSATION_CONTEXT_V1_ENABLED=1` on Bot and synthetic data/backends. The
+probes do not establish Web, Go, staging, or production acceptance. Stop the
+window and disable the Go sender before disabling the Bot flag.
+
+The native envelope is private to the HTTP API. Use an opaque UUID pair and a
+64-character ledger version; do not substitute a customer dialogue, OBS path,
+report, or biological record. The following Data request is complete and
+pins the URL slug to `DataAgent` without invoking Expert routing:
+
+```bash
+cat >/tmp/phytomni-context-data.json <<'JSON'
+{
+  "arguments": {"user_query": "Count synthetic records."},
+  "conversation": {
+    "schema_version": 1,
+    "conversation_key": "00000000-0000-0000-0000-000000000041",
+    "dialogue_id": "00000000-0000-0000-0000-000000000042",
+    "turn_id": "1",
+    "request_id": "probe-data-1",
+    "operation": "append",
+    "mode": "expert",
+    "current_message": {
+      "content": "Count synthetic records.",
+      "locale": "en-US"
+    },
+    "requested_agent_id": "DataAgent",
+    "allowed_agent_ids": ["DataAgent"],
+    "ledger_cursor": 1,
+    "ledger_version": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "base_business_context_version": 0,
+    "history_delta": [
+      {"turn_id": "1", "role": "user", "content": "Count synthetic records."}
+    ],
+    "artifact_refs": []
+  }
+}
+JSON
+
+curl -fsS -X POST "$HOST/v1/agents/data/runs" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  --data @/tmp/phytomni-context-data.json \
+  >/tmp/phytomni-context-data.response.json
+
+jq -e '
+  .status == "succeeded" and
+  .conversation_context.selected_agent_id == "DataAgent" and
+  .conversation_context.route_source == "explicit_selection" and
+  .conversation_context.context_degraded == false
+' /tmp/phytomni-context-data.response.json
+```
+
+The expected Data result is HTTP `200` with one explicit-selection stage. The
+following Analyst request uses the same bounded envelope shape and synthetic
+execution arguments:
+
+```bash
+cat >/tmp/phytomni-context-analyst.json <<'JSON'
+{
+  "arguments": {
+    "goal_description": "Summarize synthetic records.",
+    "data_list": {},
+    "obs_file_list": []
+  },
+  "conversation": {
+    "schema_version": 1,
+    "conversation_key": "00000000-0000-0000-0000-000000000043",
+    "dialogue_id": "00000000-0000-0000-0000-000000000044",
+    "turn_id": "1",
+    "request_id": "probe-analyst-1",
+    "operation": "append",
+    "mode": "expert",
+    "current_message": {
+      "content": "Summarize synthetic records.",
+      "locale": "en-US"
+    },
+    "requested_agent_id": "AnalystAgent",
+    "allowed_agent_ids": ["AnalystAgent"],
+    "ledger_cursor": 1,
+    "ledger_version": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "base_business_context_version": 0,
+    "history_delta": [
+      {"turn_id": "1", "role": "user", "content": "Summarize synthetic records."}
+    ],
+    "artifact_refs": []
+  }
+}
+JSON
+
+curl -fsS -X POST "$HOST/v1/agents/analyst/runs" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  --data @/tmp/phytomni-context-analyst.json \
+  >/tmp/phytomni-context-analyst.response.json
+
+jq -e '
+  .status == "running" and
+  (.id | length > 0) and .id == .run_id and
+  .conversation_context.selected_agent_id == "AnalystAgent" and
+  .conversation_context.route_source == "explicit_selection" and
+  .conversation_context.context_degraded == false
+' /tmp/phytomni-context-analyst.response.json
+```
+
+The expected Analyst result is HTTP `202`, `status="running"`, and stable
+equal `id` / `run_id` values. Settle each accepted turn through the existing
+mutation route and verify that the context version advances from `0` to `1`:
+
+```bash
+curl -fsS -X POST "$HOST/v1/conversation-context/settle" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  --data @- <<'JSON' | jq -e '.state == "committed" and .context_version == 1'
+{
+  "schema_version": 1,
+  "conversation_key": "00000000-0000-0000-0000-000000000041",
+  "turn_id": "1",
+  "ledger_version": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}
+JSON
+
+curl -fsS -X POST "$HOST/v1/conversation-context/settle" \
+  -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  --data @- <<'JSON' | jq -e '.state == "committed" and .context_version == 1'
+{
+  "schema_version": 1,
+  "conversation_key": "00000000-0000-0000-0000-000000000043",
+  "turn_id": "1",
+  "ledger_version": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+}
+JSON
+```
+
+Repeat each original `POST` with the same body and verify that the response
+contains the same stage and run identity. Correlate the request id with the
+Bot run/task registry and confirm that the duplicate created no second agent
+invocation or remote task submission; an identical response alone is not
+external acceptance evidence. A concurrent duplicate is expected to return
+`409 conversation_context_turn_in_progress`.
+
+The native envelope has no effect when omitted, and a valid envelope remains
+unavailable while the feature flag is off. A pre-outcome context-store error
+must be a sanitized retryable `503`; a post-outcome staging error must retain
+the original `200` or `202` and expose only
+`conversation_context_degraded=true`. Neither case authorizes a retry that
+could duplicate an accepted run.
+
 ### Locale Ingress And Resume
 
 For `/v1/chat/completions`, `/v1/agents/{agent}/runs`, and
@@ -1009,6 +1161,16 @@ The response must retain the normal `agent.run` shape with the resolved slug,
 debug-only. Logs may include the exception class and request id, but never
 the query, allowlist, extracted arguments, provider payload, credentials, or
 raw exception text.
+
+When this route receives the private `conversation` envelope, it uses the
+same context lifecycle as native runs. Autonomous selections retain the
+router-derived `route_source` and reason code; an explicit forced selection
+uses `explicit_selection` / `EXPLICIT_SELECTION`. Synchronous selections
+stage after a terminal result, and asynchronous selections stage only after
+the existing `202` run is durably accepted. Without the envelope, this route
+remains V0. Use the native context probe above for the URL-pinned Data and
+Analyst cases, and use `tests/fixtures/conversation_context/v1.json` as the
+canonical redacted response contract.
 
 ### Expert dark rollout and rollback
 

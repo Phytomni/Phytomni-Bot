@@ -92,6 +92,25 @@ def test_fixture_requests_decode_with_current_python_models() -> None:
     ContextTombstoneRequest.model_validate(requests["tombstone_request"])
 
 
+def _validate_stage(stage: dict[str, Any]) -> None:
+    """Validate one public stage against the live projection model."""
+    stage_fields = dict(getattr(ProjectionStageMetadata, "model_fields", {}))
+    common = ProjectionStageMetadata.model_validate(
+        {key: stage[key] for key in stage_fields}
+    )
+    round_tripped = {
+        "schema_version": _STAGE_SCHEMA_VERSION.validate_python(
+            stage["schema_version"]
+        ),
+        "turn_id": _STAGE_TURN_ID.validate_python(stage["turn_id"]),
+        **common.model_dump(mode="json"),
+        "context_degraded": _STAGE_CONTEXT_DEGRADED.validate_python(
+            stage["context_degraded"]
+        ),
+    }
+    assert round_tripped == stage
+
+
 def test_fixture_responses_are_emitted_by_current_models() -> None:
     """Current response models reproduce the committed response bytes."""
     responses = _fixture()["responses"]
@@ -101,24 +120,19 @@ def test_fixture_responses_are_emitted_by_current_models() -> None:
         assert response.model_dump(mode="json") == responses[name]
 
     for name in ("staged_metadata_response", "degraded_context_success"):
-        stage = responses[name]
-        stage_fields = dict(
-            getattr(ProjectionStageMetadata, "model_fields", {})
-        )
-        common = ProjectionStageMetadata.model_validate(
-            {key: stage[key] for key in stage_fields}
-        )
-        round_tripped = {
-            "schema_version": _STAGE_SCHEMA_VERSION.validate_python(
-                stage["schema_version"]
-            ),
-            "turn_id": _STAGE_TURN_ID.validate_python(stage["turn_id"]),
-            **common.model_dump(mode="json"),
-            "context_degraded": _STAGE_CONTEXT_DEGRADED.validate_python(
-                stage["context_degraded"]
-            ),
-        }
-        assert round_tripped == stage
+        _validate_stage(responses[name])
+
+    for name, status in (
+        ("native_sync_agent_run", "succeeded"),
+        ("native_async_accepted_run", "running"),
+    ):
+        response = responses[name]
+        assert response["status"] == status
+        _validate_stage(response["conversation_context"])
+
+    degraded = responses["native_context_degraded_run"]
+    assert degraded["conversation_context_degraded"] is True
+    assert "conversation_context" not in degraded
 
     assert responses["staged_metadata_response"]["context_degraded"] is False
     assert responses["degraded_context_success"]["context_degraded"] is True
