@@ -173,10 +173,11 @@ venv = ".venv"
 [tool.pytest.ini_options]
 minversion = "9.0"
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = [
+    "--import-mode=importlib",
     "--strict-config",
     "--strict-markers",
     "-ra",
