@@ -9,6 +9,8 @@ historic imports, including the two private citation helpers used by the
 server test contract, object-identical during the migration.
 """
 
+from dataclasses import dataclass
+
 from . import universal_failures as _universal_failures
 from .formatting import agui as _formatting_agui
 from .formatting import cited as _formatting_cited
@@ -26,7 +28,42 @@ project_universal_failure_metadata = (
 redact_failure_message = _universal_failures.redact_failure_message
 
 AguiEvent = _formatting_agui.AguiEvent
+CONTEXT_STAGED_CUSTOM_NAME = "phyto.context_staged"
 custom = _formatting_agui.custom
+
+
+@dataclass(frozen=True, slots=True)
+class ContextStagedPayload:
+    """Validated fields carried by the conversation-context stage frame."""
+
+    turn_id: str
+    selected_agent_id: str
+    route_source: str
+    proposed_business_context_version: int
+    context_truncated: bool
+    context_rebuilt: bool
+    context_degraded: bool
+
+
+def context_staged(payload: ContextStagedPayload) -> AguiEvent:
+    """Return the bounded V1 conversation-context staging custom frame."""
+    return custom(
+        CONTEXT_STAGED_CUSTOM_NAME,
+        {
+            "schema_version": 1,
+            "turn_id": payload.turn_id,
+            "selected_agent_id": payload.selected_agent_id,
+            "route_source": payload.route_source,
+            "proposed_business_context_version": (
+                payload.proposed_business_context_version
+            ),
+            "context_truncated": payload.context_truncated,
+            "context_rebuilt": payload.context_rebuilt,
+            "context_degraded": payload.context_degraded,
+        },
+    )
+
+
 run_error = _formatting_agui.run_error
 run_finished = _formatting_agui.run_finished
 run_started = _formatting_agui.run_started

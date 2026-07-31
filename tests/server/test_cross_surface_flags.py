@@ -42,17 +42,8 @@ pytestmark = pytest.mark.server
 
 _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 
-_AGENT_TOOL_NAMES = (
-    "ChatAgent",
-    "KnowledgeAgent",
-    "DataAgent",
-    "AnalystAgent",
-    "ReviewAgent",
-    "BriefGeneAgent",
-    "DeepGenomeAgent",
-    "InSilicoResearchAgent",
-    "DigitalDesignAgent",
-    "GeneNetworkAgent",
+_AGENT_TOOL_NAMES = tuple(
+    name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
 )
 _MCP_TOOL_NAMES = (*_AGENT_TOOL_NAMES, "GetTaskStatus")
 

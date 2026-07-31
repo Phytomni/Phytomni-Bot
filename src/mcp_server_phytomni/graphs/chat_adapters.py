@@ -18,6 +18,9 @@ from collections.abc import Mapping
 from typing import Any
 
 from ..agents.chat.state import ChatInput
+from ..agents.shared.conversation_messages import (
+    normalize_conversation_messages,
+)
 from ..agents.shared.options import build_chat_kwargs
 from ..runtime.locale import SupportedLocale, current_effective_locale
 
@@ -88,6 +91,7 @@ def build_chat_input(
     chat_kwargs: Mapping[str, Any],
     *,
     obs_file_list: list[str] | None = None,
+    conversation_messages: list[dict[str, str]] | None = None,
     locale: SupportedLocale | None = None,
 ) -> ChatInput:
     """Wrap a consumer chat call's inputs into a ``ChatInput`` dict.
@@ -117,9 +121,13 @@ def build_chat_input(
         ``ChatInput`` containing the required ``user_query`` plus
         ``chat_kwargs``, and ``obs_file_list`` only when non-empty.
     """
+    chat_kwargs_copy = dict(chat_kwargs)
+    normalized_history = normalize_conversation_messages(conversation_messages)
+    if normalized_history:
+        chat_kwargs_copy["conversation_messages"] = normalized_history
     result: ChatInput = {
         "user_query": user_query,
-        "chat_kwargs": dict(chat_kwargs),
+        "chat_kwargs": chat_kwargs_copy,
         "locale": locale
         or chat_kwargs.get("locale")
         or current_effective_locale(),
@@ -151,3 +159,31 @@ def extract_chat_response(chat_output: Mapping[str, Any]) -> dict[str, Any]:
     """
     response = chat_output.get("response")
     return response if response is not None else {}
+
+
+def extract_chat_content(chat_output: Mapping[str, Any]) -> str | None:
+    """Return the first chat-completion content string, if present."""
+    response = extract_chat_response(chat_output)
+    choices = response.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first = choices[0]
+    if not isinstance(first, Mapping):
+        return None
+    message = first.get("message")
+    if not isinstance(message, Mapping):
+        return None
+    content = message.get("content")
+    return content if isinstance(content, str) else None
+
+
+async def invoke_chat_content(
+    chat_app: Any,
+    prompt: str,
+    chat_kwargs: Mapping[str, Any],
+) -> str | None:
+    """Invoke a compiled chat app and project its content string."""
+    output = await chat_app.ainvoke(
+        build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs)
+    )
+    return extract_chat_content(output)

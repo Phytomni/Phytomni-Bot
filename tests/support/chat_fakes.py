@@ -12,6 +12,41 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni import server
+from mcp_server_phytomni.runtime.conversation_context.models import (
+    RoleTaggedTurn,
+)
+
+__all__ = [
+    "ChatCompletionOptions",
+    "chat_completion_payload",
+    "install_chat_handler",
+    "misplaced_reasoning_message",
+    "recent_knowledge_context",
+    "recent_knowledge_turns",
+]
+
+
+def recent_knowledge_context() -> str:
+    """Return the bounded recent-turn context used by knowledge fixtures."""
+    return (
+        "[recent turn 1]\nuser: Tell me about rice gene OsDREB1.\n\n"
+        "[recent turn 2]\nassistant: OsDREB1 improves drought "
+        "tolerance [1]."
+    )
+
+
+def recent_knowledge_turns() -> list[RoleTaggedTurn]:
+    """Return the matching user/assistant turns for context fixtures."""
+    return [
+        RoleTaggedTurn(
+            role="user",
+            content="Tell me about rice gene OsDREB1.",
+        ),
+        RoleTaggedTurn(
+            role="assistant",
+            content="OsDREB1 improves drought tolerance [1].",
+        ),
+    ]
 
 
 @dataclass(frozen=True, slots=True)

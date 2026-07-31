@@ -152,7 +152,7 @@ def _split_orphan_close_tail(text: str) -> tuple[str, str] | None:
     if text.find(_THINK_CLOSE, close + len(_THINK_CLOSE)) != -1:
         return None
     body = text[:close].strip()
-    tail = text[close + len(_THINK_CLOSE) :].strip()
+    tail = text[slice(close + len(_THINK_CLOSE), None)].strip()
     if not tail:
         return None
     return body, tail

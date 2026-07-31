@@ -63,6 +63,11 @@ class _FakeApp:
             raise self._raises
         return self._result
 
+    @property
+    def invocation_count(self) -> int:
+        """Return how many graph invocations the fake has observed."""
+        return len(self.invocations)
+
 
 def _build_agent(app: _FakeApp, tmp_path: Path) -> DeepGenomeAgents:
     """Construct a DeepGenomeAgents with the fake graph wired in.
@@ -131,6 +136,10 @@ async def test_arun_returns_immediately_with_submit_envelope(
     class _FixedIdFactory:
         """Return stable identities so the raw submit payload is exact."""
 
+        def known_kinds(self) -> tuple[str, ...]:
+            """Return the identity kinds covered by this deterministic fake."""
+            return ("run", "task")
+
         def new_id(self, kind: str, *_parts: str) -> str:
             """Return the fixed ID for the requested submission identity."""
             return {
@@ -138,6 +147,7 @@ async def test_arun_returns_immediately_with_submit_envelope(
                 "task": "task-deep_genome-submit",
             }[kind]
 
+    assert _FixedIdFactory().known_kinds() == ("run", "task")
     monkeypatch.setattr(agent_module, "IdFactory", _FixedIdFactory)
     fake_app = _FakeApp(result={"final_report": "ok"})
     agent = _build_agent(fake_app, tmp_path)
@@ -250,7 +260,7 @@ async def test_create_task_failure_is_compensated(
     assert run == ("failed", "local coordinator failed to start")
     assert task == ("failed", "local coordinator failed to start")
     assert section_count == 0
-    assert not fake_app.invocations
+    assert fake_app.invocation_count == 0
 
 
 def test_pre_recorded_deep_genome_submission_does_not_mint_second_run(

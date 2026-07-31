@@ -22,6 +22,8 @@ adds ``scripts/`` to ``sys.path`` itself for the same reason.
 from __future__ import annotations
 
 import os
+from importlib import import_module
+from typing import Any
 
 FAKE_ENV: dict[str, str] = {
     "PHYTOMNI_TESTING": "1",
@@ -81,22 +83,31 @@ def _install_fake_env() -> None:
 
 _install_fake_env()
 
-# Imports below intentionally sit AFTER _install_fake_env() so the
-# offline placeholder values are in place before pydantic-settings
-# instantiates ServerConfig() during the import chain. The E402 /
-# wrong-import-position suppressions mark the ordering as a
-# deliberate bootstrap constraint rather than a style violation;
-# the consumer script never has to carry a side-effect-only import.
-# pylint: disable=wrong-import-position
-from mcp_server_phytomni.graphs import (  # noqa: E402
-    SubgraphRegistry,
-    export_manifest,
-)
-from mcp_server_phytomni.graphs.defaults import (  # noqa: E402
-    build_default_registry,
-)
+_SYMBOLS: dict[str, Any] = {}
+SubgraphRegistry: Any
+build_default_registry: Any
+export_manifest: Any
 
-# pylint: enable=wrong-import-position
+
+def __getattr__(name: str) -> Any:
+    """Load graph symbols only after the fake environment is installed."""
+    if name not in {
+        "SubgraphRegistry",
+        "build_default_registry",
+        "export_manifest",
+    }:
+        raise AttributeError(name)
+    if name not in _SYMBOLS:
+        graph_module = import_module("mcp_server_phytomni.graphs")
+        if name == "build_default_registry":
+            value = getattr(
+                import_module("mcp_server_phytomni.graphs.defaults"), name
+            )
+        else:
+            value = getattr(graph_module, name)
+        _SYMBOLS[name] = value
+    return _SYMBOLS[name]
+
 
 __all__ = [
     "SubgraphRegistry",

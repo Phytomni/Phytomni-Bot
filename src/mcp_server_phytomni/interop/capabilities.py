@@ -161,7 +161,7 @@ def _remote_name(raw_name: object, target_id: str) -> str:
     for separator in ("__", "_"):
         prefix = f"{target_id}{separator}"
         if raw_name.startswith(prefix):
-            remote_name = raw_name[len(prefix) :]
+            remote_name = raw_name.removeprefix(prefix)
             if remote_name:
                 return remote_name
             break

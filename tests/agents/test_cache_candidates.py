@@ -12,7 +12,6 @@ backend).
 """
 
 import json
-from contextlib import asynccontextmanager
 from typing import cast
 
 import pytest
@@ -33,16 +32,6 @@ from mcp_server_phytomni.agents.shared.analysis_storage import get_data_list
 from mcp_server_phytomni.config.defaults import KnowledgeConfig
 
 pytestmark = pytest.mark.agent
-
-# pylint: disable=contextmanager-generator-missing-cleanup
-# W0135 is a documented false positive on the canonical
-# ``@asynccontextmanager`` + ``async with X() as y: yield y`` pattern.
-# Several tests in this file build a scripted ``get_async_client``
-# substitute inside the test function body (the fake's class is
-# constructed per-test from a scripted behaviour list); the closure
-# reference confuses pylint's static analysis even though the
-# decorator's ``GeneratorExit`` -> ``__aexit__`` conversion is
-# correct. See ``docs/development/lint-exemptions.md`` for the full analysis.
 
 
 def test_get_data_list_tracks_config_file_changes(tmp_path):
@@ -213,12 +202,7 @@ async def test_retrieve_uses_composite_cache(monkeypatch):
         calls["rerank"] += 1
         return [{"chunk_id": "doc-1", "score": 0.9}]
 
-    @asynccontextmanager
-    async def fake_async_client(**factory_kwargs):
-        """Yield the FakeClient as a get_async_client substitute."""
-        del factory_kwargs
-        async with FakeClient() as opened:
-            yield opened
+    fake_async_client = FakeClient
 
     monkeypatch.setattr(
         knowledge_retrieval, "get_async_client", fake_async_client
@@ -324,12 +308,7 @@ async def test_multi_retrieve_dedupes_via_primitive_cache(monkeypatch):
         calls["rerank"] += 1
         return [{"chunk_id": "doc-1", "score": 0.9}]
 
-    @asynccontextmanager
-    async def fake_async_client(**factory_kwargs):
-        """Yield the FakeClient as a get_async_client substitute."""
-        del factory_kwargs
-        async with FakeClient() as opened:
-            yield opened
+    fake_async_client = FakeClient
 
     monkeypatch.setattr(
         knowledge_retrieval, "get_async_client", fake_async_client

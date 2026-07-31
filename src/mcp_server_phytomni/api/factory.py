@@ -28,11 +28,19 @@ from google.protobuf import json_format
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from ..agents.review.agent import load_review_settlement_adapter
 from ..config.defaults import ApiConfig, BriefGeneConfig
 from ..config.settings import SensitiveConfig
 from ..interop.cache import DiscoveryCache
 from ..interop.capabilities import DiscoveryResult
 from ..interop.registry import InteropRegistry, InteropRegistryError
+from ..runtime.conversation_context.adapters import (
+    ConversationContextExecutor,
+)
+from ..runtime.conversation_context.store import (
+    ConversationContextStore,
+    StoredTurn,
+)
 from ..runtime.locale import message_for
 from ..runtime.memory import (
     MemorySchemaError,
@@ -67,6 +75,7 @@ from .openai_mapping import (
 )
 from .routes import admin as admin_routes
 from .routes import agents as agent_routes
+from .routes import conversation_context as conversation_context_routes
 from .routes import memory as memory_routes
 from .routes import runs as run_routes
 from .schemas import (
@@ -166,6 +175,7 @@ class _RuntimeState:
 
     rate_limit: Callable[[str, int], int | None]
     memory_store: MemoryStore | None = None
+    conversation_context_store: ConversationContextStore | None = None
     interop_registry: InteropRegistry | None = None
     interop_sensitive_config: SensitiveConfig | None = None
     interop_caches: dict[str, DiscoveryCache] | None = None
@@ -194,6 +204,14 @@ class _RuntimeState:
                     status_code=503, detail="memory store unavailable"
                 ) from None
         return self.memory_store
+
+    def get_conversation_context_store(self) -> ConversationContextStore:
+        """Open the Bot-owned context store only for an enabled mutation."""
+        if self.conversation_context_store is None:
+            self.conversation_context_store = ConversationContextStore(
+                _api_config().API_TASKS_DB_PATH
+            )
+        return self.conversation_context_store
 
     async def authorized(
         self,
@@ -354,27 +372,69 @@ class _RouteAdapters:
         )
         return canonicalize_agent_run_body(response_body), status_code
 
-    def a2ui_enabled(self) -> bool:
+    def _a2ui_enabled(self) -> bool:
         """Read the current A2UI feature flag."""
         return _api_config().A2UI_ENABLED
+
+    def _conversation_context_enabled(self) -> bool:
+        """Read the current conversation-context protocol flag."""
+        return _api_config().CONVERSATION_CONTEXT_V1_ENABLED
 
     def a2ui_max_response_bytes(self) -> int:
         """Read the configured A2UI response-size cap."""
         return _api_config().A2UI_MAX_RESPONSE_BYTES
 
+    async def invoke_tool_enveloped(
+        self,
+        name: Any,
+        arguments: dict[str, Any],
+        **options: Any,
+    ) -> Any:
+        """Invoke one tool through the request-time app compatibility seam."""
+        conversation_messages = options.pop("conversation_messages", ())
+        agent_thread_id = options.pop("agent_thread_id", None)
+        private_agent_state = options.pop("private_agent_state", None)
+        if options:
+            raise TypeError(
+                "unexpected tool invocation options: "
+                + ", ".join(sorted(options))
+            )
+        return await _app_attr("invoke_tool_enveloped")(
+            name=name,
+            arguments=arguments,
+            conversation_messages=conversation_messages,
+            agent_thread_id=agent_thread_id,
+            private_agent_state=private_agent_state,
+        )
+
     async def invoke_agent_run(
         self,
-        *,
-        agent: str,
-        arguments: dict[str, Any],
-        dialogue_id: str | None = None,
-        request_json: str | None = None,
-        debug: bool = False,
+        **options: Any,
     ) -> tuple[dict[str, Any], int]:
         """Invoke a native agent run through the app-level seam."""
+        try:
+            agent = options.pop("agent")
+            arguments = options.pop("arguments")
+        except KeyError as exc:
+            raise TypeError(
+                f"missing agent-run option: {exc.args[0]}"
+            ) from exc
+        conversation_messages = options.pop("conversation_messages", ())
+        agent_thread_id = options.pop("agent_thread_id", None)
+        private_agent_state = options.pop("private_agent_state", None)
+        dialogue_id = options.pop("dialogue_id", None)
+        request_json = options.pop("request_json", None)
+        debug = options.pop("debug", False)
+        if options:
+            raise TypeError(
+                "unexpected agent-run options: " + ", ".join(sorted(options))
+            )
         response_body, status_code = await _app_attr("_invoke_agent_run")(
             agent=agent,
             arguments=arguments,
+            conversation_messages=conversation_messages,
+            agent_thread_id=agent_thread_id,
+            private_agent_state=private_agent_state,
             dialogue_id=dialogue_id,
             request_json=request_json,
             debug=debug,
@@ -496,6 +556,7 @@ def _build_base_app() -> FastAPI:
 def _build_agent_dependencies(
     runtime: _RuntimeState,
     adapters: _RouteAdapters,
+    context_executor: ConversationContextExecutor,
 ) -> agent_routes.AgentRouteDependencies:
     """Assemble the typed dependency graph for primary agent routes."""
     return agent_routes.AgentRouteDependencies(
@@ -510,6 +571,9 @@ def _build_agent_dependencies(
             remote_agent_slugs=_app_attr("_REMOTE_AGENT_SLUGS"),
             legacy_aliases=_app_attr("_LEGACY_ALIASES"),
             serialize_capability=_app_attr("serialize_agent_capability"),
+            conversation_context_enabled=getattr(
+                adapters, "_conversation_context_enabled"
+            ),
         ),
         chat=agent_routes.AgentChatDependencies(
             input=agent_routes.AgentChatInputDependencies(
@@ -520,7 +584,7 @@ def _build_agent_dependencies(
                 brief_gene_resolver=adapters.brief_gene_resolver,
             ),
             execution=agent_routes.AgentChatExecutionDependencies(
-                invoke_tool_enveloped=_app_attr("invoke_tool_enveloped"),
+                invoke_tool_enveloped=adapters.invoke_tool_enveloped,
                 stream_chat_completion=adapters.stream_chat_completion,
                 review_chat_completion=adapters.review_chat_completion,
             ),
@@ -535,6 +599,10 @@ def _build_agent_dependencies(
         native=agent_routes.AgentNativeDependencies(
             invoke_agent_run=adapters.invoke_agent_run,
             route_expert_query=adapters.expert_query,
+        ),
+        context=agent_routes.AgentContextDependencies(
+            enabled=getattr(adapters, "_conversation_context_enabled"),
+            executor=context_executor,
         ),
         upload=agent_routes.AgentUploadDependencies(
             handle_file_upload=_app_attr("handle_file_upload"),
@@ -693,10 +761,32 @@ def _register_run_routes(
                 strip_run_result=adapters.strip_run_result,
             ),
             pause=run_routes.RunPauseDependencies(
-                a2ui_enabled=adapters.a2ui_enabled,
+                a2ui_enabled=getattr(adapters, "_a2ui_enabled"),
                 a2ui_max_response_bytes=adapters.a2ui_max_response_bytes,
                 resume_a2ui=adapters.resume_a2ui,
                 resume_review=adapters.resume_review,
+            ),
+        ),
+    )
+
+
+def _register_conversation_context_routes(
+    app: FastAPI,
+    runtime: _RuntimeState,
+    adapters: _RouteAdapters,
+    context_executor: ConversationContextExecutor,
+) -> None:
+    """Register authenticated V1 context mutation routes."""
+    if not getattr(adapters, "_conversation_context_enabled")():
+        return
+    conversation_context_routes.register_conversation_context_routes(
+        app,
+        conversation_context_routes.ContextRouteDependencies(
+            enabled=getattr(adapters, "_conversation_context_enabled"),
+            require_agents=runtime.require_scope("agents"),
+            get_store=runtime.get_conversation_context_store,
+            acknowledge_review_settlement=(
+                context_executor.acknowledge_review_settlement_for_turn
             ),
         ),
     )
@@ -847,18 +937,53 @@ def _register_error_handlers(app: FastAPI) -> None:
         )
 
 
-def build_app() -> FastAPI:
+def _build_context_executor(
+    runtime: _RuntimeState,
+) -> ConversationContextExecutor:
+    """Build the lazy, Bot-owned conversation context executor."""
+
+    async def select_agent(*args: Any, **kwargs: Any) -> Any:
+        """Resolve the selector lazily so established test seams
+        remain live.
+        """
+        return await _app_attr("select_agent_tool")(*args, **kwargs)
+
+    async def load_review_settlement(
+        metadata: Mapping[str, Any], staged_turn: StoredTurn
+    ) -> Any:
+        """Rebuild Review promotion state through its private agent seam."""
+        return await load_review_settlement_adapter(metadata, staged_turn)
+
+    return ConversationContextExecutor(
+        store_factory=runtime.get_conversation_context_store,
+        select_agent=select_agent,
+        api_config_factory=_api_config,
+        review_settlement_loader=load_review_settlement,
+    )
+
+
+def build_app(
+    *, context_executor: ConversationContextExecutor | None = None
+) -> FastAPI:
     """Build the complete FastAPI application from typed route seams."""
     app = _build_base_app()
     runtime = _RuntimeState(rate_limit=_app_attr("make_rate_limiter")())
     adapters = _RouteAdapters(runtime)
-    agent_dependencies = _build_agent_dependencies(runtime, adapters)
+    context_executor = context_executor or _build_context_executor(runtime)
+    agent_dependencies = _build_agent_dependencies(
+        runtime,
+        adapters,
+        context_executor,
+    )
 
     _register_interop_route(app, runtime, runtime.require_scope)
     _register_health_routes(app)
     agent_routes.register_model_route(app, agent_dependencies)
     _register_memory_and_admin_routes(app, runtime, adapters)
     agent_routes.register_agent_routes(app, agent_dependencies)
+    _register_conversation_context_routes(
+        app, runtime, adapters, context_executor
+    )
     _register_run_routes(app, runtime, adapters)
     _register_a2a_routes(app, runtime.require_scope)
     app.include_router(_app_attr("create_relay_router")())

@@ -14,6 +14,8 @@ can flow through every graph node without runtime key surprises.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from mcp_server_phytomni.agents.chat.state import (
@@ -25,22 +27,14 @@ from mcp_server_phytomni.agents.chat.state import (
 pytestmark = pytest.mark.agent
 
 
-def _required(td: type) -> frozenset[str]:
-    """Return ``td.__required_keys__`` via getattr.
-
-    PEP 705 attaches ``__required_keys__`` / ``__optional_keys__`` to
-    every TypedDict class, and pyright + mypy resolve the attribute
-    fine. Pylint's inference layer does not model TypedDict
-    introspection, so direct attribute access trips E1101 no-member.
-    Routing through ``getattr`` hides the access from pylint's static
-    analysis without losing runtime semantics.
-    """
-    return getattr(td, "__required_keys__")
+def _required(td: Any) -> frozenset[str]:
+    """Return ``td.__required_keys__`` for TypedDict introspection."""
+    return td.__required_keys__
 
 
-def _optional(td: type) -> frozenset[str]:
-    """Return ``td.__optional_keys__`` via getattr (see :func:`_required`)."""
-    return getattr(td, "__optional_keys__")
+def _optional(td: Any) -> frozenset[str]:
+    """Return ``td.__optional_keys__`` for TypedDict introspection."""
+    return td.__optional_keys__
 
 
 def test_chat_input_required_keys_are_only_user_query() -> None:
@@ -53,7 +47,12 @@ def test_chat_input_required_keys_are_only_user_query() -> None:
     """
     assert _required(ChatInput) == frozenset({"user_query"})
     assert _optional(ChatInput) == frozenset(
-        {"obs_file_list", "chat_kwargs", "locale"}
+        {
+            "obs_file_list",
+            "chat_kwargs",
+            "conversation_messages",
+            "locale",
+        }
     )
 
 
@@ -85,6 +84,7 @@ def test_chat_state_covers_both_input_and_output_keys() -> None:
     assert input_keys <= state_keys
     assert output_keys <= state_keys
     assert "upload_context" in state_keys
+    assert "conversation_messages" in state_keys
 
 
 def test_chat_state_required_key_matches_chat_input() -> None:

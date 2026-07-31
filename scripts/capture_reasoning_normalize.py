@@ -313,14 +313,14 @@ def _tail_after_think(text: str) -> str | None:
         close = text.find(THINK_CLOSE, start + len(THINK_OPEN))
         if close == -1:
             return None
-        tail = text[close + len(THINK_CLOSE) :].strip()
+        tail = text[slice(close + len(THINK_CLOSE), None)].strip()
         return tail or None
     close = text.find(THINK_CLOSE)
     if close == -1:
         return None
     if text.find(THINK_CLOSE, close + len(THINK_CLOSE)) != -1:
         return None
-    tail = text[close + len(THINK_CLOSE) :].strip()
+    tail = text[slice(close + len(THINK_CLOSE), None)].strip()
     return tail or None
 
 

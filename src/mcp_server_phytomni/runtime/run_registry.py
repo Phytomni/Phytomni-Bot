@@ -13,10 +13,11 @@ Public dataclasses: RunSpec, RunFilter, Timestamps, RunRecord, RunRegistry.
 from __future__ import annotations
 
 import contextlib
+import inspect
 import json
 import sqlite3
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .run_registry_models import (
     _A2A_COLUMNS,
@@ -44,8 +45,13 @@ from .run_registry_models import (
     Timestamps,
     _aggregate_status,
     _now_iso,
-    _surface_identity_from_result,
     local_run_spec,
+)
+from .run_registry_protocols import (
+    _RECONCILE_SIGNATURE,
+    _SETTLE_RUN_SIGNATURE,
+    _ReconcileRequest,
+    _ReservedSubmissionRequest,
 )
 from .run_registry_reports import (
     ReportArtifactSources,
@@ -55,9 +61,9 @@ from .run_registry_reports import (
     persist_report_compatibility,
     stored_submission_warnings,
 )
+from .run_registry_views import RunRegistryViewsMixin, _row_to_record
 from .sqlite import sqlite_transaction
 from .task_manager import (
-    Submission,
     TaskManager,
     _expires_at_for,
     resolve_tasks_db_path,
@@ -65,9 +71,6 @@ from .task_manager import (
 from .task_reconcile import reconcile_task
 from .terminal_answer import TerminalAnswerContext, synthesize_terminal_answer
 from .terminal_artifacts import (
-    ArtifactLister,
-    ArtifactObjectLister,
-    ManifestLoader,
     collect_terminal_artifacts,
     enumerate_artifact_paths,
 )
@@ -124,11 +127,13 @@ def purge_run_children(
     )
 
 
-class RunRegistry:
-    """Run-level CRUD + aggregation over the shared task database.
+if TYPE_CHECKING:
+    from .run_registry_protocols import RecordReservedSubmissionsCallable
 
-    Shares ``resolve_tasks_db_path`` with ``TaskManager`` so a run row
-    and its child tasks are always co-located in one SQLite file.
+
+class RunRegistry(RunRegistryViewsMixin):
+    """Run-level CRUD and aggregation over the shared task database.
+    ``resolve_tasks_db_path`` keeps run rows and child tasks co-located.
     """
 
     def __init__(self, db_path: str | None = None) -> None:
@@ -140,6 +145,11 @@ class RunRegistry:
         """
         self.db_path = db_path or resolve_tasks_db_path()
         self._init_db()
+
+    if TYPE_CHECKING:
+        # Runtime installation below keeps the historical explicit signature
+        # while this annotation preserves the public static call seam.
+        record_reserved_submissions: RecordReservedSubmissionsCallable
 
     def _init_db(self) -> None:
         """Create the ``runs`` table and shared indices if missing.
@@ -291,15 +301,8 @@ class RunRegistry:
                 ),
             )
 
-    def record_reserved_submissions(
-        self,
-        run_id: str,
-        *,
-        owner: str,
-        agent: str,
-        submissions: Sequence[Submission],
-        result: dict[str, Any],
-        now: str,
+    def _record_reserved_submissions(
+        self, request: _ReservedSubmissionRequest
     ) -> bool:
         """Atomically attach children and project a running reserved run.
 
@@ -314,13 +317,17 @@ class RunRegistry:
                 SELECT status FROM runs
                 WHERE run_id = ? AND user_id = ? AND agent = ?
                 """,
-                (run_id, owner, agent),
+                (request.run_id, request.owner, request.agent),
             ).fetchone()
             if row is None or row[0] != "running":
                 return False
-            expected_identity = (run_id, owner, agent)
+            expected_identity = (
+                request.run_id,
+                request.owner,
+                request.agent,
+            )
             task_ids: set[str] = set()
-            for submission in submissions:
+            for submission in request.submissions:
                 ctx = submission.run_context
                 if (
                     ctx is None
@@ -344,7 +351,7 @@ class RunRegistry:
                 ).fetchone()
                 if existing is not None and existing != expected_identity:
                     return False
-            for submission in submissions:
+            for submission in request.submissions:
                 ctx = submission.run_context
                 assert ctx is not None
                 conn.execute(
@@ -395,7 +402,13 @@ class RunRegistry:
                 WHERE run_id = ? AND user_id = ? AND agent = ?
                   AND status = 'running'
                 """,
-                (json.dumps(result), _now_iso(), run_id, owner, agent),
+                (
+                    json.dumps(request.result),
+                    request.now,
+                    request.run_id,
+                    request.owner,
+                    request.agent,
+                ),
             )
             if cursor.rowcount != 1:
                 raise sqlite3.OperationalError(
@@ -508,12 +521,8 @@ class RunRegistry:
 
     def settle_run(
         self,
-        run_id: str,
-        *,
-        owner: str,
-        status: str,
-        result: dict[str, Any] | None = None,
-        error: str | None = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> bool:
         """Settle an owned run to a terminal status in place.
 
@@ -532,6 +541,13 @@ class RunRegistry:
         Returns:
             True when an owned row was updated, False otherwise.
         """
+        bound = _SETTLE_RUN_SIGNATURE.bind(self, *args, **kwargs)
+        bound.apply_defaults()
+        run_id = bound.arguments["run_id"]
+        owner = bound.arguments["owner"]
+        status = bound.arguments["status"]
+        result = bound.arguments["result"]
+        error = bound.arguments["error"]
         now = _now_iso()
         expires_at = _expires_at_for(status, now)
         with sqlite_transaction(self.db_path) as conn:
@@ -557,266 +573,7 @@ class RunRegistry:
             )
             return cursor.rowcount > 0
 
-    def claim_a2ui_action(
-        self,
-        *,
-        run_id: str,
-        owner: str,
-        **action: str,
-    ) -> A2UIActionClaim:
-        """Atomically claim the current A2UI surface for one uplink.
-
-        The write lock is acquired before reading the run row. This makes
-        the primary key on ``(run_id, surface_id)`` a cross-process
-        compare-and-set gate rather than a process-local best effort.
-
-        ``surface_id``, ``widget``, ``action_id``, and ``channel`` remain
-        required keyword arguments at the public call boundary. They are
-        collected here so the storage method stays below the repository's
-        argument-count limit while preserving the established call shape.
-        """
-        try:
-            surface_id = action.pop("surface_id")
-            widget = action.pop("widget")
-            action_id = action.pop("action_id")
-            channel = action.pop("channel")
-        except KeyError as exc:
-            raise TypeError(
-                f"missing required A2UI action field: {exc.args[0]}"
-            ) from exc
-        if action:
-            unexpected = next(iter(action))
-            raise TypeError(f"unexpected A2UI action field: {unexpected}")
-        conn = sqlite3.connect(self.db_path, isolation_level=None)
-        try:
-            conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute(
-                """
-                SELECT status, result_json
-                FROM runs
-                WHERE run_id = ? AND user_id = ?
-                """,
-                (run_id, owner),
-            ).fetchone()
-            if row is None or row[0] != "input_required":
-                conn.rollback()
-                raise A2UIActionConflict("run is not awaiting input")
-            open_surface = _surface_identity_from_result(row[1])
-            if open_surface != (surface_id, widget):
-                conn.rollback()
-                raise A2UIActionConflict("surface does not match open pause")
-            try:
-                conn.execute(
-                    """
-                    INSERT INTO run_a2ui_actions (
-                        run_id, user_id, surface_id, widget, action_id,
-                        channel, outcome, claimed_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, 'claimed', ?)
-                    """,
-                    (
-                        run_id,
-                        owner,
-                        surface_id,
-                        widget,
-                        action_id,
-                        channel,
-                        _now_iso(),
-                    ),
-                )
-            except sqlite3.IntegrityError as exc:
-                conn.rollback()
-                raise A2UIActionConflict(
-                    "surface has already been claimed"
-                ) from exc
-            conn.commit()
-        except BaseException:
-            if conn.in_transaction:
-                conn.rollback()
-            raise
-        finally:
-            conn.close()
-        return A2UIActionClaim(
-            run_id=run_id,
-            surface_id=surface_id,
-            widget=widget,
-            action_id=action_id,
-            channel=channel,
-        )
-
-    def complete_a2ui_action(
-        self,
-        claim: A2UIActionClaim,
-        *,
-        owner: str,
-        outcome: str,
-    ) -> bool:
-        """Complete an owned claim exactly once.
-
-        A completed audit row is immutable from the caller's perspective:
-        retries return ``False`` and cannot replace the first completion.
-        """
-        if outcome not in {"succeeded", "input_required", "failed"}:
-            raise ValueError("invalid a2ui action outcome")
-        with sqlite_transaction(self.db_path) as conn:
-            cursor = conn.execute(
-                """
-                UPDATE run_a2ui_actions
-                SET outcome = ?, completed_at = ?
-                WHERE run_id = ? AND user_id = ? AND surface_id = ?
-                  AND action_id = ? AND outcome = 'claimed'
-                """,
-                (
-                    outcome,
-                    _now_iso(),
-                    claim.run_id,
-                    owner,
-                    claim.surface_id,
-                    claim.action_id,
-                ),
-            )
-            return cursor.rowcount == 1
-
-    def list_a2ui_actions(
-        self,
-        *,
-        owner: str,
-        run_id: str | None = None,
-    ) -> list[A2UIActionAudit]:
-        """Return safe, owner-scoped A2UI action audit projections."""
-        clauses = ["user_id = ?"]
-        parameters: list[str] = [owner]
-        if run_id is not None:
-            clauses.append("run_id = ?")
-            parameters.append(run_id)
-        where = " AND ".join(clauses)
-        with sqlite_transaction(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                """
-                SELECT run_id, surface_id, widget, action_id, channel,
-                       outcome, claimed_at, completed_at
-                FROM run_a2ui_actions
-                WHERE """ + where + " ORDER BY claimed_at ASC",
-                parameters,
-            ).fetchall()
-        return [
-            A2UIActionAudit(
-                identity=A2UIActionIdentity(
-                    run_id=row["run_id"],
-                    surface_id=row["surface_id"],
-                    widget=row["widget"],
-                    action_id=row["action_id"],
-                ),
-                channel=row["channel"],
-                outcome=row["outcome"],
-                claimed_at=row["claimed_at"],
-                completed_at=row["completed_at"],
-            )
-            for row in rows
-        ]
-
-    def get_run(self, run_id: str, *, owner: str) -> RunRecord | None:
-        """Return the run owned by ``owner`` or ``None``.
-
-        Owner isolation is enforced at the SELECT so an unknown id and
-        a foreign-owned id are indistinguishable to the caller (the API
-        layer turns both into a 404 with no information leak).
-
-        Args:
-            run_id: Run id to look up.
-            owner: Required user id; mismatched owner returns ``None``.
-
-        Returns:
-            ``RunRecord`` when present and owned by ``owner``,
-            otherwise ``None``.
-        """
-        with sqlite_transaction(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                """
-                SELECT run_id, user_id, agent, origin, status, result_json,
-                       error, created_at, updated_at, expires_at,
-                       dialogue_id, request_id, query, tool_name, model,
-                       request_json,
-                       locale,
-                       a2a_task_id, a2a_context_id, a2a_message_id
-                FROM runs WHERE run_id = ? AND user_id = ?
-                """,
-                (run_id, owner),
-            ).fetchone()
-            if row is None:
-                return None
-            task_rows = conn.execute(
-                "SELECT task_id FROM tasks WHERE run_id = ? ORDER BY task_id",
-                (run_id,),
-            ).fetchall()
-        return _row_to_record(row, task_rows)
-
-    def update_a2a_correlation(
-        self,
-        run_id: str,
-        *,
-        owner: str,
-        correlation: A2ACorrelation,
-    ) -> bool:
-        """Attach or replace A2A ids on an owned run row.
-
-        The update is additive and owner-scoped. It preserves the run's
-        status/result and is safe to repeat when a client retries the same
-        A2A request.
-        """
-        with sqlite_transaction(self.db_path) as conn:
-            cursor = conn.execute(
-                """
-                UPDATE runs SET
-                    a2a_task_id = ?,
-                    a2a_context_id = ?,
-                    a2a_message_id = ?,
-                    updated_at = ?
-                WHERE run_id = ? AND user_id = ?
-                """,
-                (
-                    correlation.task_id,
-                    correlation.context_id,
-                    correlation.message_id,
-                    _now_iso(),
-                    run_id,
-                    owner,
-                ),
-            )
-            return cursor.rowcount > 0
-
-    def get_run_by_a2a_task(
-        self,
-        task_id: str,
-        *,
-        owner: str,
-    ) -> RunRecord | None:
-        """Return the owned run projected by an A2A task id."""
-        if not task_id:
-            return None
-        with sqlite_transaction(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
-                """
-                SELECT run_id, user_id, agent, origin, status, result_json,
-                       error, created_at, updated_at, expires_at,
-                       dialogue_id, request_id, query, tool_name, model,
-                       request_json,
-                       locale,
-                       a2a_task_id, a2a_context_id, a2a_message_id
-                FROM runs WHERE a2a_task_id = ? AND user_id = ?
-                ORDER BY updated_at DESC, run_id DESC LIMIT 1
-                """,
-                (task_id, owner),
-            ).fetchone()
-            if row is None:
-                return None
-            task_rows = conn.execute(
-                "SELECT task_id FROM tasks WHERE run_id = ? ORDER BY task_id",
-                (row["run_id"],),
-            ).fetchall()
-        return _row_to_record(row, task_rows)
+    setattr(settle_run, "__signature__", _SETTLE_RUN_SIGNATURE)
 
     def list_runs(
         self,
@@ -874,12 +631,8 @@ class RunRegistry:
 
     async def reconcile(
         self,
-        run_id: str,
-        *,
-        owner: str,
-        lister: ArtifactLister | None = None,
-        object_lister: ArtifactObjectLister | None = None,
-        manifest_loader: ManifestLoader | None = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> RunRecord | None:
         """Refresh a non-terminal run by polling its child tasks.
 
@@ -896,7 +649,16 @@ class RunRegistry:
         Returns:
             Updated ``RunRecord`` or ``None`` (unknown / not-owner).
         """
-        current = self.get_run(run_id, owner=owner)
+        bound = _RECONCILE_SIGNATURE.bind(self, *args, **kwargs)
+        bound.apply_defaults()
+        request = _ReconcileRequest(
+            run_id=bound.arguments["run_id"],
+            owner=bound.arguments["owner"],
+            lister=bound.arguments["lister"],
+            object_lister=bound.arguments["object_lister"],
+            manifest_loader=bound.arguments["manifest_loader"],
+        )
+        current = self.get_run(request.run_id, owner=request.owner)
         if current is None or current.status in _NON_POLLABLE_RUN_STATUSES:
             return current
         live: list[dict[str, Any]] = []
@@ -911,14 +673,14 @@ class RunRegistry:
                 new_status,
                 live,
                 sources=ReportArtifactSources(
-                    lister=lister,
-                    object_lister=object_lister,
-                    manifest_loader=manifest_loader,
+                    lister=request.lister,
+                    object_lister=request.object_lister,
+                    manifest_loader=request.manifest_loader,
                 ),
             )
 
         if new_status == "succeeded":
-            live = await enumerate_artifact_paths(live, lister=lister)
+            live = await enumerate_artifact_paths(live, lister=request.lister)
         artifacts = (
             collect_terminal_artifacts(live)
             if new_status == "succeeded"
@@ -943,6 +705,8 @@ class RunRegistry:
         return self._settle_terminal(
             current, new_status, legacy_result_payload, error
         )
+
+    setattr(reconcile, "__signature__", _RECONCILE_SIGNATURE)
 
     async def _settle_report_terminal(
         self,
@@ -1073,6 +837,83 @@ class RunRegistry:
         )
 
 
+def _reserved_parameter(
+    name: str, kind: Any, annotation: object = inspect.Parameter.empty
+) -> inspect.Parameter:
+    """Build one parameter for the reserved-submission facade signature."""
+    return inspect.Parameter(name, kind, annotation=annotation)
+
+
+_RECORD_RESERVED_SUBMISSIONS_SIGNATURE = inspect.Signature(
+    parameters=(
+        _reserved_parameter("self", inspect.Parameter.POSITIONAL_OR_KEYWORD),
+        _reserved_parameter(
+            "run_id", inspect.Parameter.POSITIONAL_OR_KEYWORD, "str"
+        ),
+        _reserved_parameter("owner", inspect.Parameter.KEYWORD_ONLY, "str"),
+        _reserved_parameter("agent", inspect.Parameter.KEYWORD_ONLY, "str"),
+        _reserved_parameter(
+            "submissions",
+            inspect.Parameter.KEYWORD_ONLY,
+            "Sequence[Submission]",
+        ),
+        _reserved_parameter(
+            "result", inspect.Parameter.KEYWORD_ONLY, "dict[str, Any]"
+        ),
+        _reserved_parameter("now", inspect.Parameter.KEYWORD_ONLY, "str"),
+    ),
+    return_annotation="bool",
+)
+_RECORD_RESERVED_SUBMISSIONS_ANNOTATIONS: dict[str, object] = {
+    "run_id": "str",
+    "owner": "str",
+    "agent": "str",
+    "submissions": "Sequence[Submission]",
+    "result": "dict[str, Any]",
+    "now": "str",
+    "return": "bool",
+}
+
+
+def _record_reserved_submissions_facade(
+    self: RunRegistry, *args: Any, **kwargs: Any
+) -> bool:
+    """Adapt the historical public call shape to the typed request object."""
+    bound = _RECORD_RESERVED_SUBMISSIONS_SIGNATURE.bind(self, *args, **kwargs)
+    request = _ReservedSubmissionRequest(
+        run_id=bound.arguments["run_id"],
+        owner=bound.arguments["owner"],
+        agent=bound.arguments["agent"],
+        submissions=bound.arguments["submissions"],
+        result=bound.arguments["result"],
+        now=bound.arguments["now"],
+    )
+    implementation = getattr(self, "_record_reserved_submissions")
+    return implementation(request)
+
+
+def _install_record_reserved_submissions_facade() -> None:
+    """Install the compatibility facade after ``RunRegistry`` is defined."""
+    facade = _record_reserved_submissions_facade
+    metadata = (
+        ("__signature__", _RECORD_RESERVED_SUBMISSIONS_SIGNATURE),
+        ("__annotations__", _RECORD_RESERVED_SUBMISSIONS_ANNOTATIONS),
+        ("__name__", "record_reserved_submissions"),
+        ("__qualname__", "RunRegistry.record_reserved_submissions"),
+        ("__module__", __name__),
+        (
+            "__doc__",
+            getattr(RunRegistry, "_record_reserved_submissions").__doc__,
+        ),
+    )
+    for name, value in metadata:
+        setattr(facade, name, value)
+    setattr(RunRegistry, "record_reserved_submissions", facade)
+
+
+_install_record_reserved_submissions_facade()
+
+
 def _build_list_where(
     owner: str, run_filter: RunFilter
 ) -> tuple[str, list[Any]]:
@@ -1157,47 +998,3 @@ def _first_final_report(live: list[dict[str, Any]]) -> str | None:
         if isinstance(report, str) and report:
             return report
     return None
-
-
-def _row_to_record(
-    row: sqlite3.Row,
-    task_rows: list[Any],
-) -> RunRecord:
-    """Build a RunRecord from a ``sqlite3.Row`` of the ``runs`` table.
-
-    The row must include the 15 columns listed in get_run / list_runs
-    SELECTs; column-name access keeps this helper readable without
-    a 14-line unpacking block.
-    """
-    result_json = row["result_json"]
-    return RunRecord(
-        spec=RunSpec(
-            run_id=row["run_id"],
-            user_id=row["user_id"],
-            agent=row["agent"],
-            origin=row["origin"],
-        ),
-        status=row["status"],
-        result=json.loads(result_json) if result_json else None,
-        error=row["error"],
-        timestamps=Timestamps(
-            created_at=row["created_at"],
-            updated_at=row["updated_at"],
-            expires_at=row["expires_at"],
-        ),
-        task_ids=tuple(t[0] for t in task_rows),
-        request_info=RunRequestInfo(
-            dialogue_id=row["dialogue_id"],
-            request_id=row["request_id"],
-            query=row["query"],
-            tool_name=row["tool_name"],
-            model=row["model"],
-            request_json=row["request_json"],
-            locale=row["locale"],
-            a2a=A2ACorrelation(
-                task_id=row["a2a_task_id"],
-                context_id=row["a2a_context_id"],
-                message_id=row["a2a_message_id"],
-            ),
-        ),
-    )

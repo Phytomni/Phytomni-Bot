@@ -24,6 +24,10 @@ from langchain_core.runnables import RunnableConfig
 from ..agents.analyst.state import AnalystInput
 from ..agents.analyst.task_ops import probe_live_status
 from ..agents.shared.analysis import prepare_analyst_dispatch_context
+from ..agents.shared.analysis_requests import (
+    build_analyst_analysis_request,
+    build_analyst_prompt_parts,
+)
 from ..agents.shared.options import resolve_agent_locale
 from ..runtime.task_dedup import (
     analyst_task_fingerprint,
@@ -37,10 +41,30 @@ from ..runtime.task_manager import TaskManager, resolve_tasks_db_path
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "build_analyst_dispatch_request",
     "map_send_payload_to_analyst_input",
     "map_analyst_output_to_dispatch_state",
     "submit_analyst_via_subgraph",
 ]
+
+
+def build_analyst_dispatch_request(
+    analysis_type: str,
+    target_id: str,
+    inputs: Mapping[str, Any],
+    compute_resource: str,
+) -> dict[str, Any]:
+    """Build one preset-plan request shared by domain dispatch graphs."""
+    prompt_parts = build_analyst_prompt_parts(
+        inputs["goal_description"], inputs["meta"], inputs["data_list"]
+    )
+    return build_analyst_analysis_request(
+        analysis_type,
+        target_id,
+        inputs["output_dir"],
+        prompt_parts,
+        compute_resource,
+    ).to_payload()
 
 
 def map_send_payload_to_analyst_input(

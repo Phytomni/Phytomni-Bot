@@ -9,27 +9,31 @@ from . import metrics as _metrics
 from . import reporting as _reporting
 from . import runner as _runner
 
-AgentRoutingCase = _dataset.AgentRoutingCase
-DatasetValidationError = _dataset.DatasetValidationError
-load_dataset = _dataset.load_dataset
-validate_dataset = _dataset.validate_dataset
-validate_dataset_pair = _dataset.validate_dataset_pair
-verify_workbook_sources = _dataset.verify_workbook_sources
-EvaluationIncompleteError = _runner.EvaluationIncompleteError
-RunOutcome = _runner.RunOutcome
-RunnerOptions = _runner.RunnerOptions
-run_evaluation = _runner.run_evaluation
-NO_MAJORITY = _metrics.NO_MAJORITY
-compute_metrics = _metrics.compute_metrics
-thresholds_pass = _metrics.thresholds_pass
-GitState = _reporting.GitState
-ReportContext = _reporting.ReportContext
-build_report = _reporting.build_report
-collect_git_state = _reporting.collect_git_state
-dataset_sha256 = _reporting.dataset_sha256
-description_sha256 = _reporting.description_sha256
-provider_endpoint_sha256 = _reporting.provider_endpoint_sha256
-write_report_pair = _reporting.write_report_pair
+AgentRoutingCase = getattr(_dataset, "AgentRoutingCase")
+DatasetValidationError = getattr(_dataset, "DatasetValidationError")
+load_dataset = getattr(_dataset, "load_dataset")
+validate_dataset = getattr(_dataset, "validate_dataset")
+validate_dataset_pair = getattr(_dataset, "validate_dataset_pair")
+verify_workbook_sources = getattr(_dataset, "verify_workbook_sources")
+EvaluationIncompleteError = getattr(_runner, "EvaluationIncompleteError")
+RunOutcome = getattr(_runner, "RunOutcome")
+RunnerOptions = getattr(_runner, "RunnerOptions")
+run_evaluation = getattr(_runner, "run_evaluation")
+NO_MAJORITY = getattr(_metrics, "NO_MAJORITY")
+compute_metrics = getattr(_metrics, "compute_metrics")
+thresholds_pass = getattr(_metrics, "thresholds_pass")
+GitState = getattr(_reporting, "GitState")
+ReportContext = getattr(_reporting, "ReportContext")
+build_report = getattr(_reporting, "build_report")
+collect_git_state = getattr(_reporting, "collect_git_state")
+dataset_sha256 = getattr(_reporting, "dataset_sha256")
+description_sha256 = getattr(_reporting, "description_sha256")
+provider_endpoint_sha256 = getattr(_reporting, "provider_endpoint_sha256")
+write_report_pair = getattr(_reporting, "write_report_pair")
+
+_REPORTING_EXPORT_NAMES = tuple(
+    name for name in _reporting.__all__ if name != "RunCommand"
+)
 
 __all__ = [
     "AgentRoutingCase",
@@ -45,12 +49,5 @@ __all__ = [
     "NO_MAJORITY",
     "compute_metrics",
     "thresholds_pass",
-    "GitState",
-    "ReportContext",
-    "build_report",
-    "collect_git_state",
-    "dataset_sha256",
-    "description_sha256",
-    "provider_endpoint_sha256",
-    "write_report_pair",
+    *_REPORTING_EXPORT_NAMES,
 ]

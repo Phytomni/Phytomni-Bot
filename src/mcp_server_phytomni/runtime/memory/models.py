@@ -13,8 +13,9 @@ timezone-aware, and optimistic-concurrency revisions start at one.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -57,6 +58,17 @@ MemoryTag = Annotated[
 
 class MemoryPolicyError(ValueError):
     """Raised when a memory value would exceed an explicit policy bound."""
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryCapacity:
+    """Current namespace usage and the incoming record's byte cost."""
+
+    item_count: int
+    total_bytes: int
+    incoming_bytes: int
+    replacing: bool = False
+    existing_bytes: int = 0
 
 
 def _validate_text(
@@ -331,22 +343,24 @@ class MemoryPolicy(BaseModel):
 
     def ensure_capacity(
         self,
-        *,
-        item_count: int,
-        total_bytes: int,
-        incoming_bytes: int,
-        replacing: bool = False,
-        existing_bytes: int = 0,
+        capacity: MemoryCapacity | None = None,
+        **legacy: Any,
     ) -> None:
         """Reject a namespace write that would exceed count or byte limits.
 
         Args:
-            item_count: Current number of records in the namespace.
-            total_bytes: Current policy-counted bytes in the namespace.
-            incoming_bytes: Bytes of the record being inserted or updated.
-            replacing: Whether one existing record is being replaced.
-            existing_bytes: Bytes of that record before replacement.
+            capacity: Current usage and incoming record size. The legacy
+                keyword form remains accepted for existing store callers.
         """
+        if capacity is not None and legacy:
+            raise TypeError("capacity cannot be combined with legacy fields")
+        if capacity is None:
+            capacity = MemoryCapacity(**legacy)
+        item_count = capacity.item_count
+        total_bytes = capacity.total_bytes
+        incoming_bytes = capacity.incoming_bytes
+        replacing = capacity.replacing
+        existing_bytes = capacity.existing_bytes
         if min(item_count, total_bytes, incoming_bytes, existing_bytes) < 0:
             raise MemoryPolicyError("capacity values must not be negative")
         if replacing and existing_bytes > total_bytes:

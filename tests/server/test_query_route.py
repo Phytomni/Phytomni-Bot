@@ -14,39 +14,96 @@ error paths.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping, Sequence
+import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
+from uuid import UUID
 
 import httpx
 import pytest
-from pydantic import ValidationError
-from tests.support.chat_fakes import install_chat_handler
-from tests.support.expert_router_fakes import patch_expert_router
+from tests.support.handler_fakes import (
+    network_run_arguments,
+    patch_handler_runtime,
+    patch_knowledge_agent,
+)
 
-import mcp_server_phytomni.api.a2a.messages as a2a_messages
 import mcp_server_phytomni.api.app as api_app
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.expert import (
     ToolSelection,
-    ToolSelectionError,
 )
-from mcp_server_phytomni.agents.expert import router as expert_router
+from mcp_server_phytomni.agents.review import agent as review_agent
 from mcp_server_phytomni.api.auth import ApiKeyStore
-from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
-from mcp_server_phytomni.api.schemas import ExpertQueryRequest
-from mcp_server_phytomni.config.defaults import ApiConfig, ServerConfig
-from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
-from mcp_server_phytomni.runtime.run_registry import RunRecord, RunRegistry
-from mcp_server_phytomni.runtime.submit_recorder import records_submission
-from mcp_server_phytomni.runtime.upload_registry import (
-    UploadMetadata,
-    UploadRegistry,
+from mcp_server_phytomni.mcp import handlers as mcp_handlers
+from mcp_server_phytomni.runtime.conversation_context.store import (
+    ConversationContextStore,
 )
-from mcp_server_phytomni.storage.obs_storage import obs_path_from_key
+from mcp_server_phytomni.runtime.run_registry import RunRecord, RunRegistry
 
 pytestmark = pytest.mark.server
+
+
+def _conversation_envelope(
+    *,
+    turn_id: str = "1",
+    requested_agent_id: str | None = None,
+    allowed_agent_ids: list[str] | None = None,
+    base_business_context_version: int = 0,
+) -> dict[str, Any]:
+    """Build one Expert V1 envelope for routing tests."""
+    return {
+        "schema_version": 1,
+        "conversation_key": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad7")),
+        "dialogue_id": str(UUID("018fdf9e-1f0b-7a63-a5a3-5e4625b43ad8")),
+        "turn_id": turn_id,
+        "request_id": f"request-{turn_id}",
+        "operation": "append",
+        "mode": "expert",
+        "current_message": {
+            "content": "Compare drought candidates",
+            "locale": "en-US",
+        },
+        "requested_agent_id": requested_agent_id,
+        "allowed_agent_ids": allowed_agent_ids or ["ChatAgent", "DataAgent"],
+        "ledger_cursor": 1,
+        "ledger_version": "a" * 64,
+        "base_business_context_version": base_business_context_version,
+        "history_delta": [
+            {
+                "turn_id": turn_id,
+                "role": "user",
+                "content": "Compare drought candidates",
+            }
+        ],
+        "artifact_refs": [],
+    }
+
+
+def _context_follow_up_envelope(
+    agent: str,
+    query: str,
+    *,
+    turn_id: str = "2",
+    ledger_version: str = "c" * 64,
+    artifact_refs: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Build the bounded second-turn envelope shared by context tests."""
+    envelope = _conversation_envelope(
+        turn_id=turn_id,
+        requested_agent_id=agent,
+        allowed_agent_ids=[agent],
+        base_business_context_version=1,
+    )
+    envelope["ledger_cursor"] = int(turn_id)
+    envelope["ledger_version"] = ledger_version
+    envelope["current_message"]["content"] = query
+    envelope["history_delta"] = [
+        {"turn_id": turn_id, "role": "user", "content": query}
+    ]
+    if artifact_refs is not None:
+        envelope["artifact_refs"] = artifact_refs
+    return envelope
 
 
 def _patch_select(
@@ -82,6 +139,37 @@ def _auth(key: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {key}"}
 
 
+async def _post_query_route(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    payload: dict[str, Any],
+) -> httpx.Response:
+    """Post one payload to the authenticated Expert route."""
+    return await api_client.post(
+        "/v1/query/route",
+        headers=_auth(issued_api_key),
+        json=payload,
+    )
+
+
+async def _post_context_route(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    agent: str,
+    envelope: dict[str, Any],
+) -> httpx.Response:
+    """Post one canonical context envelope to the Expert route."""
+    return await _post_query_route(
+        api_client,
+        issued_api_key,
+        {
+            "user_query": "legacy query is ignored by V1 dispatch",
+            "allowed_tools": [agent],
+            "conversation": envelope,
+        },
+    )
+
+
 async def _wait_for_run_children(
     db_path: str,
     run_id: str,
@@ -103,6 +191,163 @@ async def _wait_for_run_children(
     )
 
 
+_REVIEW_REPORT = (
+    "# Review summary\n\n"
+    "Intro framing with [document:7].\n\n"
+    "## Background\nBackground claim [document:1].\n\n"
+    "## Evidence\nEvidence claim [document:2].\n\n"
+    "## Limitations\nLimitations remain open [document:3].\n"
+)
+
+
+def _review_checkpoint_state() -> dict[str, Any]:
+    """Return a private Review checkpoint with a byte-sensitive report."""
+    return {
+        "original_user_query": "Review drought tolerance in rice",
+        "summary_content": _REVIEW_REPORT,
+        "research_dimensions": ["Background", "Evidence", "Limitations"],
+        "evidence_gaps": ["replication study"],
+        "all_raw_doc_list": [{"doc_id": "source-1"}],
+        "report_artifact_id": "report-1",
+        "report_revision": 4,
+    }
+
+
+def _review_context_envelope(
+    query: str,
+    *,
+    turn_id: str = "3",
+) -> dict[str, Any]:
+    """Build an active Review context envelope for a real route call."""
+    envelope = _conversation_envelope(
+        turn_id=turn_id,
+        requested_agent_id="ReviewAgent",
+        allowed_agent_ids=["ReviewAgent"],
+    )
+    envelope["current_message"]["content"] = query
+    envelope["history_delta"] = [
+        {
+            "turn_id": "1",
+            "role": "user",
+            "content": "Review drought tolerance in rice",
+        },
+        {
+            "turn_id": "2",
+            "role": "assistant",
+            "content": "Review completed for drought tolerance in rice.",
+            "summary": "Review completed for drought tolerance in rice.",
+        },
+        {"turn_id": turn_id, "role": "user", "content": query},
+    ]
+    return envelope
+
+
+def _placeholder_config() -> object:
+    """Return a dependency-free config placeholder for handler tests."""
+    return object()
+
+
+def _placeholder_override(**_kwargs: Any) -> object:
+    """Return a dependency-free override placeholder for handler tests."""
+    return object()
+
+
+def _patch_review_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_agent: Any,
+) -> None:
+    """Route Review through the offline handler and a fake graph agent."""
+    monkeypatch.setattr(mcp_handlers, "ReviewConfig", _placeholder_config)
+    patch_handler_runtime(monkeypatch, scratch_path="/tmp/review")
+    monkeypatch.setattr(
+        review_agent,
+        "get_cached_agent",
+        lambda *_args, **_kwargs: fake_agent,
+    )
+
+
+class _ReviewFakeApp:
+    """Small graph-app double shared by the Review context tests."""
+
+    def __init__(self, stable_state: dict[str, Any] | None = None) -> None:
+        self.stable_state = stable_state if stable_state is not None else {}
+        self.state_reads: list[dict[str, Any]] = []
+        self.states: dict[str, dict[str, Any]] = {}
+        self.updates: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        self.deleted: list[str] = []
+
+    async def aget_state(self, config: dict[str, Any]) -> dict[str, Any]:
+        """Record a state read and return the requested candidate state."""
+        self.state_reads.append(config)
+        thread_id = config["configurable"]["thread_id"]
+        return self.states.get(thread_id, self.stable_state)
+
+    async def aupdate_state(
+        self, config: dict[str, Any], *, values: dict[str, Any]
+    ) -> None:
+        """Record updates; no test route should mutate the graph checkpoint."""
+        self.updates.append((config, values))
+
+    async def adelete_thread(self, thread_id: str) -> None:
+        """Record candidate cleanup requested by a failed Review graph."""
+        self.deleted.append(thread_id)
+
+
+class _ReviewFakeAgent:
+    """Configurable Review graph double with the public production seams."""
+
+    def __init__(
+        self,
+        app: _ReviewFakeApp,
+        config: SimpleNamespace | None = None,
+    ) -> None:
+        self.app = app
+        self.config = config or SimpleNamespace()
+        self.chat_prompts: list[str] = []
+        self.graph_calls = 0
+        self.graph_threads: list[str | None] = []
+
+    async def _chat(self, prompt: str) -> dict[str, Any]:
+        """Return the configured local Review response."""
+        self.chat_prompts.append(prompt)
+        chat_error = getattr(self.config, "chat_error", None)
+        if chat_error is not None:
+            raise chat_error
+        response = getattr(self.config, "chat_response", None)
+        if callable(response):
+            return cast(dict[str, Any], response(prompt))
+        return (
+            response
+            if response is not None
+            else {"choices": [{"message": {"content": ""}}]}
+        )
+
+    async def chat(self, prompt: str) -> dict[str, Any]:
+        """Expose the public Review chat seam used by production."""
+        return await self._chat(prompt)
+
+    async def arun(self, **kwargs: Any) -> dict[str, Any]:
+        """Return or raise the configured graph outcome and record its
+        thread."""
+        self.graph_calls += 1
+        thread_id = kwargs.get("thread_id")
+        self.graph_threads.append(thread_id)
+        run_error = getattr(self.config, "run_error", None)
+        if run_error is not None:
+            raise run_error
+        run_state = getattr(self.config, "run_state", None)
+        if thread_id is not None and run_state is not None:
+            self.app.states[thread_id] = run_state
+        response = getattr(self.config, "run_response", None)
+        if callable(response):
+            return cast(dict[str, Any], response(kwargs))
+        if response is not None:
+            return response
+        return {
+            "choices": [{"message": {"content": "Current public answer."}}]
+        }
+
+
 def _router_completion(
     *tool_calls: tuple[str, str], empty_choices: bool = False
 ) -> SimpleNamespace:
@@ -122,108 +367,78 @@ def _router_completion(
     )
 
 
-@pytest.mark.parametrize(
-    ("patch", "expected_fragment"),
-    [
-        ({}, "allowed_tools"),
-        ({"allowed_tools": []}, "allowed_tools"),
-        (
-            {"allowed_tools": ["ChatAgent", "ChatAgent"]},
-            "allowed_tools must contain unique canonical tool names",
-        ),
-        (
-            {"allowed_tools": [" ChatAgent"]},
-            "allowed_tools contains an unknown canonical tool",
-        ),
-        (
-            {"allowed_tools": ["MissingAgent"]},
-            "allowed_tools contains an unknown canonical tool",
-        ),
-        (
-            {
-                "allowed_tools": ["ChatAgent"],
-                "forced_tool": "DataAgent",
-            },
-            "forced_tool must be a member of allowed_tools",
-        ),
-    ],
-)
-async def test_route_rejects_invalid_tool_constraints(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    patch: dict[str, object],
-    expected_fragment: str,
+def _data_route_config() -> SimpleNamespace:
+    """Return the private Data config used by the context route tests."""
+    return SimpleNamespace(
+        RETRIEVE_URL=None,
+        DATA_REPO_ID=None,
+        PAGE_NUM=1,
+        DATA_PAGE_SIZE=10,
+        FILTER_STRING=None,
+        SCOPE=None,
+        RERANK_URL=None,
+        RERANK_BATCH_SIZE=10,
+        SCORE_THRESHOLD=0.0,
+        DATABASE_URL="private-database-url",
+        WORKSPACE_ID="private-workspace",
+        SUBJECT_ID="private-subject",
+        DIALOG_ID=None,
+        NEED_INSIGHT=True,
+        SIMPLIFY_RESPONSE=True,
+    )
+
+
+async def _reject_explicit_data_router(
+    *_args: Any, **_kwargs: Any
+) -> ToolSelection:
+    """Guard that explicit Data context never invokes autonomous routing."""
+    raise AssertionError("explicit Data selection must not route")
+
+
+def _assert_data_projection(
+    store: ConversationContextStore,
+    conversation_key: UUID,
+    turn_id: str,
+    required: tuple[str, ...],
+    forbidden: tuple[str, ...],
 ) -> None:
-    """Expert requests reject invalid tool allowlist constraints."""
-    payload: dict[str, object] = {
-        "user_query": "Compare drought candidates",
-        "history": [],
-        "obs_file_list": [],
-        "dialogue_id": "dialogue-1",
+    """Assert that a stored Data delta keeps metadata but not row contents."""
+    staged = store.load_turn(str(conversation_key), turn_id)
+    assert staged is not None
+    assert staged.delta is not None
+    payload = json.dumps(staged.delta, sort_keys=True)
+    for marker in required:
+        assert marker in payload
+    for marker in forbidden:
+        assert marker not in payload
+
+
+def _success_agent_body(agent: str, answer: str) -> dict[str, Any]:
+    """Return the minimal successful native-agent result used by route
+    tests."""
+    return {
+        "id": f"{agent}-run",
+        "object": "agent.run",
+        "agent": agent,
+        "status": "succeeded",
+        "task_ids": [],
+        "result": {"formatted": {"answer": answer}},
     }
-    payload.update(patch)
-
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json=payload,
-    )
-
-    assert response.status_code == 422
-    with pytest.raises(ValidationError, match=expected_fragment):
-        ExpertQueryRequest.model_validate(payload)
 
 
-async def test_route_rejects_more_than_ten_allowed_tools(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
+def _patch_knowledge_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_agent: Any,
 ) -> None:
-    """Expert requests bound the allowlist independently of uniqueness."""
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json={
-            "user_query": "Compare drought candidates",
-            "allowed_tools": [f"Tool{index}" for index in range(11)],
-        },
+    """Install the offline Knowledge handler seams used by context tests."""
+    monkeypatch.setattr(mcp_handlers, "KnowledgeConfig", _placeholder_config)
+    patch_handler_runtime(monkeypatch, scratch_path="/tmp/knowledge")
+    patch_knowledge_agent(
+        monkeypatch,
+        fake_agent,
+        _placeholder_override,
+        _placeholder_override,
     )
-
-    assert response.status_code == 422
-    with pytest.raises(ValidationError, match="allowed_tools"):
-        ExpertQueryRequest.model_validate(
-            {
-                "user_query": "Compare drought candidates",
-                "allowed_tools": [f"Tool{index}" for index in range(11)],
-            }
-        )
-
-
-def test_expert_query_request_accepts_ordered_autonomous_constraints() -> None:
-    """An autonomous Expert request retains its ordered canonical tools."""
-    request = ExpertQueryRequest(
-        user_query="Compare drought candidates",
-        allowed_tools=["KnowledgeAgent", "ChatAgent"],
-    )
-
-    assert request.allowed_tools == ["KnowledgeAgent", "ChatAgent"]
-    assert request.forced_tool is None
-
-
-def test_expert_query_request_accepts_member_forced_tool() -> None:
-    """A forced tool is valid when it belongs to the caller allowlist."""
-    request = ExpertQueryRequest(
-        user_query="Compare drought candidates",
-        allowed_tools=["KnowledgeAgent", "ChatAgent"],
-        forced_tool="ChatAgent",
-    )
-
-    assert request.forced_tool == "ChatAgent"
-
-
-def test_expert_activation_stays_outside_bot_config() -> None:
-    """Expert activation remains owned by the Web gateway boundary."""
-    fields = vars(ApiConfig).get("model_fields", {})
-    assert "EXPERT_ENABLED" not in fields
 
 
 def _stub_tool_handler(
@@ -248,193 +463,6 @@ def _scoped_key_without_agents(
     db = str(tmp_path / "keys.sqlite")
     monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", db)
     return ApiKeyStore(db).create(user_id="u9", scopes=["files"]).api_key
-
-
-async def test_route_sync_agent_returns_resolved_slug(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
-) -> None:
-    """A routed sync agent returns its resolved slug + formatted envelope.
-
-    Locks HR-1 (``agent`` is the resolved slug, never ``"expert"``) and
-    HR-2 (the ``result.formatted`` block ships, with the ``references``
-    key present for the cited KnowledgeAgent). Also confirms the verbatim
-    obs attachment reaches the obs-capable knowledge tool.
-    """
-    captured: dict[str, Any] = {}
-    path = obs_path_from_key(
-        ServerConfig().BUCKET_NAME,
-        f"{ApiConfig().API_UPLOAD_PREFIX.strip('/')}/u1/expert/"
-        "knowledge/context.pdf",
-    )
-    UploadRegistry(tasks_db_path).record(
-        UploadMetadata(
-            file_id="knowledge-context",
-            user_id="u1",
-            obs_path=path,
-            filename="context.pdf",
-            purpose="agent_context",
-            byte_size=1_024,
-            format="pdf",
-            media_type="application/pdf",
-            created_at="2026-07-25T00:00:00+00:00",
-        )
-    )
-
-    async def fake(args: Any) -> dict[str, Any]:
-        captured["args"] = args
-        return {"answer": "rice answer", "doc_list": []}
-
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.KNOWLEDGE_AGENT.value,
-        fake,
-    )
-    _patch_select(
-        monkeypatch,
-        ToolSelection("KnowledgeAgent", {"user_query": "rice drought"}),
-    )
-
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json={
-            "user_query": "rice drought",
-            "obs_file_list": [path],
-            "allowed_tools": ["KnowledgeAgent"],
-        },
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["object"] == "agent.run"
-    assert body["agent"] == "knowledge"
-    assert body["status"] == "succeeded"
-    assert body["task_ids"] == []
-    formatted = body["result"]["formatted"]
-    assert "answer" in formatted
-    assert "references" in formatted
-    # The verbatim attachment reached the obs-capable tool.
-    assert captured["args"].obs_file_list == [path]
-    assert captured["args"].user_query == "rice drought"
-
-    record = RunRegistry(tasks_db_path).list_runs(owner="u1")[0]
-    assert record.spec.agent == "knowledge"
-    assert record.spec.origin == "local"
-
-
-async def test_route_remote_agent_returns_reserved_run_before_child_ids(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
-) -> None:
-    """A routed remote agent returns its umbrella before child persistence."""
-
-    async def fake(args: Any) -> dict[str, Any]:
-        _ = args
-        return {"task_id": "T-A", "output_dir": "/obs/a"}
-
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.ANALYST_AGENT.value,
-        records_submission("analyst")(fake),
-    )
-    _patch_select(
-        monkeypatch,
-        ToolSelection(
-            "AnalystAgent",
-            {
-                "goal_description": "assemble",
-                "data_list": {},
-                "obs_file_list": [],
-            },
-        ),
-    )
-
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json={
-            "user_query": "assemble a genome",
-            "allowed_tools": ["AnalystAgent"],
-        },
-    )
-    assert response.status_code == 202
-    body = response.json()
-    assert body["agent"] == "analyst"
-    assert body["status"] == "running"
-    assert body["id"] == body["run_id"]
-    assert body["task_ids"] == []
-    assert body["result"] == empty_agent_result()
-    request_id = response.headers["X-Request-Id"]
-
-    record = await _wait_for_run_children(
-        tasks_db_path,
-        body["run_id"],
-        {"T-A"},
-    )
-    assert record.spec.agent == "analyst"
-    assert record.spec.origin == "remote"
-    assert record.request_info.request_id == request_id
-
-
-async def test_route_passes_constraints_to_selector_and_forces_agent(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A forced request forwards its validated constraints to the selector."""
-    captured: dict[str, object] = {}
-
-    async def fake_select(
-        user_query: str,
-        history: Sequence[Mapping[str, Any]] = (),
-        *,
-        allowed_tools: Sequence[str] | None = None,
-        forced_tool: str | None = None,
-    ) -> ToolSelection:
-        captured.update(
-            {
-                "user_query": user_query,
-                "history": list(history),
-                "allowed_tools": list(allowed_tools or []),
-                "forced_tool": forced_tool,
-            }
-        )
-        return ToolSelection(
-            "DataAgent",
-            {"user_query": "Compare drought candidates"},
-        )
-
-    _stub_tool_handler(
-        monkeypatch,
-        server.PhytomniAgents.DATA_AGENT.value,
-        {"answer": "ok", "doc_list": []},
-    )
-    monkeypatch.setattr(api_app, "select_agent_tool", fake_select)
-
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json={
-            "user_query": "Compare drought candidates",
-            "history": [{"role": "user", "content": "rice"}],
-            "obs_file_list": [],
-            "dialogue_id": "dialogue-1",
-            "allowed_tools": ["ChatAgent", "DataAgent"],
-            "forced_tool": "DataAgent",
-        },
-    )
-    assert response.status_code == 200
-    assert captured == {
-        "user_query": "Compare drought candidates",
-        "history": [{"role": "user", "content": "rice"}],
-        "allowed_tools": ["ChatAgent", "DataAgent"],
-        "forced_tool": "DataAgent",
-    }
-    assert response.json()["agent"] == "data"
 
 
 _FORCED_ROUTE_CASES = (
@@ -469,65 +497,6 @@ _FORCED_ROUTE_CASES = (
         {"species_code": "ath", "to_id": "TO:0000001", "obs_file_list": []},
     ),
 )
-
-
-@pytest.mark.parametrize("case", _FORCED_ROUTE_CASES)
-async def test_route_forces_every_canonical_tool_to_its_native_slug(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    case: tuple[str, str, dict[str, Any]],
-) -> None:
-    """Each shared canonical tool definition reaches its native slug."""
-    tool_name, slug, arguments = case
-    assert tuple(
-        name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
-    ) == tuple(case[0] for case in _FORCED_ROUTE_CASES)
-    selector_call: dict[str, Any] = {}
-    invoked: list[dict[str, Any]] = []
-
-    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
-        invoked.append(kwargs)
-        return (
-            {
-                "id": f"route-{kwargs['agent']}",
-                "object": "agent.run",
-                "agent": kwargs["agent"],
-                "status": "succeeded",
-                "task_ids": [],
-                "result": empty_agent_result(),
-            },
-            200,
-        )
-
-    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
-    _patch_select(
-        monkeypatch,
-        ToolSelection(tool_name, arguments),
-        selector_call,
-    )
-
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json={
-            "user_query": "q",
-            "allowed_tools": [tool_name],
-            "forced_tool": tool_name,
-        },
-    )
-
-    assert response.status_code == 200
-    assert len(invoked) == 1
-    assert invoked[0]["agent"] == slug
-    assert selector_call == {
-        "user_query": "q",
-        "history": [],
-        "allowed_tools": [tool_name],
-        "forced_tool": tool_name,
-    }
-
-
 _BACKGROUND_EXPERT_CASES = (
     pytest.param(
         (
@@ -579,12 +548,7 @@ _BACKGROUND_EXPERT_CASES = (
         (
             "GeneNetworkAgent",
             "network",
-            {
-                "species_code": "osa",
-                "to_id": "TO:0000207",
-                "obs_file_list": [],
-                "resolve_to_id": False,
-            },
+            network_run_arguments(),
             {
                 "network_task": {
                     "task_id": "expert-launch-network",
@@ -596,74 +560,6 @@ _BACKGROUND_EXPERT_CASES = (
         id="network-background",
     ),
 )
-
-
-@pytest.mark.parametrize("case", _BACKGROUND_EXPERT_CASES)
-async def test_expert_background_selection_launches_one_reserved_worker(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
-    case: tuple[str, str, dict[str, Any], dict[str, Any], set[str]],
-) -> None:
-    """Each background Expert selection uses one shared launcher call."""
-    tool_name, slug, arguments, result, expected_task_ids = case
-    launched: list[str] = []
-    real_launch = api_app.launch_background_submission
-
-    def capture_launch(
-        reservation: Any,
-        operation: Any,
-        *,
-        db_path: str,
-    ) -> None:
-        launched.append(reservation.agent)
-        real_launch(reservation, operation, db_path=db_path)
-
-    monkeypatch.setattr(
-        api_app, "launch_background_submission", capture_launch
-    )
-
-    async def fake(_args: Any) -> dict[str, Any]:
-        return result
-
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        {
-            "analyst": server.PhytomniAgents.ANALYST_AGENT.value,
-            "research": server.PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value,
-            "design": server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value,
-            "network": server.PhytomniAgents.GENE_NETWORK_AGENT.value,
-        }[slug],
-        records_submission(slug)(fake),
-    )
-    _patch_select(monkeypatch, ToolSelection(tool_name, arguments))
-
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json={
-            "user_query": "q",
-            "allowed_tools": [tool_name],
-            "forced_tool": tool_name,
-        },
-    )
-
-    assert response.status_code == 202
-    body = response.json()
-    assert body["agent"] == slug
-    assert body["status"] == "running"
-    assert body["id"] == body["run_id"]
-    assert body["task_ids"] == []
-    assert body["result"] == empty_agent_result()
-    assert launched == [slug]
-    await _wait_for_run_children(
-        tasks_db_path,
-        body["run_id"],
-        expected_task_ids,
-    )
-
-
 _SYNC_EXPERT_CASES = (
     pytest.param(
         ("ChatAgent", "chat", {"user_query": "q", "obs_file_list": []}),
@@ -690,524 +586,3 @@ _SYNC_EXPERT_CASES = (
         id="brief-gene-synchronous",
     ),
 )
-
-
-@pytest.mark.parametrize("case", _SYNC_EXPERT_CASES)
-async def test_expert_synchronous_selection_skips_background_launcher(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    case: tuple[str, str, dict[str, Any]],
-) -> None:
-    """Established synchronous Expert selections retain their native path."""
-    tool_name, slug, arguments = case
-    launched: list[str] = []
-    real_launch = api_app.launch_background_submission
-
-    def capture_launch(
-        reservation: Any,
-        operation: Any,
-        *,
-        db_path: str,
-    ) -> None:
-        launched.append(reservation.agent)
-        real_launch(reservation, operation, db_path=db_path)
-
-    monkeypatch.setattr(
-        api_app, "launch_background_submission", capture_launch
-    )
-    if slug == "review":
-
-        async def fake_review(**_kwargs: Any) -> Any:
-            return api_app._ReviewExecution(
-                run_id="expert-review-sync",
-                status="succeeded",
-                result={
-                    "formatted": {"answer": "review ok", "metadata": {}},
-                    "execution": {"warnings": []},
-                    "raw": None,
-                },
-            )
-
-        monkeypatch.setattr(api_app, "_run_review_with_interrupt", fake_review)
-    else:
-        _stub_tool_handler(
-            monkeypatch,
-            {
-                "chat": server.PhytomniAgents.CHAT_AGENT.value,
-                "knowledge": server.PhytomniAgents.KNOWLEDGE_AGENT.value,
-                "data": server.PhytomniAgents.DATA_AGENT.value,
-                "brief_gene": server.PhytomniAgents.BRIEF_GENE_AGENT.value,
-            }[slug],
-            {"answer": "ok", "doc_list": []},
-        )
-    _patch_select(monkeypatch, ToolSelection(tool_name, arguments))
-
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json={
-            "user_query": "q",
-            "allowed_tools": [tool_name],
-            "forced_tool": tool_name,
-        },
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["agent"] == slug
-    assert body["status"] == "succeeded"
-    assert launched == []
-
-
-async def test_route_autonomous_dispatches_one_allowed_tool(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Autonomous routing makes one constrained selection and dispatch."""
-    captured: dict[str, Any] = {}
-    invoked: list[dict[str, Any]] = []
-
-    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
-        invoked.append(kwargs)
-        return (
-            {
-                "id": "route-chat",
-                "object": "agent.run",
-                "agent": kwargs["agent"],
-                "status": "succeeded",
-                "task_ids": [],
-                "result": empty_agent_result(),
-            },
-            200,
-        )
-
-    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
-    patch_expert_router(
-        monkeypatch,
-        expert_router,
-        _router_completion(("ChatAgent", '{"user_query":"q"}')),
-        captured,
-    )
-
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json={
-            "user_query": "q",
-            "allowed_tools": ["ReviewAgent", "ChatAgent"],
-        },
-    )
-
-    assert response.status_code == 200
-    assert len(invoked) == 1
-    assert invoked[0]["agent"] == "chat"
-    assert captured["tool_choice"] == "required"
-    assert [tool["function"]["name"] for tool in captured["tools"]] == [
-        "ReviewAgent",
-        "ChatAgent",
-    ]
-
-
-async def test_literal_agent_mention_stays_on_chat_surface(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Literal ``@DataAgent`` text does not invoke Expert routing."""
-    captured: dict[str, Any] = {}
-    install_chat_handler(monkeypatch, captured)
-
-    async def forbidden_select(*_args: Any, **_kwargs: Any) -> None:
-        raise AssertionError("literal mentions must not enter Expert routing")
-
-    monkeypatch.setattr(api_app, "select_agent_tool", forbidden_select)
-    response = await api_client.post(
-        "/v1/chat/completions",
-        headers=_auth(issued_api_key),
-        json={
-            "model": "phyto-chat",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": "Explain literal @DataAgent text",
-                }
-            ],
-        },
-    )
-
-    assert response.status_code == 200
-    assert response.json()["model"] == "phyto-chat"
-    assert captured["user_query"] == "Explain literal @DataAgent text"
-
-
-@pytest.mark.parametrize(
-    "case",
-    [
-        (_router_completion(empty_choices=True), ["ChatAgent"], None),
-        (_router_completion(), ["ChatAgent"], None),
-        (
-            _router_completion(("ChatAgent", "{}"), ("DataAgent", "{}")),
-            ["ChatAgent", "DataAgent"],
-            None,
-        ),
-        (_router_completion(("MissingAgent", "{}")), ["ChatAgent"], None),
-        (_router_completion(("DataAgent", "{}")), ["ChatAgent"], None),
-        (
-            _router_completion(("DataAgent", "{}")),
-            ["ChatAgent", "DataAgent"],
-            "ChatAgent",
-        ),
-    ],
-    ids=(
-        "no-choice",
-        "no-call",
-        "multiple-calls",
-        "unknown-call",
-        "outside-allowlist",
-        "forced-mismatch",
-    ),
-)
-async def test_route_strict_failures_never_invoke_agent(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    case: tuple[SimpleNamespace, list[str], str | None],
-) -> None:
-    """Real strict selector contract failures stop before dispatch."""
-    completion, allowed_tools, forced_tool = case
-    invoked = 0
-
-    async def forbidden_invoke(
-        **_kwargs: object,
-    ) -> tuple[dict[str, Any], int]:
-        nonlocal invoked
-        invoked += 1
-        raise AssertionError("agent invocation must not run")
-
-    monkeypatch.setattr(api_app, "_invoke_agent_run", forbidden_invoke)
-    captured: dict[str, Any] = {}
-    patch_expert_router(monkeypatch, expert_router, completion, captured)
-    payload: dict[str, Any] = {
-        "user_query": "q",
-        "allowed_tools": allowed_tools,
-    }
-    if forced_tool is not None:
-        payload["forced_tool"] = forced_tool
-    response = await api_client.post(
-        "/v1/query/route", headers=_auth(issued_api_key), json=payload
-    )
-    assert response.status_code in {400, 422, 502}
-    assert invoked == 0
-    if forced_tool is not None:
-        assert captured["tool_choice"] == {
-            "type": "function",
-            "function": {"name": forced_tool},
-        }
-
-
-@pytest.mark.parametrize(
-    "case",
-    [
-        ("ChatAgent", "chat", True),
-        ("KnowledgeAgent", "knowledge", True),
-        ("DataAgent", "data", False),
-        ("ReviewAgent", "review", True),
-        ("BriefGeneAgent", "brief_gene", False),
-        ("AnalystAgent", "analyst", False),
-        ("DeepGenomeAgent", "deep_genome", False),
-        ("InSilicoResearchAgent", "research", False),
-        ("DigitalDesignAgent", "design", False),
-        ("GeneNetworkAgent", "network", False),
-    ],
-)
-async def test_route_attachment_forwarding_follows_capability_matrix(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
-    case: tuple[str, str, bool],
-) -> None:
-    """Expert forwarding follows the registry's exact ten-tool matrix."""
-    tool_name, slug, forwarded = case
-    captured: dict[str, dict[str, Any]] = {}
-    registry = UploadRegistry(tasks_db_path)
-    file_id = "expert-context"
-    path = obs_path_from_key(
-        ServerConfig().BUCKET_NAME,
-        f"{ApiConfig().API_UPLOAD_PREFIX.strip('/')}/u1/expert/"
-        f"{file_id}/context.pdf",
-    )
-    registry.record(
-        UploadMetadata(
-            file_id=file_id,
-            user_id="u1",
-            obs_path=path,
-            filename="context.pdf",
-            purpose="agent_context",
-            byte_size=1_024,
-            format="pdf",
-            media_type="application/pdf",
-            created_at="2026-07-25T00:00:00+00:00",
-        )
-    )
-
-    async def fake_invoke(
-        *, agent: str, arguments: dict[str, Any], **_kwargs: Any
-    ) -> tuple[dict[str, Any], int]:
-        captured[agent] = arguments
-        return (
-            {
-                "id": "r1",
-                "object": "agent.run",
-                "agent": agent,
-                "status": "succeeded",
-                "task_ids": [],
-                "result": {"formatted": {}},
-            },
-            200,
-        )
-
-    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
-
-    _patch_select(
-        monkeypatch,
-        ToolSelection(
-            tool_name,
-            {"user_query": "q", "obs_file_list": ["selector-private"]},
-        ),
-    )
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json={
-            "user_query": "q",
-            "obs_file_list": [path],
-            "allowed_tools": [tool_name],
-        },
-    )
-    if forwarded:
-        assert response.status_code == 200
-        assert captured[slug]["obs_file_list"] == [path]
-    else:
-        assert response.status_code == 422
-        assert response.json()["error"]["code"] == ("attachment_not_supported")
-        assert slug not in captured
-
-
-async def test_route_requires_auth(
-    api_client: httpx.AsyncClient,
-) -> None:
-    """An unauthenticated caller sees the unified 401."""
-    response = await api_client.post(
-        "/v1/query/route",
-        json={"user_query": "hi", "allowed_tools": ["ChatAgent"]},
-    )
-    assert response.status_code == 401
-
-
-async def test_route_insufficient_scope_returns_403(
-    api_client: httpx.AsyncClient,
-    scoped_key_without_agents: str,
-) -> None:
-    """A valid key lacking the ``agents`` scope is rejected with 403."""
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(scoped_key_without_agents),
-        json={"user_query": "hi", "allowed_tools": ["ChatAgent"]},
-    )
-    assert response.status_code == 403
-
-
-async def test_route_selection_failure_returns_sanitized_502(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Selector contract failures never disclose routing inputs or output."""
-
-    async def fake_select(*_args: Any, **_kwargs: Any) -> ToolSelection:
-        raise ToolSelectionError(
-            "DataAgent prohibited after model output: secret selection"
-        )
-
-    monkeypatch.setattr(api_app, "select_agent_tool", fake_select)
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json={
-            "user_query": "hi",
-            "allowed_tools": ["ChatAgent", "DataAgent"],
-        },
-    )
-    assert response.status_code == 502
-    assert response.json()["error"]["code"] == ("routing_contract_violation")
-    assert response.json()["error"]["stage"] == "routing"
-    assert response.json()["error"]["retryable"] is False
-    assert response.json()["error"]["message"] == (
-        "The routing contract is invalid."
-    )
-    assert "DataAgent" not in response.text
-    assert "secret selection" not in response.text
-
-
-async def test_route_no_selection_returns_sanitized_502(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Strict routing does not fall back when the selector returns nothing."""
-    _patch_select(monkeypatch, None)
-
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json={
-            "user_query": "hi",
-            "allowed_tools": ["ChatAgent", "DataAgent"],
-        },
-    )
-
-    assert response.status_code == 502
-    assert response.json()["error"]["code"] == ("routing_contract_violation")
-    assert response.json()["error"]["stage"] == "routing"
-    assert response.json()["error"]["retryable"] is False
-    assert response.json()["error"]["message"] == (
-        "The routing contract is invalid."
-    )
-    assert "ChatAgent" not in response.text
-    assert "DataAgent" not in response.text
-
-
-async def test_legacy_a2a_no_selection_cannot_relax_strict_route(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
-) -> None:
-    """Legacy A2A optional selection cannot become strict-route fallback."""
-    legacy_calls: list[str] = []
-
-    async def legacy_no_selection(text: str) -> None:
-        legacy_calls.append(text)
-        return None
-
-    monkeypatch.setattr(a2a_messages, "select_agent_tool", legacy_no_selection)
-    assert await a2a_messages.select_agent_tool("legacy question") is None
-
-    captured: dict[str, Any] = {}
-
-    async def strict_no_selection(
-        *,
-        messages: list[dict[str, Any]],
-        request: Any,
-        completion: Any,
-    ) -> SimpleNamespace:
-        _ = messages, completion
-        captured.update(
-            {
-                "tool_choice": request.tool_choice,
-                "allowed_order": request.allowed_order,
-            }
-        )
-        return _router_completion(empty_choices=True)
-
-    monkeypatch.setattr(expert_router, "_run_completion", strict_no_selection)
-    invoked = 0
-
-    async def forbidden_invoke(
-        **_kwargs: object,
-    ) -> tuple[dict[str, Any], int]:
-        nonlocal invoked
-        invoked += 1
-        raise AssertionError("strict route must stop before dispatch")
-
-    monkeypatch.setattr(api_app, "_invoke_agent_run", forbidden_invoke)
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json={
-            "user_query": "strict question",
-            "allowed_tools": ["ChatAgent", "DataAgent"],
-        },
-    )
-
-    assert response.status_code == 502
-    assert response.json()["error"]["code"] == ("routing_contract_violation")
-    assert captured == {
-        "tool_choice": "required",
-        "allowed_order": ("ChatAgent", "DataAgent"),
-    }
-    assert legacy_calls == ["legacy question"]
-    assert invoked == 0
-    assert not RunRegistry(tasks_db_path).list_runs(owner="u1")
-
-
-async def test_route_unknown_tool_returns_502(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A tool outside the agent set (e.g. GetTaskStatus) -> 502."""
-    invoked = 0
-
-    async def forbidden_invoke(
-        **_kwargs: object,
-    ) -> tuple[dict[str, Any], int]:
-        nonlocal invoked
-        invoked += 1
-        raise AssertionError("agent invocation must not run")
-
-    monkeypatch.setattr(api_app, "_invoke_agent_run", forbidden_invoke)
-    _patch_select(
-        monkeypatch, ToolSelection("GetTaskStatus", {"task_id": "T-1"})
-    )
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json={"user_query": "status?", "allowed_tools": ["ChatAgent"]},
-    )
-    assert response.status_code == 502
-    assert invoked == 0
-
-
-async def test_route_invalid_arguments_returns_400(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    tasks_db_path: str,
-) -> None:
-    """LLM-extracted arguments that fail the agent schema -> 400.
-
-    The KnowledgeAgent schema requires ``user_query``; an empty argument
-    object makes ``invoke_tool_enveloped`` raise ``McpError`` with
-    ``INVALID_PARAMS``, which the route maps to 400 rather than letting it
-    fall through to the generic 500 handler.
-    """
-    invoked = 0
-
-    async def forbidden_handler(_args: Any) -> dict[str, Any]:
-        nonlocal invoked
-        invoked += 1
-        raise AssertionError("agent invocation must not run")
-
-    monkeypatch.setitem(
-        server.TOOL_HANDLERS,
-        server.PhytomniAgents.KNOWLEDGE_AGENT.value,
-        forbidden_handler,
-    )
-    _patch_select(monkeypatch, ToolSelection("KnowledgeAgent", {}))
-    response = await api_client.post(
-        "/v1/query/route",
-        headers=_auth(issued_api_key),
-        json={"user_query": "rice", "allowed_tools": ["KnowledgeAgent"]},
-    )
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == (
-        "selected_agent_invalid_argument"
-    )
-    assert response.json()["error"]["stage"] == "dispatch_validation"
-    assert response.json()["error"]["retryable"] is False
-    assert invoked == 0
-    assert not RunRegistry(tasks_db_path).list_runs(owner="u1")

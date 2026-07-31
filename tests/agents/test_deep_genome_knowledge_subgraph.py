@@ -54,16 +54,16 @@ async def test_dispatch_knowledge_uses_subgraph() -> None:
     ``final_response`` so callers see the same chat-completion envelope
     the legacy ``knowledge_agent.arun`` produced.
     """
-    # pylint: disable=protected-access
     fake = RecordingKnowledgeApp(output=knowledge_output("subgraph"))
     mixin = _build_mixin_instance(knowledge_app=fake.compiled)
 
-    result = (
-        await report_module.DeepGenomeReportMixin._dispatch_knowledge_retrieve(
-            mixin,
-            user_query="experiment-stub",
-            repo_id_dict={"repo": 1},
-        )
+    result = await getattr(
+        report_module.DeepGenomeReportMixin,
+        "_dispatch_knowledge_retrieve",
+    )(
+        mixin,
+        user_query="experiment-stub",
+        repo_id_dict={"repo": 1},
     )
 
     assert result == {"choices": [{"message": {"content": "subgraph"}}]}

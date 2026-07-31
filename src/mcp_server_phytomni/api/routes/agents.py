@@ -21,11 +21,26 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse, Response
 
+from ...agents.expert import ToolSelectionError
+from ...runtime.conversation_context.adapters import (
+    ContextAgentInvocation,
+    ConversationContextExecutor,
+)
+from ...runtime.conversation_context.models import (
+    ContextDelta,
+    ConversationEnvelopeV1,
+)
+from ...runtime.conversation_context.service import (
+    AgentOutcome,
+    PreparedTurn,
+    PrepareStatus,
+)
 from ...runtime.locale import SupportedLocale, current_effective_locale
 from ...runtime.run_registry import RunRequestInfo
 from ...runtime.stage_trace import DataStage, trace_data_stage
 from ..app_support import resolve_http_locale
 from ..auth import ApiPrincipal
+from ..lifecycle_contract import SafeApiError
 from ..schemas import (
     AgentRunRequest,
     ChatCompletionRequest,
@@ -59,6 +74,7 @@ class AgentCatalogDependencies:
     remote_agent_slugs: frozenset[str]
     legacy_aliases: Mapping[str, list[str]]
     serialize_capability: Callable[[str], Any]
+    conversation_context_enabled: Callable[[], bool]
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +126,14 @@ class AgentNativeDependencies:
 
 
 @dataclass(frozen=True, slots=True)
+class AgentContextDependencies:
+    """Conversation-context protocol gate and shared executor."""
+
+    enabled: Callable[[], bool]
+    executor: ConversationContextExecutor
+
+
+@dataclass(frozen=True, slots=True)
 class AgentUploadDependencies:
     """Multipart upload and error projection seams."""
 
@@ -127,6 +151,7 @@ class AgentRouteDependencies:
     catalog: AgentCatalogDependencies
     chat: AgentChatDependencies
     native: AgentNativeDependencies
+    context: AgentContextDependencies
     upload: AgentUploadDependencies
 
 
@@ -186,6 +211,12 @@ def _register_chat_route(
                 status_code=404,
                 detail=f"model not found: {payload.model}",
             )
+        if payload.conversation is not None:
+            if not dependencies.context.enabled():
+                raise HTTPException(
+                    status_code=404, detail="conversation context disabled"
+                )
+            return await _execute_context_chat(payload, dependencies)
         accepts_obs = dependencies.chat.input.tool_accepts_obs(tool_name)
         if payload.obs_file_list and not accepts_obs:
             raise HTTPException(
@@ -278,6 +309,152 @@ def _register_chat_route(
         return JSONResponse(completion)
 
 
+async def _execute_context_chat(
+    payload: ChatCompletionRequest,
+    dependencies: AgentRouteDependencies,
+) -> JSONResponse:
+    """Execute an Instant V1 completion without flattening legacy messages."""
+    envelope = payload.conversation
+    assert envelope is not None
+    if envelope.mode != "instant":
+        raise HTTPException(
+            status_code=422, detail="chat context requires instant mode"
+        )
+    if dependencies.catalog.model_to_tool[payload.model] != "ChatAgent":
+        raise HTTPException(
+            status_code=422,
+            detail="instant context requires a ChatAgent model",
+        )
+    if payload.stream:
+        raise HTTPException(
+            status_code=400,
+            detail="conversation context streaming is not available",
+        )
+    if payload.obs_file_list and not dependencies.chat.input.tool_accepts_obs(
+        "ChatAgent"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"model {payload.model} does not accept obs_file_list",
+        )
+
+    async def invoke(
+        selected_agent_id: str,
+        _envelope: ConversationEnvelopeV1,
+        dispatch: ContextAgentInvocation,
+    ) -> AgentOutcome:
+        if selected_agent_id != "ChatAgent":
+            raise ValueError("instant context selected a non-chat agent")
+        arguments = dict(dispatch.arguments)
+        arguments["obs_file_list"] = list(payload.obs_file_list or [])
+        user_query, resolve_meta = (
+            await dependencies.chat.input.resolve_chat_query(
+                raw_query=arguments["user_query"],
+                resolve_flag=bool(payload.resolve_gene_id),
+                tool_name="ChatAgent",
+                brief_gene_resolver=(
+                    dependencies.chat.input.brief_gene_resolver
+                ),
+            )
+        )
+        arguments["user_query"] = user_query
+        tool_envelope = (
+            await dependencies.chat.execution.invoke_tool_enveloped(
+                "ChatAgent",
+                arguments,
+                conversation_messages=dispatch.conversation_messages,
+                agent_thread_id=dispatch.agent_thread_id,
+            )
+        )
+        formatted_dict = _formatted_with_metadata(tool_envelope, resolve_meta)
+        envelope_dict = {
+            "formatted": formatted_dict,
+            "execution": asdict(tool_envelope.execution),
+            "raw": tool_envelope.raw,
+        }
+        chat_run_id = dependencies.chat.projection.record_sync_run(
+            agent="chat",
+            owner=dependencies.chat.projection.current_user() or "anonymous",
+            result=envelope_dict,
+            request_info=_chat_run_request_info(
+                payload,
+                user_query,
+                "ChatAgent",
+                current_effective_locale(),
+            ),
+        )
+        if chat_run_id is None:
+            envelope_dict["execution"]["tracking"] = {"degraded": True}
+        completion = dependencies.chat.projection.to_chat_completion(
+            formatted_dict,
+            tool_envelope.raw,
+            payload.model,
+            envelope_dict["execution"],
+        )
+        completion["run_id"] = chat_run_id
+        if envelope_dict["execution"]["tracking"].get("degraded") is True:
+            completion["degraded_tracking"] = True
+        if not dependencies.chat.projection.resolve_debug(payload.debug):
+            completion = dependencies.chat.projection.strip_chat_completion(
+                completion
+            )
+        return AgentOutcome(
+            result=completion,
+        )
+
+    async def delegate_async(
+        _selected_agent_id: str,
+        _envelope: ConversationEnvelopeV1,
+        _arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        raise AssertionError(
+            "Instant context must not delegate asynchronously"
+        )
+
+    prepared = await dependencies.context.executor.execute(
+        envelope=envelope,
+        invoke=invoke,
+        delegate_async=delegate_async,
+    )
+    return _context_response(prepared, envelope)
+
+
+def _context_response(
+    prepared: PreparedTurn,
+    envelope: ConversationEnvelopeV1,
+) -> JSONResponse:
+    """Return a staged terminal payload or a bounded context retry signal."""
+    if prepared.status is PrepareStatus.REBUILD_REQUIRED:
+        raise SafeApiError(
+            status_code=409,
+            code="conversation_context_rebuild_required",
+            message="conversation context rebuild required",
+            stage="context",
+            retryable=True,
+        )
+    if prepared.status is PrepareStatus.IN_PROGRESS:
+        raise SafeApiError(
+            status_code=409,
+            code="conversation_context_turn_in_progress",
+            message="conversation context turn in progress",
+            stage="context",
+            retryable=True,
+        )
+    if prepared.result is None:
+        raise HTTPException(
+            status_code=500, detail="conversation context failed"
+        )
+    response = dict(prepared.result)
+    if prepared.stage is not None:
+        response["conversation_context"] = {
+            "schema_version": 1,
+            "turn_id": envelope.turn_id,
+            **asdict(prepared.stage),
+        }
+    status_code = 202 if response.get("status") == "running" else 200
+    return JSONResponse(response, status_code=status_code)
+
+
 def _formatted_with_metadata(
     envelope: Any,
     resolve_meta: dict[str, Any],
@@ -332,31 +509,32 @@ def _register_native_routes(
     ) -> JSONResponse:
         """List the agents reachable via ``/v1/agents/{slug}/runs``."""
         del principal
-        return JSONResponse(
-            {
-                "object": "list",
-                "data": [
-                    {
-                        "slug": slug,
-                        "tool": tool,
-                        "origin": (
-                            "remote"
-                            if slug in dependencies.catalog.remote_agent_slugs
-                            else "local"
-                        ),
-                        "legacy_aliases": (
-                            dependencies.catalog.legacy_aliases.get(tool, [])
-                        ),
-                        "capabilities": (
-                            dependencies.catalog.serialize_capability(slug)
-                        ),
-                    }
-                    for slug, tool in (
-                        dependencies.catalog.agent_slug_to_tool.items()
-                    )
-                ],
-            }
-        )
+        payload: dict[str, Any] = {
+            "object": "list",
+            "data": [
+                {
+                    "slug": slug,
+                    "tool": tool,
+                    "origin": (
+                        "remote"
+                        if slug in dependencies.catalog.remote_agent_slugs
+                        else "local"
+                    ),
+                    "legacy_aliases": (
+                        dependencies.catalog.legacy_aliases.get(tool, [])
+                    ),
+                    "capabilities": (
+                        dependencies.catalog.serialize_capability(slug)
+                    ),
+                }
+                for slug, tool in (
+                    dependencies.catalog.agent_slug_to_tool.items()
+                )
+            ],
+        }
+        if dependencies.catalog.conversation_context_enabled():
+            payload["protocols"] = {"conversation_context": [1]}
+        return JSONResponse(payload)
 
     @app.post(
         "/v1/agents/{agent}/runs",
@@ -412,6 +590,12 @@ def _register_native_routes(
     ) -> JSONResponse:
         """Autonomously route a query to an agent and return its run."""
         del principal
+        if payload.conversation is not None:
+            if not dependencies.context.enabled():
+                raise HTTPException(
+                    status_code=404, detail="conversation context disabled"
+                )
+            return await _execute_context_expert(payload, dependencies)
         resolve_http_locale(
             explicit=payload.locale,
             accept_language=request.headers.get("accept-language"),
@@ -453,6 +637,221 @@ def _register_native_routes(
         )
 
 
+async def _execute_context_expert(
+    payload: ExpertQueryRequest,
+    dependencies: AgentRouteDependencies,
+) -> JSONResponse:
+    """Run constrained Expert V1 selection through the shared lifecycle."""
+    envelope = payload.conversation
+    assert envelope is not None
+    if envelope.mode != "expert":
+        raise HTTPException(
+            status_code=422, detail="expert context requires expert mode"
+        )
+
+    async def invoke(
+        selected_agent_id: str,
+        _envelope: ConversationEnvelopeV1,
+        dispatch: ContextAgentInvocation,
+    ) -> AgentOutcome:
+        return await _invoke_context_expert_agent(
+            selected_agent_id=selected_agent_id,
+            dispatch=dispatch,
+            payload=payload,
+            dependencies=dependencies,
+        )
+
+    async def delegate_async(
+        selected_agent_id: str,
+        _envelope: ConversationEnvelopeV1,
+        arguments: dict[str, Any],
+    ) -> dict[str, Any]:
+        slug = _slug_for_tool(selected_agent_id, dependencies)
+        if dependencies.chat.input.tool_accepts_obs(selected_agent_id):
+            arguments = {
+                **arguments,
+                "obs_file_list": list(payload.obs_file_list),
+            }
+        body, _status_code = await dependencies.native.invoke_agent_run(
+            agent=slug,
+            arguments=arguments,
+            dialogue_id=payload.dialogue_id,
+            request_json=payload.model_dump_json(),
+            debug=dependencies.chat.projection.resolve_debug(None),
+        )
+        return body
+
+    try:
+        prepared = await dependencies.context.executor.execute(
+            envelope=envelope,
+            invoke=invoke,
+            delegate_async=delegate_async,
+        )
+    except (ToolSelectionError, ValueError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="router did not resolve one permitted agent",
+        ) from exc
+    return _context_response(prepared, envelope)
+
+
+def _context_clarification_outcome(
+    selected_agent_id: str,
+    slug: str,
+    dispatch: ContextAgentInvocation,
+) -> AgentOutcome | None:
+    """Return a terminal clarification outcome when one was requested."""
+    if selected_agent_id not in {"KnowledgeAgent", "ReviewAgent"}:
+        return None
+    clarification = dispatch.private_agent_state.get("clarification_message")
+    if not isinstance(clarification, str) or not clarification.strip():
+        return None
+    status = "failed" if selected_agent_id == "ReviewAgent" else "succeeded"
+    delta = ContextDelta() if status == "succeeded" else None
+    return AgentOutcome(
+        result=_clarification_agent_run(slug, clarification),
+        status=status,
+        context_delta=delta,
+    )
+
+
+def _context_adapter(
+    selected_agent_id: str,
+    private_agent_state: dict[str, Any],
+) -> Any:
+    """Extract the adapter belonging to one selected context agent."""
+    if selected_agent_id == "KnowledgeAgent":
+        return private_agent_state.pop("knowledge_adapter", None)
+    adapter_keys = {
+        "DataAgent": "data_adapter",
+        "BriefGeneAgent": "brief_gene_adapter",
+        "ReviewAgent": "review_adapter",
+    }
+    key = adapter_keys.get(selected_agent_id)
+    return None if key is None else private_agent_state.get(key)
+
+
+def _context_execution_thread_id(
+    selected_agent_id: str,
+    dispatch: ContextAgentInvocation,
+    adapter: Any,
+) -> str | None:
+    """Select the durable execution thread for a context invocation."""
+    thread_id = dispatch.agent_thread_id
+    if selected_agent_id == "ReviewAgent" and adapter is not None:
+        thread_id = getattr(adapter, "execution_thread_id", thread_id)
+    if selected_agent_id in {
+        "ChatAgent",
+        "KnowledgeAgent",
+        "DataAgent",
+        "ReviewAgent",
+    }:
+        return thread_id
+    return None
+
+
+async def _context_success_outcome(
+    selected_agent_id: str,
+    body: dict[str, Any],
+    adapter: Any,
+) -> AgentOutcome:
+    """Shape a successful native response and any context delta."""
+    if adapter is None:
+        outcome = AgentOutcome(result=body)
+    elif selected_agent_id != "ReviewAgent":
+        outcome = AgentOutcome(
+            result=body,
+            context_delta=(
+                adapter.delta(body)
+                if selected_agent_id
+                in {"KnowledgeAgent", "DataAgent", "BriefGeneAgent"}
+                else None
+            ),
+        )
+    elif (
+        not getattr(adapter, "settlement_ready", False)
+        or not await adapter.validate_settlement_candidate()
+    ):
+        outcome = AgentOutcome(result=body, status="failed")
+    else:
+        settlement_metadata = adapter.settlement_metadata()
+        if settlement_metadata is None:
+            adapter.mark_failed()
+            outcome = AgentOutcome(result=body, status="failed")
+        else:
+            outcome = AgentOutcome(
+                result=body,
+                context_delta=adapter.delta(body),
+                private_stage_metadata=settlement_metadata,
+            )
+    return outcome
+
+
+async def _invoke_context_expert_agent(
+    *,
+    selected_agent_id: str,
+    dispatch: ContextAgentInvocation,
+    payload: ExpertQueryRequest,
+    dependencies: AgentRouteDependencies,
+) -> AgentOutcome:
+    """Invoke one selected Expert agent and shape its context outcome."""
+    slug = _slug_for_tool(selected_agent_id, dependencies)
+    clarification = _context_clarification_outcome(
+        selected_agent_id, slug, dispatch
+    )
+    if clarification is not None:
+        return clarification
+    arguments = dict(dispatch.arguments)
+    if dependencies.chat.input.tool_accepts_obs(selected_agent_id):
+        arguments["obs_file_list"] = list(payload.obs_file_list)
+    private_agent_state = dict(dispatch.private_agent_state)
+    adapter = _context_adapter(selected_agent_id, private_agent_state)
+    body, status_code = await dependencies.native.invoke_agent_run(
+        agent=slug,
+        arguments=arguments,
+        conversation_messages=dispatch.conversation_messages,
+        agent_thread_id=_context_execution_thread_id(
+            selected_agent_id, dispatch, adapter
+        ),
+        private_agent_state=private_agent_state or None,
+        dialogue_id=payload.dialogue_id,
+        request_json=payload.model_dump_json(),
+        debug=dependencies.chat.projection.resolve_debug(None),
+    )
+    if status_code != 200 or body.get("status") != "succeeded":
+        return AgentOutcome(result=body, status="running")
+    return await _context_success_outcome(selected_agent_id, body, adapter)
+
+
+def _slug_for_tool(
+    tool_name: str,
+    dependencies: AgentRouteDependencies,
+) -> str:
+    """Map a canonical selected tool back to the public native slug."""
+    for slug, candidate in dependencies.catalog.agent_slug_to_tool.items():
+        if candidate == tool_name:
+            return slug
+    raise ValueError("selected agent is unavailable")
+
+
+def _clarification_agent_run(agent: str, message: str) -> dict[str, Any]:
+    """Return a sync agent.run envelope for clarification-only turns."""
+    return {
+        "id": None,
+        "object": "agent.run",
+        "agent": agent,
+        "status": "succeeded",
+        "task_ids": [],
+        "result": {
+            "formatted": {
+                "answer": message,
+                "follow_up_questions": [],
+                "references": [],
+            }
+        },
+    }
+
+
 def register_agent_routes(
     app: FastAPI,
     dependencies: AgentRouteDependencies,
@@ -469,6 +868,7 @@ __all__ = [
     "AgentChatExecutionDependencies",
     "AgentChatInputDependencies",
     "AgentChatProjectionDependencies",
+    "AgentContextDependencies",
     "AgentNativeDependencies",
     "AgentRouteDependencies",
     "AgentUploadDependencies",

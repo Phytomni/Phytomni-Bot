@@ -21,7 +21,7 @@ from typing import Any
 from ...common.prompts import get_prompt, load_text_file
 from ...config.defaults import EnvironmentConfig
 from ...config.settings import get_sensitive_config
-from ...graphs.chat_adapters import build_chat_input, extract_chat_response
+from ...graphs.chat_adapters import invoke_chat_content
 from ...runtime.langgraph_runner import ainvoke_graph
 from ...runtime.locale import SupportedLocale
 from ...storage.path_policy import RunIdentity
@@ -89,13 +89,11 @@ async def environment_region_codes(
         {"json_dict": region_info, "query": query},
     )
     chat_kwargs_bag = environment_chat_kwargs(kwargs)
-    chat_output = await _cached_chat_app().ainvoke(
-        build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs_bag)
+    content = await invoke_chat_content(
+        _cached_chat_app(), prompt, chat_kwargs_bag
     )
-    phyto_response = extract_chat_response(chat_output)
-    if not phyto_response:
+    if content is None:
         return None
-    content = phyto_response["choices"][0]["message"]["content"]
     try:
         code_info = re.findall(r"<result>(.*?)</result>", content)[0]
     except IndexError:

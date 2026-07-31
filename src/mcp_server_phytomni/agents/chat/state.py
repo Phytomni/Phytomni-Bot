@@ -12,9 +12,16 @@ time; lazy annotations would erase the ``Required[]`` markers and
 collapse every ``Required`` field into a ``total=False`` key.
 """
 
-from typing import Any, Required, TypedDict
+from typing import Any, Literal, Required, TypedDict
 
 from ...runtime.locale import SupportedLocale
+
+
+class ChatConversationMessage(TypedDict):
+    """One bounded native-role history item for the Chat model input."""
+
+    role: Literal["user", "assistant"]
+    content: str
 
 
 class ChatInput(TypedDict, total=False):
@@ -40,6 +47,7 @@ class ChatInput(TypedDict, total=False):
     user_query: Required[str]
     obs_file_list: list[str]
     chat_kwargs: dict[str, Any]
+    conversation_messages: list[ChatConversationMessage]
     locale: SupportedLocale
 
 
@@ -68,6 +76,7 @@ class ChatState(TypedDict, total=False):
     user_query: Required[str]
     obs_file_list: list[str]
     chat_kwargs: dict[str, Any]
+    conversation_messages: list[ChatConversationMessage]
     locale: SupportedLocale
     upload_context: str | None
     response: dict[str, Any] | None

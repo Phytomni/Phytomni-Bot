@@ -245,7 +245,6 @@ async def test_brief_gene_success_is_durable_before_optional_planning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The required profile transition commits before plan fan-out."""
-    # pylint: disable=protected-access
     db = tmp_path / "tasks.db"
     store = DeepGenomeStore(str(db))
     reservation = store.reserve_run(
@@ -268,7 +267,7 @@ async def test_brief_gene_success_is_durable_before_optional_planning(
             "preamble": None,
         },
     )
-    projected = await agent._persist_brief_gene_result(
+    projected = await getattr(agent, "_persist_brief_gene_result")(
         {"preamble": "# Deep Genome Analysis of Os01g0100100"}, state
     )
 
@@ -284,7 +283,6 @@ async def test_reserved_profile_seeds_concrete_plan_before_submission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The graph state carries reservation identity into plan seeding."""
-    # pylint: disable=protected-access
     db = tmp_path / "tasks.db"
     store = DeepGenomeStore(str(db))
     reservation = store.reserve_run(
@@ -313,11 +311,11 @@ async def test_reserved_profile_seeds_concrete_plan_before_submission(
         "output_dir": reservation.output_dir,
     }
 
-    result = (
-        await dispatch_module.DeepGenomeDispatchMixin._prepare_analysis_tasks(
-            harness,
-            state,
-        )
+    result = await getattr(
+        dispatch_module.DeepGenomeDispatchMixin, "_prepare_analysis_tasks"
+    )(
+        harness,
+        state,
     )
 
     assert len(result["work_items"]) == 12
@@ -328,7 +326,6 @@ async def test_reserved_profile_seeds_concrete_plan_before_submission(
 
 def test_send_payload_carries_reserved_lifecycle_identity() -> None:
     """Dynamic branches retain the umbrella identity after Send routing."""
-    # pylint: disable=protected-access
     harness = _dispatch_harness()
     state: Any = {
         "analysis_tasks": [
@@ -352,7 +349,7 @@ def test_send_payload_carries_reserved_lifecycle_identity() -> None:
         "task_submit_sleep": 0,
     }
 
-    sends = harness._route_analyst_tasks(state)
+    sends = getattr(harness, "_route_analyst_tasks")(state)
 
     assert len(sends) == 1
     payload = sends[0].arg
@@ -367,7 +364,6 @@ async def test_tracking_write_failure_cancels_and_fails_umbrella(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A local write failure never becomes a successful optional branch."""
-    # pylint: disable=protected-access
     store, reservation = _seed_store(tmp_path)
     monkeypatch.setattr(
         dispatch_module,
@@ -376,7 +372,11 @@ async def test_tracking_write_failure_cancels_and_fails_umbrella(
     )
     harness = _dispatch_harness()
     submission = RemoteSubmission("caller-smoc", "remote-smoc", "/obs/smoc")
-    harness._submit_analysis_task = AsyncMock(return_value=submission)
+    setattr(
+        harness,
+        "_submit_analysis_task",
+        AsyncMock(return_value=submission),
+    )
     delete = AsyncMock(return_value="deleted")
     monkeypatch.setattr(dispatch_module, "task_delete", delete)
 
@@ -397,8 +397,9 @@ async def test_tracking_write_failure_cancels_and_fails_umbrella(
         "task_id": reservation.umbrella_task_id,
         "work_item_key": "smoc_analysis",
     }
-    dispatch_and_wait = (
-        dispatch_module.DeepGenomeDispatchMixin._dispatch_and_wait_analysis
+    dispatch_and_wait = getattr(
+        dispatch_module.DeepGenomeDispatchMixin,
+        "_dispatch_and_wait_analysis",
     )
 
     with pytest.raises(

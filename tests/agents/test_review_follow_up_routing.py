@@ -17,6 +17,9 @@ from typing import Any, cast
 
 import pytest
 
+from mcp_server_phytomni.agents.review.conversation import (
+    ReviewConversationOperation,
+)
 from mcp_server_phytomni.agents.review.state import DeepResearchState
 from mcp_server_phytomni.graphs.chat_adapters import build_chat_kwargs_for
 from tests.support.config_fakes import fake_chat_config, fake_sensitive_config
@@ -31,6 +34,16 @@ from tests.support.review_fan_out import (
 )
 
 pytestmark = pytest.mark.agent
+
+
+def test_review_conversation_operation_values_are_stable() -> None:
+    """Conversation intent values are private routing metadata only."""
+    assert [item.value for item in ReviewConversationOperation] == [
+        "new_review",
+        "follow_up",
+        "local_revision",
+        "scope_change",
+    ]
 
 
 # ---------------------------------------------------------------------------

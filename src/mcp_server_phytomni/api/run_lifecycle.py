@@ -13,15 +13,21 @@ existing monkeypatch seams remain stable while registry policy has one home.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
+import os
 import sqlite3
 import threading
-from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import BackgroundTasks, HTTPException
 
+from ..runtime.background_submission import BACKGROUND_RUNTIME_ERRORS
+from ..runtime.checkpoint_backend import build_default_checkpointer
+from ..runtime.conversation_context.store import ConversationContextStore
 from ..runtime.deep_genome_store import DeepGenomeStore
 from ..runtime.deep_genome_store_projection import snapshot_to_canonical_result
 from ..runtime.run_registry import (
@@ -36,13 +42,15 @@ from ..runtime.task_manager import resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
 
 __all__ = [
+    "ResolvedRemoteRun",
+    "RunLifecycleContext",
+    "RunListQuery",
+    "RunPersistenceError",
     "agent_run_response",
     "claim_run_gc",
     "create_running_stream_run",
     "fetch_owner_run",
     "list_owner_runs",
-    "RunLifecycleContext",
-    "RunListQuery",
     "project_deep_genome_run",
     "project_public_run_record",
     "purge_expired_runs_best_effort",
@@ -50,21 +58,18 @@ __all__ = [
     "reconcile_run_task_logs",
     "record_sync_run",
     "release_run_gc",
-    "ResolvedRemoteRun",
-    "RunPersistenceError",
     "resolve_remote_run",
+    "run_record_to_dict",
     "schedule_run_gc",
     "settle_stream_run",
     "stamp_remote_request_info",
-    "run_record_to_dict",
 ]
 
 
 _LOGGER = logging.getLogger(__name__)
-_RUN_GC_CAUGHT: tuple[type[Exception], ...] = (Exception,)
+_RUN_GC_CAUGHT = BACKGROUND_RUNTIME_ERRORS
 _RUN_GC_LOCK = threading.Lock()
 _RUN_GC_ACTIVE = threading.Event()
-_RUN_GC_POLL_SECONDS = 0.01
 
 type PurgeRun = Callable[[], None]
 type ProjectRun = Callable[..., dict[str, Any]]
@@ -72,6 +77,9 @@ type FetchOwnerRun = Callable[..., Awaitable[dict[str, Any]]]
 type ReconcileTaskLog = Callable[[str], Awaitable[dict[str, Any] | None]]
 type StripResult = Callable[[dict[str, Any]], dict[str, Any]]
 type RegistryFactory = Callable[[str], Any]
+type CheckpointerFactory = Callable[[], Any]
+type CleanupCandidate = tuple[str, str]
+_CHECKPOINTS_DATABASE_FILENAME = "checkpoints.db"
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,7 +95,7 @@ class RunLifecycleContext:
 class RunListQuery:
     """Owner-run list filters and paging values from the HTTP query."""
 
-    run_filter: RunFilter = RunFilter()
+    run_filter: RunFilter = field(default_factory=RunFilter)
     limit: int = 50
     offset: int = 0
 
@@ -111,17 +119,178 @@ def _database_path(db_path: str | None) -> str:
     return db_path if db_path is not None else resolve_tasks_db_path()
 
 
+async def _close_checkpointer(
+    checkpointer: Any, logger: logging.Logger
+) -> None:
+    """Close a lifecycle-owned checkpointer connection when supported."""
+    closer = getattr(checkpointer, "aclose", None)
+    if not callable(closer):
+        closer = getattr(checkpointer, "close", None)
+    if not callable(closer):
+        connection = getattr(checkpointer, "conn", None)
+        closer = getattr(connection, "close", None)
+    if not callable(closer):
+        return
+    try:
+        result = closer()
+        if inspect.isawaitable(result):
+            await result
+    except _RUN_GC_CAUGHT as exc:
+        logger.warning(
+            "Review candidate checkpointer close failed: %s",
+            exc.__class__.__name__,
+        )
+
+
+async def _delete_review_candidate_checkpoints(
+    candidates: Sequence[CleanupCandidate],
+    *,
+    checkpointer_factory: CheckpointerFactory,
+    logger: logging.Logger,
+    close_checkpointer: bool,
+) -> tuple[CleanupCandidate, ...]:
+    """Delete only durable candidate threads and return completed rows."""
+    try:
+        checkpointer = checkpointer_factory()
+    except _RUN_GC_CAUGHT as exc:
+        logger.warning(
+            "Review candidate checkpoint cleanup unavailable: %s",
+            exc.__class__.__name__,
+        )
+        return ()
+    try:
+        deleter = getattr(checkpointer, "adelete_thread", None)
+        if not callable(deleter):
+            deleter = getattr(checkpointer, "delete_thread", None)
+        if not callable(deleter):
+            logger.warning(
+                "Review candidate checkpoint cleanup unavailable: no deleter"
+            )
+            return ()
+        deleted: list[CleanupCandidate] = []
+        for conversation_key, candidate_thread_id in candidates:
+            try:
+                result = deleter(candidate_thread_id)
+                if inspect.isawaitable(result):
+                    await result
+            except _RUN_GC_CAUGHT as exc:
+                logger.warning(
+                    "Review candidate checkpoint cleanup failed: %s",
+                    exc.__class__.__name__,
+                )
+                continue
+            deleted.append((conversation_key, candidate_thread_id))
+        return tuple(deleted)
+    finally:
+        if close_checkpointer:
+            await _close_checkpointer(checkpointer, logger)
+
+
+def _checkpoint_database_path(tasks_db_path: str) -> str:
+    """Return the persistent checkpoint DB beside the tasks DB."""
+    directory = os.path.dirname(tasks_db_path) or "."
+    return os.path.join(directory, _CHECKPOINTS_DATABASE_FILENAME)
+
+
+def _lifecycle_checkpointer_factory(
+    tasks_db_path: str,
+) -> CheckpointerFactory:
+    """Open a fresh persistent saver for one synchronous GC pass."""
+    checkpoint_path = _checkpoint_database_path(tasks_db_path)
+    return lambda: build_default_checkpointer(checkpoint_path)
+
+
+def _run_async_at_sync_boundary(
+    coroutine_factory: Callable[[], Coroutine[Any, Any, Any]],
+) -> Any:
+    """Run async checkpoint deletion without nesting or leaking event loops."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coroutine_factory())
+
+    result: list[Any] = []
+    failures: list[BaseException] = []
+
+    def _worker() -> None:
+        try:
+            result.append(asyncio.run(coroutine_factory()))
+        except asyncio.CancelledError as exc:
+            failures.append(exc)
+        except _RUN_GC_CAUGHT as exc:
+            failures.append(exc)
+
+    worker = threading.Thread(target=_worker, daemon=True)
+    worker.start()
+    worker.join()
+    if failures:
+        raise failures[0]
+    return result[0] if result else None
+
+
+def _purge_expired_context_best_effort(
+    *,
+    path: str,
+    now: datetime,
+    checkpointer_factory: CheckpointerFactory | None,
+    logger: logging.Logger,
+) -> None:
+    """Purge staged rows and candidate checkpoints under one durable lock."""
+    owns_checkpointer = checkpointer_factory is None
+    factory = checkpointer_factory or _lifecycle_checkpointer_factory(path)
+    store = ConversationContextStore(path)
+    mutation_lock = store.acquire_review_mutation_lock()
+    try:
+        store.purge_expired_staged(now, mutation_lock_held=True)
+        candidates = store.list_checkpoint_cleanup_candidates(
+            mutation_lock_held=True
+        )
+        if not candidates:
+            return
+        deleted = _run_async_at_sync_boundary(
+            lambda: _delete_review_candidate_checkpoints(
+                candidates,
+                checkpointer_factory=factory,
+                logger=logger,
+                close_checkpointer=owns_checkpointer,
+            )
+        )
+        if deleted:
+            store.complete_checkpoint_cleanup_candidates(
+                deleted, mutation_lock_held=True
+            )
+    finally:
+        mutation_lock.release()
+
+
 def purge_expired_runs_best_effort(
     *,
     db_path: str | None = None,
     registry_factory: RegistryFactory = RunRegistry,
     logger: logging.Logger = _LOGGER,
+    checkpointer_factory: CheckpointerFactory | None = None,
 ) -> None:
-    """Run one registry TTL purge, swallowing SQLite and OS failures."""
+    """Run registry and staged-context TTL purges.
+
+    Storage failures are swallowed so cleanup remains best effort.
+    """
+    path = _database_path(db_path)
     try:
-        registry_factory(_database_path(db_path)).purge_expired()
+        registry_factory(path).purge_expired()
     except (sqlite3.Error, OSError) as exc:
         logger.warning("run TTL purge failed: %s", exc.__class__.__name__)
+    try:
+        _purge_expired_context_best_effort(
+            path=path,
+            now=datetime.now(UTC),
+            checkpointer_factory=checkpointer_factory,
+            logger=logger,
+        )
+    except _RUN_GC_CAUGHT as exc:
+        logger.warning(
+            "conversation context TTL purge failed: %s",
+            exc.__class__.__name__,
+        )
 
 
 async def purge_expired_runs_best_effort_async(
@@ -130,25 +299,27 @@ async def purge_expired_runs_best_effort_async(
     """Run the local purge off-loop and coalesce concurrent callers."""
     if not claim_run_gc():
         return
-    finished = threading.Event()
-    failures: list[Exception] = []
+    finished = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    failures: list[BaseException] = []
 
     def _run() -> None:
         try:
             purge()
+        except asyncio.CancelledError as exc:
+            failures.append(exc)
         except _RUN_GC_CAUGHT as exc:
             failures.append(exc)
         finally:
             release_run_gc()
-            finished.set()
+            loop.call_soon_threadsafe(finished.set)
 
     try:
         threading.Thread(target=_run, daemon=True).start()
     except RuntimeError:
         release_run_gc()
         raise
-    while not finished.is_set():  # noqa: ASYNC110
-        await asyncio.sleep(_RUN_GC_POLL_SECONDS)
+    await finished.wait()
     if failures:
         raise failures[0]
 

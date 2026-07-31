@@ -63,7 +63,6 @@ async def retrieve_plan_submit(
         live-status probe, so the caller polls a row they own while the
         prior remote task stays the data source.
     """
-    meta_meta = kwargs.get("meta_meta")
     compute_resource = kwargs.get("compute_resource", "small")
     fingerprint = analyst_task_fingerprint(
         goal_description=goal_description,
@@ -89,8 +88,8 @@ async def retrieve_plan_submit(
                 "input_fingerprint": fingerprint,
                 "source_task_id": source_task_id,
             }
-            if meta_meta:
-                reused["meta_meta"] = meta_meta
+            if kwargs.get("meta_meta"):
+                reused["meta_meta"] = kwargs["meta_meta"]
             return reused
 
     agent, output_dir, compute_resource, thread_id = _build_submit_agent(
@@ -99,13 +98,14 @@ async def retrieve_plan_submit(
         "retrieve-plan-submit",
         "AnalystAgent.retrieve_plan_submit",
     )
+    shared_kwargs = _shared_arun_kwargs(
+        goal_description,
+        output_dir,
+        compute_resource,
+        data_list,
+    )
     result = await agent.arun(
-        **_shared_arun_kwargs(
-            goal_description,
-            output_dir,
-            compute_resource,
-            data_list,
-        ),
+        **shared_kwargs,
         obs_file_list=obs_file_list or [],
         thread_id=thread_id,
         is_auto_select=True,
@@ -113,7 +113,7 @@ async def retrieve_plan_submit(
         input_fingerprint=fingerprint,
         locale=resolve_agent_locale(kwargs.get("locale")),
     )
-    if meta_meta:
-        result["meta_meta"] = meta_meta
+    if kwargs.get("meta_meta"):
+        result["meta_meta"] = kwargs["meta_meta"]
     result["input_fingerprint"] = fingerprint
     return result

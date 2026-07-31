@@ -508,9 +508,9 @@ async def test_remote_http_response_keeps_run_identity_byte_identical(
         return {"task_id": "accepted-healthy", "output_dir": "tenant/out"}
 
     install_tool_handler(
-        monkeypatch,
-        server.PhytomniAgents.ANALYST_AGENT.value,
-        records_submission("analyst")(fake),
+        monkeypatch=monkeypatch,
+        tool_name=server.PhytomniAgents.ANALYST_AGENT.value,
+        handler=records_submission("analyst")(fake),
     )
 
     response = await api_client.post(

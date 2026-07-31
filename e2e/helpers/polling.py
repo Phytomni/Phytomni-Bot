@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from mcp.shared.exceptions import McpError
 
 from mcp_client_phytomni import McpToolResponse, PhytomniMcpClient
 from mcp_server_phytomni.contracts.deep_genome import (
@@ -267,7 +268,15 @@ async def _reconciled_task_state(
     """
     try:
         reconciled = await reconcile_task(task_id)
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except (
+        McpError,
+        OSError,
+        RuntimeError,
+        ValueError,
+        KeyError,
+        TypeError,
+        sqlite3.Error,
+    ) as exc:
         _logger.debug(
             "reconcile_task(%s) failed: %s; falling back to local DB",
             task_id,

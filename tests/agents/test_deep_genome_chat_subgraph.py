@@ -45,7 +45,6 @@ async def test_dispatch_chat_uses_subgraph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Dispatch delegates to the compiled chat subgraph."""
-    # pylint: disable=protected-access
     mixin = _build_mixin_instance()
     subgraph_app_mock = AsyncMock(
         return_value={
@@ -58,9 +57,9 @@ async def test_dispatch_chat_uses_subgraph(
         lambda: SimpleNamespace(ainvoke=subgraph_app_mock),
     )
 
-    result = await report_module.DeepGenomeReportMixin._dispatch_chat(
-        mixin, "prompt-stub"
-    )
+    result = await getattr(
+        report_module.DeepGenomeReportMixin, "_dispatch_chat"
+    )(mixin, "prompt-stub")
 
     assert result == {"choices": [{"message": {"content": "sub"}}]}
     subgraph_app_mock.assert_awaited_once()

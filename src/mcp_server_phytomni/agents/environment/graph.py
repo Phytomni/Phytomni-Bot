@@ -17,12 +17,11 @@ from __future__ import annotations
 from typing import Any, Literal, NamedTuple
 
 from ...config.settings import get_sensitive_config
-from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
-from ..analyst.submission import _build_submit_agent
-from ..shared.analysis_requests import (
-    build_analyst_analysis_request,
-    build_analyst_prompt_parts,
+from ...graphs.analyst_dispatch_adapters import (
+    build_analyst_dispatch_request,
+    submit_analyst_via_subgraph,
 )
+from ..analyst.submission import _build_submit_agent
 from . import agent
 from .agent import (
     ENVIRONMENT_CONFIG,
@@ -175,16 +174,12 @@ async def _submit_vci_via_subgraph(
     compute_resource = submit_kwargs.get(
         "compute_resource", ENVIRONMENT_CONFIG.COMPUTE_RESOURCE
     )
-    prompt_parts = build_analyst_prompt_parts(
-        inputs.goal_description, inputs.meta, inputs.data_list
-    )
-    request = build_analyst_analysis_request(
+    request = build_analyst_dispatch_request(
         "vci_analysis",
         f"{province}-{city}-{county}",
-        inputs.output_dir,
-        prompt_parts,
+        inputs._asdict(),
         compute_resource,
-    ).to_payload()
+    )
     return await submit_analyst_via_subgraph(
         analyst_agent,
         ENVIRONMENT_CONFIG,

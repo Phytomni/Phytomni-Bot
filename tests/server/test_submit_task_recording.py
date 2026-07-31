@@ -381,7 +381,7 @@ def test_recorder_rejects_reserved_run_agent_mismatch(
     stored = registry.get_run("run-agent-mismatch", owner="alice")
     assert stored is not None
     assert stored.spec.agent == "analyst"
-    assert stored.task_ids == ()
+    assert not stored.task_ids
     assert len(registry.list_runs(owner="alice", limit=10, offset=0)) == 1
 
 
@@ -411,7 +411,7 @@ def test_recorder_rejects_reserved_run_owner_mismatch(
 
     stored = registry.get_run("run-owner-mismatch", owner="alice")
     assert stored is not None
-    assert stored.task_ids == ()
+    assert not stored.task_ids
 
 
 def test_recorder_rejects_terminal_reserved_run(
@@ -453,7 +453,7 @@ def test_recorder_rejects_terminal_reserved_run(
 
     stored = registry.get_run("run-terminal-mismatch", owner="alice")
     assert stored is not None
-    assert stored.task_ids == ()
+    assert not stored.task_ids
 
 
 def test_record_handles_research_task_ids_map(tasks_db_path: str) -> None:

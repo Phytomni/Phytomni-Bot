@@ -334,9 +334,8 @@ def _make_agent(**config_overrides: Any) -> SimpleNamespace:
 
 async def _capture_create_payload(agent: Any) -> dict[str, Any]:
     """Build the submit payload without contacting the remote platform."""
-    # pylint: disable=protected-access
     state = cast(AnalystAgentsState, {"compute_resource": "small"})
-    _, payload = AnalystGraphMixin._submit_job_data(
+    _, payload = getattr(AnalystGraphMixin, "_submit_job_data")(
         agent,
         state,
         "/obs/task.yaml",
@@ -451,7 +450,6 @@ def test_submit_output_dir_forwards_input_fingerprint(
     pipeline (which computes it in ``retrieve_plan_submit``) and the OBS
     directory creator (which routes on it in ``create_output_dir``).
     """
-    # pylint: disable=protected-access
     captured: dict[str, Any] = {}
 
     def _fake_ensure(
@@ -483,6 +481,8 @@ def test_submit_output_dir_forwards_input_fingerprint(
         {"input_fingerprint": "f" * 64, "output_dir": ""},
     )
 
-    AnalystGraphMixin._submit_output_dir(fake_self, state, run_identity)
+    getattr(AnalystGraphMixin, "_submit_output_dir")(
+        fake_self, state, run_identity
+    )
 
     assert captured["fingerprint"] == "f" * 64

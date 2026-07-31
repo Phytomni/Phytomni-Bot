@@ -146,7 +146,7 @@ def _relative_output_path(key: str, base_key: str) -> str | None:
         prefix = f"{base_key}/"
         if not key.startswith(prefix):
             return None
-        relative_path = key[len(prefix) :]
+        relative_path = key.removeprefix(prefix)
     else:
         relative_path = key
     return relative_path or None

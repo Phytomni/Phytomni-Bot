@@ -48,7 +48,6 @@ _OBS_OP_EXECUTOR = ThreadPoolExecutor(
     max_workers=40,
     thread_name_prefix="phytomni-obs",
 )
-_OBS_OP_POLL_SECONDS = 0.01
 
 # A content-addressed shared path must carry a FULL sha256 fingerprint
 # segment (64 lowercase hex) plus something after it. Anchoring on the
@@ -91,10 +90,8 @@ async def _run_obs_op(
 
 
 async def _wait_obs_future(future: Future[Any]) -> Any:
-    """Poll one worker future without a cross-thread loop callback."""
-    while not future.done():  # noqa: ASYNC110
-        await asyncio.sleep(_OBS_OP_POLL_SECONDS)
-    return future.result()
+    """Await one worker future without blocking the event loop."""
+    return await asyncio.wrap_future(future)
 
 
 def _next_stream_chunk(iterator: Iterator[bytes]) -> bytes | None:

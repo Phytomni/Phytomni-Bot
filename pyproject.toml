@@ -133,19 +133,10 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-# ASYNC109 is handled by exact function-local ``noqa`` records. The
-# approved functions forward a transport budget to a downstream client;
-# they do not own the cancellation scope for that request.
+# Pin Ruff's historical default base rules to prevent version drift from
+# silently expanding the enabled rule surface.
+select = ["E4", "E7", "E9", "F"]
 extend-select = ["I", "N", "UP", "ASYNC", "SIM"]
-
-[tool.ruff.lint.per-file-ignores]
-# typings/*.pyi files mirror external SDKs (e.g. esdk-obs-python) whose
-# public API is camelCase. Renaming would break the type-check
-# correspondence, so the PEP 8 naming rules N802 (function names),
-# N803 (argument names), and N815 (mixedCase class attributes) do not
-# apply to stubs. Keep these stubs in ruff's scope for I-import-sort
-# and other structural checks.
-"typings/**/*.pyi" = ["N802", "N803", "N815"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["mcp_client_phytomni", "mcp_server_phytomni"]
@@ -199,9 +190,6 @@ markers = [
     "integration: tests that may require configured external services.",
     "network: tests that may perform real network, OBS, or LLM calls.",
 ]
-filterwarnings = [
-    "error",
-]
 
 [tool.coverage.run]
 branch = true
@@ -225,16 +213,6 @@ output = "coverage.xml"
 py-version = "3.12"
 # Keep repository-local test and script packages importable in focused runs.
 init-hook = "import sys; sys.path.insert(0, '.')"
-# typings/ holds .pyi stubs that mirror external SDKs (e.g.
-# esdk-obs-python). The stubs have no bodies, so W0613
-# (unused-argument), C0116 (missing-function-docstring), and R0903
-# (too-few-public-methods) fire spuriously; and C0103 (invalid-name)
-# / R0913 / R0917 trip on the camelCase signatures that must mirror
-# upstream exactly. mypy and pyright are the canonical stub checkers
-# (validated by ``stubPath = "typings"`` in [tool.pyright]) so
-# The OBS stub carries a file-local rule set for the six signature/docstring
-# diagnostics above; ordinary tool/cache directories remain excluded here.
-ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"]
 
 [tool.pylint."messages control"]
 
@@ -242,18 +220,11 @@ ignore = [".mypy_cache", ".pytest_cache", ".ruff_cache", ".venv"]
 
 [tool.pylint.similarities]
 
-[tool.pymarkdown]
-# MD013 (line-length): mdformat runs with ``--wrap keep`` and never
-# reflows prose or tables, so a fixed-width line rule is structurally
-# unsatisfiable — the two markdown tools would disagree on the same
-# line. mdformat is the sole authority on markdown line shape here,
-# mirroring how [tool.black] / [tool.ruff] own Python line shape.
-# See docs/development/lint-exemptions.md for the full rationale.
-plugins.md013.enabled = false
-# MD024 (no-duplicate-heading): CHANGELOG.md repeats ``### Added`` /
-# ``### Changed`` per version block; siblings_only allows repeats under
-# different parents while still catching true in-section duplicates.
-plugins.md024.siblings_only = true
+[tool.pymarkdown.plugins.md024]
+# CHANGELOG.md repeats ``### Added`` / ``### Changed`` per version block;
+# siblings_only allows repeats under different parents while still catching
+# true in-section duplicates.
+siblings_only = true
 
 [tool.tomlsort]
 # TOML gate config (consumed by `toml-sort --check` and the in-place

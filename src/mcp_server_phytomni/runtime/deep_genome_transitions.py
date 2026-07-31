@@ -61,6 +61,16 @@ class _FinalizationWrite:
     now: str
 
 
+@dataclass(frozen=True, slots=True)
+class _WorkItemTransitionRequest:
+    """Validated fields for one child-work-item observation."""
+
+    work_item_key: str
+    status: str
+    summary_markdown: str | None = None
+    failure_reason: str | None = None
+
+
 class DeepGenomeTransitionMixin:
     """Write child observations and rebuild one serialized report snapshot."""
 
@@ -405,16 +415,18 @@ class DeepGenomeTransitionMixin:
         self,
         umbrella_task_id: str,
         *,
-        work_item_key: str,
-        status: str,
-        summary_markdown: str | None = None,
-        failure_reason: str | None = None,
+        request: _WorkItemTransitionRequest | None = None,
+        **legacy: Any,
     ) -> DeepGenomeSnapshot:
         """Persist one concrete observation and rebuild the snapshot."""
-        _ = failure_reason
-        next_status = self._normalize_transition_status(status)
+        if request is not None and legacy:
+            raise TypeError("request cannot be combined with legacy fields")
+        if request is None:
+            request = _WorkItemTransitionRequest(**legacy)
+        _ = request.failure_reason
+        next_status = self._normalize_transition_status(request.status)
         work_key = self._nonblank_submission_field(
-            work_item_key, "work_item_key"
+            request.work_item_key, "work_item_key"
         )
         now = datetime.now(UTC).isoformat()
         connection = sqlite3.connect(self.db_path, timeout=10.0)
@@ -428,7 +440,7 @@ class DeepGenomeTransitionMixin:
                 umbrella_task_id,
                 work_key,
                 next_status,
-                summary_markdown,
+                request.summary_markdown,
             )
             if next_values == current_values:
                 connection.rollback()

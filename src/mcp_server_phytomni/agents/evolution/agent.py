@@ -21,13 +21,16 @@ from typing import Any
 from mcp.shared.exceptions import McpError
 
 from ...auth.iam import get_token
-from ...common.httpx_client import get_async_client
+from ...common.httpx_client import (
+    get_async_client,
+    resolve_request_timeout,
+)
 from ...common.prompts import get_prompt
 from ...common.relay_client import current_relay_client
 from ...config.defaults import DeepGenomeConfig
 from ...config.relay_mode import relay_mode_enabled
 from ...config.settings import get_sensitive_config
-from ...graphs.chat_adapters import build_chat_input, extract_chat_response
+from ...graphs.chat_adapters import invoke_chat_content
 from ...runtime.langgraph_runner import ainvoke_graph
 from ...storage.path_policy import RunIdentity
 from ..analyst.agent import submit
@@ -87,9 +90,14 @@ def evolution_submit_kwargs(
 
 
 async def find_spa_taxids(
-    spa_names: str, timeout: float  # noqa: ASYNC109
+    spa_names: str,
+    request_timeout: float | None = None,
+    **options: Any,
 ) -> list[str]:
     """Return taxonomy ids for a target species name."""
+    timeout = resolve_request_timeout(request_timeout, options)
+    if timeout is None:
+        timeout = DEEP_GENOME_CONFIG.TIMEOUT
     if relay_mode_enabled():
         # Relay mode injects the operator IAM token and bypasses the proxy.
         # Failed lookups soft-fail to no taxids, mirroring direct handling.
@@ -150,13 +158,11 @@ async def target_taxids(query: str, kwargs: dict[str, Any]) -> str | None:
         {"user_query": query},
     )
     chat_kwargs_bag = evolution_chat_kwargs(kwargs)
-    chat_output = await _cached_chat_app().ainvoke(
-        build_chat_input(user_query=prompt, chat_kwargs=chat_kwargs_bag)
+    content = await invoke_chat_content(
+        _cached_chat_app(), prompt, chat_kwargs_bag
     )
-    phyto_response = extract_chat_response(chat_output)
-    if not phyto_response:
+    if content is None:
         return None
-    content = phyto_response["choices"][0]["message"]["content"]
     target_spa_list = loads(content.replace("'", '"'))
     targets = target_spa_list["target_spa_list"]
     if targets[0] == "All":

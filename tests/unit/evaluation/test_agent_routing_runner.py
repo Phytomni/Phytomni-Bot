@@ -10,9 +10,10 @@ import asyncio
 import inspect
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypedDict, cast
 
 import pytest
+from scripts.agent_routing_eval import runner
 from scripts.agent_routing_eval.dataset import AgentRoutingCase
 from scripts.agent_routing_eval.runner import (
     PROVIDER_ERROR,
@@ -29,12 +30,24 @@ from mcp_server_phytomni.agents.expert.router import (
     ToolSelection,
     ToolSelectionError,
 )
+from mcp_server_phytomni.mcp import app as mcp_app
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 from mcp_server_phytomni.runtime.locale import (
     bind_effective_locale,
     current_effective_locale,
 )
 from mcp_server_phytomni.runtime.request_context import reset_request_var
+
+
+class _RunnerOptionsKwargs(TypedDict, total=False):
+    """Typed keyword sets used to exercise invalid runner bounds."""
+
+    repeat_count: int
+    concurrency: int
+    timeout_seconds: float
+    max_attempts: int
+    retry_delay_seconds: float
+
 
 pytestmark = pytest.mark.unit
 
@@ -70,6 +83,10 @@ class RecordingSelector:
         if isinstance(result, BaseException):
             raise result
         return result
+
+    def recorded_calls(self) -> tuple[dict[str, object], ...]:
+        """Return an immutable snapshot of calls observed by the fake."""
+        return tuple(self.calls)
 
 
 def _case(
@@ -117,7 +134,7 @@ def test_selector_receives_canonical_surface_without_context() -> None:
     outcomes = asyncio.run(run_evaluation([_case()], selector))
 
     assert len(outcomes) == 1
-    assert selector.calls == [
+    assert selector.recorded_calls() == (
         {
             "user_query": "What is plant height?",
             "history": (),
@@ -127,8 +144,8 @@ def test_selector_receives_canonical_surface_without_context() -> None:
             ),
             "forced_tool": None,
             "locale": "en-US",
-        }
-    ]
+        },
+    )
 
 
 def test_valid_selection_is_schema_valid_and_dispatchable() -> None:
@@ -250,6 +267,7 @@ def test_hanging_selector_times_out_and_retries_three_times() -> None:
         allowed_tools: Sequence[str] | None = None,
         forced_tool: str | None = None,
     ) -> ToolSelection:
+        del history, allowed_tools, forced_tool
         nonlocal attempts
         attempts += 1
         await asyncio.sleep(3600)
@@ -308,6 +326,7 @@ def test_outputs_are_sorted_by_case_and_repeat() -> None:
         allowed_tools: Sequence[str] | None = None,
         forced_tool: str | None = None,
     ) -> ToolSelection:
+        del history, allowed_tools, forced_tool
         if user_query == "slow":
             await release.wait()
         return _chat_selection(user_query)
@@ -351,6 +370,7 @@ def test_locale_isolated_for_concurrent_cases_and_restored() -> None:
         allowed_tools: Sequence[str] | None = None,
         forced_tool: str | None = None,
     ) -> ToolSelection:
+        del history, allowed_tools, forced_tool
         await release.wait()
         observed[user_query] = current_effective_locale()
         return _chat_selection(user_query)
@@ -395,6 +415,7 @@ def test_cancellation_cleans_children_and_sinks_partial_results() -> None:
         allowed_tools: Sequence[str] | None = None,
         forced_tool: str | None = None,
     ) -> ToolSelection:
+        del history, allowed_tools, forced_tool
         nonlocal cancelled_count, started_count
         started_count += 1
         if started_count == 2:
@@ -443,6 +464,7 @@ def test_cancellation_sinks_completed_outcomes() -> None:
         allowed_tools: Sequence[str] | None = None,
         forced_tool: str | None = None,
     ) -> ToolSelection:
+        del history, allowed_tools, forced_tool
         if user_query == "blocked":
             block_started.set()
             await blocked.wait()
@@ -487,6 +509,7 @@ def test_failing_partial_sink_does_not_replace_cancellation() -> None:
         allowed_tools: Sequence[str] | None = None,
         forced_tool: str | None = None,
     ) -> ToolSelection:
+        del history, allowed_tools, forced_tool
         started.set()
         await blocked.wait()
         return _chat_selection(user_query)
@@ -539,6 +562,7 @@ def test_selector_concurrency_never_exceeds_configured_ceiling() -> None:
         allowed_tools: Sequence[str] | None = None,
         forced_tool: str | None = None,
     ) -> ToolSelection:
+        del history, allowed_tools, forced_tool
         nonlocal active, max_active
         active += 1
         max_active = max(max_active, active)
@@ -574,14 +598,13 @@ def test_runner_cannot_reach_dispatch_seams(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Replacing MCP dispatch functions cannot affect selector evaluation."""
-    from mcp_server_phytomni.mcp import app
 
     def fail_dispatch(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("dispatch seam reached")
 
-    monkeypatch.setattr(app, "invoke_tool_raw", fail_dispatch)
-    monkeypatch.setattr(app, "invoke_tool_enveloped", fail_dispatch)
-    monkeypatch.setattr(app, "dispatch_tool", fail_dispatch)
+    monkeypatch.setattr(mcp_app, "invoke_tool_raw", fail_dispatch)
+    monkeypatch.setattr(mcp_app, "invoke_tool_enveloped", fail_dispatch)
+    monkeypatch.setattr(mcp_app, "dispatch_tool", fail_dispatch)
 
     outcome = asyncio.run(
         run_evaluation([_case()], RecordingSelector([_chat_selection()]))
@@ -611,17 +634,15 @@ def test_runner_cannot_reach_dispatch_seams(
     ],
 )
 def test_runner_options_reject_out_of_contract_values(
-    kwargs: dict[str, object],
+    kwargs: _RunnerOptionsKwargs,
 ) -> None:
     """Runner bounds are fixed to the evaluation protocol."""
     with pytest.raises(ValueError):
-        RunnerOptions(**kwargs)  # type: ignore[arg-type]
+        RunnerOptions(**kwargs)
 
 
 def test_runner_module_has_no_api_or_dispatch_imports() -> None:
     """The implementation has no import path into execution surfaces."""
-    import scripts.agent_routing_eval.runner as runner
-
     source = inspect.getsource(runner)
     assert "mcp_server_phytomni.api" not in source
     assert "mcp_server_phytomni.mcp.app" not in source

@@ -11,6 +11,7 @@ and a binary placeholder.
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -26,20 +27,13 @@ pytestmark = pytest.mark.unit
 
 def test_credential_header_allowlist_is_the_expected_set() -> None:
     """The dropped-header allowlist is the agreed credential set."""
-    assert (
-        frozenset(
-            {
-                "authorization",
-                "x-api-key",
-                "x-service-token",
-                "x-auth-token",
-                "token",
-                "cookie",
-                "set-cookie",
-            }
-        )
-        == CREDENTIAL_HEADERS
-    )
+    assert len(CREDENTIAL_HEADERS) == 7
+    for header in re.findall(
+        r"[a-z-]+",
+        "authorization x-api-key x-service-token "
+        "x-auth-token token cookie set-cookie",
+    ):
+        assert header in CREDENTIAL_HEADERS
 
 
 def test_drop_credential_headers_removes_allowlist_case_insensitive() -> None:

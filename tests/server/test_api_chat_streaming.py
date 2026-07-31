@@ -13,6 +13,7 @@ Pins AG-UI SSE framing (``RunStarted`` / ``TextMessageContent`` /
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from typing import (
     Any,
@@ -21,8 +22,13 @@ from typing import (
 
 import httpx
 import pytest
+from tests.support.http_fakes import (
+    build_instant_chat_context_envelope,
+    parse_sse_frames,
+)
 
 from mcp_server_phytomni.api import app as api_app
+from mcp_server_phytomni.api import streaming as streaming_runtime
 from mcp_server_phytomni.api.app import _stream_chat_completion
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
 from mcp_server_phytomni.mcp.result_formatting import (
@@ -30,10 +36,90 @@ from mcp_server_phytomni.mcp.result_formatting import (
     run_started,
     text_message_content,
 )
+from mcp_server_phytomni.runtime.conversation_context.models import (
+    ConversationEnvelopeV1,
+)
+from mcp_server_phytomni.runtime.conversation_context.store import (
+    ConversationContextStore,
+)
 from mcp_server_phytomni.runtime.request_context import request_context
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
+
+
+def _conversation_envelope(*, turn_id: str = "21") -> ConversationEnvelopeV1:
+    """Build one Instant V1 envelope for streaming tests."""
+    return ConversationEnvelopeV1.model_validate(
+        build_instant_chat_context_envelope(
+            turn_id,
+            ledger_cursor=int(turn_id),
+        )
+    )
+
+
+def _extract_custom_context(body: str) -> dict[str, Any] | None:
+    """Return the staged context payload from one SSE body, if present."""
+    marker = "event: Custom\ndata: "
+    for chunk in body.split("\n\n"):
+        if not chunk.startswith(marker):
+            continue
+        payload = json.loads(chunk.removeprefix(marker))
+        if payload.get("name") == "phyto.context_staged":
+            value = payload.get("value")
+            return value if isinstance(value, dict) else None
+    return None
+
+
+def _runtime_context_service() -> Any:
+    """Resolve the runtime context service through its public test seam."""
+    return getattr(streaming_runtime, "context_service")()
+
+
+async def _consume_context_stage(
+    response: Any,
+    payload: ChatCompletionRequest,
+    db_path: str,
+    run_id: str,
+    answer_marker: str,
+) -> tuple[str, dict[str, Any]]:
+    """Consume through the staged frame and verify durable pre-finish state."""
+    body = cast(AsyncGenerator[str, None], response.body_iterator)
+    accumulated = ""
+    async for line in body:
+        accumulated += line
+        if '"name": "phyto.context_staged"' not in line:
+            continue
+        record = RunRegistry(db_path=db_path).get_run(run_id, owner="u1")
+        assert record is not None
+        assert record.status == "succeeded"
+        assert payload.conversation is not None
+        conversation_data = vars(payload.conversation)
+        stored_turn = ConversationContextStore(db_path).load_turn(
+            str(conversation_data["conversation_key"]),
+            conversation_data["turn_id"],
+        )
+        assert stored_turn is not None
+        assert stored_turn.state == "staged"
+        assert stored_turn.delta is not None
+        assert answer_marker not in json.dumps(
+            stored_turn.delta, sort_keys=True
+        )
+        assert answer_marker in json.dumps(stored_turn.result, sort_keys=True)
+        assert stored_turn.stage_metadata is not None
+        assert stored_turn.stage_metadata["selected_agent_id"] == "ChatAgent"
+        assert stored_turn.stage_metadata["route_source"] == "instant_lock"
+        break
+    else:
+        raise AssertionError("phyto.context_staged was not emitted")
+    accumulated += "".join([line async for line in body])
+    assert payload.conversation is not None
+    return accumulated, vars(payload.conversation)
+
+
+def _stream_frames(body: str) -> list[tuple[str, dict[str, Any]]]:
+    """Parse an SSE body into semantic ``(event, payload)`` pairs."""
+    return parse_sse_frames(body)
 
 
 async def test_stream_phyto_chat_emits_agui_frames(

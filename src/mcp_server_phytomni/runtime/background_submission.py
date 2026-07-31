@@ -30,6 +30,7 @@ __all__ = [
     "BackgroundSubmissionLaunchError",
     "BackgroundSubmissionOutcome",
     "BackgroundSubmissionReservation",
+    "BACKGROUND_RUNTIME_ERRORS",
     "launch_background_submission",
     "reserve_background_submission",
 ]
@@ -41,6 +42,19 @@ class BackgroundSubmissionLaunchError(RuntimeError):
 
 class BackgroundSubmissionExecutionError(RuntimeError):
     """Stable internal signal for a post-acceptance submission failure."""
+
+
+BACKGROUND_RUNTIME_ERRORS: tuple[type[Exception], ...] = (
+    RuntimeError,
+    ValueError,
+    TypeError,
+    OSError,
+    sqlite3.Error,
+)
+_BACKGROUND_ERRORS: tuple[type[Exception], ...] = (
+    BackgroundSubmissionExecutionError,
+    *BACKGROUND_RUNTIME_ERRORS,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,7 +147,7 @@ def _settle_failed(
             result=result or empty_execution_projection(degraded=True),
             error=error,
         )
-    except Exception as exc:
+    except _BACKGROUND_ERRORS as exc:
         _LOGGER.error(
             "Background submission settlement failed",
             extra={
@@ -228,7 +242,7 @@ async def _run_background_submission(
             error="background_submission_cancelled",
         )
         raise
-    except Exception as exc:
+    except _BACKGROUND_ERRORS as exc:
         _LOGGER.error(
             "Background submission failed",
             extra={

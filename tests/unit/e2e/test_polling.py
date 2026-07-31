@@ -132,6 +132,11 @@ async def test_http_poll_records_distinct_monotonic_revisions() -> None:
             del headers
             return next(self.responses)
 
+        @property
+        def request_count(self) -> int:
+            """Return how many polling paths were requested."""
+            return len(self.paths)
+
     client = Client()
     terminal = await polling.poll_http_run_to_terminal(
         cast(httpx.AsyncClient, client),
@@ -144,4 +149,5 @@ async def test_http_poll_records_distinct_monotonic_revisions() -> None:
     assert terminal.status == "succeeded"
     assert terminal.revisions == (1, 2)
     assert terminal.result["final_report"] == "# final"
+    assert client.request_count == 2
     assert client.paths == ["/v1/runs/run-1", "/v1/runs/run-1"]

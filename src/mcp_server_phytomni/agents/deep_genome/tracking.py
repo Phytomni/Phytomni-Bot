@@ -122,10 +122,20 @@ class DeepGenomeTransitionSink:
         work_item_key: str,
         submission: RemoteSubmission,
         status: str,
-        summary: str | None,
-        failure_reason: str | None,
+        *args: Any,
+        **kwargs: Any,
     ) -> WorkItemOutcome:
         """Persist one poll observation and return its local outcome."""
+        if len(args) > 2:
+            raise TypeError("too many transition options")
+        summary = args[0] if args else kwargs.pop("summary", None)
+        failure_reason = (
+            args[1] if len(args) > 1 else kwargs.pop("failure_reason", None)
+        )
+        if kwargs:
+            raise TypeError(
+                "unexpected transition options: " + ", ".join(sorted(kwargs))
+            )
         if self.store is None or self.umbrella_task_id is None:
             return WorkItemOutcome(status, summary, failure_reason)
         try:

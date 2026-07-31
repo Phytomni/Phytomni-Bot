@@ -96,6 +96,15 @@ class BenchmarkSummary:
     failure_count: int
 
 
+@dataclass(frozen=True)
+class _StreamCapture:
+    """Text and first-token clock captured from one successful stream."""
+
+    first_text_at: float
+    reasoning_text: str
+    content_text: str
+
+
 def count_words(text: str) -> int:
     """Count deterministic provider-independent generated word units."""
     return len(_WORD_PATTERN.findall(text))
@@ -153,6 +162,51 @@ def decode_stream_delta(data: str) -> StreamDelta | None:
     )
 
 
+async def _read_stream(
+    config: BenchmarkConfig,
+    query: QueryInput,
+    client: httpx.AsyncClient,
+    clock: Callable[[], float],
+) -> _StreamCapture:
+    """Read one response stream and capture provider-independent text."""
+    first_text_at: float | None = None
+    reasoning_parts: list[str] = []
+    content_parts: list[str] = []
+    async with client.stream(
+        "POST",
+        config.endpoint,
+        headers={
+            "Authorization": f"Bearer {config.api_key}",
+            "Accept": "text/event-stream",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": config.model_id,
+            "messages": [{"role": "user", "content": query.text}],
+            "stream": True,
+        },
+    ) as response:
+        response.raise_for_status()
+        async for data in iter_sse_data(response.aiter_lines()):
+            delta = decode_stream_delta(data)
+            if delta is None:
+                continue
+            if delta.done:
+                break
+            reasoning_parts.append(delta.reasoning_content)
+            content_parts.append(delta.content)
+            has_text = delta.reasoning_content.strip() or delta.content.strip()
+            if first_text_at is None and has_text:
+                first_text_at = clock()
+    if first_text_at is None:
+        raise SseProtocolError("stream contained no generated text")
+    return _StreamCapture(
+        first_text_at=first_text_at,
+        reasoning_text="".join(reasoning_parts),
+        content_text="".join(content_parts),
+    )
+
+
 def sanitize_error(error: BaseException, api_key: str) -> str:
     """Return a bounded one-line error with the credential redacted."""
     message = str(error)
@@ -175,54 +229,17 @@ async def run_query(
     """Run and measure one streaming request inside a concurrency slot."""
     async with semaphore:
         started_at = clock()
-        first_text_at: float | None = None
-        reasoning_parts: list[str] = []
-        content_parts: list[str] = []
         try:
-            async with client.stream(
-                "POST",
-                config.endpoint,
-                headers={
-                    "Authorization": f"Bearer {config.api_key}",
-                    "Accept": "text/event-stream",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": config.model_id,
-                    "messages": [{"role": "user", "content": query.text}],
-                    "stream": True,
-                },
-            ) as response:
-                response.raise_for_status()
-                async for data in iter_sse_data(response.aiter_lines()):
-                    delta = decode_stream_delta(data)
-                    if delta is None:
-                        continue
-                    if delta.done:
-                        break
-                    reasoning_parts.append(delta.reasoning_content)
-                    content_parts.append(delta.content)
-                    has_text = (
-                        delta.reasoning_content.strip()
-                        or delta.content.strip()
-                    )
-                    if first_text_at is None and has_text:
-                        first_text_at = clock()
-
-            if first_text_at is None:
-                raise SseProtocolError("stream contained no generated text")
+            capture = await _read_stream(config, query, client, clock)
             finished_at = clock()
-            reasoning_text = "".join(reasoning_parts)
-            content_text = "".join(content_parts)
             return QueryResult(
                 line_number=query.line_number,
                 duration=finished_at - started_at,
-                ttft=first_text_at - started_at,
-                reasoning_text=reasoning_text,
-                content_text=content_text,
-                word_count=(
-                    count_words(reasoning_text) + count_words(content_text)
-                ),
+                ttft=capture.first_text_at - started_at,
+                reasoning_text=capture.reasoning_text,
+                content_text=capture.content_text,
+                word_count=count_words(capture.reasoning_text)
+                + count_words(capture.content_text),
                 error=None,
             )
         except (httpx.HTTPError, SseProtocolError) as exc:
@@ -479,7 +496,7 @@ def main(
     except KeyboardInterrupt:
         print("benchmark interrupted", file=sys.stderr)
         return 130
-    except Exception:
+    except (RuntimeError, ValueError, TypeError, OSError):
         print_summary(
             BenchmarkSummary(
                 average_ttft=None,

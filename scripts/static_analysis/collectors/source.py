@@ -129,7 +129,7 @@ def _next_definition_context(source: str, line: int) -> tuple[str | None, str]:
         )
         if not has_adjacent_decorator:
             continue
-        bridge = lines[line : start - 1]
+        bridge = lines[slice(line, start - 1)]
         if all(
             not text.strip()
             or text.lstrip().startswith("#")

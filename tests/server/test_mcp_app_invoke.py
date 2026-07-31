@@ -26,8 +26,16 @@ from tests.support.formatting_fakes import (
     design_task_payload,
     network_task_payload,
 )
+from tests.support.handler_fakes import (
+    patch_chat_completion_service,
+    patch_chat_runtime,
+    patch_handler_runtime,
+    patch_knowledge_agent,
+)
 
+import mcp_server_phytomni.agents.chat.service as chat_service
 from mcp_server_phytomni.mcp import app as mcp_app
+from mcp_server_phytomni.mcp import handlers as mcp_handlers
 from mcp_server_phytomni.mcp.result_formatting import FormattedToolResult
 from mcp_server_phytomni.mcp.schemas import PhytomniAgents
 
@@ -121,6 +129,164 @@ def test_validate_tool_arguments_rejects_invalid_payload_without_invocation(
 
     assert caught.value.error.code == INVALID_PARAMS
     assert invoked is False
+
+
+async def test_v1_history_reaches_chat_handler_through_raw_dispatch(
+    demo_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Private V1 thread and history reach only the primary Chat call."""
+    captured: list[dict[str, Any]] = []
+
+    async def fake_chat(**kwargs: Any) -> dict[str, Any]:
+        captured.append(kwargs)
+        return {
+            "choices": [
+                {"message": {"content": "ok" if len(captured) == 1 else "[]"}}
+            ]
+        }
+
+    patch_chat_runtime(
+        monkeypatch,
+        lambda **kwargs: {"user_query": kwargs["request"].user_query},
+    )
+    patch_chat_completion_service(monkeypatch, fake_chat)
+    history = (
+        {"role": "user", "content": "U1"},
+        {"role": "assistant", "content": "A1"},
+        {"role": "user", "content": "U2"},
+        {"role": "assistant", "content": "A2"},
+    )
+    thread_id = "ctx-" + "b" * 64
+
+    arguments = _payload(demo_data_dir, "chat_agent.json")
+    await mcp_app.invoke_tool_enveloped(
+        PhytomniAgents.CHAT_AGENT.value,
+        arguments,
+        conversation_messages=history,
+        agent_thread_id=thread_id,
+    )
+
+    assert captured[0] == {
+        "user_query": arguments["user_query"],
+        "locale": "en-US",
+        "obs_file_list": None,
+        "semaphore": None,
+        "conversation_messages": history,
+        "thread_id": thread_id,
+    }
+    follow_up = captured[1]
+    assert follow_up["user_query"] == "follow-up"
+    assert follow_up["locale"] == "en-US"
+    assert follow_up["semaphore"] is None
+    assert follow_up["prompt_file"] == chat_service.CHAT_CONFIG.PROMPT_FILE
+    assert follow_up["conversation_messages"] == history
+    chat_fields = dict(getattr(mcp_app.ChatAgent, "model_fields", {}))
+    assert "conversation_messages" not in chat_fields
+
+
+async def test_v1_history_reaches_expert_handler_through_raw_dispatch(
+    demo_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Private V1 history reaches a synchronous Expert handler unchanged."""
+    captured: dict[str, Any] = {}
+
+    async def fake_knowledge(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"choices": [{"message": {"content": "ok"}}]}
+
+    monkeypatch.setattr(mcp_handlers, "KnowledgeConfig", object)
+    patch_handler_runtime(monkeypatch, scratch_path="/tmp/knowledge")
+    monkeypatch.setattr(
+        mcp_handlers,
+        "multi_retrieve_generate",
+        fake_knowledge,
+    )
+    history = (
+        {"role": "user", "content": "Earlier turn."},
+        {"role": "assistant", "content": "Earlier answer."},
+    )
+
+    await mcp_app.invoke_tool_enveloped(
+        PhytomniAgents.KNOWLEDGE_AGENT.value,
+        _payload(demo_data_dir, "knowledge_agent.json"),
+        conversation_messages=history,
+    )
+
+    assert captured["conversation_messages"] == history
+    knowledge_fields = dict(
+        getattr(mcp_app.KnowledgeAgent, "model_fields", {})
+    )
+    assert "conversation_messages" not in knowledge_fields
+
+
+async def test_v1_history_reaches_knowledge_wrapper_without_leakage(
+    demo_data_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Back-to-back Knowledge dispatches keep handler history isolated."""
+
+    class FakeKnowledgeAgent:
+        """Capture wrapper calls without retaining state across invocations."""
+
+        def __init__(self) -> None:
+            """Initialize the call capture list."""
+            self.calls: list[dict[str, Any]] = []
+
+        async def arun(self, **kwargs: Any) -> dict[str, Any]:
+            """Record one wrapper call and return a minimal response."""
+            self.calls.append(kwargs)
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+        @property
+        def call_count(self) -> int:
+            """Return the number of wrapper calls observed."""
+            return len(self.calls)
+
+    fake_agent = FakeKnowledgeAgent()
+
+    monkeypatch.setattr(mcp_handlers, "KnowledgeConfig", object)
+    patch_handler_runtime(monkeypatch, scratch_path="/tmp/knowledge")
+    patch_knowledge_agent(
+        monkeypatch,
+        fake_agent,
+        lambda **_kwargs: object(),
+        lambda **_kwargs: object(),
+    )
+    first_history = (
+        {"role": "user", "content": "First U"},
+        {"role": "assistant", "content": "First A"},
+    )
+    second_history = (
+        {"role": "user", "content": "Second U"},
+        {"role": "assistant", "content": "Second A"},
+    )
+    arguments = _payload(demo_data_dir, "knowledge_agent.json")
+
+    await mcp_app.invoke_tool_enveloped(
+        PhytomniAgents.KNOWLEDGE_AGENT.value,
+        arguments,
+        conversation_messages=first_history,
+    )
+    await mcp_app.invoke_tool_enveloped(
+        PhytomniAgents.KNOWLEDGE_AGENT.value,
+        arguments,
+        conversation_messages=second_history,
+    )
+    await mcp_app.invoke_tool_enveloped(
+        PhytomniAgents.KNOWLEDGE_AGENT.value,
+        arguments,
+    )
+
+    assert fake_agent.call_count == 3
+    assert fake_agent.calls[0]["conversation_messages"] == first_history
+    assert fake_agent.calls[1]["conversation_messages"] == second_history
+    assert fake_agent.calls[2]["conversation_messages"] == ()
+    knowledge_fields = dict(
+        getattr(mcp_app.KnowledgeAgent, "model_fields", {})
+    )
+    assert "conversation_messages" not in knowledge_fields
 
 
 async def test_invoke_chat_agent_formats_assistant_message(

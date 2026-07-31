@@ -16,6 +16,7 @@ from typing import Any
 
 import httpx
 import pytest
+from tests.support.handler_fakes import network_run_arguments
 from tests.support.resolver_fakes import assert_invalid_argument_response
 
 from mcp_server_phytomni import server
@@ -177,12 +178,7 @@ async def test_native_runs_skips_resolver_when_flag_false(
         api_client,
         issued_api_key,
         "network",
-        {
-            "species_code": "osa",
-            "to_id": "TO:0000207",
-            "obs_file_list": [],
-            "resolve_to_id": False,
-        },
+        network_run_arguments(),
     )
 
     assert response.status_code == 202

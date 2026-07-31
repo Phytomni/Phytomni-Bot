@@ -7,6 +7,8 @@
 Functions: get_token.
 """
 
+from typing import Any
+
 from httpx import Timeout
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
@@ -16,7 +18,7 @@ from ..common.http import (
     JsonPostRetry,
     request_response_with_retries,
 )
-from ..common.httpx_client import get_async_client
+from ..common.httpx_client import get_async_client, resolve_request_timeout
 from ..config.defaults import ServerConfig
 from ..config.settings import SensitiveConfig
 
@@ -25,8 +27,9 @@ SENSITIVE_CONFIG = SensitiveConfig.load()
 
 
 async def get_token(
-    timeout: float = SERVER_CONFIG.TIMEOUT,  # noqa: ASYNC109
+    request_timeout: float | None = None,
     region: str = SERVER_CONFIG.REGION,
+    **options: Any,
 ) -> str:
     """Obtain an X-Subject-Token for API authentication.
 
@@ -37,9 +40,10 @@ async def get_token(
     resilience every downstream BI / NL2SQL call already relies on.
 
     Args:
-        timeout: Request timeout in seconds
+        request_timeout: Request timeout in seconds
             (default from ServerConfig.TIMEOUT).
         region: Cloud service region name (default from ServerConfig.REGION).
+        **options: Backward-compatible ``timeout=`` keyword support.
 
     Returns:
         str: X-Subject-Token header value for authenticated API requests.
@@ -48,6 +52,9 @@ async def get_token(
         McpError: If the token request fails after all retries, or a
             successful response omits the X-Subject-Token header.
     """
+    timeout = resolve_request_timeout(request_timeout, options)
+    if timeout is None:
+        timeout = SERVER_CONFIG.TIMEOUT
     client_timeout = Timeout(timeout, connect=timeout)
     async with get_async_client(timeout=client_timeout) as client:
         password = SENSITIVE_CONFIG.USER_PASSWORD.get_secret_value()

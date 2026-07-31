@@ -72,7 +72,6 @@ async def test_feedback_rag_records_failure_for_single_failed_query(
     query indices, ``kind`` is ``"execute"``, and the message round-
     trips ``str(exc)``.
     """
-    # pylint: disable=protected-access
     monkeypatch.setattr(
         ReviewReportMixin, "_audit_citations", _audit_passthrough
     )
@@ -96,7 +95,7 @@ async def test_feedback_rag_records_failure_for_single_failed_query(
         '{"has_critical_gaps": true, '
         '"search_queries": ["q-first", "q-mid", "q-last"]}'
     )
-    result = await agent._feedback_rag(
+    result = await getattr(agent, "_feedback_rag")(
         subtopic_idx=4,
         draft_content="draft-orig",
         review_content=review_content,
@@ -124,7 +123,6 @@ async def test_feedback_rag_records_failures_for_all_failed_queries(
     ``draft_content`` because the empty supplementary block bypasses
     the feedback chat.
     """
-    # pylint: disable=protected-access
     monkeypatch.setattr(
         ReviewReportMixin, "_audit_citations", _audit_passthrough
     )
@@ -152,7 +150,7 @@ async def test_feedback_rag_records_failures_for_all_failed_queries(
         '{"has_critical_gaps": true, '
         '"search_queries": ["q-a", "q-b", "q-c"]}'
     )
-    result = await agent._feedback_rag(
+    result = await getattr(agent, "_feedback_rag")(
         subtopic_idx=0,
         draft_content="draft-orig",
         review_content=review_content,
@@ -195,7 +193,6 @@ async def test_feedback_rag_failures_empty_when_no_add_queries(
     forward expects a list-typed delta on the universal failures
     channel so the ``operator.add`` reducer never sees ``None``).
     """
-    # pylint: disable=protected-access
     monkeypatch.setattr(
         ReviewReportMixin, "_audit_citations", _audit_passthrough
     )
@@ -216,7 +213,7 @@ async def test_feedback_rag_failures_empty_when_no_add_queries(
     monkeypatch.setattr(KnowledgeAgent, "arun", fake_arun)
 
     agent = _build_agent()
-    result = await agent._feedback_rag(
+    result = await getattr(agent, "_feedback_rag")(
         subtopic_idx=2,
         draft_content="draft-orig",
         review_content=review_content,

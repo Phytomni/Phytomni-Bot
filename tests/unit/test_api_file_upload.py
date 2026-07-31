@@ -41,6 +41,11 @@ class _ChunkedUpload:
             return b""
         return self.remaining.pop(0)
 
+    @property
+    def pending_chunks(self) -> int:
+        """Return the number of unread scripted chunks."""
+        return len(self.remaining)
+
 
 async def test_read_with_byte_budget_returns_bytes_within_budget() -> None:
     """A body that fits inside the budget is reassembled into bytes."""
@@ -94,7 +99,7 @@ async def test_byte_budget_stops_draining_attacker_stream_early() -> None:
     assert upload.read_calls == 3
     # The remaining 997 chunks are NOT drained; an attacker streaming
     # gigabytes cannot OOM the worker because we abort early.
-    assert len(upload.remaining) == 997
+    assert upload.pending_chunks == 997
 
 
 async def test_read_with_byte_budget_accepts_body_exactly_at_budget() -> None:

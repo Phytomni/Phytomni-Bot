@@ -16,6 +16,7 @@ import functools
 import logging
 import sqlite3
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -51,6 +52,18 @@ SubmissionTuple = tuple[str, str, str | None, str | None]
 SubmissionExtractor = Callable[
     [Mapping[str, Any]], tuple[SubmissionTuple, ...]
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class _ChildSubmissionRecordRequest:
+    """Inputs needed to persist accepted child submissions."""
+
+    manager: TaskManager
+    submissions: tuple[SubmissionTuple, ...]
+    run_id: str
+    user_id: str
+    agent: str
+    now: str
 
 
 def _extract_single_submission(
@@ -196,23 +209,17 @@ def _initial_submission_result(
 
 
 def _record_child_submissions(
-    *,
-    manager: TaskManager,
-    submissions: tuple[SubmissionTuple, ...],
-    run_id: str,
-    user_id: str,
-    agent: str,
-    now: str,
+    request: _ChildSubmissionRecordRequest,
 ) -> None:
     """Record accepted child submissions under one explicit run."""
     for submission in _build_child_submissions(
-        submissions=submissions,
-        run_id=run_id,
-        user_id=user_id,
-        agent=agent,
-        now=now,
+        submissions=request.submissions,
+        run_id=request.run_id,
+        user_id=request.user_id,
+        agent=request.agent,
+        now=request.now,
     ):
-        manager.record(submission)
+        request.manager.record(submission)
 
 
 def _build_child_submissions(
@@ -349,12 +356,14 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
             request_info=RunRequestInfo(request_id=current_request_id()),
         )
         _record_child_submissions(
-            manager=TaskManager(db_path),
-            submissions=submissions,
-            run_id=run_id,
-            user_id=user_id,
-            agent=agent,
-            now=now,
+            _ChildSubmissionRecordRequest(
+                manager=TaskManager(db_path),
+                submissions=submissions,
+                run_id=run_id,
+                user_id=user_id,
+                agent=agent,
+                now=now,
+            )
         )
         bind_run_id(run_id)
         logger.info(

@@ -45,7 +45,7 @@ def _parse_frame(line: str) -> dict:
     event_line, data_line = line[: -len("\n\n")].split("\n", 1)
     assert event_line.startswith("event: ")
     assert data_line.startswith("data: ")
-    return json.loads(data_line[len("data: ") :])
+    return json.loads(data_line.removeprefix("data: "))
 
 
 async def test_events_emit_event_data_lines_and_done_terminator() -> None:

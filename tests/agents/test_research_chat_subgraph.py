@@ -66,7 +66,6 @@ async def test_extract_goals_uses_chat_subgraph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``_extract_goals`` delegates to the compiled chat subgraph."""
-    # pylint: disable=protected-access
     agent = _build_agent()
     subgraph_app_mock = _install_chat_app_mock(
         monkeypatch,
@@ -80,7 +79,7 @@ async def test_extract_goals_uses_chat_subgraph(
         research_agent, "get_prompt", lambda *_a, **_kw: "prompt-stub"
     )
 
-    result = await agent._extract_goals("Paper text body", [])
+    result = await getattr(agent, "_extract_goals")("Paper text body", [])
 
     assert result == [{"goal": "Investigate X", "context": "context-blob"}]
     subgraph_app_mock.ainvoke.assert_awaited_once()

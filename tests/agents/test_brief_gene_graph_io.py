@@ -18,6 +18,9 @@ from typing import cast, get_type_hints
 import pytest
 
 from mcp_server_phytomni.agents.brief_gene import BriefGeneAgent
+from mcp_server_phytomni.agents.brief_gene.conversation import (
+    BriefGeneConversationOperation,
+)
 from mcp_server_phytomni.agents.brief_gene.state import (
     BriefGeneInput,
     BriefGeneOutput,
@@ -167,6 +170,15 @@ def test_route_after_generate_skips_when_disabled() -> None:
         },
     )
     assert agent.route_after_generate(state) == "__end__"
+
+
+def test_conversation_follow_up_is_separate_from_is_follow_up() -> None:
+    """The public flag still controls suggested-question generation only."""
+    assert BriefGeneConversationOperation.FOLLOW_UP.value == "follow_up"
+    assert _optional_keys(BriefGeneInput) == {
+        "is_follow_up",
+        "locale",
+    }
 
 
 def test_brief_gene_subgraph_exposes_conditional_sources() -> None:

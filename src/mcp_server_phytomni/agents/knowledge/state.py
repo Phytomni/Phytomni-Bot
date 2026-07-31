@@ -37,6 +37,9 @@ class KnowledgeInput(TypedDict, total=False):
     user_query: Required[str]
     locale: SupportedLocale
     obs_file_list: list[str] | None
+    conversation_messages: list[dict[str, str]]
+    retrieval_query: str
+    answer_context: str
     repo_id_dict: dict[str, int] | None
     is_generate: bool
     is_follow_up: bool
@@ -71,6 +74,9 @@ class KnowledgeState(TypedDict):
     user_query: str
     locale: SupportedLocale
     obs_file_list: list[str] | None
+    conversation_messages: list[dict[str, str]]
+    retrieval_query: str
+    answer_context: str
     repo_id_dict: dict[str, int] | None
     upload_context: str
     retrieved_docs: list[dict[str, Any]]

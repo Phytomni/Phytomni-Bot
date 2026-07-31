@@ -12,7 +12,7 @@ import re
 import subprocess
 import textwrap
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +34,14 @@ _ENDPOINT_RE = re.compile(
     re.MULTILINE,
 )
 _PYLINT_VERSION = ("uv", "run", "pylint", "--version")
+
+
+@dataclass(frozen=True)
+class _PylintPathContext:
+    """Tracked-source context shared while resolving Pylint endpoints."""
+
+    root: Path
+    tracked: Sequence[Path]
 
 
 def validate_pylint_result(returncode: int, stdout: str, stderr: str) -> str:
@@ -124,14 +132,60 @@ def _module_name(root: Path, path: Path) -> str:
     return value
 
 
-def _resolve_module(root: Path, module: str, tracked: Sequence[Path]) -> Path:
-    """Resolve Pylint's module label back to one tracked source path."""
+def _candidate_paths(root: Path, paths: Sequence[Path]) -> str:
+    """Render sorted candidate paths relative to the analysis root."""
+    return ", ".join(sorted(_relative_path(root, path) for path in paths))
+
+
+def _normalize_span_source(source: str) -> str:
+    """Normalize complete or partial Pylint source spans."""
+    try:
+        return normalize_source(source)
+    except ValueError:
+        dedented = textwrap.dedent(source)
+        try:
+            return normalize_source(dedented)
+        except ValueError:
+            return dedented.strip()
+
+
+def _endpoint_candidates(
+    root: Path, module: str, tracked: Sequence[Path]
+) -> tuple[Path, ...]:
+    """Return every tracked path that could represent one endpoint label."""
     module_names = {module}
     if module.endswith(".__init__"):
         module_names.add(module[: -len(".__init__")])
-    for path in tracked:
-        if _module_name(root, path) in module_names:
-            return path
+    suffix = f".{module}"
+    direct = root / f"{module.replace('.', '/')}.py"
+    return tuple(
+        path
+        for path in tracked
+        if _module_name(root, path) in module_names
+        or _module_name(root, path).endswith(suffix)
+        or path == direct
+        or path.stem == module
+    )
+
+
+def _resolve_module(
+    context: _PylintPathContext,
+    module: str,
+    start: int,
+    end: int,
+    source_hint: str | None,
+) -> Path:
+    """Resolve one Pylint endpoint using path and source evidence."""
+    root = context.root
+    tracked = context.tracked
+    module_names = {module}
+    if module.endswith(".__init__"):
+        module_names.add(module[: -len(".__init__")])
+    exact_matches = tuple(
+        path for path in tracked if _module_name(root, path) in module_names
+    )
+    if len(exact_matches) == 1:
+        return exact_matches[0]
     suffix = f".{module}"
     suffix_matches = tuple(
         path for path in tracked if _module_name(root, path).endswith(suffix)
@@ -139,12 +193,26 @@ def _resolve_module(root: Path, module: str, tracked: Sequence[Path]) -> Path:
     if len(suffix_matches) == 1:
         return suffix_matches[0]
     direct = root / f"{module.replace('.', '/')}.py"
-    if direct.is_file():
+    if direct in tracked and direct.is_file():
         return direct
-    candidates = tuple(path for path in tracked if path.stem == module)
+    candidates = (
+        exact_matches
+        or suffix_matches
+        or tuple(path for path in tracked if path.stem == module)
+    )
+    reported_candidates = candidates
+    if source_hint is not None:
+        candidates = tuple(
+            path
+            for path in candidates
+            if source_hint in _span_source(path, start, end)
+        )
     if len(candidates) == 1:
         return candidates[0]
-    raise CollectionError(f"cannot resolve Pylint module {module!r}")
+    detail = _candidate_paths(root, candidates or reported_candidates)
+    raise CollectionError(
+        f"cannot resolve Pylint module {module!r}; candidates: {detail}"
+    )
 
 
 def _span_source(path: Path, start: int, end: int) -> str:
@@ -153,20 +221,19 @@ def _span_source(path: Path, start: int, end: int) -> str:
         raise CollectionError(
             f"Pylint span is outside {path.as_posix()}: {start}:{end}"
         )
-    snippet = "\n".join(lines[start - 1 : end])
-    try:
-        return normalize_source(snippet)
-    except ValueError:
-        try:
-            return normalize_source(textwrap.dedent(snippet))
-        except ValueError:
-            return snippet.strip()
+    snippet = "\n".join(lines[slice(start - 1, end)])
+    return _normalize_span_source(snippet)
 
 
 def _span_endpoint(
-    root: Path, module: str, start: int, end: int, tracked: Sequence[Path]
+    context: _PylintPathContext,
+    module: str,
+    start: int,
+    end: int,
+    source_hint: str | None,
 ) -> tuple[Path, Endpoint, str]:
-    path = _resolve_module(root, module, tracked)
+    path = _resolve_module(context, module, start, end, source_hint)
+    root = context.root
     relative = _relative_path(root, path)
     normalized = _span_source(path, start, end)
     return path, Endpoint(relative, f"{start}:{end}", normalized), normalized
@@ -181,20 +248,38 @@ def _pair_endpoints(
             "R0801 diagnostic must contain exactly two source endpoints"
         )
     first_match, second_match = matches
+    source = message[slice(second_match.end(), None)]
+    source_hint = _normalize_span_source(source) if source.strip() else None
+    context = _PylintPathContext(root, tracked)
     first = _span_endpoint(
-        root,
+        context,
         first_match.group("module"),
         int(first_match.group("start")),
         int(first_match.group("end")),
-        tracked,
+        source_hint,
     )
     second = _span_endpoint(
-        root,
+        context,
         second_match.group("module"),
         int(second_match.group("start")),
         int(second_match.group("end")),
-        tracked,
+        source_hint,
     )
+    if first[0] == second[0]:
+        candidates = tuple(
+            dict.fromkeys(
+                _endpoint_candidates(
+                    root, first_match.group("module"), tracked
+                )
+                + _endpoint_candidates(
+                    root, second_match.group("module"), tracked
+                )
+            )
+        )
+        raise CollectionError(
+            "R0801 endpoints did not resolve to distinct paths; "
+            f"candidates: {_candidate_paths(root, candidates)}"
+        )
     return first[0], first[1], second[0], second[1]
 
 

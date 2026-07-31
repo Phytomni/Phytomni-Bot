@@ -14,10 +14,12 @@ pipeline.py-style siblings.
 """
 
 import logging
+from collections.abc import Mapping
 from typing import Any
+from uuid import UUID
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.graph import END, START, StateGraph
+from langgraph.graph import StateGraph
 from langgraph.types import Send, interrupt
 
 from ...common.prompts import get_prompt
@@ -41,25 +43,26 @@ from ...runtime.agent_registry import (
     agent_fingerprint_values,
     get_cached_agent,
 )
-from ...runtime.langgraph_runner import (
-    ainvoke_graph,
-    ensure_checkpointer,
-    make_async_router,
-)
+from ...runtime.conversation_context.projection import agent_thread_id
+from ...runtime.conversation_context.store import StoredTurn
+from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from ...runtime.locale import SupportedLocale
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
 from ..shared.a2ui.loop import A2UI_MAX_ROUNDS, next_a2ui_round
 from ..shared.analysis import _compute_traceback_digest
-from ..shared.chat_subgraph import (
-    CHAT_APP,
-    make_chat_after_router,
-    mount_chat_node,
-)
+from ..shared.chat_subgraph import CHAT_APP
 from ..shared.intermediate_state import merge_intermediate_state
 from ..shared.knowledge_subgraph import KnowledgeApp, build_knowledge_app
 from ..shared.options import resolve_agent_locale
 from ..shared.parallel_dispatch import FailureRecord
+from .arun_options import resolve_arun_options
+from .conversation import (
+    ReviewClarificationError,
+    ReviewConversationAdapter,
+    review_clarification_result,
+)
+from .graph_wiring import wire_review_graph
 from .helpers import build_review_chat_kwargs
 from .planning import ReviewPlanningMixin
 from .report import ReviewReportMixin
@@ -193,156 +196,8 @@ class DeepResearchAgent(
         return workflow.compile(checkpointer=self.checkpointer)
 
     def _wire_chat_subgraph(self, workflow: StateGraph) -> None:
-        """Register the prep + post + shared chat form on ``workflow``.
-
-        Replaces the three single-shot chat sites (``plan_query`` /
-        ``summary`` / ``follow_up``) with prep + post pairs surrounding
-        a single shared ``chat`` node. The chat node is registered via
-        :func:`~agents.shared.chat_subgraph.make_chat_node_wrapper` so
-        LangGraph's ``xray`` rendering can inline the compiled chat
-        subgraph in the review render.
-        :func:`~agents.shared.chat_subgraph.make_chat_after_router`
-        reads the ``pending_post`` sentinel each prep node stages to
-        branch back to the correct post node after the chat call.
-
-        Both per-dimension chat fan-out sites are replaced by
-        Send-dispatch triads: the draft site
-        (``draft_dispatch`` → ``draft_worker_node`` × N →
-        ``draft_reduce_node``) and the review_results site
-        (``review_results_dispatch`` →
-        ``review_results_worker_node`` × N →
-        ``review_results_reduce_node``).  Each per-worker
-        ``CHAT_APP.ainvoke`` lets xray expand the shared chat
-        subgraph under every worker key. The revised fan-out site is
-        likewise replaced by a Send triad (``revised_dispatch`` →
-        ``revised_worker_node`` × N → ``revised_reduce_node``) whose
-        workers call ``self._feedback_rag`` so the per-dimension
-        critique-driven supplementary retrieval and revision run
-        concurrently; the only legacy ``asyncio.gather`` body that
-        remains lives inside ``_feedback_rag`` itself for the
-        per-query supplementary retrieval fan-in.
-        The retrieve site is likewise replaced by a Send-dispatch triad
-        (``retrieve_dispatch`` → ``retrieve_worker_node`` × N →
-        ``retrieve_reduce_node``) so each research dimension fans out
-        to a dedicated KnowledgeAgent subgraph invocation before
-        ``draft_dispatch``.
-
-        Args:
-            workflow: Uncompiled ``StateGraph`` to register nodes and
-                edges on.
-        """
-        # === 3 prep + 3 post + 1 shared chat mount ===
-        workflow.add_node("plan_query_prep_node", self.plan_query_prep_node)
-        workflow.add_node("plan_query_post_node", self.plan_query_post_node)
-        workflow.add_node("summary_prep_node", self.summary_prep_node)
-        workflow.add_node("summary_post_node", self.summary_post_node)
-        workflow.add_node("follow_up_prep_node", self.follow_up_prep_node)
-        workflow.add_node("follow_up_post_node", self.follow_up_post_node)
-        workflow.add_node("approval_node", self.approval_node)
-        mount_chat_node(workflow)
-
-        # === Retrieve site: Send fan-out ===
-        knowledge_app = self._knowledge_app
-        if knowledge_app is None:
-            raise RuntimeError(
-                "unreachable: _knowledge_app must be built in __init__"
-            )
-        workflow.add_node(
-            "retrieve_dispatch", self.retrieve_prepare_tasks_node
-        )
-        workflow.add_node(
-            "retrieve_worker_node",
-            self.make_retrieve_worker_node(knowledge_app),
-        )
-        workflow.add_node("retrieve_reduce_node", self.retrieve_reduce_node)
-        workflow.add_conditional_edges(
-            "retrieve_dispatch",
-            make_async_router(self.route_retrieve_tasks),
-            ["retrieve_worker_node"],
-        )
-        workflow.add_edge("retrieve_worker_node", "retrieve_reduce_node")
-        retrieve_in, retrieve_out = (
-            "retrieve_dispatch",
-            "retrieve_reduce_node",
-        )
-
-        # === Draft site: Send fan-out (flag-on) ===
-        workflow.add_node("draft_dispatch", self.draft_prepare_tasks_node)
-        workflow.add_node("draft_worker_node", self.draft_worker_node)
-        workflow.add_node("draft_reduce_node", self.draft_reduce_node)
-        workflow.add_conditional_edges(
-            "draft_dispatch",
-            make_async_router(self.route_draft_tasks),
-            ["draft_worker_node"],
-        )
-        workflow.add_edge("draft_worker_node", "draft_reduce_node")
-
-        # === Review-results site: Send fan-out (flag-on) ===
-        workflow.add_node(
-            "review_results_dispatch",
-            self.review_results_prepare_tasks_node,
-        )
-        workflow.add_node(
-            "review_results_worker_node",
-            self.review_results_worker_node,
-        )
-        workflow.add_node(
-            "review_results_reduce_node",
-            self.review_results_reduce_node,
-        )
-        workflow.add_conditional_edges(
-            "review_results_dispatch",
-            make_async_router(self.route_review_results_tasks),
-            ["review_results_worker_node"],
-        )
-        workflow.add_edge(
-            "review_results_worker_node", "review_results_reduce_node"
-        )
-
-        # === Revised site: Send fan-out (flag-on) ===
-        workflow.add_node("revised_dispatch", self.revised_prepare_tasks_node)
-        workflow.add_node("revised_worker_node", self.revised_worker_node)
-        workflow.add_node("revised_reduce_node", self.revised_reduce_node)
-        workflow.add_conditional_edges(
-            "revised_dispatch",
-            make_async_router(self.route_revised_tasks),
-            ["revised_worker_node"],
-        )
-        workflow.add_edge("revised_worker_node", "revised_reduce_node")
-
-        # === Wire prep → chat (3 sites) ===
-        workflow.add_edge("plan_query_prep_node", "chat")
-        workflow.add_edge("summary_prep_node", "chat")
-        workflow.add_edge("follow_up_prep_node", "chat")
-
-        # === Shared chat → post (after-router) ===
-        workflow.add_conditional_edges(
-            "chat",
-            make_async_router(make_chat_after_router()),
-            {
-                "plan_query_post_node": "plan_query_post_node",
-                "summary_post_node": "summary_post_node",
-                "follow_up_post_node": "follow_up_post_node",
-            },
-        )
-
-        # === Linear pipeline edges ===
-        workflow.add_edge(START, "plan_query_prep_node")
-        workflow.add_edge("plan_query_post_node", retrieve_in)
-        workflow.add_edge(retrieve_out, "draft_dispatch")
-        workflow.add_edge("draft_reduce_node", "review_results_dispatch")
-        workflow.add_edge("review_results_reduce_node", "revised_dispatch")
-        workflow.add_edge("revised_reduce_node", "summary_prep_node")
-        workflow.add_edge("summary_post_node", "approval_node")
-        workflow.add_conditional_edges(
-            "approval_node",
-            make_async_router(self.route_after_approval),
-            {
-                "follow_up_prep_node": "follow_up_prep_node",
-                "summary_prep_node": "summary_prep_node",
-            },
-        )
-        workflow.add_edge("follow_up_post_node", END)
+        """Register all Review graph nodes and edges."""
+        wire_review_graph(self, workflow, self._knowledge_app)
 
     async def _chat(
         self,
@@ -371,6 +226,14 @@ class DeepResearchAgent(
             retriable_codes=self.review_config.RETRIABLE_CODES,
             max_retries=self.review_config.MAX_RETRIES,
         )
+
+    async def chat(
+        self,
+        prompt: str,
+        response_format_override: dict[str, str | dict] | None = None,
+    ) -> dict[str, Any] | None:
+        """Call the configured LLM through the public review seam."""
+        return await self._chat(prompt, response_format_override)
 
     async def approval_node(self, state: DeepResearchState) -> dict[str, Any]:
         """Pause for human approval of the synthesized summary.
@@ -884,15 +747,19 @@ class DeepResearchAgent(
             "approval_pending": False,
             "approval_decision": {},
             "a2ui_round": 0,
+            # Private conversation metadata is additive to the graph state;
+            # DeepResearchInput/DeepResearchOutput remain unchanged.
+            "review_operation": None,
+            "report_artifact_id": None,
+            "report_revision": 0,
         }
         return initial_state
 
     async def arun(
         self,
         user_query: str,
-        obs_file_list: list[str] | None = None,
-        thread_id: str | None = None,
-        locale: SupportedLocale | None = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> dict[str, Any]:
         """Execute the DeepResearchAgent workflow.
 
@@ -905,15 +772,92 @@ class DeepResearchAgent(
             Chat-completions-style final response payload with review text,
             ordered references, and follow-up questions.
         """
+        obs_file_list, thread_id, locale, review_operation = (
+            resolve_arun_options(args, kwargs)
+        )
         initial_state = self.initial_state(
             user_query,
             obs_file_list,
             locale=locale,
         )
+        initial_state["review_operation"] = review_operation
         final_state = await ainvoke_graph(
             self.app, initial_state, thread_id=thread_id
         )
-        return merge_intermediate_state(final_state)
+        return merge_intermediate_state(
+            final_state,
+            extra_excluded_keys={
+                "review_operation",
+                "report_artifact_id",
+                "report_revision",
+            },
+        )
+
+
+def _build_review_agent_runtime(
+    overrides: dict[str, Any],
+) -> DeepResearchAgent:
+    """Build the configured Review agent and its cached dependency."""
+    review_config = copy_config_with_overrides(
+        REVIEW_CONFIG,
+        overrides,
+        REVIEW_CONFIG_FIELD_MAP,
+    )
+    sensitive_config = copy_sensitive_config_with_overrides(
+        get_sensitive_config(),
+        overrides,
+        field_map=REVIEW_SENSITIVE_FIELD_MAP,
+        secret_field_map=REVIEW_SECRET_FIELD_MAP,
+    )
+    agent = get_cached_agent(
+        "DeepResearchAgent",
+        lambda: DeepResearchAgent(
+            review_config=review_config,
+            sensitive_config=sensitive_config,
+            knowledge_agent=KnowledgeAgent(
+                knowledge_config=review_config,
+                sensitive_config=sensitive_config,
+            ),
+        ),
+        agent_fingerprint_values(
+            review_config=review_config,
+            sensitive_config=sensitive_config,
+        ),
+    )
+    return agent
+
+
+async def _run_review_adapter(
+    adapter: ReviewConversationAdapter,
+    projection: Any,
+    agent: DeepResearchAgent,
+    turn_id: str | None,
+) -> dict[str, Any] | None:
+    """Run a Review adapter operation, returning early terminal results."""
+    if projection is not None:
+        try:
+            await adapter.prepare_from_agent(
+                projection,
+                agent,
+                adapter.stable_thread_id or projection.agent_thread_id,
+                turn_id=turn_id,
+            )
+        except ReviewClarificationError as exc:
+            adapter.mark_failed()
+            return review_clarification_result(str(exc))
+    operation = adapter.operation
+    if operation not in {"follow_up", "local_revision"}:
+        return None
+    try:
+        if operation == "follow_up":
+            result = await adapter.follow_up(agent.chat)
+        else:
+            result = await adapter.local_revision(agent.chat)
+    except ReviewClarificationError as exc:
+        adapter.mark_failed()
+        return review_clarification_result(str(exc))
+    adapter.capture_result(result)
+    return result
 
 
 async def review_agent_function(
@@ -934,18 +878,56 @@ async def review_agent_function(
     Returns:
         Chat-completions-style final response payload from DeepResearchAgent.
     """
+    thread_id = kwargs.pop("thread_id", None)
+    review_adapter = kwargs.pop("review_adapter", None)
+    review_projection = kwargs.pop("review_projection", None)
+    review_turn_id = kwargs.pop("review_turn_id", None)
+    review_operation = kwargs.pop("review_operation", None)
     effective_locale = resolve_agent_locale(locale)
-    review_config = copy_config_with_overrides(
-        REVIEW_CONFIG,
-        kwargs,
-        REVIEW_CONFIG_FIELD_MAP,
-    )
-    sensitive_config = copy_sensitive_config_with_overrides(
-        get_sensitive_config(),
-        kwargs,
-        field_map=REVIEW_SENSITIVE_FIELD_MAP,
-        secret_field_map=REVIEW_SECRET_FIELD_MAP,
-    )
+    agent = _build_review_agent_runtime(kwargs)
+    if isinstance(review_adapter, ReviewConversationAdapter):
+        adapter_result = await _run_review_adapter(
+            review_adapter,
+            review_projection,
+            agent,
+            review_turn_id,
+        )
+        if adapter_result is not None:
+            return adapter_result
+        review_operation = (
+            review_adapter.operation.value
+            if review_adapter.operation is not None
+            else review_operation
+        )
+    try:
+        execution_thread_id = thread_id
+        if isinstance(review_adapter, ReviewConversationAdapter):
+            execution_thread_id = (
+                review_adapter.execution_thread_id or thread_id
+            )
+        result = await agent.arun(
+            user_query=user_query,
+            obs_file_list=obs_file_list or [],
+            thread_id=execution_thread_id,
+            locale=effective_locale,
+            review_operation=review_operation,
+        )
+    except ReviewClarificationError as exc:
+        if isinstance(review_adapter, ReviewConversationAdapter):
+            review_adapter.mark_failed()
+        return review_clarification_result(str(exc))
+    if isinstance(review_adapter, ReviewConversationAdapter):
+        review_adapter.capture_result(result)
+    return result
+
+
+async def load_review_settlement_adapter(
+    metadata: Mapping[str, Any],
+    staged_turn: StoredTurn,
+) -> ReviewConversationAdapter:
+    """Rebuild one pending Review adapter from durable staged-turn metadata."""
+    review_config = REVIEW_CONFIG
+    sensitive_config = get_sensitive_config()
     agent = get_cached_agent(
         "DeepResearchAgent",
         lambda: DeepResearchAgent(
@@ -961,11 +943,23 @@ async def review_agent_function(
             sensitive_config=sensitive_config,
         ),
     )
-    return await agent.arun(
-        user_query=user_query,
-        obs_file_list=obs_file_list or [],
-        locale=effective_locale,
+    adapter = ReviewConversationAdapter()
+    try:
+        expected_stable_thread_id = agent_thread_id(
+            UUID(staged_turn.conversation_key), "ReviewAgent"
+        )
+    except (AttributeError, ValueError) as exc:
+        raise ReviewClarificationError(
+            "Review settlement conversation identity is invalid."
+        ) from exc
+    await adapter.restore_settlement(
+        metadata,
+        agent,
+        staged_turn.result,
+        expected_stable_thread_id=expected_stable_thread_id,
+        expected_turn_id=staged_turn.turn_id,
     )
+    return adapter
 
 
 def review_stream_target(

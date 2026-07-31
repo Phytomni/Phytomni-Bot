@@ -37,6 +37,37 @@ from .httpx_client import get_async_client
 __all__ = ["RelayClient", "build_relay_client", "current_relay_client"]
 
 _RELAY_PREFIX = "v1/relay"
+_MISSING = object()
+
+
+def _post_json_options(
+    args: tuple[Any, ...], kwargs: Mapping[str, Any]
+) -> tuple[Any, str, Mapping[str, str] | None, float | None]:
+    """Normalize the historical keyword-only POST options."""
+    names = ("json_body", "message", "extra_headers", "request_timeout")
+    values: dict[str, Any] = {
+        "json_body": _MISSING,
+        "message": _MISSING,
+        "extra_headers": None,
+        "request_timeout": None,
+    }
+    if len(args) > len(names):
+        raise TypeError("too many relay POST options")
+    values.update(zip(names, args, strict=False))
+    unknown = set(kwargs).difference(names)
+    if unknown:
+        raise TypeError(
+            "unexpected relay POST options: " + ", ".join(sorted(unknown))
+        )
+    values.update(kwargs)
+    if values["json_body"] is _MISSING or values["message"] is _MISSING:
+        raise TypeError("relay post_json requires json_body and message")
+    return (
+        values["json_body"],
+        values["message"],
+        values["extra_headers"],
+        values["request_timeout"],
+    )
 
 
 @dataclass(frozen=True)
@@ -134,11 +165,8 @@ class RelayClient:
     async def post_json(
         self,
         relay_path: str,
-        *,
-        json_body: Any,
-        message: str,
-        extra_headers: Mapping[str, str] | None = None,
-        request_timeout: float | None = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> Any:
         """POST ``json_body`` to a relay route and return parsed JSON.
 
@@ -146,6 +174,9 @@ class RelayClient:
         forwards upstream (e.g. ``X-Workspace-Id`` for NL2SQL).
         ``request_timeout`` overrides the client's default for this call.
         """
+        json_body, message, extra_headers, request_timeout = (
+            _post_json_options(args, kwargs)
+        )
         request = JsonPostRequest(
             url=self.relay_url(relay_path),
             method="POST",

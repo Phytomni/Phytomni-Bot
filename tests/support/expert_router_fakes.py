@@ -17,12 +17,37 @@ def patch_expert_router(
     router: ModuleType,
     completion: object,
     captured: dict[str, Any] | None = None,
+    **options: Any,
 ) -> None:
-    """Patch one Expert router module with a canned completion."""
+    """Patch one Expert router module with a canned completion.
+
+    Args:
+        completion: Default object returned by ``create`` once any scripted
+            ``side_effects`` are exhausted.
+        captured: If given, updated with each call's kwargs (last call wins).
+        side_effects: Optional per-call script. Each ``create`` call pops the
+            next item; a ``BaseException`` instance is raised, anything else
+            is returned. Lets a test drive the 400-then-retry fallback.
+        calls: If given, every call's kwargs is appended (all calls kept),
+            so a test can assert on both the initial and the retry request.
+    """
+    side_effects = options.pop("side_effects", None)
+    calls = options.pop("calls", None)
+    if options:
+        unexpected = ", ".join(sorted(options))
+        raise TypeError(f"unexpected router fake options: {unexpected}")
+    scripted = list(side_effects or [])
 
     async def create(**kwargs: Any) -> object:
         if captured is not None:
             captured.update(kwargs)
+        if calls is not None:
+            calls.append(dict(kwargs))
+        if scripted:
+            result = scripted.pop(0)
+            if isinstance(result, BaseException):
+                raise result
+            return result
         return completion
 
     def fake_async_openai(

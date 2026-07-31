@@ -93,6 +93,25 @@ def _result_row_count(result: Any) -> int | None:
 
 DATA_CONFIG = DataConfig()
 
+
+def _data_run_options(
+    args: tuple[Any, ...], kwargs: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Normalize the legacy positional DataAgent run options."""
+    names = ("is_rewrite", "dialog_id", "thread_id", "locale")
+    values: dict[str, Any] = {
+        "is_rewrite": True,
+        "dialog_id": None,
+        "thread_id": None,
+        "locale": None,
+    }
+    if len(args) > len(names):
+        raise TypeError("too many DataAgent run arguments")
+    values.update(zip(names, args, strict=False))
+    values.update({name: kwargs[name] for name in names if name in kwargs})
+    return values
+
+
 DATA_CONFIG_FIELD_MAP = {
     "retrieve_url": "RETRIEVE_URL",
     "data_repo_id": "DATA_REPO_ID",
@@ -133,6 +152,7 @@ async def rewrite_nl2sql(
     """
     effective_locale = resolve_agent_locale(locale)
     active_dialog_id = kwargs.get("dialog_id") or _default_dialog_id()
+    active_thread_id = kwargs.get("thread_id") or active_dialog_id
     arguments = {**kwargs, "dialog_id": active_dialog_id}
     data_config = copy_config_with_overrides(
         DATA_CONFIG,
@@ -159,7 +179,8 @@ async def rewrite_nl2sql(
     return await agent.arun(
         user_query=user_query,
         is_rewrite=is_rewrite,
-        thread_id=active_dialog_id,
+        dialog_id=active_dialog_id,
+        thread_id=active_thread_id,
         locale=effective_locale,
     )
 
@@ -206,6 +227,7 @@ def data_stream_seed(
         "user_query": args.user_query,
         "locale": resolve_agent_locale(args.locale),
         "is_rewrite": True,
+        "dialog_id": None,
         "retrieve_prompt": None,
         "rewrite_query": None,
         "final_response": None,
@@ -530,7 +552,9 @@ class DataAgent:
                     "workspace_id": self.data_config.WORKSPACE_ID,
                     "subject_id": self.data_config.SUBJECT_ID,
                     "dialog_id": (
-                        self.data_config.DIALOG_ID or _default_dialog_id()
+                        state.get("dialog_id")
+                        or self.data_config.DIALOG_ID
+                        or _default_dialog_id()
                     ),
                     "need_insight": self.data_config.NEED_INSIGHT,
                     "simplify_response": self.data_config.SIMPLIFY_RESPONSE,
@@ -566,9 +590,8 @@ class DataAgent:
     async def arun(
         self,
         user_query: str,
-        is_rewrite: bool = True,
-        thread_id: str | None = None,
-        locale: SupportedLocale | None = None,
+        *args: Any,
+        **kwargs: Any,
     ):
         """Execute the DataAgent workflow.
 
@@ -579,23 +602,26 @@ class DataAgent:
 
         Args:
             user_query: The user's natural language query.
+            dialog_id: Optional stable identity for the NL2SQL service.
             thread_id: Optional thread ID for state persistence. If not
                        provided, a new UUID will be generated.
 
         Returns:
             The final response dictionary containing database query results.
         """
+        options = _data_run_options(args, kwargs)
         initial_state = {
             "user_query": user_query,
-            "locale": resolve_agent_locale(locale),
-            "is_rewrite": is_rewrite,
+            "locale": resolve_agent_locale(options["locale"]),
+            "is_rewrite": options["is_rewrite"],
+            "dialog_id": options["dialog_id"],
             "retrieve_prompt": None,
             "rewrite_query": None,
             "final_response": None,
         }
 
         final_state = await ainvoke_graph(
-            self.app, initial_state, thread_id=thread_id
+            self.app, initial_state, thread_id=options["thread_id"]
         )
 
         return merge_intermediate_state(final_state)

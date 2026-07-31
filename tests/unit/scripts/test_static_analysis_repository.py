@@ -52,6 +52,7 @@ def test_repository_inventory_matches_registry() -> None:
         _ROOT / "static-analysis-exemptions.toml",
         today=date(2026, 7, 17),
     )
+    assert not registry.exemptions
     findings = collect_inventory(_ROOT, "full", None)
 
     assert reconcile(registry, findings, date(2026, 7, 17)).is_clean

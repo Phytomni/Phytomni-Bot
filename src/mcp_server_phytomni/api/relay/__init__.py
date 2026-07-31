@@ -18,10 +18,11 @@ from .audit import (
 )
 from .routes import create_relay_router
 
-__all__ = [
-    "RelayAuditRecord",
-    "RelayAuditQuery",
-    "RelayAuditStore",
-    "get_audit_store",
-    "create_relay_router",
-]
+_AUDIT_EXPORTS = {
+    "RelayAuditQuery": RelayAuditQuery,
+    "RelayAuditRecord": RelayAuditRecord,
+    "RelayAuditStore": RelayAuditStore,
+    "get_audit_store": get_audit_store,
+}
+
+__all__ = [*_AUDIT_EXPORTS, "create_relay_router"]

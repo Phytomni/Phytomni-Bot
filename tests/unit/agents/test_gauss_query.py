@@ -41,11 +41,23 @@ class _FakePool:
         self,
         rows: list[dict[str, Any]],
         boom: bool,
-        timeout_boom: bool = False,
-        error_message: str = "bad sql",
-        transaction_error: BaseException | None = None,
+        *args: Any,
+        **kwargs: Any,
     ) -> None:
         """Store rows and flags; start with closed=False."""
+        timeout_boom = kwargs.pop("timeout_boom", False)
+        error_message = kwargs.pop("error_message", "bad sql")
+        transaction_error = kwargs.pop("transaction_error", None)
+        if kwargs:
+            raise TypeError("unknown fake-pool options")
+        if len(args) > 3:
+            raise TypeError("too many fake-pool options")
+        if args:
+            timeout_boom = args[0]
+        if len(args) > 1:
+            error_message = args[1]
+        if len(args) > 2:
+            transaction_error = args[2]
         self._rows = rows
         self._boom = boom
         self._timeout_boom = timeout_boom

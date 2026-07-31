@@ -30,7 +30,7 @@ def _extract_service_token(
 ) -> str | None:
     """Pull the service token from Bearer or X-Service-Token headers."""
     if authorization and authorization.startswith("Bearer "):
-        token = authorization[len("Bearer ") :].strip()
+        token = authorization.removeprefix("Bearer ").strip()
         return token or None
     if x_service_token:
         token = x_service_token.strip()

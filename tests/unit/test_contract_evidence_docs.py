@@ -123,7 +123,7 @@ def _table_rows(path: Path, heading: str) -> list[dict[str, str]]:
         raise AssertionError(f"missing heading: {heading}") from exc
 
     table: list[list[str]] = []
-    for line in lines[start + 1 :]:
+    for line in lines[slice(start + 1, None)]:
         if line.startswith("## "):
             break
         if not line.strip().startswith("|"):
