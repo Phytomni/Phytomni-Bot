@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
+from unicodedata import category, normalize
 from uuid import UUID
 
 from pydantic import (
@@ -42,6 +43,8 @@ UploadPurpose = Literal[
     "user_data",
 ]
 
+UploadAssetPurpose = Literal["chat_attachment"]
+
 __all__ = [
     "A2uiActionRequest",
     "AgentRunRequest",
@@ -58,6 +61,12 @@ __all__ = [
     "ContextSettlementRequest",
     "ContextTombstoneRequest",
     "FileUploadResponse",
+    "UploadAssetPurpose",
+    "UploadCapabilityResponse",
+    "UploadCompletionRequest",
+    "UploadCreateRequest",
+    "UploadCreateResponse",
+    "UploadStatusResponse",
     "MemoryCreateRequest",
     "MemoryDeleteResponse",
     "MemoryExportResponse",
@@ -172,6 +181,95 @@ class ChatCompletionRequest(BaseModel):
         default=None,
         exclude_if=lambda value: value is None,
     )
+
+
+class AttachmentAsset(BaseModel):
+    """One completed resumable asset reference from the Web client."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    asset_id: str = Field(min_length=1, max_length=128)
+
+
+class UploadCreateRequest(BaseModel):
+    """Trusted Web-service request that creates one upload asset."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    owner_subject: str = Field(min_length=1, max_length=256)
+    filename: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(gt=0, le=10 * 1024**3)
+    purpose: UploadAssetPurpose = "chat_attachment"
+    idempotency_key: str = Field(min_length=1, max_length=256)
+
+    @model_validator(mode="after")
+    def validate_filename(self) -> UploadCreateRequest:
+        """Normalize and validate the display filename before persistence."""
+        filename = normalize("NFC", self.filename)
+        if not 1 <= len(filename.encode("utf-8")) <= 255:
+            raise ValueError("invalid_upload_metadata")
+        if filename in {".", ".."}:
+            raise ValueError("invalid_upload_metadata")
+        if any(
+            char in {"/", "\\", "\x00"} or category(char) in {"Cc", "Cf"}
+            for char in filename
+        ):
+            raise ValueError("invalid_upload_metadata")
+        self.filename = filename
+        return self
+
+
+class UploadCreateResponse(BaseModel):
+    """Safe v2 response returned after an idempotent asset create."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    protocol: Literal["obs-multipart-v2"]
+    asset_id: str
+    status: Literal["uploading"]
+    part_size_bytes: int
+    part_count: int
+    max_parallel_parts: int
+    upload_url: str
+    capability: str
+    capability_expires_at: datetime
+    session_expires_at: datetime
+
+
+class UploadCapabilityResponse(BaseModel):
+    """Safe capability-renewal response with no cloud credential fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    protocol: Literal["obs-multipart-v2"]
+    asset_id: str
+    capability: str
+    capability_expires_at: datetime
+    session_expires_at: datetime
+
+
+class UploadCompletionRequest(BaseModel):
+    """Optional client checksum for the completed authoritative asset."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
+
+
+class UploadStatusResponse(BaseModel):
+    """Safe status returned by the browser-facing HEAD route."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    protocol: Literal["obs-multipart-v2"]
+    asset_id: str
+    status: Literal["uploading", "completed", "aborted", "expired"]
+    size_bytes: int
+    part_size_bytes: int
+    part_count: int
+    received_parts: list[int]
+    filename: str | None = None
 
 
 class AgentRunRequest(BaseModel):
