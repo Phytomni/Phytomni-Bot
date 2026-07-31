@@ -19,6 +19,7 @@ from mcp_server_phytomni.api.a2a.card import build_agent_card
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.config.defaults import ApiConfig
 from mcp_server_phytomni.mcp.schemas import PhytomniAgents
+from tests.support.markdown import parse_bold_records
 
 pytestmark = pytest.mark.unit
 
@@ -44,9 +45,6 @@ README_TOOL_PATTERN = re.compile(r"\| `([^`]+)`\s+\|")
 MCP_TOOL_PATTERN = re.compile(r"\|\s*`([^`]+)`\s*\|\s*(?:sync|async)\s*\|")
 ENDPOINT_ROW_PATTERN = re.compile(
     r"\|\s*`(GET|POST)`\s*\|\s*`([^`]+)`\s*\|", re.MULTILINE
-)
-BOLD_FIELD_PATTERN = re.compile(
-    r"^\s*(?:-\s+)?\*\*(?P<key>[^*]+):\*\*\s*(?P<value>.*)$"
 )
 
 
@@ -108,33 +106,7 @@ def _markdown_bullet_records(
     text: str, first_key: str
 ) -> list[dict[str, str]]:
     """Parse wrapped bold-field records used by the Markdown gate."""
-    records: list[dict[str, str]] = []
-    current: dict[str, str] | None = None
-    last_key: str | None = None
-    for line in text.splitlines():
-        match = BOLD_FIELD_PATTERN.match(line)
-        if match:
-            key = match.group("key")
-            if key == first_key:
-                if current is not None:
-                    records.append(current)
-                current = {}
-            if current is not None:
-                current[key] = match.group("value").strip().strip("`")
-                last_key = key
-            continue
-        if (
-            current is not None
-            and last_key is not None
-            and line.strip()
-            and not line.lstrip().startswith("-")
-        ):
-            current[last_key] = (
-                (f"{current[last_key]} {line.strip()}").strip().strip("`")
-            )
-    if current is not None:
-        records.append(current)
-    return records
+    return parse_bold_records(text.splitlines(), first_key)
 
 
 def _capability_status(text: str, capability: str, status: str) -> bool:

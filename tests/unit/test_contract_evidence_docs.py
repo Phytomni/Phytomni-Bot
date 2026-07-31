@@ -5,11 +5,11 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import pytest
 from scripts.capture_contract_evidence import A2UI_FIXTURES, HTTP_GOLDENS
+from tests.support.markdown import parse_bold_records
 
 pytestmark = pytest.mark.unit
 
@@ -51,9 +51,6 @@ REGISTER_COLUMNS = {
     "Exit condition",
     "Rollback",
 }
-_BOLD_FIELD_PATTERN = re.compile(
-    r"^\s*(?:-\s+)?\*\*(?P<key>[^*]+):\*\*\s*(?P<value>.*)$"
-)
 EXPECTED_HANDOFFS = {
     "2026-07-15-a2ui-bot-contract-handoff.md": "Lifecycle/A2UI plan",
     "2026-07-18-bot-head-web-compatibility-handoff.md": (
@@ -116,6 +113,15 @@ STAGING_SMOKES = (
 )
 
 
+def _wrapped_rows(
+    lines: list[str], start: int, first_key: str
+) -> list[dict[str, str]]:
+    """Parse wrapped bold-field records after a section heading."""
+    return parse_bold_records(
+        lines[slice(start + 1, None)], first_key, stop_at_heading=True
+    )
+
+
 def _table_rows(path: Path, heading: str) -> list[dict[str, str]]:
     """Parse a table or wrapped field records following a heading."""
     lines = path.read_text(encoding="utf-8").splitlines()
@@ -151,34 +157,7 @@ def _table_rows(path: Path, heading: str) -> list[dict[str, str]]:
         "## Handoff dispositions": "Handoff",
         "## Compatibility register": "Bridge",
     }[heading]
-    rows: list[dict[str, str]] = []
-    current: dict[str, str] | None = None
-    last_key: str | None = None
-    for line in lines[slice(start + 1, None)]:
-        if line.startswith("## "):
-            break
-        match = _BOLD_FIELD_PATTERN.match(line)
-        if match:
-            key = match.group("key")
-            if key == first_key:
-                if current is not None:
-                    rows.append(current)
-                current = {}
-            if current is not None:
-                current[key] = match.group("value").strip().strip("`")
-                last_key = key
-            continue
-        if (
-            current is not None
-            and last_key is not None
-            and line.strip()
-            and not line.lstrip().startswith("-")
-        ):
-            current[last_key] = (
-                (f"{current[last_key]} {line.strip()}").strip().strip("`")
-            )
-    if current is not None:
-        rows.append(current)
+    rows = _wrapped_rows(lines, start, first_key)
     assert rows, f"missing table or wrapped records after {heading}"
     return rows
 
