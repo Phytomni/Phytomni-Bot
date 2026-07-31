@@ -187,6 +187,9 @@ class AgentRunRequest(BaseModel):
         dialogue_id: Optional chat-ai conversation id captured on the
             run row so the history page can group runs into one
             visible thread.
+        conversation: Optional private V1 conversation-context envelope.
+            When present, the URL slug is the only permitted agent
+            selection and the ordinary native lifecycle is reused.
         debug: When true, include the raw handler payload in the
             result block. Default mode strips it to reduce volume.
             PHYTOMNI_DEBUG=1 overrides this to always return full.
@@ -196,6 +199,10 @@ class AgentRunRequest(BaseModel):
     dialogue_id: str | None = None
     debug: bool | None = None
     locale: SupportedLocale | None = None
+    conversation: ConversationEnvelopeV1 | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class ResumeRequest(BaseModel):

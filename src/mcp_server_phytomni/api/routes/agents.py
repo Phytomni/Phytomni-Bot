@@ -49,6 +49,7 @@ from ..schemas import (
     FileUploadResponse,
     UploadPurpose,
 )
+from .context_types import ContextAgentRequest
 
 type AgentRun = Callable[..., Awaitable[tuple[dict[str, Any], int]]]
 type ChatResponse = Callable[..., Awaitable[Response]]
@@ -561,16 +562,25 @@ def _register_native_routes(
                         payload.arguments
                     ),
                 )
-                arguments = dict(payload.arguments)
-                arguments["locale"] = locale
         else:
             locale = resolve_http_locale(
                 explicit=payload.locale,
                 accept_language=request.headers.get("accept-language"),
                 latest_user_query=_latest_argument_query(payload.arguments),
             )
-            arguments = dict(payload.arguments)
-            arguments["locale"] = locale
+        arguments = dict(payload.arguments)
+        arguments["locale"] = locale
+        if payload.conversation is not None:
+            if not dependencies.context.enabled():
+                raise HTTPException(
+                    status_code=404, detail="conversation context disabled"
+                )
+            return await _execute_context_native(
+                agent=agent,
+                payload=payload,
+                arguments=arguments,
+                dependencies=dependencies,
+            )
         body, status_code = await dependencies.native.invoke_agent_run(
             agent=agent,
             arguments=arguments,
@@ -636,6 +646,89 @@ def _register_native_routes(
             user_id=principal.user_id,
             error_response=dependencies.upload.error_response,
         )
+
+
+def _native_context_tool(
+    agent: str,
+    envelope: ConversationEnvelopeV1,
+    dependencies: AgentRouteDependencies,
+) -> str:
+    """Validate and return the canonical tool selected by a native URL."""
+    tool_name = dependencies.catalog.agent_slug_to_tool.get(agent)
+    if tool_name is None:
+        raise HTTPException(404, f"agent not found: {agent}")
+    if envelope.mode != "expert":
+        raise HTTPException(422, "native context requires expert mode")
+    requested = envelope.requested_agent_id
+    if requested is None:
+        detail = "native context requires an explicit agent"
+    elif requested != tool_name:
+        detail = "native context agent does not match URL slug"
+    elif tool_name not in envelope.allowed_agent_ids:
+        detail = "native context agent is not allowed"
+    else:
+        return tool_name
+    raise HTTPException(422, detail)
+
+
+async def _execute_context_native(
+    *,
+    agent: str,
+    payload: AgentRunRequest,
+    arguments: dict[str, Any],
+    dependencies: AgentRouteDependencies,
+) -> JSONResponse:
+    """Execute one URL-pinned native agent through the V1 lifecycle."""
+    envelope = payload.conversation
+    assert envelope is not None
+    tool_name = _native_context_tool(agent, envelope, dependencies)
+    context_request = ContextAgentRequest(
+        dialogue_id=payload.dialogue_id,
+        request_json=payload.model_dump_json(),
+        debug=dependencies.chat.projection.resolve_debug(payload.debug),
+        obs_file_list=None,
+    )
+
+    async def invoke(
+        selected_agent_id: str,
+        _envelope: ConversationEnvelopeV1,
+        dispatch: ContextAgentInvocation,
+    ) -> AgentOutcome:
+        if selected_agent_id != tool_name:
+            raise ValueError("native context selected a non-URL agent")
+        return await _invoke_context_agent(
+            selected_agent_id=selected_agent_id,
+            dispatch=dispatch,
+            request=context_request,
+            dependencies=dependencies,
+        )
+
+    async def delegate_async(
+        selected_agent_id: str,
+        _envelope: ConversationEnvelopeV1,
+        selected_arguments: dict[str, Any],
+    ) -> AsyncAgentAcceptance:
+        if selected_agent_id != tool_name:
+            raise ValueError("native context selected a non-URL agent")
+        body, status_code = await dependencies.native.invoke_agent_run(
+            agent=agent,
+            arguments=selected_arguments,
+            dialogue_id=payload.dialogue_id,
+            request_json=context_request.request_json,
+            debug=context_request.debug,
+        )
+        return AsyncAgentAcceptance(body, status_code)
+
+    try:
+        prepared = await dependencies.context.executor.execute(
+            envelope=envelope,
+            invoke=invoke,
+            delegate_async=delegate_async,
+            selected_arguments=arguments,
+        )
+    except (ToolSelectionError, ValueError) as exc:
+        raise HTTPException(502, "invalid native context agent") from exc
+    return _context_response(prepared, envelope)
 
 
 async def _execute_context_expert(
@@ -795,7 +888,28 @@ async def _invoke_context_expert_agent(
     payload: ExpertQueryRequest,
     dependencies: AgentRouteDependencies,
 ) -> AgentOutcome:
-    """Invoke one selected Expert agent and shape its context outcome."""
+    """Invoke one selected Expert agent through the shared context seam."""
+    return await _invoke_context_agent(
+        selected_agent_id=selected_agent_id,
+        dispatch=dispatch,
+        request=ContextAgentRequest(
+            dialogue_id=payload.dialogue_id,
+            request_json=payload.model_dump_json(),
+            debug=dependencies.chat.projection.resolve_debug(None),
+            obs_file_list=payload.obs_file_list,
+        ),
+        dependencies=dependencies,
+    )
+
+
+async def _invoke_context_agent(
+    *,
+    selected_agent_id: str,
+    dispatch: ContextAgentInvocation,
+    request: ContextAgentRequest,
+    dependencies: AgentRouteDependencies,
+) -> AgentOutcome:
+    """Invoke one selected agent and shape its context outcome."""
     slug = _slug_for_tool(selected_agent_id, dependencies)
     clarification = _context_clarification_outcome(
         selected_agent_id, slug, dispatch
@@ -803,8 +917,10 @@ async def _invoke_context_expert_agent(
     if clarification is not None:
         return clarification
     arguments = dict(dispatch.arguments)
-    if dependencies.chat.input.tool_accepts_obs(selected_agent_id):
-        arguments["obs_file_list"] = list(payload.obs_file_list)
+    if request.obs_file_list is not None and (
+        dependencies.chat.input.tool_accepts_obs(selected_agent_id)
+    ):
+        arguments["obs_file_list"] = list(request.obs_file_list)
     private_agent_state = dict(dispatch.private_agent_state)
     adapter = _context_adapter(selected_agent_id, private_agent_state)
     body, status_code = await dependencies.native.invoke_agent_run(
@@ -815,9 +931,9 @@ async def _invoke_context_expert_agent(
             selected_agent_id, dispatch, adapter
         ),
         private_agent_state=private_agent_state or None,
-        dialogue_id=payload.dialogue_id,
-        request_json=payload.model_dump_json(),
-        debug=dependencies.chat.projection.resolve_debug(None),
+        dialogue_id=request.dialogue_id,
+        request_json=request.request_json,
+        debug=request.debug,
     )
     if status_code != 200 or body.get("status") != "succeeded":
         return AgentOutcome(result=body, status="running")
