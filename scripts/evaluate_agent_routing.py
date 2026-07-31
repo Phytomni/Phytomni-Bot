@@ -274,16 +274,22 @@ def _execute(inputs: _RunInputs) -> int:
         partial_paths[:] = list(paths)
 
     try:
+        # Only forward a selector when one was actually injected. Passing
+        # selector=None would override run_evaluation's own
+        # ``selector=select_agent_tool`` default and route every case into
+        # ``await None(...)``. Omitting the kwarg keeps the runner default
+        # authoritative for the production path.
+        evaluator_kwargs: dict[str, Any] = {
+            "options": RunnerOptions(
+                repeat_count=inputs.options.repeat_count,
+                concurrency=inputs.options.concurrency,
+            ),
+            "partial_sink": write_partial,
+        }
+        if inputs.selector is not None:
+            evaluator_kwargs["selector"] = inputs.selector
         outcomes = asyncio.run(
-            inputs.evaluator(
-                inputs.cases,
-                selector=inputs.selector,
-                options=RunnerOptions(
-                    repeat_count=inputs.options.repeat_count,
-                    concurrency=inputs.options.concurrency,
-                ),
-                partial_sink=write_partial,
-            )
+            inputs.evaluator(inputs.cases, **evaluator_kwargs)
         )
     except asyncio.CancelledError:
         if not partial_paths:

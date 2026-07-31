@@ -260,3 +260,71 @@ def test_invalid_configuration_returns_two_without_secret_output(
         == "Evaluation configuration or dataset validation failed."
     )
     assert "secret.invalid" not in captured.err
+
+
+def test_run_cli_without_selector_does_not_forward_none(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """No injected selector: the evaluator keeps its own default.
+
+    Regression: forwarding ``selector=None`` overrode ``run_evaluation``'s
+    ``selector=select_agent_tool`` default and routed every case into
+    ``await None(...)`` (TypeError, swallowed as incomplete exit 3).
+    """
+    _patch_cases(monkeypatch)
+    seen: dict[str, Any] = {}
+
+    async def evaluator(
+        cases: tuple[AgentRoutingCase, ...], **kwargs: Any
+    ) -> tuple[RunOutcome, ...]:
+        seen.update(kwargs)
+        seen["selector_passed"] = "selector" in kwargs
+        return (_outcome(cases[0], 1),)
+
+    result = cli.run_cli(
+        ["--mode", "quick", "--output-dir", str(tmp_path)],
+        git_state=GitState(branch="release", head="f" * 40, dirty=False),
+        config_loader=_config,
+        evaluator=evaluator,
+    )
+
+    assert result == 0
+    # The kwarg is omitted entirely, so the runner default stays authoritative.
+    assert seen["selector_passed"] is False
+
+
+def test_run_cli_forwards_injected_selector(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An explicitly injected selector is forwarded unchanged."""
+    _patch_cases(monkeypatch)
+    seen: dict[str, Any] = {}
+
+    async def sentinel_selector(
+        user_query: str,
+        history: Any = (),
+        *,
+        allowed_tools: Any = None,
+        forced_tool: Any = None,
+    ) -> None:
+        del user_query, history, allowed_tools, forced_tool
+        return None
+
+    async def evaluator(
+        cases: tuple[AgentRoutingCase, ...], **kwargs: Any
+    ) -> tuple[RunOutcome, ...]:
+        seen.update(kwargs)
+        return (_outcome(cases[0], 1),)
+
+    result = cli.run_cli(
+        ["--mode", "quick", "--output-dir", str(tmp_path)],
+        git_state=GitState(branch="release", head="a" * 40, dirty=False),
+        config_loader=_config,
+        selector=sentinel_selector,
+        evaluator=evaluator,
+    )
+
+    assert result == 0
+    assert seen.get("selector") is sentinel_selector
