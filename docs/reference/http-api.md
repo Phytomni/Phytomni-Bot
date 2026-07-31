@@ -449,18 +449,18 @@ descriptor is:
 
 The current attachment matrix is:
 
-| Agent slug | Document context | CSV datasets | Expert forwarding |
+| Agent slug    | Document context | CSV datasets | Expert forwarding |
 | ------------- | ---------------- | ------------ | ----------------- |
-| `chat` | `obs_file_list` | no | yes |
-| `knowledge` | `obs_file_list` | no | yes |
-| `data` | no | no | no |
-| `review` | `obs_file_list` | no | yes |
-| `brief_gene` | no | no | no |
-| `analyst` | `obs_file_list` | `data_list` | no |
-| `deep_genome` | no | no | no |
-| `research` | `obs_file_list` | `data_list` | no |
-| `design` | no | no | no |
-| `network` | no | no | no |
+| `chat`        | `obs_file_list`  | no           | yes               |
+| `knowledge`   | `obs_file_list`  | no           | yes               |
+| `data`        | no               | no           | no                |
+| `review`      | `obs_file_list`  | no           | yes               |
+| `brief_gene`  | no               | no           | no                |
+| `analyst`     | `obs_file_list`  | `data_list`  | no                |
+| `deep_genome` | no               | no           | no                |
+| `research`    | `obs_file_list`  | `data_list`  | no                |
+| `design`      | no               | no           | no                |
+| `network`     | no               | no           | no                |
 
 `agent_context` uploads use the document channel. `dataset` uploads use the
 CSV channel, require UTF-8 or UTF-8-BOM comma-delimited CSV, and require a
@@ -944,20 +944,20 @@ Bot Ready versus external acceptance boundary, see the [Bot contract
 acceptance runbook](../ops/bot-contract-acceptance-runbook.md). Synthetic
 HTTP goldens do not close Web, Go, staging, or production acceptance.
 
-| Condition | HTTP | Detail |
+| Condition                    | HTTP  | Detail                             |
 | ---------------------------- | ----- | ---------------------------------- |
-| `A2UI_ENABLED` off | `403` | `forbidden`, `a2ui disabled` |
-| Unknown or foreign run | `404` | `run not found: <run_id>` |
-| Path/body `run_id` mismatch | `400` | `run_id mismatch` |
-| Invalid widget payload | `400` | e.g. missing `accepted` on confirm |
-| Run not `input_required` | `409` | `run is not awaiting input` |
-| No open surface on run | `409` | `no open a2ui surface` |
-| `surface_id` ≠ draft | `409` | `surface_id mismatch` |
-| Missing LangGraph checkpoint | `409` | `checkpoint_not_available` |
-| Second POST after success | `409` | `a2ui_action_conflict` |
-| Body above 65,536 bytes | `413` | `a2ui request body too large` |
-| Response above 1 MiB | `413` | `a2ui response body too large` |
-| Malformed or over-shape body | `400` | `invalid a2ui action envelope` |
+| `A2UI_ENABLED` off           | `403` | `forbidden`, `a2ui disabled`       |
+| Unknown or foreign run       | `404` | `run not found: <run_id>`          |
+| Path/body `run_id` mismatch  | `400` | `run_id mismatch`                  |
+| Invalid widget payload       | `400` | e.g. missing `accepted` on confirm |
+| Run not `input_required`     | `409` | `run is not awaiting input`        |
+| No open surface on run       | `409` | `no open a2ui surface`             |
+| `surface_id` ≠ draft         | `409` | `surface_id mismatch`              |
+| Missing LangGraph checkpoint | `409` | `checkpoint_not_available`         |
+| Second POST after success    | `409` | `a2ui_action_conflict`             |
+| Body above 65,536 bytes      | `413` | `a2ui request body too large`      |
+| Response above 1 MiB         | `413` | `a2ui response body too large`     |
+| Malformed or over-shape body | `400` | `invalid a2ui action envelope`     |
 
 On success the run settles `succeeded` and the response carries the
 normal `agent.run` envelope with `result.formatted.answer` (the real
@@ -1165,12 +1165,12 @@ mapped to the unified error envelope.
 
 **Per-service upstream credential injected:**
 
-| Service | Injected upstream credential |
+| Service                   | Injected upstream credential                     |
 | ------------------------- | ------------------------------------------------ |
-| `llm` / `coder` / `embed` | `Authorization: Bearer <operator key>` |
-| `database` / `analysis` | IAM `X-Auth-Token` (minted via `get_token`) |
-| `bi` | none — server-side GaussDB termination |
-| `retrieve` / `rerank` | none (the upstream is currently unauthenticated) |
+| `llm` / `coder` / `embed` | `Authorization: Bearer <operator key>`           |
+| `database` / `analysis`   | IAM `X-Auth-Token` (minted via `get_token`)      |
+| `bi`                      | none — server-side GaussDB termination           |
+| `retrieve` / `rerank`     | none (the upstream is currently unauthenticated) |
 
 **Request and response handling.** The request body is read under a
 streaming byte budget (`RELAY_REQUEST_MAX_BYTES`; over-limit returns

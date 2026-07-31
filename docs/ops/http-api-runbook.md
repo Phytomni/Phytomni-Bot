@@ -1406,16 +1406,16 @@ raw logs into a ticket intended for a customer.
 The producer manifest is `.phytomni-artifacts.json` and must use version `1.0`
 with relative POSIX paths. The exact role set is:
 
-| Role | Report context | Operator meaning |
+| Role                | Report context | Operator meaning                 |
 | ------------------- | -------------- | -------------------------------- |
-| `scientific_report` | eligible | Report prose. |
-| `scientific_table` | eligible | Scientific table. |
-| `scientific_text` | eligible | Scientific notes or text. |
-| `scientific_figure` | excluded | Downloadable figure only. |
-| `input` | excluded | Input material. |
-| `execution_log` | excluded | Operational log. |
-| `diagnostic` | excluded | Diagnostic or manifest metadata. |
-| `unknown` | excluded | Unproven producer meaning. |
+| `scientific_report` | eligible       | Report prose.                    |
+| `scientific_table`  | eligible       | Scientific table.                |
+| `scientific_text`   | eligible       | Scientific notes or text.        |
+| `scientific_figure` | excluded       | Downloadable figure only.        |
+| `input`             | excluded       | Input material.                  |
+| `execution_log`     | excluded       | Operational log.                 |
+| `diagnostic`        | excluded       | Diagnostic or manifest metadata. |
+| `unknown`           | excluded       | Unproven producer meaning.       |
 
 Admission is fail-closed: missing or invalid manifests and undeclared objects
 become `unknown`, while the manifest itself is `diagnostic`. The report reader
