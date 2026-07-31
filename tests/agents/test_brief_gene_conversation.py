@@ -29,6 +29,9 @@ from mcp_server_phytomni.mcp.app import invoke_tool_raw
 from mcp_server_phytomni.mcp.formatting.cited import (
     format_cited_message_result,
 )
+from mcp_server_phytomni.mcp.schemas import (
+    BriefGeneAgent as BriefGeneAgentSchema,
+)
 from mcp_server_phytomni.runtime.conversation_context.adapters import (
     brief_gene_agent_invocation,
 )
@@ -750,7 +753,7 @@ def test_brief_gene_stream_seed_uses_shared_initial_state(
     monkeypatch.setattr(
         brief_gene_agent, "get_cached_agent", fake_get_cached_agent
     )
-    args = SimpleNamespace(user_query="Os01g0177400", locale="en-US")
+    args = BriefGeneAgentSchema(user_query="Os01g0177400", locale="en-US")
 
     app, state = brief_gene_agent.brief_gene_stream_seed(args)
 
