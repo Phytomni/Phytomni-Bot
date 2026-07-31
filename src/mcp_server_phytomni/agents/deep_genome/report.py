@@ -84,7 +84,10 @@ async def _write_async(path: Path, text: str) -> None:
 
     threading.Thread(target=_run, daemon=True).start()
     while not finished.is_set():
-        await asyncio.sleep(0)
+        try:
+            await asyncio.wait_for(finished.wait(), timeout=0.01)
+        except TimeoutError:
+            continue
     if failures:
         raise failures[0]
 
