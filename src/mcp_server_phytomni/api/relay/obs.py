@@ -59,6 +59,15 @@ _OBS_OP_EXECUTOR = ThreadPoolExecutor(
 _SHARED_FP_RE = re.compile(
     rf"^{re.escape(AGENT_DATA_ROOT)}/shared/[0-9a-f]{{64}}/"
 )
+_GENE_EXAMPLE_LIST_PREFIX = "gene-examples/md/"
+_GENE_ID_PATTERN = r"(?:AT|GLYMA|Os|Traes|Zm)[A-Za-z0-9.-]*"
+_GENE_EXAMPLE_MD_RE = re.compile(
+    rf"^gene-examples/md/(?P<gene>{_GENE_ID_PATTERN})_result[.]md$"
+)
+_GENE_EXAMPLE_IMAGE_RE = re.compile(
+    rf"^gene-examples/img/(?P<gene>{_GENE_ID_PATTERN})/"
+    rf"(?P=gene)_[A-Za-z0-9._-]+[.]png$"
+)
 
 
 def _require_query(request: Request, key: str) -> str:
@@ -136,49 +145,73 @@ def _record_obs_audit(
         _LOGGER.exception("relay obs audit write failed")
 
 
-def _require_output_prefix(
-    bucket: str, prefix: str, principal: ApiPrincipal
-) -> str:
-    """Return a normalized list prefix confined to the caller's output root.
-
-    The list relay is bound to the caller key's own output namespace
-    (``USER_DATA_ROOT/<user_id>``) so a customer key cannot enumerate
-    another tenant's output dirs in the shared operator bucket, let alone
-    arbitrary bucket prefixes; anything else is a 403.
-
-    A content-addressed shared path (``AGENT_DATA_ROOT/shared/<64-hex>/``)
-    is also permitted on a possession-of-fingerprint basis: the path must
-    carry a full sha256 fingerprint segment — the bare shared root is
-    rejected so a caller cannot enumerate it — and the fingerprint is
-    unguessable, so a caller that knows it already proved possession of the
-    inputs that produced it.
-    """
+def _normalized_obs_key(bucket: str, value: str, *, kind: str) -> str:
+    """Normalize an OBS path and map bucket escapes to a client error."""
     try:
-        normalized = normalize_obs_object_key(prefix, bucket)
+        return normalize_obs_object_key(value, bucket)
     except ObsPathError as exc:
         raise HTTPException(
-            status_code=400, detail="obs prefix outside bucket"
+            status_code=400,
+            detail=f"obs {kind} outside bucket",
         ) from exc
-    user_prefix = f"{USER_DATA_ROOT}/{principal.user_id}/"
-    if not (
-        normalized.startswith(user_prefix) or _SHARED_FP_RE.match(normalized)
+
+
+def _is_gene_example_object(key: str) -> bool:
+    """Return whether a key matches the curated gene object grammar."""
+    return bool(
+        _GENE_EXAMPLE_MD_RE.fullmatch(key)
+        or _GENE_EXAMPLE_IMAGE_RE.fullmatch(key)
+    )
+
+
+def _require_read_object(
+    bucket: str, path: str, principal: ApiPrincipal
+) -> str:
+    """Return a normalized object key allowed for authenticated reads."""
+    normalized = _normalized_obs_key(bucket, path, kind="path")
+    tenant_prefixes = (
+        f"{USER_DATA_ROOT}/{principal.user_id}/",
+        f"{AGENT_DATA_ROOT}/uploads/{principal.user_id}/",
+    )
+    if (
+        normalized.startswith(tenant_prefixes)
+        or _SHARED_FP_RE.match(normalized)
+        or _is_gene_example_object(normalized)
     ):
-        raise HTTPException(
-            status_code=403,
-            detail="list prefix outside the tenant output root",
-        )
-    return normalized
+        return normalized
+    raise HTTPException(
+        status_code=403,
+        detail="obs path outside tenant namespace",
+    )
+
+
+def _require_list_prefix(
+    bucket: str, prefix: str, principal: ApiPrincipal
+) -> str:
+    """Return a normalized prefix allowed for authenticated listing."""
+    normalized = _normalized_obs_key(bucket, prefix, kind="prefix")
+    own_output = f"{USER_DATA_ROOT}/{principal.user_id}/"
+    if (
+        normalized.startswith(own_output)
+        or _SHARED_FP_RE.match(normalized)
+        or normalized == _GENE_EXAMPLE_LIST_PREFIX
+    ):
+        return normalized
+    raise HTTPException(
+        status_code=403,
+        detail="list prefix outside readable namespace",
+    )
 
 
 def _require_tenant_prefix(
     bucket: str, path: str, principal: ApiPrincipal
 ) -> str:
-    """Return a normalized object key confined to the caller's namespace.
+    """Return a normalized mutation key confined to the caller's namespace.
 
-    Object read / write / dir relay is bound to the caller key's own
-    tenant namespace under the two real roots (``user_data`` outputs and
-    ``uploads``). Even inside the shared operator bucket a key cannot
-    reach another tenant's objects; anything else is a 403.
+    Object write / dir relay is bound to the caller key's own tenant namespace
+    under the two real roots (``user_data`` outputs and ``uploads``). Even
+    inside the shared operator bucket a key cannot reach another tenant's
+    objects; anything else is a 403.
 
     A content-addressed shared path (``AGENT_DATA_ROOT/shared/<64-hex>/``)
     is also permitted on a possession-of-fingerprint basis: the path must
@@ -239,7 +272,7 @@ async def _get_object(
     """Stream the client-supplied (validated) object key under a budget."""
     started, config, server = _begin()
     path = _require_query(request, "path")
-    safe_key = _require_tenant_prefix(server.BUCKET_NAME, path, principal)
+    safe_key = _require_read_object(server.BUCKET_NAME, path, principal)
     size = await _run_obs_op(
         obs_relay_ops.object_size,
         server.BUCKET_NAME,
@@ -299,9 +332,9 @@ async def _list_objects(
     request: Request,
     principal: ApiPrincipal = Depends(require_relay_access(_OBS_SERVICE)),
 ) -> Response:
-    """List object keys under an output-root-confined prefix."""
+    """List object keys under a read-authorized prefix."""
     started, config, server = _begin()
-    prefix = _require_output_prefix(
+    prefix = _require_list_prefix(
         server.BUCKET_NAME, _require_query(request, "prefix"), principal
     )
     keys = await _run_obs_op(

@@ -50,6 +50,8 @@ def _redirect_relay_audit(
 
 
 _OUTPUT_PREFIX = "agent_data/user_data/customer/runs/d/run_x/task/output/"
+_GENE_MD = "gene-examples/md/AT1G01010_result.md"
+_GENE_IMAGE = "gene-examples/img/AT1G01010/AT1G01010_network.png"
 
 
 async def test_obs_put_object_writes_and_returns_path(
@@ -117,6 +119,195 @@ async def test_obs_get_object_rejects_over_budget(
 
     assert response.status_code == 413
     assert not streamed.called
+
+
+@pytest.mark.parametrize("path", [_GENE_MD, _GENE_IMAGE])
+async def test_obs_get_allows_curated_gene_example_object(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+) -> None:
+    """Authenticated relay keys can read canonical curated gene objects."""
+    size = Mock(return_value=4)
+    chunks = Mock(return_value=iter([b"GENE"]))
+    monkeypatch.setattr(ops_module, "object_size", size)
+    monkeypatch.setattr(ops_module, "iter_object_chunks", chunks)
+
+    response = await client.get(
+        f"/v1/relay/obs/object?path={path}",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"GENE"
+    assert size.call_args.args[1] == path
+
+
+async def test_obs_list_allows_only_gene_markdown_root(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The exact curated Markdown root is listable."""
+    listing = Mock(return_value=[_GENE_MD])
+    monkeypatch.setattr(ops_module, "list_object_keys", listing)
+
+    response = await client.get(
+        "/v1/relay/obs/list?prefix=gene-examples/md/",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"keys": [_GENE_MD]}
+    assert listing.call_args.args[1] == "gene-examples/md/"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "gene-examples/",
+        "gene-examples/md/",
+        "gene-examples/md/at1g01010_result.md",
+        "gene-examples/md/AT1G01010.md",
+        "gene-examples/md/nested/AT1G01010_result.md",
+        "gene-examples/img/",
+        "gene-examples/img/AT1G01010/",
+        "gene-examples/img/AT1G01010/Os01g01010_network.png",
+        "gene-examples/img/AT1G01010/AT1G01010_network.jpg",
+        "gene-examples/img/AT1G01010/nested/AT1G01010_network.png",
+    ],
+)
+async def test_obs_get_rejects_noncanonical_gene_example_path(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+    path: str,
+) -> None:
+    """Noncanonical catalog paths are rejected before any OBS read."""
+    size = Mock(return_value=4)
+    monkeypatch.setattr(ops_module, "object_size", size)
+
+    response = await client.get(
+        f"/v1/relay/obs/object?path={path}",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+    )
+
+    assert response.status_code == 403
+    assert not size.called
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "gene-examples/",
+        "gene-examples/img/",
+        "gene-examples/img/AT1G01010/",
+        "gene-examples/md/AT1G01010",
+    ],
+)
+async def test_obs_list_rejects_broad_gene_example_prefix(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+    prefix: str,
+) -> None:
+    """Catalog enumeration is limited to the exact Markdown root."""
+    listing = Mock(return_value=[])
+    monkeypatch.setattr(ops_module, "list_object_keys", listing)
+
+    response = await client.get(
+        f"/v1/relay/obs/list?prefix={prefix}",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+    )
+
+    assert response.status_code == 403
+    assert not listing.called
+
+
+@pytest.mark.parametrize(
+    ("route", "path"),
+    [
+        ("/v1/relay/obs/object", _GENE_MD),
+        ("/v1/relay/obs/object", _GENE_IMAGE),
+        ("/v1/relay/obs/dir", _GENE_MD),
+        ("/v1/relay/obs/dir", _GENE_IMAGE),
+    ],
+)
+async def test_obs_mutation_rejects_gene_example_path(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+    route: str,
+    path: str,
+) -> None:
+    """Curated catalog objects cannot be mutated through either PUT route."""
+    put_object = Mock(return_value=_GENE_MD)
+    put_dir = Mock(return_value=_GENE_MD)
+    monkeypatch.setattr(ops_module, "put_object_bytes", put_object)
+    monkeypatch.setattr(ops_module, "put_dir_marker", put_dir)
+
+    response = await client.put(
+        f"{route}?path={path}",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+        content=b"forbidden",
+    )
+
+    assert response.status_code == 403
+    assert not put_object.called
+    assert not put_dir.called
+
+
+@pytest.mark.parametrize(
+    ("request_path", "expected_key"),
+    [
+        (
+            "gene-examples/md/AT1G01010_result.md",
+            "gene-examples/md/AT1G01010_result.md",
+        ),
+        (
+            "gene-examples/md/GLYMA01G000100_result.md",
+            "gene-examples/md/GLYMA01G000100_result.md",
+        ),
+        (
+            "gene-examples/md/Os01g01010_result.md",
+            "gene-examples/md/Os01g01010_result.md",
+        ),
+        (
+            "gene-examples/md/TraesCS1A02G000100_result.md",
+            "gene-examples/md/TraesCS1A02G000100_result.md",
+        ),
+        (
+            "gene-examples/md/Zm00001eb000010_result.md",
+            "gene-examples/md/Zm00001eb000010_result.md",
+        ),
+        (
+            "/obs/phytomni/gene-examples/md/AT1G01010_result.md",
+            "gene-examples/md/AT1G01010_result.md",
+        ),
+    ],
+)
+async def test_obs_gene_example_read_accepts_approved_species_prefix(
+    client: httpx.AsyncClient,
+    relay_key: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+    request_path: str,
+    expected_key: str,
+) -> None:
+    """Approved species identifiers normalize to bucket-relative keys."""
+    size = Mock(return_value=4)
+    monkeypatch.setattr(ops_module, "object_size", size)
+    monkeypatch.setattr(
+        ops_module, "iter_object_chunks", Mock(return_value=iter([b"GENE"]))
+    )
+
+    response = await client.get(
+        f"/v1/relay/obs/object?path={request_path}",
+        headers={"Authorization": f"Bearer {relay_key('obs')}"},
+    )
+
+    assert response.status_code == 200
+    assert size.call_args.args[1] == expected_key
 
 
 async def test_obs_get_object_rejects_cross_tenant_output_dir(

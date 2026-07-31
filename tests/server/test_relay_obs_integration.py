@@ -35,6 +35,8 @@ _REAL_REQUEST = httpx.AsyncClient.request
 
 _OWNER_KEY = "agent_data/user_data/customer/runs/x/out.txt"
 _OWNER_PREFIX = "agent_data/user_data/customer/runs/x/"
+_GENE_MD_KEY = "gene-examples/md/AT1G01010_result.md"
+_GENE_IMAGE_KEY = "gene-examples/img/AT1G01010/AT1G01010_network.png"
 
 
 @pytest.fixture(autouse=True)
@@ -132,4 +134,40 @@ async def test_obs_relay_rejects_foreign_tenant_end_to_end(
         await client.get_obs_object(
             "/obs/phytomni/agent_data/user_data/other/runs/x/r.cif",
             message="dl",
+        )
+
+
+async def test_gene_example_catalog_reads_end_to_end(
+    relay_app: FastAPI,
+    owner_key: str,
+    fake_obs_client: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Curated list and reads work through the child RelayClient boundary."""
+    fake_obs_client.objects[_GENE_MD_KEY] = b"# AT1G01010"
+    fake_obs_client.objects[_GENE_IMAGE_KEY] = b"PNG"
+    fake_obs_client.pages = [
+        SimpleNamespace(
+            contents=[SimpleNamespace(key=_GENE_MD_KEY)],
+            is_truncated=False,
+            next_marker=None,
+        )
+    ]
+    client = _relay_client(relay_app, owner_key, monkeypatch)
+
+    assert await client.get_obs_list(
+        "gene-examples/md/", message="gene-list"
+    ) == [_GENE_MD_KEY]
+    assert (
+        await client.get_obs_object(_GENE_MD_KEY, message="gene-md")
+        == b"# AT1G01010"
+    )
+    assert (
+        await client.get_obs_object(_GENE_IMAGE_KEY, message="gene-image")
+        == b"PNG"
+    )
+
+    with pytest.raises(McpError):
+        await client.put_obs_object(
+            _GENE_MD_KEY, b"forbidden", message="gene-write"
         )
