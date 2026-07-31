@@ -745,6 +745,12 @@ The OBS relay rows confine each object key to the caller's tenant namespace
 rejected to prevent enumeration), so a dedup-reuse caller can fetch a prior
 tenant's shared output without holding that tenant's namespace.
 
+The OBS relay also serves canonical curated gene-example Markdown/PNG objects
+through authenticated `GET /v1/relay/obs/object`. Listing is additionally
+allowed only for the exact `gene-examples/md/` prefix; the catalog root,
+image prefixes, per-gene prefixes, and every catalog mutation remain denied.
+The existing tenant and content-addressed shared rules remain unchanged.
+
 `DataAgent` is a synchronous native run: the HTTP layer returns its result
 inline with status `200`.
 
@@ -1116,12 +1122,47 @@ The credential-injecting relay (`/v1/relay/*`) is off unless
   disable takes effect on in-flight workers without a restart — this is
   the incident kill-switch. While disabled, every relay route returns
   `404`.
+
 - **Issue customer keys.** Mint a `ptm_...` key scoped to only the
   services the customer may reach:
   `phytomni-api-key create --user-id <customer> --scope relay:llm --scope relay:retrieve`.
   Use `--scope relay:*` for all relay services. Do **not** issue a
   scope-less key for relay use — scope-less keys are all-access on the
   agent routes but are denied (`403`) on relay routes by design.
+
+- **Curated gene-example reads.** The authenticated `relay:obs` catalog is
+  read-only and permits only canonical Markdown/PNG objects plus the exact
+  `gene-examples/md/` list prefix. Use the following probes with a
+  non-production key and a Bot-local endpoint:
+
+  ```bash
+  GENE_MD='gene-examples/md/AT1G01010_result.md'
+  GENE_IMG='gene-examples/img/AT1G01010/AT1G01010_network.png'
+
+  curl -fsS -G "$BOT_URL/v1/relay/obs/list" \
+    -H "Authorization: Bearer $BOT_RELAY_KEY" \
+    --data-urlencode 'prefix=gene-examples/md/'
+
+  curl -fsS -G "$BOT_URL/v1/relay/obs/object" \
+    -H "Authorization: Bearer $BOT_RELAY_KEY" \
+    --data-urlencode "path=$GENE_MD" >/tmp/gene-example.md
+
+  curl -fsS -G "$BOT_URL/v1/relay/obs/object" \
+    -H "Authorization: Bearer $BOT_RELAY_KEY" \
+    --data-urlencode "path=$GENE_IMG" >/tmp/gene-example.png
+
+  GENE_MD_QUERY='gene-examples%2Fmd%2FAT1G01010_result.md'
+  curl -sS -o /dev/null -w '%{http_code}\n' -X PUT \
+    "$BOT_URL/v1/relay/obs/object?path=$GENE_MD_QUERY" \
+    -H "Authorization: Bearer $BOT_RELAY_KEY" \
+    --data-binary 'forbidden'
+  ```
+
+  The final probe must return `403`. Do not run it with production
+  credentials during Bot-local acceptance. The contract does not claim Web
+  forwarding, catalog materialization, browser, staging, or production
+  acceptance.
+
 - **Per-service upstream auth.** `llm` / `coder` / `embed` inject the
   operator `Authorization: Bearer` key; `database` / `analysis` inject an
   IAM `X-Auth-Token`; `bi` is server-side-terminated (the operator runs
@@ -1131,6 +1172,7 @@ The credential-injecting relay (`/v1/relay/*`) is off unless
   / `.env.encrypted` the rest of the service uses (`API_KEY`,
   `CODER_API_KEY`, `EMBED_API_KEY`, and the IAM user credentials); no
   relay-specific secret exists.
+
 - **Query the audit.** Every relay call is recorded in the local audit
   store (`RELAY_AUDIT_DB_PATH`). Query it with the service token:
   `GET /v1/relay/audit?service=llm&user_id=<customer>` and
@@ -1142,20 +1184,24 @@ The credential-injecting relay (`/v1/relay/*`) is off unless
   sensitive: restrict file permissions, keep it on a local disk (SQLite WAL
   deadlocks on network filesystems), and purge any pre-existing raw-body rows
   before enabling the redaction policy in an existing deployment.
+
 - **Retention.** Audit rows are eligible for cleanup after
   `RELAY_AUDIT_RETENTION_DAYS` (default 90). Purge expired rows on a
   schedule by calling `RelayAuditStore.purge_expired(retention_days)`
   (wire it into a cron job alongside the existing task cleanup).
+
 - **Rate and concurrency.** Relay calls draw on a per-key budget
   (`RELAY_RATE_LIMIT_PER_MIN`, returns `429` + `Retry-After`) that is
   separate from the agent budget, and each key may hold at most
   `RELAY_MAX_CONCURRENT_PER_KEY` in-flight forwards (excess returns
   `503`). Both counters are per worker; raise the limits cautiously since
   relay calls spend the operator's metered upstream credentials.
+
 - **Multi-worker caveat.** The rate, concurrency, and audit-retention
   state are per worker. With N workers the effective per-key ceilings are
   ×N, so set the limits accordingly or front the relay with a single
   worker until a shared store is added.
+
 - **Live-task reconciliation is process-local.** The in-flight worker registry
   (`runtime/live_tasks.py`) that lets `GetTaskStatus` and
   `GET /v1/runs/{run_id}` tell a live umbrella from a dead one lives in one
@@ -1169,6 +1215,7 @@ The credential-injecting relay (`/v1/relay/*`) is off unless
   with no children; there is no durable queue, long-lived coordinator, or
   automatic recovery for it. DeepGenome has its separate specialized
   coordinator and restart behavior below.
+
 - **E12 checkpointer caveat.** ReviewAgent human-in-the-loop pause points
   live in the local SQLite `checkpoints.db` sibling of `server_tasks.db`.
   Run the API as one replica, or keep `/resume` and `/a2ui-actions`

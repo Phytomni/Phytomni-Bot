@@ -364,28 +364,30 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
   **Auth:** relay
   **Purpose:** OBS object download relay; streams a tenant-namespace-confined
   object (key re-validated to
-  `agent_data/{user_data,uploads}/<key user id>/`)
-  under a response-size budget, via operator OBS credentials.
+  `agent_data/{user_data,uploads}/<key user id>/`) or one canonical curated
+  gene-example Markdown/PNG object under a response-size budget, via operator
+  OBS credentials.
 
 - **Method:** `GET`
   **Path:** `/v1/relay/obs/list`
   **Auth:** relay
   **Purpose:** OBS object list relay; enumerates keys under the caller tenant's
-  output root (`agent_data/user_data/<key user id>/`) via operator
-  OBS
-  credentials.
+  output root (`agent_data/user_data/<key user id>/`) or exactly
+  `gene-examples/md/` via operator OBS credentials.
 
 - **Method:** `PUT`
   **Path:** `/v1/relay/obs/object`
   **Auth:** relay
   **Purpose:** OBS object upload relay; writes the request body at a
-  tenant-namespace-confined key via operator OBS credentials.
+  tenant-namespace-confined key via operator OBS credentials. Gene-example
+  catalog keys are rejected before any OBS write.
 
 - **Method:** `PUT`
   **Path:** `/v1/relay/obs/dir`
   **Auth:** relay
   **Purpose:** OBS dir-marker relay; creates a zero-byte directory marker at a
-  tenant-namespace-confined key via operator OBS credentials.
+  tenant-namespace-confined key via operator OBS credentials. Gene-example
+  catalog keys are rejected before any OBS write.
 
 - **Method:** `POST`
   **Path:** `/v1/relay/analysis/tasks`
@@ -1191,6 +1193,25 @@ service-token `GET /v1/relay/audit` routes.
 See *Relay Variables* in `docs/reference/configuration.md` for the knobs and the
 *Relay* section of `docs/ops/http-api-runbook.md` for operator
 procedures.
+
+### Curated gene-examples catalog
+
+The authenticated `relay:obs` catalog has a deliberately narrow owner-less
+read exception:
+
+- `GET /v1/relay/obs/object` permits only
+  `gene-examples/md/<GENE>_result.md` and
+  `gene-examples/img/<GENE>/<GENE>_<name>.png`, in addition to the existing
+  tenant and content-addressed shared namespaces.
+- `GET /v1/relay/obs/list` permits the exact `gene-examples/md/` prefix only.
+- `PUT /v1/relay/obs/object` and `PUT /v1/relay/obs/dir` reject every
+  `gene-examples` key before an OBS operation.
+
+`GENE` is case-sensitive and must begin with `AT`, `GLYMA`, `Os`, `Traes`, or
+`Zm`. `RELAY_ENABLED=1`, the `relay:obs` scope, the configured response cap,
+streaming cleanup, and metadata-only audit are required exactly as for other
+relay operations. See the [copyable contract](../contracts/gene-examples/README.md)
+for the producer and Web image-reference boundary.
 
 ## OpenAI-compatible Chat
 
