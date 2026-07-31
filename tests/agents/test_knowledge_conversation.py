@@ -12,13 +12,18 @@ from typing import Any, cast
 import pytest
 
 from mcp_server_phytomni.agents.knowledge import agent as knowledge_agent
-from mcp_server_phytomni.agents.knowledge import (
-    conversation as knowledge_conversation,
-)
 from mcp_server_phytomni.agents.knowledge.agent import KnowledgeAgent
 from mcp_server_phytomni.agents.knowledge.conversation import (
     KnowledgeClarificationError,
     KnowledgeConversationAdapter,
+    _answer_context_fragments,
+    _answer_text,
+    _bounded_text,
+    _candidate_tokens,
+    _explicit_topic,
+    _follow_up_questions,
+    _standalone_query,
+    _topic_entity_removals,
 )
 from mcp_server_phytomni.agents.knowledge.state import KnowledgeState
 from mcp_server_phytomni.config.defaults import KnowledgeConfig
@@ -274,10 +279,8 @@ def test_delta_replaces_prior_active_topic_after_explicit_switch() -> None:
 
 def test_knowledge_helpers_cover_bounded_and_raw_result_paths() -> None:
     """Exercise the bounded helper fallbacks and raw response shapes."""
-    assert knowledge_conversation._bounded_text(None) == ""
-    assert knowledge_conversation._candidate_tokens(
-        "OsDREB1 OsDREB1 evidence"
-    ) == ["OsDREB1"]
+    assert _bounded_text(None) == ""
+    assert _candidate_tokens("OsDREB1 OsDREB1 evidence") == ["OsDREB1"]
     projection = _projection(
         current_query="Which pathway is involved?",
         task_summary="The active drought-response task.",
@@ -290,16 +293,14 @@ def test_knowledge_helpers_cover_bounded_and_raw_result_paths() -> None:
         ],
         open_questions=["Which tissues respond?"],
     )
-    fragments = knowledge_conversation._answer_context_fragments(projection)
+    fragments = _answer_context_fragments(projection)
     assert "[task summary]" in fragments[0]
     assert "[open questions]" in fragments[-1]
-    assert knowledge_conversation._explicit_topic(
+    assert _explicit_topic(
         "Tell me about OsDREB1", candidates=["OsDREB1"]
     ) == ("OsDREB1", False)
     assert (
-        knowledge_conversation._standalone_query(
-            "How is it expressed?", "OsDREB1"
-        )
+        _standalone_query("How is it expressed?", "OsDREB1")
         == "How is it expressed about OsDREB1?"
     )
     raw_result = {
@@ -308,11 +309,9 @@ def test_knowledge_helpers_cover_bounded_and_raw_result_paths() -> None:
             "raw": {"choices": [{"message": {"content": "raw answer"}}]},
         }
     }
-    assert knowledge_conversation._answer_text(raw_result) == "raw answer"
+    assert _answer_text(raw_result) == "raw answer"
     assert (
-        knowledge_conversation._answer_text(
-            {"choices": [{"message": {"content": "top answer"}}]}
-        )
+        _answer_text({"choices": [{"message": {"content": "top answer"}}]})
         == "top answer"
     )
     follow_up_result = {
@@ -324,9 +323,7 @@ def test_knowledge_helpers_cover_bounded_and_raw_result_paths() -> None:
             }
         }
     }
-    assert knowledge_conversation._follow_up_questions(follow_up_result) == [
-        "Next?"
-    ]
+    assert _follow_up_questions(follow_up_result) == ["Next?"]
 
 
 def test_knowledge_topic_removals_skip_non_gene_and_same_topic() -> None:
@@ -351,7 +348,7 @@ def test_knowledge_topic_removals_skip_non_gene_and_same_topic() -> None:
             ),
         ],
     )
-    assert knowledge_conversation._topic_entity_removals(
+    assert _topic_entity_removals(
         projection, topic_label="OsNAC6", is_new_topic=True
     ) == ("knowledge:osdreb1",)
 

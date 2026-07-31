@@ -13,6 +13,10 @@ from uuid import UUID
 import pytest
 
 from mcp_server_phytomni.agents.brief_gene import agent as brief_gene_agent
+from mcp_server_phytomni.agents.brief_gene.agent import (
+    _build_brief_gene_runtime,
+    _run_brief_gene_conversation_report,
+)
 from mcp_server_phytomni.agents.brief_gene.conversation import (
     BriefGeneClarificationError,
     BriefGeneConversationAdapter,
@@ -662,12 +666,10 @@ async def test_brief_gene_follow_up_clarification_error_is_stable(
 @pytest.mark.asyncio
 async def test_brief_gene_report_without_resolver_query_clarifies() -> None:
     """Report execution refuses to run when no identifier was prepared."""
-    runtime = brief_gene_agent._build_brief_gene_runtime(None, {})
+    runtime = _build_brief_gene_runtime(None, {})
     adapter = BriefGeneConversationAdapter()
 
-    result = await brief_gene_agent._run_brief_gene_conversation_report(
-        adapter, runtime, None
-    )
+    result = await _run_brief_gene_conversation_report(adapter, runtime, None)
 
     assert result["choices"][0]["message"]["content"]
     assert adapter.settlement_ready is False
