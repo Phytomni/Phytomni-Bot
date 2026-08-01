@@ -63,7 +63,6 @@ class ApiConfig(ApiLimitsConfig):
             ),
         ),
     ] = None
-    API_UPLOAD_MAX_BYTES: int = 26_214_400
     API_UPLOAD_PREFIX: str = "agent_data/uploads"
     API_UPLOAD_V2_ORIGIN: str = Field(
         default="http://127.0.0.1:8080",

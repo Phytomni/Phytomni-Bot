@@ -16,12 +16,19 @@ from __future__ import annotations
 import logging
 import sqlite3
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import cached_property, partial
 from importlib import import_module
 from typing import Any
 
 from a2a.server.routes.jsonrpc_routes import create_jsonrpc_routes
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import (
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Request,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from google.protobuf import json_format
@@ -49,22 +56,24 @@ from ..runtime.memory import (
     memory_policy_from_config,
 )
 from ..runtime.run_registry import RunFilter, RunRequestInfo
-from ..runtime.stage_trace import (
-    current_stage_trace,
-    stage_failure_from_exception,
-)
+from ..runtime.stage_trace import current_stage_trace
 from . import run_lifecycle
 from .a2a.executor import A2AHandlerOptions, A2ARequestHandler
 from .admin_auth import require_service_principal
 from .app_support import _SAFE_DEFAULT_MESSAGES, _ErrorResponseOptions
-from .auth import ApiPrincipal, require_principal, scopes_satisfy
+from .auth import (
+    ApiPrincipal,
+    require_explicit_scope,
+    require_principal,
+)
+from .auth import (
+    require_scope as build_scope_dependency,
+)
 from .lifecycle_contract import (
     LifecycleInvariantError,
     SafeApiError,
-    SafeErrorCode,
     canonicalize_agent_run_body,
     canonicalize_run_record,
-    run_persistence_error,
 )
 from .openai_mapping import (
     MODEL_TO_TOOL,
@@ -86,71 +95,16 @@ from .schemas import (
     MemoryResponse,
     ResumeRequest,
 )
+from .stage_errors import (
+    safe_api_error_for_lifecycle as _safe_api_error_for_lifecycle,
+)
+from .upload_runtime import (
+    UploadRuntime,
+    install_upload_cors,
+    register_upload_error_handler,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def project_data_stage_error(exc: BaseException) -> SafeApiError | None:
-    """Project the first failed DataAgent stage into a safe API error."""
-    failure = stage_failure_from_exception(exc)
-    if failure is not None:
-        stage, error_code, final_http_status = failure
-        status_code = final_http_status or 500
-    else:
-        event = next(
-            (
-                candidate
-                for candidate in current_stage_trace()
-                if candidate.error_code is not None
-            ),
-            None,
-        )
-        if event is None:
-            return None
-        stage = event.stage
-        error_code = event.error_code or "internal_invariant_failed"
-        status_code = event.final_http_status or 500
-    message = {
-        400: "invalid request",
-        502: "upstream service failed",
-        503: "service unavailable",
-        504: "upstream service timed out",
-    }.get(status_code, "internal server error")
-    return SafeApiError(
-        status_code=status_code,
-        code=error_code,
-        message=message,
-        stage=stage,
-        retryable=status_code in {502, 503, 504},
-    )
-
-
-def _safe_api_error_for_lifecycle(
-    exc: LifecycleInvariantError,
-) -> SafeApiError:
-    """Map one internal lifecycle invariant failure to a safe HTTP error."""
-    if exc.code is SafeErrorCode.SUCCEEDED_WITHOUT_PERSISTENCE:
-        return run_persistence_error()
-    if exc.code is SafeErrorCode.INPUT_REQUIRED_WITHOUT_SURFACE:
-        return SafeApiError(
-            status_code=500,
-            code=exc.code.value,
-            message="input required response is invalid",
-            stage="projection",
-        )
-    if exc.code is SafeErrorCode.PROJECTION_FAILED:
-        return SafeApiError(
-            status_code=500,
-            code=exc.code.value,
-            message="result projection failed",
-            stage="projection",
-        )
-    return SafeApiError(
-        status_code=500,
-        code=exc.code.value,
-        message="agent run response violated lifecycle contract",
-        stage="lifecycle",
-    )
 
 
 def _app_module() -> Any:
@@ -178,11 +132,7 @@ class _RuntimeState:
     conversation_context_store: ConversationContextStore | None = None
     interop_registry: InteropRegistry | None = None
     interop_sensitive_config: SensitiveConfig | None = None
-    interop_caches: dict[str, DiscoveryCache] | None = None
-
-    def __post_init__(self) -> None:
-        if self.interop_caches is None:
-            self.interop_caches = {}
+    interop_caches: dict[str, DiscoveryCache] = field(default_factory=dict)
 
     def get_memory_store(self) -> MemoryStore:
         """Open the enabled local memory store on first use."""
@@ -213,6 +163,11 @@ class _RuntimeState:
             )
         return self.conversation_context_store
 
+    @cached_property
+    def upload_runtime(self) -> UploadRuntime:
+        """Build the process-local upload runtime on first access."""
+        return UploadRuntime(_api_config, _app_attr("_LOGGER"))
+
     async def authorized(
         self,
         principal: ApiPrincipal = Depends(require_principal),
@@ -227,23 +182,6 @@ class _RuntimeState:
                 headers={"Retry-After": str(retry_after)},
             )
         return principal
-
-    def require_scope(
-        self,
-        *needed: str,
-    ) -> Callable[..., Awaitable[ApiPrincipal]]:
-        """Build a dependency requiring the caller to hold ``needed``."""
-
-        async def _scoped(
-            caller: ApiPrincipal = Depends(self.authorized),
-        ) -> ApiPrincipal:
-            if not scopes_satisfy(caller.scopes, needed):
-                raise HTTPException(
-                    status_code=403, detail="insufficient scope"
-                )
-            return caller
-
-        return _scoped
 
 
 @dataclass(frozen=True)
@@ -550,6 +488,7 @@ def _build_base_app() -> FastAPI:
     app.add_middleware(
         _app_attr("request_context_middleware"),
     )
+    install_upload_cors(app, _api_config().API_UPLOAD_V2_ALLOWED_ORIGINS)
     return app
 
 
@@ -559,9 +498,13 @@ def _build_agent_dependencies(
     context_executor: ConversationContextExecutor,
 ) -> agent_routes.AgentRouteDependencies:
     """Assemble the typed dependency graph for primary agent routes."""
+
+    upload_runtime = runtime.upload_runtime
     return agent_routes.AgentRouteDependencies(
         auth=agent_routes.AgentAuthDependencies(
-            require_agents=runtime.require_scope("agents"),
+            require_agents=build_scope_dependency(
+                runtime.authorized, "agents"
+            ),
             schedule_run_gc=_app_attr("_schedule_run_gc"),
         ),
         catalog=agent_routes.AgentCatalogDependencies(
@@ -605,8 +548,15 @@ def _build_agent_dependencies(
             executor=context_executor,
         ),
         upload=agent_routes.AgentUploadDependencies(
-            handle_file_upload=_app_attr("handle_file_upload"),
-            error_response=_app_attr("_error_response"),
+            resumable_service=upload_runtime.get_upload_service(),
+            asset_resolver=upload_runtime.get_asset_resolver(),
+            require_upload_control=require_explicit_scope(
+                runtime.authorized, "files:delegate"
+            ),
+            schedule_cleanup=upload_runtime.schedule_cleanup,
+            serialize_file_upload_capability=(
+                upload_runtime.serialize_file_upload_capability
+            ),
         ),
     )
 
@@ -708,7 +658,7 @@ def _register_memory_and_admin_routes(
 ) -> None:
     """Register memory and service-admin routes behind their feature gates."""
     if _api_config().MEMORY_ENABLED:
-        memory_agents = runtime.require_scope("agents")
+        memory_agents = build_scope_dependency(runtime.authorized, "agents")
         memory_routes.register_memory_routes(
             app,
             memory_routes.MemoryRouteDependencies(
@@ -748,7 +698,9 @@ def _register_run_routes(
         app,
         run_routes.RunRouteDependencies(
             auth=run_routes.RunAuthDependencies(
-                require_agents=runtime.require_scope("agents")
+                require_agents=build_scope_dependency(
+                    runtime.authorized, "agents"
+                )
             ),
             context=run_routes.RunContextDependencies(
                 current_user=_app_attr("current_request_user"),
@@ -783,7 +735,9 @@ def _register_conversation_context_routes(
         app,
         conversation_context_routes.ContextRouteDependencies(
             enabled=getattr(adapters, "_conversation_context_enabled"),
-            require_agents=runtime.require_scope("agents"),
+            require_agents=build_scope_dependency(
+                runtime.authorized, "agents"
+            ),
             get_store=runtime.get_conversation_context_store,
             acknowledge_review_settlement=(
                 context_executor.acknowledge_review_settlement_for_turn
@@ -936,6 +890,8 @@ def _register_error_handlers(app: FastAPI) -> None:
             ),
         )
 
+    register_upload_error_handler(app, _app_attr("_error_response"))
+
 
 def _build_context_executor(
     runtime: _RuntimeState,
@@ -968,6 +924,7 @@ def build_app(
     """Build the complete FastAPI application from typed route seams."""
     app = _build_base_app()
     runtime = _RuntimeState(rate_limit=_app_attr("make_rate_limiter")())
+    scope = partial(build_scope_dependency, runtime.authorized)
     adapters = _RouteAdapters(runtime)
     context_executor = context_executor or _build_context_executor(runtime)
     agent_dependencies = _build_agent_dependencies(
@@ -976,7 +933,7 @@ def build_app(
         context_executor,
     )
 
-    _register_interop_route(app, runtime, runtime.require_scope)
+    _register_interop_route(app, runtime, scope)
     _register_health_routes(app)
     agent_routes.register_model_route(app, agent_dependencies)
     _register_memory_and_admin_routes(app, runtime, adapters)
@@ -985,7 +942,7 @@ def build_app(
         app, runtime, adapters, context_executor
     )
     _register_run_routes(app, runtime, adapters)
-    _register_a2a_routes(app, runtime.require_scope)
+    _register_a2a_routes(app, scope)
     app.include_router(_app_attr("create_relay_router")())
     _register_error_handlers(app)
     return app

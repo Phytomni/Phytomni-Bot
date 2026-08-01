@@ -324,8 +324,33 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
 
 - **Method:** `POST`
   **Path:** `/v1/files`
-  **Auth:** yes
-  **Operational use:** Per-user multipart upload (25 MiB ceiling).
+  **Auth:** `files:delegate` scope
+  **Operational use:** Create or replay a resumable asset.
+
+- **Method:** `POST`
+  **Path:** `/v1/files/{asset_id}/capability`
+  **Auth:** `files:delegate` scope
+  **Operational use:** Renew a browser capability for an owner assertion.
+
+- **Method:** `HEAD`
+  **Path:** `/v1/files/{asset_id}`
+  **Auth:** asset capability
+  **Operational use:** Inspect resumable state through headers.
+
+- **Method:** `PUT`
+  **Path:** `/v1/files/{asset_id}/parts/{part_number}`
+  **Auth:** asset capability
+  **Operational use:** Upload one bounded, checksummed part.
+
+- **Method:** `POST`
+  **Path:** `/v1/files/{asset_id}/complete`
+  **Auth:** asset capability
+  **Operational use:** Complete an asset from registered parts.
+
+- **Method:** `DELETE`
+  **Path:** `/v1/files/{asset_id}`
+  **Auth:** asset capability
+  **Operational use:** Abort an unfinished asset.
 
 - **Method:** `POST`
   **Path:** `/v1/api-keys`
@@ -990,51 +1015,52 @@ the candidate-A architecture every log already belongs to the single
 `web` user, and broadening to multi-tenant delegation would land
 alongside the candidate-B owner-key revival.
 
-`POST /v1/files` accepts one `multipart/form-data` upload through the
-standard `file` field with an optional `purpose` field. The
-`purpose` value MUST be one of `agent_context` (default) /
-`assistants` / `batch` / `dataset` / `fine-tune` / `vision` / `user_data`;
-any other value returns `422`. Stored under
-`agent_data/uploads/{user_id}/{request_id}/{file_id}/{safe_filename}`;
-the response carries the OpenAI-files compatible shape plus
-`obs_path` (the public `/obs/<bucket>/<key>` form) and a `path` alias
-so clients can replay it in any later `obs_file_list` argument.
+The resumable upload runbook has two auth planes. The control plane
+(`POST /v1/files` and `/capability`) requires an API key with the explicit
+`files:delegate` scope. The browser data plane uses only the opaque
+asset-scoped Bearer capability. Never put an OBS credential, bucket, object
+key, provider upload id, or raw token in a client log, capability descriptor,
+ticket, or support response.
 
-Default size ceiling is `API_UPLOAD_MAX_BYTES` (25 MiB). The route
-defends in two layers: a `Content-Length` pre-check rejects honest
-oversize requests before reading, and a chunked reader caps
-cumulative reads when `Content-Length` is absent or falsified
-(`Transfer-Encoding: chunked`), aborting at the first chunk that
-pushes past the limit so peak memory stays bounded near the ceiling.
-Both paths return `413`.
+Create an asset with JSON metadata:
 
-Filename sanitization is a deliberate **sanitize-and-accept** policy:
-path-traversal segments collapse to the basename
-(`../../etc/passwd` → `passwd`, response `201`) and unsafe stem
-characters rewrite to `-` (`my report (final).pdf` →
-`my-report-final.pdf`, response `201`). Only empty bodies and
-empty / `.` / `..` filenames return `400`.
+```json
+{
+  "owner_subject": "alice",
+  "filename": "report.pdf",
+  "content_type_hint": "application/pdf",
+  "size_bytes": 524288,
+  "purpose": "chat_attachment",
+  "idempotency_key": "web-upload-123"
+}
+```
 
-`purpose=dataset` is validated before storage as a nonempty UTF-8 or
-UTF-8-BOM comma-delimited CSV with unique nonblank headers and at least one
-data row. A `201` response means both the OBS object and the owner-scoped
-`user_uploads` metadata row were persisted. If the object write succeeds but
-metadata registration fails, the route returns `500 upload_metadata_failed`
-and does not advertise the path.
+The `201` result returns `asset_id`, `upload_url`, an opaque capability,
+part sizing/count, concurrency, and expiry timestamps. Upload each part with
+an exact `Content-Length` and `X-Phytomni-Part-SHA256`; the Bot bounds the
+temporary spool to one part. Complete only after all authoritative parts are
+registered. A completed asset is passed to an agent as
+`"attachments":[{"asset_id":"file_..."}]`; the resolver checks owner and
+completion before creating an internal legacy attachment projection.
+
+The default transfer ceiling is 10 GiB, with 128 MiB parts and four
+recommended parallel uploads. The old multipart body is intentionally not a
+second route and receives `422` request validation before storage. Expired
+sessions are cleaned by a rate-limited native-run hook; provider abort
+failures remain retryable on a later pass.
 
 ### Attachment Preflight And Orphan Review
 
-Native runs and Expert routing validate attachment paths before invoking the
-selected handler. A managed path below `API_UPLOAD_PREFIX` must have a
-matching `user_uploads` row owned by the authenticated user. The purpose,
-filename extension, byte size, and channel must match the public capability
-descriptor. Arbitrary managed-prefix paths and foreign-owner rows are
-rejected; do not infer ownership from an OBS key.
+Native runs and Expert routing validate asset ids before invoking the selected
+handler. A resumable asset must be completed and owned by the authenticated
+user before the resolver projects its internal `obs_file_list` reference.
+The purpose, filename extension, byte size, and channel must match the public
+capability descriptor. Arbitrary managed-prefix paths, incomplete assets, and
+foreign-owner rows are rejected; do not infer ownership from an OBS key.
 
 Use the following exact limits for registered uploads: 10 files per request,
 26,214,400 bytes per file, and 52,428,800 bytes in total. The limits are
-inclusive. Duplicate paths are rejected before budget checks, including a
-path repeated across `obs_file_list` and `data_list`. Dataset descriptions
+inclusive. Duplicate asset ids are rejected before budget checks. Dataset descriptions
 must be nonblank. Legacy preconfigured OBS paths in `data_list` are a
 separate Analyst/Research policy, are not upload-registry evidence, and are
 not automatically migrated.
@@ -1908,39 +1934,29 @@ The resolver adds one shared-cache LLM call per unique free-form query,
 so heavy unsupervised opt-in does add LLM cost; the `~90d` `phyto_chat`
 cache keeps the marginal cost near zero for repeated identical queries.
 
-### Upload Returned 413, 422, Or 400
+### Upload Returned 413, 401, 409, Or 422
 
-`POST /v1/files` enforces three guard rails. Triage by code:
+Triage the resumable protocol by stage:
 
-- `413` — the upload exceeds `API_UPLOAD_MAX_BYTES` (default 25 MiB).
-  Two layers fire: the route's `Content-Length` pre-check rejects
-  honest oversize requests before reading, and the chunked reader
-  (`read_with_byte_budget`, 64 KiB chunks) catches absent / falsified
-  `Content-Length` (chunked transfer encoding) by aborting the read
-  loop the moment cumulative bytes cross the ceiling. A sustained
-  413 stream indicates either a misconfigured client or a deliberate
-  ceiling bump request. Raise the env var and restart to widen.
-- `422` — the supplied `purpose` form field is outside the allowed
-  `Literal` enum (`agent_context` / `assistants` / `batch` / `dataset` /
-  `fine-tune` / `vision` / `user_data`). FastAPI's
-  `RequestValidationError` flows through the unified envelope.
-  Tell the client to send one of the six allowed values; do NOT
-  silently accept arbitrary purpose strings.
-- `400` — the upload body is empty, the `file` form field is
-  missing, or the supplied filename is empty / `.` / `..`. The
-  unified error envelope carries the rejection reason in
-  `error.message`. Filename sanitization itself never returns `400`;
-  traversal segments collapse to the basename silently and return
-  `201` with the sanitized name.
+- `401` — the data-plane Authorization header is missing, malformed, or the
+  capability is expired, asset-scoped differently, or missing the operation.
+  Renew through the control plane; never reuse a user API key as the part
+  capability.
+- `409` — the asset is not in an uploadable state, a part conflicts with an
+  already-recorded checksum/length, or completion is missing a part. Inspect
+  with `HEAD` using the same capability and reconcile the client part map.
+- `413` — the create size exceeds `API_UPLOAD_V2_MAX_BYTES`, or a part exceeds
+  `API_UPLOAD_V2_PART_SIZE_BYTES`. Change the configured v2 limit only with an
+  explicit capacity review and restart.
+- `422` — the old multipart form body was sent to `POST /v1/files`, metadata
+  violates the JSON schema, or the part number/checksum metadata is invalid.
+  Switch the client to the create, part, and complete sequence.
 
-Stored uploads live under
-`agent_data/uploads/{user_id}/{request_id}/{file_id}/{safe_filename}`
-in OBS. There is no automatic GC. An object left by a
-`upload_metadata_failed` response is not advertised and may have no
-`user_uploads` row; use [Attachment Preflight And Orphan
-Review](#attachment-preflight-and-orphan-review)
-to correlate request, object-store, and registry evidence before any
-operator-approved cleanup.
+If a session expires, the cleanup hook marks it expired and best-effort
+aborts the provider session. A provider abort failure is logged without
+credentials and remains eligible for a later cleanup retry. Do not delete
+SQLite rows or OBS objects manually until the asset id, owner, registry
+state, and provider outcome have been correlated.
 
 ### Startup Failure
 

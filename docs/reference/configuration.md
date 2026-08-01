@@ -293,17 +293,65 @@ single env var carries the full map.
   **Sensitive?:** yes
   **Purpose:** Backward-compatible service token alias.
 
-- **Variable:** `API_UPLOAD_MAX_BYTES`
-  **Default:** `26214400`
-  **Sensitive?:** no
-  **Purpose:** Per-file ceiling for `POST /v1/files`, in bytes (25 MiB);
-  oversize uploads return `413`.
-
 - **Variable:** `API_UPLOAD_PREFIX`
   **Default:** `agent_data/uploads`
   **Sensitive?:** no
-  **Purpose:** OBS object-key prefix below the bucket root for `POST /v1/files`
-  upload outputs.
+  **Purpose:** Managed OBS object-key prefix used by legacy attachment
+  validation and the internal `user_uploads` projection. It is not a
+  caller-controlled path and is not the resumable protocol's public
+  capability.
+
+- **Variable:** `API_UPLOAD_V2_ORIGIN`
+  **Default:** `http://127.0.0.1:8080`
+  **Sensitive?:** no
+  **Purpose:** Absolute HTTP(S) origin used to build the resumable upload
+  URL returned by `POST /v1/files`.
+
+- **Variable:** `API_UPLOAD_V2_BUCKET`
+  **Default:** `phytomni`
+  **Sensitive?:** no
+  **Purpose:** Bot-owned OBS bucket for resumable assets. The bucket name is
+  never returned in public upload responses.
+
+- **Variable:** `API_UPLOAD_V2_MAX_BYTES`
+  **Default:** `10737418240`
+  **Sensitive?:** no
+  **Purpose:** Maximum resumable asset size in bytes (10 GiB); rejected
+  creates return `413`.
+
+- **Variable:** `API_UPLOAD_V2_PART_SIZE_BYTES`
+  **Default:** `134217728`
+  **Sensitive?:** no
+  **Purpose:** Maximum part body and the default part size (128 MiB).
+
+- **Variable:** `API_UPLOAD_V2_MAX_PARALLEL_PARTS`
+  **Default:** `4`
+  **Sensitive?:** no
+  **Purpose:** Maximum client-recommended parallel part uploads.
+
+- **Variable:** `API_UPLOAD_V2_CAPABILITY_TTL_SECONDS`
+  **Default:** `900`
+  **Sensitive?:** no
+  **Purpose:** Lifetime of a browser data-plane capability, bounded to
+  60-900 seconds.
+
+- **Variable:** `API_UPLOAD_V2_SESSION_TTL_SECONDS`
+  **Default:** `604800`
+  **Sensitive?:** no
+  **Purpose:** Lifetime of an unfinished upload session, bounded to
+  1 hour-7 days.
+
+- **Variable:** `API_UPLOAD_V2_CLEANUP_INTERVAL_SECONDS`
+  **Default:** `300`
+  **Sensitive?:** no
+  **Purpose:** Minimum interval between best-effort expired-session cleanup
+  passes scheduled by native run requests.
+
+- **Variable:** `API_UPLOAD_V2_ALLOWED_ORIGINS`
+  **Default:** `[]`
+  **Sensitive?:** no
+  **Purpose:** Explicit browser origins allowed by the upload CORS policy;
+  wildcard origins are rejected.
 
 - **Variable:** `API_REQUEST_TIMEOUT`
   **Default:** `600.0`
@@ -441,10 +489,9 @@ single env var carries the full map.
 
 ### Attachment Invocation Limits
 
-`API_UPLOAD_MAX_BYTES` is the upload-stream ceiling and defaults to
-26,214,400 bytes (25 MiB). After a successful upload, native agent runs and
-Expert routing apply the immutable attachment contract below to registered
-user uploads:
+The resumable transfer ceiling is `API_UPLOAD_V2_MAX_BYTES` (10 GiB by
+default). Native agent runs and Expert routing apply a separate, deliberately
+bounded attachment contract after completion:
 
 | Limit                  | Value      | Applies to                             |
 | ---------------------- | ---------- | -------------------------------------- |
@@ -452,14 +499,13 @@ user uploads:
 | Maximum bytes per file | 26,214,400 | One registered document or CSV dataset |
 | Maximum total bytes    | 52,428,800 | All registered uploads in one request  |
 
-The limits are inclusive; the validator rejects only values above them.
-Duplicate paths are rejected before budget evaluation. The owner-scoped
-`user_uploads` registry is stored in the SQLite database selected by
-`API_TASKS_DB_PATH`; there is no separate registry path or environment
-override. `API_UPLOAD_PREFIX` is also the managed-path boundary: a path below
-that prefix without a matching owner row is rejected rather than treated as
-a legacy dataset. Legacy preconfigured `data_list` paths are a separate
-policy and are not user-upload metadata.
+The invocation limits are inclusive; the validator rejects only values above
+them. Duplicate asset ids are rejected before budget evaluation. The
+owner-scoped `user_uploads` projection is stored in the SQLite database
+selected by `API_TASKS_DB_PATH`; it is created only after a completed v2 asset
+is resolved for an agent. `API_UPLOAD_PREFIX` remains the managed-path
+boundary for legacy internal `obs_file_list` validation. Legacy preconfigured
+`data_list` paths are a separate policy and are not user-upload metadata.
 
 SQLite store defaults are relative to the service working directory. In
 systemd or container deployments, set absolute paths or pin the service

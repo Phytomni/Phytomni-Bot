@@ -136,13 +136,16 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
   }'
 ```
 
-Use `POST /v1/files` to obtain a trusted `obs_path`, then pass that path to a
-capable agent. `purpose=agent_context` accepts document context for Chat,
-Knowledge, Review, Analyst, and Research; `purpose=dataset` is a validated
-CSV channel for Analyst and Research and requires a nonblank `data_list`
-description. The invocation limits are 10 registered uploads, 26,214,400
-bytes per upload, and 52,428,800 bytes in total. Repeated paths, foreign
-owners, unregistered managed paths, unsupported channels, and metadata
+Use the resumable `POST /v1/files` control route to create an asset, upload
+parts with the returned capability, and complete it. Pass the completed
+`asset_id` in an HTTP agent request's `attachments` list; Bot resolves it
+owner-scoped before invoking the selected agent. `purpose=chat_attachment`
+accepts document context for Chat, Knowledge, Review, Analyst, and Research;
+dataset uploads remain a validated CSV channel for Analyst and Research and
+require a nonblank `data_list` description. The transfer limit is 10 GiB by
+default. Agent invocation remains bounded to 10 attachments, 26,214,400
+bytes per attachment, and 52,428,800 bytes in total. Repeated asset ids,
+foreign owners, incomplete assets, unsupported channels, and metadata
 mismatches fail closed. Existing preconfigured OBS paths in `data_list` are a
 separate legacy policy and are not user-upload registration evidence. See the
 [HTTP attachment
@@ -216,9 +219,11 @@ There is no autonomous `langmem` writer and no embedding or semantic index.
 For tools that include `obs_file_list`, pass an empty list (`[]`) when no
 document upload is needed. See [MCP Tool Reference](docs/reference/mcp-tools.md)
 for detailed argument semantics, async behavior, and demo payload links.
-To attach a document, upload it with `POST /v1/files` on the HTTP API,
-then put the returned `obs_path` into `obs_file_list`. Demo upload
-samples live under [`demo_data/`](demo_data/). Details:
+To attach a document through HTTP, create and complete a resumable asset with
+`POST /v1/files`, then put the returned `asset_id` in the request's
+`attachments` list. Bot converts the owner-checked asset to the internal
+`obs_file_list` shape before the agent runs. Demo upload samples live under
+[`demo_data/`](demo_data/). Details:
 [MCP Tool Reference — Uploading
 documents](docs/reference/mcp-tools.md#uploading-documents-for-obs_file_list).
 

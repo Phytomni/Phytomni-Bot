@@ -13,11 +13,8 @@ from typing import Any
 from fastapi import (
     Depends,
     FastAPI,
-    File,
-    Form,
     HTTPException,
     Request,
-    UploadFile,
 )
 from fastapi.responses import JSONResponse, Response
 
@@ -46,16 +43,20 @@ from ..schemas import (
     AgentRunRequest,
     ChatCompletionRequest,
     ExpertQueryRequest,
-    FileUploadResponse,
-    UploadPurpose,
+)
+from .attachment_inputs import (
+    normalize_chat_payload_attachments,
+    normalize_expert_payload_attachments,
+    normalize_payload_attachments,
+    validate_chat_attachment_capability,
 )
 from .context_types import ContextAgentRequest, execute_context_lifecycle
+from .uploads import AgentUploadDependencies, register_upload_routes
 
 type AgentRun = Callable[..., Awaitable[tuple[dict[str, Any], int]]]
 type ChatResponse = Callable[..., Awaitable[Response]]
 type QueryFlattener = Callable[[Any], str]
 type ChatResolver = Callable[..., Awaitable[tuple[str, dict[str, Any]]]]
-type ErrorResponse = Callable[..., JSONResponse]
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,16 +137,6 @@ class AgentContextDependencies:
 
 
 @dataclass(frozen=True, slots=True)
-class AgentUploadDependencies:
-    """Multipart upload and error projection seams."""
-
-    handle_file_upload: Callable[
-        ..., Awaitable[FileUploadResponse | JSONResponse]
-    ]
-    error_response: ErrorResponse
-
-
-@dataclass(frozen=True, slots=True)
 class AgentRouteDependencies:
     """Explicit dependencies required by the primary agent routes."""
 
@@ -213,6 +204,16 @@ def _register_chat_route(
                 status_code=404,
                 detail=f"model not found: {payload.model}",
             )
+        validate_chat_attachment_capability(
+            payload,
+            tool_name,
+            dependencies.chat.input.tool_accepts_obs,
+        )
+        payload = normalize_chat_payload_attachments(
+            payload,
+            owner=dependencies.chat.projection.current_user() or "anonymous",
+            resolver=dependencies.upload.asset_resolver,
+        )
         if payload.conversation is not None:
             if not dependencies.context.enabled():
                 raise HTTPException(
@@ -506,7 +507,7 @@ def _register_native_routes(
     app: FastAPI,
     dependencies: AgentRouteDependencies,
 ) -> None:
-    """Register native agent catalog, runs, Expert routing, and files."""
+    """Register native agent catalog, runs, and Expert routing."""
 
     @app.get("/v1/agents")
     async def list_agents(
@@ -516,6 +517,9 @@ def _register_native_routes(
         del principal
         payload: dict[str, Any] = {
             "object": "list",
+            "file_upload": (
+                dependencies.upload.serialize_file_upload_capability()
+            ),
             "data": [
                 {
                     "slug": slug,
@@ -543,7 +547,10 @@ def _register_native_routes(
 
     @app.post(
         "/v1/agents/{agent}/runs",
-        dependencies=[Depends(dependencies.auth.schedule_run_gc)],
+        dependencies=[
+            Depends(dependencies.auth.schedule_run_gc),
+            Depends(dependencies.upload.schedule_cleanup),
+        ],
     )
     async def create_agent_run(
         agent: str,
@@ -573,6 +580,12 @@ def _register_native_routes(
             )
         arguments = dict(payload.arguments)
         arguments["locale"] = locale
+        arguments = normalize_payload_attachments(
+            arguments,
+            payload.attachments,
+            owner=dependencies.chat.projection.current_user() or "anonymous",
+            resolver=dependencies.upload.asset_resolver,
+        )
         if payload.conversation is not None:
             if not dependencies.context.enabled():
                 raise HTTPException(
@@ -604,6 +617,11 @@ def _register_native_routes(
     ) -> JSONResponse:
         """Autonomously route a query to an agent and return its run."""
         del principal
+        payload = normalize_expert_payload_attachments(
+            payload,
+            owner=dependencies.chat.projection.current_user() or "anonymous",
+            resolver=dependencies.upload.asset_resolver,
+        )
         if payload.conversation is not None:
             if not dependencies.context.enabled():
                 raise HTTPException(
@@ -619,36 +637,6 @@ def _register_native_routes(
             payload, debug=dependencies.chat.projection.resolve_debug(None)
         )
         return JSONResponse(body, status_code=status_code)
-
-    @app.post(
-        "/v1/files",
-        status_code=201,
-        response_model=FileUploadResponse,
-    )
-    async def upload_file(
-        request: Request,
-        file: UploadFile = File(...),
-        purpose: UploadPurpose = Form("agent_context"),
-        principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
-    ) -> FileUploadResponse | JSONResponse:
-        """Accept one multipart file upload and store it in OBS.
-
-        Pre-checks ``Content-Length`` so oversize requests are rejected
-        before the body is buffered; falls back to a post-read size
-        guard inside ``upload_user_file`` so missing or falsified
-        Content-Length (e.g. chunked transfer) is still caught. The
-        sanitized filename, byte length, and public OBS path are
-        returned in a ``FileUploadResponse`` shape with ``path`` aliased
-        to ``obs_path`` so existing chat-ai code that already reads
-        ``path`` from the legacy upload bridge can plug in unchanged.
-        """
-        return await dependencies.upload.handle_file_upload(
-            request=request,
-            file=file,
-            purpose=purpose,
-            user_id=principal.user_id,
-            error_response=dependencies.upload.error_response,
-        )
 
 
 def _native_context_tool(
@@ -981,6 +969,7 @@ def register_agent_routes(
     """Register primary agent routes in their legacy order."""
     _register_chat_route(app, dependencies)
     _register_native_routes(app, dependencies)
+    register_upload_routes(app, dependencies.upload)
 
 
 __all__ = [

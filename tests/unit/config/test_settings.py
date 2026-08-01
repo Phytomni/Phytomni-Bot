@@ -229,12 +229,11 @@ def test_relay_api_key_defaults_empty_outside_relay():
 def test_relay_mode_imports_config_building_module_without_secrets():
     """A module that builds a config at import time boots in relay mode.
 
-    The decisive S1 guarantee: ``storage/uploads.py`` constructs
-    ``ServerConfig()`` at module scope, so a customer relay image
-    importing the package with ONLY ``PHYTOMNI_RELAY_*`` set (no
-    operator endpoints, no secrets) must not raise ``ValidationError``
-    during import. Run the import in a clean subprocess so the
-    operator env the test session carries cannot mask the relax.
+    The upload storage boundary imports without requiring deployment
+    endpoints or secrets, so a customer relay image importing the package
+    with ONLY ``PHYTOMNI_RELAY_*`` set must not raise ``ValidationError``.
+    Run the import in a clean subprocess so the operator env the test
+    session carries cannot mask the relax.
     """
     clean_env = {
         "PATH": os.environ.get("PATH", ""),
@@ -246,7 +245,11 @@ def test_relay_mode_imports_config_building_module_without_secrets():
     }
 
     result = subprocess.run(
-        [sys.executable, "-c", "import mcp_server_phytomni.storage.uploads"],
+        [
+            sys.executable,
+            "-c",
+            "import mcp_server_phytomni.storage.multipart",
+        ],
         env=clean_env,
         capture_output=True,
         text=True,

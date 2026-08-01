@@ -18,7 +18,7 @@ from mcp_server_phytomni.api.schemas import (
     ApiKeyCreateResponse,
     ApiKeyDeleteResponse,
     ApiKeyListResponse,
-    FileUploadResponse,
+    UploadCreateResponse,
 )
 
 pytestmark = pytest.mark.server
@@ -31,7 +31,7 @@ def test_routes_declare_response_models() -> None:
         ("/v1/api-keys", "POST"): ApiKeyCreateResponse,
         ("/v1/api-keys", "GET"): ApiKeyListResponse,
         ("/v1/api-keys/{prefix}", "DELETE"): ApiKeyDeleteResponse,
-        ("/v1/files", "POST"): FileUploadResponse,
+        ("/v1/files", "POST"): UploadCreateResponse,
     }
     found: dict[tuple[str, str], object] = {}
     for route in app.routes:

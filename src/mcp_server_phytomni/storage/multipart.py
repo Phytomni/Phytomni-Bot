@@ -11,6 +11,7 @@ import secrets
 from collections.abc import Sequence
 from dataclasses import dataclass
 from importlib import import_module
+from pathlib import Path
 from typing import Any, BinaryIO, NamedTuple, Protocol
 
 from ..config.settings import get_sensitive_config
@@ -20,6 +21,7 @@ from .obs_storage import normalize_obs_object_key
 __all__ = [
     "BoundedMultipartStorage",
     "CompletedObject",
+    "CompletedObjectReader",
     "FakeMultipartStorage",
     "PartInput",
     "MultipartSession",
@@ -111,6 +113,21 @@ class MultipartStorage(Protocol):
         parts: Sequence[StoredPart],
     ) -> CompletedObject | None:
         """Find a successful completion after an unknown provider outcome."""
+        raise NotImplementedError
+
+
+class CompletedObjectReader(Protocol):
+    """Port for bounded reads of an already completed object."""
+
+    def download_to_path(
+        self,
+        *,
+        bucket: str,
+        object_key: str,
+        destination: Path,
+        expected_size: int,
+    ) -> int:
+        """Stream one completed object into a caller-owned file."""
         raise NotImplementedError
 
 
@@ -233,6 +250,35 @@ class BoundedMultipartStorage:
             return None
         return CompletedObject(session.bucket, session.object_key, byte_size)
 
+    def download_to_path(
+        self,
+        *,
+        bucket: str,
+        object_key: str,
+        destination: Path,
+        expected_size: int,
+    ) -> int:
+        """Download one completed object without retaining its bytes."""
+        safe_key = normalize_obs_object_key(object_key, bucket)
+        response = self._client().downloadFile(
+            bucketName=bucket,
+            objectKey=safe_key,
+            downloadFile=str(destination),
+            partSize=128 * 1024**2,
+            taskNum=1,
+            enableCheckpoint=False,
+        )
+        _require_ok(response)
+        try:
+            actual_size = destination.stat().st_size
+        except OSError as error:
+            raise MultipartStorageError(
+                "upload_storage_unavailable"
+            ) from error
+        if actual_size != expected_size:
+            raise MultipartStorageError("upload_state_conflict")
+        return actual_size
+
     def _client(self) -> ObsClient:
         """Build a Bot-credentialed OBS client at the storage boundary."""
         access_key, secret_key = get_sensitive_config().obs_credentials()
@@ -331,6 +377,43 @@ class FakeMultipartStorage:
             session.object_key,
             sum(part.byte_size for part in parts),
         )
+
+    def download_to_path(
+        self,
+        *,
+        bucket: str,
+        object_key: str,
+        destination: Path,
+        expected_size: int,
+    ) -> int:
+        """Write completed fake parts one at a time for resolver tests."""
+        state = next(
+            (
+                candidate
+                for candidate in self.sessions.values()
+                if candidate.session.bucket == bucket
+                and candidate.session.object_key == object_key
+            ),
+            None,
+        )
+        if state is None or not state.completed:
+            raise MultipartStorageError("upload_asset_not_found")
+        total = 0
+        try:
+            with destination.open("wb") as output:
+                for part_number in sorted(state.parts):
+                    content = state.parts[part_number]
+                    total += len(content)
+                    if total > expected_size:
+                        raise MultipartStorageError("upload_state_conflict")
+                    output.write(content)
+        except OSError as error:
+            raise MultipartStorageError(
+                "upload_storage_unavailable"
+            ) from error
+        if total != expected_size:
+            raise MultipartStorageError("upload_state_conflict")
+        return total
 
     def _state(self, session: MultipartSession) -> _FakeSessionState:
         """Resolve a fake session or return a sanitized storage error."""

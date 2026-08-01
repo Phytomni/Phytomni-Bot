@@ -25,6 +25,7 @@ __all__ = [
     "CapabilitySecret",
     "PartRecord",
     "ResumableUploadRegistry",
+    "ResumableUploadRegistryConfig",
     "UploadStateError",
 ]
 
@@ -39,6 +40,16 @@ SESSION_TTL = timedelta(days=7)
 CAPABILITY_TTL = timedelta(minutes=15)
 
 AssetStatus = Literal["uploading", "completed", "aborted", "expired"]
+
+
+@dataclass(frozen=True, slots=True)
+class ResumableUploadRegistryConfig:
+    """Deployment limits and TTLs for one upload registry instance."""
+
+    max_upload_bytes: int = MAX_UPLOAD_BYTES
+    part_size_bytes: int = PART_SIZE_BYTES
+    session_ttl: timedelta = SESSION_TTL
+    capability_ttl: timedelta = CAPABILITY_TTL
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,8 +221,17 @@ _CREATE_QUOTA_INDEX = (
 class ResumableUploadRegistry:
     """Persist resumable assets without changing the legacy upload table."""
 
-    def __init__(self, db_path: str) -> None:
+    def __init__(
+        self,
+        db_path: str,
+        config: ResumableUploadRegistryConfig | None = None,
+    ) -> None:
+        config = config or ResumableUploadRegistryConfig()
         self.db_path = db_path
+        self.max_upload_bytes = config.max_upload_bytes
+        self.part_size_bytes = config.part_size_bytes
+        self.session_ttl = config.session_ttl
+        self.capability_ttl = config.capability_ttl
         with sqlite_transaction(db_path) as conn:
             for statement in (
                 _CREATE_ASSETS_TABLE,
@@ -233,7 +253,7 @@ class ResumableUploadRegistry:
         now: datetime,
     ) -> tuple[AssetRecord, CapabilitySecret]:
         """Create or replay one owner-scoped idempotent asset."""
-        _validate_spec(spec)
+        _validate_spec(spec, max_upload_bytes=self.max_upload_bytes)
         created_at = _utc(now)
         fingerprint = _fingerprint(spec)
         with sqlite_transaction(self.db_path) as conn:
@@ -284,7 +304,7 @@ class ResumableUploadRegistry:
                 f"agent_data/uploads/{_safe_owner(spec.owner_subject)}"
                 f"/{asset_id}"
             )
-            session_expires_at = created_at + SESSION_TTL
+            session_expires_at = created_at + self.session_ttl
             asset = AssetRecord(
                 asset_id=asset_id,
                 owner_subject=spec.owner_subject,
@@ -292,8 +312,8 @@ class ResumableUploadRegistry:
                 content_type=spec.content_type,
                 purpose=spec.purpose,
                 size_bytes=spec.size_bytes,
-                part_size_bytes=PART_SIZE_BYTES,
-                part_count=ceil(spec.size_bytes / PART_SIZE_BYTES),
+                part_size_bytes=self.part_size_bytes,
+                part_count=ceil(spec.size_bytes / self.part_size_bytes),
                 status="uploading",
                 object_key=object_key,
                 obs_upload_id=None,
@@ -379,6 +399,16 @@ class ResumableUploadRegistry:
                 "SELECT * FROM upload_assets WHERE asset_id = ?", (asset_id,)
             ).fetchone()
         return None if asset is None else _asset_from_row(asset)
+
+    def clear_provider_session(self, asset_id: str, *, now: datetime) -> None:
+        """Forget an OBS session only after its provider abort succeeds."""
+        with sqlite_transaction(self.db_path) as conn:
+            conn.execute(
+                "UPDATE upload_assets SET obs_upload_id = NULL, "
+                "updated_at = ?, state_version = state_version + 1 "
+                "WHERE asset_id = ? AND status IN ('expired', 'aborted')",
+                (_iso(_utc(now)), asset_id),
+            )
 
     def get_parts(
         self, asset_id: str, *, owner: str
@@ -565,8 +595,8 @@ class ResumableUploadRegistry:
             conn.execute("BEGIN IMMEDIATE")
             rows = conn.execute(
                 "SELECT asset_id FROM upload_assets "
-                "WHERE status = 'uploading' "
-                "AND session_expires_at <= ?",
+                "WHERE (status = 'uploading' AND session_expires_at <= ?) "
+                "OR (status = 'expired' AND obs_upload_id IS NOT NULL)",
                 (_iso(expired_at),),
             ).fetchall()
             asset_ids = tuple(row[0] for row in rows)
@@ -681,7 +711,7 @@ class ResumableUploadRegistry:
         if asset.status != "uploading":
             raise UploadStateError("upload_state_conflict")
         raw_token = secrets.token_urlsafe(32)
-        expires_at = now + CAPABILITY_TTL
+        expires_at = now + self.capability_ttl
         record = CapabilityRecord(
             asset_id=asset.asset_id,
             owner_subject=asset.owner_subject,
@@ -728,11 +758,11 @@ class ResumableUploadRegistry:
         )
 
 
-def _validate_spec(spec: AssetCreateSpec) -> None:
+def _validate_spec(spec: AssetCreateSpec, *, max_upload_bytes: int) -> None:
     """Validate registry-level limits for callers outside Pydantic."""
-    if not spec.owner_subject or not spec.filename or not spec.content_type:
+    if not spec.owner_subject or not spec.filename:
         raise UploadStateError("invalid_upload_metadata")
-    if not 0 < spec.size_bytes <= MAX_UPLOAD_BYTES:
+    if not 0 < spec.size_bytes <= max_upload_bytes:
         raise UploadStateError("upload_limit_exceeded")
     if not spec.idempotency_key:
         raise UploadStateError("invalid_upload_metadata")

@@ -281,8 +281,34 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
 
 - **Method:** `POST`
   **Path:** `/v1/files`
-  **Auth:** yes
-  **Purpose:** Stores one multipart upload in OBS and returns the public path.
+  **Auth:** `files:delegate` scope
+  **Purpose:** Creates or replays one resumable asset and returns its browser
+  capability.
+
+- **Method:** `POST`
+  **Path:** `/v1/files/{asset_id}/capability`
+  **Auth:** `files:delegate` scope
+  **Purpose:** Renews a browser capability for an owner assertion.
+
+- **Method:** `HEAD`
+  **Path:** `/v1/files/{asset_id}`
+  **Auth:** asset capability
+  **Purpose:** Returns resumable state in response headers.
+
+- **Method:** `PUT`
+  **Path:** `/v1/files/{asset_id}/parts/{part_number}`
+  **Auth:** asset capability
+  **Purpose:** Streams one exact-length multipart part.
+
+- **Method:** `POST`
+  **Path:** `/v1/files/{asset_id}/complete`
+  **Auth:** asset capability
+  **Purpose:** Completes an asset from its authoritative part registry.
+
+- **Method:** `DELETE`
+  **Path:** `/v1/files/{asset_id}`
+  **Auth:** asset capability
+  **Purpose:** Aborts an unfinished asset and releases its provider session.
 
 - **Method:** `POST`
   **Path:** `/v1/api-keys`
@@ -1012,65 +1038,86 @@ exists, otherwise the entry is absent) and the request still returns
 outage rather than surfacing it as an error; pass `debug=true` to
 inspect the raw per-task payloads when a log looks unexpectedly thin.
 
-`POST /v1/files` accepts one `multipart/form-data` upload through the
-standard `file` field and an optional `purpose` field. The `purpose`
-value MUST be one of the OpenAI-files compatible literals
-`agent_context` (default) / `assistants` / `batch` / `dataset` /
-`fine-tune` / `vision` / `user_data`; any other value returns `422` through the
-unified error envelope. The response carries the OpenAI-files
-compatible shape — `id` / `object: "file"` / `bytes` / `filename` /
-`purpose` / `created_at` — plus `obs_path` (the public
-`/obs/<bucket>/<key>` path) and a `path` alias on `obs_path` so
-clients can replay it in any later `obs_file_list` argument without
-translation.
+The upload protocol is resumable and has separate control and data planes.
+The control plane accepts only a trusted service key with the explicit
+`files:delegate` scope. The data plane accepts only the opaque Bearer
+capability returned for one asset; a normal user key, object key, bucket name,
+provider upload id, or cloud credential is not accepted there.
 
-Filename sanitization is a deliberate **sanitize-and-accept** policy
-(not a 400 rejection): `Path.name` collapses any path-traversal
-segments to the basename and `safe_path_segment` rewrites shell
-metacharacters and Unicode into `-`, preserving the suffix.
-Examples:
+`POST /v1/files` accepts JSON metadata:
 
-- `../../etc/passwd` → stored as `passwd`, response returns `201`.
-- `my report (final).pdf` → stored as `my-report-final.pdf`, `201`.
-
-Only empty bodies, empty filenames, and `.` / `..` filenames return
-`400` through the unified error envelope. The OBS object key follows
-`agent_data/uploads/{user_id}/{request_id}/{file_id}/{safe_filename}`
-so uploads are isolated per authenticated principal and traceable
-back to the originating HTTP call through the `X-Request-Id`
-response header.
-
-Size ceiling is `API_UPLOAD_MAX_BYTES` (25 MiB default). The route
-defends in two layers: a `Content-Length` pre-check rejects honest
-oversize requests before reading the body, and a chunked reader
-(`read_with_byte_budget`, 64 KiB chunks) caps cumulative reads when
-`Content-Length` is absent or falsified (`Transfer-Encoding: chunked`),
-aborting at the first chunk that pushes past the limit so peak
-memory stays bounded. Both paths return `413`. Example:
-
-```bash
-curl -s http://127.0.0.1:8080/v1/files \
-  -H "Authorization: Bearer ptm_..." \
-  -F file=@report.pdf \
-  -F purpose=agent_context
+```json
+{
+  "owner_subject": "alice",
+  "filename": "report.pdf",
+  "content_type_hint": "application/pdf",
+  "size_bytes": 524288,
+  "purpose": "chat_attachment",
+  "idempotency_key": "web-upload-123"
+}
 ```
 
-`purpose=dataset` is validated before storage as a nonempty UTF-8 or
-UTF-8-BOM comma-delimited CSV with unique nonblank headers and at least one
-data row. Every successful upload returns `201` only after its owner-scoped
-`user_uploads` metadata row is registered. If the OBS object write succeeds
-but metadata registration fails, the API returns `500` with code
-`upload_metadata_failed` and does not advertise the path; the stored object
-then requires operator orphan review.
+The `201` response contains only `protocol`, `asset_id`, `status`,
+`part_size_bytes`, `part_count`, `max_parallel_parts`, `upload_url`, an
+opaque `capability`, and the two expiry timestamps. Repeating the same
+owner-scoped idempotency key replays the existing asset and capability.
+`POST /v1/files/{asset_id}/capability` returns a fresh capability after the
+same control-plane service asserts the owner.
+
+The browser data plane uses the capability in `Authorization: Bearer`:
+
+1. `HEAD /v1/files/{asset_id}` reports status and received parts through
+   `Upload-*` response headers.
+1. `PUT /v1/files/{asset_id}/parts/{part_number}` requires an exact
+   `Content-Length` and `X-Phytomni-Part-SHA256`; the body is spooled to a
+   bounded temporary file and never buffered as a complete upload.
+1. `POST /v1/files/{asset_id}/complete` verifies the authoritative part
+   registry and returns the completed `asset_id` descriptor.
+1. `DELETE /v1/files/{asset_id}` aborts an unfinished asset.
+
+The default resumable limit is 10 GiB (`API_UPLOAD_V2_MAX_BYTES`) with
+128 MiB parts and four recommended parallel parts. Expired sessions are
+reconciled by the rate-limited cleanup hook; cleanup is retryable after a
+provider abort failure and never exposes provider diagnostics in the public
+error body. The old multipart body sent to `POST /v1/files` is not a second
+upload protocol and is rejected by request validation before storage.
+
+Example metadata create:
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/v1/files \
+  -H "Authorization: Bearer ${FILES_DELEGATE_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"owner_subject":"alice","filename":"report.pdf",'\
+      '"content_type_hint":"application/pdf","size_bytes":524288,'\
+      '"purpose":"chat_attachment","idempotency_key":"web-upload-123"}'
+```
+
+Agent requests use the completed asset id, not an OBS path:
+
+```json
+{
+  "arguments": {
+    "user_query": "Summarize the uploaded paper."
+  },
+  "attachments": [{"asset_id": "file_..."}]
+}
+```
+
+The resolver checks completion and owner, downloads only into a generated
+private run directory when an agent needs local bytes, and projects a safe
+owner-scoped legacy `obs_file_list` entry for agents that use the existing
+OBS-backed path boundary. Public responses never return an object key or
+provider upload id.
 
 ## Attachment Invocation Contract
 
 Native runs and Expert routing validate attachments before the selected
-handler is called. A path returned by `POST /v1/files` is a managed upload:
-the caller must own its registry row, and its purpose and filename format
-must match the selected channel. A path below the managed upload prefix with
-no owner-scoped row is not accepted as a legacy path. This prevents a caller
-from turning an arbitrary OBS path into an authenticated upload reference.
+handler is called. An `asset_id` returned by the resumable upload protocol is
+resolved only when the authenticated caller owns the completed registry row.
+The resolver then projects a controlled internal `obs_file_list` value for
+legacy agent schemas. Callers cannot turn an arbitrary OBS path, object key,
+or incomplete asset into an authenticated attachment reference.
 
 The document channel accepts `agent_context` metadata with `pdf`, `docx`,
 `pptx`, `xls`, `xlsx`, or `msg` filenames for Chat, Knowledge, Review,
@@ -1080,11 +1127,11 @@ be nonblank.
 
 The registered-upload limits are inclusive at the boundary: at most 10
 attachments, at most 26,214,400 bytes per attachment, and at most 52,428,800
-bytes across one request. Exact repeated paths are rejected before capability
-or budget evaluation, including a repeat across `obs_file_list` and
-`data_list`. Legacy preconfigured OBS dataset paths remain a separate
-`data_list` policy for Analyst and Research; they do not prove ownership of a
-new upload and are not converted into `user_uploads` metadata.
+bytes across one request. Exact repeated asset ids are rejected before
+capability or budget evaluation. Legacy preconfigured OBS dataset paths
+remain a separate `data_list` policy for Analyst and Research; they do not
+prove ownership of a new upload and are not converted into `user_uploads`
+metadata.
 
 Attachment contract failures return `422` with one of these stable codes:
 `attachment_not_found`, `attachment_not_supported`,
@@ -1094,7 +1141,7 @@ Attachment contract failures return `422` with one of these stable codes:
 OBS path. Design and Network retain their legacy attachment fields for
 schema compatibility, but any nonempty value is rejected during migration.
 
-Native example using a registered upload:
+Native example using a completed asset:
 
 ```bash
 curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
@@ -1102,17 +1149,18 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
   -H 'Content-Type: application/json' \
   -d '{
     "arguments": {
-      "user_query": "Summarize the uploaded paper.",
-      "obs_file_list": ["/obs/phytomni/agent_data/uploads/u1/request/upload_.../paper.pdf"]
+      "user_query": "Summarize the uploaded paper."
     },
+    "attachments": [{"asset_id": "file_..."}],
     "locale": "en-US"
   }'
 ```
 
 `/v1/chat/completions` keeps its existing model capability gate: the
-`obs_file_list` field is forwarded only for Chat, Knowledge, and Review
-models. Native runs and Expert routing apply the owner, metadata, duplicate,
-purpose, format, description, and budget checks above.
+`attachments` field is resolved only for Chat, Knowledge, and Review models.
+The legacy `obs_file_list` field remains an internal-compatible input where
+the selected tool accepts it. Native runs and Expert routing apply the owner,
+metadata, duplicate, purpose, format, description, and budget checks above.
 
 `POST /v1/chat/completions` and `POST /v1/agents/{agent}/runs` accept
 an optional `dialogue_id` field that groups runs into one visible

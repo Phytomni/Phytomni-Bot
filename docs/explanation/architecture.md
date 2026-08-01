@@ -26,7 +26,8 @@ src/mcp_server_phytomni/
     keys.py                  Admin CLI for the per-user API key store
     openai_mapping.py        OpenAI-compatible chat mapping helpers
     ratelimit.py             In-process per-key sliding-window rate limiter
-    file_upload.py           Handler for POST /v1/files multipart upload
+    resumable_uploads.py     Resumable OBS upload service and safe errors
+    asset_resolver.py        Owner-scoped completion and run materialization
     schemas.py               HTTP API request and response schemas
     relay/                   Credential-injecting customer relay subpackage
   interop/
@@ -99,7 +100,7 @@ src/mcp_server_phytomni/
     path_policy.py           Runtime path and ID policy
     downloads.py             OBS and obsfs download/conversion helpers
     scratch.py               Obsfs-first per-run scratch directory resolver
-    uploads.py               HTTP /v1/files multipart upload OBS bridge
+    multipart.py             Bounded OBS multipart storage adapter
   config/
     defaults.py              Non-secret defaults, agent config classes,
                              and Pydantic schemas for static datasets

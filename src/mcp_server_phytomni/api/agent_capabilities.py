@@ -10,6 +10,15 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Final
 
+from ..runtime.resumable_uploads import (
+    CAPABILITY_TTL,
+    MAX_ACTIVE_ASSETS,
+    MAX_UPLOAD_BYTES,
+    PART_SIZE_BYTES,
+    SESSION_TTL,
+    UPLOAD_PROTOCOL,
+)
+
 __all__ = [
     "AGENT_CAPABILITIES",
     "AttachmentCapability",
@@ -19,6 +28,7 @@ __all__ = [
     "get_agent_slug_for_tool",
     "get_attachment_capability",
     "get_agent_capability",
+    "serialize_file_upload_capability",
     "serialize_agent_capability",
 ]
 
@@ -27,6 +37,46 @@ MAX_FILE_BYTES = 26_214_400
 MAX_FILES = 10
 MAX_TOTAL_BYTES = 52_428_800
 DOCUMENT_EXTENSIONS = ("pdf", "docx", "pptx", "xls", "xlsx", "msg")
+MAX_PARALLEL_PARTS = 4
+
+_UPLOAD_ROUTES: tuple[dict[str, str], ...] = (
+    {
+        "method": "POST",
+        "path": "/v1/files",
+        "plane": "control",
+        "auth": "service_scope",
+    },
+    {
+        "method": "POST",
+        "path": "/v1/files/{asset_id}/capability",
+        "plane": "control",
+        "auth": "service_scope",
+    },
+    {
+        "method": "HEAD",
+        "path": "/v1/files/{asset_id}",
+        "plane": "data",
+        "auth": "asset_capability",
+    },
+    {
+        "method": "PUT",
+        "path": "/v1/files/{asset_id}/parts/{part_number}",
+        "plane": "data",
+        "auth": "asset_capability",
+    },
+    {
+        "method": "POST",
+        "path": "/v1/files/{asset_id}/complete",
+        "plane": "data",
+        "auth": "asset_capability",
+    },
+    {
+        "method": "DELETE",
+        "path": "/v1/files/{asset_id}",
+        "plane": "data",
+        "auth": "asset_capability",
+    },
+)
 
 
 @dataclass(frozen=True)
@@ -239,3 +289,27 @@ def get_agent_slug_for_tool(tool_name: str) -> str | None:
 def serialize_agent_capability(slug: str) -> dict[str, Any]:
     """Return one JSON-compatible capability descriptor for ``slug``."""
     return get_agent_capability(slug).to_public_dict()
+
+
+def serialize_file_upload_capability(
+    limits: Mapping[str, int] | None = None,
+) -> dict[str, Any]:
+    """Return a fresh, sanitized descriptor for the upload protocol."""
+    resolved = {
+        "max_file_bytes": MAX_UPLOAD_BYTES,
+        "part_size_bytes": PART_SIZE_BYTES,
+        "max_parallel_parts": MAX_PARALLEL_PARTS,
+        "max_active_assets": MAX_ACTIVE_ASSETS,
+        "capability_ttl_seconds": int(CAPABILITY_TTL.total_seconds()),
+        "session_ttl_seconds": int(SESSION_TTL.total_seconds()),
+    }
+    if limits is not None:
+        for key in resolved:
+            if key in limits:
+                resolved[key] = limits[key]
+    return {
+        "protocol": UPLOAD_PROTOCOL,
+        "route_family": "resumable_files",
+        "routes": [dict(route) for route in _UPLOAD_ROUTES],
+        "limits": resolved,
+    }

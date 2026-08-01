@@ -41,7 +41,6 @@ def test_api_config_defaults() -> None:
     assert config.API_RUN_TTL_OK_HOURS == 24
     assert config.API_RUN_TTL_FAIL_DAYS == 7
     assert config.API_SERVICE_TOKEN is None
-    assert config.API_UPLOAD_MAX_BYTES == 26_214_400
     assert config.API_UPLOAD_PREFIX == "agent_data/uploads"
     assert config.STREAM_ANSWER_MAX_BYTES == 1_048_576
     assert config.CONVERSATION_CONTEXT_V1_ENABLED is False

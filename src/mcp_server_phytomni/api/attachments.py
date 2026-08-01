@@ -22,12 +22,14 @@ from .agent_capabilities import (
     get_agent_capability,
     get_attachment_capability,
 )
+from .asset_resolver import normalize_asset_attachments
 from .lifecycle_contract import SafeApiError
 
 __all__ = [
     "AttachmentContractError",
     "AttachmentSelection",
     "is_managed_upload_path",
+    "normalize_asset_attachments",
     "legacy_dataset_path_allowed",
     "prepare_expert_arguments",
     "validate_agent_attachments",
@@ -374,8 +376,13 @@ def _validate_extension(
     format_name = metadata.format.lower().lstrip(".")
     suffix = PurePosixPath(metadata.filename).suffix.lower().lstrip(".")
     if format_name not in allowed or suffix != format_name:
+        code = (
+            "unsupported_asset_format"
+            if metadata.file_id.startswith("file_")
+            else "attachment_format_unsupported"
+        )
         _raise(
-            "attachment_format_unsupported",
+            code,
             "The attachment format is not supported for this channel.",
         )
 

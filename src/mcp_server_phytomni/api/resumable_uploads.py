@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Sequence
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -56,13 +56,18 @@ MAX_UPLOAD_BYTES = 10 * 1024**3
 MAX_PARALLEL_PARTS = 4
 
 
-@dataclass(frozen=True, slots=True)
 class UploadContractError(ValueError):
     """A stable upload error that cannot expose storage implementation data."""
 
-    code: str
-    status_code: int
-    retryable: bool = False
+    __slots__ = ("code", "status_code", "retryable")
+
+    def __init__(
+        self, code: str, status_code: int, retryable: bool = False
+    ) -> None:
+        super().__init__(code)
+        self.code = code
+        self.status_code = status_code
+        self.retryable = retryable
 
     def __str__(self) -> str:
         """Return a fixed public message keyed only by the stable code."""
@@ -88,6 +93,9 @@ class UploadServiceConfig:
 
     bucket_name: str
     upload_origin: str
+    max_upload_bytes: int = MAX_UPLOAD_BYTES
+    part_size_bytes: int = PART_SIZE_BYTES
+    max_parallel_parts: int = MAX_PARALLEL_PARTS
     now: Callable[[], datetime] | None = None
 
 
@@ -102,12 +110,25 @@ class ResumableUploadService:
     ) -> None:
         self.registry = registry
         self.storage = storage
+        self.config = config
         self.bucket_name = config.bucket_name
         self.upload_origin = config.upload_origin.rstrip("/")
         self._now = config.now or _utc_now
 
+    @property
+    def max_upload_bytes(self) -> int:
+        """Return the configured maximum asset size."""
+        return self.config.max_upload_bytes
+
+    @property
+    def part_size_bytes(self) -> int:
+        """Return the configured maximum request part size."""
+        return self.config.part_size_bytes
+
     def create(self, request: UploadCreateRequest) -> UploadCreateResponse:
         """Create or replay an upload and start its provider session."""
+        if request.size_bytes > self.max_upload_bytes:
+            raise UploadContractError("upload_limit_exceeded", status_code=413)
         spec = AssetCreateSpec(
             owner_subject=request.owner_subject,
             filename=request.filename,
@@ -144,7 +165,7 @@ class ResumableUploadService:
             status="uploading",
             part_size_bytes=asset.part_size_bytes,
             part_count=asset.part_count,
-            max_parallel_parts=MAX_PARALLEL_PARTS,
+            max_parallel_parts=self.config.max_parallel_parts,
             upload_url=f"{self.upload_origin}/v1/files/{asset.asset_id}",
             capability=capability.raw_token,
             capability_expires_at=capability.record.expires_at,
@@ -170,6 +191,8 @@ class ResumableUploadService:
         return UploadCapabilityResponse(
             protocol=UPLOAD_PROTOCOL,
             asset_id=asset_id,
+            status="uploading",
+            upload_url=f"{self.upload_origin}/v1/files/{asset_id}",
             capability=capability.raw_token,
             capability_expires_at=capability.record.expires_at,
             session_expires_at=asset.session_expires_at,
@@ -182,6 +205,15 @@ class ResumableUploadService:
                 asset_id, capability, operation="head"
             )
             return self._status(asset)
+        except UploadStateError as error:
+            raise _contract_error(error) from error
+
+    def authorize(
+        self, asset_id: str, capability: str, *, operation: str
+    ) -> None:
+        """Validate a capability before a route starts consuming a body."""
+        try:
+            self._authorized_asset(asset_id, capability, operation=operation)
         except UploadStateError as error:
             raise _contract_error(error) from error
 
@@ -216,7 +248,10 @@ class ResumableUploadService:
                 now=self._now(),
             )
             with _stage_part(
-                upload.source, upload.content_length, upload.sha256
+                upload.source,
+                upload.content_length,
+                upload.sha256,
+                max_spool_bytes=self.part_size_bytes,
             ) as staged:
                 stored = self.storage.put_part(
                     _session_for(asset, self.bucket_name),
@@ -319,6 +354,8 @@ class ResumableUploadService:
                 owner=asset.owner_subject,
                 now=self._now(),
             )
+            if asset.obs_upload_id is not None:
+                self.registry.clear_provider_session(asset_id, now=self._now())
             return self._status(aborted)
         except UploadStateError as error:
             raise _contract_error(error) from error
@@ -330,10 +367,14 @@ class ResumableUploadService:
         expired = self.registry.cleanup_expired(now=self._now())
         for asset_id in expired:
             asset = self.registry.get_asset_by_id(asset_id)
-            if asset is not None and asset.obs_upload_id is not None:
-                _abort_quietly(
+            if (
+                asset is not None
+                and asset.obs_upload_id is not None
+                and _abort_quietly(
                     self.storage, _session_for(asset, self.bucket_name)
                 )
+            ):
+                self.registry.clear_provider_session(asset_id, now=self._now())
         return expired
 
     def _authorized_asset(
@@ -454,10 +495,14 @@ def _validate_checksum(value: str) -> None:
 
 @contextmanager
 def _stage_part(
-    source: BinaryIO, content_length: int, expected_sha256: str
+    source: BinaryIO,
+    content_length: int,
+    expected_sha256: str,
+    *,
+    max_spool_bytes: int = PART_SIZE_BYTES,
 ) -> Iterator[BinaryIO]:
     """Validate one bounded part without buffering the complete asset."""
-    with SpooledTemporaryFile(max_size=PART_SIZE_BYTES, mode="w+b") as staged:
+    with SpooledTemporaryFile(max_size=max_spool_bytes, mode="w+b") as staged:
         digest = sha256()
         total = 0
         try:
@@ -530,6 +575,7 @@ def _descriptor(asset: AssetRecord) -> AssetDescriptor:
         size_bytes=asset.size_bytes,
         purpose=cast(UploadAssetPurpose, asset.purpose),
         status="completed",
+        completed_at=asset.completed_at or asset.updated_at,
     )
 
 
@@ -542,10 +588,13 @@ def _session_for(asset: AssetRecord, bucket_name: str) -> MultipartSession:
 
 def _abort_quietly(
     storage: MultipartStorage, session: MultipartSession
-) -> None:
+) -> bool:
     """Best-effort cleanup after a provider session loses its DB binding."""
-    with suppress(ConnectionError, OSError, TimeoutError):
+    try:
         storage.abort(session)
+    except (ConnectionError, OSError, TimeoutError):
+        return False
+    return True
 
 
 def _utc_now() -> datetime:

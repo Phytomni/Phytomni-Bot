@@ -16,24 +16,27 @@ Tools that accept `obs_file_list` expect public OBS paths such as
 
 **HTTP upload (recommended):**
 
-1. Start `phytomni-api` with a valid API key.
-1. `POST /v1/files` with multipart field `file` (optional `purpose`,
-   default `agent_context`).
-1. Read `obs_path` (alias `path`) from the `201` response.
-1. Pass that string in the tool argument, e.g.
-   `"obs_file_list": ["/obs/phytomni/agent_data/uploads/.../report.pdf"]`.
+1. Start `phytomni-api` with a valid API key and negotiate the `file_upload`
+   descriptor from `GET /v1/agents`.
+1. `POST /v1/files` with JSON metadata to create an asset.
+1. Upload each exact-length part to the returned upload URL with the opaque
+   capability and `X-Phytomni-Part-SHA256`, then call the complete route.
+1. Put the completed `asset_id` in an HTTP agent request's `attachments` list.
+   Bot resolves the asset to its internal `obs_file_list` only after checking
+   the authenticated owner.
 
-Full contract, size limits, and curl example:
-[HTTP API — file upload](http-api.md) (`POST /v1/files`).
+Full contract, limits, and curl examples:
+[HTTP API — resumable file upload](http-api.md) (`/v1/files` routes).
 
 **Demo files:** small markdown / PDF / xlsx / FASTA samples live under
 [`demo_data/`](../../demo_data/). JSON tool payloads under
-`demo_data/payloads/` often use `"obs_file_list": []`; replace with your
-uploaded `obs_path` when you need document context.
+`demo_data/payloads/` often use `"obs_file_list": []`; use the HTTP
+`attachments` field when you need document context.
 
-**MCP-only:** there is no MCP upload tool. Obtain an OBS path via the
-HTTP upload route (or an already-provisioned object), then call the MCP
-tool with that path. Pass `[]` when no document context is needed.
+**MCP-only:** there is no MCP upload tool or asset-id attachment field on the
+stdio surface. Obtain an already-provisioned OBS path through the operator's
+trusted boundary, then call the MCP tool with that path. Pass `[]` when no
+document context is needed.
 
 ## Response Envelope
 

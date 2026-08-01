@@ -63,7 +63,6 @@ from . import app_support as _app_support
 from . import attachments as _attachments
 from . import compat as _compat
 from . import factory as _factory
-from . import file_upload as _file_upload
 from . import ratelimit as _ratelimit
 from . import relay as _relay
 from . import resolvers as _resolvers
@@ -179,7 +178,9 @@ _schedule_run_gc = getattr(_compat, "_schedule_run_gc")
 is_service_token_valid = _admin_auth.is_service_token_valid
 require_service_principal = _admin_auth.require_service_principal
 serialize_agent_capability = _agent_capabilities.serialize_agent_capability
-handle_file_upload = _file_upload.handle_file_upload
+serialize_file_upload_capability = (
+    _agent_capabilities.serialize_file_upload_capability
+)
 make_rate_limiter = _ratelimit.make_rate_limiter
 create_relay_router = _relay.create_relay_router
 resolve_chat_query = _resolvers.resolve_chat_query

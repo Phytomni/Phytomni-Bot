@@ -23,6 +23,7 @@ import httpx
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.routing import APIRoute
+from tests.server.upload_route_contract import build_upload_route_contracts
 from tests.support.handler_fakes import RunningResponseKwargs
 
 from mcp_server_phytomni.agents.brief_gene.resolve_query import (
@@ -57,10 +58,9 @@ _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 # schema additions in 7321656 (locale), dd99f82 (dataset uploads), bcf20b6
 # (attachment capabilities), the strict Expert request boundary, the private
 # native conversation envelope, and resumable attachment references. The
-# ``_normalized_openapi`` helper
-# removes only unstable version/server fields.
+# ``_normalized_openapi`` helper removes only unstable version/server fields.
 _OPENAPI_HASH = (
-    "122343acb9cc128d144b8bf2bcaa98eae1d212db30fa4ea0ab76379d5c7128c4"
+    "244f911260d6820d4ac4b4c37e41b0909fca9b8fa5d61a6e1ec26534e4ec8333"
 )
 
 
@@ -243,14 +243,7 @@ _DEFAULT_ROUTES = (
         ("agents",),
         "route_query",
     ),
-    _route(
-        "/v1/files",
-        ("POST",),
-        201,
-        "FileUploadResponse",
-        ("agents",),
-        "upload_file",
-    ),
+    *build_upload_route_contracts(_route),
     _route(
         "/v1/runs/{run_id}/logs",
         ("GET",),
@@ -516,9 +509,9 @@ def _all_flag_routes() -> tuple[_RouteContract, ...]:
         (_INTEROP_ROUTE,)
         + _DEFAULT_ROUTES[:3]
         + _MEMORY_ROUTES
-        + _DEFAULT_ROUTES[3:18]
+        + _DEFAULT_ROUTES[3:23]
         + _A2A_ROUTES
-        + _DEFAULT_ROUTES[18:]
+        + _DEFAULT_ROUTES[23:]
     )
 
 
@@ -561,13 +554,13 @@ def test_default_application_contract_is_literal() -> None:
     assert _route_manifest(app) == _DEFAULT_ROUTES
     assert tuple(
         getattr(item.cls, "__name__", "") for item in app.user_middleware
-    ) == ("request_context_middleware",)
+    ) == ("CORSMiddleware", "request_context_middleware")
     assert _original_lifespan_name(app) == "_http_lifespan"
     document = _normalized_openapi(app)
     if os.environ.get("PHYTOMNI_DEPENDENCY_FLOOR") != "1":
         assert _openapi_hash(app) == _OPENAPI_HASH
-    assert len(document["paths"]) == 33
-    assert len(document["components"]["schemas"]) == 20
+    assert len(document["paths"]) == 37
+    assert len(document["components"]["schemas"]) == 26
     assert all(
         operation.get("operationId")
         for path_item in document["paths"].values()
@@ -595,7 +588,7 @@ def test_optional_application_contract_is_literal(
     app = create_app()
 
     assert _route_manifest(app) == _all_flag_routes()
-    assert len(app.openapi()["paths"]) == 40
+    assert len(app.openapi()["paths"]) == 44
     assert _original_lifespan_name(app) == "_http_lifespan"
 
 

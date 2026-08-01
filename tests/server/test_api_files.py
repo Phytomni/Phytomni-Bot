@@ -1,418 +1,255 @@
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
-#         guxiaofeng (guxiaofeng@caas.cn)
-"""Tests for ``POST /v1/files`` multipart upload endpoint.
-
-Covers response shape, auth, pre-read and post-read 413 guards, empty
-body rejection, filename sanitization, allowed purpose literals, and
-request-id correlation between the response header and ``obs_path``.
-"""
+"""HTTP contracts for the breaking resumable upload resource."""
 
 from __future__ import annotations
 
-import sqlite3
-from types import SimpleNamespace
-from typing import Any
+from collections.abc import AsyncIterator
+from hashlib import sha256
+from pathlib import Path
 
 import httpx
 import pytest
+from tests.support.http_fakes import open_asgi_client
 
-from mcp_server_phytomni.api import app as api_app
-from mcp_server_phytomni.api import file_upload as file_upload_module
-from mcp_server_phytomni.storage import uploads as uploads_module
+from mcp_server_phytomni.api.app import create_app
+from mcp_server_phytomni.api.auth import ApiKeyStore
+from mcp_server_phytomni.api.resumable_uploads import (
+    ResumableUploadService,
+    UploadServiceConfig,
+)
+from mcp_server_phytomni.api.upload_runtime import UploadRuntime
+from mcp_server_phytomni.runtime.resumable_uploads import (
+    ResumableUploadRegistry,
+)
+from mcp_server_phytomni.storage.multipart import FakeMultipartStorage
 
 pytestmark = pytest.mark.server
 
 
-async def test_upload_file_returns_full_response_shape(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    fake_obs_client: Any,
-) -> None:
-    """A successful upload returns FileUploadResponse with aliased path."""
-    del fake_obs_client  # patches the SDK fallback as a side effect
-    response = await api_client.post(
-        "/v1/files",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        files={"file": ("report.pdf", b"hello", "application/pdf")},
-    )
-
-    assert response.status_code == 201
-    body = response.json()
-    assert body["object"] == "file"
-    assert body["filename"] == "report.pdf"
-    assert body["bytes"] == 5
-    assert body["purpose"] == "agent_context"
-    assert isinstance(body["created_at"], int) and body["created_at"] > 0
-    assert body["id"].startswith("2")  # timestamped IdFactory token
-    assert body["path"] == body["obs_path"]
-    assert body["obs_path"].startswith("/obs/phytomni/agent_data/uploads/u1/")
-    assert body["obs_path"].endswith("/report.pdf")
-    assert body["id"] in body["obs_path"]
-
-
-async def test_upload_file_honors_purpose_form_field(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    fake_obs_client: Any,
-) -> None:
-    """An allowed OpenAI-files purpose round-trips into the response."""
-    del fake_obs_client
-    response = await api_client.post(
-        "/v1/files",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        files={"file": ("x.bin", b"data", "application/octet-stream")},
-        data={"purpose": "user_data"},
-    )
-
-    assert response.status_code == 201
-    assert response.json()["purpose"] == "user_data"
-
-
-@pytest.mark.parametrize(
-    "purpose",
-    [
-        "agent_context",
-        "assistants",
-        "batch",
-        "dataset",
-        "fine-tune",
-        "vision",
-        "user_data",
-    ],
-)
-async def test_upload_file_accepts_every_allowed_purpose(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    fake_obs_client: Any,
-    purpose: str,
-) -> None:
-    """All seven UploadPurpose Literal values are accepted (AF-002)."""
-    del fake_obs_client
-    payload = b"column\nvalue\n" if purpose == "dataset" else b"data"
-    response = await api_client.post(
-        "/v1/files",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        files={
-            "file": (
-                "x.csv" if purpose == "dataset" else "x.bin",
-                payload,
-                (
-                    "text/csv"
-                    if purpose == "dataset"
-                    else "application/octet-stream"
-                ),
-            )
-        },
-        data={"purpose": purpose},
-    )
-
-    assert response.status_code == 201
-    assert response.json()["purpose"] == purpose
-
-
-@pytest.mark.parametrize(
-    ("filename", "payload"),
-    [
-        ("table.tsv", b"gene,value\nOs01g1,1\n"),
-        ("table.csv.gz", b"gene,value\nOs01g1,1\n"),
-        ("table.csv", b"gene,gene\nOs01g1,1\n"),
-    ],
-)
-async def test_upload_file_rejects_invalid_dataset_before_obs(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    fake_obs_client: Any,
-    filename: str,
-    payload: bytes,
-) -> None:
-    """Invalid dataset names/content return 422 without an OBS write."""
-    response = await api_client.post(
-        "/v1/files",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        files={"file": (filename, payload, "text/csv")},
-        data={"purpose": "dataset"},
-    )
-
-    assert response.status_code == 422
-    body = response.json()["error"]
-    assert body["code"] == "invalid_dataset_format"
-    assert body["stage"] == "upload_validation"
-    assert body["retryable"] is False
-    assert "put_content" not in fake_obs_client.captured
-
-
-async def test_dataset_upload_limit_is_inclusive(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    fake_obs_client: Any,
+@pytest.fixture(name="resumable_upload_client")
+async def _resumable_upload_client(
+    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A dataset at the byte ceiling passes, while the next byte fails."""
-    monkeypatch.setattr(
-        file_upload_module,
-        "ApiConfig",
-        lambda: SimpleNamespace(
-            API_UPLOAD_MAX_BYTES=16,
-            API_UPLOAD_PREFIX="agent_data/uploads",
+) -> AsyncIterator[tuple[httpx.AsyncClient, str, str, FakeMultipartStorage]]:
+    """Build an API client with an injectable local upload service."""
+    keys_path = str(tmp_path / "keys.sqlite")
+    uploads_path = str(tmp_path / "uploads.sqlite")
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", keys_path)
+    monkeypatch.setenv(
+        "PHYTOMNI_API_UPLOAD_V2_ALLOWED_ORIGINS",
+        '["https://web.example"]',
+    )
+    key_store = ApiKeyStore(keys_path)
+    control_key = key_store.create(
+        user_id="web-service",
+        scopes=("files:delegate",),
+    ).api_key
+    ordinary_key = key_store.create(user_id="ordinary-user").api_key
+    storage = FakeMultipartStorage()
+    service = ResumableUploadService(
+        ResumableUploadRegistry(uploads_path),
+        storage,
+        UploadServiceConfig(
+            bucket_name="test-bucket",
+            upload_origin="https://upload.example",
         ),
     )
-    payload = b"col\n" + b"a\n" * 6
-
-    accepted = await api_client.post(
-        "/v1/files",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        files={"file": ("table.csv", payload, "text/csv")},
-        data={"purpose": "dataset"},
-    )
-    assert accepted.status_code == 201
-    put_content = fake_obs_client.captured["put_content"]["content"]
-    assert put_content == payload
-
-    rejected = await api_client.post(
-        "/v1/files",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        files={"file": ("table.csv", payload + b"x", "text/csv")},
-        data={"purpose": "dataset"},
-    )
-    assert rejected.status_code == 413
-    assert rejected.json()["error"]["code"] == "payload_too_large"
-    assert fake_obs_client.captured["put_content"]["content"] == payload
-
-
-async def test_upload_file_does_not_advertise_unregistered_object(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    fake_obs_client: Any,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Metadata persistence failure blocks the 201 upload response."""
-
-    def _fail_record(_self: Any, _metadata: Any) -> None:
-        """Raise the simulated persistence failure."""
-        raise sqlite3.OperationalError("disk full")
-
     monkeypatch.setattr(
-        file_upload_module.UploadRegistry, "record", _fail_record
+        UploadRuntime,
+        "get_upload_service",
+        lambda _runtime: service,
     )
-    response = await api_client.post(
+    async with open_asgi_client(
+        monkeypatch, create_app(), base_url="https://api.test"
+    ) as client:
+        yield client, control_key, ordinary_key, storage
+
+
+def _control_headers(key: str) -> dict[str, str]:
+    """Return the trusted Web control-plane authorization header."""
+    return {"Authorization": f"Bearer {key}"}
+
+
+def _data_headers(capability: str) -> dict[str, str]:
+    """Return the browser capability header only."""
+    return {"Authorization": f"Bearer {capability}"}
+
+
+async def _create(
+    client: httpx.AsyncClient,
+    control_key: str,
+    *,
+    owner: str = "alice@example.com",
+    idempotency_key: str = "upload-route-1",
+    size_bytes: int = 3,
+) -> httpx.Response:
+    """Create one small synthetic asset through the Web control shape."""
+    return await client.post(
         "/v1/files",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        files={"file": ("report.pdf", b"hello", "application/pdf")},
-    )
-
-    assert response.status_code == 500
-    body = response.json()["error"]
-    assert body["code"] == "upload_metadata_failed"
-    assert body["stage"] == "upload_persist"
-    assert body["retryable"] is False
-    assert "obs_path" not in response.text
-    assert fake_obs_client.captured["put_content"]["content"] == b"hello"
-
-
-async def test_upload_file_rejects_unknown_purpose_with_422(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    fake_obs_client: Any,
-) -> None:
-    """A purpose outside the UploadPurpose Literal returns 422 + envelope.
-
-    Covers AF-002 (audit 2026-05-26): prior contract accepted any
-    string and echoed it back unfiltered. The Literal enum now drives
-    FastAPI's RequestValidationError, which the unified handler maps
-    to the 422 envelope.
-    """
-    response = await api_client.post(
-        "/v1/files",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        files={"file": ("x.bin", b"data", "application/octet-stream")},
-        data={"purpose": "hack"},
-    )
-
-    assert response.status_code == 422
-    body = response.json()
-    assert body["error"]["code"] == "invalid_request"
-    assert "put_content" not in fake_obs_client.captured
-
-
-async def test_upload_file_rejects_unauthenticated_request(
-    api_client: httpx.AsyncClient,
-) -> None:
-    """Missing bearer token returns 401."""
-    response = await api_client.post(
-        "/v1/files",
-        files={"file": ("x.bin", b"data", "application/octet-stream")},
-    )
-
-    assert response.status_code == 401
-
-
-async def test_upload_file_pre_read_rejects_oversized_content_length(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    fake_obs_client: Any,
-) -> None:
-    """A Content-Length above the ceiling returns 413 without writing."""
-    real_config = api_app.ApiConfig
-    monkeypatch.setattr(
-        file_upload_module,
-        "ApiConfig",
-        lambda: SimpleNamespace(
-            API_RATE_LIMIT_PER_MIN=120,
-            API_UPLOAD_MAX_BYTES=8,
-            API_UPLOAD_PREFIX="agent_data/uploads",
-            **{
-                k: getattr(real_config(), k)
-                for k in (
-                    "API_KEYS_DB_PATH",
-                    "API_TASKS_DB_PATH",
-                    "API_REQUEST_TIMEOUT",
-                    "API_RUN_TTL_OK_HOURS",
-                    "API_RUN_TTL_FAIL_DAYS",
-                )
-            },
-        ),
-    )
-
-    response = await api_client.post(
-        "/v1/files",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        files={
-            "file": (
-                "x.bin",
-                b"this is more than 8 bytes",
-                "application/octet-stream",
-            )
+        headers=_control_headers(control_key),
+        json={
+            "owner_subject": owner,
+            "filename": "sample.fastq.gz",
+            "size_bytes": size_bytes,
+            "content_type_hint": "application/gzip",
+            "last_modified_ms": 1722470400000,
+            "purpose": "chat_attachment",
+            "idempotency_key": idempotency_key,
         },
     )
 
-    assert response.status_code == 413
-    assert response.json()["error"]["code"] == "payload_too_large"
-    assert "put_content" not in fake_obs_client.captured
 
-
-async def test_upload_file_post_read_rejects_oversize_when_header_absent(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
+async def test_multipart_route_is_rejected_and_control_scope_is_explicit(
+    resumable_upload_client: tuple[
+        httpx.AsyncClient, str, str, FakeMultipartStorage
+    ],
 ) -> None:
-    """An oversized body still returns 413 if the helper's check fires."""
-    monkeypatch.setattr(
-        uploads_module,
-        "_SERVER_DEFAULTS",
-        SimpleNamespace(BUCKET_NAME="phytomni", OBS_SERVER="x"),
-    )
-
-    def _boom(**_: Any) -> Any:
-        raise uploads_module.UploadTooLargeError(
-            "upload of 999 bytes exceeds max_bytes=8"
-        )
-
-    monkeypatch.setattr(uploads_module, "upload_user_file", _boom)
-    monkeypatch.setattr(file_upload_module, "upload_user_file", _boom)
-
-    response = await api_client.post(
+    """Old multipart input cannot reach storage and scope-less keys fail."""
+    client, control_key, ordinary_key, storage = resumable_upload_client
+    rejected = await client.post(
         "/v1/files",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        files={"file": ("x.bin", b"tiny", "application/octet-stream")},
+        headers=_control_headers(control_key),
+        files={"file": ("sample.txt", b"abc", "text/plain")},
     )
+    assert rejected.status_code == 422
+    assert not storage.sessions
 
-    assert response.status_code == 413
+    forbidden = await _create(client, ordinary_key)
+    assert forbidden.status_code == 403
+    assert forbidden.json()["error"]["code"] == "forbidden"
 
 
-async def test_upload_file_byte_budget_breach_returns_413_without_writing(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    monkeypatch: pytest.MonkeyPatch,
-    fake_obs_client: Any,
+async def test_resumable_data_plane_streams_parts_and_completes(
+    resumable_upload_client: tuple[
+        httpx.AsyncClient, str, str, FakeMultipartStorage
+    ],
 ) -> None:
-    """A body that breaches ``max_bytes`` returns 413 before OBS upload.
-
-    Covers AF-001 (audit 2026-05-26): when the Content-Length header is
-    absent or falsified, the route must still bound peak memory and
-    never reach ``upload_user_file``. We monkeypatch
-    ``read_with_byte_budget`` to return ``None`` (the helper's "budget
-    breached" signal) so the route's None-branch fires regardless of
-    what the in-process ASGI client claims for Content-Length.
-    """
-
-    async def _budget_breach(*_args: Any, **_kwargs: Any) -> Any:
-        return None
-
-    monkeypatch.setattr(
-        file_upload_module, "read_with_byte_budget", _budget_breach
+    """Create, HEAD, PUT, complete, and abort use the split resource API."""
+    client, control_key, _ordinary_key, storage = resumable_upload_client
+    created = await _create(client, control_key)
+    assert created.status_code == 201
+    assert created.headers["cache-control"] == "no-store"
+    session = created.json()
+    assert session["protocol"] == "obs-multipart-v2"
+    assert session["upload_url"] == (
+        f"https://upload.example/v1/files/{session['asset_id']}"
     )
+    assert "object_key" not in created.text
+    capability = session["capability"]
 
-    response = await api_client.post(
-        "/v1/files",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        files={"file": ("x.bin", b"tiny", "application/octet-stream")},
+    head = await client.head(
+        f"/v1/files/{session['asset_id']}",
+        headers=_data_headers(capability),
     )
+    assert head.status_code == 200
+    assert head.headers["upload-protocol"] == "obs-multipart-v2"
+    assert head.headers["upload-status"] == "uploading"
+    assert head.headers["upload-length"] == "3"
+    assert head.headers["upload-part-count"] == "1"
+    assert head.headers["upload-received-parts"] == ""
+    assert head.headers["cache-control"] == "no-store"
+    assert head.headers["x-request-id"]
 
-    assert response.status_code == 413
-    assert response.json()["error"]["code"] == "payload_too_large"
-    assert "put_content" not in fake_obs_client.captured
+    body = b"abc"
+    part = await client.put(
+        f"/v1/files/{session['asset_id']}/parts/1",
+        headers={
+            **_data_headers(capability),
+            "Content-Type": "application/octet-stream",
+            "X-Phytomni-Part-SHA256": sha256(body).hexdigest(),
+        },
+        content=body,
+    )
+    assert part.status_code == 200
+    assert part.json()["received_parts"] == [1]
+    assert storage.read_sizes == [3]
+
+    complete = await client.post(
+        f"/v1/files/{session['asset_id']}/complete",
+        headers=_data_headers(capability),
+    )
+    assert complete.status_code == 200
+    assert complete.json()["status"] == "completed"
+    assert complete.json()["completed_at"]
+    assert complete.headers["cache-control"] == "no-store"
+
+    revoked = await client.head(
+        f"/v1/files/{session['asset_id']}",
+        headers=_data_headers(capability),
+    )
+    assert revoked.status_code == 401
+    assert revoked.headers["cache-control"] == "no-store"
 
 
-async def test_upload_file_rejects_empty_body(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    fake_obs_client: Any,
+async def test_capabilities_are_asset_scoped_and_checksum_errors_are_stable(
+    resumable_upload_client: tuple[
+        httpx.AsyncClient, str, str, FakeMultipartStorage
+    ],
 ) -> None:
-    """An empty multipart body returns 400."""
-    del fake_obs_client
-    response = await api_client.post(
-        "/v1/files",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        files={"file": ("x.bin", b"", "application/octet-stream")},
+    """A bearer for one asset cannot inspect or write another asset."""
+    client, control_key, _ordinary_key, _storage = resumable_upload_client
+    first = await _create(
+        client, control_key, idempotency_key="upload-route-a"
+    )
+    second = await _create(
+        client,
+        control_key,
+        idempotency_key="upload-route-b",
+        owner="bob@example.com",
+    )
+    first_body = first.json()
+    second_body = second.json()
+    cross_asset = await client.head(
+        f"/v1/files/{second_body['asset_id']}",
+        headers=_data_headers(first_body["capability"]),
+    )
+    assert cross_asset.status_code == 401
+    assert cross_asset.content == b""
+    assert cross_asset.headers["cache-control"] == "no-store"
+
+    body = b"abc"
+    checksum_error = await client.put(
+        f"/v1/files/{first_body['asset_id']}/parts/1",
+        headers={
+            **_data_headers(first_body["capability"]),
+            "X-Phytomni-Part-SHA256": "0" * 64,
+        },
+        content=body,
+    )
+    assert checksum_error.status_code == 422
+    assert checksum_error.json()["error"]["code"] == (
+        "upload_checksum_mismatch"
     )
 
-    assert response.status_code == 400
-    assert response.json()["error"]["code"] == "invalid_argument"
 
-
-async def test_upload_file_sanitizes_traversal_filename(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    fake_obs_client: Any,
+async def test_cors_allows_configured_origin_without_credentials(
+    resumable_upload_client: tuple[
+        httpx.AsyncClient, str, str, FakeMultipartStorage
+    ],
 ) -> None:
-    """A path-traversing filename collapses to the basename."""
-    del fake_obs_client
-    response = await api_client.post(
-        "/v1/files",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        files={
-            "file": (
-                "../../etc/passwd",
-                b"data",
-                "application/octet-stream",
-            )
+    """The direct browser data plane exposes only the configured origin."""
+    client, _control_key, _ordinary_key, _storage = resumable_upload_client
+    response = await client.options(
+        "/v1/files/file_missing",
+        headers={
+            "Origin": "https://web.example",
+            "Access-Control-Request-Method": "HEAD",
+            "Access-Control-Request-Headers": "authorization",
         },
     )
-
-    assert response.status_code == 201
-    body = response.json()
-    assert body["filename"] == "passwd"
-    assert "../" not in body["obs_path"]
-    assert body["obs_path"].endswith("/passwd")
-
-
-async def test_upload_file_request_id_appears_in_obs_path(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    fake_obs_client: Any,
-) -> None:
-    """The X-Request-Id header value is the request-id segment of obs_path."""
-    del fake_obs_client
-    response = await api_client.post(
-        "/v1/files",
-        headers={"Authorization": f"Bearer {issued_api_key}"},
-        files={"file": ("notes.txt", b"abc", "text/plain")},
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == (
+        "https://web.example"
     )
+    assert response.headers.get("access-control-allow-credentials") != "true"
 
-    assert response.status_code == 201
-    request_id = response.headers["X-Request-Id"]
-    body = response.json()
-    assert f"/agent_data/uploads/u1/{request_id}/" in body["obs_path"]
+    denied = await client.options(
+        "/v1/files/file_missing",
+        headers={
+            "Origin": "https://evil.example",
+            "Access-Control-Request-Method": "HEAD",
+        },
+    )
+    assert "access-control-allow-origin" not in denied.headers

@@ -12,10 +12,10 @@ from unicodedata import category, normalize
 from uuid import UUID
 
 from pydantic import (
+    AliasChoices,
     BaseModel,
     ConfigDict,
     Field,
-    computed_field,
     model_validator,
 )
 
@@ -26,22 +26,6 @@ from ..runtime.locale import SupportedLocale
 _CANONICAL_AGENT_TOOL_NAMES = frozenset(
     name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
 )
-
-# Allowed values for the ``purpose`` field on ``POST /v1/files`` and
-# the response echo. Combines the OpenAI files API enum (assistants,
-# batch, fine-tune, vision, user_data) with the Phytomni-internal
-# ``agent_context`` default. AF-002 audit 2026-05-26: prior contract
-# accepted any str, which drifted from the docs claim of "OpenAI-files
-# compatible" and exposed an unbounded echo field.
-UploadPurpose = Literal[
-    "agent_context",
-    "assistants",
-    "batch",
-    "dataset",
-    "fine-tune",
-    "vision",
-    "user_data",
-]
 
 UploadAssetPurpose = Literal["chat_attachment"]
 
@@ -62,8 +46,8 @@ __all__ = [
     "ContextMutationResponse",
     "ContextSettlementRequest",
     "ContextTombstoneRequest",
-    "FileUploadResponse",
     "UploadAssetPurpose",
+    "UploadCapabilityRenewRequest",
     "UploadCapabilityResponse",
     "UploadCompletionRequest",
     "UploadCreateRequest",
@@ -79,7 +63,6 @@ __all__ = [
     "MemoryResponse",
     "MemoryUpdateRequest",
     "ResumeRequest",
-    "UploadPurpose",
 ]
 
 
@@ -202,9 +185,14 @@ class UploadCreateRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    owner_subject: str = Field(min_length=1, max_length=256)
+    owner_subject: str = Field(min_length=1, max_length=320)
     filename: str = Field(min_length=1, max_length=255)
-    content_type: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(
+        default="",
+        max_length=256,
+        validation_alias=AliasChoices("content_type", "content_type_hint"),
+    )
+    last_modified_ms: int = Field(default=0, ge=0)
     size_bytes: int = Field(gt=0, le=10 * 1024**3)
     purpose: UploadAssetPurpose = "chat_attachment"
     idempotency_key: str = Field(min_length=1, max_length=256)
@@ -250,9 +238,19 @@ class UploadCapabilityResponse(BaseModel):
 
     protocol: Literal["obs-multipart-v2"]
     asset_id: str
+    status: Literal["uploading"]
+    upload_url: str
     capability: str
     capability_expires_at: datetime
     session_expires_at: datetime
+
+
+class UploadCapabilityRenewRequest(BaseModel):
+    """Trusted owner assertion used by the Web control plane."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    owner_subject: str = Field(min_length=1, max_length=320)
 
 
 class UploadCompletionRequest(BaseModel):
@@ -302,6 +300,7 @@ class AssetDescriptor(BaseModel):
     size_bytes: int
     purpose: UploadAssetPurpose
     status: Literal["completed"]
+    completed_at: datetime
 
 
 class AgentRunRequest(BaseModel):
@@ -607,47 +606,3 @@ class MemoryAuditListResponse(BaseModel):
 
     object: str = "list"
     data: list[MemoryAuditRecordResponse]
-
-
-class FileUploadResponse(BaseModel):
-    """Response to ``POST /v1/files`` multipart upload.
-
-    The shape stays OpenAI-files-compatible (``id``, ``object``,
-    ``bytes``, ``filename``, ``purpose``, ``created_at``) so chat-ai
-    clients that already speak the OpenAI files schema can integrate
-    without an adapter, plus two Phytomni-specific fields:
-
-    Attributes:
-        id: Per-request file id (``upload_...`` token from IdFactory)
-            that also appears as the second-to-last segment of
-            ``obs_path``.
-        object: Stable type discriminator (``"file"``).
-        bytes: Byte length of the stored payload.
-        filename: Sanitized basename actually written to OBS; may
-            differ from the original upload name if the client sent
-            shell metacharacters, Unicode, or path traversal segments.
-        purpose: Caller-declared intent for the file. Defaults to
-            ``agent_context`` so chat-ai's attachment flow can omit it.
-        created_at: Unix epoch seconds (UTC) when the upload was
-            stored.
-        obs_path: Public ``/obs/<bucket>/<key>`` path that clients can
-            replay in a later ``obs_file_list`` argument.
-        path: Computed alias of ``obs_path`` preserved so chat-ai's
-            existing ``obs_file_list`` builder, which already reads
-            ``path`` from the legacy local upload bridge, can plug in
-            unchanged. Read-only mirror that can never drift from
-            ``obs_path``.
-    """
-
-    id: str
-    object: str = "file"
-    bytes: int
-    filename: str
-    purpose: UploadPurpose
-    created_at: int
-    obs_path: str
-
-    @computed_field
-    def path(self) -> str:
-        """Alias of ``obs_path`` for chat-ai's ``obs_file_list`` builder."""
-        return self.obs_path

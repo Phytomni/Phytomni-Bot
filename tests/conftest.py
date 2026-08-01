@@ -550,9 +550,9 @@ def _build_fake_obs_client() -> Any:
 
     Two fixtures share this helper: ``fake_obs_client_factory`` exposes
     it raw for unit tests that want to control creation timing, and
-    ``fake_obs_client`` patches ``storage.obs_relay_ops.ObsClient`` (the
-    server-side SDK seam ``upload_user_file`` delegates to) for server
-    tests. Each call yields a new class so capture state never leaks
+    ``fake_obs_client`` patches ``storage.obs_relay_ops.ObsClient`` for
+    server tests that exercise the relay SDK seam. Each call yields a new
+    class so capture state never leaks
     between cases.
     """
 
@@ -697,8 +697,7 @@ def fake_obs_client(monkeypatch: pytest.MonkeyPatch) -> Any:
 
     Args:
         monkeypatch: Pytest monkeypatch used to bind the fake into
-            ``storage.obs_relay_ops`` (the SDK seam ``upload_user_file``
-            delegates its write to).
+            ``storage.obs_relay_ops`` for relay object tests.
 
     Returns:
         The patched fake OBS client class.

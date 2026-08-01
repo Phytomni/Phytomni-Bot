@@ -16,13 +16,13 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import cache
 from pathlib import Path
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 from ..config.defaults import ApiConfig
@@ -37,6 +37,8 @@ __all__ = [
     "get_key_store",
     "resolve_principal",
     "require_principal",
+    "require_scope",
+    "require_explicit_scope",
     "scopes_satisfy",
     "relay_scope_satisfied",
 ]
@@ -112,6 +114,40 @@ def scopes_satisfy(granted: frozenset[str], needed: Sequence[str]) -> bool:
             continue
         return False
     return True
+
+
+def require_explicit_scope(
+    authorized: Callable[..., Awaitable[ApiPrincipal]],
+    *needed: str,
+) -> Callable[..., Awaitable[ApiPrincipal]]:
+    """Build a dependency that rejects legacy scope-less keys."""
+
+    async def _scoped(
+        caller: ApiPrincipal = Depends(authorized),
+    ) -> ApiPrincipal:
+        if not caller.scopes or any(
+            scope not in caller.scopes for scope in needed
+        ):
+            raise HTTPException(status_code=403, detail="insufficient scope")
+        return caller
+
+    return _scoped
+
+
+def require_scope(
+    authorized: Callable[..., Awaitable[ApiPrincipal]],
+    *needed: str,
+) -> Callable[..., Awaitable[ApiPrincipal]]:
+    """Build a dependency that accepts legacy all-access keys."""
+
+    async def _scoped(
+        caller: ApiPrincipal = Depends(authorized),
+    ) -> ApiPrincipal:
+        if not scopes_satisfy(caller.scopes, needed):
+            raise HTTPException(status_code=403, detail="insufficient scope")
+        return caller
+
+    return _scoped
 
 
 def relay_scope_satisfied(granted: frozenset[str], service: str) -> bool:
