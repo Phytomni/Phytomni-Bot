@@ -11,7 +11,33 @@ Baseline SHA: `1a44d591d5eb5cfabfb16c74b1eda41d6c527dac`
 Allowed statuses: `Unknown`, `Needs Verification`, `Bot Ready`,
 `External Pending`, `Accepted`, `Blocked`, `Rejected`.
 
-## Current Bot evidence packet
+## Current-SHA local reconciliation
+
+The following evidence was captured on the clean source candidate immediately
+before this documentation-only reconciliation commit:
+
+- Branch: `release/0.1.4`.
+- Source candidate: `cdb3a29b77bdfa7f75f75d32339d6cff3fcd9803`.
+- Tracked worktree: clean; the branch was ahead of its remote by 16 commits;
+  no push, merge, rebase, or production action was performed.
+- Acceptance focused packet: `380 passed in 19.95s`.
+- Convergence packet: `436 passed, 8 deselected` in 18.96s.
+- Scoped gate: `254 passed, 8 deselected`, with exact cross-file Pylint
+  `0 records`.
+- Full local gate: `4133 passed, 9 deselected`, total coverage `87.78%`.
+- Conversation-context fixture SHA-256:
+  `8d432c8ebd6c4912667566b211177c4f5ee2f19bf4f8df935861ccf016a89633`.
+- The Bot-local implementation is ready for review. Python 3.13/3.14 matrix,
+  Web/Go forwarding and settlement, browser, real backend/operator, staging,
+  production, CI, and feature activation remain `Needs Verification` or
+  `External Pending` according to the relevant owner boundary.
+
+This section is a pre-commit evidence snapshot. The documentation commit that
+follows changes `HEAD`; any final acceptance packet must bind its own logs to
+that post-commit SHA. It must not reuse this snapshot as final current-SHA
+proof.
+
+## Historical packet snapshot
 
 Evidence base SHA: `edcf25d7` (Task 3 acceptance assets; not the final
 current-SHA packet)\
@@ -751,12 +777,13 @@ acceptance remain pending; feature flags stay dark.
 
 ## Local reconciliation note
 
-The current source contains the stream capability gate and the accumulated
-HTTP stream-answer persistence path that were previously listed as absent in
-C3 and C7. Focused regression coverage now exercises the stream allowlist and
-the complete public lifecycle error-code localization. These rows remain
-`Needs Verification` until the current-SHA packet and its full local gate are
-replayed without unrelated static-analysis findings.
+The current source contains the stream capability gate, accumulated HTTP
+stream-answer persistence, analyst-class report assembly, native agent-run
+conversation context, curated gene-example OBS reads, and resumable upload
+runtime corrections. Focused/scoped/full local evidence is green for the
+source candidate above. The final packet and supported-version matrix remain
+separate acceptance evidence; no missing external evidence is upgraded to
+`Accepted` here.
 
 ## Handoff dispositions
 

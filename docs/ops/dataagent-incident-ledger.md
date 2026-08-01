@@ -30,6 +30,22 @@ provider-owner interpretation.
   - `2026-07-24-bot-contract-convergence-spec.md`:
     `ea8ff5439a7c605cf545d84d49c6c8c9928f4c1bfa80a477dcfc9a5994da6d6e`
 
+## Current source reconciliation
+
+The evidence-only DataAgent conclusion is unchanged after the current Bot
+source reconciliation:
+
+- Current source candidate before the documentation-only commit:
+  `cdb3a29b77bdfa7f75f75d32339d6cff3fcd9803` on `release/0.1.4`.
+- Current Bot local focused/scoped/full gates are green, including the safe
+  six-stage trace and public stage-error projection tests.
+- The provider-side semantic contract is still unresolved. No DataAgent
+  behavior amendment, provider interpretation, historical Analyst write,
+  production access, or production mutation is authorized by this update.
+- The post-commit SHA must be used for any future evidence packet; this note
+  deliberately preserves the original controlled replay identifiers and
+  hashes below.
+
 ## Confirmed
 
 - The captured Web request ended as HTTP 500.
