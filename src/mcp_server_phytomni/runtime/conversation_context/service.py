@@ -418,7 +418,13 @@ class ConversationContextService:
         context: BusinessContext | None = None
         rebuilt = False
         failure: PrepareStatus | None = None
-        if stored is None:
+        if envelope.operation == "rebuild":
+            if stored is not None and stored.state != "active":
+                failure = PrepareStatus.REBUILD_REQUIRED
+            else:
+                context = self._rebuild_context(envelope)
+                rebuilt = True
+        elif stored is None:
             if envelope.base_business_context_version == 0:
                 context = self._rebuild_context(envelope)
                 rebuilt = True
@@ -429,9 +435,6 @@ class ConversationContextService:
             or stored.context_version != envelope.base_business_context_version
         ):
             failure = PrepareStatus.REBUILD_REQUIRED
-        elif envelope.operation == "rebuild":
-            context = self._rebuild_context(envelope)
-            rebuilt = True
         elif (
             stored.schema_version != 1
             or stored.observed_mode != envelope.mode
@@ -446,17 +449,15 @@ class ConversationContextService:
                 context = BusinessContext.model_validate(stored.context)
             except ValueError:
                 failure = PrepareStatus.REBUILD_REQUIRED
-        if (
-            context is not None
-            and stored is not None
-            and (
+        if context is not None and stored is not None and not rebuilt:
+            context_mismatch = (
                 context.version != stored.context_version
                 or context.last_applied_ledger_cursor != stored.ledger_cursor
                 or context.last_applied_ledger_version != stored.ledger_version
             )
-        ):
-            failure = PrepareStatus.REBUILD_REQUIRED
-            context = None
+            if context_mismatch:
+                failure = PrepareStatus.REBUILD_REQUIRED
+                context = None
         return context, rebuilt, failure
 
     def _matches_duplicate(

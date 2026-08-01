@@ -280,6 +280,20 @@ async def test_settlement_persists_acknowledged_ledger_for_next_append(
 
 
 @pytest.mark.asyncio
+async def test_rebuild_stale_base(store: ConversationContextStore) -> None:
+    """An explicit rebuild recovers from a stale local context base."""
+    service = _service(store)
+    await service.execute_turn(_envelope())
+    await service.acknowledge_settlement(_envelope(), "b" * 64)
+    prepared = await service.execute_turn(
+        _envelope(
+            turn_id="2", operation="rebuild", base_business_context_version=0
+        )
+    )
+    assert prepared.stage and prepared.stage.context_rebuilt
+
+
+@pytest.mark.asyncio
 async def test_duplicate_in_progress_turn_returns_explicit_status(
     store: ConversationContextStore,
 ) -> None:
