@@ -372,6 +372,14 @@ class ResumableUploadRegistry:
             ).fetchone()
         return None if asset is None else _asset_from_row(asset)
 
+    def get_asset_by_id(self, asset_id: str) -> AssetRecord | None:
+        """Return one asset for internal cleanup and reconciliation."""
+        with sqlite_connection(self.db_path) as conn:
+            asset = conn.execute(
+                "SELECT * FROM upload_assets WHERE asset_id = ?", (asset_id,)
+            ).fetchone()
+        return None if asset is None else _asset_from_row(asset)
+
     def get_parts(
         self, asset_id: str, *, owner: str
     ) -> tuple[PartRecord, ...]:
@@ -391,6 +399,53 @@ class ResumableUploadRegistry:
                 (asset_id,),
             ).fetchall()
         return tuple(_part_from_row(row) for row in rows)
+
+    def get_part(
+        self, asset_id: str, part_number: int, *, owner: str
+    ) -> PartRecord | None:
+        """Return one owner-scoped authoritative part, if present."""
+        with sqlite_connection(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT p.asset_id, p.part_number, p.byte_size, p.sha256, "
+                "p.etag, p.received_at FROM upload_parts AS p "
+                "JOIN upload_assets AS a ON a.asset_id = p.asset_id "
+                "WHERE p.asset_id = ? AND p.part_number = ? "
+                "AND a.owner_subject = ?",
+                (asset_id, part_number, owner),
+            ).fetchone()
+        return None if row is None else _part_from_row(row)
+
+    def set_provider_session(
+        self,
+        asset_id: str,
+        *,
+        owner: str,
+        obs_upload_id: str,
+        now: datetime,
+    ) -> AssetRecord:
+        """Bind one provider session and accept identical concurrent binds."""
+        if not obs_upload_id:
+            raise UploadStateError("invalid_upload_metadata")
+        bound_at = _utc(now)
+        with sqlite_transaction(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            asset = self._fetch_asset(conn, asset_id)
+            if asset.owner_subject != owner:
+                raise UploadStateError("upload_asset_not_found")
+            if asset.status != "uploading":
+                raise UploadStateError("upload_state_conflict")
+            if asset.obs_upload_id is not None:
+                if asset.obs_upload_id == obs_upload_id:
+                    return asset
+                raise UploadStateError("upload_state_conflict")
+            conn.execute(
+                "UPDATE upload_assets SET obs_upload_id = ?, "
+                "updated_at = ?, state_version = state_version + 1 "
+                "WHERE asset_id = ? AND status = 'uploading' "
+                "AND obs_upload_id IS NULL",
+                (obs_upload_id, _iso(bound_at), asset_id),
+            )
+            return self._fetch_asset(conn, asset_id)
 
     def record_part(self, part: PartRecord, *, now: datetime) -> PartRecord:
         """Insert one part or accept an identical retry."""

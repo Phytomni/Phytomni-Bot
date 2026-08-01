@@ -55,11 +55,12 @@ pytestmark = pytest.mark.server
 _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 # Generated from ``_openapi_hash(create_app())`` after the intentional public
 # schema additions in 7321656 (locale), dd99f82 (dataset uploads), bcf20b6
-# (attachment capabilities), the strict Expert request boundary, and the
-# private native conversation envelope. The ``_normalized_openapi`` helper
+# (attachment capabilities), the strict Expert request boundary, the private
+# native conversation envelope, and resumable attachment references. The
+# ``_normalized_openapi`` helper
 # removes only unstable version/server fields.
 _OPENAPI_HASH = (
-    "f5b9bf192a1ab14844022c9eca896afd4794d3db8165bf148a316737e6a6a69a"
+    "122343acb9cc128d144b8bf2bcaa98eae1d212db30fa4ea0ab76379d5c7128c4"
 )
 
 
@@ -566,7 +567,7 @@ def test_default_application_contract_is_literal() -> None:
     if os.environ.get("PHYTOMNI_DEPENDENCY_FLOOR") != "1":
         assert _openapi_hash(app) == _OPENAPI_HASH
     assert len(document["paths"]) == 33
-    assert len(document["components"]["schemas"]) == 19
+    assert len(document["components"]["schemas"]) == 20
     assert all(
         operation.get("operationId")
         for path_item in document["paths"].values()

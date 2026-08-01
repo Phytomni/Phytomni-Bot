@@ -65,6 +65,80 @@ class ApiConfig(ApiLimitsConfig):
     ] = None
     API_UPLOAD_MAX_BYTES: int = 26_214_400
     API_UPLOAD_PREFIX: str = "agent_data/uploads"
+    API_UPLOAD_V2_ORIGIN: str = Field(
+        default="http://127.0.0.1:8080",
+        validation_alias=AliasChoices(
+            "API_UPLOAD_V2_ORIGIN", "PHYTOMNI_API_UPLOAD_V2_ORIGIN"
+        ),
+    )
+    API_UPLOAD_V2_BUCKET: str = Field(
+        default="phytomni",
+        min_length=1,
+        max_length=63,
+        validation_alias=AliasChoices(
+            "API_UPLOAD_V2_BUCKET", "PHYTOMNI_API_UPLOAD_V2_BUCKET"
+        ),
+    )
+    API_UPLOAD_V2_MAX_BYTES: int = Field(
+        default=10 * 1024**3,
+        ge=1,
+        le=10 * 1024**3,
+        validation_alias=AliasChoices(
+            "API_UPLOAD_V2_MAX_BYTES", "PHYTOMNI_API_UPLOAD_V2_MAX_BYTES"
+        ),
+    )
+    API_UPLOAD_V2_PART_SIZE_BYTES: int = Field(
+        default=128 * 1024**2,
+        ge=1,
+        le=128 * 1024**2,
+        validation_alias=AliasChoices(
+            "API_UPLOAD_V2_PART_SIZE_BYTES",
+            "PHYTOMNI_API_UPLOAD_V2_PART_SIZE_BYTES",
+        ),
+    )
+    API_UPLOAD_V2_MAX_PARALLEL_PARTS: int = Field(
+        default=4,
+        ge=1,
+        le=4,
+        validation_alias=AliasChoices(
+            "API_UPLOAD_V2_MAX_PARALLEL_PARTS",
+            "PHYTOMNI_API_UPLOAD_V2_MAX_PARALLEL_PARTS",
+        ),
+    )
+    API_UPLOAD_V2_CAPABILITY_TTL_SECONDS: int = Field(
+        default=900,
+        ge=60,
+        le=900,
+        validation_alias=AliasChoices(
+            "API_UPLOAD_V2_CAPABILITY_TTL_SECONDS",
+            "PHYTOMNI_API_UPLOAD_V2_CAPABILITY_TTL_SECONDS",
+        ),
+    )
+    API_UPLOAD_V2_SESSION_TTL_SECONDS: int = Field(
+        default=7 * 24 * 60 * 60,
+        ge=3600,
+        le=7 * 24 * 60 * 60,
+        validation_alias=AliasChoices(
+            "API_UPLOAD_V2_SESSION_TTL_SECONDS",
+            "PHYTOMNI_API_UPLOAD_V2_SESSION_TTL_SECONDS",
+        ),
+    )
+    API_UPLOAD_V2_CLEANUP_INTERVAL_SECONDS: int = Field(
+        default=300,
+        ge=30,
+        le=24 * 60 * 60,
+        validation_alias=AliasChoices(
+            "API_UPLOAD_V2_CLEANUP_INTERVAL_SECONDS",
+            "PHYTOMNI_API_UPLOAD_V2_CLEANUP_INTERVAL_SECONDS",
+        ),
+    )
+    API_UPLOAD_V2_ALLOWED_ORIGINS: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices(
+            "API_UPLOAD_V2_ALLOWED_ORIGINS",
+            "PHYTOMNI_API_UPLOAD_V2_ALLOWED_ORIGINS",
+        ),
+    )
     STREAM_ANSWER_MAX_BYTES: int = Field(
         default=1_048_576,
         validation_alias=AliasChoices(
@@ -195,6 +269,37 @@ class ApiConfig(ApiLimitsConfig):
             )
         return normalized
 
+    @field_validator("API_UPLOAD_V2_ORIGIN")
+    @classmethod
+    def _normalize_upload_origin(cls, value: str) -> str:
+        """Require an absolute origin without credentials or query data."""
+        normalized = value.strip().rstrip("/")
+        if not _is_safe_http_url(normalized):
+            raise ValueError(
+                "API_UPLOAD_V2_ORIGIN must be an absolute HTTP(S) URL "
+                "without credentials, query, or fragment."
+            )
+        return normalized
+
+    @field_validator("API_UPLOAD_V2_ALLOWED_ORIGINS")
+    @classmethod
+    def _validate_upload_origins(cls, values: list[str]) -> list[str]:
+        """Reject wildcard CORS origins at the upload boundary."""
+        normalized: list[str] = []
+        for value in values:
+            candidate = value.strip().rstrip("/")
+            if candidate == "*":
+                raise ValueError(
+                    "API_UPLOAD_V2_ALLOWED_ORIGINS cannot contain '*'"
+                )
+            if not _is_safe_http_url(candidate):
+                raise ValueError(
+                    "API_UPLOAD_V2_ALLOWED_ORIGINS must contain absolute "
+                    "HTTP(S) origins without credentials or query data."
+                )
+            normalized.append(candidate)
+        return normalized
+
     @model_validator(mode="after")
     def _require_a2a_public_base_url(self) -> "ApiConfig":
         """Fail at settings construction when enabled A2A lacks a URL."""
@@ -263,6 +368,16 @@ class ApiConfig(ApiLimitsConfig):
             "PHYTOMNI_RELAY_MAX_CONCURRENT_PER_KEY",
         ),
     )
+
+
+def _is_safe_http_url(value: str) -> bool:
+    """Return whether a URL is safe for an origin-style configuration."""
+    parsed = urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    if parsed.username is not None or parsed.password is not None:
+        return False
+    return not parsed.query and not parsed.fragment
 
 
 __all__ = ["ApiConfig"]

@@ -55,6 +55,8 @@ __all__ = [
     "ApiKeyDeleteResponse",
     "ApiKeyListResponse",
     "ApiKeyRecordResponse",
+    "AssetDescriptor",
+    "AttachmentAsset",
     "ChatCompletionRequest",
     "ChatMessage",
     "ContextMutationResponse",
@@ -66,6 +68,7 @@ __all__ = [
     "UploadCompletionRequest",
     "UploadCreateRequest",
     "UploadCreateResponse",
+    "UploadPartResponse",
     "UploadStatusResponse",
     "MemoryCreateRequest",
     "MemoryDeleteResponse",
@@ -142,6 +145,14 @@ class ContextMutationResponse(BaseModel):
     context_version: int = Field(ge=0)
 
 
+class AttachmentAsset(BaseModel):
+    """One completed resumable asset reference from the Web client."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    asset_id: str = Field(min_length=1, max_length=128)
+
+
 class ChatCompletionRequest(BaseModel):
     """OpenAI-compatible chat completion request subset.
 
@@ -173,6 +184,9 @@ class ChatCompletionRequest(BaseModel):
     messages: list[ChatMessage]
     stream: bool = False
     obs_file_list: list[str] | None = None
+    attachments: list[AttachmentAsset] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
     resolve_gene_id: bool | None = None
     dialogue_id: str | None = None
     debug: bool | None = None
@@ -181,14 +195,6 @@ class ChatCompletionRequest(BaseModel):
         default=None,
         exclude_if=lambda value: value is None,
     )
-
-
-class AttachmentAsset(BaseModel):
-    """One completed resumable asset reference from the Web client."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    asset_id: str = Field(min_length=1, max_length=128)
 
 
 class UploadCreateRequest(BaseModel):
@@ -272,6 +278,32 @@ class UploadStatusResponse(BaseModel):
     filename: str | None = None
 
 
+class UploadPartResponse(BaseModel):
+    """Safe response after one authoritative part upload."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    protocol: Literal["obs-multipart-v2"]
+    asset_id: str
+    status: Literal["uploading"]
+    part_number: int
+    byte_size: int
+    received_parts: list[int]
+
+
+class AssetDescriptor(BaseModel):
+    """Safe descriptor for a completed owner-scoped asset."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    asset_id: str
+    filename: str
+    content_type: str
+    size_bytes: int
+    purpose: UploadAssetPurpose
+    status: Literal["completed"]
+
+
 class AgentRunRequest(BaseModel):
     """Body for ``POST /v1/agents/{agent}/runs``.
 
@@ -294,6 +326,9 @@ class AgentRunRequest(BaseModel):
     """
 
     arguments: dict[str, Any] = Field(default_factory=dict)
+    attachments: list[AttachmentAsset] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
     dialogue_id: str | None = None
     debug: bool | None = None
     locale: SupportedLocale | None = None
@@ -363,6 +398,9 @@ class ExpertQueryRequest(BaseModel):
     user_query: str
     history: list[dict[str, Any]] = Field(default_factory=list)
     obs_file_list: list[str] = Field(default_factory=list)
+    attachments: list[AttachmentAsset] = Field(
+        default_factory=list, exclude_if=lambda value: not value
+    )
     dialogue_id: str | None = None
     allowed_tools: list[str] = Field(min_length=1, max_length=10)
     forced_tool: str | None = None

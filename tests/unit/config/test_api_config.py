@@ -76,6 +76,21 @@ def test_api_config_defaults() -> None:
     assert config.RELAY_MAX_CONCURRENT_PER_KEY == 8
 
 
+def test_resumable_upload_config_defaults() -> None:
+    """Verify the bounded v2 upload contract defaults."""
+    config = ApiConfig()
+
+    assert config.API_UPLOAD_V2_ORIGIN == "http://127.0.0.1:8080"
+    assert config.API_UPLOAD_V2_BUCKET == "phytomni"
+    assert config.API_UPLOAD_V2_MAX_BYTES == 10 * 1024**3
+    assert config.API_UPLOAD_V2_PART_SIZE_BYTES == 128 * 1024**2
+    assert config.API_UPLOAD_V2_MAX_PARALLEL_PARTS == 4
+    assert config.API_UPLOAD_V2_CAPABILITY_TTL_SECONDS == 900
+    assert config.API_UPLOAD_V2_SESSION_TTL_SECONDS == 604800
+    assert config.API_UPLOAD_V2_CLEANUP_INTERVAL_SECONDS == 300
+    assert config.API_UPLOAD_V2_ALLOWED_ORIGINS == []
+
+
 def test_api_config_env_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -89,6 +104,44 @@ def test_api_config_env_override(
     assert config.API_KEYS_DB_PATH == "/tmp/keys.sqlite"
     assert config.API_TASKS_DB_PATH == "/tmp/tasks.sqlite"
     assert config.API_RATE_LIMIT_PER_MIN == 5
+
+
+def test_resumable_upload_config_accepts_prefixed_aliases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Upload origin, limits, and CORS values accept deployment aliases."""
+    monkeypatch.setenv(
+        "PHYTOMNI_API_UPLOAD_V2_ORIGIN", "https://bot.example.com/"
+    )
+    monkeypatch.setenv("PHYTOMNI_API_UPLOAD_V2_BUCKET", "science-bucket")
+    monkeypatch.setenv(
+        "PHYTOMNI_API_UPLOAD_V2_ALLOWED_ORIGINS",
+        '["https://web.example.com"]',
+    )
+    monkeypatch.setenv("PHYTOMNI_API_UPLOAD_V2_CLEANUP_INTERVAL_SECONDS", "60")
+
+    config = ApiConfig()
+
+    assert config.API_UPLOAD_V2_ORIGIN == "https://bot.example.com"
+    assert config.API_UPLOAD_V2_BUCKET == "science-bucket"
+    assert config.API_UPLOAD_V2_ALLOWED_ORIGINS == ["https://web.example.com"]
+    assert config.API_UPLOAD_V2_CLEANUP_INTERVAL_SECONDS == 60
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["*", "ftp://web.example.com", "https://user:pass@web.example.com"],
+)
+def test_resumable_upload_config_rejects_unsafe_cors_origin(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """Upload CORS never accepts wildcard or credential origins."""
+    monkeypatch.setenv(
+        "PHYTOMNI_API_UPLOAD_V2_ALLOWED_ORIGINS", f'["{value}"]'
+    )
+
+    with pytest.raises(ValidationError, match="API_UPLOAD_V2_ALLOWED_ORIGINS"):
+        ApiConfig()
 
 
 def test_stream_answer_max_bytes_env_override(
