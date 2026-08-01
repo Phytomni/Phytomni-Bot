@@ -13,7 +13,7 @@ import sqlite3
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 from ..runtime.resumable_uploads import AssetRecord, ResumableUploadRegistry
 from ..runtime.upload_registry import UploadMetadata, UploadRegistry
@@ -22,6 +22,7 @@ from ..storage.multipart import (
     MultipartStorageError,
 )
 from ..storage.obs_storage import obs_path_from_key
+from .asset_descriptors import build_asset_descriptor
 from .resumable_uploads import UploadContractError
 from .schemas import AssetDescriptor, AttachmentAsset
 
@@ -78,7 +79,7 @@ class AssetResolver:
             run_dir.chmod(0o700)
             if partial.exists():
                 partial.unlink()
-            actual_size = self.storage.download_to_path(
+            actual_size = self.storage(
                 bucket=self.bucket_name,
                 object_key=asset.object_key,
                 destination=partial,
@@ -231,15 +232,7 @@ def _descriptor(asset: AssetRecord) -> AssetDescriptor:
     completed_at = asset.completed_at
     if completed_at is None:
         raise _asset_error("upload_state_conflict", status_code=409)
-    return AssetDescriptor(
-        asset_id=asset.asset_id,
-        filename=asset.filename,
-        content_type=asset.content_type,
-        size_bytes=asset.size_bytes,
-        purpose=cast(Any, asset.purpose),
-        status="completed",
-        completed_at=completed_at,
-    )
+    return build_asset_descriptor(asset)
 
 
 def _filename_format(filename: str) -> str:

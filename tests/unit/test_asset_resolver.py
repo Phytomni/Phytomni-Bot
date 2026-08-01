@@ -69,15 +69,11 @@ def _build_completed_asset(
         idempotency_key=f"resolver-{hashlib.sha256(content).hexdigest()}",
     )
     created = service.create(request)
+    digest = hashlib.sha256(content).hexdigest()
     service.put_part(
         created.asset_id,
         created.capability,
-        PartInput(
-            1,
-            BytesIO(content),
-            len(content),
-            hashlib.sha256(content).hexdigest(),
-        ),
+        PartInput(1, BytesIO(content), len(content), digest),
     )
     service.complete(
         created.asset_id,
@@ -86,7 +82,7 @@ def _build_completed_asset(
     )
     resolver = AssetResolver(
         registry,
-        storage,
+        storage.download_to_path,
         bucket_name="resolver-bucket",
         workspace_root=tmp_path / "materialized",
     )
@@ -116,7 +112,7 @@ def test_resolve_requires_owner_and_completion(tmp_path: Path) -> None:
     )
     resolver = AssetResolver(
         registry,
-        storage,
+        storage.download_to_path,
         bucket_name="resolver-bucket",
         workspace_root=tmp_path / "materialized",
     )

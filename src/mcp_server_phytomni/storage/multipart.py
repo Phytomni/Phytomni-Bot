@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
@@ -115,10 +115,6 @@ class MultipartStorage(Protocol):
         """Find a successful completion after an unknown provider outcome."""
         raise NotImplementedError
 
-
-class CompletedObjectReader(Protocol):
-    """Port for bounded reads of an already completed object."""
-
     def download_to_path(
         self,
         *,
@@ -129,6 +125,9 @@ class CompletedObjectReader(Protocol):
     ) -> int:
         """Stream one completed object into a caller-owned file."""
         raise NotImplementedError
+
+
+CompletedObjectReader = Callable[..., int]
 
 
 class BoundedMultipartStorage:

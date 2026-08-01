@@ -29,9 +29,9 @@ from ..storage.multipart import (
     PartInput,
     StoredPart,
 )
+from .asset_descriptors import build_asset_descriptor
 from .schemas import (
     AssetDescriptor,
-    UploadAssetPurpose,
     UploadCapabilityResponse,
     UploadCompletionRequest,
     UploadCreateRequest,
@@ -568,15 +568,7 @@ def _validate_complete_parts(
 
 def _descriptor(asset: AssetRecord) -> AssetDescriptor:
     """Project only safe metadata for a completed asset."""
-    return AssetDescriptor(
-        asset_id=asset.asset_id,
-        filename=asset.filename,
-        content_type=asset.content_type,
-        size_bytes=asset.size_bytes,
-        purpose=cast(UploadAssetPurpose, asset.purpose),
-        status="completed",
-        completed_at=asset.completed_at or asset.updated_at,
-    )
+    return build_asset_descriptor(asset)
 
 
 def _session_for(asset: AssetRecord, bucket_name: str) -> MultipartSession:

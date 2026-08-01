@@ -11,20 +11,21 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from time import monotonic
-from typing import Any, cast
+from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from ..config.defaults import ApiConfig, ServerConfig
+from ..runtime.background_submission import BACKGROUND_RUNTIME_ERRORS
 from ..runtime.resumable_uploads import (
     ResumableUploadRegistry,
     ResumableUploadRegistryConfig,
 )
-from ..storage.multipart import BoundedMultipartStorage, CompletedObjectReader
+from ..storage.multipart import BoundedMultipartStorage
 from .agent_capabilities import (
     serialize_file_upload_capability as _serialize_file_upload_capability,
 )
@@ -97,7 +98,7 @@ class UploadRuntime:
             )
             self.asset_resolver = AssetResolver(
                 service.registry,
-                cast(CompletedObjectReader, service.storage),
+                service.storage.download_to_path,
                 bucket_name=config.API_UPLOAD_V2_BUCKET,
                 workspace_root=workspace_root,
             )
@@ -120,9 +121,23 @@ class UploadRuntime:
             }
         )
 
-    def schedule_cleanup(self, background: BackgroundTasks) -> None:
+    async def schedule_cleanup(self, background: BackgroundTasks) -> None:
         """Schedule one rate-limited cleanup pass after a request."""
-        background.add_task(self.cleanup_expired)
+        background.add_task(self._start_cleanup_worker)
+
+    async def _start_cleanup_worker(self) -> None:
+        """Start cleanup without making the response await provider I/O."""
+        Thread(target=self._cleanup_expired_best_effort, daemon=True).start()
+
+    def _cleanup_expired_best_effort(self) -> None:
+        """Run cleanup in a daemon worker and contain unexpected failures."""
+        try:
+            self.cleanup_expired()
+        except BACKGROUND_RUNTIME_ERRORS as error:
+            self.logger.warning(
+                "resumable upload cleanup failed: %s",
+                error.__class__.__name__,
+            )
 
     def cleanup_expired(
         self,
