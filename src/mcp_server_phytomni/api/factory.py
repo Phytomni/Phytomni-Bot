@@ -58,6 +58,7 @@ from ..runtime.memory import (
 from ..runtime.run_registry import RunFilter, RunRequestInfo
 from ..runtime.stage_trace import current_stage_trace
 from . import run_lifecycle
+from . import stage_errors as _stage_errors
 from .a2a.executor import A2AHandlerOptions, A2ARequestHandler
 from .admin_auth import require_service_principal
 from .app_support import _SAFE_DEFAULT_MESSAGES, _ErrorResponseOptions
@@ -105,6 +106,11 @@ from .upload_runtime import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def project_data_stage_error(exc: BaseException) -> SafeApiError | None:
+    """Preserve the legacy factory seam for DataAgent error projection."""
+    return _stage_errors.project_data_stage_error(exc)
 
 
 def _app_module() -> Any:
@@ -548,8 +554,8 @@ def _build_agent_dependencies(
             executor=context_executor,
         ),
         upload=agent_routes.AgentUploadDependencies(
-            resumable_service=upload_runtime.get_upload_service(),
-            asset_resolver=upload_runtime.get_asset_resolver(),
+            resumable_service=upload_runtime.get_upload_service,
+            asset_resolver=upload_runtime.get_asset_resolver,
             require_upload_control=require_explicit_scope(
                 runtime.authorized, "files:delegate"
             ),

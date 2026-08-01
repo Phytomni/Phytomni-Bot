@@ -36,8 +36,8 @@ __all__ = ["AgentUploadDependencies", "register_upload_routes"]
 class AgentUploadDependencies:
     """Resumable upload and lifecycle seams used by HTTP routes."""
 
-    resumable_service: ResumableUploadService
-    asset_resolver: AssetResolver
+    resumable_service: Callable[[], ResumableUploadService]
+    asset_resolver: Callable[[], AssetResolver]
     require_upload_control: Callable[..., Any]
     schedule_cleanup: Callable[..., Any]
     serialize_file_upload_capability: Callable[[], Any]
@@ -61,7 +61,7 @@ def register_upload_routes(
         """Create one owner-scoped upload through the Web service principal."""
         del principal
         return _upload_json(
-            dependencies.resumable_service.create(payload), status_code=201
+            dependencies.resumable_service().create(payload), status_code=201
         )
 
     @app.post(
@@ -76,7 +76,7 @@ def register_upload_routes(
         """Renew a browser capability for the trusted owner assertion."""
         del principal
         return _upload_json(
-            dependencies.resumable_service.renew(
+            dependencies.resumable_service().renew(
                 asset_id, payload.owner_subject
             )
         )
@@ -84,7 +84,7 @@ def register_upload_routes(
     @app.head("/v1/files/{asset_id}")
     async def head_upload(asset_id: str, request: Request) -> Response:
         """Return resumable state through capability-only response headers."""
-        status = dependencies.resumable_service.head(
+        status = dependencies.resumable_service().head(
             asset_id, _capability_from_request(request)
         )
         return Response(headers=_upload_status_headers(status))
@@ -100,10 +100,9 @@ def register_upload_routes(
     ) -> JSONResponse:
         """Stream one exact-length part through a bounded temporary file."""
         capability = _capability_from_request(request)
-        dependencies.resumable_service.authorize(
-            asset_id, capability, operation="part"
-        )
-        max_part_size = dependencies.resumable_service.part_size_bytes
+        service = dependencies.resumable_service()
+        service.authorize(asset_id, capability, operation="part")
+        max_part_size = service.part_size_bytes
         content_length = _content_length_from_request(
             request, max_part_size=max_part_size
         )
@@ -117,7 +116,7 @@ def register_upload_routes(
             content_length,
             max_part_size=max_part_size,
         ) as source:
-            response = dependencies.resumable_service.put_part(
+            response = service.put_part(
                 asset_id,
                 capability,
                 _part_input(part_number, source, content_length, checksum),
@@ -134,7 +133,7 @@ def register_upload_routes(
         payload: UploadCompletionRequest | None = None,
     ) -> JSONResponse:
         """Complete one upload from the authoritative part registry."""
-        response = dependencies.resumable_service.complete(
+        response = dependencies.resumable_service().complete(
             asset_id,
             _capability_from_request(request),
             payload or UploadCompletionRequest(),
@@ -151,7 +150,7 @@ def register_upload_routes(
     ) -> JSONResponse:
         """Abort one upload and release its provider session."""
         return _upload_json(
-            dependencies.resumable_service.abort(
+            dependencies.resumable_service().abort(
                 asset_id, _capability_from_request(request)
             )
         )

@@ -36,11 +36,13 @@ def normalize_payload_attachments(
     attachments: Sequence[Any],
     *,
     owner: str,
-    resolver: AssetResolver,
+    resolver: AssetResolver | Callable[[], AssetResolver],
 ) -> dict[str, Any]:
     """Resolve Web asset IDs before any Agent or routing boundary."""
     if not attachments:
         return dict(arguments)
+    if callable(resolver):
+        resolver = resolver()
     return normalize_asset_attachments(
         {**arguments, "attachments": _attachment_payload_values(attachments)},
         owner=owner,
@@ -65,7 +67,7 @@ def normalize_chat_payload_attachments(
     payload: ChatCompletionRequest,
     *,
     owner: str,
-    resolver: AssetResolver,
+    resolver: AssetResolver | Callable[[], AssetResolver],
 ) -> ChatCompletionRequest:
     """Keep chat's public body while replacing asset IDs internally."""
     if not payload.attachments:
@@ -88,7 +90,7 @@ def normalize_expert_payload_attachments(
     payload: ExpertQueryRequest,
     *,
     owner: str,
-    resolver: AssetResolver,
+    resolver: AssetResolver | Callable[[], AssetResolver],
 ) -> ExpertQueryRequest:
     """Normalize Expert asset IDs without changing its tool allowlist."""
     if not payload.attachments:
