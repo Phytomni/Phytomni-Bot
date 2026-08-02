@@ -162,6 +162,48 @@ def _unpublished_commits(tip: str) -> list[str]:
     ).splitlines()
 
 
+def _new_ref_commits(after: str, event_ref: str) -> list[str]:
+    """Resolve commits introduced only by a newly created GitHub ref."""
+    _git("check-ref-format", event_ref)
+    references = [
+        tuple(line.split("\t", maxsplit=1))
+        for line in _git(
+            "for-each-ref",
+            "--format=%(refname)%09%(symref)",
+        ).splitlines()
+    ]
+    event_aliases = {event_ref}
+    if event_ref.startswith("refs/heads/"):
+        branch = event_ref.removeprefix("refs/heads/")
+        for reference, _target in references:
+            remote = reference.removeprefix("refs/remotes/")
+            _remote_name, separator, remote_branch = remote.partition("/")
+            if (
+                reference.startswith("refs/remotes/")
+                and separator
+                and remote_branch == branch
+            ):
+                event_aliases.add(reference)
+
+    changed = True
+    while changed:
+        changed = False
+        for reference, target in references:
+            if target in event_aliases and reference not in event_aliases:
+                event_aliases.add(reference)
+                changed = True
+
+    other_refs = [
+        reference
+        for reference, _target in references
+        if reference not in event_aliases
+    ]
+    arguments = ["rev-list", "--reverse", after]
+    if other_refs:
+        arguments.extend(("--not", *other_refs))
+    return _git(*arguments).splitlines()
+
+
 def _github_event_commits(path: Path) -> list[str]:
     """Resolve the authored commit range represented by a GitHub event."""
     try:
@@ -190,7 +232,12 @@ def _github_event_commits(path: Path) -> list[str]:
     if after == ZERO_OBJECT_ID:
         return []
     if before == ZERO_OBJECT_ID:
-        return [after]
+        event_ref = event.get("ref")
+        if not isinstance(event_ref, str):
+            raise CommitMessageGateError(
+                "GitHub new-ref push payload has no ref"
+            )
+        return _new_ref_commits(after, event_ref)
     return _range_commits(f"{before}..{after}")
 
 

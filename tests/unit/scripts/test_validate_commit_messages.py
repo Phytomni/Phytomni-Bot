@@ -269,6 +269,89 @@ def test_github_event_checks_pull_request_head_range(tmp_path: Path) -> None:
     assert result.stderr.startswith(f"{bad[:12]}: line 3:")
 
 
+def test_github_event_checks_all_commits_on_new_ref(tmp_path: Path) -> None:
+    """A zero-before push validates every commit introduced by its ref."""
+    repository = tmp_path / "repository"
+    _init_repository(repository)
+    _commit_message(
+        repository,
+        tmp_path,
+        "📄 Contracts: Preserve existing reference history\n\n"
+        "This pre-existing body is outside the new reference range.\n",
+    )
+    _git(repository, "switch", "--quiet", "--create", "new-ref")
+    bad = _commit_message(
+        repository,
+        tmp_path,
+        "📄 Contracts: Check new reference messages\n\n"
+        "An ancestor on the new ref lost its bullet.\n",
+    )
+    tip = _commit_message(repository, tmp_path, VALID_MESSAGE)
+    event_ref = _git(repository, "symbolic-ref", "HEAD")
+    _git(repository, "update-ref", "refs/remotes/origin/new-ref", tip)
+    _git(repository, "switch", "--quiet", "--detach", tip)
+    _git(repository, "branch", "--delete", "--force", "new-ref")
+    event = tmp_path / "event.json"
+    event.write_text(
+        json.dumps(
+            {
+                "before": "0" * 40,
+                "after": tip,
+                "created": True,
+                "ref": event_ref,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_checker("--github-event", str(event), cwd=repository)
+
+    assert result.returncode == 1
+    assert result.stderr == (
+        f"{bad[:12]}: line 3: body lines must start with '- '\n"
+    )
+
+
+def test_github_event_checks_all_commits_on_new_tag(tmp_path: Path) -> None:
+    """A detached new-tag push checks unique ancestors but not other refs."""
+    repository = tmp_path / "repository"
+    _init_repository(repository)
+    _commit_message(
+        repository,
+        tmp_path,
+        "📄 Contracts: Preserve existing tag history\n\n"
+        "This pre-existing body is outside the new tag range.\n",
+    )
+    _git(repository, "switch", "--quiet", "--detach", "HEAD")
+    bad = _commit_message(
+        repository,
+        tmp_path,
+        "📄 Contracts: Check new tag messages\n\n"
+        "An ancestor on the new tag lost its bullet.\n",
+    )
+    tip = _commit_message(repository, tmp_path, VALID_MESSAGE)
+    _git(repository, "tag", "new-tag", tip)
+    event = tmp_path / "event.json"
+    event.write_text(
+        json.dumps(
+            {
+                "before": "0" * 40,
+                "after": tip,
+                "created": True,
+                "ref": "refs/tags/new-tag",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_checker("--github-event", str(event), cwd=repository)
+
+    assert result.returncode == 1
+    assert result.stderr == (
+        f"{bad[:12]}: line 3: body lines must start with '- '\n"
+    )
+
+
 def test_github_event_ignores_deleted_ref(tmp_path: Path) -> None:
     """A branch or tag deletion introduces no commit message to validate."""
     event = tmp_path / "event.json"
