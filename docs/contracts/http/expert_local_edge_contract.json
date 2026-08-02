@@ -1,0 +1,26 @@
+{
+  "agent": "expert",
+  "contract": "expert_local_edge_contract",
+  "evidence_scope": "synthetic_bot_local_shape",
+  "activation": {
+    "web_expert_enabled": false,
+    "status": "External Pending"
+  },
+  "forced_route": {
+    "allowed_tools": ["DataAgent"],
+    "forced_tool": "DataAgent",
+    "selected_agent": "data",
+    "native_dispatch": "local_contract_pass"
+  },
+  "local_contract": {
+    "strict_allowlist": "PASS",
+    "native_run_parity": "PASS",
+    "no_dispatch_on_contract_failure": "PASS",
+    "legacy_a2a_optional_selection": "External Pending"
+  },
+  "autonomous_route": {
+    "provider_selection": "External Pending",
+    "paired_consumer_acceptance": "External Pending"
+  },
+  "rollback": "keep_web_expert_enabled_false"
+}

@@ -317,3 +317,31 @@ def test_dataagent_golden_pins_guarded_replay_boundary() -> None:
         "history_correlation": "External Pending",
         "behavior_change": "not_authorized",
     }
+
+
+def test_expert_golden_pins_local_edges_and_dark_activation() -> None:
+    """The Expert golden records local edges without claiming activation."""
+    payload = _load_http_golden("expert_local_edge_contract.json")
+
+    assert payload["agent"] == "expert"
+    assert payload["evidence_scope"] == "synthetic_bot_local_shape"
+    assert payload["activation"] == {
+        "web_expert_enabled": False,
+        "status": "External Pending",
+    }
+    assert payload["forced_route"] == {
+        "allowed_tools": ["DataAgent"],
+        "forced_tool": "DataAgent",
+        "selected_agent": "data",
+        "native_dispatch": "local_contract_pass",
+    }
+    assert payload["local_contract"] == {
+        "strict_allowlist": "PASS",
+        "native_run_parity": "PASS",
+        "no_dispatch_on_contract_failure": "PASS",
+        "legacy_a2a_optional_selection": "External Pending",
+    }
+    assert payload["autonomous_route"] == {
+        "provider_selection": "External Pending",
+        "paired_consumer_acceptance": "External Pending",
+    }

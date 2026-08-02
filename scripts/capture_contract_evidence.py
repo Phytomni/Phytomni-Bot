@@ -58,6 +58,7 @@ HTTP_GOLDENS = (
     "docs/contracts/http/streamed_run_accumulated_answer.json",
     "docs/contracts/http/deep_genome_bounded_reports.json",
     "docs/contracts/http/dataagent_incident_replay_guarded.json",
+    "docs/contracts/http/expert_local_edge_contract.json",
     "docs/contracts/http/remote_partial_acceptance.json",
     "docs/contracts/http/remote_registry_degraded.json",
 )

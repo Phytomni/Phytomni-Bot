@@ -147,7 +147,7 @@ The current packet hashes these nine A2UI fixture files:
 - `docs/contracts/a2ui/chat_choice/success_cancel.json`
 - `docs/contracts/a2ui/multi_turn/round2_downlink.json`
 
-The HTTP body manifest covers these eighteen redacted goldens:
+The HTTP body manifest covers these nineteen redacted goldens:
 
 - `docs/contracts/http/a2ui_request_64k_exact.json`
 - `docs/contracts/http/a2ui_request_64k_plus_one.json`
@@ -165,6 +165,7 @@ The HTTP body manifest covers these eighteen redacted goldens:
 - `docs/contracts/http/streamed_run_accumulated_answer.json`
 - `docs/contracts/http/deep_genome_bounded_reports.json`
 - `docs/contracts/http/dataagent_incident_replay_guarded.json`
+- `docs/contracts/http/expert_local_edge_contract.json`
 - `docs/contracts/http/remote_partial_acceptance.json`
 - `docs/contracts/http/remote_registry_degraded.json`
 
