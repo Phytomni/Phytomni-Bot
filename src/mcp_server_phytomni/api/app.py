@@ -46,6 +46,7 @@ from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
 from ..runtime import request_context as _request_context
 from ..runtime import stage_trace as _stage_trace
 from ..runtime import task_reconcile as _task_reconcile
+from ..runtime.background_policy import BACKGROUND_SUBMISSION_AGENT_SLUGS
 from ..runtime.locale import current_effective_locale
 from ..runtime.resume import ahas_checkpoint as _runtime_has_checkpoint
 from ..runtime.run_registry import (
@@ -262,9 +263,7 @@ _REMOTE_AGENT_SLUGS = frozenset(
     {"analyst", "deep_genome", "research", "design", "network"}
 )
 
-_BACKGROUND_SUBMISSION_AGENT_SLUGS = frozenset(
-    {"analyst", "research", "network", "design"}
-)
+_BACKGROUND_SUBMISSION_AGENT_SLUGS = BACKGROUND_SUBMISSION_AGENT_SLUGS
 
 # Historical Web ``tool_name`` aliases preserved on ``/v1/agents`` rows
 # as ``legacy_aliases`` metadata. The route itself never accepts these
