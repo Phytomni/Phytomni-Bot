@@ -788,8 +788,28 @@ real CA bundle instead.
 - **Variable:** `TIMEOUT`
   **Default:** `600.0`
   **Sensitive?:** no
-  **Purpose:** General agent/provider request timeout; separate from local
-  polling and remote job ceilings.
+  **Purpose:** Generic agent/provider request timeout; separate from local
+  polling and remote job ceilings. The synchronous Agent configuration
+  classes override this repository default to match the Web-owned business
+  budgets:
+
+  | Agent      | Config class      | Default (seconds) |
+  | ---------- | ----------------- | ----------------: |
+  | Chat       | `ChatConfig`      |              3000 |
+  | Knowledge  | `KnowledgeConfig` |             15000 |
+  | Data       | `DataConfig`      |              9000 |
+  | Review     | `ReviewConfig`    |             30000 |
+  | Brief Gene | `BriefGeneConfig` |             30000 |
+
+  Analyst and its background-task descendants retain the generic 600-second
+  provider budget; `MAX_POLL` and `ANALYSIS_JOB_TIMEOUT` remain their separate
+  86400-second polling and remote-job ceilings. In child relay mode, the five
+  synchronous Agents send an allowlisted internal timeout profile. The relay
+  applies the matching class value to its connect/read timeout and streaming
+  deadline, strips the profile before forwarding upstream, and keeps
+  `RELAY_TIMEOUT_SECONDS=600` for unknown profiles, unknown models, and
+  non-LLM services. A deployment-level `TIMEOUT` setting still overrides the
+  selected class field through the existing Pydantic settings contract.
 
 - **Variable:** `MAX_POLL`
   **Default:** `86400`
