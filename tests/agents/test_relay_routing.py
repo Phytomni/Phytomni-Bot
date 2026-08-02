@@ -21,10 +21,18 @@ import pytest
 
 from mcp_server_phytomni.agents.analyst.model_yaml import build_model_yaml
 from mcp_server_phytomni.agents.chat import service as chat_service
-from mcp_server_phytomni.config.models.agents import ReviewConfig
+from mcp_server_phytomni.config.models.agents import (
+    BriefGeneConfig,
+    ChatConfig,
+    DataConfig,
+    KnowledgeConfig,
+    ReviewConfig,
+)
 from mcp_server_phytomni.config.settings import get_sensitive_config
 
 pytestmark = pytest.mark.agent
+
+_RELAY_TIMEOUT_PROFILE_HEADER = "X-Phytomni-Relay-Timeout-Profile"
 
 
 @dataclass(frozen=True)
@@ -63,12 +71,25 @@ def _capturing_async_openai(captured: dict[str, Any]):
     return fake_async_openai
 
 
+@pytest.mark.parametrize(
+    ("config_type", "expected_timeout", "expected_profile"),
+    (
+        (ChatConfig, 3000.0, "phyto-chat"),
+        (KnowledgeConfig, 15000.0, "phyto-knowledge"),
+        (DataConfig, 9000.0, "phyto-data"),
+        (ReviewConfig, 30000.0, "phyto-review"),
+        (BriefGeneConfig, 30000.0, "phyto-brief-gene"),
+    ),
+)
 @pytest.mark.parametrize("relay_enabled", [False, True])
-async def test_review_timeout_reaches_direct_and_relay_provider(
+async def test_agent_timeout_reaches_direct_and_relay_provider(
     monkeypatch: pytest.MonkeyPatch,
     relay_enabled: bool,
+    config_type: type[ChatConfig],
+    expected_timeout: float,
+    expected_profile: str,
 ) -> None:
-    """Review keeps its 30000-second timeout through either transport."""
+    """Each synchronous Agent keeps its budget through either transport."""
     chat_service.clear_chat_cache()
     get_sensitive_config.cache_clear()
     try:
@@ -84,8 +105,11 @@ async def test_review_timeout_reaches_direct_and_relay_provider(
             chat_service, "AsyncOpenAI", _capturing_async_openai(captured)
         )
 
-        sampling = _sampling("review timeout transport")
-        sampling["timeout"] = ReviewConfig().TIMEOUT
+        sampling = _sampling(
+            f"{config_type.__name__} timeout transport {relay_enabled}"
+        )
+        sampling["timeout"] = config_type().TIMEOUT
+        sampling["relay_timeout_profile"] = expected_profile
         result = await chat_service.run_phyto_chat_cached(
             api_key="operator-key",
             base_url="https://operator.invalid/v1",
@@ -93,11 +117,15 @@ async def test_review_timeout_reaches_direct_and_relay_provider(
         )
 
         assert result["choices"][0]["message"]["content"] == "ok"
-        assert captured["completion"]["timeout"] == 30000.0
+        assert captured["completion"]["timeout"] == expected_timeout
         if relay_enabled:
             assert captured["base_url"] == "https://relay.test/v1/relay/llm"
+            assert captured["completion"]["extra_headers"] == {
+                _RELAY_TIMEOUT_PROFILE_HEADER: expected_profile
+            }
         else:
             assert captured["base_url"] == "https://operator.invalid/v1"
+            assert "extra_headers" not in captured["completion"]
     finally:
         chat_service.clear_chat_cache()
         get_sensitive_config.cache_clear()
@@ -157,6 +185,7 @@ async def test_chat_relay_mode_overrides_llm_endpoint(monkeypatch):
     assert result["choices"][0]["message"]["content"] == "ok"
     assert captured["api_key"] == "relay-key"
     assert captured["base_url"] == "https://relay.test/v1/relay/llm"
+    assert "extra_headers" not in captured["completion"]
 
 
 async def test_chat_normal_mode_keeps_operator_endpoint(monkeypatch):

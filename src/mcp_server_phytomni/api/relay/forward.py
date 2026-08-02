@@ -37,7 +37,15 @@ from fastapi.responses import Response, StreamingResponse
 from starlette.requests import Request
 
 from ...common.httpx_client import get_async_client
-from ...config.defaults import ApiConfig, ReviewConfig
+from ...config.defaults import (
+    ApiConfig,
+    BriefGeneConfig,
+    ChatConfig,
+    DataConfig,
+    KnowledgeConfig,
+    ReviewConfig,
+)
+from ...config.relay_mode import RELAY_TIMEOUT_PROFILE_HEADER
 from ...runtime.request_context import current_request_id
 from ..auth import ApiPrincipal
 from .audit import RelayAuditRecord, RelayAuditStore
@@ -101,7 +109,15 @@ _HOP_BY_HOP: frozenset[str] = frozenset(
 # upstream, Host is re-derived by httpx from the upstream URL, and a
 # stale/lying Content-Length is recomputed from the body httpx sends.
 _REQUEST_DROP: frozenset[str] = (
-    CREDENTIAL_HEADERS | _HOP_BY_HOP | frozenset({"host", "content-length"})
+    CREDENTIAL_HEADERS
+    | _HOP_BY_HOP
+    | frozenset(
+        {
+            "host",
+            "content-length",
+            RELAY_TIMEOUT_PROFILE_HEADER.lower(),
+        }
+    )
 )
 
 # Returned to the client: an ALLOWLIST, not a denylist, so an upstream
@@ -114,6 +130,14 @@ _RESPONSE_ALLOW: frozenset[str] = frozenset({"content-type"})
 # the rate limiter). A dict literal so the count is mutated in place
 # without a global statement, by _acquire_key_slot and its release.
 _INFLIGHT: dict[str, int] = {}
+
+_LLM_AGENT_TIMEOUT_CONFIGS: Mapping[str, type[ChatConfig]] = {
+    "phyto-chat": ChatConfig,
+    "phyto-knowledge": KnowledgeConfig,
+    "phyto-data": DataConfig,
+    "phyto-review": ReviewConfig,
+    "phyto-brief-gene": BriefGeneConfig,
+}
 
 
 def prepare_forward_headers(inbound: Mapping[str, str]) -> dict[str, str]:
@@ -371,27 +395,39 @@ class _RelayForwardPlan:
 
 
 def _relay_timeout_seconds(
-    *, body: bytes, upstream: RelayUpstream, config: ApiConfig
+    *,
+    body: bytes,
+    headers: Mapping[str, str],
+    upstream: RelayUpstream,
+    config: ApiConfig,
 ) -> float:
     """Select the server-owned timeout for one relayed request.
 
-    Only the allowlisted LLM route carrying the canonical Review model may
-    inherit the Review timeout. Caller headers and arbitrary body fields do
+    Only an allowlisted child timeout profile or canonical Agent model on the
+    LLM route inherits its Agent timeout. Arbitrary headers and body fields do
     not affect the policy; malformed JSON and every other service or model
-    retain the generic relay timeout.
+    retain the generic relay timeout. The internal profile header is stripped
+    before the upstream call.
     """
+    timeout_config: type[ChatConfig] | None = None
     if (
-        upstream.service != "llm"
-        or upstream.error_mode is not RelayErrorMode.TRANSPARENT
+        upstream.service == "llm"
+        and upstream.error_mode is RelayErrorMode.TRANSPARENT
     ):
+        timeout_config = _LLM_AGENT_TIMEOUT_CONFIGS.get(
+            headers.get(RELAY_TIMEOUT_PROFILE_HEADER, "")
+        )
+        if timeout_config is None:
+            try:
+                payload = json.loads(body)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                payload = None
+            model = payload.get("model") if isinstance(payload, dict) else None
+            if isinstance(model, str):
+                timeout_config = _LLM_AGENT_TIMEOUT_CONFIGS.get(model)
+    if timeout_config is None:
         return config.RELAY_TIMEOUT_SECONDS
-    try:
-        payload = json.loads(body)
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return config.RELAY_TIMEOUT_SECONDS
-    if not isinstance(payload, dict) or payload.get("model") != "phyto-review":
-        return config.RELAY_TIMEOUT_SECONDS
-    return ReviewConfig().TIMEOUT
+    return timeout_config().TIMEOUT
 
 
 async def _buffered_relay_response(
@@ -629,6 +665,7 @@ async def forward_relay_request(
         upstream=upstream,
         timeout_seconds=_relay_timeout_seconds(
             body=body,
+            headers=request.headers,
             upstream=upstream,
             config=config,
         ),

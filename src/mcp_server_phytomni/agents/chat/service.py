@@ -33,7 +33,10 @@ from ...common.responses import (
     parse_follow_up_questions,
 )
 from ...config.defaults import ChatConfig
-from ...config.relay_mode import relay_mode_enabled
+from ...config.relay_mode import (
+    RELAY_TIMEOUT_PROFILE_HEADER,
+    relay_mode_enabled,
+)
 from ...config.settings import get_sensitive_config
 from ...func_cache import LONG_TTL_SECONDS, func_cache
 from ...runtime.langgraph_runner import ainvoke_graph
@@ -81,6 +84,7 @@ class _ChatCacheRequest(NamedTuple):
     user: str
     timeout: float
     stream: bool
+    relay_timeout_profile: str | None
 
 
 class ChatCacheCall(TypedDict):
@@ -102,6 +106,7 @@ class ChatCacheCall(TypedDict):
     timeout: float
     stream: bool
     locale: NotRequired[SupportedLocale]
+    relay_timeout_profile: NotRequired[str | None]
 
 
 async def phyto_chat_with_follow(
@@ -421,6 +426,7 @@ def _chat_options(values: dict[str, Any]) -> dict[str, Any]:
         "part_size": values.get("part_size", CHAT_CONFIG.PART_SIZE),
         "task_num": values.get("task_num", CHAT_CONFIG.TASK_NUM),
         "timeout": values.get("timeout", CHAT_CONFIG.TIMEOUT),
+        "relay_timeout_profile": values.get("relay_timeout_profile"),
         "retriable_codes": (
             list(CHAT_CONFIG.RETRIABLE_CODES)
             if retriable_codes is None
@@ -504,6 +510,13 @@ def _relay_llm_endpoint(api_key: str, base_url: str) -> tuple[str, str]:
     return relay_key, f"{ChatConfig().RELAY_BASE_URL}/v1/relay/llm"
 
 
+def _relay_timeout_headers(profile: str | None) -> dict[str, str] | None:
+    """Return the child-only timeout profile header in relay mode."""
+    if not relay_mode_enabled() or profile is None:
+        return None
+    return {RELAY_TIMEOUT_PROFILE_HEADER: profile}
+
+
 @func_cache(key_params=["cache_key"], ttl=LONG_TTL_SECONDS)
 async def _run_chat_completion_cached(
     cache_key: _ChatCacheKey,
@@ -543,6 +556,8 @@ async def _run_chat_completion_cached(
         params["max_tokens"] = request.max_tokens
     if "reasoner" in request.model and request.reasoning_effort is not None:
         params["reasoning_effort"] = request.reasoning_effort
+    if extra_headers := _relay_timeout_headers(request.relay_timeout_profile):
+        params["extra_headers"] = extra_headers
     chat_completions = await client.chat.completions.create(**params)
     if request.stream:
         payload = await _stream_response_to_dict(chat_completions)
@@ -580,6 +595,7 @@ async def run_phyto_chat_cached(
         user=call["user"],
         timeout=call["timeout"],
         stream=call["stream"],
+        relay_timeout_profile=call.get("relay_timeout_profile"),
     )
     return await _run_chat_completion_cached(
         cache_key=cache_key,
@@ -626,6 +642,7 @@ async def _run_phyto_chat(
                 timeout=options["timeout"],
                 stream=options["stream"],
                 locale=options["locale"],
+                relay_timeout_profile=options.get("relay_timeout_profile"),
             )
         except HTTPStatusError as exc:
             if await retry_http_status_or_raise(
@@ -751,6 +768,10 @@ def _build_stream_params(
         and options["reasoning_effort"] is not None
     ):
         params["reasoning_effort"] = options["reasoning_effort"]
+    if extra_headers := _relay_timeout_headers(
+        options.get("relay_timeout_profile")
+    ):
+        params["extra_headers"] = extra_headers
     return params
 
 

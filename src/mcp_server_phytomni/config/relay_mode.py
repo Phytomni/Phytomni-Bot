@@ -2,9 +2,9 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Customer relay-mode flag detection.
+"""Customer relay-mode flag detection and internal protocol constants.
 
-Functions: relay_mode_enabled.
+Exports: RELAY_TIMEOUT_PROFILE_HEADER, relay_mode_enabled.
 
 A leaf module (depends only on ``os``) so both ``config/defaults.py``
 and ``config/settings.py`` read the relay-mode switch without importing
@@ -14,7 +14,9 @@ each other. The import-time required-field validators consult
 
 import os
 
-__all__ = ["relay_mode_enabled"]
+__all__ = ["RELAY_TIMEOUT_PROFILE_HEADER", "relay_mode_enabled"]
+
+RELAY_TIMEOUT_PROFILE_HEADER = "X-Phytomni-Relay-Timeout-Profile"
 
 _RELAY_MODE_TRUE_VALUES = frozenset({"1", "true", "yes", "on", "t", "y"})
 

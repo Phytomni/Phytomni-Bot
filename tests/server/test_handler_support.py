@@ -18,6 +18,19 @@ from typing import Any, cast
 import pytest
 from pydantic import SecretStr
 
+from mcp_server_phytomni.config.defaults import (
+    AnalystConfig,
+    BriefGeneConfig,
+    ChatConfig,
+    DataConfig,
+    DeepGenomeConfig,
+    DigitalDesignConfig,
+    EnvironmentConfig,
+    GeneNetworkConfig,
+    InSilicoResearchConfig,
+    KnowledgeConfig,
+    ReviewConfig,
+)
 from mcp_server_phytomni.config.settings import SensitiveConfig
 from mcp_server_phytomni.mcp.handler_support import (
     HandlerRuntime,
@@ -188,6 +201,54 @@ def test_retry_kwargs_returns_three_documented_keys() -> None:
         "retriable_codes": [502, 503],
         "max_retries": 3,
     }
+
+
+@pytest.mark.parametrize(
+    ("config_type", "expected_timeout", "expected_profile"),
+    (
+        (ChatConfig, 3000.0, "phyto-chat"),
+        (KnowledgeConfig, 15000.0, "phyto-knowledge"),
+        (DataConfig, 9000.0, "phyto-data"),
+        (ReviewConfig, 30000.0, "phyto-review"),
+        (BriefGeneConfig, 30000.0, "phyto-brief-gene"),
+    ),
+)
+def test_synchronous_agent_retry_kwargs_match_web_business_budgets(
+    config_type: type[ChatConfig],
+    expected_timeout: float,
+    expected_profile: str,
+) -> None:
+    """Handler kwargs expose each Web-owned budget and relay profile."""
+    config = config_type()
+
+    assert retry_kwargs(config)["timeout"] == expected_timeout
+    assert (
+        chat_kwargs(config, _fake_sensitive())["relay_timeout_profile"]
+        == expected_profile
+    )
+
+
+@pytest.mark.parametrize(
+    "config_type",
+    (
+        AnalystConfig,
+        DeepGenomeConfig,
+        DigitalDesignConfig,
+        EnvironmentConfig,
+        GeneNetworkConfig,
+        InSilicoResearchConfig,
+    ),
+)
+def test_background_agent_retry_kwargs_keep_the_generic_budget(
+    config_type: type[AnalystConfig],
+) -> None:
+    """Synchronous defaults do not leak into background Agent families."""
+    config = config_type()
+
+    assert retry_kwargs(config)["timeout"] == 600.0
+    assert "relay_timeout_profile" not in chat_kwargs(
+        config, _fake_sensitive()
+    )
 
 
 def test_coder_kwargs_pulls_from_sensitive_only() -> None:

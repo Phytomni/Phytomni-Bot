@@ -158,7 +158,10 @@ async def test_generate_prep_node_builds_chat_payload_and_pending_post() -> (
     assert "doc1" in chat_payload["user_query"]
     assert "What is photosynthesis?" in chat_payload["user_query"]
     assert isinstance(chat_payload["chat_kwargs"], dict)
-    assert len(chat_payload["chat_kwargs"]) == 19
+    assert len(chat_payload["chat_kwargs"]) == 20
+    assert chat_payload["chat_kwargs"]["relay_timeout_profile"] == (
+        "phyto-knowledge"
+    )
     assert "obs_file_list" not in chat_payload
 
 
@@ -208,7 +211,10 @@ async def test_follow_up_prep_node_builds_chat_payload_and_pending_post() -> (
     assert "What is photosynthesis?" in chat_payload["user_query"]
     assert "primary answer body" in chat_payload["user_query"]
     assert isinstance(chat_payload["chat_kwargs"], dict)
-    assert len(chat_payload["chat_kwargs"]) == 19
+    assert len(chat_payload["chat_kwargs"]) == 20
+    assert chat_payload["chat_kwargs"]["relay_timeout_profile"] == (
+        "phyto-knowledge"
+    )
     assert "obs_file_list" not in chat_payload
 
 

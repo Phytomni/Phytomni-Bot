@@ -160,6 +160,42 @@ async def test_stream_phyto_chat_chunks_yields_provider_chunks(
     assert "Simplified Chinese" in captured["params"]["messages"][0]["content"]
 
 
+async def test_stream_relay_carries_internal_timeout_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Streaming relay calls identify their Agent budget to the relay."""
+    _install_default_prompt(monkeypatch)
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    monkeypatch.setenv("PHYTOMNI_RELAY_BASE_URL", "https://relay.test")
+    monkeypatch.setenv("PHYTOMNI_RELAY_API_KEY", "relay-key")
+    chat_service.get_sensitive_config.cache_clear()
+    captured: dict[str, Any] = {}
+
+    async def fake_create(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        captured["params"] = kwargs
+        return _iter_chunks([])
+
+    monkeypatch.setattr(
+        chat_service,
+        "AsyncOpenAI",
+        _build_fake_async_openai(fake_create, captured),
+    )
+    kwargs = _stream_kwargs()
+    kwargs["relay_timeout_profile"] = "phyto-knowledge"
+    try:
+        async for _ in chat_service.stream_phyto_chat_chunks(
+            user_query="hi", **kwargs
+        ):
+            pass
+    finally:
+        chat_service.get_sensitive_config.cache_clear()
+
+    assert captured["base_url"] == "https://relay.test/v1/relay/llm"
+    assert captured["params"]["extra_headers"] == {
+        "X-Phytomni-Relay-Timeout-Profile": "phyto-knowledge"
+    }
+
+
 async def test_stream_phyto_chat_chunks_prepends_upload_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

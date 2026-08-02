@@ -4,7 +4,7 @@
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Non-secret configuration models used by the Phytomni agents."""
 
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 
 from pydantic import AliasChoices, Field, field_validator
 
@@ -26,6 +26,8 @@ from .base import (
 class ChatConfig(ServerConfig):
     """Configuration settings for chat interactions with a language model."""
 
+    RELAY_TIMEOUT_PROFILE: ClassVar[str | None] = "phyto-chat"
+    TIMEOUT: float = 3000.0
     USER: str = "test"
     TEMPERATURE: float = 0.3
     TOP_P: float = 1
@@ -40,6 +42,8 @@ class ChatConfig(ServerConfig):
 class KnowledgeConfig(ChatConfig):
     """Configuration settings for retrieval and document search."""
 
+    RELAY_TIMEOUT_PROFILE: ClassVar[str | None] = "phyto-knowledge"
+    TIMEOUT: float = 15000.0
     PAGE_NUM: int = 1
     PAGE_SIZE: int = int(_MAX_TOKENS / 512)
     TOP_N: int = int(_MAX_TOKENS / 512)
@@ -62,6 +66,8 @@ class KnowledgeConfig(ChatConfig):
 class DataConfig(KnowledgeConfig):
     """Configuration settings for database query operations."""
 
+    RELAY_TIMEOUT_PROFILE: ClassVar[str | None] = "phyto-data"
+    TIMEOUT: float = 9000.0
     NEED_INSIGHT: bool = False
     SIMPLIFY_RESPONSE: bool = True
     DIALOG_ID: str = ""
@@ -85,6 +91,8 @@ class DataConfig(KnowledgeConfig):
 class AnalystConfig(KnowledgeConfig):
     """Configuration settings for analysis workflows."""
 
+    RELAY_TIMEOUT_PROFILE: ClassVar[str | None] = None
+    TIMEOUT: float = 600.0
     TOOL_REPO_ID: Annotated[
         str,
         Field(
@@ -139,6 +147,7 @@ class AnalystConfig(KnowledgeConfig):
 class ReviewConfig(KnowledgeConfig):
     """Configuration settings for review generation."""
 
+    RELAY_TIMEOUT_PROFILE: ClassVar[str | None] = "phyto-review"
     TIMEOUT: float = 30000.0
     TOP_N: int = int(_MAX_TOKENS / 2048)
 
@@ -146,6 +155,8 @@ class ReviewConfig(KnowledgeConfig):
 class BriefGeneConfig(KnowledgeConfig):
     """Configuration settings for brief gene function reports."""
 
+    RELAY_TIMEOUT_PROFILE: ClassVar[str | None] = "phyto-brief-gene"
+    TIMEOUT: float = 30000.0
     TOP_N: int = int(_MAX_TOKENS / 2048)
 
 
@@ -158,6 +169,8 @@ class GeneNetworkConfig(AnalystConfig):
 class DeepGenomeConfig(DataConfig, AnalystConfig):
     """Configuration settings specific to gene function analysis tasks."""
 
+    RELAY_TIMEOUT_PROFILE: ClassVar[str | None] = None
+    TIMEOUT: float = 600.0
     DEEPGENOME_DATA: str = str(PRE_PREPARED_DATA_PATH)
     DEEPGENOME_OUT: str = str(DOWNLOAD_PATH)
     BATCH: bool = True

@@ -40,6 +40,7 @@ from mcp_server_phytomni.api.relay.forward import (
 pytestmark = pytest.mark.server
 
 _Inject = Callable[[], Awaitable[dict[str, str]]]
+_RELAY_TIMEOUT_PROFILE_HEADER = "X-Phytomni-Relay-Timeout-Profile"
 
 
 def _make_request(headers: dict[str, str], *, method: str = "POST") -> Request:
@@ -148,7 +149,7 @@ async def test_transparent_2xx_streams_with_upstream_status(
     # Caller credential stripped, operator credential injected (T10/T11).
     assert seen[0].headers["authorization"] == "Bearer sk-operator-secret"
     timeout = seen[0].extensions["timeout"]
-    expected_timeout = forward_module.ApiConfig().RELAY_TIMEOUT_SECONDS
+    expected_timeout = 3000.0
     assert timeout["connect"] == expected_timeout
     assert timeout["read"] == expected_timeout
     records = store.query()
@@ -162,21 +163,51 @@ async def test_transparent_2xx_streams_with_upstream_status(
     (
         pytest.param(
             _upstream(RelayErrorMode.TRANSPARENT, service="llm"),
+            b'{"model":"phyto-chat"}',
+            3000.0,
+            id="chat-llm",
+        ),
+        pytest.param(
+            _upstream(RelayErrorMode.TRANSPARENT, service="llm"),
+            b'{"model":"phyto-knowledge"}',
+            15000.0,
+            id="knowledge-llm",
+        ),
+        pytest.param(
+            _upstream(RelayErrorMode.TRANSPARENT, service="llm"),
+            b'{"model":"phyto-data"}',
+            9000.0,
+            id="data-llm",
+        ),
+        pytest.param(
+            _upstream(RelayErrorMode.TRANSPARENT, service="llm"),
             b'{"model":"phyto-review","timeout":42}',
             30000.0,
             id="review-llm",
         ),
         pytest.param(
             _upstream(RelayErrorMode.TRANSPARENT, service="llm"),
-            b'{"model":"phyto-chat"}',
+            b'{"model":"phyto-brief-gene"}',
+            30000.0,
+            id="brief-gene-llm",
+        ),
+        pytest.param(
+            _upstream(RelayErrorMode.TRANSPARENT, service="llm"),
+            b'{"model":"provider-model"}',
             600.0,
-            id="non-review-llm",
+            id="unknown-llm",
         ),
         pytest.param(
             _upstream(RelayErrorMode.TRANSPARENT, service="llm"),
             b"not-json",
             600.0,
             id="malformed-llm",
+        ),
+        pytest.param(
+            _upstream(RelayErrorMode.TRANSPARENT, service="llm"),
+            b'{"model":[]}',
+            600.0,
+            id="non-string-model",
         ),
         pytest.param(
             _upstream(RelayErrorMode.ENVELOPE, service="llm"),
@@ -204,14 +235,14 @@ async def test_transparent_2xx_streams_with_upstream_status(
         ),
     ),
 )
-async def test_review_timeout_policy_is_narrow(
+async def test_agent_timeout_policy_is_narrow(
     monkeypatch: pytest.MonkeyPatch,
     store: RelayAuditStore,
     upstream: RelayUpstream,
     request_body: bytes,
     expected_timeout: float,
 ) -> None:
-    """Only the allowlisted Review LLM request gets the long timeout."""
+    """Only allowlisted Agent aliases select Agent execution budgets."""
     seen: list[httpx.Request] = []
     deadlines: list[float | None] = []
 
@@ -254,6 +285,51 @@ async def test_review_timeout_policy_is_narrow(
         assert deadlines == [expected_timeout]
     else:
         assert not deadlines
+
+
+@pytest.mark.parametrize(
+    ("profile", "expected_timeout"),
+    (
+        ("phyto-chat", 3000.0),
+        ("phyto-knowledge", 15000.0),
+        ("phyto-data", 9000.0),
+        ("phyto-review", 30000.0),
+        ("phyto-brief-gene", 30000.0),
+        ("unknown", 600.0),
+    ),
+)
+async def test_relay_profile_selects_timeout_for_real_provider_model(
+    monkeypatch: pytest.MonkeyPatch,
+    store: RelayAuditStore,
+    profile: str,
+    expected_timeout: float,
+) -> None:
+    """The child profile survives provider-model use but not forwarding."""
+    seen: list[httpx.Request] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            content=b"{}",
+        )
+
+    _patch_client(monkeypatch, handler)
+    response = await _forward(
+        store,
+        _make_request({_RELAY_TIMEOUT_PROFILE_HEADER: profile}),
+        _upstream(RelayErrorMode.TRANSPARENT, service="llm"),
+        body=b'{"model":"operator-provider-model"}',
+    )
+    assert isinstance(response, StreamingResponse)
+    async for _ in response.body_iterator:
+        pass
+
+    timeout = seen[0].extensions["timeout"]
+    assert timeout["connect"] == expected_timeout
+    assert timeout["read"] == expected_timeout
+    assert _RELAY_TIMEOUT_PROFILE_HEADER not in seen[0].headers
 
 
 async def test_request_audit_redacts_credentials_and_caps_body(

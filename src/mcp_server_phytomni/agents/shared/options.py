@@ -140,6 +140,9 @@ def build_chat_kwargs(
         "locale": effective_locale,
         "locale_instruction": locale_instruction(effective_locale),
     }
+    relay_timeout_profile = getattr(config, "RELAY_TIMEOUT_PROFILE", None)
+    if relay_timeout_profile is not None:
+        result["relay_timeout_profile"] = relay_timeout_profile
     if "with_follow_up" in kwargs:
         result["with_follow_up"] = kwargs["with_follow_up"]
     return result
