@@ -43,6 +43,7 @@ A2UI_FIXTURES = (
 )
 HTTP_GOLDENS = (
     "docs/contracts/http/chat_terminal_succeeded.json",
+    "docs/contracts/http/analyst_terminal_succeeded.json",
     "docs/contracts/http/review_terminal_succeeded.json",
     "docs/contracts/http/review_round2_input_required.json",
     "docs/contracts/http/error_400_run_widget_payload_mismatch.json",

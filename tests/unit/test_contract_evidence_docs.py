@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -254,3 +255,29 @@ def test_acceptance_runbook_locks_current_sha_packet() -> None:
     for smoke in STAGING_SMOKES:
         assert smoke in text
     assert "Bot Ready != Accepted" in text
+
+
+def test_analyst_terminal_golden_pins_local_report_projection() -> None:
+    """The Analyst golden proves shape without claiming live acceptance."""
+    path = ROOT / "docs/contracts/http/analyst_terminal_succeeded.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["agent"] == "analyst"
+    assert payload["evidence_scope"] == "synthetic_bot_local_shape"
+    assert payload["status"] == "succeeded"
+    result = payload["result"]
+    assert result["formatted"]["answer"].strip()
+    report = result["execution"]["report"]
+    assert report == {
+        "degraded": False,
+        "source_artifact_count": 1,
+        "state": "final",
+    }
+    assert result["formatted"]["metadata"]["report"] == report
+    assert result["execution"]["artifacts"] == [
+        {"name": "report.md", "role": "scientific_report", "state": "final"},
+        {"name": "network.png", "role": "scientific_figure", "state": "final"},
+    ]
+    assert result["execution"]["output_dirs"] == [
+        "output-dir-fixture/analyst-1"
+    ]

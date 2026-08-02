@@ -1,0 +1,41 @@
+{
+  "agent": "analyst",
+  "contract": "analyst_terminal_succeeded",
+  "evidence_scope": "synthetic_bot_local_shape",
+  "id": "run-fixture-analyst-1",
+  "object": "agent.run",
+  "result": {
+    "execution": {
+      "artifacts": [
+        {"name": "report.md", "role": "scientific_report", "state": "final"},
+        {"name": "network.png", "role": "scientific_figure", "state": "final"}
+      ],
+      "diagnostics": [],
+      "output_dirs": ["output-dir-fixture/analyst-1"],
+      "report": {
+        "degraded": false,
+        "source_artifact_count": 1,
+        "state": "final"
+      },
+      "tasks": ["task-fixture-analyst-1"],
+      "tracking": {"degraded": false},
+      "warnings": []
+    },
+    "formatted": {
+      "answer": "Synthetic Analyst final report.",
+      "follow_up_questions": [],
+      "metadata": {
+        "report": {
+          "degraded": false,
+          "source_artifact_count": 1,
+          "state": "final"
+        }
+      },
+      "output_dirs": ["output-dir-fixture/analyst-1"],
+      "references": [],
+      "tabular": {}
+    }
+  },
+  "status": "succeeded",
+  "task_ids": ["task-fixture-analyst-1"]
+}
