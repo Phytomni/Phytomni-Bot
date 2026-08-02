@@ -26,6 +26,8 @@ __all__ = [
     "PartRecord",
     "ResumableUploadRegistry",
     "ResumableUploadRegistryConfig",
+    "UPLOAD_ASSET_PURPOSES",
+    "UploadAssetPurpose",
     "UploadStateError",
 ]
 
@@ -40,6 +42,8 @@ SESSION_TTL = timedelta(days=7)
 CAPABILITY_TTL = timedelta(minutes=15)
 
 AssetStatus = Literal["uploading", "completed", "aborted", "expired"]
+UploadAssetPurpose = Literal["chat_attachment", "dataset", "document"]
+UPLOAD_ASSET_PURPOSES = frozenset({"chat_attachment", "dataset", "document"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +64,7 @@ class AssetCreateSpec:
     filename: str
     content_type: str
     size_bytes: int
-    purpose: str
+    purpose: UploadAssetPurpose
     idempotency_key: str
 
 
@@ -766,6 +770,8 @@ def _validate_spec(spec: AssetCreateSpec, *, max_upload_bytes: int) -> None:
         raise UploadStateError("upload_limit_exceeded")
     if not spec.idempotency_key:
         raise UploadStateError("invalid_upload_metadata")
+    if spec.purpose not in UPLOAD_ASSET_PURPOSES:
+        raise UploadStateError("attachment_purpose_invalid")
 
 
 def _validate_part(part: PartRecord) -> None:

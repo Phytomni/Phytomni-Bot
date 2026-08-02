@@ -24,6 +24,7 @@ from mcp_server_phytomni.api.schemas import (
 )
 from mcp_server_phytomni.runtime.resumable_uploads import (
     ResumableUploadRegistry,
+    UploadAssetPurpose,
 )
 from mcp_server_phytomni.storage.multipart import (
     FakeMultipartStorage,
@@ -37,7 +38,11 @@ NOW = datetime(2026, 8, 1, tzinfo=UTC)
 
 
 def _request(
-    *, owner: str = "owner-1", key: str = "create-1", size_bytes: int = 3
+    *,
+    owner: str = "owner-1",
+    key: str = "create-1",
+    size_bytes: int = 3,
+    purpose: UploadAssetPurpose = "chat_attachment",
 ) -> UploadCreateRequest:
     """Build one trusted upload request for service tests."""
     return UploadCreateRequest(
@@ -45,18 +50,21 @@ def _request(
         filename="sample.fastq.gz",
         content_type="application/octet-stream",
         size_bytes=size_bytes,
-        purpose="chat_attachment",
+        purpose=purpose,
         idempotency_key=key,
     )
 
 
 def _service(
     tmp_path: Path,
+    *,
+    db_path: Path | None = None,
+    storage: FakeMultipartStorage | None = None,
 ) -> tuple[ResumableUploadService, FakeMultipartStorage]:
     """Build the service with a provider-free storage boundary."""
-    storage = FakeMultipartStorage()
+    storage = storage or FakeMultipartStorage()
     service = ResumableUploadService(
-        ResumableUploadRegistry(str(tmp_path / "uploads.db")),
+        ResumableUploadRegistry(str(db_path or tmp_path / "uploads.db")),
         storage,
         UploadServiceConfig(
             bucket_name="bot-bucket",
@@ -102,6 +110,66 @@ def test_create_is_idempotent_and_binds_one_provider_session(
     assert first.upload_url == f"https://bot.example/v1/files/{first.asset_id}"
     assert len(storage.sessions) == 1
     assert "upload_id" not in first.model_dump_json()
+
+
+def test_create_conflicts_when_only_purpose_changes(
+    tmp_path: Path,
+) -> None:
+    """Treat a purpose-only replay change as an idempotency conflict."""
+    service, storage = _service(tmp_path)
+    service.create(_request())
+
+    with pytest.raises(UploadContractError) as error:
+        service.create(_request(purpose="dataset"))
+
+    assert error.value.code == "upload_state_conflict"
+    assert len(storage.sessions) == 1
+
+
+@pytest.mark.parametrize("purpose", ["dataset", "document"])
+def test_purpose_survives_reconstruction_and_completion(
+    tmp_path: Path,
+    purpose: UploadAssetPurpose,
+) -> None:
+    """Retain dataset and document purposes across service reconstruction."""
+    db_path = tmp_path / "uploads.db"
+    service, storage = _service(tmp_path, db_path=db_path)
+    created = service.create(_request(purpose=purpose))
+    _put_one(service, created.asset_id, created.capability)
+
+    restarted, _restarted_storage = _service(
+        tmp_path, db_path=db_path, storage=storage
+    )
+    renewed = restarted.renew(created.asset_id, "owner-1")
+    status = restarted.head(created.asset_id, renewed.capability)
+    descriptor = restarted.complete(
+        created.asset_id,
+        renewed.capability,
+        UploadCompletionRequest(),
+    )
+    asset = restarted.registry.get_asset(created.asset_id, owner="owner-1")
+
+    assert asset is not None
+    assert asset.purpose == purpose
+    assert status.asset_id == created.asset_id
+    assert descriptor.purpose == purpose
+
+
+def test_legacy_default_purpose_is_preserved_in_descriptor(
+    tmp_path: Path,
+) -> None:
+    """Keep the legacy chat purpose in completed descriptors."""
+    service, _storage = _service(tmp_path)
+    created = service.create(_request())
+    _put_one(service, created.asset_id, created.capability)
+
+    descriptor = service.complete(
+        created.asset_id,
+        created.capability,
+        UploadCompletionRequest(),
+    )
+
+    assert descriptor.purpose == "chat_attachment"
 
 
 def test_part_retry_and_cross_asset_capability_are_safe(

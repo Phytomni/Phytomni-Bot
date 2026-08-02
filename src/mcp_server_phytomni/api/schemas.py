@@ -22,12 +22,11 @@ from pydantic import (
 from ..mcp.schemas import AGENT_TOOL_DEFINITIONS
 from ..runtime.conversation_context.models import ConversationEnvelopeV1
 from ..runtime.locale import SupportedLocale
+from ..runtime.resumable_uploads import UploadAssetPurpose
 
 _CANONICAL_AGENT_TOOL_NAMES = frozenset(
     name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
 )
-
-UploadAssetPurpose = Literal["chat_attachment"]
 
 __all__ = [
     "A2uiActionRequest",

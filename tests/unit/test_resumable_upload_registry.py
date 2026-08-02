@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -16,6 +18,7 @@ from mcp_server_phytomni.runtime.resumable_uploads import (
     AssetCreateSpec,
     PartRecord,
     ResumableUploadRegistry,
+    UploadAssetPurpose,
     UploadStateError,
 )
 
@@ -101,6 +104,22 @@ def test_create_is_idempotent_without_double_charging(tmp_path: Path) -> None:
 
     with pytest.raises(UploadStateError, match="upload_state_conflict"):
         registry.create_or_replay(_spec(size_bytes=4), now=NOW)
+
+
+def test_registry_rejects_invalid_purpose_outside_pydantic(
+    tmp_path: Path,
+) -> None:
+    """Reject invalid purposes from callers that bypass request schemas."""
+    registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
+    with pytest.raises(UploadStateError) as error:
+        registry.create_or_replay(
+            replace(
+                _spec(),
+                purpose=cast(UploadAssetPurpose, "not-supported"),
+            ),
+            now=NOW,
+        )
+    assert error.value.code == "attachment_purpose_invalid"
 
 
 def test_owner_and_quota_limits_fail_closed(tmp_path: Path) -> None:

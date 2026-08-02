@@ -123,6 +123,18 @@ def _app_attr(name: str) -> Any:
     return getattr(_app_module(), name)
 
 
+def _is_invalid_upload_purpose_error(error: Mapping[str, Any]) -> bool:
+    """Match only the upload request's Pydantic purpose literal failure."""
+    location = error.get("loc", ())
+    return bool(
+        isinstance(location, (list, tuple))
+        and location
+        and location[0] == "body"
+        and location[-1] == "purpose"
+        and error.get("type") == "literal_error"
+    )
+
+
 def _api_config() -> ApiConfig:
     """Build the current API config through the public app seam."""
     config_type = _app_attr("ApiConfig")
@@ -848,6 +860,18 @@ def _register_error_handlers(app: FastAPI) -> None:
                 message_for("unsupported_locale", "en-US"),
                 options=_ErrorResponseOptions(
                     code="unsupported_locale",
+                    stage="request_validation",
+                    retryable=False,
+                ),
+            )
+        if any(
+            _is_invalid_upload_purpose_error(error) for error in exc.errors()
+        ):
+            return _app_attr("_error_response")(
+                422,
+                "attachment purpose is invalid",
+                options=_ErrorResponseOptions(
+                    code="attachment_purpose_invalid",
                     stage="request_validation",
                     retryable=False,
                 ),

@@ -83,7 +83,7 @@ async def _create(
     *,
     owner: str = "alice@example.com",
     idempotency_key: str = "upload-route-1",
-    size_bytes: int = 3,
+    purpose: str = "chat_attachment",
 ) -> httpx.Response:
     """Create one small synthetic asset through the Web control shape."""
     return await client.post(
@@ -92,13 +92,37 @@ async def _create(
         json={
             "owner_subject": owner,
             "filename": "sample.fastq.gz",
-            "size_bytes": size_bytes,
+            "size_bytes": 3,
             "content_type_hint": "application/gzip",
             "last_modified_ms": 1722470400000,
-            "purpose": "chat_attachment",
+            "purpose": purpose,
             "idempotency_key": idempotency_key,
         },
     )
+
+
+async def test_invalid_purpose_has_stable_validation_error(
+    resumable_upload_client: tuple[
+        httpx.AsyncClient, str, str, FakeMultipartStorage
+    ],
+) -> None:
+    """Reject unsupported purposes before opening a provider session."""
+    client, control_key, _ordinary_key, storage = resumable_upload_client
+    response = await _create(
+        client,
+        control_key,
+        owner="owner-with-purpose",
+        purpose="Dataset",
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "attachment_purpose_invalid"
+    assert response.json()["error"]["stage"] == "request_validation"
+    assert response.json()["error"]["retryable"] is False
+    assert not storage.sessions
+    for value in ("Dataset", "owner-with-purpose", "test-bucket"):
+        assert value not in response.text
+    assert "object_key" not in response.text
 
 
 async def test_multipart_route_is_rejected_and_control_scope_is_explicit(

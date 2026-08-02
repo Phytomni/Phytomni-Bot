@@ -58,6 +58,29 @@ def test_create_accepts_one_byte_and_ten_gib_boundaries() -> None:
         UploadCreateRequest.model_validate(_request(size_bytes=0))
 
 
+@pytest.mark.parametrize("purpose", ["chat_attachment", "dataset", "document"])
+def test_create_accepts_exact_attachment_purposes(purpose: str) -> None:
+    """Accept exactly the three public upload-purpose values."""
+    request = UploadCreateRequest.model_validate(_request(purpose=purpose))
+    assert request.purpose == purpose
+
+
+def test_create_omitted_purpose_keeps_legacy_default() -> None:
+    """Keep chat attachments as the compatibility default."""
+    payload = _request()
+    payload.pop("purpose")
+    assert UploadCreateRequest.model_validate(payload).purpose == (
+        "chat_attachment"
+    )
+
+
+@pytest.mark.parametrize("purpose", ["", "Dataset", "agent_context", "csv"])
+def test_create_rejects_non_contract_purpose(purpose: str) -> None:
+    """Reject values outside the upload-purpose contract."""
+    with pytest.raises(ValidationError):
+        UploadCreateRequest.model_validate(_request(purpose=purpose))
+
+
 @pytest.mark.parametrize("filename", ["", ".", "..", "a/b.fa", "a\\b.fa"])
 def test_create_rejects_unsafe_filename(filename: str) -> None:
     """Separators, dot paths, and empty names cannot cross the boundary."""
