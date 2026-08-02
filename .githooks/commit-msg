@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+cd "$repo_root"
+
+if command -v python3 >/dev/null 2>&1; then
+    exec python3 scripts/validate_commit_messages.py --message-file "$1"
+fi
+
+exec python scripts/validate_commit_messages.py --message-file "$1"

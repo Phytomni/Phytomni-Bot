@@ -144,6 +144,7 @@ framework boundaries.
 `./scripts/validate_local.sh` runs the full gate over tracked files:
 
 - staged and tree secret scan
+- unpublished commit-message convention
 - compileall
 - `git diff --check`
 - black, ruff, flake8, mypy, pyright, pylint
@@ -166,12 +167,13 @@ CI Pylint semantics and the local hook gate:
 The `Makefile` adds a scoped gate for faster feedback:
 
 ```bash
-make help        # list targets
-make full        # full validate_local.sh
-make precommit   # scoped gate over the staged index
-make prepush     # scoped gate over @{upstream}..work-tree
-make scoped      # alias of prepush
-make push        # git push with SSH keepalive; hook still runs
+make help          # list targets
+make commit-check  # validate unpublished commit messages
+make full          # full validate_local.sh
+make precommit     # scoped gate over the staged index
+make prepush       # scoped gate over @{upstream}..work-tree
+make scoped        # alias of prepush
+make push          # git push with SSH keepalive; hook still runs
 ```
 
 If the remote branch advances and Git rejects a push as non-fast-forward,
@@ -211,7 +213,8 @@ Three workflows live under `.github/workflows/`:
 
 - `lint.yml` runs black, ruff, flake8, mypy, pyright, pylint, pytest with
   coverage, yamllint, actionlint, shellcheck, shfmt, mdformat,
-  pymarkdown, toml-sort, validate-pyproject, jsonlint, and
+  pymarkdown, toml-sort, validate-pyproject, jsonlint, commit-message
+  range validation, and
   `normalize_json.py --check`. The matrix covers Python 3.12, 3.13, and
   3.14 for the type checkers and pytest; the remaining tools run on 3.12.
   A separate Python 3.12 `dependency-floor` job installs direct dependencies

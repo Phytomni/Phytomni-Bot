@@ -9,8 +9,10 @@ repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
 git config core.hooksPath .githooks
+chmod +x .githooks/commit-msg
 chmod +x .githooks/pre-commit
 chmod +x .githooks/pre-push
+chmod +x scripts/validate_commit_messages.py
 chmod +x scripts/validate_local.sh
 chmod +x scripts/scoped_gate.sh
 

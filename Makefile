@@ -16,10 +16,11 @@ SHELL := /bin/sh
 GIT_SSH_KEEPALIVE := ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=6
 
 .DEFAULT_GOAL := help
-.PHONY: help scoped precommit prepush full push
+.PHONY: help commit-check scoped precommit prepush full push
 
 help:
 	@printf 'Phytomni-Bot quality gate targets:\n\n'
+	@printf '  make commit-check  validate unpublished commit messages\n'
 	@printf '  make precommit   scoped gate over the STAGED index\n'
 	@printf '  make prepush     scoped gate over BASE..work-tree\n'
 	@printf '  make scoped      alias of prepush (range scope)\n'
@@ -28,6 +29,9 @@ help:
 	@printf '  make help        this message\n\n'
 	@printf 'Fast opt-in pre-push:  PHYTOMNI_SCOPED_GATE=1 git push\n'
 	@printf 'Combine both:          PHYTOMNI_SCOPED_GATE=1 make push\n'
+
+commit-check:
+	@python3 scripts/validate_commit_messages.py --not-on-remotes HEAD
 
 scoped:
 	@scripts/scoped_gate.sh scoped

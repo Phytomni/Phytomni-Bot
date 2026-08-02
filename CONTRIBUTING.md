@@ -75,6 +75,10 @@ Subject line: `emoji + Word: summary` (e.g. `🐛 Fix:`, `✨ Add:`,
 blank line between bullets; the first bullet states the problem.
 Commit subjects and bodies are English-only.
 
+Install `.githooks/commit-msg` with `./scripts/install_git_hooks.sh` for
+immediate feedback. `make commit-check` validates every unpublished commit;
+the pre-push gate and CI run the same checker over their effective ranges.
+
 ## Dependency Policy
 
 Runtime and development dependencies are declared in `pyproject.toml`

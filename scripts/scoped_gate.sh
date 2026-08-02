@@ -109,7 +109,8 @@ for f in $changed; do
     static-analysis-exemptions.toml | pyproject.toml | .flake8 | Makefile | \
         scripts/check_static_analysis_exemptions.py | scripts/check_*.py | \
         scripts/scoped_gate.sh | \
-        scripts/scan_secrets.py | scripts/validate_local.sh | \
+        scripts/scan_secrets.py | scripts/validate_commit_messages.py | \
+        scripts/validate_local.sh | \
         scripts/static_analysis/* | .github/workflows/* | .githooks/*)
         policy_changed=1
         ;;
@@ -186,6 +187,7 @@ workflow_files=$(printf '%s' "$workflow_files" | sed '/^[[:space:]]*$/d')
 if [ "$mode" = precommit ]; then
     run python3 scripts/scan_secrets.py --staged
 else
+    run python3 scripts/validate_commit_messages.py --not-on-remotes HEAD
     run python3 scripts/scan_secrets.py --git-range "$BASE..HEAD"
 fi
 

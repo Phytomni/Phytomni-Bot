@@ -14,6 +14,7 @@ run() {
 }
 
 run python3 scripts/scan_secrets.py --all
+run python3 scripts/validate_commit_messages.py --not-on-remotes HEAD
 run uv run python -m compileall src tests e2e scripts
 run git diff --check
 run git diff --cached --check
