@@ -23,9 +23,13 @@ from tests.support.run_registry_fakes import (
     seed_foreign_run,
 )
 
+from mcp_server_phytomni.runtime.execution_defaults import (
+    empty_execution_projection,
+)
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
+    RunRequestInfo,
     RunSpec,
 )
 from mcp_server_phytomni.runtime.task_manager import (
@@ -135,6 +139,83 @@ async def test_get_run_logs_empty_tasks(
     assert body["run_id"] == "run-empty-1"
     assert body["task_ids"] == []
     assert body["task_logs"] == []
+
+
+async def test_get_orphan_run_logs_are_finite_and_status_is_terminal(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """An orphaned detached run yields finite empty logs and settles."""
+    registry = RunRegistry(tasks_db_path)
+    registry.reserve_run(
+        RunSpec("run-orphan-logs", "u1", "analyst", "remote"),
+        request_info=RunRequestInfo(request_id="request-orphan-logs"),
+        result=empty_execution_projection(),
+    )
+    headers = {"Authorization": f"Bearer {issued_api_key}"}
+    logs = await api_client.get(
+        "/v1/runs/run-orphan-logs/logs", headers=headers
+    )
+    status = await api_client.get("/v1/runs/run-orphan-logs", headers=headers)
+    assert logs.status_code == status.status_code == 200
+    assert logs.json() == {
+        "run_id": "run-orphan-logs",
+        "task_ids": [],
+        "task_logs": [],
+    }
+    assert status.json()["status"] == "failed"
+    assert status.json()["error"] == "run failed"
+    record = registry.get_run("run-orphan-logs", owner="u1")
+    assert record is not None
+    assert record.error == "background_submission_worker_lost"
+
+
+async def test_get_run_logs_default_strips_private_sentinel(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Default task-log projection removes the complete raw payload."""
+    registry = RunRegistry(tasks_db_path)
+    registry.create_run(
+        RunSpec("run-redacted-logs", "u1", "analyst", "remote"),
+        outcome=RunOutcome(status="succeeded"),
+    )
+    TaskManager(tasks_db_path).record(
+        Submission(
+            task_id="task-redacted-log",
+            status="succeeded",
+            output_dir="/tmp/task-redacted-log",
+            run_context=RunContext(run_id="run-redacted-logs"),
+        )
+    )
+
+    async def fake_reconcile(_task_id: str) -> dict[str, Any]:
+        """Return an intentionally private task-log payload."""
+        return {
+            "formatted": {"answer": "safe"},
+            "raw": {
+                "authorization": "Bearer sentinel",
+                "path": "/private/input.fa",
+                "arguments": {"secret": "value"},
+            },
+        }
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.api.app.reconcile_task_log", fake_reconcile
+    )
+    response = await api_client.get(
+        "/v1/runs/run-redacted-logs/logs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task_logs"] == [{"formatted": {"answer": "safe"}}]
+    assert "sentinel" not in response.text
+    assert "/private/input.fa" not in response.text
+    assert "arguments" not in response.text
 
 
 async def test_get_run_logs_response_keys_locked(

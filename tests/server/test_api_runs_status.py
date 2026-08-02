@@ -12,6 +12,7 @@ settles the run as terminal when all children are success-like.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -36,6 +37,13 @@ from mcp_server_phytomni.runtime import (
     run_registry_reports as run_registry_reports_module,
 )
 from mcp_server_phytomni.runtime.deep_genome_store import DeepGenomeStore
+from mcp_server_phytomni.runtime.execution_defaults import (
+    empty_execution_projection,
+)
+from mcp_server_phytomni.runtime.live_tasks import (
+    deregister_live_task,
+    register_live_task,
+)
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
     RunRegistry,
@@ -188,11 +196,81 @@ async def test_get_run_foreign_owner_is_404(
         result={"answer": "secret"},
     )
 
-    response = await api_client.get(
+    foreign = await api_client.get(
         "/v1/runs/run-other-1",
         headers={"Authorization": f"Bearer {issued_api_key}"},
     )
-    assert response.status_code == 404
+    unknown = await api_client.get(
+        "/v1/runs/run-other-unknown",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+    assert foreign.status_code == unknown.status_code == 404
+    foreign_error = foreign.json()["error"]
+    unknown_error = unknown.json()["error"]
+    for field in ("code", "message", "stage", "retryable"):
+        assert foreign_error.get(field) == unknown_error.get(field)
+    assert foreign_error["request_id"]
+    assert unknown_error["request_id"]
+
+
+async def test_get_zero_child_live_background_run_remains_running(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """A live detached worker keeps its zero-child run in flight."""
+    run_id = "run-live-background"
+    RunRegistry(tasks_db_path).reserve_run(
+        RunSpec(run_id, "u1", "analyst", "remote"),
+        request_info=RunRequestInfo(),
+        result=empty_execution_projection(),
+    )
+    release = asyncio.Event()
+    task = asyncio.create_task(release.wait())
+    register_live_task(run_id, task)
+    try:
+        response = await api_client.get(
+            f"/v1/runs/{run_id}",
+            headers={"Authorization": f"Bearer {issued_api_key}"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "running"
+        assert body["task_ids"] == []
+    finally:
+        release.set()
+        await task
+        deregister_live_task(run_id)
+
+
+async def test_get_zero_child_orphan_background_run_settles_safe_failure(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """A missing detached worker becomes a generic terminal failure."""
+    run_id = "run-orphan-background"
+    registry = RunRegistry(tasks_db_path)
+    registry.reserve_run(
+        RunSpec(run_id, "u1", "analyst", "remote"),
+        request_info=RunRequestInfo(),
+        result=empty_execution_projection(),
+    )
+
+    response = await api_client.get(
+        f"/v1/runs/{run_id}",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "failed"
+    assert body["error"] == "run failed"
+    record = registry.get_run(run_id, owner="u1")
+    assert record is not None
+    assert record.error == "background_submission_worker_lost"
+    assert "/private/input.fa" not in response.text
+    assert "Bearer sentinel" not in response.text
 
 
 async def test_get_run_reconciles_non_terminal_to_terminal(
