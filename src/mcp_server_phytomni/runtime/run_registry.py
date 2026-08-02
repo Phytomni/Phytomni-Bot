@@ -446,19 +446,17 @@ class RunRegistry(RunRegistryViewsMixin):
         result: dict[str, Any],
         error: str,
     ) -> bool:
-        """Fail an owned run only while it is still running."""
+        """Fail an owned zero-child run only while it is still running."""
         now = _now_iso()
         with sqlite_transaction(self.db_path) as conn:
             cursor = conn.execute(
-                """
-                UPDATE runs
-                SET status = 'failed',
-                    result_json = ?,
-                    error = ?,
-                    updated_at = ?,
-                    expires_at = ?
-                WHERE run_id = ? AND user_id = ? AND status = 'running'
-                """,
+                "UPDATE runs SET status = 'failed', result_json = ?, "
+                "error = ?, updated_at = ?, expires_at = ? "
+                "WHERE run_id = ? AND user_id = ? AND status = 'running' "
+                "AND NOT EXISTS (SELECT 1 FROM tasks "
+                "WHERE tasks.run_id = runs.run_id "
+                "AND tasks.user_id = runs.user_id "
+                "AND tasks.agent = runs.agent)",
                 (
                     json.dumps(result),
                     error,
@@ -668,13 +666,15 @@ class RunRegistry(RunRegistryViewsMixin):
         ):
             if is_live_running(current.spec.run_id):
                 return self._touch_running(current, "running")
-            self.fail_running_run(
+            settled = self.fail_running_run(
                 current.spec.run_id,
                 owner=current.spec.user_id,
                 result=empty_execution_projection(degraded=True),
                 error="background_submission_worker_lost",
             )
-            return self.get_run(current.spec.run_id, owner=request.owner)
+            current = self.get_run(current.spec.run_id, owner=request.owner)
+            if settled or current is None or current.status != "running":
+                return current
         live: list[dict[str, Any]] = []
         for task_id in current.task_ids:
             live.append(await reconcile_task(task_id))

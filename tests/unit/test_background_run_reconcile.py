@@ -210,6 +210,68 @@ async def test_accepted_child_reconciles_without_live_worker(
 
 
 @pytest.mark.asyncio
+async def test_child_accepted_during_worker_lost_cas_remains_authoritative(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A child attached after the first read defeats worker-lost settlement."""
+    db_path = str(tmp_path / "tasks.db")
+    registry = RunRegistry(db_path)
+    _reserve_zero_child(registry, run_id="run-racing-child")
+    original_fail = registry.fail_running_run
+    fail_calls = 0
+
+    def accept_before_fail(
+        run_id: str,
+        *,
+        owner: str,
+        result: dict[str, Any],
+        error: str,
+    ) -> bool:
+        """Attach through the real reservation seam before the failure CAS."""
+        nonlocal fail_calls
+        fail_calls += 1
+        assert registry.record_reserved_submissions(
+            run_id,
+            owner=owner,
+            agent="analyst",
+            submissions=(
+                Submission(
+                    task_id="task-racing-child",
+                    status="submitted",
+                    output_dir="/out",
+                    run_context=RunContext(
+                        run_id=run_id,
+                        user_id=owner,
+                        agent="analyst",
+                        origin="remote",
+                        created_at="2026-08-02T00:00:00+00:00",
+                        updated_at="2026-08-02T00:00:00+00:00",
+                    ),
+                ),
+            ),
+            result=empty_execution_projection(),
+            now="2026-08-02T00:00:00+00:00",
+        )
+        return original_fail(run_id, owner=owner, result=result, error=error)
+
+    async def submitted(task_id: str) -> dict[str, str]:
+        assert task_id == "task-racing-child"
+        return {"task_id": task_id, "status": "submitted"}
+
+    monkeypatch.setattr(registry, "fail_running_run", accept_before_fail)
+    monkeypatch.setattr(run_registry, "reconcile_task", submitted)
+
+    record = await registry.reconcile("run-racing-child", owner="alice")
+
+    assert fail_calls == 1
+    assert record is not None
+    assert record.status == "running"
+    assert record.task_ids == ("task-racing-child",)
+    assert record.error is None
+
+
+@pytest.mark.asyncio
 async def test_terminal_run_skips_worker_and_child_probes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
