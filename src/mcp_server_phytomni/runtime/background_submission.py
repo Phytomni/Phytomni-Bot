@@ -261,6 +261,11 @@ def _observe_background_task(
 ) -> None:
     """Retrieve one task result and contain an unexpected escaped failure."""
     if task.cancelled():
+        _settle_failed(
+            db_path,
+            reservation,
+            error="background_submission_cancelled",
+        )
         return
     escaped = task.exception()
     if escaped is None:

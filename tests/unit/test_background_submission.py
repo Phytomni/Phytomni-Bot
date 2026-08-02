@@ -457,7 +457,6 @@ async def test_cancelled_worker_settles_run_failed(
         return BackgroundSubmissionOutcome()
 
     launch_background_submission(reservation, operation, db_path=db_path)
-    await asyncio.sleep(0)
     captured_task = captured["task"]
     captured_task.cancel()
     with pytest.raises(asyncio.CancelledError):
