@@ -19,6 +19,9 @@ import sqlite3
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from .background_policy import is_detached_background_run
+from .execution_defaults import empty_execution_projection
+from .live_tasks import is_live_running
 from .run_registry_models import (
     _A2A_COLUMNS,
     _CREATE_A2A_TASK_INDEX,
@@ -636,11 +639,9 @@ class RunRegistry(RunRegistryViewsMixin):
     ) -> RunRecord | None:
         """Refresh a non-terminal run by polling its child tasks.
 
-        Terminal cached runs are returned as-is without any task probe;
-        this is the "terminal → no re-poll" guard. Non-terminal runs
-        call ``reconcile_task`` exactly once per child, aggregate, and
-        on a fresh terminal write the result_json / error plus the OK
-        or FAIL TTL ``expires_at``.
+        Terminal cached runs return without probes. Other runs reconcile each
+        child once; fresh terminal writes cache result/error with the
+        status TTL.
 
         Args:
             run_id: Run id to reconcile.
@@ -661,6 +662,19 @@ class RunRegistry(RunRegistryViewsMixin):
         current = self.get_run(request.run_id, owner=request.owner)
         if current is None or current.status in _NON_POLLABLE_RUN_STATUSES:
             return current
+        if not current.task_ids and is_detached_background_run(
+            agent=current.spec.agent,
+            origin=current.spec.origin,
+        ):
+            if is_live_running(current.spec.run_id):
+                return self._touch_running(current, "running")
+            self.fail_running_run(
+                current.spec.run_id,
+                owner=current.spec.user_id,
+                result=empty_execution_projection(degraded=True),
+                error="background_submission_worker_lost",
+            )
+            return self.get_run(current.spec.run_id, owner=request.owner)
         live: list[dict[str, Any]] = []
         for task_id in current.task_ids:
             live.append(await reconcile_task(task_id))
@@ -715,7 +729,7 @@ class RunRegistry(RunRegistryViewsMixin):
         live: list[dict[str, Any]],
         *,
         sources: ReportArtifactSources,
-    ) -> RunRecord:
+    ) -> RunRecord | None:
         """Assemble and persist the canonical analyst-class report."""
         artifact_set = await collect_report_artifact_set(
             live,
@@ -734,7 +748,6 @@ class RunRegistry(RunRegistryViewsMixin):
             ),
             artifacts=artifact_set.artifacts if status == "succeeded" else (),
         )
-        persist_report_compatibility(live, report, self.db_path)
         result_payload, error = canonical_terminal_payload(
             status,
             live,
@@ -742,7 +755,14 @@ class RunRegistry(RunRegistryViewsMixin):
             report,
             warnings=stored_submission_warnings(current.result),
         )
-        return self._settle_terminal(current, status, result_payload, error)
+        settled = self._settle_terminal(current, status, result_payload, error)
+        if (
+            settled is not None
+            and settled.status == status
+            and settled.result == result_payload
+        ):
+            persist_report_compatibility(live, report, self.db_path)
+        return settled
 
     def purge_expired(self) -> int:
         """Delete runs whose ``expires_at`` has elapsed and their tasks.
@@ -770,27 +790,18 @@ class RunRegistry(RunRegistryViewsMixin):
             purge_run_children(conn, expired)
         return len(expired)
 
-    def _touch_running(self, current: RunRecord, status: str) -> RunRecord:
-        """Persist a non-terminal status refresh (updates updated_at)."""
+    def _touch_running(
+        self, current: RunRecord, status: str
+    ) -> RunRecord | None:
+        """Refresh only the still-running owner row, then return its winner."""
         now = _now_iso()
         with sqlite_transaction(self.db_path) as conn:
             conn.execute(
-                "UPDATE runs SET status = ?, updated_at = ? WHERE run_id = ?",
-                (status, now, current.spec.run_id),
+                "UPDATE runs SET status = ?, updated_at = ? "
+                "WHERE run_id = ? AND user_id = ? AND status = 'running'",
+                (status, now, current.spec.run_id, current.spec.user_id),
             )
-        return RunRecord(
-            spec=current.spec,
-            status=status,
-            result=current.result,
-            error=current.error,
-            timestamps=Timestamps(
-                created_at=current.timestamps.created_at,
-                updated_at=now,
-                expires_at=current.timestamps.expires_at,
-            ),
-            task_ids=current.task_ids,
-            request_info=current.request_info,
-        )
+        return self.get_run(current.spec.run_id, owner=current.spec.user_id)
 
     def _settle_terminal(
         self,
@@ -798,7 +809,7 @@ class RunRegistry(RunRegistryViewsMixin):
         status: str,
         result_payload: dict[str, Any] | None,
         error: str | None,
-    ) -> RunRecord:
+    ) -> RunRecord | None:
         """Cache a freshly-terminal run with TTL and result/error."""
         now = _now_iso()
         expires_at = _expires_at_for(status, now)
@@ -807,7 +818,7 @@ class RunRegistry(RunRegistryViewsMixin):
                 """
                 UPDATE runs SET status = ?, result_json = ?, error = ?,
                        updated_at = ?, expires_at = ?
-                WHERE run_id = ?
+                WHERE run_id = ? AND user_id = ? AND status = 'running'
                 """,
                 (
                     status,
@@ -820,21 +831,10 @@ class RunRegistry(RunRegistryViewsMixin):
                     now,
                     expires_at,
                     current.spec.run_id,
+                    current.spec.user_id,
                 ),
             )
-        return RunRecord(
-            spec=current.spec,
-            status=status,
-            result=result_payload,
-            error=error,
-            timestamps=Timestamps(
-                created_at=current.timestamps.created_at,
-                updated_at=now,
-                expires_at=expires_at,
-            ),
-            task_ids=current.task_ids,
-            request_info=current.request_info,
-        )
+        return self.get_run(current.spec.run_id, owner=current.spec.user_id)
 
 
 def _reserved_parameter(

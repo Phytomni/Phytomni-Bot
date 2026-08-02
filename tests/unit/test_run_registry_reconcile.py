@@ -403,14 +403,13 @@ async def test_reconcile_assembles_answer_and_paths_once(
 async def test_reconcile_concurrent_first_polls_are_idempotent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Two simultaneous first polls assemble twice but settle identically.
+    """Two simultaneous first polls return the one persisted winner.
 
-    ``reconcile`` has no compare-and-swap: each first poll reads a
-    non-terminal run and runs the glob + synth + settle independently, so
+    Each first poll reads a non-terminal run and runs the glob + synth
+    independently, so
     the artifact lister fires once per concurrent poll (at-least-once, NOT
-    exactly-once). The guarantee that actually holds is idempotency — the
-    duplicated assembly is pure, so both returned records and the
-    persisted row agree. A gate forces both coroutines past the
+    exactly-once). The terminal write is a compare-and-swap; both readers
+    must re-read and return its persisted winner. A gate forces both past the
     non-terminal status read before either settles, exercising the race
     deterministically. (Sequential later polls still short-circuit; see
     ``test_reconcile_terminal_run_does_not_poll``.)
@@ -455,16 +454,147 @@ async def test_reconcile_concurrent_first_polls_are_idempotent(
 
     # At-least-once: both first polls did the work (no CAS to dedupe them).
     assert glob_hits["n"] == 2
-    # ...but idempotent: both returns and the cached row carry one answer.
+    # ...but both readers return the exact persisted winner.
     assert rec1 is not None and rec2 is not None
     assert rec1.status == rec2.status == "succeeded"
     assert rec1.result is not None and rec2.result is not None
-    settled = rec1.result["formatted"]["answer"]
-    assert rec2.result["formatted"]["answer"] == settled
-    assert rec1.result["execution"]["artifacts"][0]["name"] == "plot.png"
     cached = registry.get_run("run-cc", owner="alice")
     assert cached is not None and cached.result is not None
-    assert cached.result["formatted"]["answer"] == settled
+    assert rec1 == cached
+    assert rec2 == cached
+    assert cached.result["execution"]["artifacts"][0]["name"] == "plot.png"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_terminal_readers_return_one_persisted_winner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Conflicting first readers both return one complete persisted result."""
+    registry, manager, _ = _make_registry(tmp_path)
+    _seed_async_run(
+        registry,
+        manager,
+        RunSpec("run-race", "alice", "chat", "remote"),
+        ("race-1",),
+    )
+    arrivals: set[str] = set()
+    both_ready = asyncio.Event()
+    release = asyncio.Event()
+
+    async def conflicting(task_id: str) -> dict[str, Any]:
+        """Release one success and one failure after both initial reads."""
+        task = asyncio.current_task()
+        assert task is not None
+        name = task.get_name()
+        arrivals.add(name)
+        if len(arrivals) == 2:
+            both_ready.set()
+        await release.wait()
+        return {
+            "task_id": task_id,
+            "status": "succeeded" if name == "success-reader" else "failed",
+            "output_dir": "/obs/race",
+        }
+
+    monkeypatch.setattr(run_registry, "reconcile_task", conflicting)
+    success = asyncio.create_task(
+        registry.reconcile("run-race", owner="alice", lister=_empty_lister),
+        name="success-reader",
+    )
+    failure = asyncio.create_task(
+        registry.reconcile("run-race", owner="alice", lister=_empty_lister),
+        name="failure-reader",
+    )
+    await both_ready.wait()
+    release.set()
+    first, second = await asyncio.gather(success, failure)
+
+    cached = registry.get_run("run-race", owner="alice")
+    assert first is not None and second is not None and cached is not None
+    assert first == cached
+    assert second == cached
+    assert cached.status in {"succeeded", "failed"}
+    assert cached.result is not None
+    task_status = cached.result["task_results"][0]["status"]
+    if cached.status == "succeeded":
+        assert task_status == "succeeded"
+        assert cached.error is None
+    else:
+        assert task_status == "failed"
+        assert cached.error is not None
+
+
+@pytest.mark.asyncio
+async def test_losing_report_reader_does_not_replace_compatibility_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the terminal CAS winner may project its report onto the child."""
+    registry, manager, _ = _make_registry(tmp_path)
+    _seed_async_run(
+        registry,
+        manager,
+        RunSpec("run-report-race", "alice", "analyst", "remote"),
+        ("report-1",),
+    )
+    report_arrivals: set[str] = set()
+    reports_ready = asyncio.Event()
+    release_reports = asyncio.Event()
+
+    async def succeeded(task_id: str) -> dict[str, Any]:
+        """Return one terminal child to both racing readers."""
+        return {
+            "task_id": task_id,
+            "status": "succeeded",
+            "output_dir": "/obs/report-race",
+        }
+
+    async def distinct_report(**_kwargs: Any) -> TerminalReportAssembly:
+        """Hold distinct assemblies until both readers reach the CAS."""
+        task = asyncio.current_task()
+        assert task is not None
+        name = task.get_name()
+        report_arrivals.add(name)
+        if len(report_arrivals) == 2:
+            reports_ready.set()
+        await release_reports.wait()
+        return TerminalReportAssembly(
+            answer=f"# {name}\n\nSynthetic report.",
+            report=ReportExecution(
+                state="final",
+                degraded=False,
+                source_artifact_count=0,
+            ),
+        )
+
+    monkeypatch.setattr(run_registry, "reconcile_task", succeeded)
+    monkeypatch.setattr(
+        run_registry,
+        "assemble_terminal_report",
+        distinct_report,
+    )
+    first = asyncio.create_task(
+        registry.reconcile(
+            "run-report-race", owner="alice", lister=_empty_lister
+        ),
+        name="report-reader-one",
+    )
+    second = asyncio.create_task(
+        registry.reconcile(
+            "run-report-race", owner="alice", lister=_empty_lister
+        ),
+        name="report-reader-two",
+    )
+    await reports_ready.wait()
+    release_reports.set()
+    first_record, second_record = await asyncio.gather(first, second)
+
+    cached = registry.get_run("run-report-race", owner="alice")
+    assert cached is not None and cached.result is not None
+    assert first_record == cached
+    assert second_record == cached
+    assert manager.get_task_final_report("report-1") == (
+        cached.result["formatted"]["answer"]
+    )
 
 
 @pytest.mark.parametrize(

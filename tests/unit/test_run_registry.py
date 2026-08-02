@@ -188,6 +188,21 @@ def test_update_running_result_is_owner_and_status_scoped(
         request_info=RunRequestInfo(request_id="req-1"),
         result=empty_execution_projection(),
     )
+    manager = TaskManager(db_path)
+    manager.record(
+        Submission(
+            task_id="task-winner",
+            status="succeeded",
+            output_dir="/out/winner",
+            run_context=RunContext(
+                run_id="run-1",
+                user_id="alice",
+                agent="research",
+                origin="remote",
+            ),
+        )
+    )
+    manager.set_task_final_report("task-winner", "# Persisted winner")
     updated = empty_execution_projection()
     updated["execution"]["warnings"] = [{"code": "partial_submission"}]
 
@@ -228,6 +243,11 @@ def test_update_running_result_is_owner_and_status_scoped(
     record = registry.get_run("run-1", owner="alice")
     assert record is not None
     assert record.status == "succeeded"
+    assert record.result == updated
+    assert record.task_ids == ("task-winner",)
+    assert manager.get_task_final_report("task-winner") == (
+        "# Persisted winner"
+    )
 
 
 def test_fail_running_run_is_owner_scoped(tmp_path: Path) -> None:
