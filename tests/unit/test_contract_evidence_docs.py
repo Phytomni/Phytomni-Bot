@@ -7,10 +7,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from scripts.capture_contract_evidence import A2UI_FIXTURES, HTTP_GOLDENS
 from tests.support.markdown import parse_bold_records
+
+from mcp_server_phytomni.runtime.stage_trace import DataStage
 
 pytestmark = pytest.mark.unit
 
@@ -183,6 +186,12 @@ def parse_compatibility_register(
     return _table_rows(path, "## Compatibility register")
 
 
+def _load_http_golden(filename: str) -> dict[str, Any]:
+    """Load one tracked HTTP golden from the public contract directory."""
+    path = ROOT / "docs/contracts/http" / filename
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def test_every_requirement_row_has_required_columns() -> None:
     """Every requirement row uses the fixed schema and status vocabulary."""
     rows = parse_requirement_ledger()
@@ -259,8 +268,7 @@ def test_acceptance_runbook_locks_current_sha_packet() -> None:
 
 def test_analyst_terminal_golden_pins_local_report_projection() -> None:
     """The Analyst golden proves shape without claiming live acceptance."""
-    path = ROOT / "docs/contracts/http/analyst_terminal_succeeded.json"
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload = _load_http_golden("analyst_terminal_succeeded.json")
 
     assert payload["agent"] == "analyst"
     assert payload["evidence_scope"] == "synthetic_bot_local_shape"
@@ -281,3 +289,31 @@ def test_analyst_terminal_golden_pins_local_report_projection() -> None:
     assert result["execution"]["output_dirs"] == [
         "output-dir-fixture/analyst-1"
     ]
+
+
+def test_dataagent_golden_pins_guarded_replay_boundary() -> None:
+    """The DataAgent golden separates local shape from root-cause proof."""
+    payload = _load_http_golden("dataagent_incident_replay_guarded.json")
+
+    assert payload["agent"] == "data"
+    assert payload["evidence_scope"] == "synthetic_bot_local_shape"
+    assert payload["request"]["query_sha256"] == (
+        "04055046d046a5185951a32e658d6a3405cdf731eb5a25fd1c56ad4a5b17b28a"
+    )
+    response = payload["response"]
+    assert response["status"] == "succeeded"
+    assert tuple(item["stage"] for item in response["stage_trace"]) == tuple(
+        stage.value for stage in DataStage
+    )
+    assert response["tabular"] == {
+        "headers": ["sequence_2"],
+        "row_count": 1,
+        "sequence_length": 1003,
+        "alphabet_valid": False,
+    }
+    assert payload["root_cause_gate"] == {
+        "first_failing_boundary": "Needs Verification",
+        "provider_contract": "External Pending",
+        "history_correlation": "External Pending",
+        "behavior_change": "not_authorized",
+    }

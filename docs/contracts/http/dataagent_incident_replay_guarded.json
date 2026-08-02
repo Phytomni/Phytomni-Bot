@@ -1,0 +1,34 @@
+{
+  "agent": "data",
+  "contract": "dataagent_incident_replay_guarded",
+  "evidence_scope": "synthetic_bot_local_shape",
+  "request": {
+    "dialogue_id": "dialogue-fixture-data-1",
+    "locale": "en-US",
+    "query_sha256": "04055046d046a5185951a32e658d6a3405cdf731eb5a25fd1c56ad4a5b17b28a"
+  },
+  "response": {
+    "http_status": 200,
+    "status": "succeeded",
+    "stage_trace": [
+      {"stage": "native_request", "error_code": null},
+      {"stage": "data_rewrite", "error_code": null},
+      {"stage": "nl2sql_request", "error_code": null},
+      {"stage": "database_query", "error_code": null},
+      {"stage": "result_format", "error_code": null},
+      {"stage": "run_persist", "error_code": null}
+    ],
+    "tabular": {
+      "headers": ["sequence_2"],
+      "row_count": 1,
+      "sequence_length": 1003,
+      "alphabet_valid": false
+    }
+  },
+  "root_cause_gate": {
+    "first_failing_boundary": "Needs Verification",
+    "provider_contract": "External Pending",
+    "history_correlation": "External Pending",
+    "behavior_change": "not_authorized"
+  }
+}
