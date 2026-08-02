@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import enum
+import json
 import logging
 import re
 import sqlite3
@@ -36,7 +37,7 @@ from fastapi.responses import Response, StreamingResponse
 from starlette.requests import Request
 
 from ...common.httpx_client import get_async_client
-from ...config.defaults import ApiConfig
+from ...config.defaults import ApiConfig, ReviewConfig
 from ...runtime.request_context import current_request_id
 from ..auth import ApiPrincipal
 from .audit import RelayAuditRecord, RelayAuditStore
@@ -360,6 +361,39 @@ class RelayUpstream:
     trust_env: bool = True
 
 
+@dataclass(frozen=True)
+class _RelayForwardPlan:
+    """Resolved body, upstream, and server-owned timeout for one forward."""
+
+    body: bytes
+    upstream: RelayUpstream
+    timeout_seconds: float
+
+
+def _relay_timeout_seconds(
+    *, body: bytes, upstream: RelayUpstream, config: ApiConfig
+) -> float:
+    """Select the server-owned timeout for one relayed request.
+
+    Only the allowlisted LLM route carrying the canonical Review model may
+    inherit the Review timeout. Caller headers and arbitrary body fields do
+    not affect the policy; malformed JSON and every other service or model
+    retain the generic relay timeout.
+    """
+    if (
+        upstream.service != "llm"
+        or upstream.error_mode is not RelayErrorMode.TRANSPARENT
+    ):
+        return config.RELAY_TIMEOUT_SECONDS
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return config.RELAY_TIMEOUT_SECONDS
+    if not isinstance(payload, dict) or payload.get("model") != "phyto-review":
+        return config.RELAY_TIMEOUT_SECONDS
+    return ReviewConfig().TIMEOUT
+
+
 async def _buffered_relay_response(
     upstream: httpx.Response,
     *,
@@ -487,8 +521,7 @@ def _acquire_key_slot(
 async def _open_relay_upstream(
     *,
     request: Request,
-    body: bytes,
-    upstream: RelayUpstream,
+    plan: _RelayForwardPlan,
     stack: AsyncExitStack,
     record: Callable[..., None],
 ) -> tuple[httpx.Response, list[str]]:
@@ -504,9 +537,8 @@ async def _open_relay_upstream(
         HTTPException: 502 when the credential mint or the upstream
             connection fails.
     """
-    config = ApiConfig()
     try:
-        injected = await upstream.inject_headers()
+        injected = await plan.upstream.inject_headers()
     except Exception as exc:  # fail closed on any credential-mint failure
         await stack.aclose()
         record(
@@ -521,11 +553,12 @@ async def _open_relay_upstream(
     # shared keep-alive pool, so the default path stays pooled while a
     # bare-IP upstream gets an ephemeral, proxy-bypassing client.
     timeout = httpx.Timeout(
-        config.RELAY_TIMEOUT_SECONDS, connect=config.RELAY_TIMEOUT_SECONDS
+        plan.timeout_seconds,
+        connect=plan.timeout_seconds,
     )
     upstream_client = (
         get_async_client(timeout=timeout)
-        if upstream.trust_env
+        if plan.upstream.trust_env
         else get_async_client(timeout=timeout, trust_env=False)
     )
     client = await stack.enter_async_context(upstream_client)
@@ -533,9 +566,9 @@ async def _open_relay_upstream(
         upstream_resp = await client.send(
             client.build_request(
                 request.method,
-                upstream.url,
+                plan.upstream.url,
                 headers=forward_headers,
-                content=body,
+                content=plan.body,
                 timeout=timeout,
             ),
             stream=True,
@@ -591,6 +624,15 @@ async def forward_relay_request(
     request_body = sanitize_audit_body(
         body, config.RELAY_REQUEST_AUDIT_MAX_BYTES
     )
+    plan = _RelayForwardPlan(
+        body=body,
+        upstream=upstream,
+        timeout_seconds=_relay_timeout_seconds(
+            body=body,
+            upstream=upstream,
+            config=config,
+        ),
+    )
 
     def record(
         *,
@@ -623,8 +665,7 @@ async def forward_relay_request(
     )
     upstream_resp, secrets = await _open_relay_upstream(
         request=request,
-        body=body,
-        upstream=upstream,
+        plan=plan,
         stack=stack,
         record=record,
     )
@@ -638,7 +679,7 @@ async def forward_relay_request(
             upstream_resp,
             cap=cap,
             record=record,
-            deadline=config.RELAY_TIMEOUT_SECONDS,
+            deadline=plan.timeout_seconds,
         )
 
     try:

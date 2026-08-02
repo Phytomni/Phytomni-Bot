@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -136,7 +136,7 @@ async def test_transparent_2xx_streams_with_upstream_status(
             RelayErrorMode.TRANSPARENT,
             url="https://upstream.test/v1/chat/completions",
         ),
-        body=b'{"q":1}',
+        body=b'{"model":"phyto-chat","q":1}',
     )
     assert isinstance(response, StreamingResponse)
     body = b"".join(
@@ -155,6 +155,105 @@ async def test_transparent_2xx_streams_with_upstream_status(
     assert len(records) == 1
     assert records[0].status_code == 200
     assert records[0].service == "llm"
+
+
+@pytest.mark.parametrize(
+    ("upstream", "request_body", "expected_timeout"),
+    (
+        pytest.param(
+            _upstream(RelayErrorMode.TRANSPARENT, service="llm"),
+            b'{"model":"phyto-review","timeout":42}',
+            30000.0,
+            id="review-llm",
+        ),
+        pytest.param(
+            _upstream(RelayErrorMode.TRANSPARENT, service="llm"),
+            b'{"model":"phyto-chat"}',
+            600.0,
+            id="non-review-llm",
+        ),
+        pytest.param(
+            _upstream(RelayErrorMode.TRANSPARENT, service="llm"),
+            b"not-json",
+            600.0,
+            id="malformed-llm",
+        ),
+        pytest.param(
+            _upstream(RelayErrorMode.ENVELOPE, service="llm"),
+            b'{"model":"phyto-review"}',
+            600.0,
+            id="non-openai-mode",
+        ),
+        pytest.param(
+            _upstream(RelayErrorMode.TRANSPARENT, service="coder"),
+            b'{"model":"phyto-review"}',
+            600.0,
+            id="coder",
+        ),
+        pytest.param(
+            _upstream(RelayErrorMode.TRANSPARENT, service="embed"),
+            b'{"model":"phyto-review"}',
+            600.0,
+            id="embed",
+        ),
+        pytest.param(
+            _upstream(RelayErrorMode.ENVELOPE, service="retrieve"),
+            b'{"model":"phyto-review"}',
+            600.0,
+            id="platform",
+        ),
+    ),
+)
+async def test_review_timeout_policy_is_narrow(
+    monkeypatch: pytest.MonkeyPatch,
+    store: RelayAuditStore,
+    upstream: RelayUpstream,
+    request_body: bytes,
+    expected_timeout: float,
+) -> None:
+    """Only the allowlisted Review LLM request gets the long timeout."""
+    seen: list[httpx.Request] = []
+    deadlines: list[float | None] = []
+
+    original_stream = getattr(forward_module, "_streaming_relay_response")
+
+    def capture_stream_deadline(
+        *args: Any, **kwargs: Any
+    ) -> StreamingResponse:
+        deadlines.append(cast(float | None, kwargs.get("deadline")))
+        return original_stream(*args, **kwargs)
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(req)
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            content=b"{}",
+        )
+
+    _patch_client(monkeypatch, handler)
+    monkeypatch.setattr(
+        forward_module,
+        "_streaming_relay_response",
+        capture_stream_deadline,
+    )
+    response = await _forward(
+        store,
+        _make_request({"X-Request-Timeout": "42"}),
+        upstream,
+        body=request_body,
+    )
+    if isinstance(response, StreamingResponse):
+        async for _ in response.body_iterator:
+            pass
+
+    timeout = seen[0].extensions["timeout"]
+    assert timeout["connect"] == expected_timeout
+    assert timeout["read"] == expected_timeout
+    if upstream.error_mode is RelayErrorMode.TRANSPARENT:
+        assert deadlines == [expected_timeout]
+    else:
+        assert not deadlines
 
 
 async def test_request_audit_redacts_credentials_and_caps_body(

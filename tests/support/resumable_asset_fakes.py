@@ -10,7 +10,7 @@ import hashlib
 from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
-from typing import Any, TypedDict, Unpack
+from typing import Any
 
 import httpx
 import pytest
@@ -55,26 +55,23 @@ class ResumableAssetHarness:
     capability: str
 
 
-class _ResumableAssetOptions(TypedDict, total=False):
-    """Typed optional inputs for the synthetic builder."""
-
-    db_path: str | None
-    owner: str
-    filename: str
-    content: bytes
-    complete: bool
-
-
 def build_resumable_asset(
-    tmp_path: Path,
-    **options: Unpack[_ResumableAssetOptions],
+    _tmp_path: Path,
+    /,
+    *,
+    db_path: str | None = None,
+    owner: str = "owner-1",
+    filename: str = "context.pdf",
+    content: bytes = b"synthetic attachment",
+    complete: bool = True,
 ) -> ResumableAssetHarness:
-    """Build one owner-scoped resumable asset without external storage."""
-    db_path = options.get("db_path")
-    owner = options.get("owner", "owner-1")
-    filename = options.get("filename", "context.pdf")
-    content = options.get("content", b"synthetic attachment")
-    complete = options.get("complete", True)
+    """Build one owner-scoped resumable asset without external storage.
+
+    The temporary root is positional-only; every behavior knob remains an
+    explicit keyword-only argument while the helper stays within the
+    repository's five-argument static-analysis ceiling.
+    """
+    tmp_path = _tmp_path
     registry = ResumableUploadRegistry(
         db_path or str(tmp_path / "uploads.sqlite")
     )
