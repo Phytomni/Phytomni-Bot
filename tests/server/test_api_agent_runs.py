@@ -16,6 +16,7 @@ import asyncio
 import json
 import sqlite3
 from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
@@ -33,6 +34,15 @@ from tests.support.resolver_fakes import (
     post_duplicate_attachment_run,
     post_native_run,
     post_recorded_analyst_run,
+)
+from tests.support.resumable_asset_fakes import (
+    AssetHttpTestContext,
+    AssetRejectionCase,
+    BackgroundAssetCase,
+    execute_opaque_asset_run,
+    execute_rejected_asset_run,
+    install_attachment_capture,
+    wait_for_attachment_submission,
 )
 
 from mcp_server_phytomni import server
@@ -95,14 +105,24 @@ def test_native_run_projects_submission_warnings_into_execution() -> None:
 
 
 @dataclass(frozen=True)
-class _RemoteCase:
+class _RemoteCase(BackgroundAssetCase):
     """One parametrize row for the remote-agent chokepoint contract."""
 
-    slug: str
-    tool_name: str
-    stub_return: dict[str, Any]
-    arguments: dict[str, Any]
-    expected_task_ids: set[str]
+
+@pytest.fixture(name="asset_http_context")
+def _asset_http_context(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    tasks_db_path: str,
+    issued_api_key: str,
+) -> AssetHttpTestContext:
+    """Bundle opaque-asset HTTP fixtures without hiding their ownership."""
+    return AssetHttpTestContext(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        db_path=tasks_db_path,
+        api_key=issued_api_key,
+    )
 
 
 def _canonical_agent_slug(tool: PhytomniAgents) -> str:
@@ -593,6 +613,97 @@ _BACKGROUND_CASES = [
 
 
 @pytest.mark.parametrize("case", _BACKGROUND_CASES)
+async def test_native_background_run_preserves_empty_obs_file_list(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+    case: _RemoteCase,
+) -> None:
+    """An explicit empty attachment list reaches all four typed Agents."""
+    captured: dict[str, Any] = {}
+    install_attachment_capture(monkeypatch, case, captured)
+
+    response = await api_client.post(
+        f"/v1/agents/{case.slug}/runs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+        json={"arguments": case.arguments, "attachments": []},
+    )
+
+    assert response.status_code == 202
+    arguments = await wait_for_attachment_submission(
+        captured=captured,
+        db_path=tasks_db_path,
+        run_id=response.json()["run_id"],
+        case=case,
+    )
+    assert arguments.obs_file_list == []
+
+
+@pytest.mark.parametrize("case", _BACKGROUND_CASES)
+async def test_native_background_run_resolves_opaque_owner_asset(
+    asset_http_context: AssetHttpTestContext,
+    case: _RemoteCase,
+) -> None:
+    """An owner-completed opaque asset becomes one internal reference."""
+    harness, response, arguments = await execute_opaque_asset_run(
+        asset_http_context,
+        case,
+    )
+    assert response.status_code == 202
+    assert len(arguments.obs_file_list) == 1
+    internal_reference = arguments.obs_file_list[0]
+    assert not hasattr(arguments, "attachments")
+    assert "attachments" not in arguments.model_dump()
+    assert harness.asset_id not in response.text
+    assert internal_reference not in response.text
+
+
+_ATTACHMENT_REJECTION_CASES = (
+    pytest.param(
+        AssetRejectionCase("foreign", 404, "upload_asset_not_found"),
+        id="foreign",
+    ),
+    pytest.param(
+        AssetRejectionCase("incomplete", 409, "upload_state_conflict"),
+        id="incomplete",
+    ),
+    pytest.param(
+        AssetRejectionCase("duplicate", 409, "upload_state_conflict"),
+        id="duplicate",
+    ),
+    pytest.param(
+        AssetRejectionCase("malformed", 422, "invalid_upload_metadata"),
+        id="malformed",
+    ),
+)
+
+
+@pytest.mark.parametrize("case", _BACKGROUND_CASES)
+@pytest.mark.parametrize("rejection", _ATTACHMENT_REJECTION_CASES)
+async def test_native_background_run_rejects_unsafe_opaque_asset(
+    asset_http_context: AssetHttpTestContext,
+    caplog: pytest.LogCaptureFixture,
+    case: _RemoteCase,
+    rejection: AssetRejectionCase,
+) -> None:
+    """Owner, completion, uniqueness, and format failures stay private."""
+    response, private_values, handler_called = (
+        await execute_rejected_asset_run(
+            asset_http_context,
+            case,
+            rejection.scenario,
+        )
+    )
+    assert response.status_code == rejection.status_code
+    assert response.json()["error"]["code"] == rejection.safe_code
+    assert handler_called is False
+    rendered = f"{response.text}\n{caplog.text}"
+    for private_value in private_values:
+        assert private_value not in rendered
+
+
+@pytest.mark.parametrize("case", _BACKGROUND_CASES)
 async def test_background_agent_returns_reserved_run_before_handler_finishes(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -675,17 +786,8 @@ async def test_agent_run_remote_returns_chokepoint_run_id(
     case: _RemoteCase,
 ) -> None:
     """Deep Genome keeps its immediate upstream child identity."""
-
-    async def fake(args: Any) -> dict[str, Any]:
-        """Return the parametrised stub wrapper payload."""
-        _ = args
-        return case.stub_return
-
-    install_tool_handler(
-        monkeypatch,
-        case.tool_name,
-        records_submission(case.slug)(fake),
-    )
+    captured: dict[str, Any] = {}
+    install_attachment_capture(monkeypatch, case, captured)
 
     response = await api_client.post(
         f"/v1/agents/{case.slug}/runs",

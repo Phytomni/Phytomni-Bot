@@ -7,12 +7,11 @@
 from __future__ import annotations
 
 import gzip
-import hashlib
 import stat
-from io import BytesIO
 from pathlib import Path
 
 import pytest
+from tests.support.resumable_asset_fakes import build_resumable_asset
 
 from mcp_server_phytomni.api.asset_resolver import (
     AssetResolver,
@@ -22,23 +21,8 @@ from mcp_server_phytomni.api.attachments import (
     AttachmentContractError,
     validate_agent_attachments,
 )
-from mcp_server_phytomni.api.resumable_uploads import (
-    ResumableUploadService,
-    UploadContractError,
-    UploadServiceConfig,
-)
-from mcp_server_phytomni.api.schemas import (
-    UploadCompletionRequest,
-    UploadCreateRequest,
-)
-from mcp_server_phytomni.runtime.resumable_uploads import (
-    ResumableUploadRegistry,
-)
+from mcp_server_phytomni.api.resumable_uploads import UploadContractError
 from mcp_server_phytomni.runtime.upload_registry import UploadRegistry
-from mcp_server_phytomni.storage.multipart import (
-    FakeMultipartStorage,
-    PartInput,
-)
 
 pytestmark = pytest.mark.unit
 
@@ -50,85 +34,40 @@ def _build_completed_asset(
     content: bytes,
 ) -> tuple[AssetResolver, str, str, bytes]:
     """Create one completed fake asset and its owner-scoped resolver."""
-    registry = ResumableUploadRegistry(str(tmp_path / "uploads.sqlite"))
-    storage = FakeMultipartStorage()
-    service = ResumableUploadService(
-        registry,
-        storage,
-        UploadServiceConfig(
-            bucket_name="resolver-bucket",
-            upload_origin="https://upload.example",
-        ),
-    )
-    request = UploadCreateRequest(
-        owner_subject="owner-1",
+    harness = build_resumable_asset(
+        tmp_path,
         filename=filename,
-        content_type="application/octet-stream",
-        size_bytes=len(content),
-        purpose="chat_attachment",
-        idempotency_key=f"resolver-{hashlib.sha256(content).hexdigest()}",
+        content=content,
     )
-    created = service.create(request)
-    digest = hashlib.sha256(content).hexdigest()
-    service.put_part(
-        created.asset_id,
-        created.capability,
-        PartInput(1, BytesIO(content), len(content), digest),
+    return (
+        harness.resolver,
+        harness.asset_id,
+        harness.owner,
+        harness.content,
     )
-    service.complete(
-        created.asset_id,
-        created.capability,
-        UploadCompletionRequest(),
-    )
-    resolver = AssetResolver(
-        registry,
-        storage.download_to_path,
-        bucket_name="resolver-bucket",
-        workspace_root=tmp_path / "materialized",
-    )
-    return resolver, created.asset_id, "owner-1", content
 
 
 def test_resolve_requires_owner_and_completion(tmp_path: Path) -> None:
     """Missing, foreign, and unfinished assets fail without storage details."""
-    registry = ResumableUploadRegistry(str(tmp_path / "uploads.sqlite"))
-    storage = FakeMultipartStorage()
-    service = ResumableUploadService(
-        registry,
-        storage,
-        UploadServiceConfig(
-            bucket_name="resolver-bucket",
-            upload_origin="https://upload.example",
-        ),
-    )
-    created = service.create(
-        UploadCreateRequest(
-            owner_subject="owner-1",
-            filename="input.fa",
-            size_bytes=3,
-            purpose="chat_attachment",
-            idempotency_key="unfinished-asset",
-        )
-    )
-    resolver = AssetResolver(
-        registry,
-        storage.download_to_path,
-        bucket_name="resolver-bucket",
-        workspace_root=tmp_path / "materialized",
+    harness = build_resumable_asset(
+        tmp_path,
+        filename="input.fa",
+        content=b"abc",
+        complete=False,
     )
 
     with pytest.raises(UploadContractError) as unfinished:
-        resolver.resolve(created.asset_id, "owner-1")
+        harness.resolver.resolve(harness.asset_id, harness.owner)
     assert unfinished.value.code == "upload_state_conflict"
 
     with pytest.raises(UploadContractError) as foreign:
-        resolver.resolve(created.asset_id, "owner-2")
+        harness.resolver.resolve(harness.asset_id, "owner-2")
     assert foreign.value.code == "upload_asset_not_found"
     with pytest.raises(UploadContractError) as missing:
-        resolver.resolve("file_does_not_exist", "owner-1")
+        harness.resolver.resolve("file_does_not_exist", harness.owner)
     assert missing.value.code == "upload_asset_not_found"
     assert "resolver-bucket" not in str(foreign.value)
-    assert created.capability not in str(foreign.value)
+    assert harness.capability not in str(foreign.value)
 
 
 @pytest.mark.parametrize(

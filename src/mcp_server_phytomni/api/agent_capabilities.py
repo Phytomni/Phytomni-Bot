@@ -240,11 +240,13 @@ _CAPABILITIES: dict[str, AgentCapability] = {
         report_states=("final",),
         artifacts=True,
         degraded_outcomes=True,
+        attachments=AttachmentCapability(_DOCUMENTS, None, False),
     ),
     "network": AgentCapability(
         report_states=("final",),
         artifacts=True,
         degraded_outcomes=True,
+        attachments=AttachmentCapability(_DOCUMENTS, None, False),
     ),
 }
 

@@ -46,8 +46,8 @@ _EXPECTED_ATTACHMENTS = {
     "research": (True, True, False),
     "brief_gene": (False, False, False),
     "deep_genome": (False, False, False),
-    "design": (False, False, False),
-    "network": (False, False, False),
+    "design": (True, False, False),
+    "network": (True, False, False),
 }
 
 
@@ -116,7 +116,7 @@ def test_capability_golden_is_byte_stable() -> None:
     assert json.loads(golden) == actual
     assert golden == json.dumps(actual, ensure_ascii=False, indent=2) + "\n"
     assert hashlib.sha256(golden.encode("utf-8")).hexdigest() == (
-        "b13f327b1dd1012ef24936cf3183bd37a19d0e1e8ec3dd7a5115352d0ea492b5"
+        "66452e129e2c0746330fb8bb15b67713765d793aa7e7987737c2c435d255d2b8"
     )
 
 
@@ -125,11 +125,22 @@ def test_attachment_limits_are_public_and_exact() -> None:
     for slug, channel in (
         ("chat", "document_context"),
         ("analyst", "datasets"),
+        ("design", "document_context"),
+        ("network", "document_context"),
     ):
         limits = serialize_agent_capability(slug)["attachments"][channel]
         assert limits["max_file_bytes"] == 26_214_400
         assert limits["max_files"] == 10
         assert limits["max_total_bytes"] == 52_428_800
+
+
+@pytest.mark.parametrize("slug", ["design", "network"])
+def test_design_and_network_accept_only_document_context(slug: str) -> None:
+    """The two added channels do not enable datasets or Expert forwarding."""
+    attachments = serialize_agent_capability(slug)["attachments"]
+    assert attachments["document_context"] is not None
+    assert attachments["datasets"] is None
+    assert attachments["expert_forwarding"] is False
 
 
 def test_obs_policy_reads_attachment_registry() -> None:

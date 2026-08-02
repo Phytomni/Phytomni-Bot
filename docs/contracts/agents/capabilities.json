@@ -206,7 +206,20 @@
     "artifacts": true,
     "degraded_outcomes": true,
     "attachments": {
-      "document_context": null,
+      "document_context": {
+        "argument": "obs_file_list",
+        "extensions": [
+          "pdf",
+          "docx",
+          "pptx",
+          "xls",
+          "xlsx",
+          "msg"
+        ],
+        "max_file_bytes": 26214400,
+        "max_files": 10,
+        "max_total_bytes": 52428800
+      },
       "datasets": null,
       "expert_forwarding": false
     }
@@ -220,7 +233,20 @@
     "artifacts": true,
     "degraded_outcomes": true,
     "attachments": {
-      "document_context": null,
+      "document_context": {
+        "argument": "obs_file_list",
+        "extensions": [
+          "pdf",
+          "docx",
+          "pptx",
+          "xls",
+          "xlsx",
+          "msg"
+        ],
+        "max_file_bytes": 26214400,
+        "max_files": 10,
+        "max_total_bytes": 52428800
+      },
       "datasets": null,
       "expert_forwarding": false
     }

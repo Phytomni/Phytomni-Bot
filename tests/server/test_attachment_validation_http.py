@@ -103,8 +103,10 @@ def assert_attachment_error(
         ("data", "datasets", False),
         ("brief_gene", "documents", False),
         ("deep_genome", "documents", False),
-        ("design", "documents", False),
-        ("network", "documents", False),
+        ("design", "documents", True),
+        ("design", "datasets", False),
+        ("network", "documents", True),
+        ("network", "datasets", False),
     ],
 )
 def test_native_attachment_matrix(
@@ -372,16 +374,16 @@ def test_total_file_limit_is_inclusive(tasks_db_path: str) -> None:
 
 
 @pytest.mark.parametrize("agent", ["design", "network"])
-def test_legacy_design_and_network_attachment_fields_are_rejected(
+def test_unregistered_design_and_network_paths_are_rejected(
     tasks_db_path: str,
     agent: str,
 ) -> None:
-    """Legacy fields remain present but nonempty is unsupported."""
+    """Raw paths reach owner validation but remain unregistered."""
     assert_attachment_error(
         UploadRegistry(tasks_db_path),
         agent=agent,
         arguments={"obs_file_list": ["/obs/phytomni/legacy.pdf"]},
-        code="attachment_not_supported",
+        code="attachment_not_found",
     )
 
 
