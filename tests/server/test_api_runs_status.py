@@ -13,6 +13,7 @@ settles the run as terminal when all children are success-like.
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from typing import Any
 from unittest.mock import AsyncMock
 
@@ -253,9 +254,23 @@ async def test_get_zero_child_orphan_background_run_settles_safe_failure(
     registry = RunRegistry(tasks_db_path)
     registry.reserve_run(
         RunSpec(run_id, "u1", "analyst", "remote"),
-        request_info=RunRequestInfo(),
-        result=empty_execution_projection(),
+        request_info=RunRequestInfo(
+            query="safe public query",
+            request_json=(
+                '{"query":"query-sentinel","authorization":'
+                '"Bearer sentinel"}'
+            ),
+        ),
+        result={
+            **empty_execution_projection(),
+            "raw": {"path": "/private/input.fa"},
+        },
     )
+    with sqlite3.connect(tasks_db_path) as conn:
+        conn.execute(
+            "UPDATE runs SET error = ? WHERE run_id = ?",
+            ("error-sentinel: /private/input.fa", run_id),
+        )
 
     response = await api_client.get(
         f"/v1/runs/{run_id}",
@@ -266,11 +281,14 @@ async def test_get_zero_child_orphan_background_run_settles_safe_failure(
     body = response.json()
     assert body["status"] == "failed"
     assert body["error"] == "run failed"
+    assert body["query"] == "safe public query"
     record = registry.get_run(run_id, owner="u1")
     assert record is not None
     assert record.error == "background_submission_worker_lost"
+    assert "query-sentinel" not in response.text
     assert "/private/input.fa" not in response.text
     assert "Bearer sentinel" not in response.text
+    assert "error-sentinel" not in response.text
 
 
 async def test_get_run_reconciles_non_terminal_to_terminal(
