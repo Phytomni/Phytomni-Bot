@@ -785,6 +785,41 @@ source candidate above. The final packet and supported-version matrix remain
 separate acceptance evidence; no missing external evidence is upgraded to
 `Accepted` here.
 
+## 2026-08-02 five-item Bot evidence refresh
+
+This is a Bot-local evidence inventory. It does not replace paired Web/Go,
+provider, OBS, browser, staging, or historical-operator acceptance. Each row
+separates the local result from the remaining external boundary:
+
+- **Analyst terminal report:** `analyst_terminal_succeeded.json` and
+  `test_analyst_terminal_golden_pins_local_report_projection` prove the
+  synthetic final answer, report state, scientific artifact roles, and output
+  directory projection. Remote completion, OBS artifacts, Web correlation, and
+  historical repair remain `External Pending`.
+
+- **DeepGenome RC-WEB:** the `RC-WEB local evidence map` in
+  `docs/contracts/deep-genome/README.md` links RC-WEB-001 through RC-WEB-005
+  to bounded fixtures and tests for submit, revision, failure, artifacts, and
+  timeout. Live remote, OBS, paired consumer, browser, and staging evidence
+  remain `External Pending`.
+
+- **Review timeout/provider seam:** the Review timeout tests cover the HTTP,
+  Agent, direct-provider, and relay-provider paths without adding an outer
+  wait or changing the configured override contract. Real provider behavior,
+  OBS, browser, and real-user acceptance remain `External Pending`.
+
+- **DataAgent guarded replay:** `dataagent_incident_replay_guarded.json` and
+  `test_dataagent_golden_pins_guarded_replay_boundary` pin the exact-query
+  identity hash, six safe stages, and result metrics. Provider interpretation,
+  root-cause confirmation, and historical Analyst correlation remain
+  `External Pending`; no behavior change is authorized.
+
+- **Expert local edges:** `expert_local_edge_contract.json` and the existing
+  strict-router/native-parity packet prove forced allowlist routing, no-dispatch
+  failure handling, and the dark activation boundary. Autonomous provider
+  selection, paired Web/Go acceptance, and legacy A2A consumer evidence remain
+  `External Pending`; Web `bot.expert_enabled` stays `false`.
+
 ## Handoff dispositions
 
 - **Handoff:** `2026-07-15-a2ui-bot-contract-handoff.md`
