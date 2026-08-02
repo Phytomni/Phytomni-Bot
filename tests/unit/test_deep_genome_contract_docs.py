@@ -16,6 +16,7 @@ pytestmark = pytest.mark.unit
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_ROOT = ROOT / "docs/contracts/deep-genome"
+EVIDENCE_MAP = ROOT / "docs/ops/deep-genome-rc-web-evidence.md"
 EXAMPLE_PATHS = tuple(
     CONTRACT_ROOT / name
     for name in (
@@ -149,10 +150,10 @@ def test_rc_web_cases_are_mapped_to_local_evidence_and_external_pending() -> (
     None
 ):
     """Every RC-WEB case has a local proof and external boundary."""
-    readme = (CONTRACT_ROOT / "README.md").read_text(encoding="utf-8")
+    evidence_map = EVIDENCE_MAP.read_text(encoding="utf-8")
 
     for case, evidence in RC_WEB_CASES.items():
-        assert f"`{case}`" in readme
+        assert f"`{case}`" in evidence_map
         for item in evidence:
-            assert f"`{item}`" in readme
-    assert readme.count("External Pending:") == len(RC_WEB_CASES)
+            assert f"`{item}`" in evidence_map
+    assert evidence_map.count("External Pending:") == len(RC_WEB_CASES)

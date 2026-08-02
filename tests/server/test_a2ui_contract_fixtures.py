@@ -34,6 +34,7 @@ _HTTP_ROOT = _REPO_ROOT / "docs" / "contracts" / "http"
 _EXPECTED_HTTP_GOLDENS = frozenset(
     {
         "chat_terminal_succeeded.json",
+        "analyst_terminal_succeeded.json",
         "review_terminal_succeeded.json",
         "review_round2_input_required.json",
         "error_400_run_widget_payload_mismatch.json",
@@ -47,6 +48,8 @@ _EXPECTED_HTTP_GOLDENS = frozenset(
         "a2ui_response_1m_plus_one.json",
         "streamed_run_accumulated_answer.json",
         "deep_genome_bounded_reports.json",
+        "dataagent_incident_replay_guarded.json",
+        "expert_local_edge_contract.json",
         "remote_partial_acceptance.json",
         "remote_registry_degraded.json",
     }
