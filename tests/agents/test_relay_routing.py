@@ -21,6 +21,7 @@ import pytest
 
 from mcp_server_phytomni.agents.analyst.model_yaml import build_model_yaml
 from mcp_server_phytomni.agents.chat import service as chat_service
+from mcp_server_phytomni.config.models.agents import ReviewConfig
 from mcp_server_phytomni.config.settings import get_sensitive_config
 
 pytestmark = pytest.mark.agent
@@ -41,7 +42,7 @@ def _capturing_async_openai(captured: dict[str, Any]):
     """Return a fake AsyncOpenAI recording the api_key / base_url it gets."""
 
     async def fake_create(**kwargs: Any) -> _FakeCompletion:
-        del kwargs
+        captured["completion"] = kwargs
         return _FakeCompletion(
             payload={
                 "choices": [
@@ -60,6 +61,42 @@ def _capturing_async_openai(captured: dict[str, Any]):
         )
 
     return fake_async_openai
+
+
+@pytest.mark.parametrize("relay_enabled", [False, True])
+async def test_review_timeout_reaches_direct_and_relay_provider(
+    monkeypatch: pytest.MonkeyPatch,
+    relay_enabled: bool,
+) -> None:
+    """Review keeps its 30000-second timeout through either transport."""
+    chat_service.clear_chat_cache()
+    get_sensitive_config.cache_clear()
+    if relay_enabled:
+        monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+        monkeypatch.setenv("PHYTOMNI_RELAY_BASE_URL", "https://relay.test")
+        monkeypatch.setenv("PHYTOMNI_RELAY_API_KEY", "relay-key")
+    else:
+        monkeypatch.delenv("PHYTOMNI_RELAY_MODE", raising=False)
+        monkeypatch.delenv("RELAY_MODE", raising=False)
+    captured: dict[str, Any] = {}
+    monkeypatch.setattr(
+        chat_service, "AsyncOpenAI", _capturing_async_openai(captured)
+    )
+
+    sampling = _sampling("review timeout transport")
+    sampling["timeout"] = ReviewConfig().TIMEOUT
+    result = await chat_service.run_phyto_chat_cached(
+        api_key="operator-key",
+        base_url="https://operator.invalid/v1",
+        **sampling,
+    )
+
+    assert result["choices"][0]["message"]["content"] == "ok"
+    assert captured["completion"]["timeout"] == 30000.0
+    if relay_enabled:
+        assert captured["base_url"] == "https://relay.test/v1/relay/llm"
+    else:
+        assert captured["base_url"] == "https://operator.invalid/v1"
 
 
 def _sampling(content: str) -> dict[str, Any]:

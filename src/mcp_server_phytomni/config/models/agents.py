@@ -139,6 +139,7 @@ class AnalystConfig(KnowledgeConfig):
 class ReviewConfig(KnowledgeConfig):
     """Configuration settings for review generation."""
 
+    TIMEOUT: float = 30000.0
     TOP_N: int = int(_MAX_TOKENS / 2048)
 
 

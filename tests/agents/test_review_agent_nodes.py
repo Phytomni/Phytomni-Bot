@@ -20,6 +20,7 @@ import pytest
 
 from mcp_server_phytomni.agents.review import agent as review_agent
 from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
+from mcp_server_phytomni.config.models.agents import ReviewConfig
 
 pytestmark = pytest.mark.agent
 
@@ -71,6 +72,8 @@ async def test_chat_threads_review_config_into_phyto_chat(
     assert captured["prompt_file"] == agent.review_config.PROMPT_FILE
     assert captured["prompt_path"] == agent.review_config.PROMPT_PATH
     assert captured["response_format"] == agent.review_config.RESPONSE_FORMAT
+    assert agent.review_config.TIMEOUT == 30000.0
+    assert captured["timeout"] == 30000.0
     assert captured["timeout"] == agent.review_config.TIMEOUT
     assert captured["max_retries"] == agent.review_config.MAX_RETRIES
     assert captured["retriable_codes"] == agent.review_config.RETRIABLE_CODES
@@ -101,3 +104,27 @@ async def test_chat_uses_response_format_override_when_provided(
     await _AgentProbe().chat("hi", response_format_override=schema_override)
 
     assert captured["response_format"] == schema_override
+
+
+async def test_chat_preserves_explicit_review_timeout_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit Review timeout remains authoritative at the
+    provider seam."""
+    captured: dict[str, Any] = {}
+
+    async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {}
+
+    monkeypatch.setattr(review_agent, "phyto_chat", fake_phyto_chat)
+    agent = _AgentProbe(review_config=ReviewConfig(TIMEOUT=42.5))
+
+    await agent.chat("synthetic timeout override")
+
+    assert captured["timeout"] == 42.5
+
+
+def test_review_timeout_default_is_30000_seconds() -> None:
+    """Review owns the long-running provider timeout explicitly."""
+    assert ReviewConfig().TIMEOUT == 30000.0

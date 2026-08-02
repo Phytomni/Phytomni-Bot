@@ -27,14 +27,19 @@ from tests.support.chat_fakes import (
 from tests.support.handler_fakes import (
     patch_chat_completion_service,
     patch_context_chat_runtime,
+    review_success_result,
 )
 from tests.support.http_fakes import build_instant_chat_context_envelope
 
 import mcp_server_phytomni.agents.chat.service as chat_service
+import mcp_server_phytomni.agents.review.agent as review_agent
 from mcp_server_phytomni import server
 from mcp_server_phytomni.agents.knowledge.conversation import (
     KnowledgeConversationAdapter,
 )
+from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
+from mcp_server_phytomni.api import app as api_app_module
+from mcp_server_phytomni.api.a2ui_runtime import ReviewExecution
 from mcp_server_phytomni.runtime.conversation_context.adapters import (
     canonical_agent_invocation,
 )
@@ -53,6 +58,47 @@ pytestmark = pytest.mark.server
 def _conversation_envelope(*, turn_id: str = "1") -> dict[str, Any]:
     """Build one Instant V1 envelope for a chat completion test."""
     return build_instant_chat_context_envelope(turn_id)
+
+
+async def test_review_chat_completion_passes_effective_timeout(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The HTTP Review entry point reaches the configured provider timeout."""
+    captured: dict[str, Any] = {}
+
+    async def fake_phyto_chat(**kwargs: Any) -> dict[str, Any]:
+        captured.update(kwargs)
+        return {"choices": [{"message": {"content": "review ok"}}]}
+
+    async def fake_run_review(**kwargs: Any) -> ReviewExecution:
+        agent = DeepResearchAgent()
+        arguments = kwargs["arguments"]
+        await agent.chat(arguments["user_query"])
+        return ReviewExecution(
+            run_id="review-timeout-probe",
+            status="succeeded",
+            result=review_success_result(),
+        )
+
+    monkeypatch.setattr(review_agent, "phyto_chat", fake_phyto_chat)
+    monkeypatch.setattr(
+        api_app_module, "_run_review_with_interrupt", fake_run_review
+    )
+
+    response = await chat_completion(
+        api_client,
+        issued_api_key,
+        model="phyto-review",
+        messages=[{"role": "user", "content": "review timeout"}],
+        debug=True,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["run_id"] == "review-timeout-probe"
+    assert captured["timeout"] == 30000.0
 
 
 async def test_chat_completions_passthrough(
