@@ -26,6 +26,33 @@ EXAMPLE_PATHS = tuple(
     )
 )
 
+RC_WEB_CASES = {
+    "RC-WEB-001": (
+        "running.json",
+        "test_arun_returns_immediately_with_submit_envelope",
+        "test_fake_backend_persists_acceptance_before_poll_and_snapshots",
+    ),
+    "RC-WEB-002": (
+        "running.json",
+        "test_partial_fake_backend_publishes_final_report_after_cas",
+    ),
+    "RC-WEB-003": (
+        "failed-with-intermediate.json",
+        "test_post_profile_failure_keeps_intermediate_report",
+        "test_all_optional_failures_preserve_profile_and_fail_owner",
+    ),
+    "RC-WEB-004": (
+        "partial-final.json",
+        "test_deep_genome_snapshot_uses_canonical_split",
+        "test_terminal_report_metadata_survives_run_projection",
+    ),
+    "RC-WEB-005": (
+        "test_transition_sink_persists_every_local_status",
+        "test_poll_contract_emits_ordered_transitions_and_summary",
+        "test_dispatch_coordinator_receives_effective_poll_id",
+    ),
+}
+
 
 def assert_public_deep_genome_payload(payload: Any) -> None:
     """Validate the stable owner-scoped DeepGenome snapshot projection."""
@@ -116,3 +143,16 @@ def test_brief_gene_failure_has_no_optional_report_or_submission() -> None:
     assert result["report_completeness"] == "none"
     assert result["progress"]["planned"] == 0
     assert result["progress"]["submitted"] == 0
+
+
+def test_rc_web_cases_are_mapped_to_local_evidence_and_external_pending() -> (
+    None
+):
+    """Every RC-WEB case has a local proof and external boundary."""
+    readme = (CONTRACT_ROOT / "README.md").read_text(encoding="utf-8")
+
+    for case, evidence in RC_WEB_CASES.items():
+        assert f"`{case}`" in readme
+        for item in evidence:
+            assert f"`{item}`" in readme
+    assert readme.count("External Pending:") == len(RC_WEB_CASES)
