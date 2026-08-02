@@ -1,0 +1,50 @@
+{
+  "protocol": "obs-multipart-v2",
+  "route_family": "resumable_files",
+  "routes": [
+    {
+      "method": "POST",
+      "path": "/v1/files",
+      "plane": "control",
+      "auth": "service_scope"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/files/{asset_id}/capability",
+      "plane": "control",
+      "auth": "service_scope"
+    },
+    {
+      "method": "HEAD",
+      "path": "/v1/files/{asset_id}",
+      "plane": "data",
+      "auth": "asset_capability"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/files/{asset_id}/parts/{part_number}",
+      "plane": "data",
+      "auth": "asset_capability"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/files/{asset_id}/complete",
+      "plane": "data",
+      "auth": "asset_capability"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/files/{asset_id}",
+      "plane": "data",
+      "auth": "asset_capability"
+    }
+  ],
+  "limits": {
+    "max_file_bytes": 10737418240,
+    "part_size_bytes": 134217728,
+    "max_parallel_parts": 4,
+    "max_active_assets": 3,
+    "capability_ttl_seconds": 900,
+    "session_ttl_seconds": 604800
+  }
+}

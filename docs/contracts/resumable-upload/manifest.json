@@ -1,0 +1,17 @@
+{
+  "protocol": "obs-multipart-v2",
+  "fixture_version": "2026-08-02",
+  "files": {
+    "abort_response.json": "61af084446e79e0900f4ae1db9529af32ff47f2732690f6f73689d419692c962",
+    "capability.json": "6716e966e9b92c5284c9a3cb55045ce7e0fd847a146abe019b4c451110f29e23",
+    "complete_request.json": "658b1c38bd53a42e9761dc6945520de111e454d2fd284ae0b7ce0510bf35ec1c",
+    "complete_response.json": "7d13ca2e0e9f43334a7cf9f84a94832237c601f8158093af225795a5d01157c6",
+    "create_request.json": "32c918c4755a1013f299139ccfe20bc0ac37b4212ddbd5aad6367edf6195e63c",
+    "create_response.json": "690a7f330580a9a35d51aec8564919bca307bad53a943099607785a24321b0df",
+    "head_headers.json": "326d63825e09053184ea19b8ab5d4633530001e1495000ab673b929e83f0f710",
+    "head_response.json": "fe5d58e364a17b22885d5bb05c1ebb69431b95136bcbfa9eaa39d3a6a59c05a2",
+    "part_response.json": "a4c0b1a4a30999cd68e629036de0f177c3d578597c4e2fa5b3bee122209a742e",
+    "renew_request.json": "a28a4207b6222b1a6ca68aa5fbc0faa1046f78132a58caed912b2b9096a41975",
+    "renew_response.json": "1838e6e4e3037130b54730a5202c5cdb03d2d6244f192c9c35a7d8486c23ae49"
+  }
+}

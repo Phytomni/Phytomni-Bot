@@ -1,0 +1,10 @@
+{
+  "protocol": "obs-multipart-v2",
+  "asset_id": "file-fixture-1",
+  "status": "uploading",
+  "part_number": 1,
+  "byte_size": 3,
+  "received_parts": [
+    1
+  ]
+}

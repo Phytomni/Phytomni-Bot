@@ -1,0 +1,9 @@
+{
+  "owner_subject": "fixture-owner-1",
+  "filename": "sample.fastq.gz",
+  "content_type": "application/octet-stream",
+  "last_modified_ms": 0,
+  "size_bytes": 3,
+  "purpose": "chat_attachment",
+  "idempotency_key": "fixture-upload-1"
+}

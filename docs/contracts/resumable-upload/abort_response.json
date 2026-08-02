@@ -1,0 +1,12 @@
+{
+  "protocol": "obs-multipart-v2",
+  "asset_id": "file-fixture-1",
+  "status": "aborted",
+  "size_bytes": 3,
+  "part_size_bytes": 134217728,
+  "part_count": 1,
+  "received_parts": [
+    1
+  ],
+  "filename": "sample.fastq.gz"
+}

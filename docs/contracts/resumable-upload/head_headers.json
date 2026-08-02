@@ -1,0 +1,9 @@
+{
+  "Upload-Protocol": "obs-multipart-v2",
+  "Upload-Status": "uploading",
+  "Upload-Length": "3",
+  "Upload-Part-Size": "134217728",
+  "Upload-Part-Count": "1",
+  "Upload-Received-Parts": "1",
+  "Cache-Control": "no-store"
+}

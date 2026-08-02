@@ -1,0 +1,12 @@
+{
+  "protocol": "obs-multipart-v2",
+  "asset_id": "file-fixture-1",
+  "status": "uploading",
+  "part_size_bytes": 134217728,
+  "part_count": 1,
+  "max_parallel_parts": 4,
+  "upload_url": "https://bot.example/v1/files/file-fixture-1",
+  "capability": "fixture-capability",
+  "capability_expires_at": "2026-08-01T00:15:00Z",
+  "session_expires_at": "2026-08-08T00:00:00Z"
+}
