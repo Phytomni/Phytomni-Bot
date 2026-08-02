@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sqlite3
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
@@ -35,6 +36,14 @@ from mcp_server_phytomni.runtime.run_registry import (
     RunRequestInfo,
 )
 from mcp_server_phytomni.runtime.task_manager import RunContext, Submission
+
+
+class _SyntheticProviderFailureError(Exception):
+    """Ordinary provider failure carrying deliberately private text."""
+
+
+class _SyntheticEscapedSignal(BaseException):
+    """Non-cancellation escape used to exercise the done observer."""
 
 
 async def _wait_until(
@@ -174,6 +183,70 @@ async def test_worker_failure_settles_owned_run_without_raw_error(
     assert "secret" not in json.dumps(record.result)
     assert "secret prompt and token" not in caplog.text
     assert not is_live_running(reservation.run_id)
+
+
+@pytest.mark.asyncio
+async def test_arbitrary_ordinary_exception_settles_failed(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Every ordinary provider failure settles without leaking its text."""
+    db_path = str(tmp_path / "tasks.db")
+    reservation = reserve_background_submission(
+        agent="analyst",
+        owner="alice",
+        request_info=RunRequestInfo(request_id="req-arbitrary"),
+        db_path=db_path,
+    )
+
+    async def operation() -> BackgroundSubmissionOutcome:
+        raise _SyntheticProviderFailureError(
+            "Bearer private-token /private/input.fa"
+        )
+
+    launch_background_submission(reservation, operation, db_path=db_path)
+    await _wait_until(lambda: not is_live_running(reservation.run_id))
+
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    assert record.status == "failed"
+    assert record.error == "background_submission_failed"
+    assert "private-token" not in caplog.text
+    assert "/private/input.fa" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_done_observer_retrieves_unexpected_escaped_exception(
+    tmp_path: Path,
+) -> None:
+    """The completion observer retrieves and settles an escaped signal."""
+    db_path = str(tmp_path / "tasks.db")
+    reservation = reserve_background_submission(
+        agent="design",
+        owner="alice",
+        request_info=RunRequestInfo(request_id="req-observer"),
+        db_path=db_path,
+    )
+    loop = asyncio.get_running_loop()
+    contexts: list[dict[str, Any]] = []
+    previous = loop.get_exception_handler()
+    loop.set_exception_handler(lambda _loop, context: contexts.append(context))
+
+    async def operation() -> BackgroundSubmissionOutcome:
+        raise _SyntheticEscapedSignal("private escaped body")
+
+    try:
+        launch_background_submission(reservation, operation, db_path=db_path)
+        await _wait_until(lambda: not is_live_running(reservation.run_id))
+        await asyncio.sleep(0)
+    finally:
+        loop.set_exception_handler(previous)
+
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    assert record.status == "failed"
+    assert record.error == "background_submission_failed"
+    assert not contexts
 
 
 @pytest.mark.asyncio
@@ -352,8 +425,11 @@ async def test_terminal_reconciliation_owns_projection_race(
 
 
 @pytest.mark.asyncio
-async def test_cancelled_worker_settles_run_failed(tmp_path: Path) -> None:
-    """Cancelled workers settle their owned run as failed."""
+async def test_cancelled_worker_settles_run_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cancelled workers stay cancelled and settle their owned run failed."""
     db_path = str(tmp_path / "tasks.db")
     reservation = reserve_background_submission(
         agent="network",
@@ -362,16 +438,85 @@ async def test_cancelled_worker_settles_run_failed(tmp_path: Path) -> None:
         db_path=db_path,
     )
 
+    captured: dict[str, asyncio.Task[None]] = {}
+    original_register = background_submission.register_live_task
+
+    def capture_task(run_id: str, task: asyncio.Task[None]) -> None:
+        captured["task"] = task
+        original_register(run_id, task)
+
+    monkeypatch.setattr(
+        background_submission,
+        "register_live_task",
+        capture_task,
+    )
+    release = asyncio.Event()
+
     async def operation() -> BackgroundSubmissionOutcome:
-        raise asyncio.CancelledError
+        await release.wait()
+        return BackgroundSubmissionOutcome()
 
     launch_background_submission(reservation, operation, db_path=db_path)
-    await _wait_until(lambda: not is_live_running(reservation.run_id))
+    await asyncio.sleep(0)
+    captured_task = captured["task"]
+    captured_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await captured_task
+    assert captured_task.cancelled() is True
 
     record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
     assert record is not None
     assert record.status == "failed"
     assert record.error == "background_submission_cancelled"
+
+
+@pytest.mark.asyncio
+async def test_settlement_failure_is_sanitized_and_deregisters(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Settlement storage failures expose only bounded safe log metadata."""
+    db_path = str(tmp_path / "tasks.db")
+    reservation = reserve_background_submission(
+        agent="research",
+        owner="alice",
+        request_info=RunRequestInfo(request_id="req-settlement"),
+        db_path=db_path,
+    )
+
+    def fail_registry(_db_path: str) -> NoReturn:
+        raise _SyntheticProviderFailureError(
+            "Bearer settlement-token /private/tasks.db"
+        )
+
+    monkeypatch.setattr(background_submission, "RunRegistry", fail_registry)
+
+    async def operation() -> BackgroundSubmissionOutcome:
+        pytest.fail("operation must not run after registry init failure")
+
+    package_logger = logging.getLogger("mcp_server_phytomni")
+    package_logger.addHandler(caplog.handler)
+    try:
+        launch_background_submission(reservation, operation, db_path=db_path)
+        await _wait_until(lambda: not is_live_running(reservation.run_id))
+    finally:
+        package_logger.removeHandler(caplog.handler)
+
+    assert "settlement-token" not in caplog.text
+    assert "/private/tasks.db" not in caplog.text
+    settlement_record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "Background submission settlement failed"
+    )
+    assert getattr(settlement_record, "run_id") == reservation.run_id
+    assert getattr(settlement_record, "agent") == "research"
+    assert getattr(settlement_record, "stage") == "settle_failed"
+    assert getattr(settlement_record, "error_type") == (
+        "_SyntheticProviderFailureError"
+    )
+    assert not is_live_running(reservation.run_id)
 
 
 @pytest.mark.asyncio
@@ -438,6 +583,67 @@ def test_task_creation_failure_compensates_reserved_run(
     assert record is not None
     assert record.status == "failed"
     assert record.error == "background_submission_launch_failed"
+
+
+@pytest.mark.asyncio
+async def test_registration_failure_compensates_and_observes_task(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Registration failure cancels the task and compensates the run."""
+    db_path = str(tmp_path / "tasks.db")
+    reservation = reserve_background_submission(
+        agent="research",
+        owner="alice",
+        request_info=RunRequestInfo(request_id="req-register"),
+        db_path=db_path,
+    )
+    created: dict[str, asyncio.Task[None]] = {}
+    original_create_task = asyncio.create_task
+
+    def capture_create_task(
+        coroutine: Coroutine[Any, Any, None],
+        *,
+        name: str | None = None,
+    ) -> asyncio.Task[None]:
+        task = original_create_task(coroutine, name=name)
+        created["task"] = task
+        return task
+
+    def fail_registration(
+        _run_id: str,
+        _task: asyncio.Task[object],
+    ) -> NoReturn:
+        raise _SyntheticProviderFailureError(
+            "Bearer register-token /private/register.db"
+        )
+
+    monkeypatch.setattr(asyncio, "create_task", capture_create_task)
+    monkeypatch.setattr(
+        background_submission,
+        "register_live_task",
+        fail_registration,
+    )
+
+    async def operation() -> BackgroundSubmissionOutcome:
+        return BackgroundSubmissionOutcome()
+
+    with pytest.raises(BackgroundSubmissionLaunchError):
+        launch_background_submission(reservation, operation, db_path=db_path)
+    await asyncio.sleep(0)
+
+    task = created["task"]
+    assert task.cancelled() or task.done()
+    if not task.cancelled():
+        assert task.exception() is None
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    assert record.status == "failed"
+    assert record.error == "background_submission_launch_failed"
+    assert "register-token" not in caplog.text
+    assert "/private/register.db" not in caplog.text
+    assert not is_live_running(reservation.run_id)
 
 
 def test_task_creation_compensation_init_failure_is_sanitized(

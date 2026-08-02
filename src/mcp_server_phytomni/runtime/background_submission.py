@@ -44,17 +44,7 @@ class BackgroundSubmissionExecutionError(RuntimeError):
     """Stable internal signal for a post-acceptance submission failure."""
 
 
-BACKGROUND_RUNTIME_ERRORS: tuple[type[Exception], ...] = (
-    RuntimeError,
-    ValueError,
-    TypeError,
-    OSError,
-    sqlite3.Error,
-)
-_BACKGROUND_ERRORS: tuple[type[Exception], ...] = (
-    BackgroundSubmissionExecutionError,
-    *BACKGROUND_RUNTIME_ERRORS,
-)
+BACKGROUND_RUNTIME_ERRORS: tuple[type[Exception], ...] = (Exception,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,25 +127,27 @@ def _settle_failed(
     *,
     error: str,
     result: dict[str, Any] | None = None,
-) -> None:
+) -> bool:
     """Best-effort safe settlement that cannot leak a worker exception."""
     try:
         registry = RunRegistry(db_path)
-        registry.fail_running_run(
+        return registry.fail_running_run(
             reservation.run_id,
             owner=reservation.owner,
             result=result or empty_execution_projection(degraded=True),
             error=error,
         )
-    except _BACKGROUND_ERRORS as exc:
+    except BACKGROUND_RUNTIME_ERRORS as exc:
         _LOGGER.error(
             "Background submission settlement failed",
             extra={
                 "run_id": reservation.run_id,
                 "agent": reservation.agent,
+                "stage": "settle_failed",
                 "error_type": type(exc).__name__,
             },
         )
+        return False
 
 
 async def _run_background_submission(
@@ -242,12 +234,13 @@ async def _run_background_submission(
             error="background_submission_cancelled",
         )
         raise
-    except _BACKGROUND_ERRORS as exc:
+    except BACKGROUND_RUNTIME_ERRORS as exc:
         _LOGGER.error(
             "Background submission failed",
             extra={
                 "run_id": reservation.run_id,
                 "agent": reservation.agent,
+                "stage": "worker",
                 "error_type": type(exc).__name__,
             },
         )
@@ -258,6 +251,34 @@ async def _run_background_submission(
         )
     finally:
         deregister_live_task(reservation.run_id)
+
+
+def _observe_background_task(
+    task: asyncio.Task[None],
+    *,
+    reservation: BackgroundSubmissionReservation,
+    db_path: str,
+) -> None:
+    """Retrieve one task result and contain an unexpected escaped failure."""
+    if task.cancelled():
+        return
+    escaped = task.exception()
+    if escaped is None:
+        return
+    _LOGGER.error(
+        "Background submission task escaped its worker boundary",
+        extra={
+            "run_id": reservation.run_id,
+            "agent": reservation.agent,
+            "stage": "done_callback",
+            "error_type": type(escaped).__name__,
+        },
+    )
+    _settle_failed(
+        db_path,
+        reservation,
+        error="background_submission_failed",
+    )
 
 
 def launch_background_submission(
@@ -294,4 +315,25 @@ def launch_background_submission(
         raise BackgroundSubmissionLaunchError(
             "unable to launch background submission"
         ) from exc
-    register_live_task(reservation.run_id, task)
+
+    def observe(completed: asyncio.Task[None]) -> None:
+        _observe_background_task(
+            completed,
+            reservation=reservation,
+            db_path=db_path,
+        )
+
+    task.add_done_callback(observe)
+    try:
+        register_live_task(reservation.run_id, task)
+    except Exception as exc:
+        task.cancel()
+        deregister_live_task(reservation.run_id)
+        _settle_failed(
+            db_path,
+            reservation,
+            error="background_submission_launch_failed",
+        )
+        raise BackgroundSubmissionLaunchError(
+            "unable to launch background submission"
+        ) from exc
