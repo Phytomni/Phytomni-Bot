@@ -13,9 +13,12 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.api import app as api_app
-from mcp_server_phytomni.runtime import run_registry
+from mcp_server_phytomni.runtime import background_submission, run_registry
 from mcp_server_phytomni.runtime.background_policy import (
     BACKGROUND_SUBMISSION_AGENT_SLUGS,
+)
+from mcp_server_phytomni.runtime.background_submission import (
+    BackgroundSubmissionOutcome,
 )
 from mcp_server_phytomni.runtime.execution_defaults import (
     empty_execution_projection,
@@ -26,6 +29,7 @@ from mcp_server_phytomni.runtime.live_tasks import (
 )
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
+    RunRecord,
     RunRegistry,
     RunRequestInfo,
     RunSpec,
@@ -77,6 +81,48 @@ def _record_child(
             ),
         )
     )
+
+
+def _accept_child(
+    registry: RunRegistry,
+    *,
+    run_id: str,
+    task_id: str,
+    agent: str,
+) -> None:
+    """Attach one child through the real reserved-submission transaction."""
+    now = "2026-08-02T00:00:00+00:00"
+    assert registry.record_reserved_submissions(
+        run_id,
+        owner="alice",
+        agent=agent,
+        submissions=(
+            Submission(
+                task_id=task_id,
+                status="submitted",
+                output_dir="/out",
+                run_context=RunContext(
+                    run_id=run_id,
+                    user_id="alice",
+                    agent=agent,
+                    origin="remote",
+                    created_at=now,
+                    updated_at=now,
+                ),
+            ),
+        ),
+        result=empty_execution_projection(),
+        now=now,
+    )
+
+
+async def _wait_until_not_live(run_id: str) -> None:
+    """Wait for one synthetic background worker to deregister."""
+    for _attempt in range(100):
+        if not background_submission.is_live_running(run_id):
+            return
+        await asyncio.sleep(0)
+    pytest.fail("background worker did not deregister")
 
 
 def _assert_worker_lost(record: Any) -> None:
@@ -218,57 +264,130 @@ async def test_child_accepted_during_worker_lost_cas_remains_authoritative(
     db_path = str(tmp_path / "tasks.db")
     registry = RunRegistry(db_path)
     _reserve_zero_child(registry, run_id="run-racing-child")
-    original_fail = registry.fail_running_run
-    fail_calls = 0
+    original_settle = getattr(registry, "_settle_orphaned_run")
+    settle_calls = 0
 
-    def accept_before_fail(
-        run_id: str,
-        *,
-        owner: str,
-        result: dict[str, Any],
-        error: str,
-    ) -> bool:
+    def accept_before_settle(current: RunRecord) -> RunRecord | None:
         """Attach through the real reservation seam before the failure CAS."""
-        nonlocal fail_calls
-        fail_calls += 1
-        assert registry.record_reserved_submissions(
-            run_id,
-            owner=owner,
+        nonlocal settle_calls
+        settle_calls += 1
+        _accept_child(
+            registry,
+            run_id=current.spec.run_id,
+            task_id="task-racing-child",
             agent="analyst",
-            submissions=(
-                Submission(
-                    task_id="task-racing-child",
-                    status="submitted",
-                    output_dir="/out",
-                    run_context=RunContext(
-                        run_id=run_id,
-                        user_id=owner,
-                        agent="analyst",
-                        origin="remote",
-                        created_at="2026-08-02T00:00:00+00:00",
-                        updated_at="2026-08-02T00:00:00+00:00",
-                    ),
-                ),
-            ),
-            result=empty_execution_projection(),
-            now="2026-08-02T00:00:00+00:00",
         )
-        return original_fail(run_id, owner=owner, result=result, error=error)
+        return original_settle(current)
 
     async def submitted(task_id: str) -> dict[str, str]:
         assert task_id == "task-racing-child"
         return {"task_id": task_id, "status": "submitted"}
 
-    monkeypatch.setattr(registry, "fail_running_run", accept_before_fail)
+    monkeypatch.setattr(
+        registry,
+        "_settle_orphaned_run",
+        accept_before_settle,
+    )
     monkeypatch.setattr(run_registry, "reconcile_task", submitted)
 
     record = await registry.reconcile("run-racing-child", owner="alice")
 
-    assert fail_calls == 1
+    assert settle_calls == 1
     assert record is not None
     assert record.status == "running"
     assert record.task_ids == ("task-racing-child",)
     assert record.error is None
+
+
+@pytest.mark.asyncio
+async def test_post_child_worker_failure_persists_generic_error(
+    tmp_path: Path,
+) -> None:
+    """An ordinary worker failure still settles after a child is recorded."""
+    db_path = str(tmp_path / "tasks.db")
+    reservation = background_submission.reserve_background_submission(
+        agent="design",
+        owner="alice",
+        request_info=RunRequestInfo(request_id="request-post-child-failure"),
+        db_path=db_path,
+    )
+
+    async def operation() -> BackgroundSubmissionOutcome:
+        _accept_child(
+            RunRegistry(db_path),
+            run_id=reservation.run_id,
+            task_id="task-before-failure",
+            agent="design",
+        )
+        raise RuntimeError("synthetic post-child failure")
+
+    background_submission.launch_background_submission(
+        reservation,
+        operation,
+        db_path=db_path,
+    )
+    await _wait_until_not_live(reservation.run_id)
+
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert record is not None
+    assert record.status == "failed"
+    assert record.error == "background_submission_failed"
+    assert record.task_ids == ("task-before-failure",)
+
+
+@pytest.mark.asyncio
+async def test_post_child_worker_cancellation_persists_cancellation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cancelled worker still settles after a child is recorded."""
+    db_path = str(tmp_path / "tasks.db")
+    reservation = background_submission.reserve_background_submission(
+        agent="network",
+        owner="alice",
+        request_info=RunRequestInfo(request_id="request-post-child-cancel"),
+        db_path=db_path,
+    )
+    captured: list[asyncio.Task[None]] = []
+    original_register = background_submission.register_live_task
+
+    def capture(run_id: str, task: asyncio.Task[None]) -> None:
+        original_register(run_id, task)
+        captured.append(task)
+
+    monkeypatch.setattr(background_submission, "register_live_task", capture)
+    attached = asyncio.Event()
+    release = asyncio.Event()
+
+    async def operation() -> BackgroundSubmissionOutcome:
+        _accept_child(
+            RunRegistry(db_path),
+            run_id=reservation.run_id,
+            task_id="task-before-cancel",
+            agent="network",
+        )
+        attached.set()
+        await release.wait()
+        return BackgroundSubmissionOutcome()
+
+    background_submission.launch_background_submission(
+        reservation,
+        operation,
+        db_path=db_path,
+    )
+    await attached.wait()
+    task = captured[0]
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+    await _wait_until_not_live(reservation.run_id)
+
+    record = RunRegistry(db_path).get_run(reservation.run_id, owner="alice")
+    assert task.cancelled()
+    assert record is not None
+    assert record.status == "failed"
+    assert record.error == "background_submission_cancelled"
+    assert record.task_ids == ("task-before-cancel",)
 
 
 @pytest.mark.asyncio

@@ -83,6 +83,11 @@ from .terminal_report import (
     is_terminal_report_agent,
 )
 
+_ZERO_OWNED_CHILD_SQL = (
+    " AND NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.run_id = runs.run_id "
+    "AND tasks.user_id = runs.user_id AND tasks.agent = runs.agent)"
+)
+
 __all__ = [
     "A2ACorrelation",
     "A2UIActionAudit",
@@ -429,11 +434,8 @@ class RunRegistry(RunRegistryViewsMixin):
         """Update the projection of an owned run only while it is running."""
         with sqlite_transaction(self.db_path) as conn:
             cursor = conn.execute(
-                """
-                UPDATE runs
-                SET result_json = ?, updated_at = ?
-                WHERE run_id = ? AND user_id = ? AND status = 'running'
-                """,
+                "UPDATE runs SET result_json = ?, updated_at = ? "
+                "WHERE run_id = ? AND user_id = ? AND status = 'running'",
                 (json.dumps(result), _now_iso(), run_id, owner),
             )
             return cursor.rowcount == 1
@@ -446,17 +448,13 @@ class RunRegistry(RunRegistryViewsMixin):
         result: dict[str, Any],
         error: str,
     ) -> bool:
-        """Fail an owned zero-child run only while it is still running."""
+        """Fail an owned run only while it is still running."""
         now = _now_iso()
         with sqlite_transaction(self.db_path) as conn:
             cursor = conn.execute(
                 "UPDATE runs SET status = 'failed', result_json = ?, "
                 "error = ?, updated_at = ?, expires_at = ? "
-                "WHERE run_id = ? AND user_id = ? AND status = 'running' "
-                "AND NOT EXISTS (SELECT 1 FROM tasks "
-                "WHERE tasks.run_id = runs.run_id "
-                "AND tasks.user_id = runs.user_id "
-                "AND tasks.agent = runs.agent)",
+                "WHERE run_id = ? AND user_id = ? AND status = 'running'",
                 (
                     json.dumps(result),
                     error,
@@ -553,15 +551,9 @@ class RunRegistry(RunRegistryViewsMixin):
         expires_at = _expires_at_for(status, now)
         with sqlite_transaction(self.db_path) as conn:
             cursor = conn.execute(
-                """
-                UPDATE runs SET
-                    status = ?,
-                    result_json = ?,
-                    error = ?,
-                    updated_at = ?,
-                    expires_at = ?
-                WHERE run_id = ? AND user_id = ?
-                """,
+                "UPDATE runs SET status = ?, result_json = ?, error = ?, "
+                "updated_at = ?, expires_at = ? "
+                "WHERE run_id = ? AND user_id = ?",
                 (
                     status,
                     json.dumps(result) if result is not None else None,
@@ -666,14 +658,8 @@ class RunRegistry(RunRegistryViewsMixin):
         ):
             if is_live_running(current.spec.run_id):
                 return self._touch_running(current, "running")
-            settled = self.fail_running_run(
-                current.spec.run_id,
-                owner=current.spec.user_id,
-                result=empty_execution_projection(degraded=True),
-                error="background_submission_worker_lost",
-            )
-            current = self.get_run(current.spec.run_id, owner=request.owner)
-            if settled or current is None or current.status != "running":
+            current = self._settle_orphaned_run(current)
+            if current is None or current.status != "running":
                 return current
         live: list[dict[str, Any]] = []
         for task_id in current.task_ids:
@@ -716,9 +702,8 @@ class RunRegistry(RunRegistryViewsMixin):
             answer,
             warnings=stored_submission_warnings(current.result),
         )
-        return self._settle_terminal(
-            current, new_status, legacy_result_payload, error
-        )
+        outcome = RunOutcome(new_status, legacy_result_payload, error)
+        return self._settle_terminal(current, outcome)
 
     setattr(reconcile, "__signature__", _RECONCILE_SIGNATURE)
 
@@ -755,7 +740,8 @@ class RunRegistry(RunRegistryViewsMixin):
             report,
             warnings=stored_submission_warnings(current.result),
         )
-        settled = self._settle_terminal(current, status, result_payload, error)
+        outcome = RunOutcome(status, result_payload, error)
+        settled = self._settle_terminal(current, outcome)
         if (
             settled is not None
             and settled.status == status
@@ -803,31 +789,45 @@ class RunRegistry(RunRegistryViewsMixin):
             )
         return self.get_run(current.spec.run_id, owner=current.spec.user_id)
 
+    def _settle_orphaned_run(self, current: RunRecord) -> RunRecord | None:
+        """Fail only an owned running row that still has no owned child."""
+        return self._settle_terminal(
+            current,
+            RunOutcome(
+                "failed",
+                empty_execution_projection(degraded=True),
+                "background_submission_worker_lost",
+            ),
+            require_zero_child=True,
+        )
+
     def _settle_terminal(
         self,
         current: RunRecord,
-        status: str,
-        result_payload: dict[str, Any] | None,
-        error: str | None,
+        outcome: RunOutcome,
+        *,
+        require_zero_child: bool = False,
     ) -> RunRecord | None:
         """Cache a freshly-terminal run with TTL and result/error."""
         now = _now_iso()
-        expires_at = _expires_at_for(status, now)
+        expires_at = _expires_at_for(outcome.status, now)
+        query = (
+            "UPDATE runs SET status = ?, result_json = ?, error = ?, "
+            "updated_at = ?, expires_at = ? "
+            "WHERE run_id = ? AND user_id = ? AND status = 'running'"
+            + (_ZERO_OWNED_CHILD_SQL if require_zero_child else "")
+        )
         with sqlite_transaction(self.db_path) as conn:
             conn.execute(
-                """
-                UPDATE runs SET status = ?, result_json = ?, error = ?,
-                       updated_at = ?, expires_at = ?
-                WHERE run_id = ? AND user_id = ? AND status = 'running'
-                """,
+                query,
                 (
-                    status,
+                    outcome.status,
                     (
-                        json.dumps(result_payload)
-                        if result_payload is not None
+                        json.dumps(outcome.result)
+                        if outcome.result is not None
                         else None
                     ),
-                    error,
+                    outcome.error,
                     now,
                     expires_at,
                     current.spec.run_id,
