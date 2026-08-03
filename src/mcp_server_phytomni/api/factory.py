@@ -141,6 +141,11 @@ def _api_config() -> ApiConfig:
     return config_type()
 
 
+def _tasks_db_path() -> str:
+    """Resolve the task database path through the live app seam."""
+    return _app_attr("resolve_tasks_db_path")()
+
+
 @dataclass
 class _RuntimeState:
     """Mutable process state shared by lazily registered routes."""
@@ -380,6 +385,7 @@ class _RouteAdapters:
         private_agent_state = options.pop("private_agent_state", None)
         dialogue_id = options.pop("dialogue_id", None)
         request_json = options.pop("request_json", None)
+        attachment_evidence = options.pop("attachment_evidence", None)
         debug = options.pop("debug", False)
         if options:
             raise TypeError(
@@ -393,6 +399,7 @@ class _RouteAdapters:
             private_agent_state=private_agent_state,
             dialogue_id=dialogue_id,
             request_json=request_json,
+            attachment_evidence=attachment_evidence,
             debug=debug,
         )
         return canonicalize_agent_run_body(response_body), status_code
@@ -576,6 +583,7 @@ def _build_agent_dependencies(
                 upload_runtime.serialize_file_upload_capability
             ),
         ),
+        tasks_db_path=_tasks_db_path,
     )
 
 

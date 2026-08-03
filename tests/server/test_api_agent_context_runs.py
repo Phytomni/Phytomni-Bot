@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -16,11 +17,22 @@ from tests.support.http_fakes import (
     build_instant_chat_context_envelope,
     open_asgi_client,
 )
+from tests.support.resumable_asset_fakes import (
+    ResumableAssetSpec,
+    build_resumable_asset,
+)
 
+from mcp_server_phytomni.agents.shared.dataset_description import (
+    DatasetDescriptionResult,
+)
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
+from mcp_server_phytomni.api.routes import (
+    attachment_inputs as attachment_inputs_module,
+)
 from mcp_server_phytomni.api.schemas import AgentRunRequest
+from mcp_server_phytomni.api.upload_runtime import UploadRuntime
 from mcp_server_phytomni.runtime.conversation_context.store import (
     ConversationContextStore,
 )
@@ -75,6 +87,71 @@ def _native_context_setup(
     return api_app_module.create_app(), key
 
 
+def _native_context_delegated_setup(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> tuple[Any, str]:
+    """Build a context-enabled app with a files:delegate principal."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "tasks.sqlite"))
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(tmp_path / "keys.sqlite"))
+    key = (
+        ApiKeyStore(str(tmp_path / "keys.sqlite"))
+        .create(user_id="web-service", scopes=["agents", "files:delegate"])
+        .api_key
+    )
+    return api_app_module.create_app(), key
+
+
+def _install_context_assets(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    owner: str = "delegated-owner",
+) -> tuple[str, str]:
+    """Create one context dataset and document sharing the task database."""
+    db_path = str(tmp_path / "tasks.sqlite")
+    dataset = build_resumable_asset(
+        tmp_path,
+        db_path=db_path,
+        spec=ResumableAssetSpec(
+            owner=owner,
+            filename="context-data.csv",
+            content=b"gene,value\nAT1G01010,3\n",
+            purpose="dataset",
+        ),
+    )
+    document = build_resumable_asset(
+        tmp_path,
+        db_path=db_path,
+        spec=ResumableAssetSpec(
+            owner=owner,
+            filename="context.pdf",
+            content=b"%PDF-1.4 context",
+            purpose="chat_attachment",
+        ),
+    )
+    monkeypatch.setattr(
+        UploadRuntime,
+        "get_asset_resolver",
+        lambda _runtime: dataset.resolver,
+    )
+    return dataset.asset_id, document.asset_id
+
+
+def _context_store_text(db_path: Path) -> str:
+    """Return bounded serialized context rows for redaction assertions."""
+    with sqlite3.connect(str(db_path)) as connection:
+        contexts = connection.execute(
+            "SELECT * FROM conversation_contexts"
+        ).fetchall()
+        turns = connection.execute(
+            "SELECT * FROM conversation_turns"
+        ).fetchall()
+        rows = {"contexts": contexts, "turns": turns}
+    return json.dumps(rows)
+
+
 def _native_context_arguments(slug: str) -> dict[str, Any]:
     """Return schema-shaped arguments for one native agent slug."""
     arguments: dict[str, dict[str, Any]] = {
@@ -113,6 +190,94 @@ def _native_request(agent: str, tool_name: str) -> dict[str, Any]:
         "arguments": _native_context_arguments(agent),
         "conversation": _native_context_envelope(tool_name),
     }
+
+
+def _native_attachment_request(
+    agent: str,
+    tool_name: str,
+    *,
+    attachments: list[dict[str, str]],
+) -> dict[str, Any]:
+    """Build one attachment-bearing native context request."""
+    request = _native_request(agent, tool_name)
+    request.update(
+        {
+            "attachments": attachments,
+            "owner_subject": "delegated-owner",
+        }
+    )
+    return request
+
+
+@dataclass(slots=True)
+class _ContextAttachmentCallState:
+    """Captured private preparation/invocation calls for context tests."""
+
+    completion_calls: list[dict[str, Any]]
+    invoke_calls: list[dict[str, Any]]
+
+
+def _patch_context_attachment_invocation(
+    monkeypatch: pytest.MonkeyPatch,
+    agent: str,
+) -> _ContextAttachmentCallState:
+    """Patch dataset completion and native invoke for context replay tests."""
+    state = _ContextAttachmentCallState([], [])
+
+    async def fake_completion(**kwargs: Any) -> DatasetDescriptionResult:
+        state.completion_calls.append(kwargs)
+        return DatasetDescriptionResult(("context generated",), "generated")
+
+    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        state.invoke_calls.append(kwargs)
+        run_id = f"context-{agent}"
+        evidence = kwargs["attachment_evidence"]
+        assert evidence.attachment_owner == "delegated-owner"
+        return (
+            {
+                "id": run_id,
+                "run_id": run_id,
+                "object": "agent.run",
+                "agent": agent,
+                "status": "running",
+                "task_ids": [],
+                "result": empty_agent_result(),
+            },
+            202,
+        )
+
+    monkeypatch.setattr(
+        attachment_inputs_module,
+        "complete_dataset_descriptions",
+        fake_completion,
+        raising=False,
+    )
+    monkeypatch.setattr(api_app_module, "_invoke_agent_run", fake_invoke)
+    return state
+
+
+async def _post_native_context_twice(
+    monkeypatch: pytest.MonkeyPatch,
+    app: Any,
+    key: str,
+    agent: str,
+    request: dict[str, Any],
+) -> tuple[Any, Any]:
+    """POST the same native context request twice for replay assertions."""
+    async with open_asgi_client(
+        monkeypatch, app, base_url="http://api.native-context.test"
+    ) as client:
+        response = await client.post(
+            f"/v1/agents/{agent}/runs",
+            headers={"Authorization": f"Bearer {key}"},
+            json=request,
+        )
+        retry = await client.post(
+            f"/v1/agents/{agent}/runs",
+            headers={"Authorization": f"Bearer {key}"},
+            json=request,
+        )
+    return response, retry
 
 
 def test_native_agent_request_keeps_legacy_serialization_without_context() -> (
@@ -410,18 +575,18 @@ async def test_native_context_reuses_async_acceptance_for_async_agents(
     async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
         calls.append(kwargs)
         run_id = f"native-{agent}"
-        return (
-            {
-                "id": run_id,
-                "run_id": run_id,
-                "object": "agent.run",
-                "agent": agent,
-                "status": "running",
-                "task_ids": [],
-                "result": empty_agent_result(),
-            },
-            202,
+        body: dict[str, Any] = {
+            "id": run_id,
+            "run_id": run_id,
+            "object": "agent.run",
+        }
+        body.update(
+            agent=agent,
+            status="running",
+            task_ids=[],
+            result=empty_agent_result(),
         )
+        return body, 202
 
     monkeypatch.setattr(api_app_module, "_invoke_agent_run", fake_invoke)
     request = _native_request(agent, tool_name)
@@ -454,3 +619,85 @@ async def test_native_context_reuses_async_acceptance_for_async_agents(
         assert calls[0]["arguments"]["user_query"] == "bounded research"
     else:
         assert "user_query" not in calls[0]["arguments"]
+
+
+@pytest.mark.parametrize(
+    ("agent", "tool_name"),
+    [("analyst", "AnalystAgent"), ("research", "InSilicoResearchAgent")],
+)
+async def test_native_context_dataset_attachments_prepare_once_and_replay(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    agent: str,
+    tool_name: str,
+) -> None:
+    """Native context replays staged 202 without re-preparing attachments."""
+    app, key = _native_context_delegated_setup(monkeypatch, tmp_path)
+    dataset_id, document_id = _install_context_assets(monkeypatch, tmp_path)
+    call_state = _patch_context_attachment_invocation(monkeypatch, agent)
+    request = _native_attachment_request(
+        agent,
+        tool_name,
+        attachments=[{"asset_id": dataset_id}, {"asset_id": document_id}],
+    )
+    response, retry = await _post_native_context_twice(
+        monkeypatch, app, key, agent, request
+    )
+
+    assert response.status_code == 202, response.text
+    assert retry.status_code == 202
+    assert retry.json()["run_id"] == response.json()["run_id"]
+    assert len(call_state.completion_calls) == 1
+    assert len(call_state.invoke_calls) == 1
+    arguments = call_state.invoke_calls[0]["arguments"]
+    assert list(arguments["data_list"].values()) == ["context generated"]
+    assert len(arguments["obs_file_list"]) == 1
+    assert call_state.invoke_calls[0]["request_json"] is not None
+    assert (
+        call_state.invoke_calls[0]["attachment_evidence"].attachment_owner
+        == "delegated-owner"
+    )
+    rendered = (
+        response.text
+        + retry.text
+        + _context_store_text(tmp_path / "tasks.sqlite")
+    )
+    for sentinel in (
+        dataset_id,
+        document_id,
+        "delegated-owner",
+        "context generated",
+        "context-data.csv",
+    ):
+        assert sentinel not in rendered
+
+
+async def test_native_context_unsupported_dataset_returns_attachment_422(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Unsupported native context Agents keep attachment validation errors."""
+    app, key = _native_context_delegated_setup(monkeypatch, tmp_path)
+    dataset_id, _document_id = _install_context_assets(monkeypatch, tmp_path)
+
+    async def fail_invoke(**_kwargs: Any) -> tuple[dict[str, Any], int]:
+        raise AssertionError("unsupported attachment reached invoke")
+
+    monkeypatch.setattr(api_app_module, "_invoke_agent_run", fail_invoke)
+    request = _native_attachment_request(
+        "brief_gene",
+        "BriefGeneAgent",
+        attachments=[{"asset_id": dataset_id}],
+    )
+    async with open_asgi_client(
+        monkeypatch, app, base_url="http://api.native-context.test"
+    ) as client:
+        response = await client.post(
+            "/v1/agents/brief_gene/runs",
+            headers={"Authorization": f"Bearer {key}"},
+            json=request,
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "attachment_not_supported"
+    assert "unsupported attachment reached invoke" not in response.text

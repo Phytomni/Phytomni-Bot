@@ -2,10 +2,12 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
+# pylint: disable=too-many-lines
 """Chat, native-agent, expert-routing, and upload route registration."""
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -47,7 +49,9 @@ from ..schemas import (
 from .attachment_inputs import (
     normalize_chat_payload_attachments,
     normalize_expert_payload_attachments,
-    normalize_payload_attachments,
+    prepare_native_attachment_arguments,
+    resolve_attachment_input,
+    resolve_attachment_owner,
     validate_chat_attachment_capability,
 )
 from .context_types import ContextAgentRequest, execute_context_lifecycle
@@ -146,6 +150,29 @@ class AgentRouteDependencies:
     native: AgentNativeDependencies
     context: AgentContextDependencies
     upload: AgentUploadDependencies
+    tasks_db_path: Callable[[], str]
+
+
+@dataclass(frozen=True, slots=True)
+class _ContextNativePrepareRequest:
+    """Inputs for preparing one context native attachment invocation."""
+
+    agent: str
+    arguments: Mapping[str, Any]
+    request: ContextAgentRequest
+    dependencies: AgentRouteDependencies
+
+
+@dataclass(frozen=True, slots=True)
+class _ContextNativeExecutionRequest:
+    """Inputs for executing one URL-pinned native context route."""
+
+    agent: str
+    payload: AgentRunRequest
+    arguments: dict[str, Any]
+    resolved_input: Any
+    request_json: str
+    dependencies: AgentRouteDependencies
 
 
 def register_model_route(
@@ -503,6 +530,20 @@ def _latest_argument_query(arguments: Mapping[str, Any]) -> str:
     return ""
 
 
+def _safe_native_request_json(
+    *,
+    dialogue_id: str | None,
+    locale: SupportedLocale,
+    route: str,
+) -> str:
+    """Serialize only bounded native request metadata."""
+    return json.dumps(
+        {"dialogue_id": dialogue_id, "locale": locale, "route": route},
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+
+
 def _register_native_routes(
     app: FastAPI,
     dependencies: AgentRouteDependencies,
@@ -559,7 +600,10 @@ def _register_native_routes(
         principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
     ) -> JSONResponse:
         """Invoke one agent by slug and return its agent.run envelope."""
-        del principal
+        if agent not in dependencies.catalog.agent_slug_to_tool:
+            raise HTTPException(
+                status_code=404, detail=f"agent not found: {agent}"
+            )
         if agent == "data":
             async with trace_data_stage(
                 DataStage.NATIVE_REQUEST,
@@ -580,11 +624,18 @@ def _register_native_routes(
             )
         arguments = dict(payload.arguments)
         arguments["locale"] = locale
-        arguments = normalize_payload_attachments(
-            arguments,
+        attachment_owner = resolve_attachment_owner(
+            principal, payload.owner_subject
+        )
+        resolved_input = resolve_attachment_input(
             payload.attachments,
-            owner=dependencies.chat.projection.current_user() or "anonymous",
+            attachment_owner=attachment_owner,
             resolver=dependencies.upload.asset_resolver,
+        )
+        request_json = _safe_native_request_json(
+            dialogue_id=payload.dialogue_id,
+            locale=locale,
+            route=agent,
         )
         if payload.conversation is not None:
             if not dependencies.context.enabled():
@@ -592,17 +643,31 @@ def _register_native_routes(
                     status_code=404, detail="conversation context disabled"
                 )
             return await _execute_context_native(
-                agent=agent,
-                payload=payload,
-                arguments=arguments,
-                dependencies=dependencies,
+                _ContextNativeExecutionRequest(
+                    agent=agent,
+                    payload=payload,
+                    arguments=arguments,
+                    resolved_input=resolved_input,
+                    request_json=request_json,
+                    dependencies=dependencies,
+                )
             )
+        arguments, attachment_context = (
+            await prepare_native_attachment_arguments(
+                agent=agent,
+                arguments=arguments,
+                resolved_input=resolved_input,
+                dataset_description=payload.dataset_description,
+                db_path=dependencies.tasks_db_path(),
+            )
+        )
         body, status_code = await dependencies.native.invoke_agent_run(
             agent=agent,
             arguments=arguments,
             dialogue_id=payload.dialogue_id,
             debug=dependencies.chat.projection.resolve_debug(payload.debug),
-            request_json=payload.model_dump_json(),
+            request_json=request_json,
+            attachment_evidence=attachment_context.evidence,
         )
         return JSONResponse(body, status_code=status_code)
 
@@ -663,21 +728,22 @@ def _native_context_tool(
 
 
 async def _execute_context_native(
-    *,
-    agent: str,
-    payload: AgentRunRequest,
-    arguments: dict[str, Any],
-    dependencies: AgentRouteDependencies,
+    request: _ContextNativeExecutionRequest,
 ) -> JSONResponse:
     """Execute one URL-pinned native agent through the V1 lifecycle."""
+    agent = request.agent
+    payload = request.payload
+    dependencies = request.dependencies
     envelope = payload.conversation
     assert envelope is not None
     tool_name = _native_context_tool(agent, envelope, dependencies)
     context_request = ContextAgentRequest(
         dialogue_id=payload.dialogue_id,
-        request_json=payload.model_dump_json(),
+        request_json=request.request_json,
         debug=dependencies.chat.projection.resolve_debug(payload.debug),
         obs_file_list=None,
+        resolved_attachments=request.resolved_input,
+        dataset_description=payload.dataset_description,
     )
 
     async def invoke(
@@ -702,8 +768,14 @@ async def _execute_context_native(
         if selected_agent_id != tool_name:
             raise ValueError("native context selected a non-URL agent")
         body, status_code = await dependencies.native.invoke_agent_run(
-            agent=agent,
-            arguments=selected_arguments,
+            **await _prepare_context_native_invocation(
+                _ContextNativePrepareRequest(
+                    agent,
+                    selected_arguments,
+                    context_request,
+                    dependencies,
+                )
+            ),
             dialogue_id=payload.dialogue_id,
             request_json=context_request.request_json,
             debug=context_request.debug,
@@ -716,11 +788,37 @@ async def _execute_context_native(
             envelope=envelope,
             invoke=invoke,
             delegate_async=delegate_async,
-            selected_arguments=arguments,
+            selected_arguments=request.arguments,
         )
     except (ToolSelectionError, ValueError) as exc:
         raise HTTPException(502, "invalid native context agent") from exc
     return _context_response(prepared, envelope)
+
+
+async def _prepare_context_native_invocation(
+    request: _ContextNativePrepareRequest,
+) -> dict[str, Any]:
+    """Prepare native context attachments for a new turn callback."""
+    prepared_arguments = dict(request.arguments)
+    context_request = request.request
+    evidence = context_request.attachment_evidence
+    if context_request.resolved_attachments is not None:
+        attachment_context: Any
+        prepared_arguments, attachment_context = (
+            await prepare_native_attachment_arguments(
+                agent=request.agent,
+                arguments=prepared_arguments,
+                resolved_input=context_request.resolved_attachments,
+                dataset_description=context_request.dataset_description,
+                db_path=request.dependencies.tasks_db_path(),
+            )
+        )
+        evidence = attachment_context.evidence
+    return {
+        "agent": request.agent,
+        "arguments": prepared_arguments,
+        "attachment_evidence": evidence,
+    }
 
 
 async def _execute_context_expert(
@@ -914,6 +1012,10 @@ async def _invoke_context_agent(
         dependencies.chat.input.tool_accepts_obs(selected_agent_id)
     ):
         arguments["obs_file_list"] = list(request.obs_file_list)
+    invocation = await _prepare_context_native_invocation(
+        _ContextNativePrepareRequest(slug, arguments, request, dependencies)
+    )
+    arguments = invocation["arguments"]
     private_agent_state = dict(dispatch.private_agent_state)
     adapter = _context_adapter(selected_agent_id, private_agent_state)
     body, status_code = await dependencies.native.invoke_agent_run(
@@ -927,6 +1029,7 @@ async def _invoke_context_agent(
         dialogue_id=request.dialogue_id,
         request_json=request.request_json,
         debug=request.debug,
+        attachment_evidence=invocation["attachment_evidence"],
     )
     if status_code != 200 or body.get("status") != "succeeded":
         return AgentOutcome(result=body, status="running")

@@ -1,6 +1,7 @@
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
+# pylint: disable=too-many-lines
 """Compatibility contracts for the FastAPI application factory.
 
 These tests are intentionally literal: route order, public methods, status
@@ -41,6 +42,7 @@ from mcp_server_phytomni.agents.network.resolve_query import (
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api import resolvers as resolver_module
 from mcp_server_phytomni.api.app import create_app
+from mcp_server_phytomni.api.attachments import ManagedAttachmentEvidence
 from mcp_server_phytomni.api.lifecycle_contract import (
     build_agent_run_response,
     empty_agent_result,
@@ -60,7 +62,7 @@ _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 # native conversation envelope, and resumable attachment references. The
 # ``_normalized_openapi`` helper removes only unstable version/server fields.
 _OPENAPI_HASH = (
-    "3e18fb2ccf76f5dd10b366cb77f04bd90be9a05a7d56c381fc39726ba66afa67"
+    "f294c59febe3df685b4e605db3cde06dcf2369dc23c3d0f60f04b6f454c73c0e"
 )
 
 
@@ -715,6 +717,7 @@ def test_native_run_facade_preserves_signature_and_module_identity() -> None:
         "private_agent_state",
         "dialogue_id",
         "request_json",
+        "attachment_evidence",
         "debug",
     )
     assert all(
@@ -733,6 +736,10 @@ def test_native_run_facade_preserves_signature_and_module_identity() -> None:
         ("private_agent_state", "Mapping[str, Any] | None"),
         ("dialogue_id", "str | None"),
         ("request_json", "str | None"),
+        (
+            "attachment_evidence",
+            "ManagedAttachmentEvidence | None",
+        ),
         ("debug", "bool"),
         ("return", "tuple[dict[str, Any], int]"),
     )
@@ -793,6 +800,7 @@ def test_native_run_preflight_uses_app_compatibility_seams(
         arguments={"user_query": "compat query"},
         dialogue_id="compat-dialogue",
         request_json=None,
+        attachment_evidence=None,
     )
 
     assert preflight.owner == "compat-owner"
@@ -801,6 +809,57 @@ def test_native_run_preflight_uses_app_compatibility_seams(
     assert captured["kwargs"] == {
         "owner": "compat-owner",
         "db_path": "compat-db",
+        "managed_evidence": None,
+    }
+
+
+def test_native_run_preflight_keeps_attachment_owner_separate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Evidence owner validates attachments without changing run owner."""
+    captured: dict[str, Any] = {}
+    evidence = ManagedAttachmentEvidence(
+        attachment_owner="delegated-owner",
+        dataset_references=frozenset({"obs://dataset"}),
+    )
+    monkeypatch.setattr(
+        api_app_module, "current_request_user", lambda: "run-owner"
+    )
+    monkeypatch.setattr(
+        api_app_module, "current_request_id", lambda: "compat-request"
+    )
+    monkeypatch.setattr(
+        api_app_module,
+        "resolve_tasks_db_path",
+        lambda: "compat-db",
+    )
+
+    def capture_attachments(*args: Any, **kwargs: Any) -> None:
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(
+        api_app_module,
+        "validate_native_attachments",
+        capture_attachments,
+    )
+    preflight = getattr(api_app_module, "_preflight_agent_run")(
+        agent="analyst",
+        arguments={
+            "goal_description": "compat",
+            "data_list": {"obs://dataset": ""},
+            "obs_file_list": [],
+        },
+        dialogue_id=None,
+        request_json=None,
+        attachment_evidence=evidence,
+    )
+
+    assert preflight.owner == "run-owner"
+    assert captured["kwargs"] == {
+        "owner": "delegated-owner",
+        "db_path": "compat-db",
+        "managed_evidence": evidence,
     }
 
 

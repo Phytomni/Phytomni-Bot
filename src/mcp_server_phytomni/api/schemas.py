@@ -16,6 +16,7 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    field_validator,
     model_validator,
 )
 
@@ -135,6 +136,16 @@ class AttachmentAsset(BaseModel):
     asset_id: str = Field(min_length=1, max_length=128)
 
 
+def _normalize_owner_subject(value: str | None) -> str | None:
+    """Trim an asserted attachment owner without accepting blanks."""
+    if value is None:
+        return None
+    normalized_value = value.strip()
+    if not normalized_value:
+        raise ValueError("owner_subject must be non-empty")
+    return normalized_value
+
+
 class ChatCompletionRequest(BaseModel):
     """OpenAI-compatible chat completion request subset.
 
@@ -169,6 +180,9 @@ class ChatCompletionRequest(BaseModel):
     attachments: list[AttachmentAsset] = Field(
         default_factory=list, exclude_if=lambda value: not value
     )
+    owner_subject: str | None = Field(
+        default=None, min_length=1, max_length=320
+    )
     resolve_gene_id: bool | None = None
     dialogue_id: str | None = None
     debug: bool | None = None
@@ -176,6 +190,10 @@ class ChatCompletionRequest(BaseModel):
     conversation: ConversationEnvelopeV1 | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
+    )
+
+    _trim_owner_subject = field_validator("owner_subject", mode="before")(
+        _normalize_owner_subject
     )
 
 
@@ -327,12 +345,20 @@ class AgentRunRequest(BaseModel):
     attachments: list[AttachmentAsset] = Field(
         default_factory=list, exclude_if=lambda value: not value
     )
+    owner_subject: str | None = Field(
+        default=None, min_length=1, max_length=320
+    )
+    dataset_description: str | None = Field(default=None, max_length=4_000)
     dialogue_id: str | None = None
     debug: bool | None = None
     locale: SupportedLocale | None = None
     conversation: ConversationEnvelopeV1 | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
+    )
+
+    _trim_owner_subject = field_validator("owner_subject", mode="before")(
+        _normalize_owner_subject
     )
 
 
@@ -399,6 +425,10 @@ class ExpertQueryRequest(BaseModel):
     attachments: list[AttachmentAsset] = Field(
         default_factory=list, exclude_if=lambda value: not value
     )
+    owner_subject: str | None = Field(
+        default=None, min_length=1, max_length=320
+    )
+    dataset_description: str | None = Field(default=None, max_length=4_000)
     dialogue_id: str | None = None
     allowed_tools: list[str] = Field(min_length=1, max_length=10)
     forced_tool: str | None = None
@@ -406,6 +436,10 @@ class ExpertQueryRequest(BaseModel):
     conversation: ConversationEnvelopeV1 | None = Field(
         default=None,
         exclude_if=lambda value: value is None,
+    )
+
+    _trim_owner_subject = field_validator("owner_subject", mode="before")(
+        _normalize_owner_subject
     )
 
     @model_validator(mode="after")

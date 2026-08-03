@@ -42,6 +42,10 @@ from ..runtime.submission_outcome import (
     project_submission_warnings as _project_warnings,
 )
 from . import run_lifecycle
+from .attachments import (
+    ManagedAttachmentEvidence,
+    redact_managed_attachment_values,
+)
 from .lifecycle_contract import (
     SafeApiError,
     SafeErrorCode,
@@ -135,6 +139,7 @@ def _preflight_agent_run(
     arguments: dict[str, Any],
     dialogue_id: str | None,
     request_json: str | None,
+    attachment_evidence: ManagedAttachmentEvidence | None = None,
 ) -> _AgentRunPreflight:
     """Validate structural inputs and capture request context before
     dispatch."""
@@ -154,11 +159,17 @@ def _preflight_agent_run(
             validation_arguments.setdefault("to_id", "TO:0000001")
         _app_attr("validate_tool_arguments")(tool_name, validation_arguments)
     owner = _app_attr("current_request_user")() or "anonymous"
+    validation_owner = (
+        attachment_evidence.attachment_owner
+        if attachment_evidence is not None
+        else owner
+    )
     _app_attr("validate_native_attachments")(
         agent,
         arguments,
-        owner=owner,
+        owner=validation_owner,
         db_path=_app_attr("resolve_tasks_db_path")(),
+        managed_evidence=attachment_evidence,
     )
     return _AgentRunPreflight(
         tool_name=tool_name,
@@ -237,6 +248,7 @@ async def _execute_background_agent_run(
     agent: str,
     arguments: dict[str, Any],
     preflight: _AgentRunPreflight,
+    attachment_evidence: ManagedAttachmentEvidence | None,
     debug: bool,
 ) -> BackgroundSubmissionOutcome:
     """Resolve, invoke, and project one already-reserved background run."""
@@ -259,6 +271,8 @@ async def _execute_background_agent_run(
         resolve_meta=prepared.resolve_meta,
         debug=debug,
     )
+    if attachment_evidence is not None:
+        result = redact_managed_attachment_values(result, attachment_evidence)
     return BackgroundSubmissionOutcome(
         accepted_task_ids=_app_attr("current_accepted_task_ids")(),
         # The detached worker persists this projection.  Debug is a public
@@ -273,6 +287,7 @@ def _background_agent_run_response(
     agent: str,
     arguments: dict[str, Any],
     preflight: _AgentRunPreflight,
+    attachment_evidence: ManagedAttachmentEvidence | None,
     debug: bool,
 ) -> tuple[dict[str, Any], int]:
     """Reserve and launch one background run before returning 202."""
@@ -290,6 +305,7 @@ def _background_agent_run_response(
             agent=agent,
             arguments=worker_arguments,
             preflight=preflight,
+            attachment_evidence=attachment_evidence,
             debug=debug,
         ),
         db_path=db_path,
@@ -410,11 +426,13 @@ async def _invoke_agent_run_request(
     dialogue_id = request.get("dialogue_id")
     request_json = request.get("request_json")
     debug = request.get("debug", False)
+    attachment_evidence = request.get("attachment_evidence")
     preflight = _app_attr("_preflight_agent_run")(
         agent=agent,
         arguments=arguments,
         dialogue_id=dialogue_id,
         request_json=request_json,
+        attachment_evidence=attachment_evidence,
     )
     if agent in _app_attr("_BACKGROUND_SUBMISSION_AGENT_SLUGS"):
         try:
@@ -422,6 +440,7 @@ async def _invoke_agent_run_request(
                 agent=agent,
                 arguments=arguments,
                 preflight=preflight,
+                attachment_evidence=attachment_evidence,
                 debug=debug,
             )
         except BackgroundSubmissionLaunchError as exc:
@@ -450,11 +469,11 @@ async def _invoke_prepared_agent_run(
     arguments = request["arguments"]
     private_agent_state = request.get("private_agent_state")
     debug = request.get("debug", False)
-    context_review = (
+    attachment_evidence = request.get("attachment_evidence")
+    if agent == "review" and not (
         isinstance(private_agent_state, Mapping)
         and private_agent_state.get("review_adapter") is not None
-    )
-    if agent == "review" and not context_review:
+    ):
         execution = await _app_attr("_run_review_with_interrupt")(
             arguments=arguments,
             request_info=prepared.request_info,
@@ -494,6 +513,12 @@ async def _invoke_prepared_agent_run(
                 resolve_meta=prepared.resolve_meta,
                 debug=debug,
             )
+        if attachment_evidence is not None:
+            result = redact_managed_attachment_values(
+                result, attachment_evidence
+            )
+            result = strip_agent_result(result)
+            response_result = strip_agent_result(result)
         if agent in _app_attr("_REMOTE_AGENT_SLUGS"):
             return _app_attr("_remote_agent_run_response")(
                 agent=agent,
@@ -544,6 +569,7 @@ _INVOKE_AGENT_RUN_ANNOTATIONS = {
     "private_agent_state": "Mapping[str, Any] | None",
     "dialogue_id": "str | None",
     "request_json": "str | None",
+    "attachment_evidence": "ManagedAttachmentEvidence | None",
     "debug": "bool",
     "return": "tuple[dict[str, Any], int]",
 }
@@ -583,6 +609,12 @@ _INVOKE_AGENT_RUN_SIGNATURE = Signature(
             "request_json",
             Parameter.KEYWORD_ONLY,
             annotation="str | None",
+            default=None,
+        ),
+        Parameter(
+            "attachment_evidence",
+            Parameter.KEYWORD_ONLY,
+            annotation="ManagedAttachmentEvidence | None",
             default=None,
         ),
         Parameter(

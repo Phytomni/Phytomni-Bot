@@ -18,7 +18,9 @@ from ...runtime.conversation_context.service import (
     ContextStoreUnavailableError,
     PreparedTurn,
 )
+from ..attachments import ManagedAttachmentEvidence
 from ..lifecycle_contract import conversation_context_unavailable_error
+from .attachment_inputs import ResolvedAttachmentInput
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +31,9 @@ class ContextAgentRequest:
     request_json: str
     debug: bool
     obs_file_list: list[str] | None
+    resolved_attachments: ResolvedAttachmentInput | None = None
+    dataset_description: str | None = None
+    attachment_evidence: ManagedAttachmentEvidence | None = None
 
 
 async def execute_context_lifecycle(
