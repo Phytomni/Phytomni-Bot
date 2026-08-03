@@ -385,6 +385,83 @@ def test_recorder_rejects_reserved_run_agent_mismatch(
     assert len(registry.list_runs(owner="alice", limit=10, offset=0)) == 1
 
 
+@pytest.mark.parametrize(
+    ("agent", "result", "task_id"),
+    [
+        (
+            "network",
+            {
+                "network_task": {
+                    "task_id": "network-prefingerprinted",
+                    "output_dir": "/safe/network",
+                }
+            },
+            "network-prefingerprinted",
+        ),
+        (
+            "design",
+            {
+                "design_task_result": [
+                    {
+                        "task_id": "design-prefingerprinted",
+                        "output_dir": "/safe/design",
+                    }
+                ]
+            },
+            "design-prefingerprinted",
+        ),
+    ],
+)
+def test_recorder_claims_unowned_prefingerprint_row_for_reserved_run(
+    tasks_db_path: str,
+    agent: str,
+    result: dict[str, Any],
+    task_id: str,
+) -> None:
+    """Attach the dispatch seam's unclaimed task row to its umbrella run."""
+    registry = RunRegistry(tasks_db_path)
+    registry.reserve_run(
+        RunSpec(
+            run_id=f"run-{agent}-reserved",
+            user_id="alice",
+            agent=agent,
+            origin="remote",
+        ),
+        request_info=RunRequestInfo(request_id=f"req-{agent}"),
+        result=empty_execution_projection(),
+    )
+    TaskManager(tasks_db_path).record(
+        Submission(
+            task_id=task_id,
+            status="submitted",
+            output_dir=f"/safe/{agent}",
+            input_fingerprint=f"fingerprint-{agent}",
+            source_task_id=f"remote-{agent}",
+        )
+    )
+
+    with request_context("alice", f"req-{agent}", f"run-{agent}-reserved"):
+        record_submitted_task(result, agent=agent)
+        assert current_recorder_degraded() is False
+
+    stored = registry.get_run(f"run-{agent}-reserved", owner="alice")
+    assert stored is not None
+    assert stored.task_ids == (task_id,)
+    with closed_sqlite_connection(tasks_db_path) as conn:
+        identity = conn.execute(
+            "SELECT run_id, user_id, agent, input_fingerprint, "
+            "source_task_id FROM tasks WHERE task_id = ?",
+            (task_id,),
+        ).fetchone()
+    assert identity == (
+        f"run-{agent}-reserved",
+        "alice",
+        agent,
+        f"fingerprint-{agent}",
+        f"remote-{agent}",
+    )
+
+
 def test_recorder_rejects_reserved_run_owner_mismatch(
     tasks_db_path: str,
 ) -> None:

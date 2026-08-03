@@ -329,11 +329,7 @@ class RunRegistry(RunRegistryViewsMixin):
             ).fetchone()
             if row is None or row[0] != "running":
                 return False
-            expected_identity = (
-                request.run_id,
-                request.owner,
-                request.agent,
-            )
+            expected_identity = (request.run_id, request.owner, request.agent)
             task_ids: set[str] = set()
             for submission in request.submissions:
                 ctx = submission.run_context
@@ -357,7 +353,11 @@ class RunRegistry(RunRegistryViewsMixin):
                     """,
                     (submission.task_id,),
                 ).fetchone()
-                if existing is not None and existing != expected_identity:
+                if existing not in (
+                    None,
+                    expected_identity,
+                    (None, None, None),
+                ):
                     return False
             for submission in request.submissions:
                 ctx = submission.run_context
