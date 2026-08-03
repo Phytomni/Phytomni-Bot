@@ -60,7 +60,7 @@ _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 # native conversation envelope, and resumable attachment references. The
 # ``_normalized_openapi`` helper removes only unstable version/server fields.
 _OPENAPI_HASH = (
-    "244f911260d6820d4ac4b4c37e41b0909fca9b8fa5d61a6e1ec26534e4ec8333"
+    "3e18fb2ccf76f5dd10b366cb77f04bd90be9a05a7d56c381fc39726ba66afa67"
 )
 
 

@@ -122,6 +122,11 @@ async def test_invalid_purpose_has_stable_validation_error(
     assert not storage.sessions
     for value in ("Dataset", "owner-with-purpose", "test-bucket"):
         assert value not in response.text
+    expected_object_key = (
+        "agent_data/uploads/"
+        f"{sha256(b'owner-with-purpose').hexdigest()[:32]}/file_expected"
+    )
+    assert expected_object_key not in response.text
     assert "object_key" not in response.text
 
 
