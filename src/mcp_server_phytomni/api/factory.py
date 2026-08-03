@@ -441,12 +441,14 @@ class _RouteAdapters:
         payload: ChatCompletionRequest,
         arguments: Mapping[str, object],
         user_query: str,
+        attachment_evidence: Any | None = None,
     ) -> Response:
         """Stream a Review completion through the app-level seam."""
         return await _app_attr("_review_chat_completion_response")(
             payload=payload,
             arguments=arguments,
             user_query=user_query,
+            attachment_evidence=attachment_evidence,
         )
 
     async def resolve_chat_query(

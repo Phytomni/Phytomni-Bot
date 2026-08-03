@@ -502,12 +502,14 @@ async def _run_review_with_interrupt(
     *,
     arguments: dict[str, Any],
     request_info: RunRequestInfo,
+    attachment_evidence: _attachments.ManagedAttachmentEvidence | None = None,
 ) -> _ReviewExecution:
     """Compatibility seam for interrupt-aware Review execution."""
     return await a2ui_runtime.run_review_with_interrupt(
         arguments=arguments,
         request_info=request_info,
         dependencies=_a2ui_runtime_dependencies(),
+        attachment_evidence=attachment_evidence,
     )
 
 
@@ -531,6 +533,7 @@ async def _review_chat_completion_response(
     payload: ChatCompletionRequest,
     arguments: Mapping[str, object],
     user_query: str,
+    attachment_evidence: _attachments.ManagedAttachmentEvidence | None = None,
 ) -> JSONResponse:
     """Return the ReviewAgent non-stream chat response or interrupt body."""
     execution = await _run_review_with_interrupt(
@@ -538,22 +541,36 @@ async def _review_chat_completion_response(
         request_info=a2ui_runtime.build_review_request_info(
             payload, user_query
         ),
+        attachment_evidence=attachment_evidence,
     )
     if execution.interrupt is not None:
         # A ReviewAgent pause is not an OpenAI chat completion; return
         # the native interrupt body so clients can resume with the Bot
         # run id without guessing inside choices[].
-        return JSONResponse(_review_run_body(execution, debug=True))
+        body = _review_run_body(execution, debug=True)
+        if attachment_evidence is not None:
+            body = _attachments.redact_managed_attachment_values(
+                body, attachment_evidence
+            )
+        return JSONResponse(body)
     result = execution.result or {
         **empty_agent_result(),
         "raw": None,
     }
+    if attachment_evidence is not None:
+        result = _attachments.redact_managed_attachment_values(
+            result, attachment_evidence
+        )
     completion = to_chat_completion(
         result.get("formatted", {}),
         result.get("raw"),
         payload.model,
         result.get("execution"),
     )
+    if attachment_evidence is not None:
+        completion = _attachments.redact_managed_attachment_values(
+            completion, attachment_evidence
+        )
     completion["run_id"] = execution.run_id
     if not resolve_debug(payload.debug):
         completion = strip_chat_completion(completion)

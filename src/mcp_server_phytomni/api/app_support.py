@@ -15,6 +15,7 @@ silently bypass those patches.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
@@ -57,6 +58,7 @@ from ..runtime.request_context import (
     current_request_id,
     reset_request_var,
 )
+from ..runtime.run_registry import RunRequestInfo
 from ..runtime.stage_trace import bind_stage_trace
 from ..storage.path_policy import IdFactory
 from . import run_lifecycle
@@ -148,6 +150,50 @@ def error_response(
         status_code=status_code,
         content=payload.model_dump(exclude_none=True),
         headers=dict(options.headers or {}),
+    )
+
+
+def safe_chat_completion_request_json(
+    *,
+    model: str,
+    dialogue_id: str | None,
+    locale: SupportedLocale,
+    stream: bool,
+) -> str:
+    """Serialize only bounded chat-completion request metadata."""
+    return json.dumps(
+        {
+            "model": model,
+            "dialogue_id": dialogue_id,
+            "locale": locale,
+            "stream": stream,
+        },
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+
+
+def build_safe_chat_request_info(
+    payload: Any,
+    user_query: str,
+    *,
+    tool_name: str,
+    locale: SupportedLocale | None = None,
+) -> RunRequestInfo:
+    """Build one bounded chat/review run-registry request record."""
+    effective_locale = current_effective_locale() if locale is None else locale
+    return RunRequestInfo(
+        dialogue_id=payload.dialogue_id,
+        query=user_query,
+        tool_name=tool_name,
+        model=payload.model,
+        request_json=safe_chat_completion_request_json(
+            model=payload.model,
+            dialogue_id=payload.dialogue_id,
+            locale=effective_locale,
+            stream=bool(payload.stream),
+        ),
+        locale=effective_locale,
     )
 
 
@@ -409,7 +455,9 @@ __all__ = [
     "memory_write",
     "reconcile_run_task_logs",
     "request_context_middleware",
+    "build_safe_chat_request_info",
     "resolve_http_locale",
+    "safe_chat_completion_request_json",
     "store_path_writable",
     "stream_answer_max_bytes",
 ]

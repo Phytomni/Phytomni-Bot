@@ -92,6 +92,11 @@ from .a2ui_review_stream import (
 from .a2ui_review_stream import (
     stream_review_a2ui_pause as _stream_review_a2ui_pause,
 )
+from .app_support import build_safe_chat_request_info
+from .attachments import (
+    ManagedAttachmentEvidence,
+    redact_managed_attachment_values,
+)
 from .schemas import ChatCompletionRequest
 
 _LOGGER = logging.getLogger(__name__)
@@ -198,13 +203,10 @@ def build_review_request_info(
     user_query: str,
 ) -> RunRequestInfo:
     """Build the stable request metadata stored for Review runs."""
-    return RunRequestInfo(
-        dialogue_id=payload.dialogue_id,
-        query=user_query,
+    return build_safe_chat_request_info(
+        payload,
+        user_query,
         tool_name="ReviewAgent",
-        model=payload.model,
-        request_json=payload.model_dump_json(),
-        locale=current_effective_locale(),
     )
 
 
@@ -228,20 +230,73 @@ async def resume_paused_graph(
     return await aresume_graph(app, thread_id, dict(resume_payload))
 
 
+def _redact_review_payload(
+    payload: dict[str, Any],
+    evidence: ManagedAttachmentEvidence | None,
+) -> dict[str, Any]:
+    """Project managed attachment references out of one Review payload."""
+    if evidence is None:
+        return payload
+    return redact_managed_attachment_values(payload, evidence)
+
+
+@dataclass(frozen=True, slots=True)
+class _ReviewInterruptPersistRequest:
+    """Inputs needed to persist one Review pause row."""
+
+    registry: RunRegistry
+    run_id: str
+    owner: str
+    request_info: RunRequestInfo
+    interrupt: Mapping[str, Any]
+    attachment_evidence: ManagedAttachmentEvidence | None
+
+
+def _persist_review_interrupt(
+    request: _ReviewInterruptPersistRequest,
+) -> ReviewExecution:
+    """Persist one Review pause after projecting its interrupt surface."""
+    try:
+        interrupt_dict = project_review_interrupt(request.interrupt)
+    except ReviewSurfaceProjectionError as exc:
+        _settle_review_projection_failure(
+            request.registry,
+            run_id=request.run_id,
+            owner=request.owner,
+            request_info=request.request_info,
+            existing=False,
+        )
+        raise _review_projection_error() from exc
+    _create_review_pause(
+        request.registry,
+        run_id=request.run_id,
+        owner=request.owner,
+        request_info=request.request_info,
+        result=_redact_review_payload(
+            review_interrupt_result(interrupt_dict),
+            request.attachment_evidence,
+        ),
+    )
+    return ReviewExecution(
+        run_id=request.run_id,
+        status="input_required",
+        interrupt=interrupt_dict,
+    )
+
+
 async def run_review_with_interrupt(
     *,
     arguments: dict[str, Any],
     request_info: RunRequestInfo,
     dependencies: A2UIRuntimeDependencies,
+    attachment_evidence: ManagedAttachmentEvidence | None = None,
 ) -> ReviewExecution:
     """Run ReviewAgent once, surfacing a LangGraph interrupt if present."""
     args = dependencies.graphs.validate_review(arguments)
     owner = dependencies.persistence.current_user() or "anonymous"
     run_id = IdFactory().new_id("run", "review")
-    graph = dependencies.graphs.review_graph()
-    initial_state = dependencies.graphs.review_initial_state(args)
-    final_state = await graph.ainvoke(
-        initial_state,
+    final_state = await dependencies.graphs.review_graph().ainvoke(
+        dependencies.graphs.review_initial_state(args),
         config=build_runnable_config(run_id),
     )
     interrupt = detect_interrupt(final_state, run_id)
@@ -249,31 +304,21 @@ async def run_review_with_interrupt(
         dependencies.persistence.tasks_db_path()
     )
     if interrupt is not None:
-        try:
-            interrupt_dict = project_review_interrupt(interrupt)
-        except ReviewSurfaceProjectionError as exc:
-            _settle_review_projection_failure(
-                registry,
+        return _persist_review_interrupt(
+            _ReviewInterruptPersistRequest(
+                registry=registry,
                 run_id=run_id,
                 owner=owner,
                 request_info=request_info,
-                existing=False,
+                interrupt=interrupt,
+                attachment_evidence=attachment_evidence,
             )
-            raise _review_projection_error() from exc
-        _create_review_pause(
-            registry,
-            run_id=run_id,
-            owner=owner,
-            request_info=request_info,
-            result=review_interrupt_result(interrupt_dict),
         )
-        return ReviewExecution(
-            run_id=run_id,
-            status="input_required",
-            interrupt=interrupt_dict,
-        )
-    result = dependencies.persistence.format_review_result(
-        final_state, arguments=arguments
+    result = _redact_review_payload(
+        dependencies.persistence.format_review_result(
+            final_state, arguments=arguments
+        ),
+        attachment_evidence,
     )
     registry.create_run(
         review_run_spec(run_id, owner),

@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import asdict
 from typing import Any
@@ -29,9 +28,11 @@ from ...runtime.conversation_context.service import (
     AsyncAgentAcceptance,
 )
 from ...runtime.locale import SupportedLocale, current_effective_locale
-from ...runtime.run_registry import RunRequestInfo
 from ...runtime.stage_trace import DataStage, trace_data_stage
-from ..app_support import resolve_http_locale
+from ..app_support import (
+    build_safe_chat_request_info,
+    resolve_http_locale,
+)
 from ..attachments import (
     redact_managed_attachment_values,
     redact_streaming_attachment_response,
@@ -49,6 +50,7 @@ from .agent_dependencies import (
     ContextNativePrepareRequest,
 )
 from .attachment_inputs import (
+    attachment_not_supported_error,
     expert_attachment_channels,
     filter_expert_attachment_candidates,
     prepare_chat_document_attachments,
@@ -156,6 +158,8 @@ def _register_chat_route(
             ),
             resolver=dependencies.upload.asset_resolver,
         )
+        if resolved_input.bundle.datasets:
+            raise attachment_not_supported_error()
         if payload.conversation is not None:
             if not dependencies.context.enabled():
                 raise HTTPException(
@@ -191,6 +195,7 @@ def _register_chat_route(
                 payload=payload,
                 arguments=prepared["arguments"],
                 user_query=prepared["user_query"],
+                attachment_evidence=prepared["evidence"],
             )
         return await _finalize_ordinary_chat_response(
             payload,
@@ -463,21 +468,10 @@ def _chat_run_request_info(
     locale: SupportedLocale,
 ) -> Any:
     """Build the run-registry request record without app-layer imports."""
-    return RunRequestInfo(
-        dialogue_id=payload.dialogue_id,
-        query=user_query,
+    return build_safe_chat_request_info(
+        payload,
+        user_query,
         tool_name=tool_name,
-        model=payload.model,
-        request_json=json.dumps(
-            {
-                "model": payload.model,
-                "dialogue_id": payload.dialogue_id,
-                "locale": locale,
-                "stream": payload.stream,
-            },
-            ensure_ascii=True,
-            separators=(",", ":"),
-        ),
         locale=locale,
     )
 
