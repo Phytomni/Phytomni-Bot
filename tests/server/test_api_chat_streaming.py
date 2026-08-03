@@ -17,11 +17,13 @@ import json
 from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from typing import (
     Any,
+    Self,
     cast,
 )
 
 import httpx
 import pytest
+from starlette.responses import StreamingResponse
 from tests.support.http_fakes import (
     build_instant_chat_context_envelope,
     parse_sse_frames,
@@ -30,6 +32,10 @@ from tests.support.http_fakes import (
 from mcp_server_phytomni.api import app as api_app
 from mcp_server_phytomni.api import streaming as streaming_runtime
 from mcp_server_phytomni.api.app import _stream_chat_completion
+from mcp_server_phytomni.api.attachments import (
+    ManagedAttachmentEvidence,
+    redact_streaming_attachment_response,
+)
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
 from mcp_server_phytomni.mcp.result_formatting import (
     run_finished,
@@ -848,3 +854,60 @@ async def test_stream_settle_marks_truncated_when_over_cap(
     assert len(answer.encode("utf-8")) <= 4
     # Wire still carried the full text.
     assert "HelloWorld" in response.text or "Hello" in response.text
+
+
+class _CloseableStream:
+    """Async body iterator that records whether ``aclose`` ran."""
+
+    def __init__(self, chunks: list[str]) -> None:
+        self.closed = False
+        self._chunks = list(chunks)
+
+    def __aiter__(self) -> Self:
+        return self
+
+    async def __anext__(self) -> str:
+        if not self._chunks:
+            raise StopAsyncIteration
+        return self._chunks.pop(0)
+
+    async def aclose(self) -> None:
+        """Mark the source iterator closed for cancellation assertions."""
+        self.closed = True
+
+
+async def test_streaming_attachment_redaction_spans_chunk_boundaries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SSE redaction replaces split references and propagates aclose."""
+    del monkeypatch
+    reference = "/obs/resolver-bucket/agent_data/uploads/u1/file_deadbeef"
+    source = _CloseableStream(
+        [
+            f'data: {{"answer":"prefix {reference[:12]}',
+            reference[12:28],
+            f'{reference[28:]} suffix"}}\n\ndata: [DONE]\n\n',
+        ]
+    )
+    evidence = ManagedAttachmentEvidence(
+        attachment_owner="u1",
+        document_references=frozenset({reference}),
+    )
+    response = redact_streaming_attachment_response(
+        StreamingResponse(source, media_type="text/event-stream"),
+        evidence,
+    )
+    assert isinstance(response, StreamingResponse)
+    body = cast(AsyncGenerator[Any, None], response.body_iterator)
+    chunks: list[str] = []
+    async for chunk in body:
+        chunks.append(chunk if isinstance(chunk, str) else chunk.decode())
+        if "data: [DONE]" in "".join(chunks):
+            await body.aclose()
+            break
+    reconstructed = "".join(chunks)
+    assert reference not in reconstructed
+    assert "<redacted-attachment>" in reconstructed
+    assert "data: " in reconstructed
+    assert "data: [DONE]\n\n" in reconstructed
+    assert source.closed is True

@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator, Awaitable, Callable
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, NamedTuple
 
 import httpx
 import pytest
 from tests.support.http_fakes import parse_sse_frames
+from tests.support.resumable_asset_fakes import AssetHttpTestContext
 
 from mcp_server_phytomni.agents.shared.a2ui import A2UI_CUSTOM_NAME
 from mcp_server_phytomni.mcp import app as mcp_app
@@ -196,3 +198,19 @@ def _review_app_factory(
         )
 
     return make
+
+
+@pytest.fixture(name="asset_http_context")
+def _asset_http_context_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    tasks_db_path: str,
+    issued_api_key: str,
+) -> AssetHttpTestContext:
+    """Bundle opaque-asset HTTP fixtures for attachment contract tests."""
+    return AssetHttpTestContext(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        db_path=tasks_db_path,
+        api_key=issued_api_key,
+    )

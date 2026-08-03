@@ -1,0 +1,641 @@
+# Copyright (c) Biotechnology Research Institute,
+# Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
+"""Expert attachment preselection, authorization, and context parity tests."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import pytest
+from tests.server.test_query_route import (
+    RunRegistry,
+    ToolSelection,
+    _auth,
+    _patch_select,
+    _router_completion,
+    _stub_tool_handler,
+    api_app,
+    httpx,
+)
+from tests.support.chat_fakes import install_chat_handler
+from tests.support.expert_router_fakes import patch_expert_router
+from tests.support.http_fakes import (
+    build_instant_chat_context_envelope,
+    open_asgi_client,
+    running_agent_run_body,
+)
+from tests.support.resumable_asset_fakes import (
+    AssetHttpTestContext,
+    enable_conversation_context_v1,
+    install_dataset_and_document_assets,
+    patch_dataset_description_completion,
+)
+
+from mcp_server_phytomni.agents.expert import router as expert_router
+from mcp_server_phytomni.agents.shared.dataset_description import (
+    DatasetDescriptionResult,
+)
+
+pytestmark = pytest.mark.server
+
+
+@dataclass(frozen=True, slots=True)
+class _PreselectorCase:
+    """One Expert preselector channel-filter expectation."""
+
+    attachments_kind: str
+    allowed: tuple[str, ...]
+    expected_tools: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _AuthzCase:
+    """One Expert attachment authorization failure expectation."""
+
+    allowed: tuple[str, ...]
+    forced: str | None
+    attachments: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ExpertAssets:
+    """Installed dataset/document assets for one Expert HTTP app."""
+
+    app: Any
+    dataset_id: str
+    document_id: str
+    dataset_ref: str
+    document_ref: str
+
+
+def _install_expert_purpose_assets(
+    context: AssetHttpTestContext,
+    *,
+    owner: str = "u1",
+) -> _ExpertAssets:
+    """Install completed dataset/document assets into the app upload DB."""
+    resolver, dataset_id, document_id = install_dataset_and_document_assets(
+        context,
+        owner=owner,
+        dataset_filename="expert.csv",
+        document_filename="expert.pdf",
+    )
+    dataset_ref = (
+        resolver.resolve_bundle([{"asset_id": dataset_id}], owner)
+        .datasets[0]
+        .reference
+    )
+    document_ref = (
+        resolver.resolve_bundle([{"asset_id": document_id}], owner)
+        .documents[0]
+        .reference
+    )
+    return _ExpertAssets(
+        app=api_app.create_app(),
+        dataset_id=dataset_id,
+        document_id=document_id,
+        dataset_ref=dataset_ref,
+        document_ref=document_ref,
+    )
+
+
+def _attachments_for(
+    assets: _ExpertAssets,
+    kind: str,
+) -> list[dict[str, str]]:
+    """Build the opaque attachment list for one preselector kind."""
+    if kind == "dataset":
+        return [{"asset_id": assets.dataset_id}]
+    if kind == "mixed":
+        return [
+            {"asset_id": assets.dataset_id},
+            {"asset_id": assets.document_id},
+        ]
+    if kind == "document":
+        return [{"asset_id": assets.document_id}]
+    return []
+
+
+def _selection_args(tool_name: str) -> dict[str, Any]:
+    """Return schema-shaped selector arguments for one tool."""
+    if tool_name == "AnalystAgent":
+        return {
+            "goal_description": "q",
+            "data_list": {},
+            "obs_file_list": [],
+        }
+    if tool_name == "InSilicoResearchAgent":
+        return {"user_query": "q", "data_list": {}, "obs_file_list": []}
+    return {"user_query": "canonical expert query"}
+
+
+def _install_selected_handler(
+    monkeypatch: pytest.MonkeyPatch,
+    selected: str,
+) -> None:
+    """Install a sync or remote handler for the selected Expert tool."""
+    if selected in {"AnalystAgent", "InSilicoResearchAgent"}:
+
+        async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
+            return (
+                running_agent_run_body("filtered-run", kwargs["agent"]),
+                202,
+            )
+
+        monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
+        return
+    install_chat_handler(monkeypatch, {}, content="ok")
+    if selected != "ChatAgent":
+        _stub_tool_handler(
+            monkeypatch,
+            selected,
+            {"answer": "ok", "doc_list": []},
+        )
+
+
+async def _post_expert_route(
+    context: AssetHttpTestContext,
+    app: Any,
+    *,
+    payload: dict[str, Any],
+    base_url: str,
+    api_key: str | None = None,
+) -> httpx.Response:
+    """POST one Expert route against a freshly created ASGI app."""
+    async with open_asgi_client(
+        context.monkeypatch, app, base_url=base_url
+    ) as client:
+        return await client.post(
+            "/v1/query/route",
+            headers=_auth(api_key or context.api_key),
+            json=payload,
+        )
+
+
+def _patch_generated_completion(
+    monkeypatch: pytest.MonkeyPatch,
+    completion_calls: list[Any],
+) -> None:
+    """Install one generated dataset-description completion fake."""
+
+    async def fake_completion(**kwargs: Any) -> DatasetDescriptionResult:
+        completion_calls.append(kwargs)
+        return DatasetDescriptionResult(("generated desc",), "generated")
+
+    patch_dataset_description_completion(monkeypatch, fake_completion)
+
+
+def _forbid_router_and_agent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[list[Any], list[Any]]:
+    """Install assertions that Expert routing never reaches selection."""
+    router_calls: list[Any] = []
+    agent_calls: list[Any] = []
+
+    async def forbid_select(*_args: Any, **_kwargs: Any) -> ToolSelection:
+        router_calls.append(1)
+        raise AssertionError("router must not run")
+
+    async def forbid_invoke(**_kwargs: Any) -> tuple[dict[str, Any], int]:
+        agent_calls.append(1)
+        raise AssertionError("agent must not run")
+
+    monkeypatch.setattr(api_app, "select_agent_tool", forbid_select)
+    monkeypatch.setattr(api_app, "_invoke_agent_run", forbid_invoke)
+    return router_calls, agent_calls
+
+
+def _expert_context_envelope(
+    *,
+    allowed: list[str],
+    requested: str | None,
+    request_id: str,
+    content: str,
+) -> dict[str, Any]:
+    """Build one Expert-mode Instant envelope for context attachment tests."""
+    envelope = build_instant_chat_context_envelope("9")
+    envelope.update(
+        {
+            "mode": "expert",
+            "request_id": request_id,
+            "requested_agent_id": requested,
+            "allowed_agent_ids": allowed,
+            "current_message": {"content": content, "locale": "en-US"},
+        }
+    )
+    return envelope
+
+
+_PRESELECTOR_CASES = (
+    _PreselectorCase(
+        "dataset",
+        (
+            "ChatAgent",
+            "AnalystAgent",
+            "InSilicoResearchAgent",
+            "KnowledgeAgent",
+        ),
+        ("AnalystAgent", "InSilicoResearchAgent"),
+    ),
+    _PreselectorCase(
+        "dataset",
+        ("InSilicoResearchAgent", "AnalystAgent"),
+        ("InSilicoResearchAgent", "AnalystAgent"),
+    ),
+    _PreselectorCase(
+        "mixed",
+        ("AnalystAgent", "InSilicoResearchAgent", "DigitalDesignAgent"),
+        ("AnalystAgent", "InSilicoResearchAgent"),
+    ),
+    _PreselectorCase(
+        "document",
+        ("DataAgent", "ChatAgent", "AnalystAgent", "KnowledgeAgent"),
+        ("ChatAgent", "AnalystAgent", "KnowledgeAgent"),
+    ),
+    _PreselectorCase(
+        "none",
+        ("ChatAgent", "DataAgent", "KnowledgeAgent"),
+        ("ChatAgent", "DataAgent", "KnowledgeAgent"),
+    ),
+)
+
+
+def _assert_research_attachment_call(
+    call: dict[str, Any],
+    *,
+    document_ref: str,
+    dataset_ref: str,
+) -> None:
+    """Assert one Research Expert call carries canonical managed refs."""
+    assert call["agent"] == "research"
+    assert call["arguments"]["user_query"] == "original expert query"
+    assert call["arguments"]["obs_file_list"] == [document_ref]
+    assert call["arguments"]["data_list"] == {dataset_ref: "generated desc"}
+    assert call["attachment_evidence"].attachment_owner == "u1"
+
+
+_AUTHZ_CASES = (
+    _AuthzCase(("ChatAgent", "KnowledgeAgent"), None, "dataset"),
+    _AuthzCase(("ChatAgent", "AnalystAgent"), "ChatAgent", "dataset"),
+    _AuthzCase(
+        ("AnalystAgent", "InSilicoResearchAgent", "DigitalDesignAgent"),
+        "DigitalDesignAgent",
+        "mixed",
+    ),
+)
+
+
+@pytest.mark.parametrize("case", _PRESELECTOR_CASES)
+async def test_expert_preselector_filters_tools_by_attachment_channels(
+    asset_http_context: AssetHttpTestContext,
+    case: _PreselectorCase,
+) -> None:
+    """Opaque attachment channels filter ordered Expert authorization."""
+    assets = _install_expert_purpose_assets(asset_http_context)
+    selected = case.expected_tools[0]
+    captured: dict[str, Any] = {}
+    patch_expert_router(
+        asset_http_context.monkeypatch,
+        expert_router,
+        _router_completion((selected, json.dumps(_selection_args(selected)))),
+        captured=captured,
+    )
+    _install_selected_handler(asset_http_context.monkeypatch, selected)
+    response = await _post_expert_route(
+        asset_http_context,
+        assets.app,
+        payload={
+            "user_query": "canonical expert query",
+            "allowed_tools": list(case.allowed),
+            "attachments": _attachments_for(assets, case.attachments_kind),
+        },
+        base_url="http://api.expert-filter.test",
+    )
+    assert response.status_code in {200, 202}, response.text
+    tool_names = [
+        tool["function"]["name"] for tool in captured.get("tools", [])
+    ]
+    assert tool_names == list(case.expected_tools)
+    messages = json.dumps(captured.get("messages", []), default=str)
+    assert "canonical expert query" in messages
+    assert assets.dataset_id not in messages
+    assert assets.document_id not in messages
+    assert "/obs/" not in messages
+    assert "u1" not in messages
+
+
+@pytest.mark.parametrize("case", _AUTHZ_CASES)
+async def test_expert_empty_or_forced_attachment_authorization_fails(
+    asset_http_context: AssetHttpTestContext,
+    case: _AuthzCase,
+) -> None:
+    """Unsupported attachment authorization fails before routing."""
+    assets = _install_expert_purpose_assets(asset_http_context)
+    router_calls, agent_calls = _forbid_router_and_agent(
+        asset_http_context.monkeypatch
+    )
+    payload: dict[str, Any] = {
+        "user_query": "blocked query",
+        "allowed_tools": list(case.allowed),
+        "attachments": _attachments_for(assets, case.attachments),
+    }
+    if case.forced is not None:
+        payload["forced_tool"] = case.forced
+    response = await _post_expert_route(
+        asset_http_context,
+        assets.app,
+        payload=payload,
+        base_url="http://api.expert-authz.test",
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "attachment_not_supported"
+    assert response.json()["error"]["stage"] == "attachment_validation"
+    assert not router_calls
+    assert not agent_calls
+    assert not RunRegistry(asset_http_context.db_path).list_runs(owner="u1")
+
+
+@pytest.mark.parametrize(
+    "slug_tool",
+    (("analyst", "AnalystAgent"), ("research", "InSilicoResearchAgent")),
+)
+async def test_expert_selected_arguments_discard_selector_paths(
+    asset_http_context: AssetHttpTestContext,
+    slug_tool: tuple[str, str],
+) -> None:
+    """Selector path maps never reach Analyst/Research after selection."""
+    slug, tool_name = slug_tool
+    assets = _install_expert_purpose_assets(asset_http_context)
+    captured: dict[str, Any] = {}
+    completion_calls: list[Any] = []
+    _patch_generated_completion(
+        asset_http_context.monkeypatch, completion_calls
+    )
+
+    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        captured.update(kwargs)
+        return running_agent_run_body(f"expert-{slug}", slug), 202
+
+    asset_http_context.monkeypatch.setattr(
+        api_app, "_invoke_agent_run", fake_invoke
+    )
+    _patch_select(
+        asset_http_context.monkeypatch,
+        ToolSelection(
+            tool_name,
+            {
+                "goal_description": "selector rewrite",
+                "user_query": "selector rewrite",
+                "obs_file_list": ["/obs/selector-private"],
+                "data_list": {"/obs/selector-private.csv": "selector value"},
+            },
+        ),
+    )
+    response = await _post_expert_route(
+        asset_http_context,
+        assets.app,
+        payload={
+            "user_query": "original expert query",
+            "allowed_tools": [tool_name],
+            "attachments": _attachments_for(assets, "mixed"),
+        },
+        base_url="http://api.expert-args.test",
+    )
+    assert response.status_code == 202, response.text
+    arguments = captured["arguments"]
+    if slug == "analyst":
+        assert arguments["goal_description"] == "original expert query"
+    else:
+        assert arguments["user_query"] == "original expert query"
+    assert arguments["obs_file_list"] == [assets.document_ref]
+    assert arguments["data_list"] == {assets.dataset_ref: "generated desc"}
+    assert "/obs/selector-private" not in str(arguments)
+    assert "selector rewrite" not in str(arguments)
+    assert "selector value" not in response.text
+    assert len(completion_calls) == 1
+
+
+async def test_expert_supplied_description_skips_completion(
+    asset_http_context: AssetHttpTestContext,
+) -> None:
+    """A supplied dataset description skips provider completion."""
+    assets = _install_expert_purpose_assets(asset_http_context)
+    completion_calls: list[Any] = []
+    captured: dict[str, Any] = {}
+
+    async def fail_completion(**_kwargs: Any) -> Any:
+        completion_calls.append(1)
+        raise AssertionError("supplied description skips completion")
+
+    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        captured.update(kwargs)
+        return running_agent_run_body("expert-supplied", "analyst"), 202
+
+    asset_http_context.monkeypatch.setattr(
+        api_app, "_invoke_agent_run", fake_invoke
+    )
+    patch_dataset_description_completion(
+        asset_http_context.monkeypatch, fail_completion
+    )
+    _patch_select(
+        asset_http_context.monkeypatch,
+        ToolSelection(
+            "AnalystAgent",
+            {
+                "goal_description": "selector rewrite",
+                "data_list": {},
+                "obs_file_list": [],
+            },
+        ),
+    )
+    response = await _post_expert_route(
+        asset_http_context,
+        assets.app,
+        payload={
+            "user_query": "original expert query",
+            "allowed_tools": ["AnalystAgent"],
+            "attachments": _attachments_for(assets, "mixed"),
+            "dataset_description": "supplied batch description",
+        },
+        base_url="http://api.expert-desc.test",
+    )
+    assert response.status_code == 202, response.text
+    assert not completion_calls
+    assert captured["arguments"]["data_list"][assets.dataset_ref] == (
+        "supplied batch description"
+    )
+
+
+def _enable_expert_context_assets(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> tuple[AssetHttpTestContext, _ExpertAssets, str]:
+    """Enable context V1 and install Expert assets under one owner key."""
+    context, key = enable_conversation_context_v1(monkeypatch, tmp_path)
+    return context, _install_expert_purpose_assets(context), key
+
+
+async def test_expert_context_dataset_authorization_failures(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Context Expert rejects unsupported or emptied attachment allowlists."""
+    context, assets, key = _enable_expert_context_assets(monkeypatch, tmp_path)
+    router_calls, agent_calls = _forbid_router_and_agent(monkeypatch)
+    cases = (
+        {
+            "allowed_tools": ["DataAgent", "ChatAgent"],
+            "conversation": _expert_context_envelope(
+                allowed=["DataAgent", "ChatAgent"],
+                requested="DataAgent",
+                request_id="expert-context-authz",
+                content="blocked expert context",
+            ),
+        },
+        {
+            "allowed_tools": ["AnalystAgent", "ChatAgent"],
+            "conversation": _expert_context_envelope(
+                allowed=["ChatAgent"],
+                requested=None,
+                request_id="expert-context-authz",
+                content="blocked expert context",
+            ),
+        },
+    )
+    async with open_asgi_client(
+        monkeypatch, assets.app, base_url="http://api.expert-ctx-authz.test"
+    ) as client:
+        for case in cases:
+            response = await client.post(
+                "/v1/query/route",
+                headers=_auth(key),
+                json={
+                    "user_query": "blocked expert context",
+                    "allowed_tools": case["allowed_tools"],
+                    "attachments": [{"asset_id": assets.dataset_id}],
+                    "conversation": case["conversation"],
+                },
+            )
+            assert response.status_code == 422, response.text
+            assert response.json()["error"]["code"] == (
+                "attachment_not_supported"
+            )
+    assert not router_calls
+    assert not agent_calls
+    assert not RunRegistry(context.db_path).list_runs(owner="u1")
+
+
+async def _run_expert_context_parity(
+    monkeypatch: pytest.MonkeyPatch,
+    assets: _ExpertAssets,
+    *,
+    api_key: str,
+) -> tuple[Any, Any, list[dict[str, Any]], list[Any]]:
+    """Drive context + ordinary + replay Expert calls for parity asserts."""
+    invoke_calls: list[dict[str, Any]] = []
+    completion_calls: list[Any] = []
+    _patch_generated_completion(monkeypatch, completion_calls)
+
+    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        invoke_calls.append(kwargs)
+        run_id = f"expert-ctx-{len(invoke_calls)}"
+        return running_agent_run_body(run_id, kwargs["agent"]), 202
+
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
+    _patch_select(
+        monkeypatch,
+        ToolSelection(
+            "InSilicoResearchAgent",
+            {
+                "user_query": "selector rewrite",
+                "obs_file_list": ["/obs/selector-private"],
+                "data_list": {"/obs/selector-private.csv": "x"},
+            },
+        ),
+    )
+    request_body = {
+        "user_query": "original expert query",
+        "allowed_tools": [
+            "AnalystAgent",
+            "InSilicoResearchAgent",
+            "DigitalDesignAgent",
+            "ChatAgent",
+        ],
+        "attachments": _attachments_for(assets, "mixed"),
+        "conversation": _expert_context_envelope(
+            allowed=[
+                "DigitalDesignAgent",
+                "InSilicoResearchAgent",
+                "AnalystAgent",
+            ],
+            requested="InSilicoResearchAgent",
+            request_id="expert-context-parity",
+            content="original expert query",
+        ),
+    }
+    async with open_asgi_client(
+        monkeypatch, assets.app, base_url="http://api.expert-ctx-parity.test"
+    ) as client:
+        response = await client.post(
+            "/v1/query/route",
+            headers=_auth(api_key),
+            json=request_body,
+        )
+        ordinary = await client.post(
+            "/v1/query/route",
+            headers=_auth(api_key),
+            json={
+                "user_query": "original expert query",
+                "allowed_tools": [
+                    "AnalystAgent",
+                    "InSilicoResearchAgent",
+                ],
+                "attachments": _attachments_for(assets, "mixed"),
+                "forced_tool": "InSilicoResearchAgent",
+            },
+        )
+        replay = await client.post(
+            "/v1/query/route",
+            headers=_auth(api_key),
+            json=request_body,
+        )
+    assert response.status_code == 202, response.text
+    assert ordinary.status_code == 202, ordinary.text
+    assert replay.status_code == 202, replay.text
+    return response, replay, invoke_calls, completion_calls
+
+
+async def test_expert_context_preserves_payload_order_and_parity(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Context intersection keeps payload order and matches ordinary prep."""
+    _context, assets, key = _enable_expert_context_assets(
+        monkeypatch, tmp_path
+    )
+    response, replay, invoke_calls, completion_calls = (
+        await _run_expert_context_parity(monkeypatch, assets, api_key=key)
+    )
+    assert len(invoke_calls) == 2
+    for call in invoke_calls:
+        _assert_research_attachment_call(
+            call,
+            document_ref=assets.document_ref,
+            dataset_ref=assets.dataset_ref,
+        )
+    assert len(completion_calls) == 2
+    stage = response.json().get("conversation_context")
+    assert stage is not None
+    dumped = json.dumps(stage)
+    assert assets.dataset_id not in dumped
+    assert assets.document_id not in dumped
+    assert assets.dataset_ref not in dumped
+    assert "data_list" not in dumped
+    assert "obs_file_list" not in dumped
+    assert "generated desc" not in dumped
+    assert replay.json().get("conversation_context") == stage

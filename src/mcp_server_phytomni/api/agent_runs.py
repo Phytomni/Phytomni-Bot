@@ -122,15 +122,22 @@ def _project_submission_warnings(raw: Any) -> list[dict[str, Any]]:
 def _request_info_query(
     arguments: Mapping[str, Any], request_json: str | None
 ) -> str | None:
-    """Resolve the original query without trusting selected arguments."""
-    value = arguments.get("user_query")
-    if isinstance(value, str):
-        return value
+    """Resolve the original query without trusting attachment maps."""
+    for key in ("user_query", "goal_description"):
+        value = arguments.get(key)
+        if isinstance(value, str):
+            return value
     try:
-        value = json.loads(request_json or "{}").get("user_query")
+        payload = json.loads(request_json or "{}")
     except (AttributeError, TypeError, ValueError):
         return None
-    return value if isinstance(value, str) else None
+    if not isinstance(payload, Mapping):
+        return None
+    for key in ("user_query", "goal_description"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            return value
+    return None
 
 
 def _preflight_agent_run(

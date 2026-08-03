@@ -16,10 +16,12 @@ import pytest
 from tests.support.http_fakes import (
     build_instant_chat_context_envelope,
     open_asgi_client,
+    running_agent_run_body,
 )
 from tests.support.resumable_asset_fakes import (
     ResumableAssetSpec,
     build_resumable_asset,
+    patch_dataset_description_completion,
 )
 
 from mcp_server_phytomni.agents.shared.dataset_description import (
@@ -28,9 +30,6 @@ from mcp_server_phytomni.agents.shared.dataset_description import (
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
-from mcp_server_phytomni.api.routes import (
-    attachment_inputs as attachment_inputs_module,
-)
 from mcp_server_phytomni.api.schemas import AgentRunRequest
 from mcp_server_phytomni.api.upload_runtime import UploadRuntime
 from mcp_server_phytomni.runtime.conversation_context.store import (
@@ -234,24 +233,11 @@ def _patch_context_attachment_invocation(
         evidence = kwargs["attachment_evidence"]
         assert evidence.attachment_owner == "delegated-owner"
         return (
-            {
-                "id": run_id,
-                "run_id": run_id,
-                "object": "agent.run",
-                "agent": agent,
-                "status": "running",
-                "task_ids": [],
-                "result": empty_agent_result(),
-            },
+            running_agent_run_body(run_id, agent),
             202,
         )
 
-    monkeypatch.setattr(
-        attachment_inputs_module,
-        "complete_dataset_descriptions",
-        fake_completion,
-        raising=False,
-    )
+    patch_dataset_description_completion(monkeypatch, fake_completion)
     monkeypatch.setattr(api_app_module, "_invoke_agent_run", fake_invoke)
     return state
 

@@ -115,6 +115,7 @@ def install_chat_handler(
     async def fake(args: Any) -> dict[str, Any]:
         """Capture the query and return a canonical completion."""
         captured["user_query"] = args.user_query
+        captured["obs_file_list"] = getattr(args, "obs_file_list", None)
         return chat_completion_payload(
             "chatcmpl-canned",
             content,

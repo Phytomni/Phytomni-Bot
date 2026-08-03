@@ -17,9 +17,13 @@ import pytest
 
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.asset_resolver import AssetResolver
+from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.resumable_uploads import (
     ResumableUploadService,
     UploadServiceConfig,
+)
+from mcp_server_phytomni.api.routes import (
+    attachment_inputs as attachment_inputs_module,
 )
 from mcp_server_phytomni.api.schemas import (
     UploadCompletionRequest,
@@ -312,3 +316,79 @@ async def execute_rejected_asset_run(
             json={"arguments": case.arguments, "attachments": attachments},
         )
     return response, private_values, marker["called"]
+
+
+def patch_dataset_description_completion(
+    monkeypatch: pytest.MonkeyPatch,
+    fake: Any,
+    *,
+    module: Any | None = None,
+) -> None:
+    """Replace the attachment-input dataset-description completion seam."""
+    monkeypatch.setattr(
+        module or attachment_inputs_module,
+        "complete_dataset_descriptions",
+        fake,
+        raising=False,
+    )
+
+
+def enable_conversation_context_v1(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    user_id: str = "u1",
+) -> tuple[AssetHttpTestContext, str]:
+    """Enable Instant V1 context and return one owner API key plus context."""
+    monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "tasks.sqlite"))
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", str(tmp_path / "keys.sqlite"))
+    api_key = (
+        ApiKeyStore(str(tmp_path / "keys.sqlite"))
+        .create(user_id=user_id)
+        .api_key
+    )
+    context = AssetHttpTestContext(
+        monkeypatch=monkeypatch,
+        tmp_path=tmp_path,
+        db_path=str(tmp_path / "tasks.sqlite"),
+        api_key=api_key,
+    )
+    return context, api_key
+
+
+def install_dataset_and_document_assets(
+    context: AssetHttpTestContext,
+    *,
+    owner: str = "u1",
+    dataset_filename: str = "input.csv",
+    document_filename: str = "context.pdf",
+    document_purpose: UploadAssetPurpose = "document",
+) -> tuple[Any, str, str]:
+    """Install one dataset and one document under the shared resolver."""
+    dataset = build_resumable_asset(
+        context.tmp_path,
+        db_path=context.db_path,
+        spec=ResumableAssetSpec(
+            owner=owner,
+            filename=dataset_filename,
+            content=b"gene,value\nAT1G01010,1\n",
+            purpose="dataset",
+        ),
+    )
+    document = build_resumable_asset(
+        context.tmp_path,
+        db_path=context.db_path,
+        spec=ResumableAssetSpec(
+            owner=owner,
+            filename=document_filename,
+            content=b"%PDF-1.4\ncontext\n",
+            purpose=document_purpose,
+        ),
+    )
+    context.monkeypatch.setattr(
+        UploadRuntime,
+        "get_asset_resolver",
+        lambda _runtime: dataset.resolver,
+    )
+    return dataset.resolver, dataset.asset_id, document.asset_id

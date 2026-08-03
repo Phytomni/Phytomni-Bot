@@ -409,10 +409,13 @@ class _RouteAdapters:
         payload: ExpertQueryRequest,
         *,
         debug: bool,
+        attachment_input: Any | None = None,
     ) -> tuple[dict[str, Any], int]:
         """Route an Expert query through the app-level seam."""
         response_body, status_code = await _app_attr("_route_expert_query")(
-            payload, debug=debug
+            payload,
+            debug=debug,
+            attachment_input=attachment_input,
         )
         return canonicalize_agent_run_body(response_body), status_code
 

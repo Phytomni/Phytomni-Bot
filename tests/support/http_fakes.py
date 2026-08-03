@@ -15,6 +15,7 @@ import pytest
 from starlette.types import ASGIApp
 
 from mcp_server_phytomni import server
+from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 
 __all__ = [
     "assert_duplicate_attachment_response",
@@ -25,9 +26,28 @@ __all__ = [
     "install_rejection_handler",
     "open_asgi_client",
     "parse_sse_frames",
+    "running_agent_run_body",
 ]
 
 _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
+
+
+def running_agent_run_body(
+    run_id: str,
+    agent: str,
+    *,
+    task_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Build one minimal accepted remote-agent response body."""
+    return {
+        "id": run_id,
+        "run_id": run_id,
+        "object": "agent.run",
+        "agent": agent,
+        "status": "running",
+        "task_ids": [] if task_ids is None else list(task_ids),
+        "result": empty_agent_result(),
+    }
 
 
 def build_instant_chat_context_envelope(

@@ -19,7 +19,6 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse, Response
 
-from ...agents.expert import ToolSelectionError
 from ...runtime.conversation_context.adapters import ContextAgentInvocation
 from ...runtime.conversation_context.models import (
     ContextDelta,
@@ -28,15 +27,16 @@ from ...runtime.conversation_context.models import (
 from ...runtime.conversation_context.service import (
     AgentOutcome,
     AsyncAgentAcceptance,
-    PreparedTurn,
-    PrepareStatus,
 )
 from ...runtime.locale import SupportedLocale, current_effective_locale
 from ...runtime.run_registry import RunRequestInfo
 from ...runtime.stage_trace import DataStage, trace_data_stage
 from ..app_support import resolve_http_locale
+from ..attachments import (
+    redact_managed_attachment_values,
+    redact_streaming_attachment_response,
+)
 from ..auth import ApiPrincipal
-from ..lifecycle_contract import SafeApiError
 from ..schemas import (
     AgentRunRequest,
     ChatCompletionRequest,
@@ -49,14 +49,30 @@ from .agent_dependencies import (
     ContextNativePrepareRequest,
 )
 from .attachment_inputs import (
-    normalize_chat_payload_attachments,
-    normalize_expert_payload_attachments,
+    expert_attachment_channels,
+    filter_expert_attachment_candidates,
+    prepare_chat_document_attachments,
     prepare_native_attachment_arguments,
     resolve_attachment_input,
     resolve_attachment_owner,
     validate_chat_attachment_capability,
 )
-from .context_types import ContextAgentRequest, execute_context_lifecycle
+from .context_helpers import (
+    context_response as _context_response,
+)
+from .context_helpers import (
+    safe_native_request_json as _safe_native_request_json,
+)
+from .context_helpers import (
+    slug_for_tool as _slug_for_tool,
+)
+from .context_types import (
+    ContextAgentRequest,
+    ContextLifecycleHttpRequest,
+    execute_context_lifecycle,
+    execute_context_lifecycle_http,
+)
+from .expert_context import ExpertContextHelpers, execute_context_expert
 from .uploads import AgentUploadDependencies, register_upload_routes
 
 AgentAuthDependencies = _agent_dependencies.AgentAuthDependencies
@@ -122,7 +138,6 @@ def _register_chat_route(
         plus a terminating ``data: [DONE]\\n\\n``; the non-stream
         path returns a JSON ``chat.completion`` envelope unchanged.
         """
-        del principal
         tool_name = dependencies.chat.input.tool_for_model(payload.model)
         if tool_name is None:
             raise HTTPException(
@@ -134,9 +149,11 @@ def _register_chat_route(
             tool_name,
             dependencies.chat.input.tool_accepts_obs,
         )
-        payload = normalize_chat_payload_attachments(
-            payload,
-            owner=dependencies.chat.projection.current_user() or "anonymous",
+        resolved_input = resolve_attachment_input(
+            payload.attachments,
+            attachment_owner=resolve_attachment_owner(
+                principal, payload.owner_subject
+            ),
             resolver=dependencies.upload.asset_resolver,
         )
         if payload.conversation is not None:
@@ -144,102 +161,161 @@ def _register_chat_route(
                 raise HTTPException(
                     status_code=404, detail="conversation context disabled"
                 )
-            return await _execute_context_chat(payload, dependencies)
-        accepts_obs = dependencies.chat.input.tool_accepts_obs(tool_name)
-        if payload.obs_file_list and not accepts_obs:
-            raise HTTPException(
-                status_code=400,
-                detail=f"model {payload.model} does not accept "
-                "obs_file_list",
+            return await _execute_context_chat(
+                payload,
+                dependencies,
+                resolved_input=resolved_input,
             )
-        try:
-            user_query = dependencies.chat.input.flatten_messages(
-                payload.messages
-            )
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        resolve_http_locale(
-            explicit=payload.locale,
-            accept_language=request.headers.get("accept-language"),
-            latest_user_query=user_query,
+        prepared = await _prepare_ordinary_chat_request(
+            payload,
+            request,
+            dependencies,
+            tool_name=tool_name,
+            resolved_input=resolved_input,
         )
-        user_query, resolve_meta = (
-            await dependencies.chat.input.resolve_chat_query(
-                raw_query=user_query,
-                resolve_flag=bool(payload.resolve_gene_id),
-                tool_name=tool_name,
-                brief_gene_resolver=(
-                    dependencies.chat.input.brief_gene_resolver
-                ),
-            )
-        )
-        arguments: dict[str, Any] = {
-            "user_query": user_query,
-            "locale": current_effective_locale(),
-        }
-        if accepts_obs:
-            arguments["obs_file_list"] = payload.obs_file_list or []
         if payload.stream:
-            return await dependencies.chat.execution.stream_chat_completion(
-                tool_name=tool_name,
-                arguments=arguments,
-                payload=payload,
-                user_query=user_query,
+            response = (
+                await dependencies.chat.execution.stream_chat_completion(
+                    tool_name=tool_name,
+                    arguments=prepared["arguments"],
+                    payload=payload,
+                    user_query=prepared["user_query"],
+                )
             )
+            evidence = prepared["evidence"]
+            if evidence is not None:
+                return redact_streaming_attachment_response(response, evidence)
+            return response
         if tool_name == "ReviewAgent":
             return await dependencies.chat.execution.review_chat_completion(
                 payload=payload,
-                arguments=arguments,
-                user_query=user_query,
+                arguments=prepared["arguments"],
+                user_query=prepared["user_query"],
             )
-        envelope = await dependencies.chat.execution.invoke_tool_enveloped(
-            tool_name, arguments
+        return await _finalize_ordinary_chat_response(
+            payload,
+            dependencies,
+            tool_name=tool_name,
+            prepared=prepared,
         )
-        formatted_dict = _formatted_with_metadata(envelope, resolve_meta)
-        envelope_dict = {
-            "formatted": formatted_dict,
-            "execution": asdict(envelope.execution),
-            "raw": envelope.raw,
-        }
-        agent_slug = dependencies.catalog.model_to_agent_slug.get(
-            payload.model
+
+
+async def _prepare_ordinary_chat_request(
+    payload: ChatCompletionRequest,
+    request: Request,
+    dependencies: AgentRouteDependencies,
+    *,
+    tool_name: str,
+    resolved_input: Any,
+) -> dict[str, Any]:
+    """Flatten, resolve, and attach documents for one ordinary chat call."""
+    accepts_obs = dependencies.chat.input.tool_accepts_obs(tool_name)
+    if payload.obs_file_list and not accepts_obs:
+        raise HTTPException(
+            status_code=400,
+            detail=f"model {payload.model} does not accept obs_file_list",
         )
-        chat_run_id: str | None = None
-        if agent_slug is not None:
-            chat_run_id = dependencies.chat.projection.record_sync_run(
-                agent=agent_slug,
-                owner=(
-                    dependencies.chat.projection.current_user() or "anonymous"
-                ),
-                result=envelope_dict,
-                request_info=_chat_run_request_info(
-                    payload,
-                    user_query,
-                    tool_name,
-                    current_effective_locale(),
-                ),
-            )
-        if chat_run_id is None and agent_slug is not None:
-            envelope_dict["execution"]["tracking"] = {"degraded": True}
-        completion = dependencies.chat.projection.to_chat_completion(
-            formatted_dict,
-            envelope.raw,
-            payload.model,
-            envelope_dict["execution"],
+    try:
+        user_query = dependencies.chat.input.flatten_messages(payload.messages)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    resolve_http_locale(
+        explicit=payload.locale,
+        accept_language=request.headers.get("accept-language"),
+        latest_user_query=user_query,
+    )
+    user_query, resolve_meta = (
+        await dependencies.chat.input.resolve_chat_query(
+            raw_query=user_query,
+            resolve_flag=bool(payload.resolve_gene_id),
+            tool_name=tool_name,
+            brief_gene_resolver=dependencies.chat.input.brief_gene_resolver,
         )
-        completion["run_id"] = chat_run_id
-        if envelope_dict["execution"]["tracking"].get("degraded") is True:
-            completion["degraded_tracking"] = True
-        if not dependencies.chat.projection.resolve_debug(payload.debug):
-            completion = dependencies.chat.projection.strip_chat_completion(
-                completion
-            )
-        return JSONResponse(completion)
+    )
+    arguments: dict[str, Any] = {
+        "user_query": user_query,
+        "locale": current_effective_locale(),
+    }
+    if accepts_obs:
+        arguments["obs_file_list"] = payload.obs_file_list or []
+    arguments, attachment_context = await prepare_chat_document_attachments(
+        tool_name=tool_name,
+        arguments=arguments,
+        resolved_input=resolved_input,
+        db_path=dependencies.tasks_db_path(),
+    )
+    return {
+        "user_query": user_query,
+        "resolve_meta": resolve_meta,
+        "arguments": arguments,
+        "evidence": attachment_context.evidence,
+    }
+
+
+async def _finalize_ordinary_chat_response(
+    payload: ChatCompletionRequest,
+    dependencies: AgentRouteDependencies,
+    *,
+    tool_name: str,
+    prepared: Mapping[str, Any],
+) -> JSONResponse:
+    """Invoke one ordinary chat agent and project its redacted completion."""
+    envelope = await dependencies.chat.execution.invoke_tool_enveloped(
+        tool_name, prepared["arguments"]
+    )
+    formatted_dict = _formatted_with_metadata(
+        envelope, prepared["resolve_meta"]
+    )
+    envelope_dict = {
+        "formatted": formatted_dict,
+        "execution": asdict(envelope.execution),
+        "raw": envelope.raw,
+    }
+    evidence = prepared["evidence"]
+    if evidence is not None:
+        envelope_dict = redact_managed_attachment_values(
+            envelope_dict, evidence
+        )
+        formatted_dict = envelope_dict["formatted"]
+    agent_slug = dependencies.catalog.model_to_agent_slug.get(payload.model)
+    chat_run_id: str | None = None
+    if agent_slug is not None:
+        chat_run_id = dependencies.chat.projection.record_sync_run(
+            agent=agent_slug,
+            owner=dependencies.chat.projection.current_user() or "anonymous",
+            result=envelope_dict,
+            request_info=_chat_run_request_info(
+                payload,
+                prepared["user_query"],
+                tool_name,
+                current_effective_locale(),
+            ),
+        )
+    if chat_run_id is None and agent_slug is not None:
+        envelope_dict["execution"]["tracking"] = {"degraded": True}
+    completion = dependencies.chat.projection.to_chat_completion(
+        formatted_dict,
+        envelope_dict.get("raw"),
+        payload.model,
+        envelope_dict["execution"],
+    )
+    if evidence is not None:
+        completion = redact_managed_attachment_values(completion, evidence)
+    completion["run_id"] = chat_run_id
+    if envelope_dict["execution"]["tracking"].get("degraded") is True:
+        completion["degraded_tracking"] = True
+    if not dependencies.chat.projection.resolve_debug(payload.debug):
+        completion = dependencies.chat.projection.strip_chat_completion(
+            completion
+        )
+    return JSONResponse(completion)
 
 
 async def _execute_context_chat(
     payload: ChatCompletionRequest,
     dependencies: AgentRouteDependencies,
+    *,
+    resolved_input: Any,
 ) -> JSONResponse:
     """Execute an Instant V1 completion without flattening legacy messages."""
     envelope = payload.conversation
@@ -275,6 +351,15 @@ async def _execute_context_chat(
             raise ValueError("instant context selected a non-chat agent")
         arguments = dict(dispatch.arguments)
         arguments["obs_file_list"] = list(payload.obs_file_list or [])
+        arguments, attachment_context = (
+            await prepare_chat_document_attachments(
+                tool_name="ChatAgent",
+                arguments=arguments,
+                resolved_input=resolved_input,
+                db_path=dependencies.tasks_db_path(),
+            )
+        )
+        evidence = attachment_context.evidence
         user_query, resolve_meta = (
             await dependencies.chat.input.resolve_chat_query(
                 raw_query=arguments["user_query"],
@@ -300,6 +385,11 @@ async def _execute_context_chat(
             "execution": asdict(tool_envelope.execution),
             "raw": tool_envelope.raw,
         }
+        if evidence is not None:
+            envelope_dict = redact_managed_attachment_values(
+                envelope_dict, evidence
+            )
+            formatted_dict = envelope_dict["formatted"]
         chat_run_id = dependencies.chat.projection.record_sync_run(
             agent="chat",
             owner=dependencies.chat.projection.current_user() or "anonymous",
@@ -315,10 +405,12 @@ async def _execute_context_chat(
             envelope_dict["execution"]["tracking"] = {"degraded": True}
         completion = dependencies.chat.projection.to_chat_completion(
             formatted_dict,
-            tool_envelope.raw,
+            envelope_dict.get("raw"),
             payload.model,
             envelope_dict["execution"],
         )
+        if evidence is not None:
+            completion = redact_managed_attachment_values(completion, evidence)
         completion["run_id"] = chat_run_id
         if envelope_dict["execution"]["tracking"].get("degraded") is True:
             completion["degraded_tracking"] = True
@@ -346,44 +438,6 @@ async def _execute_context_chat(
         delegate_async=delegate_async,
     )
     return _context_response(prepared, envelope)
-
-
-def _context_response(
-    prepared: PreparedTurn,
-    envelope: ConversationEnvelopeV1,
-) -> JSONResponse:
-    """Return a staged terminal payload or a bounded context retry signal."""
-    if prepared.status is PrepareStatus.REBUILD_REQUIRED:
-        raise SafeApiError(
-            status_code=409,
-            code="conversation_context_rebuild_required",
-            message="conversation context rebuild required",
-            stage="context",
-            retryable=True,
-        )
-    if prepared.status is PrepareStatus.IN_PROGRESS:
-        raise SafeApiError(
-            status_code=409,
-            code="conversation_context_turn_in_progress",
-            message="conversation context turn in progress",
-            stage="context",
-            retryable=True,
-        )
-    if prepared.result is None:
-        raise HTTPException(
-            status_code=500, detail="conversation context failed"
-        )
-    response = dict(prepared.result)
-    if prepared.context_persistence_degraded:
-        response["conversation_context_degraded"] = True
-    elif prepared.stage is not None:
-        response["conversation_context"] = {
-            "schema_version": 1,
-            "turn_id": envelope.turn_id,
-            **asdict(prepared.stage),
-        }
-    status_code = 202 if response.get("status") == "running" else 200
-    return JSONResponse(response, status_code=status_code)
 
 
 def _formatted_with_metadata(
@@ -414,7 +468,16 @@ def _chat_run_request_info(
         query=user_query,
         tool_name=tool_name,
         model=payload.model,
-        request_json=payload.model_dump_json(),
+        request_json=json.dumps(
+            {
+                "model": payload.model,
+                "dialogue_id": payload.dialogue_id,
+                "locale": locale,
+                "stream": payload.stream,
+            },
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ),
         locale=locale,
     )
 
@@ -426,20 +489,6 @@ def _latest_argument_query(arguments: Mapping[str, Any]) -> str:
         if isinstance(value, str) and value.strip():
             return value
     return ""
-
-
-def _safe_native_request_json(
-    *,
-    dialogue_id: str | None,
-    locale: SupportedLocale,
-    route: str,
-) -> str:
-    """Serialize only bounded native request metadata."""
-    return json.dumps(
-        {"dialogue_id": dialogue_id, "locale": locale, "route": route},
-        ensure_ascii=True,
-        separators=(",", ":"),
-    )
 
 
 def _register_native_routes(
@@ -579,25 +628,39 @@ def _register_native_routes(
         principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
     ) -> JSONResponse:
         """Autonomously route a query to an agent and return its run."""
-        del principal
-        payload = normalize_expert_payload_attachments(
-            payload,
-            owner=dependencies.chat.projection.current_user() or "anonymous",
+        attachment_owner = resolve_attachment_owner(
+            principal, payload.owner_subject
+        )
+        resolved_input = resolve_attachment_input(
+            payload.attachments,
+            attachment_owner=attachment_owner,
             resolver=dependencies.upload.asset_resolver,
         )
+        channels = expert_attachment_channels(
+            resolved_input,
+            payload.obs_file_list,
+        )
+        payload = filter_expert_attachment_candidates(payload, channels)
         if payload.conversation is not None:
             if not dependencies.context.enabled():
                 raise HTTPException(
                     status_code=404, detail="conversation context disabled"
                 )
-            return await _execute_context_expert(payload, dependencies)
+            return await _execute_context_expert(
+                payload,
+                dependencies,
+                resolved_input=resolved_input,
+                channels=channels,
+            )
         resolve_http_locale(
             explicit=payload.locale,
             accept_language=request.headers.get("accept-language"),
             latest_user_query=payload.user_query,
         )
         body, status_code = await dependencies.native.route_expert_query(
-            payload, debug=dependencies.chat.projection.resolve_debug(None)
+            payload,
+            debug=dependencies.chat.projection.resolve_debug(None),
+            attachment_input=resolved_input,
         )
         return JSONResponse(body, status_code=status_code)
 
@@ -680,16 +743,16 @@ async def _execute_context_native(
         )
         return AsyncAgentAcceptance(body, status_code)
 
-    try:
-        prepared = await execute_context_lifecycle(
+    prepared = await execute_context_lifecycle_http(
+        ContextLifecycleHttpRequest(
             executor=dependencies.context.executor,
             envelope=envelope,
             invoke=invoke,
             delegate_async=delegate_async,
             selected_arguments=request.arguments,
+            selection_failure_detail="invalid native context agent",
         )
-    except (ToolSelectionError, ValueError) as exc:
-        raise HTTPException(502, "invalid native context agent") from exc
+    )
     return _context_response(prepared, envelope)
 
 
@@ -722,60 +785,20 @@ async def _prepare_context_native_invocation(
 async def _execute_context_expert(
     payload: ExpertQueryRequest,
     dependencies: AgentRouteDependencies,
+    *,
+    resolved_input: Any,
+    channels: frozenset[str],
 ) -> JSONResponse:
-    """Run constrained Expert V1 selection through the shared lifecycle."""
-    envelope = payload.conversation
-    assert envelope is not None
-    if envelope.mode != "expert":
-        raise HTTPException(
-            status_code=422, detail="expert context requires expert mode"
-        )
-
-    async def invoke(
-        selected_agent_id: str,
-        _envelope: ConversationEnvelopeV1,
-        dispatch: ContextAgentInvocation,
-    ) -> AgentOutcome:
-        return await _invoke_context_expert_agent(
-            selected_agent_id=selected_agent_id,
-            dispatch=dispatch,
-            payload=payload,
-            dependencies=dependencies,
-        )
-
-    async def delegate_async(
-        selected_agent_id: str,
-        _envelope: ConversationEnvelopeV1,
-        arguments: dict[str, Any],
-    ) -> AsyncAgentAcceptance:
-        slug = _slug_for_tool(selected_agent_id, dependencies)
-        if dependencies.chat.input.tool_accepts_obs(selected_agent_id):
-            arguments = {
-                **arguments,
-                "obs_file_list": list(payload.obs_file_list),
-            }
-        body, status_code = await dependencies.native.invoke_agent_run(
-            agent=slug,
-            arguments=arguments,
-            dialogue_id=payload.dialogue_id,
-            request_json=payload.model_dump_json(),
-            debug=dependencies.chat.projection.resolve_debug(None),
-        )
-        return AsyncAgentAcceptance(body, status_code)
-
-    try:
-        prepared = await execute_context_lifecycle(
-            executor=dependencies.context.executor,
-            envelope=envelope,
-            invoke=invoke,
-            delegate_async=delegate_async,
-        )
-    except (ToolSelectionError, ValueError) as exc:
-        raise HTTPException(
-            status_code=502,
-            detail="router did not resolve one permitted agent",
-        ) from exc
-    return _context_response(prepared, envelope)
+    """Delegate Expert context execution to the extracted helper module."""
+    return await execute_context_expert(
+        payload,
+        dependencies,
+        resolved_input=resolved_input,
+        channels=channels,
+        helpers=ExpertContextHelpers(
+            invoke_context_agent=_invoke_context_agent,
+        ),
+    )
 
 
 def _context_clarification_outcome(
@@ -870,27 +893,6 @@ async def _context_success_outcome(
     return outcome
 
 
-async def _invoke_context_expert_agent(
-    *,
-    selected_agent_id: str,
-    dispatch: ContextAgentInvocation,
-    payload: ExpertQueryRequest,
-    dependencies: AgentRouteDependencies,
-) -> AgentOutcome:
-    """Invoke one selected Expert agent through the shared context seam."""
-    return await _invoke_context_agent(
-        selected_agent_id=selected_agent_id,
-        dispatch=dispatch,
-        request=ContextAgentRequest(
-            dialogue_id=payload.dialogue_id,
-            request_json=payload.model_dump_json(),
-            debug=dependencies.chat.projection.resolve_debug(None),
-            obs_file_list=payload.obs_file_list,
-        ),
-        dependencies=dependencies,
-    )
-
-
 async def _invoke_context_agent(
     *,
     selected_agent_id: str,
@@ -932,17 +934,6 @@ async def _invoke_context_agent(
     if status_code != 200 or body.get("status") != "succeeded":
         return AgentOutcome(result=body, status="running")
     return await _context_success_outcome(selected_agent_id, body, adapter)
-
-
-def _slug_for_tool(
-    tool_name: str,
-    dependencies: AgentRouteDependencies,
-) -> str:
-    """Map a canonical selected tool back to the public native slug."""
-    for slug, candidate in dependencies.catalog.agent_slug_to_tool.items():
-        if candidate == tool_name:
-            return slug
-    raise ValueError("selected agent is unavailable")
 
 
 def _clarification_agent_run(agent: str, message: str) -> dict[str, Any]:

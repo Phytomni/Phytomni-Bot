@@ -19,6 +19,7 @@ from tests.support.http_fakes import (
     install_rejection_handler,
     install_tool_handler,
     open_asgi_client,
+    running_agent_run_body,
 )
 from tests.support.resumable_asset_fakes import (
     AssetHttpTestContext,
@@ -29,6 +30,8 @@ from tests.support.resumable_asset_fakes import (
     execute_opaque_asset_run,
     execute_rejected_asset_run,
     install_attachment_capture,
+    install_dataset_and_document_assets,
+    patch_dataset_description_completion,
     wait_for_attachment_submission,
 )
 
@@ -38,30 +41,10 @@ from mcp_server_phytomni.agents.shared.dataset_description import (
 )
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.auth import ApiKeyStore
-from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
-from mcp_server_phytomni.api.routes import (
-    attachment_inputs as attachment_inputs_module,
-)
 from mcp_server_phytomni.api.upload_runtime import UploadRuntime
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
-
-
-@pytest.fixture(name="asset_http_context")
-def _asset_http_context(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    tasks_db_path: str,
-    issued_api_key: str,
-) -> AssetHttpTestContext:
-    """Bundle opaque-asset HTTP fixtures without hiding their ownership."""
-    return AssetHttpTestContext(
-        monkeypatch=monkeypatch,
-        tmp_path=tmp_path,
-        db_path=tasks_db_path,
-        api_key=issued_api_key,
-    )
 
 
 def _auth(key: str) -> dict[str, str]:
@@ -107,32 +90,13 @@ def _install_dataset_assets(
     dataset_filename: str = "input.csv",
 ) -> tuple[Any, str, str]:
     """Create one completed dataset and document and return references."""
-    dataset = build_resumable_asset(
-        context.tmp_path,
-        db_path=context.db_path,
-        spec=ResumableAssetSpec(
-            owner=owner,
-            filename=dataset_filename,
-            content=b"gene,value\nAT1G01010,7\n",
-            purpose="dataset",
-        ),
+    return install_dataset_and_document_assets(
+        context,
+        owner=owner,
+        dataset_filename=dataset_filename,
+        document_filename="context.pdf",
+        document_purpose="chat_attachment",
     )
-    document = build_resumable_asset(
-        context.tmp_path,
-        db_path=context.db_path,
-        spec=ResumableAssetSpec(
-            owner=owner,
-            filename="context.pdf",
-            content=b"%PDF-1.4\ncontext\n",
-            purpose="chat_attachment",
-        ),
-    )
-    context.monkeypatch.setattr(
-        UploadRuntime,
-        "get_asset_resolver",
-        lambda _runtime: dataset.resolver,
-    )
-    return dataset.resolver, dataset.asset_id, document.asset_id
 
 
 async def _post_asset_run(
@@ -269,15 +233,7 @@ async def test_omitted_owner_subject_preserves_scope_less_principal_owner(
     async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
         calls.append(kwargs)
         return (
-            {
-                "id": "principal-run",
-                "run_id": "principal-run",
-                "object": "agent.run",
-                "agent": "analyst",
-                "status": "running",
-                "task_ids": [],
-                "result": empty_agent_result(),
-            },
+            running_agent_run_body("principal-run", "analyst"),
             202,
         )
 
@@ -338,11 +294,8 @@ async def test_direct_dataset_assets_project_to_data_list_before_202(
     async def fail_completion(**_kwargs: Any) -> DatasetDescriptionResult:
         raise AssertionError("supplied description should skip provider")
 
-    asset_http_context.monkeypatch.setattr(
-        attachment_inputs_module,
-        "complete_dataset_descriptions",
-        fail_completion,
-        raising=False,
+    patch_dataset_description_completion(
+        asset_http_context.monkeypatch, fail_completion
     )
     response = await _post_asset_run(
         asset_http_context,
@@ -393,11 +346,8 @@ async def test_direct_dataset_blank_description_uses_one_completion_result(
         calls.append(kwargs)
         return DatasetDescriptionResult(("generated role",), "generated")
 
-    asset_http_context.monkeypatch.setattr(
-        attachment_inputs_module,
-        "complete_dataset_descriptions",
-        fake_completion,
-        raising=False,
+    patch_dataset_description_completion(
+        asset_http_context.monkeypatch, fake_completion
     )
     response = await _post_asset_run(
         asset_http_context,
@@ -437,11 +387,8 @@ async def test_dataset_assets_fail_before_completion_and_reservation(
     async def fail_completion(**_kwargs: Any) -> DatasetDescriptionResult:
         raise AssertionError("unsupported agent should not complete")
 
-    asset_http_context.monkeypatch.setattr(
-        attachment_inputs_module,
-        "complete_dataset_descriptions",
-        fail_completion,
-        raising=False,
+    patch_dataset_description_completion(
+        asset_http_context.monkeypatch, fail_completion
     )
     response = await _post_asset_run(
         asset_http_context,
@@ -472,11 +419,8 @@ async def test_dataset_completion_blocks_before_umbrella_reservation(
         await release.wait()
         return DatasetDescriptionResult(("ready",), "generated")
 
-    asset_http_context.monkeypatch.setattr(
-        attachment_inputs_module,
-        "complete_dataset_descriptions",
-        slow_completion,
-        raising=False,
+    patch_dataset_description_completion(
+        asset_http_context.monkeypatch, slow_completion
     )
     captured: dict[str, Any] = {}
     case = _RemoteCase(
@@ -517,11 +461,8 @@ async def test_managed_tsv_dataset_asset_fails_before_completion(
     async def fail_completion(**_kwargs: Any) -> DatasetDescriptionResult:
         raise AssertionError("unsupported format should not complete")
 
-    asset_http_context.monkeypatch.setattr(
-        attachment_inputs_module,
-        "complete_dataset_descriptions",
-        fail_completion,
-        raising=False,
+    patch_dataset_description_completion(
+        asset_http_context.monkeypatch, fail_completion
     )
     response = await _post_asset_run(
         asset_http_context,
@@ -555,11 +496,8 @@ async def test_empty_dataset_completion_still_submits_managed_blank(
     async def empty_completion(**_kwargs: Any) -> DatasetDescriptionResult:
         return DatasetDescriptionResult(("",), "empty")
 
-    asset_http_context.monkeypatch.setattr(
-        attachment_inputs_module,
-        "complete_dataset_descriptions",
-        empty_completion,
-        raising=False,
+    patch_dataset_description_completion(
+        asset_http_context.monkeypatch, empty_completion
     )
     response = await _post_asset_run(
         asset_http_context,

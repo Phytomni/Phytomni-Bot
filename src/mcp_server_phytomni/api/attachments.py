@@ -5,13 +5,20 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Mapping,
+    Sequence,
+)
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import PurePosixPath
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
+
+from fastapi.responses import Response, StreamingResponse
 
 from ..config.defaults import ApiConfig, ServerConfig
-from ..runtime.locale import current_effective_locale
 from ..runtime.upload_registry import UploadMetadata, UploadRegistry
 from ..storage.obs_storage import ObsPathError, normalize_obs_object_key
 from .agent_capabilities import (
@@ -19,7 +26,6 @@ from .agent_capabilities import (
     MAX_FILE_BYTES,
     MAX_FILES,
     MAX_TOTAL_BYTES,
-    get_agent_capability,
     get_attachment_capability,
 )
 from .asset_resolver import normalize_asset_attachments
@@ -32,9 +38,10 @@ __all__ = [
     "is_managed_upload_path",
     "normalize_asset_attachments",
     "legacy_dataset_path_allowed",
-    "prepare_expert_arguments",
     "redact_managed_attachment_values",
+    "redact_streaming_attachment_response",
     "validate_agent_attachments",
+    "validate_native_attachments",
 ]
 
 
@@ -124,48 +131,6 @@ def validate_native_attachments(
             stage="attachment_validation",
             retryable=False,
         ) from exc
-
-
-def prepare_expert_arguments(
-    agent: str,
-    selected_arguments: Mapping[str, Any],
-    *,
-    obs_file_list: Sequence[str],
-    owner: str,
-    db_path: str,
-) -> dict[str, Any]:
-    """Prepare Expert arguments under the selected capability contract."""
-    capability = get_agent_capability(agent)
-    arguments = dict(selected_arguments)
-    selected_obs_file_list = arguments.get("obs_file_list")
-    arguments.pop("obs_file_list", None)
-    arguments["locale"] = current_effective_locale()
-    if obs_file_list:
-        if not capability.attachments.expert_forwarding:
-            raise SafeApiError(
-                status_code=422,
-                code="attachment_not_supported",
-                message=(
-                    "The selected agent does not accept Expert attachments."
-                ),
-                stage="attachment_validation",
-                retryable=False,
-            )
-        arguments["obs_file_list"] = list(obs_file_list)
-    elif (
-        selected_obs_file_list == []
-        or capability.attachments.document_context is not None
-    ):
-        # Preserve the empty schema value; selector-generated paths are not
-        # trusted or forwarded.
-        arguments["obs_file_list"] = []
-    validate_native_attachments(
-        agent,
-        arguments,
-        owner=owner,
-        db_path=db_path,
-    )
-    return arguments
 
 
 def validate_agent_attachments(
@@ -418,7 +383,37 @@ def redact_managed_attachment_values(
     evidence: ManagedAttachmentEvidence,
 ) -> Any:
     """Project managed attachment evidence into a safe recursive value."""
-    references = tuple(
+    return _redact_managed_attachment_value(
+        value,
+        _managed_reference_tuple(evidence),
+    )
+
+
+def redact_streaming_attachment_response(
+    response: Response,
+    evidence: ManagedAttachmentEvidence,
+) -> Response:
+    """Redact exact managed references across streamed response chunks."""
+    if not isinstance(response, StreamingResponse):
+        return response
+    references = _managed_reference_tuple(evidence)
+    if not references:
+        return response
+    source = cast(AsyncIterator[Any], response.body_iterator)
+    return StreamingResponse(
+        _redact_attachment_stream_chunks(source, references),
+        status_code=response.status_code,
+        headers=dict(response.headers),
+        media_type=response.media_type,
+        background=response.background,
+    )
+
+
+def _managed_reference_tuple(
+    evidence: ManagedAttachmentEvidence,
+) -> tuple[str, ...]:
+    """Return managed references longest-first for exact replacement."""
+    return tuple(
         sorted(
             (
                 reference
@@ -432,7 +427,50 @@ def redact_managed_attachment_values(
             reverse=True,
         )
     )
-    return _redact_managed_attachment_value(value, references)
+
+
+async def _redact_attachment_stream_chunks(
+    source: AsyncIterator[Any],
+    references: tuple[str, ...],
+) -> AsyncIterator[Any]:
+    """Replace exact references while preserving SSE chunk boundaries."""
+    max_hold = max(len(reference) for reference in references) - 1
+    pending = ""
+    emit_bytes: bool | None = None
+    try:
+        async for chunk in source:
+            if emit_bytes is None:
+                emit_bytes = isinstance(chunk, (bytes, bytearray))
+            text = (
+                bytes(chunk).decode("utf-8", errors="surrogateescape")
+                if isinstance(chunk, (bytes, bytearray))
+                else str(chunk)
+            )
+            pending = _replace_managed_references(pending + text, references)
+            if max_hold <= 0:
+                emit, pending = pending, ""
+            elif len(pending) > max_hold:
+                emit, pending = pending[:-max_hold], pending[-max_hold:]
+            else:
+                continue
+            yield emit.encode("utf-8") if emit_bytes else emit
+        if pending:
+            pending = _replace_managed_references(pending, references)
+            yield pending.encode("utf-8") if emit_bytes else pending
+    finally:
+        aclose = getattr(source, "aclose", None)
+        if callable(aclose):
+            await cast(Callable[[], Awaitable[Any]], aclose)()
+
+
+def _replace_managed_references(
+    value: str,
+    references: tuple[str, ...],
+) -> str:
+    """Replace every exact managed reference with the fixed marker."""
+    for reference in references:
+        value = value.replace(reference, _REDACTED_ATTACHMENT)
+    return value
 
 
 def _redact_managed_attachment_value(

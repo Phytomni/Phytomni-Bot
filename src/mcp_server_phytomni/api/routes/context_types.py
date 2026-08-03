@@ -10,6 +10,9 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from fastapi import HTTPException
+
+from ...agents.expert import ToolSelectionError
 from ...runtime.conversation_context.adapters import (
     ConversationContextExecutor,
 )
@@ -36,6 +39,18 @@ class ContextAgentRequest:
     attachment_evidence: ManagedAttachmentEvidence | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ContextLifecycleHttpRequest:
+    """HTTP wrapper inputs for one conversation-context lifecycle turn."""
+
+    executor: ConversationContextExecutor
+    envelope: ConversationEnvelopeV1
+    invoke: Callable[..., Awaitable[Any]]
+    delegate_async: Callable[..., Awaitable[Any]]
+    selection_failure_detail: str
+    selected_arguments: Mapping[str, Any] | None = None
+
+
 async def execute_context_lifecycle(
     *,
     executor: ConversationContextExecutor,
@@ -56,4 +71,28 @@ async def execute_context_lifecycle(
         raise conversation_context_unavailable_error() from exc
 
 
-__all__ = ["ContextAgentRequest", "execute_context_lifecycle"]
+async def execute_context_lifecycle_http(
+    request: ContextLifecycleHttpRequest,
+) -> PreparedTurn:
+    """Run one context turn and map selection faults to HTTP 502."""
+    try:
+        return await execute_context_lifecycle(
+            executor=request.executor,
+            envelope=request.envelope,
+            invoke=request.invoke,
+            delegate_async=request.delegate_async,
+            selected_arguments=request.selected_arguments,
+        )
+    except (ToolSelectionError, ValueError) as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=request.selection_failure_detail,
+        ) from exc
+
+
+__all__ = [
+    "ContextAgentRequest",
+    "ContextLifecycleHttpRequest",
+    "execute_context_lifecycle",
+    "execute_context_lifecycle_http",
+]

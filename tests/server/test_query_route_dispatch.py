@@ -644,11 +644,11 @@ async def test_route_forced_mismatch_coerces_and_dispatches(
         ("DataAgent", "data", False),
         ("ReviewAgent", "review", True),
         ("BriefGeneAgent", "brief_gene", False),
-        ("AnalystAgent", "analyst", False),
+        ("AnalystAgent", "analyst", True),
         ("DeepGenomeAgent", "deep_genome", False),
-        ("InSilicoResearchAgent", "research", False),
-        ("DigitalDesignAgent", "design", False),
-        ("GeneNetworkAgent", "network", False),
+        ("InSilicoResearchAgent", "research", True),
+        ("DigitalDesignAgent", "design", True),
+        ("GeneNetworkAgent", "network", True),
     ],
 )
 async def test_route_attachment_forwarding_follows_capability_matrix(

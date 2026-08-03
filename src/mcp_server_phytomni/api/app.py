@@ -46,6 +46,7 @@ from ..mcp.schemas import ReviewAgent as ReviewAgentArgs
 from ..runtime import request_context as _request_context
 from ..runtime import stage_trace as _stage_trace
 from ..runtime import task_reconcile as _task_reconcile
+from ..runtime.attachment_assets import ResolvedAttachmentBundle
 from ..runtime.background_policy import BACKGROUND_SUBMISSION_AGENT_SLUGS
 from ..runtime.locale import current_effective_locale
 from ..runtime.resume import ahas_checkpoint as _runtime_has_checkpoint
@@ -72,7 +73,6 @@ from .a2a import runtime as a2a_runtime
 from .a2a.executor import (
     A2ARegistration,
 )
-from .attachments import prepare_expert_arguments
 from .compat import (
     _a2ui_interrupt_body,
     _a2ui_runtime_dependencies,
@@ -93,6 +93,10 @@ from .lifecycle_contract import (
 from .openai_mapping import (
     to_chat_completion,
     tool_accepts_stream,
+)
+from .routes.attachment_inputs import (
+    ResolvedAttachmentInput,
+    prepare_selected_expert_arguments,
 )
 from .schemas import ChatCompletionRequest, ExpertQueryRequest, ResumeRequest
 from .stream_answer import resolve_stream_answer_max_bytes
@@ -301,7 +305,10 @@ def _routing_contract_error() -> SafeApiError:
 
 
 async def _route_expert_query(
-    payload: ExpertQueryRequest, *, debug: bool
+    payload: ExpertQueryRequest,
+    *,
+    debug: bool,
+    attachment_input: ResolvedAttachmentInput | None = None,
 ) -> tuple[dict[str, Any], int]:
     """Route one constrained Expert request to a native agent run."""
     try:
@@ -315,9 +322,9 @@ async def _route_expert_query(
         # The model answered directly instead of picking a tool -- on the
         # real endpoint this follows the ``required`` -> ``auto`` downgrade
         # and means the turn is plain chat. Degrade to ChatAgent when the
-        # caller allowed it (injecting ``user_query`` because
-        # ``prepare_expert_arguments`` never synthesizes one), mirroring the
-        # A2A mapper's ``None`` -> ChatAgent fallback. Otherwise the caller
+        # caller allowed it (injecting ``user_query`` because selected
+        # preparation restores the canonical query), mirroring the A2A
+        # mapper's ``None`` -> ChatAgent fallback. Otherwise the caller
         # scoped chat out, so the decline stays a 502 contract failure.
         if "ChatAgent" not in payload.allowed_tools:
             _LOGGER.warning(
@@ -360,19 +367,21 @@ async def _route_expert_query(
         {
             "agent": slug,
             "tool_name": selection.tool_name,
-            "user_query": payload.user_query,
             "dialogue_id": payload.dialogue_id,
             "locale": current_effective_locale(),
         },
         ensure_ascii=False,
         separators=(",", ":"),
     )
-    owner = current_request_user() or "anonymous"
-    arguments = prepare_expert_arguments(
-        slug,
-        selection.arguments,
-        obs_file_list=payload.obs_file_list,
-        owner=owner,
+    resolved = attachment_input or ResolvedAttachmentInput(
+        attachment_owner=current_request_user() or "anonymous",
+        bundle=ResolvedAttachmentBundle(),
+    )
+    arguments, attachment_context = await prepare_selected_expert_arguments(
+        agent=slug,
+        selected_arguments=selection.arguments,
+        payload=payload,
+        resolved_input=resolved,
         db_path=resolve_tasks_db_path(),
     )
     try:
@@ -382,6 +391,7 @@ async def _route_expert_query(
             dialogue_id=payload.dialogue_id,
             request_json=request_json,
             debug=debug,
+            attachment_evidence=attachment_context.evidence,
         )
     except McpError as exc:
         if exc.error.code == INVALID_PARAMS:

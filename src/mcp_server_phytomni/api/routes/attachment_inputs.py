@@ -16,21 +16,35 @@ from ...agents.shared.dataset_description import (
     complete_dataset_descriptions,
 )
 from ...runtime.attachment_assets import ResolvedAttachmentBundle
+from ...runtime.locale import current_effective_locale
+from ..agent_capabilities import (
+    agent_supports_attachment_channels,
+    filter_tools_for_attachment_channels,
+    get_agent_slug_for_tool,
+    get_attachment_capability,
+    required_attachment_channels,
+)
 from ..asset_resolver import AssetResolver, normalize_asset_attachments
 from ..attachments import (
     ManagedAttachmentEvidence,
     validate_native_attachments,
 )
 from ..auth import ApiPrincipal
+from ..lifecycle_contract import SafeApiError
 from ..schemas import ChatCompletionRequest, ExpertQueryRequest
 
 __all__ = [
     "PreparedAttachmentContext",
     "ResolvedAttachmentInput",
+    "attachment_not_supported_error",
+    "expert_attachment_channels",
+    "filter_expert_attachment_candidates",
     "normalize_chat_payload_attachments",
     "normalize_expert_payload_attachments",
     "normalize_payload_attachments",
+    "prepare_chat_document_attachments",
     "prepare_native_attachment_arguments",
+    "prepare_selected_expert_arguments",
     "resolve_attachment_input",
     "resolve_attachment_owner",
     "validate_chat_attachment_capability",
@@ -283,6 +297,114 @@ def validate_chat_attachment_capability(
             status_code=400,
             detail=f"model {payload.model} does not accept attachments",
         )
+
+
+def expert_attachment_channels(
+    resolved_input: ResolvedAttachmentInput,
+    obs_file_list: Sequence[str],
+) -> frozenset[str]:
+    """Union resolved bundle channels with trusted document paths."""
+    channels = set(required_attachment_channels(resolved_input.bundle))
+    if any(str(item).strip() for item in obs_file_list):
+        channels.add("documents")
+    return frozenset(channels)
+
+
+def filter_expert_attachment_candidates(
+    payload: ExpertQueryRequest,
+    channels: frozenset[str],
+) -> ExpertQueryRequest:
+    """Filter ordered Expert tools by required attachment channels."""
+    if not channels:
+        return payload
+    filtered = filter_tools_for_attachment_channels(
+        allowed_tools=payload.allowed_tools,
+        channels=channels,
+    )
+    if not filtered or (
+        payload.forced_tool is not None and payload.forced_tool not in filtered
+    ):
+        raise attachment_not_supported_error()
+    return payload.model_copy(update={"allowed_tools": list(filtered)})
+
+
+async def prepare_selected_expert_arguments(
+    *,
+    agent: str,
+    selected_arguments: Mapping[str, Any],
+    payload: ExpertQueryRequest,
+    resolved_input: ResolvedAttachmentInput,
+    db_path: str,
+) -> tuple[dict[str, Any], PreparedAttachmentContext]:
+    """Discard selector path maps and prepare managed Expert arguments."""
+    channels = expert_attachment_channels(
+        resolved_input,
+        payload.obs_file_list,
+    )
+    if channels and not agent_supports_attachment_channels(agent, channels):
+        raise attachment_not_supported_error()
+    arguments = dict(selected_arguments)
+    arguments.pop("obs_file_list", None)
+    arguments.pop("data_list", None)
+    arguments.pop("attachments", None)
+    if agent == "analyst":
+        arguments["goal_description"] = payload.user_query
+        arguments.pop("user_query", None)
+    elif agent == "research":
+        arguments["user_query"] = payload.user_query
+        arguments.pop("goal_description", None)
+    arguments["locale"] = current_effective_locale()
+    if payload.obs_file_list:
+        arguments["obs_file_list"] = list(payload.obs_file_list)
+    capability = get_attachment_capability(agent)
+    if capability.document_context is not None:
+        arguments.setdefault("obs_file_list", [])
+    if capability.datasets is not None:
+        arguments.setdefault("data_list", {})
+    return await prepare_native_attachment_arguments(
+        agent=agent,
+        arguments=arguments,
+        resolved_input=resolved_input,
+        dataset_description=payload.dataset_description,
+        db_path=db_path,
+    )
+
+
+async def prepare_chat_document_attachments(
+    *,
+    tool_name: str,
+    arguments: Mapping[str, Any],
+    resolved_input: ResolvedAttachmentInput,
+    db_path: str,
+) -> tuple[dict[str, Any], PreparedAttachmentContext]:
+    """Prepare Chat document attachments and reject dataset partitions."""
+    if resolved_input.bundle.datasets:
+        raise attachment_not_supported_error()
+    slug = get_agent_slug_for_tool(tool_name) or "chat"
+    channels = expert_attachment_channels(
+        resolved_input,
+        _document_argument_values(arguments.get("obs_file_list")),
+    )
+    if channels and not agent_supports_attachment_channels(slug, channels):
+        raise attachment_not_supported_error()
+    return await prepare_native_attachment_arguments(
+        agent=slug,
+        arguments=arguments,
+        resolved_input=resolved_input,
+        dataset_description=None,
+        db_path=db_path,
+    )
+
+
+def attachment_not_supported_error() -> SafeApiError:
+    """Return the stable public attachment-authorization failure."""
+    return SafeApiError(
+        status_code=422,
+        code="attachment_not_supported",
+        message="The selected agent does not accept these attachments.",
+        stage="attachment_validation",
+        retryable=False,
+    )
 
 
 def normalize_chat_payload_attachments(
