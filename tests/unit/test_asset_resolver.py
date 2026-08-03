@@ -9,6 +9,7 @@ from __future__ import annotations
 import gzip
 import sqlite3
 import stat
+from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import patch
 
@@ -26,6 +27,8 @@ from mcp_server_phytomni.api.asset_resolver import (
 )
 from mcp_server_phytomni.api.attachments import (
     AttachmentContractError,
+    ManagedAttachmentEvidence,
+    redact_managed_attachment_values,
     validate_agent_attachments,
 )
 from mcp_server_phytomni.api.resumable_uploads import UploadContractError
@@ -35,6 +38,15 @@ from mcp_server_phytomni.runtime.upload_registry import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+@dataclass(frozen=True)
+class AttachmentProjectionFixture:
+    """Nested test fixture for private attachment projection coverage."""
+
+    reference: str
+    attachments: str
+    nested: tuple[object, ...]
 
 
 def _build_completed_asset(
@@ -187,6 +199,54 @@ def test_attachment_normalization_projects_only_owner_checked_references(
             resolver=resolver,
         )
     assert duplicate.value.code == "upload_state_conflict"
+
+
+def test_redact_managed_attachment_values_is_recursive_and_nonmutating() -> (
+    None
+):
+    """Private evidence is removed from nested HTTP/persistence projections."""
+    document_reference = "obs://private/document"
+    dataset_reference = "obs://private/dataset"
+    projection_fixture = AttachmentProjectionFixture(
+        reference=dataset_reference,
+        attachments="drop this field",
+        nested=(
+            {"owner_subject": "u1"},
+            {"dataset_description": "drop this too"},
+        ),
+    )
+    value = {
+        "keep": "prefix obs://private/document suffix",
+        "obs_file_list": [document_reference],
+        "data_list": {dataset_reference: "description"},
+        "nested": [
+            "obs://private/dataset",
+            ("unrelated", document_reference),
+            projection_fixture,
+        ],
+    }
+    evidence = ManagedAttachmentEvidence(
+        attachment_owner="u1",
+        document_references=frozenset({document_reference}),
+        dataset_references=frozenset({dataset_reference}),
+    )
+
+    redacted = redact_managed_attachment_values(value, evidence)
+
+    assert redacted == {
+        "keep": "prefix <redacted-attachment> suffix",
+        "nested": [
+            "<redacted-attachment>",
+            ("unrelated", "<redacted-attachment>"),
+            {
+                "reference": "<redacted-attachment>",
+                "nested": ({}, {}),
+            },
+        ],
+    }
+    assert value["obs_file_list"] == [document_reference]
+    assert value["data_list"] == {dataset_reference: "description"}
+    assert projection_fixture.reference == dataset_reference
 
 
 def test_resolve_bundle_partitions_documents_and_datasets_in_request_order(

@@ -26,6 +26,7 @@ from mcp_server_phytomni.api.agent_capabilities import (
 )
 from mcp_server_phytomni.api.attachments import (
     AttachmentContractError,
+    ManagedAttachmentEvidence,
     validate_agent_attachments,
 )
 from mcp_server_phytomni.config.defaults import ApiConfig, ServerConfig
@@ -242,6 +243,175 @@ def test_owner_purpose_format_and_description_fail_closed(
         arguments={"data_list": {dataset_path: "  "}},
         code="attachment_description_required",
     )
+
+
+def test_blank_dataset_descriptions_require_exact_managed_evidence(
+    tasks_db_path: str,
+) -> None:
+    """Only request-local owner-validated managed datasets may omit text."""
+    registry = UploadRegistry(tasks_db_path)
+    managed_path = register_fixture_upload(
+        registry,
+        owner="u1",
+        purpose="dataset",
+        filename="input.csv",
+    )
+    arguments = {"data_list": {managed_path: ""}}
+
+    assert_attachment_error(
+        registry,
+        agent="analyst",
+        arguments=arguments,
+        code="attachment_description_required",
+    )
+    selection = validate_agent_attachments(
+        "analyst",
+        arguments,
+        owner="u1",
+        registry=registry,
+        managed_evidence=ManagedAttachmentEvidence(
+            attachment_owner="u1",
+            dataset_references=frozenset({managed_path}),
+        ),
+    )
+    assert selection.datasets[0].obs_path == managed_path
+
+    for evidence in (
+        ManagedAttachmentEvidence(
+            attachment_owner="u2",
+            dataset_references=frozenset({managed_path}),
+        ),
+        ManagedAttachmentEvidence(
+            attachment_owner="u1",
+            document_references=frozenset({managed_path}),
+        ),
+        ManagedAttachmentEvidence(
+            attachment_owner="u1",
+            dataset_references=frozenset({"obs://other-dataset"}),
+        ),
+    ):
+        with pytest.raises(AttachmentContractError) as raised:
+            validate_agent_attachments(
+                "analyst",
+                arguments,
+                owner="u1",
+                registry=registry,
+                managed_evidence=evidence,
+            )
+        assert raised.value.code == "attachment_description_required"
+
+
+def test_forged_evidence_does_not_authorize_legacy_blank_description(
+    tasks_db_path: str,
+) -> None:
+    """Legacy paths retain their strict nonblank-description requirement."""
+    legacy_path = "/obs/phytomni/prepared/input.fasta"
+    assert_attachment_error(
+        UploadRegistry(tasks_db_path),
+        agent="research",
+        arguments={"data_list": {legacy_path: ""}},
+        code="attachment_description_required",
+    )
+    with pytest.raises(AttachmentContractError) as raised:
+        validate_agent_attachments(
+            "research",
+            {"data_list": {legacy_path: ""}},
+            owner="u1",
+            registry=UploadRegistry(tasks_db_path),
+            managed_evidence=ManagedAttachmentEvidence(
+                attachment_owner="u1",
+                dataset_references=frozenset({legacy_path}),
+            ),
+        )
+    assert raised.value.code == "attachment_description_required"
+
+
+def test_nonblank_descriptions_retain_existing_acceptance(
+    tasks_db_path: str,
+) -> None:
+    """Managed and legacy datasets still accept caller-supplied text."""
+    registry = UploadRegistry(tasks_db_path)
+    managed_path = register_fixture_upload(
+        registry,
+        owner="u1",
+        purpose="dataset",
+        filename="input.csv",
+    )
+    selection = validate_agent_attachments(
+        "research",
+        {
+            "data_list": {
+                managed_path: "managed input",
+                "/obs/phytomni/prepared/input.fasta": "legacy input",
+            }
+        },
+        owner="u1",
+        registry=registry,
+    )
+    assert selection.datasets[0].obs_path == managed_path
+    assert selection.legacy_dataset_paths == (
+        "/obs/phytomni/prepared/input.fasta",
+    )
+
+
+def test_managed_evidence_preserves_duplicate_and_budget_guards(
+    tasks_db_path: str,
+) -> None:
+    """Private evidence cannot bypass duplicate or combined-size limits."""
+    registry = UploadRegistry(tasks_db_path)
+    dataset_path = register_fixture_upload(
+        registry,
+        owner="u1",
+        purpose="dataset",
+        filename="input.csv",
+        byte_size=26_214_400,
+    )
+    document_path = register_fixture_upload(
+        registry,
+        owner="u1",
+        purpose="agent_context",
+        filename="context.pdf",
+        byte_size=26_214_400,
+    )
+    evidence = ManagedAttachmentEvidence(
+        attachment_owner="u1",
+        dataset_references=frozenset({dataset_path}),
+    )
+    legacy_path = "/obs/phytomni/prepared/input.fasta"
+    with pytest.raises(AttachmentContractError) as raised:
+        validate_agent_attachments(
+            "analyst",
+            {
+                "obs_file_list": [legacy_path],
+                "data_list": {
+                    dataset_path: "",
+                    legacy_path: "legacy input",
+                },
+            },
+            owner="u1",
+            registry=registry,
+            managed_evidence=evidence,
+        )
+    assert raised.value.code == "attachment_duplicate"
+    extra_document_path = register_fixture_upload(
+        registry,
+        owner="u1",
+        purpose="agent_context",
+        filename="extra.pdf",
+        byte_size=1,
+    )
+    with pytest.raises(AttachmentContractError) as raised:
+        validate_agent_attachments(
+            "analyst",
+            {
+                "obs_file_list": [document_path, extra_document_path],
+                "data_list": {dataset_path: ""},
+            },
+            owner="u1",
+            registry=registry,
+            managed_evidence=evidence,
+        )
+    assert raised.value.code == "attachment_limit_exceeded"
 
 
 def test_legacy_dataset_paths_remain_outside_user_upload_budget(

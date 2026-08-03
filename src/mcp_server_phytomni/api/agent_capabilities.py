@@ -5,11 +5,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Final
 
+from ..runtime.attachment_assets import ResolvedAttachmentBundle
 from ..runtime.resumable_uploads import (
     CAPABILITY_TTL,
     MAX_ACTIVE_ASSETS,
@@ -25,9 +26,12 @@ __all__ = [
     "AgentCapability",
     "DatasetCapability",
     "DocumentContextCapability",
+    "agent_supports_attachment_channels",
+    "filter_tools_for_attachment_channels",
     "get_agent_slug_for_tool",
     "get_attachment_capability",
     "get_agent_capability",
+    "required_attachment_channels",
     "serialize_file_upload_capability",
     "serialize_agent_capability",
 ]
@@ -286,6 +290,49 @@ def get_attachment_capability(slug: str) -> AttachmentCapability:
 def get_agent_slug_for_tool(tool_name: str) -> str | None:
     """Return a canonical agent slug for a public MCP tool name."""
     return _TOOL_TO_AGENT_SLUG.get(tool_name)
+
+
+def required_attachment_channels(
+    bundle: ResolvedAttachmentBundle,
+) -> frozenset[str]:
+    """Return the exact attachment channels required by a resolved bundle."""
+    channels: set[str] = set()
+    if bundle.documents:
+        channels.add("documents")
+    if bundle.datasets:
+        channels.add("datasets")
+    return frozenset(channels)
+
+
+def agent_supports_attachment_channels(
+    agent: str,
+    channels: frozenset[str],
+) -> bool:
+    """Return whether one canonical tool or slug supports every channel."""
+    slug = get_agent_slug_for_tool(agent) or agent
+    try:
+        attachments = get_attachment_capability(slug)
+    except KeyError:
+        return False
+    return all(
+        (channel == "documents" and attachments.document_context is not None)
+        or (channel == "datasets" and attachments.datasets is not None)
+        for channel in channels
+    )
+
+
+def filter_tools_for_attachment_channels(
+    *,
+    allowed_tools: Sequence[str],
+    channels: frozenset[str],
+) -> tuple[str, ...]:
+    """Retain known allowed tools that support all required channels."""
+    return tuple(
+        tool
+        for tool in allowed_tools
+        if get_agent_slug_for_tool(tool) is not None
+        and agent_supports_attachment_channels(tool, channels)
+    )
 
 
 def serialize_agent_capability(slug: str) -> dict[str, Any]:

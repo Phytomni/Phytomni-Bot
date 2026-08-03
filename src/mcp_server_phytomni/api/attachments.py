@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from pathlib import PurePosixPath
 from typing import Any, NoReturn
 
@@ -28,10 +28,12 @@ from .lifecycle_contract import SafeApiError
 __all__ = [
     "AttachmentContractError",
     "AttachmentSelection",
+    "ManagedAttachmentEvidence",
     "is_managed_upload_path",
     "normalize_asset_attachments",
     "legacy_dataset_path_allowed",
     "prepare_expert_arguments",
+    "redact_managed_attachment_values",
     "validate_agent_attachments",
 ]
 
@@ -48,6 +50,17 @@ _DOCUMENT_PURPOSES = frozenset(
     }
 )
 _DATASET_PURPOSE = "dataset"
+_PRIVATE_ATTACHMENT_KEYS = frozenset(
+    {
+        "attachments",
+        "data_list",
+        "dataset_description",
+        "obs_file_list",
+        "owner_subject",
+    }
+)
+_REDACTED_ATTACHMENT = "<redacted-attachment>"
+_REDACTED_VALUE = "<redacted>"
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +70,25 @@ class AttachmentSelection:
     documents: tuple[UploadMetadata, ...] = ()
     datasets: tuple[UploadMetadata, ...] = ()
     legacy_dataset_paths: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ManagedAttachmentEvidence:
+    """Private request-local provenance for owner-validated attachments."""
+
+    attachment_owner: str
+    document_references: frozenset[str] = frozenset()
+    dataset_references: frozenset[str] = frozenset()
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedDataset:
+    """One resolved dataset entry retained through description validation."""
+
+    path: str
+    metadata: UploadMetadata | None
+    is_legacy: bool
+    description: Any
 
 
 class AttachmentContractError(ValueError):
@@ -73,6 +105,7 @@ def validate_native_attachments(
     *,
     owner: str,
     db_path: str,
+    managed_evidence: ManagedAttachmentEvidence | None = None,
 ) -> None:
     """Validate one API invocation and project failures into HTTP state."""
     try:
@@ -81,6 +114,7 @@ def validate_native_attachments(
             arguments,
             owner=owner,
             registry=UploadRegistry(db_path),
+            managed_evidence=managed_evidence,
         )
     except AttachmentContractError as exc:
         raise SafeApiError(
@@ -140,12 +174,14 @@ def validate_agent_attachments(
     *,
     owner: str,
     registry: UploadRegistry,
+    managed_evidence: ManagedAttachmentEvidence | None = None,
 ) -> AttachmentSelection:
     """Validate all declared attachment references for one native agent."""
     document_paths = _document_paths(arguments)
     dataset_items = _dataset_items(arguments)
-    all_paths = (*document_paths, *(path for path, _ in dataset_items))
-    _reject_duplicate_paths(all_paths)
+    _reject_duplicate_paths(
+        (*document_paths, *(path for path, _ in dataset_items))
+    )
 
     capability = _attachment_capability(agent)
     if document_paths and capability.document_context is None:
@@ -163,17 +199,38 @@ def validate_agent_attachments(
         _resolve_document_path(path, owner=owner, registry=registry)
         for path in document_paths
     )
-    datasets, legacy_paths, descriptions = _resolve_datasets(
+    resolved_datasets = _resolve_datasets(
         dataset_items,
         owner=owner,
         registry=registry,
+    )
+    datasets = tuple(
+        item.metadata
+        for item in resolved_datasets
+        if item.metadata is not None and not item.is_legacy
+    )
+    legacy_paths = tuple(
+        item.path for item in resolved_datasets if item.is_legacy
     )
     for metadata in documents:
         _validate_metadata(metadata, channel="documents")
     for metadata in datasets:
         _validate_metadata(metadata, channel="datasets")
-    for description in descriptions:
-        _validate_dataset_description(description)
+    evidence = (
+        managed_evidence
+        if managed_evidence is not None
+        and managed_evidence.attachment_owner == owner
+        else None
+    )
+    for item in resolved_datasets:
+        _validate_dataset_description(
+            item.description,
+            blank_allowed=_managed_dataset_description_may_be_empty(
+                item,
+                owner=owner,
+                evidence=evidence,
+            ),
+        )
     _validate_budget((*documents, *datasets))
     return AttachmentSelection(
         documents=documents,
@@ -187,31 +244,24 @@ def _resolve_datasets(
     *,
     owner: str,
     registry: UploadRegistry,
-) -> tuple[
-    tuple[UploadMetadata, ...],
-    tuple[str, ...],
-    tuple[Any, ...],
-]:
+) -> tuple[_ResolvedDataset, ...]:
     """Resolve user and legacy datasets while preserving descriptions."""
-    datasets: list[UploadMetadata] = []
-    legacy_paths: list[str] = []
-    descriptions: list[Any] = []
+    resolved: list[_ResolvedDataset] = []
     for path, description in dataset_items:
         metadata, is_legacy = _resolve_dataset_path(
             path,
             owner=owner,
             registry=registry,
         )
-        if is_legacy:
-            legacy_paths.append(path)
-        elif metadata is not None:
-            datasets.append(metadata)
-        descriptions.append(description)
-    return (
-        tuple(datasets),
-        tuple(legacy_paths),
-        tuple(descriptions),
-    )
+        resolved.append(
+            _ResolvedDataset(
+                path=path,
+                metadata=metadata,
+                is_legacy=is_legacy,
+                description=description,
+            )
+        )
+    return tuple(resolved)
 
 
 def is_managed_upload_path(path: str) -> bool:
@@ -331,13 +381,99 @@ def _resolve_dataset_path(
     )
 
 
-def _validate_dataset_description(description: Any) -> None:
+def _managed_dataset_description_may_be_empty(
+    item: _ResolvedDataset,
+    *,
+    owner: str,
+    evidence: ManagedAttachmentEvidence | None,
+) -> bool:
+    """Allow a blank description only for exact current managed evidence."""
+    metadata = item.metadata
+    return (
+        evidence is not None
+        and not item.is_legacy
+        and metadata is not None
+        and metadata.user_id == owner
+        and metadata.purpose == _DATASET_PURPOSE
+        and item.path in evidence.dataset_references
+    )
+
+
+def _validate_dataset_description(
+    description: Any,
+    *,
+    blank_allowed: bool = False,
+) -> None:
     """Require a nonblank description for every dataset mapping entry."""
-    if not isinstance(description, str) or not description.strip():
-        _raise(
-            "attachment_description_required",
-            "Dataset descriptions must be nonblank.",
+    if isinstance(description, str) and (description.strip() or blank_allowed):
+        return
+    _raise(
+        "attachment_description_required",
+        "Dataset descriptions must be nonblank.",
+    )
+
+
+def redact_managed_attachment_values(
+    value: Any,
+    evidence: ManagedAttachmentEvidence,
+) -> Any:
+    """Project managed attachment evidence into a safe recursive value."""
+    references = tuple(
+        sorted(
+            (
+                reference
+                for reference in (
+                    *evidence.document_references,
+                    *evidence.dataset_references,
+                )
+                if reference
+            ),
+            key=len,
+            reverse=True,
         )
+    )
+    return _redact_managed_attachment_value(value, references)
+
+
+def _redact_managed_attachment_value(
+    value: Any,
+    references: tuple[str, ...],
+) -> Any:
+    """Recursively project one value without calling untrusted ``repr``."""
+    if isinstance(value, str):
+        for reference in references:
+            value = value.replace(reference, _REDACTED_ATTACHMENT)
+        return value
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, Mapping):
+        return {
+            _redact_managed_attachment_value(
+                key, references
+            ): _redact_managed_attachment_value(
+                item,
+                references,
+            )
+            for key, item in value.items()
+            if not isinstance(key, str)
+            or key.lower() not in _PRIVATE_ATTACHMENT_KEYS
+        }
+    if is_dataclass(value) and not isinstance(value, type):
+        return {
+            field.name: _redact_managed_attachment_value(
+                getattr(value, field.name),
+                references,
+            )
+            for field in fields(value)
+            if field.name.lower() not in _PRIVATE_ATTACHMENT_KEYS
+        }
+    if isinstance(value, (tuple, list)):
+        items = [
+            _redact_managed_attachment_value(item, references)
+            for item in value
+        ]
+        return tuple(items) if isinstance(value, tuple) else items
+    return _REDACTED_VALUE
 
 
 def _validate_metadata(metadata: UploadMetadata, *, channel: str) -> None:

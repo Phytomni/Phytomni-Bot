@@ -13,13 +13,20 @@ import pytest
 
 from mcp_server_phytomni.api.agent_capabilities import (
     AGENT_CAPABILITIES,
+    agent_supports_attachment_channels,
+    filter_tools_for_attachment_channels,
     get_agent_capability,
     get_attachment_capability,
+    required_attachment_channels,
     serialize_agent_capability,
 )
 from mcp_server_phytomni.api.openai_mapping import (
     tool_accepts_obs,
     tool_accepts_stream,
+)
+from mcp_server_phytomni.runtime.attachment_assets import (
+    ResolvedAsset,
+    ResolvedAttachmentBundle,
 )
 
 pytestmark = pytest.mark.server
@@ -88,6 +95,124 @@ def test_attachment_matrix_is_exact() -> None:
             attachments.datasets is not None,
             attachments.expert_forwarding,
         ) == expected
+
+
+@pytest.mark.parametrize(
+    ("channels", "supported_tools"),
+    [
+        (
+            frozenset(),
+            (
+                "ChatAgent",
+                "KnowledgeAgent",
+                "DataAgent",
+                "ReviewAgent",
+                "BriefGeneAgent",
+                "AnalystAgent",
+                "DeepGenomeAgent",
+                "InSilicoResearchAgent",
+                "DigitalDesignAgent",
+                "GeneNetworkAgent",
+            ),
+        ),
+        (
+            frozenset({"documents"}),
+            (
+                "ChatAgent",
+                "KnowledgeAgent",
+                "ReviewAgent",
+                "AnalystAgent",
+                "InSilicoResearchAgent",
+                "DigitalDesignAgent",
+                "GeneNetworkAgent",
+            ),
+        ),
+        (
+            frozenset({"datasets"}),
+            ("AnalystAgent", "InSilicoResearchAgent"),
+        ),
+        (
+            frozenset({"documents", "datasets"}),
+            ("AnalystAgent", "InSilicoResearchAgent"),
+        ),
+    ],
+)
+def test_attachment_channel_predicates_and_tool_filtering(
+    channels: frozenset[str],
+    supported_tools: tuple[str, ...],
+) -> None:
+    """Capability-derived predicates retain only authorized input tools."""
+    allowed_tools = (
+        "ChatAgent",
+        "KnowledgeAgent",
+        "DataAgent",
+        "ReviewAgent",
+        "BriefGeneAgent",
+        "AnalystAgent",
+        "DeepGenomeAgent",
+        "InSilicoResearchAgent",
+        "DigitalDesignAgent",
+        "GeneNetworkAgent",
+    )
+
+    assert (
+        tuple(
+            tool
+            for tool in allowed_tools
+            if agent_supports_attachment_channels(tool, channels)
+        )
+        == supported_tools
+    )
+    assert (
+        filter_tools_for_attachment_channels(
+            allowed_tools=allowed_tools,
+            channels=channels,
+        )
+        == supported_tools
+    )
+
+
+def test_attachment_channel_filter_discards_unknown_without_synthesis() -> (
+    None
+):
+    """An unrecognized tool cannot be introduced by channel filtering."""
+    assert filter_tools_for_attachment_channels(
+        allowed_tools=("unknown-tool", "AnalystAgent"),
+        channels=frozenset({"datasets"}),
+    ) == ("AnalystAgent",)
+
+
+def test_required_attachment_channels_follow_bundle_partitions() -> None:
+    """A resolved bundle becomes the exact channel requirement set."""
+    document = ResolvedAsset(
+        asset_id="file_document",
+        reference="obs://document",
+        filename="document.pdf",
+        content_type="application/pdf",
+        size_bytes=1,
+        purpose="document",
+    )
+    dataset = ResolvedAsset(
+        asset_id="file_dataset",
+        reference="obs://dataset",
+        filename="dataset.csv",
+        content_type="text/csv",
+        size_bytes=1,
+        purpose="dataset",
+    )
+
+    assert (
+        required_attachment_channels(ResolvedAttachmentBundle()) == frozenset()
+    )
+    assert required_attachment_channels(
+        ResolvedAttachmentBundle(documents=(document,))
+    ) == frozenset({"documents"})
+    assert required_attachment_channels(
+        ResolvedAttachmentBundle(datasets=(dataset,))
+    ) == frozenset({"datasets"})
+    assert required_attachment_channels(
+        ResolvedAttachmentBundle(documents=(document,), datasets=(dataset,))
+    ) == frozenset({"documents", "datasets"})
 
 
 def test_unsupported_attachment_channels_are_json_null() -> None:
