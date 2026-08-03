@@ -1,0 +1,8 @@
+{
+  "protocol": "phytomni-agent-attachments-v1",
+  "endpoint": "/v1/agents/analyst/runs",
+  "agent": "analyst",
+  "files": {
+    "native_mixed_request.json": "454a9b6da81b8a40128b4257d438d3df510b76f7f5546d081b841ebbb9894aed"
+  }
+}

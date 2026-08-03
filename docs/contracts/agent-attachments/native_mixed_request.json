@@ -1,0 +1,17 @@
+{
+  "arguments": {
+    "goal_description": "Compare synthetic expression groups",
+    "data_list": {},
+    "obs_file_list": []
+  },
+  "attachments": [
+    {
+      "asset_id": "file_11111111111111111111111111111111"
+    },
+    {
+      "asset_id": "file_22222222222222222222222222222222"
+    }
+  ],
+  "owner_subject": "fixture-delegated-owner",
+  "dataset_description": "Synthetic CSV count matrix"
+}
