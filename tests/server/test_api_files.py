@@ -108,10 +108,22 @@ async def test_invalid_purpose_has_stable_validation_error(
 ) -> None:
     """Reject unsupported purposes before opening a provider session."""
     client, control_key, _ordinary_key, storage = resumable_upload_client
+    valid = await _create(
+        client,
+        control_key,
+        owner="owner-with-purpose",
+        idempotency_key="object-key-fixture",
+    )
+    assert valid.status_code == 201
+    expected_object_key = next(
+        iter(storage.sessions.values())
+    ).session.object_key
+    session_count = len(storage.sessions)
     response = await _create(
         client,
         control_key,
         owner="owner-with-purpose",
+        idempotency_key="invalid-purpose",
         purpose="Dataset",
     )
 
@@ -119,13 +131,9 @@ async def test_invalid_purpose_has_stable_validation_error(
     assert response.json()["error"]["code"] == "attachment_purpose_invalid"
     assert response.json()["error"]["stage"] == "request_validation"
     assert response.json()["error"]["retryable"] is False
-    assert not storage.sessions
+    assert len(storage.sessions) == session_count
     for value in ("Dataset", "owner-with-purpose", "test-bucket"):
         assert value not in response.text
-    expected_object_key = (
-        "agent_data/uploads/"
-        f"{sha256(b'owner-with-purpose').hexdigest()[:32]}/file_expected"
-    )
     assert expected_object_key not in response.text
     assert "object_key" not in response.text
 
