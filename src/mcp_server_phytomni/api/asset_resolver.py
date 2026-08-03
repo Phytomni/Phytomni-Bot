@@ -15,6 +15,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ..runtime.attachment_assets import (
+    EffectiveAssetPurpose,
+    ResolvedAsset,
+    ResolvedAttachmentBundle,
+)
 from ..runtime.resumable_uploads import AssetRecord, ResumableUploadRegistry
 from ..runtime.upload_registry import UploadMetadata, UploadRegistry
 from ..storage.multipart import (
@@ -57,6 +62,66 @@ class AssetResolver:
     def resolve(self, asset_id: str, owner: str) -> AssetDescriptor:
         """Return a safe descriptor for one completed owner-owned asset."""
         return _descriptor(self._completed_asset(asset_id, owner))
+
+    def resolve_bundle(
+        self,
+        attachments: Sequence[Any],
+        owner: str,
+    ) -> ResolvedAttachmentBundle:
+        """Resolve owner-owned assets into ordered purpose-aware partitions."""
+        asset_ids = tuple(_asset_id_from_item(item) for item in attachments)
+        if len(set(asset_ids)) != len(asset_ids):
+            raise _asset_error("upload_state_conflict", status_code=409)
+
+        assets = tuple(
+            self._completed_asset(asset_id, owner) for asset_id in asset_ids
+        )
+        purposes: tuple[EffectiveAssetPurpose, ...] = tuple(
+            _effective_purpose(asset.purpose) for asset in assets
+        )
+        references = tuple(
+            obs_path_from_key(self.bucket_name, asset.object_key)
+            for asset in assets
+        )
+        if len(set(references)) != len(references):
+            raise _asset_error("upload_state_conflict", status_code=409)
+
+        resolved_assets = tuple(
+            ResolvedAsset(
+                asset_id=asset.asset_id,
+                reference=reference,
+                filename=asset.filename,
+                content_type=asset.content_type,
+                size_bytes=asset.size_bytes,
+                purpose=purpose,
+            )
+            for asset, purpose, reference in zip(
+                assets,
+                purposes,
+                references,
+                strict=True,
+            )
+        )
+        for asset, purpose, reference in zip(
+            assets,
+            purposes,
+            references,
+            strict=True,
+        ):
+            self._ensure_legacy_projection(asset, owner, reference, purpose)
+
+        return ResolvedAttachmentBundle(
+            documents=tuple(
+                asset
+                for asset in resolved_assets
+                if asset.purpose == "document"
+            ),
+            datasets=tuple(
+                asset
+                for asset in resolved_assets
+                if asset.purpose == "dataset"
+            ),
+        )
 
     def materialize(self, asset_id: str, owner: str, run_id: str) -> Path:
         """Stream one completed asset into a private generated run path."""
@@ -123,10 +188,8 @@ class AssetResolver:
 
     def internal_reference(self, asset_id: str, owner: str) -> str:
         """Return an owner-checked OBS reference for Agent internals."""
-        asset = self._completed_asset(asset_id, owner)
-        reference = obs_path_from_key(self.bucket_name, asset.object_key)
-        self._ensure_legacy_projection(asset, owner, reference)
-        return reference
+        bundle = self.resolve_bundle(({"asset_id": asset_id},), owner)
+        return bundle.all_assets[0].reference
 
     def _completed_asset(self, asset_id: str, owner: str) -> AssetRecord:
         """Load one completed asset while failing closed on ownership."""
@@ -151,6 +214,7 @@ class AssetResolver:
         asset: AssetRecord,
         owner: str,
         reference: str,
+        purpose: EffectiveAssetPurpose,
     ) -> None:
         """Project only safe completed metadata for legacy Agent validators."""
         if (
@@ -163,7 +227,7 @@ class AssetResolver:
             user_id=owner,
             obs_path=reference,
             filename=asset.filename,
-            purpose="agent_context",
+            purpose=purpose,
             byte_size=asset.size_bytes,
             format=_filename_format(asset.filename),
             media_type=asset.content_type or "application/octet-stream",
@@ -195,12 +259,10 @@ def normalize_asset_attachments(
     ):
         raise _asset_error("invalid_upload_metadata", status_code=422)
 
-    asset_ids = tuple(_asset_id_from_item(item) for item in raw_attachments)
-    if len(set(asset_ids)) != len(asset_ids):
+    bundle = resolver.resolve_bundle(raw_attachments, owner)
+    if bundle.datasets:
         raise _asset_error("upload_state_conflict", status_code=409)
-    references = [
-        resolver.internal_reference(asset_id, owner) for asset_id in asset_ids
-    ]
+    references = [asset.reference for asset in bundle.documents]
     existing = normalized.get("obs_file_list")
     if existing is None:
         normalized["obs_file_list"] = references
@@ -225,6 +287,15 @@ def _asset_id_from_item(item: Any) -> str:
     if not isinstance(asset_id, str) or not _ASSET_ID.fullmatch(asset_id):
         raise _asset_error("invalid_upload_metadata", status_code=422)
     return asset_id
+
+
+def _effective_purpose(purpose: str) -> EffectiveAssetPurpose:
+    """Map persisted upload purpose to one resolver partition."""
+    if purpose in {"chat_attachment", "document"}:
+        return "document"
+    if purpose == "dataset":
+        return "dataset"
+    raise _asset_error("upload_state_conflict", status_code=409)
 
 
 def _descriptor(asset: AssetRecord) -> AssetDescriptor:

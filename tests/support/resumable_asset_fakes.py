@@ -28,6 +28,7 @@ from mcp_server_phytomni.api.schemas import (
 from mcp_server_phytomni.api.upload_runtime import UploadRuntime
 from mcp_server_phytomni.runtime.resumable_uploads import (
     ResumableUploadRegistry,
+    UploadAssetPurpose,
 )
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
@@ -55,15 +56,23 @@ class ResumableAssetHarness:
     capability: str
 
 
+@dataclass(frozen=True, slots=True)
+class ResumableAssetSpec:
+    """Configurable trusted input for one synthetic resumable asset."""
+
+    owner: str = "owner-1"
+    filename: str = "context.pdf"
+    content: bytes = b"synthetic attachment"
+    complete: bool = True
+    purpose: UploadAssetPurpose = "chat_attachment"
+
+
 def build_resumable_asset(
     _tmp_path: Path,
     /,
     *,
     db_path: str | None = None,
-    owner: str = "owner-1",
-    filename: str = "context.pdf",
-    content: bytes = b"synthetic attachment",
-    complete: bool = True,
+    spec: ResumableAssetSpec = ResumableAssetSpec(),
 ) -> ResumableAssetHarness:
     """Build one owner-scoped resumable asset without external storage.
 
@@ -84,29 +93,31 @@ def build_resumable_asset(
             upload_origin="https://upload.example",
         ),
     )
-    digest = hashlib.sha256(content).hexdigest()
+    digest = hashlib.sha256(spec.content).hexdigest()
     identity = hashlib.sha256(
-        owner.encode("utf-8")
+        spec.owner.encode("utf-8")
         + b"\0"
-        + filename.encode("utf-8")
+        + spec.filename.encode("utf-8")
         + b"\0"
-        + content
+        + spec.content
+        + b"\0"
+        + spec.purpose.encode("utf-8")
     ).hexdigest()
     created = service.create(
         UploadCreateRequest(
-            owner_subject=owner,
-            filename=filename,
+            owner_subject=spec.owner,
+            filename=spec.filename,
             content_type="application/octet-stream",
-            size_bytes=len(content),
-            purpose="chat_attachment",
+            size_bytes=len(spec.content),
+            purpose=spec.purpose,
             idempotency_key=f"resolver-{identity}",
         )
     )
-    if complete:
+    if spec.complete:
         service.put_part(
             created.asset_id,
             created.capability,
-            PartInput(1, BytesIO(content), len(content), digest),
+            PartInput(1, BytesIO(spec.content), len(spec.content), digest),
         )
         service.complete(
             created.asset_id,
@@ -123,8 +134,8 @@ def build_resumable_asset(
         resolver=resolver,
         service=service,
         asset_id=created.asset_id,
-        owner=owner,
-        content=content,
+        owner=spec.owner,
+        content=spec.content,
         capability=created.capability,
     )
 
@@ -204,7 +215,7 @@ async def execute_opaque_asset_run(
     harness = build_resumable_asset(
         context.tmp_path,
         db_path=context.db_path,
-        owner="u1",
+        spec=ResumableAssetSpec(owner="u1"),
     )
     captured: dict[str, Any] = {}
     install_attachment_capture(context.monkeypatch, case, captured)
@@ -245,10 +256,12 @@ def _rejection_asset(
     harness = build_resumable_asset(
         context.tmp_path,
         db_path=context.db_path,
-        owner="other-user" if scenario == "foreign" else "u1",
-        filename="private-authorization-sentinel.pdf",
-        content=b"authorization-sentinel",
-        complete=scenario != "incomplete",
+        spec=ResumableAssetSpec(
+            owner="other-user" if scenario == "foreign" else "u1",
+            filename="private-authorization-sentinel.pdf",
+            content=b"authorization-sentinel",
+            complete=scenario != "incomplete",
+        ),
     )
     requested_id = "not/valid" if scenario == "malformed" else harness.asset_id
     attachments = [{"asset_id": requested_id}]

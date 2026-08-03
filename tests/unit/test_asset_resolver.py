@@ -7,12 +7,19 @@
 from __future__ import annotations
 
 import gzip
+import sqlite3
 import stat
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-from tests.support.resumable_asset_fakes import build_resumable_asset
+from tests.support.resumable_asset_fakes import (
+    ResumableAssetHarness,
+    ResumableAssetSpec,
+    build_resumable_asset,
+)
 
+from mcp_server_phytomni.api import asset_resolver as asset_resolver_module
 from mcp_server_phytomni.api.asset_resolver import (
     AssetResolver,
     normalize_asset_attachments,
@@ -22,7 +29,10 @@ from mcp_server_phytomni.api.attachments import (
     validate_agent_attachments,
 )
 from mcp_server_phytomni.api.resumable_uploads import UploadContractError
-from mcp_server_phytomni.runtime.upload_registry import UploadRegistry
+from mcp_server_phytomni.runtime.upload_registry import (
+    UploadMetadata,
+    UploadRegistry,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -36,8 +46,7 @@ def _build_completed_asset(
     """Create one completed fake asset and its owner-scoped resolver."""
     harness = build_resumable_asset(
         tmp_path,
-        filename=filename,
-        content=content,
+        spec=ResumableAssetSpec(filename=filename, content=content),
     )
     return (
         harness.resolver,
@@ -47,13 +56,48 @@ def _build_completed_asset(
     )
 
 
+def _build_purpose_assets(
+    tmp_path: Path,
+) -> tuple[dict[str, ResumableAssetHarness], str]:
+    """Create completed fixture assets sharing one upload registry."""
+    db_path = str(tmp_path / "uploads.sqlite")
+    specs = {
+        "document": ResumableAssetSpec(
+            filename="document-a.pdf",
+            content=b"document-a",
+            purpose="document",
+        ),
+        "legacy": ResumableAssetSpec(
+            filename="legacy-b.pdf",
+            content=b"legacy-b",
+            purpose="chat_attachment",
+        ),
+        "dataset_a": ResumableAssetSpec(
+            filename="dataset-a.csv",
+            content=b"dataset-a",
+            purpose="dataset",
+        ),
+        "dataset_b": ResumableAssetSpec(
+            filename="dataset-b.csv",
+            content=b"dataset-b",
+            purpose="dataset",
+        ),
+    }
+    return {
+        name: build_resumable_asset(tmp_path, db_path=db_path, spec=spec)
+        for name, spec in specs.items()
+    }, db_path
+
+
 def test_resolve_requires_owner_and_completion(tmp_path: Path) -> None:
     """Missing, foreign, and unfinished assets fail without storage details."""
     harness = build_resumable_asset(
         tmp_path,
-        filename="input.fa",
-        content=b"abc",
-        complete=False,
+        spec=ResumableAssetSpec(
+            filename="input.fa",
+            content=b"abc",
+            complete=False,
+        ),
     )
 
     with pytest.raises(UploadContractError) as unfinished:
@@ -143,6 +187,342 @@ def test_attachment_normalization_projects_only_owner_checked_references(
             resolver=resolver,
         )
     assert duplicate.value.code == "upload_state_conflict"
+
+
+def test_resolve_bundle_partitions_documents_and_datasets_in_request_order(
+    tmp_path: Path,
+) -> None:
+    """Bundle resolution preserves order inside each effective-purpose lane."""
+    assets, db_path = _build_purpose_assets(tmp_path)
+    resolver = assets["document"].resolver
+    owner = assets["document"].owner
+    document_bundle = resolver.resolve_bundle(
+        [
+            {"asset_id": assets["document"].asset_id},
+            {"asset_id": assets["legacy"].asset_id},
+        ],
+        owner,
+    )
+    dataset_bundle = resolver.resolve_bundle(
+        [
+            {"asset_id": assets["dataset_a"].asset_id},
+            {"asset_id": assets["dataset_b"].asset_id},
+        ],
+        owner,
+    )
+    mixed_bundle = resolver.resolve_bundle(
+        [
+            {"asset_id": assets["dataset_a"].asset_id},
+            {"asset_id": assets["document"].asset_id},
+            {"asset_id": assets["dataset_b"].asset_id},
+            {"asset_id": assets["legacy"].asset_id},
+        ],
+        owner,
+    )
+
+    assert [asset.asset_id for asset in document_bundle.documents] == [
+        assets["document"].asset_id,
+        assets["legacy"].asset_id,
+    ]
+    assert not document_bundle.datasets
+    assert [asset.asset_id for asset in dataset_bundle.datasets] == [
+        assets["dataset_a"].asset_id,
+        assets["dataset_b"].asset_id,
+    ]
+    assert not dataset_bundle.documents
+    assert [asset.asset_id for asset in mixed_bundle.datasets] == [
+        assets["dataset_a"].asset_id,
+        assets["dataset_b"].asset_id,
+    ]
+    assert [asset.asset_id for asset in mixed_bundle.documents] == [
+        assets["document"].asset_id,
+        assets["legacy"].asset_id,
+    ]
+    assert [asset.asset_id for asset in mixed_bundle.all_assets] == [
+        assets["document"].asset_id,
+        assets["legacy"].asset_id,
+        assets["dataset_a"].asset_id,
+        assets["dataset_b"].asset_id,
+    ]
+
+    expected = {
+        assets["document"].asset_id: (
+            "document-a.pdf",
+            len(b"document-a"),
+            "document",
+        ),
+        assets["legacy"].asset_id: (
+            "legacy-b.pdf",
+            len(b"legacy-b"),
+            "document",
+        ),
+        assets["dataset_a"].asset_id: (
+            "dataset-a.csv",
+            len(b"dataset-a"),
+            "dataset",
+        ),
+        assets["dataset_b"].asset_id: (
+            "dataset-b.csv",
+            len(b"dataset-b"),
+            "dataset",
+        ),
+    }
+    legacy_registry = UploadRegistry(db_path)
+    for asset in mixed_bundle.all_assets:
+        filename, size_bytes, purpose = expected[asset.asset_id]
+        assert (asset.filename, asset.size_bytes, asset.purpose) == (
+            filename,
+            size_bytes,
+            purpose,
+        )
+        assert asset.content_type == "application/octet-stream"
+        projection = legacy_registry.get_by_path(
+            asset.reference,
+            owner=owner,
+        )
+        assert projection is not None
+        assert projection.purpose == purpose
+
+
+def test_resolve_bundle_keeps_historical_legacy_projection_unchanged(
+    tmp_path: Path,
+) -> None:
+    """Existing legacy rows remain untouched when a typed asset resolves."""
+    db_path = str(tmp_path / "uploads.sqlite")
+    harness = build_resumable_asset(
+        tmp_path,
+        db_path=db_path,
+        spec=ResumableAssetSpec(purpose="dataset"),
+    )
+    uploaded = harness.service.registry.get_asset(
+        harness.asset_id,
+        owner=harness.owner,
+    )
+    assert uploaded is not None
+    assert uploaded.completed_at is not None
+    reference = asset_resolver_module.obs_path_from_key(
+        harness.service.bucket_name,
+        uploaded.object_key,
+    )
+    legacy_registry = UploadRegistry(db_path)
+    legacy_registry.record(
+        UploadMetadata(
+            file_id=harness.asset_id,
+            user_id=harness.owner,
+            obs_path=reference,
+            filename=uploaded.filename,
+            purpose="agent_context",
+            byte_size=uploaded.size_bytes,
+            format="pdf",
+            media_type=uploaded.content_type,
+            created_at=uploaded.completed_at.isoformat(),
+        )
+    )
+
+    bundle = harness.resolver.resolve_bundle(
+        [{"asset_id": harness.asset_id}],
+        harness.owner,
+    )
+
+    assert bundle.datasets[0].purpose == "dataset"
+    projection = legacy_registry.get_by_path(reference, owner=harness.owner)
+    assert projection is not None
+    assert projection.purpose == "agent_context"
+
+
+def test_resolve_bundle_rejects_duplicate_ids_before_lookup(
+    tmp_path: Path,
+) -> None:
+    """Duplicate opaque IDs fail before loading completed asset state twice."""
+    harness = build_resumable_asset(tmp_path)
+    with (
+        patch.object(
+            harness.resolver,
+            "_completed_asset",
+            wraps=getattr(harness.resolver, "_completed_asset"),
+        ) as completed_asset,
+        pytest.raises(UploadContractError) as error,
+    ):
+        harness.resolver.resolve_bundle(
+            [
+                {"asset_id": harness.asset_id},
+                {"asset_id": harness.asset_id},
+            ],
+            harness.owner,
+        )
+
+    assert error.value.code == "upload_state_conflict"
+    assert not completed_asset.called
+
+
+def test_resolve_bundle_rejects_duplicate_references_without_leaks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A collision in derived references is a sanitized state conflict."""
+    db_path = str(tmp_path / "uploads.sqlite")
+    first = build_resumable_asset(
+        tmp_path,
+        db_path=db_path,
+        spec=ResumableAssetSpec(filename="first.pdf", content=b"first"),
+    )
+    second = build_resumable_asset(
+        tmp_path,
+        db_path=db_path,
+        spec=ResumableAssetSpec(filename="second.pdf", content=b"second"),
+    )
+    constant_reference = "obs://generated-reference-sentinel"
+    monkeypatch.setattr(
+        asset_resolver_module,
+        "obs_path_from_key",
+        lambda _bucket, _key: constant_reference,
+    )
+
+    with pytest.raises(UploadContractError) as error:
+        first.resolver.resolve_bundle(
+            [{"asset_id": first.asset_id}, {"asset_id": second.asset_id}],
+            first.owner,
+        )
+
+    assert error.value.code == "upload_state_conflict"
+    assert constant_reference not in str(error.value)
+
+
+def test_resolve_bundle_rejects_unknown_persisted_purpose(
+    tmp_path: Path,
+) -> None:
+    """Corrupt persisted purpose values fail closed without migration."""
+    harness = build_resumable_asset(tmp_path)
+    unknown_id = "file_unknown_purpose_1234567890"
+    uploaded = harness.service.registry.get_asset(
+        harness.asset_id,
+        owner=harness.owner,
+    )
+    assert uploaded is not None
+    assert uploaded.completed_at is not None
+    with sqlite3.connect(harness.service.registry.db_path) as connection:
+        connection.execute(
+            "INSERT INTO upload_assets ("
+            "asset_id, owner_subject, filename, content_type, purpose, "
+            "size_bytes, part_size_bytes, part_count, status, object_key, "
+            "obs_upload_id, idempotency_key, request_fingerprint, "
+            "state_version, reserved_bytes, created_at, updated_at, "
+            "session_expires_at, completed_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+            "?, ?)",
+            (
+                unknown_id,
+                uploaded.owner_subject,
+                uploaded.filename,
+                uploaded.content_type,
+                "unknown-purpose",
+                uploaded.size_bytes,
+                uploaded.part_size_bytes,
+                uploaded.part_count,
+                uploaded.status,
+                "agent_data/uploads/corrupt-purpose-sentinel",
+                uploaded.obs_upload_id,
+                "corrupt-purpose-idempotency",
+                "corrupt-purpose-fingerprint",
+                uploaded.state_version,
+                uploaded.reserved_bytes,
+                uploaded.created_at.isoformat(),
+                uploaded.updated_at.isoformat(),
+                uploaded.session_expires_at.isoformat(),
+                uploaded.completed_at.isoformat(),
+            ),
+        )
+
+    with pytest.raises(UploadContractError) as error:
+        harness.resolver.resolve_bundle(
+            [{"asset_id": unknown_id}],
+            harness.owner,
+        )
+
+    assert error.value.code == "upload_state_conflict"
+    assert "unknown-purpose" not in str(error.value)
+
+
+def test_resolve_bundle_hides_missing_foreign_and_incomplete_details(
+    tmp_path: Path,
+) -> None:
+    """Finite resolver failures keep owner and storage state private."""
+    foreign = build_resumable_asset(
+        tmp_path,
+        spec=ResumableAssetSpec(
+            owner="foreign-owner-sentinel",
+            filename="private-object-sentinel.pdf",
+            content=b"foreign",
+        ),
+    )
+    incomplete = build_resumable_asset(
+        tmp_path,
+        spec=ResumableAssetSpec(
+            filename="incomplete.pdf",
+            content=b"incomplete",
+            complete=False,
+        ),
+    )
+    foreign_asset = foreign.service.registry.get_asset(
+        foreign.asset_id,
+        owner=foreign.owner,
+    )
+    assert foreign_asset is not None
+    reference = asset_resolver_module.obs_path_from_key(
+        foreign.service.bucket_name,
+        foreign_asset.object_key,
+    )
+
+    with pytest.raises(UploadContractError) as missing:
+        foreign.resolver.resolve_bundle(
+            [{"asset_id": "file_missing_asset_1234567890"}],
+            "owner-1",
+        )
+    with pytest.raises(UploadContractError) as cross_owner:
+        foreign.resolver.resolve_bundle(
+            [{"asset_id": foreign.asset_id}],
+            "owner-1",
+        )
+    with pytest.raises(UploadContractError) as not_completed:
+        incomplete.resolver.resolve_bundle(
+            [{"asset_id": incomplete.asset_id}],
+            incomplete.owner,
+        )
+
+    assert (
+        missing.value.code
+        == cross_owner.value.code
+        == "upload_asset_not_found"
+    )
+    assert str(missing.value) == str(cross_owner.value)
+    assert not_completed.value.code == "upload_state_conflict"
+    for value in (
+        foreign.owner,
+        foreign.asset_id,
+        foreign_asset.object_key,
+        foreign.capability,
+        reference,
+    ):
+        assert value not in str(cross_owner.value)
+
+
+def test_attachment_normalization_rejects_dataset_assets(
+    tmp_path: Path,
+) -> None:
+    """The legacy document-only normalizer cannot silently downgrade data."""
+    harness = build_resumable_asset(
+        tmp_path,
+        spec=ResumableAssetSpec(purpose="dataset"),
+    )
+
+    with pytest.raises(UploadContractError) as error:
+        normalize_asset_attachments(
+            {"attachments": [{"asset_id": harness.asset_id}]},
+            owner=harness.owner,
+            resolver=harness.resolver,
+        )
+
+    assert error.value.code == "upload_state_conflict"
 
 
 def test_unsupported_new_asset_format_has_stable_agent_boundary_error(
