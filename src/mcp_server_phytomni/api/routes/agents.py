@@ -2,14 +2,13 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-# pylint: disable=too-many-lines
 """Chat, native-agent, expert-routing, and upload route registration."""
 
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import asdict, dataclass
+from collections.abc import Mapping
+from dataclasses import asdict
 from typing import Any
 
 from fastapi import (
@@ -21,10 +20,7 @@ from fastapi import (
 from fastapi.responses import JSONResponse, Response
 
 from ...agents.expert import ToolSelectionError
-from ...runtime.conversation_context.adapters import (
-    ContextAgentInvocation,
-    ConversationContextExecutor,
-)
+from ...runtime.conversation_context.adapters import ContextAgentInvocation
 from ...runtime.conversation_context.models import (
     ContextDelta,
     ConversationEnvelopeV1,
@@ -46,6 +42,12 @@ from ..schemas import (
     ChatCompletionRequest,
     ExpertQueryRequest,
 )
+from . import agent_dependencies as _agent_dependencies
+from .agent_dependencies import (
+    AgentRouteDependencies,
+    ContextNativeExecutionRequest,
+    ContextNativePrepareRequest,
+)
 from .attachment_inputs import (
     normalize_chat_payload_attachments,
     normalize_expert_payload_attachments,
@@ -57,122 +59,18 @@ from .attachment_inputs import (
 from .context_types import ContextAgentRequest, execute_context_lifecycle
 from .uploads import AgentUploadDependencies, register_upload_routes
 
-type AgentRun = Callable[..., Awaitable[tuple[dict[str, Any], int]]]
-type ChatResponse = Callable[..., Awaitable[Response]]
-type QueryFlattener = Callable[[Any], str]
-type ChatResolver = Callable[..., Awaitable[tuple[str, dict[str, Any]]]]
-
-
-@dataclass(frozen=True, slots=True)
-class AgentAuthDependencies:
-    """Authentication and request-lifecycle dependencies."""
-
-    require_agents: Callable[..., Any]
-    schedule_run_gc: Callable[..., Any]
-
-
-@dataclass(frozen=True, slots=True)
-class AgentCatalogDependencies:
-    """Public model and agent catalog projections."""
-
-    model_to_tool: Mapping[str, str]
-    model_to_agent_slug: Mapping[str, str]
-    agent_slug_to_tool: Mapping[str, str]
-    remote_agent_slugs: frozenset[str]
-    legacy_aliases: Mapping[str, list[str]]
-    serialize_capability: Callable[[str], Any]
-    conversation_context_enabled: Callable[[], bool]
-
-
-@dataclass(frozen=True, slots=True)
-class AgentChatInputDependencies:
-    """Chat request validation and HTTP-only pre-shaping seams."""
-
-    tool_for_model: Callable[[str], str | None]
-    tool_accepts_obs: Callable[[str], bool]
-    flatten_messages: QueryFlattener
-    resolve_chat_query: ChatResolver
-    brief_gene_resolver: Callable[..., Awaitable[Any]]
-
-
-@dataclass(frozen=True, slots=True)
-class AgentChatExecutionDependencies:
-    """Chat execution seams shared by sync, stream, and Review paths."""
-
-    invoke_tool_enveloped: Callable[..., Awaitable[Any]]
-    stream_chat_completion: ChatResponse
-    review_chat_completion: ChatResponse
-
-
-@dataclass(frozen=True, slots=True)
-class AgentChatProjectionDependencies:
-    """Run-registry and OpenAI response projection seams."""
-
-    record_sync_run: Callable[..., str | None]
-    current_user: Callable[[], str | None]
-    to_chat_completion: Callable[..., dict[str, Any]]
-    strip_chat_completion: Callable[[dict[str, Any]], dict[str, Any]]
-    resolve_debug: Callable[[bool | None], bool]
-
-
-@dataclass(frozen=True, slots=True)
-class AgentChatDependencies:
-    """Grouped dependencies for the OpenAI-compatible chat route."""
-
-    input: AgentChatInputDependencies
-    execution: AgentChatExecutionDependencies
-    projection: AgentChatProjectionDependencies
-
-
-@dataclass(frozen=True, slots=True)
-class AgentNativeDependencies:
-    """Native-agent and Expert routing call seams."""
-
-    invoke_agent_run: AgentRun
-    route_expert_query: AgentRun
-
-
-@dataclass(frozen=True, slots=True)
-class AgentContextDependencies:
-    """Conversation-context protocol gate and shared executor."""
-
-    enabled: Callable[[], bool]
-    executor: ConversationContextExecutor
-
-
-@dataclass(frozen=True, slots=True)
-class AgentRouteDependencies:
-    """Explicit dependencies required by the primary agent routes."""
-
-    auth: AgentAuthDependencies
-    catalog: AgentCatalogDependencies
-    chat: AgentChatDependencies
-    native: AgentNativeDependencies
-    context: AgentContextDependencies
-    upload: AgentUploadDependencies
-    tasks_db_path: Callable[[], str]
-
-
-@dataclass(frozen=True, slots=True)
-class _ContextNativePrepareRequest:
-    """Inputs for preparing one context native attachment invocation."""
-
-    agent: str
-    arguments: Mapping[str, Any]
-    request: ContextAgentRequest
-    dependencies: AgentRouteDependencies
-
-
-@dataclass(frozen=True, slots=True)
-class _ContextNativeExecutionRequest:
-    """Inputs for executing one URL-pinned native context route."""
-
-    agent: str
-    payload: AgentRunRequest
-    arguments: dict[str, Any]
-    resolved_input: Any
-    request_json: str
-    dependencies: AgentRouteDependencies
+AgentAuthDependencies = _agent_dependencies.AgentAuthDependencies
+AgentCatalogDependencies = _agent_dependencies.AgentCatalogDependencies
+AgentChatDependencies = _agent_dependencies.AgentChatDependencies
+AgentChatExecutionDependencies = (
+    _agent_dependencies.AgentChatExecutionDependencies
+)
+AgentChatInputDependencies = _agent_dependencies.AgentChatInputDependencies
+AgentChatProjectionDependencies = (
+    _agent_dependencies.AgentChatProjectionDependencies
+)
+AgentContextDependencies = _agent_dependencies.AgentContextDependencies
+AgentNativeDependencies = _agent_dependencies.AgentNativeDependencies
 
 
 def register_model_route(
@@ -643,7 +541,7 @@ def _register_native_routes(
                     status_code=404, detail="conversation context disabled"
                 )
             return await _execute_context_native(
-                _ContextNativeExecutionRequest(
+                ContextNativeExecutionRequest(
                     agent=agent,
                     payload=payload,
                     arguments=arguments,
@@ -728,7 +626,7 @@ def _native_context_tool(
 
 
 async def _execute_context_native(
-    request: _ContextNativeExecutionRequest,
+    request: ContextNativeExecutionRequest,
 ) -> JSONResponse:
     """Execute one URL-pinned native agent through the V1 lifecycle."""
     agent = request.agent
@@ -769,7 +667,7 @@ async def _execute_context_native(
             raise ValueError("native context selected a non-URL agent")
         body, status_code = await dependencies.native.invoke_agent_run(
             **await _prepare_context_native_invocation(
-                _ContextNativePrepareRequest(
+                ContextNativePrepareRequest(
                     agent,
                     selected_arguments,
                     context_request,
@@ -796,7 +694,7 @@ async def _execute_context_native(
 
 
 async def _prepare_context_native_invocation(
-    request: _ContextNativePrepareRequest,
+    request: ContextNativePrepareRequest,
 ) -> dict[str, Any]:
     """Prepare native context attachments for a new turn callback."""
     prepared_arguments = dict(request.arguments)
@@ -1013,7 +911,7 @@ async def _invoke_context_agent(
     ):
         arguments["obs_file_list"] = list(request.obs_file_list)
     invocation = await _prepare_context_native_invocation(
-        _ContextNativePrepareRequest(slug, arguments, request, dependencies)
+        ContextNativePrepareRequest(slug, arguments, request, dependencies)
     )
     arguments = invocation["arguments"]
     private_agent_state = dict(dispatch.private_agent_state)
@@ -1076,15 +974,7 @@ def register_agent_routes(
 
 
 __all__ = [
-    "AgentAuthDependencies",
-    "AgentCatalogDependencies",
-    "AgentChatDependencies",
-    "AgentChatExecutionDependencies",
-    "AgentChatInputDependencies",
-    "AgentChatProjectionDependencies",
-    "AgentContextDependencies",
-    "AgentNativeDependencies",
-    "AgentRouteDependencies",
+    *_agent_dependencies.__all__,
     "AgentUploadDependencies",
     "register_agent_routes",
     "register_model_route",

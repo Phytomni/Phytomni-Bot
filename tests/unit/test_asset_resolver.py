@@ -460,37 +460,33 @@ def test_resolve_bundle_rejects_unknown_persisted_purpose(
     )
     assert uploaded is not None
     assert uploaded.completed_at is not None
+    corrupt_record = {
+        "asset_id": unknown_id,
+        "owner_subject": uploaded.owner_subject,
+        "filename": uploaded.filename,
+        "content_type": uploaded.content_type,
+        "purpose": "unknown-purpose",
+        "size_bytes": uploaded.size_bytes,
+        "part_size_bytes": uploaded.part_size_bytes,
+        "part_count": uploaded.part_count,
+        "status": uploaded.status,
+        "object_key": "agent_data/uploads/corrupt-purpose-sentinel",
+        "obs_upload_id": uploaded.obs_upload_id,
+        "idempotency_key": "corrupt-purpose-idempotency",
+        "request_fingerprint": "corrupt-purpose-fingerprint",
+        "state_version": uploaded.state_version,
+        "reserved_bytes": uploaded.reserved_bytes,
+        "created_at": uploaded.created_at.isoformat(),
+        "updated_at": uploaded.updated_at.isoformat(),
+        "session_expires_at": uploaded.session_expires_at.isoformat(),
+        "completed_at": uploaded.completed_at.isoformat(),
+    }
     with sqlite3.connect(harness.service.registry.db_path) as connection:
         connection.execute(
-            "INSERT INTO upload_assets ("
-            "asset_id, owner_subject, filename, content_type, purpose, "
-            "size_bytes, part_size_bytes, part_count, status, object_key, "
-            "obs_upload_id, idempotency_key, request_fingerprint, "
-            "state_version, reserved_bytes, created_at, updated_at, "
-            "session_expires_at, completed_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "?, ?)",
-            (
-                unknown_id,
-                uploaded.owner_subject,
-                uploaded.filename,
-                uploaded.content_type,
-                "unknown-purpose",
-                uploaded.size_bytes,
-                uploaded.part_size_bytes,
-                uploaded.part_count,
-                uploaded.status,
-                "agent_data/uploads/corrupt-purpose-sentinel",
-                uploaded.obs_upload_id,
-                "corrupt-purpose-idempotency",
-                "corrupt-purpose-fingerprint",
-                uploaded.state_version,
-                uploaded.reserved_bytes,
-                uploaded.created_at.isoformat(),
-                uploaded.updated_at.isoformat(),
-                uploaded.session_expires_at.isoformat(),
-                uploaded.completed_at.isoformat(),
-            ),
+            f"INSERT INTO upload_assets "
+            f"({', '.join(corrupt_record)}) "
+            f"VALUES ({', '.join('?' for _key in corrupt_record)})",
+            tuple(corrupt_record.values()),
         )
 
     with pytest.raises(UploadContractError) as error:

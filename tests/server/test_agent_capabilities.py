@@ -16,6 +16,7 @@ from mcp_server_phytomni.api.agent_capabilities import (
     agent_supports_attachment_channels,
     filter_tools_for_attachment_channels,
     get_agent_capability,
+    get_agent_slug_for_tool,
     get_attachment_capability,
     required_attachment_channels,
     serialize_agent_capability,
@@ -24,6 +25,7 @@ from mcp_server_phytomni.api.openai_mapping import (
     tool_accepts_obs,
     tool_accepts_stream,
 )
+from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 from mcp_server_phytomni.runtime.attachment_assets import (
     ResolvedAsset,
     ResolvedAttachmentBundle,
@@ -56,6 +58,19 @@ _EXPECTED_ATTACHMENTS = {
     "design": (True, False, False),
     "network": (True, False, False),
 }
+
+_ALL_PUBLIC_TOOLS = tuple(
+    name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
+)
+
+
+def _tools_for_slugs(slugs: set[str]) -> tuple[str, ...]:
+    """Return public tool names for the requested canonical slug set."""
+    return tuple(
+        tool
+        for tool in _ALL_PUBLIC_TOOLS
+        if get_agent_slug_for_tool(tool) in slugs
+    )
 
 
 def test_capability_descriptors_are_explicit_and_json_compatible() -> None:
@@ -102,38 +117,29 @@ def test_attachment_matrix_is_exact() -> None:
     [
         (
             frozenset(),
-            (
-                "ChatAgent",
-                "KnowledgeAgent",
-                "DataAgent",
-                "ReviewAgent",
-                "BriefGeneAgent",
-                "AnalystAgent",
-                "DeepGenomeAgent",
-                "InSilicoResearchAgent",
-                "DigitalDesignAgent",
-                "GeneNetworkAgent",
-            ),
+            _ALL_PUBLIC_TOOLS,
         ),
         (
             frozenset({"documents"}),
-            (
-                "ChatAgent",
-                "KnowledgeAgent",
-                "ReviewAgent",
-                "AnalystAgent",
-                "InSilicoResearchAgent",
-                "DigitalDesignAgent",
-                "GeneNetworkAgent",
+            _tools_for_slugs(
+                {
+                    "chat",
+                    "knowledge",
+                    "review",
+                    "analyst",
+                    "research",
+                    "design",
+                    "network",
+                }
             ),
         ),
         (
             frozenset({"datasets"}),
-            ("AnalystAgent", "InSilicoResearchAgent"),
+            _tools_for_slugs({"analyst", "research"}),
         ),
         (
             frozenset({"documents", "datasets"}),
-            ("AnalystAgent", "InSilicoResearchAgent"),
+            _tools_for_slugs({"analyst", "research"}),
         ),
     ],
 )
@@ -142,18 +148,7 @@ def test_attachment_channel_predicates_and_tool_filtering(
     supported_tools: tuple[str, ...],
 ) -> None:
     """Capability-derived predicates retain only authorized input tools."""
-    allowed_tools = (
-        "ChatAgent",
-        "KnowledgeAgent",
-        "DataAgent",
-        "ReviewAgent",
-        "BriefGeneAgent",
-        "AnalystAgent",
-        "DeepGenomeAgent",
-        "InSilicoResearchAgent",
-        "DigitalDesignAgent",
-        "GeneNetworkAgent",
-    )
+    allowed_tools = _ALL_PUBLIC_TOOLS
 
     assert (
         tuple(
