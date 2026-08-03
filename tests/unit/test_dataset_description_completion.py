@@ -309,6 +309,31 @@ async def test_structured_output_is_normalized_per_label(
 
 
 @pytest.mark.asyncio
+async def test_more_than_ten_provider_items_returns_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Provider arrays beyond the bound fail closed even with valid labels."""
+    items = [
+        {"label": "dataset_1", "description": "First"},
+        {"label": "dataset_2", "description": "Second"},
+        *[
+            {"label": f"dataset_{index}", "description": "Unknown"}
+            for index in range(3, 12)
+        ],
+    ]
+    _install_provider(monkeypatch, _response(items))
+
+    result = await complete_dataset_descriptions(
+        query="query-private",
+        datasets=(_dataset(1), _dataset(2)),
+        supplied_description=None,
+    )
+
+    assert result.descriptions == ("", "")
+    assert result.source == "empty"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("content", ("", "not-json-output-private"))
 async def test_empty_or_unparseable_message_returns_empty(
     monkeypatch: pytest.MonkeyPatch,

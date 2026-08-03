@@ -230,6 +230,8 @@ def _parse_items(
     items = payload.get("items")
     if not isinstance(items, list):
         return ("",) * len(labels), "malformed_output"
+    if len(items) > _MAX_DATASETS:
+        return ("",) * len(labels), "malformed_output"
 
     label_counts = {label: 0 for label in labels}
     known_items: list[Mapping[str, Any]] = []
