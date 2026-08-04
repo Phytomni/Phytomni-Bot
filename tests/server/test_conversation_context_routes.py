@@ -178,14 +178,18 @@ def _promote_review_marker(
 async def test_enabled_catalog_advertises_context_protocol(
     context_client: tuple[httpx.AsyncClient, str, ConversationContextStore],
 ) -> None:
-    """Enabled deployments publish only the top-level V1 protocol marker."""
+    """Enabled deployments publish the top-level V1 protocol marker.
+
+    The upload protocol (obs-multipart-v2) is always present too; only assert
+    the context marker is advertised and kept out of the per-agent rows.
+    """
     client, key, _store = context_client
 
     response = await client.get("/v1/agents", headers=_headers(key))
 
     assert response.status_code == 200
     body = response.json()
-    assert body["protocols"] == {"conversation_context": [1]}
+    assert body["protocols"]["conversation_context"] == [1]
     assert all("conversation_context" not in row for row in body["data"])
 
 

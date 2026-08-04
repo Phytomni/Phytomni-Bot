@@ -147,14 +147,21 @@ async def test_list_agents_omits_disabled_context_protocol(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
 ) -> None:
-    """The default-off context protocol is absent from the public catalog."""
+    """The default-off context protocol is absent from the public catalog.
+
+    The upload protocol (obs-multipart-v2) is always advertised in the
+    top-level `protocols` map so the Web gateway can discover it via
+    SupportsProtocol; conversation_context only appears when its flag is on.
+    """
     response = await api_client.get(
         "/v1/agents",
         headers={"Authorization": f"Bearer {issued_api_key}"},
     )
 
     assert response.status_code == 200
-    assert "protocols" not in response.json()
+    protocols = response.json()["protocols"]
+    assert "conversation_context" not in protocols
+    assert protocols["obs-multipart-v2"] == [2]
 
 
 async def test_list_agents_requires_auth(

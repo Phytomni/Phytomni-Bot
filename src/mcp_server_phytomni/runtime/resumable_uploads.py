@@ -32,6 +32,9 @@ __all__ = [
 ]
 
 UPLOAD_PROTOCOL = "obs-multipart-v2"
+# Mirrors the Web-side ResumableUploadProtocolVersion constant; the upload
+# routes are v2-only, so this version is implicit in the route surface.
+UPLOAD_PROTOCOL_VERSION = 2
 PART_SIZE_BYTES = 128 * 1024**2
 MAX_UPLOAD_BYTES = 10 * 1024**3
 MAX_ACTIVE_ASSETS = 3

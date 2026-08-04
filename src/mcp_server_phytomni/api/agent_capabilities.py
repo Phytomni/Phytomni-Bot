@@ -17,7 +17,6 @@ from ..runtime.resumable_uploads import (
     MAX_UPLOAD_BYTES,
     PART_SIZE_BYTES,
     SESSION_TTL,
-    UPLOAD_PROTOCOL,
 )
 
 __all__ = [
@@ -356,8 +355,10 @@ def serialize_file_upload_capability(
         for key in resolved:
             if key in limits:
                 resolved[key] = limits[key]
+    # The protocol identity (name + version) lives only in the top-level
+    # `protocols` map of the agent catalog (see advertised_protocols); this
+    # descriptor carries the runtime limits and route surface only.
     return {
-        "protocol": UPLOAD_PROTOCOL,
         "route_family": "resumable_files",
         "routes": [dict(route) for route in _UPLOAD_ROUTES],
         "limits": resolved,

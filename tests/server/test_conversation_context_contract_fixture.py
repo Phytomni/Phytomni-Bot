@@ -54,10 +54,12 @@ def test_protocol_advertisement_and_canonical_allowlist_are_current() -> None:
     """The fixture records the live advertisement and ten-tool order."""
     payload = _fixture()
 
-    assert payload["protocol_advertisement"] == {
-        "object": "list",
-        "protocols": {"conversation_context": [1]},
-    }
+    advertised = payload["protocol_advertisement"]
+    assert advertised["object"] == "list"
+    # conversation_context is only present when its flag is on (this fixture
+    # captures the enabled state); obs-multipart-v2 is always advertised.
+    assert advertised["protocols"]["conversation_context"] == [1]
+    assert advertised["protocols"]["obs-multipart-v2"] == [2]
     assert (
         payload["requests"]["expert_unforced_envelope"]["allowed_agent_ids"]
         == _CANONICAL_AGENT_IDS

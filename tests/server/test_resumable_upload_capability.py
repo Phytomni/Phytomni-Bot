@@ -60,7 +60,9 @@ def test_file_upload_capability_is_sanitized_and_fresh() -> None:
     first = serialize_file_upload_capability()
     second = serialize_file_upload_capability()
 
-    assert first["protocol"] == "obs-multipart-v2"
+    # Protocol identity lives in the top-level `protocols` map of the catalog,
+    # not in this descriptor; it carries only the route surface and limits.
+    assert "protocol" not in first
     assert first["route_family"] == "resumable_files"
     assert first["limits"] == {
         "max_file_bytes": 10 * 1024**3,
@@ -108,11 +110,14 @@ async def test_agents_catalog_advertises_upload_protocol(
         )
 
     assert response.status_code == 200
-    descriptor = response.json()["file_upload"]
-    assert descriptor["protocol"] == "obs-multipart-v2"
+    body = response.json()
+    descriptor = body["file_upload"]
+    # The protocol identity lives only in the top-level `protocols` map now;
+    # the `file_upload` descriptor carries runtime limits and routes only.
+    assert "protocol" not in descriptor
     assert descriptor["limits"]["max_parallel_parts"] == 4
     assert "upload_origin" not in descriptor
-    assert "protocols" not in response.json()
+    assert body["protocols"]["obs-multipart-v2"] == [2]
 
 
 def test_cleanup_hook_is_repeatable_and_preserves_completed_assets(

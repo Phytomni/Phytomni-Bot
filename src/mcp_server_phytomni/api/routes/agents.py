@@ -29,6 +29,7 @@ from ...runtime.conversation_context.service import (
 )
 from ...runtime.locale import SupportedLocale, current_effective_locale
 from ...runtime.stage_trace import DataStage, trace_data_stage
+from ..advertised_protocols import serialize_protocols
 from ..app_support import (
     build_safe_chat_request_info,
     resolve_http_locale,
@@ -522,9 +523,10 @@ def _register_native_routes(
                     dependencies.catalog.agent_slug_to_tool.items()
                 )
             ],
+            "protocols": serialize_protocols(
+                dependencies.catalog.conversation_context_enabled
+            ),
         }
-        if dependencies.catalog.conversation_context_enabled():
-            payload["protocols"] = {"conversation_context": [1]}
         return JSONResponse(payload)
 
     @app.post(

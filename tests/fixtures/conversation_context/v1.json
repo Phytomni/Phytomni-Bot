@@ -2,7 +2,12 @@
   "protocol_advertisement": {
     "object": "list",
     "protocols": {
-      "conversation_context": [1]
+      "conversation_context": [
+        1
+      ],
+      "obs-multipart-v2": [
+        2
+      ]
     }
   },
   "redaction_contract": {
@@ -13,7 +18,12 @@
       "recent_turns",
       "task_summary"
     ],
-    "excluded_output_kinds": ["answer", "report", "table", "tabular"]
+    "excluded_output_kinds": [
+      "answer",
+      "report",
+      "table",
+      "tabular"
+    ]
   },
   "requests": {
     "instant_envelope": {
@@ -29,7 +39,9 @@
         "locale": "en-US"
       },
       "requested_agent_id": null,
-      "allowed_agent_ids": ["ChatAgent"],
+      "allowed_agent_ids": [
+        "ChatAgent"
+      ],
       "ledger_cursor": 1,
       "ledger_version": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
       "base_business_context_version": 0,
@@ -96,7 +108,10 @@
         "locale": "en-US"
       },
       "requested_agent_id": "KnowledgeAgent",
-      "allowed_agent_ids": ["KnowledgeAgent", "ChatAgent"],
+      "allowed_agent_ids": [
+        "KnowledgeAgent",
+        "ChatAgent"
+      ],
       "ledger_cursor": 3,
       "ledger_version": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
       "base_business_context_version": 0,

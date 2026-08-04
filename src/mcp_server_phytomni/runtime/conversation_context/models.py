@@ -35,6 +35,11 @@ MAX_CONTEXT_ITEMS = 50
 MAX_AGENT_THREAD_ID_CHARS = 68
 MAX_CONTEXT_ITEM_TEXT_CHARS = MAX_CONTEXT_TEXT_CHARS
 
+# The conversation-context protocol version advertised in GET /v1/agents
+# top-level `protocols` map. Mirrors the Web-side expectation; bump only on a
+# breaking contract change to the context envelope shape.
+CONVERSATION_CONTEXT_PROTOCOL_VERSION = 1
+
 BoundedContextText = Annotated[
     str,
     Field(min_length=1, max_length=MAX_CONTEXT_ITEM_TEXT_CHARS),
