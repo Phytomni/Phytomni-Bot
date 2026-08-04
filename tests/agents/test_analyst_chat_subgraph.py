@@ -116,10 +116,11 @@ async def test_data_select_prep_node_stages_payload() -> None:
     assert result["pending_post"] == "data_select_post_node"
     chat_payload = result["chat_payload"]
     assert "study photosynthesis pathway" in chat_payload["user_query"]
-    assert len(chat_payload["chat_kwargs"]) == 19
+    assert len(chat_payload["chat_kwargs"]) == 20
     assert chat_payload["chat_kwargs"]["response_format"] == {
         "type": "json_schema"
     }
+    assert chat_payload["chat_kwargs"]["max_tokens"] == 4096
 
 
 async def test_plan_prep_node_stages_payload() -> None:

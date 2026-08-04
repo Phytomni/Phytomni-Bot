@@ -35,6 +35,10 @@ else:
 
 logger = logging.getLogger(__name__)
 
+# Data selection returns a compact JSON mapping; keep enough context budget
+# for the comparatively large pre-prepared species catalog.
+_DATA_SELECTION_MAX_TOKENS = 4096
+
 
 def _parse_json_object_preserving_errors(text: str) -> Any:
     """Use the common object parser while retaining legacy JSON errors."""
@@ -190,6 +194,7 @@ class AnalystChatSubgraphMixin:
             response_format={"type": "json_schema"},
             locale=state.get("locale"),
         )
+        chat_kwargs["max_tokens"] = _DATA_SELECTION_MAX_TOKENS
         chat_payload = build_chat_input(selection_prompt, chat_kwargs)
         return {
             "chat_payload": chat_payload,
