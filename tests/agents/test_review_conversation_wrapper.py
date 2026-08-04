@@ -173,9 +173,11 @@ async def test_review_wrapper_marks_clarification_failed(
     projection = _projection("Review drought tolerance in rice", active=False)
     adapter = ReviewConversationAdapter()
     adapter.prepare(projection, turn_id="clarification-1")
+    captured: dict[str, Any] = {}
 
-    async def arun(**_kwargs: Any) -> dict[str, Any]:
+    async def arun(**kwargs: Any) -> dict[str, Any]:
         """Raise the graph clarification used by this failure-path probe."""
+        captured.update(kwargs)
         raise ReviewClarificationError("graph clarification")
 
     fake_agent = SimpleNamespace(arun=arun)
@@ -192,6 +194,7 @@ async def test_review_wrapper_marks_clarification_failed(
     )
 
     assert result["choices"][0]["message"]["content"] == "graph clarification"
+    assert captured["auto_approve"] is True
     assert adapter.settlement_ready is False
 
 
@@ -291,6 +294,7 @@ async def test_review_wrapper_forwards_private_thread_id_without_schema_change(
     assert result == {"ok": True}
     assert captured["thread_id"] == _THREAD_ID
     assert captured["user_query"] == "Review drought tolerance in rice"
+    assert "auto_approve" not in captured
 
 
 @pytest.mark.asyncio

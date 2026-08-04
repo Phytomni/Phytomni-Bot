@@ -47,6 +47,7 @@ from ...runtime.conversation_context.projection import agent_thread_id
 from ...runtime.conversation_context.store import StoredTurn
 from ...runtime.langgraph_runner import ainvoke_graph, ensure_checkpointer
 from ...runtime.locale import SupportedLocale
+from ...runtime.resume import aresume_graph, detect_interrupt
 from ..chat.service import phyto_chat
 from ..knowledge.agent import KnowledgeAgent
 from ..shared.a2ui.loop import A2UI_MAX_ROUNDS, next_a2ui_round
@@ -772,6 +773,7 @@ class DeepResearchAgent(
             Chat-completions-style final response payload with review text,
             ordered references, and follow-up questions.
         """
+        auto_approve = kwargs.pop("auto_approve", False)
         obs_file_list, thread_id, locale, review_operation = (
             resolve_arun_options(args, kwargs)
         )
@@ -784,6 +786,14 @@ class DeepResearchAgent(
         final_state = await ainvoke_graph(
             self.app, initial_state, thread_id=thread_id
         )
+        if (
+            auto_approve
+            and thread_id is not None
+            and detect_interrupt(final_state, thread_id)
+        ):
+            final_state = await aresume_graph(
+                self.app, thread_id, {"approved": True, "edits": None}
+            )
         return merge_intermediate_state(
             final_state,
             extra_excluded_keys={
@@ -900,18 +910,20 @@ async def review_agent_function(
             else review_operation
         )
     try:
-        execution_thread_id = thread_id
-        if isinstance(review_adapter, ReviewConversationAdapter):
-            execution_thread_id = (
+        arun_kwargs: dict[str, Any] = {
+            "user_query": user_query,
+            "obs_file_list": obs_file_list or [],
+            "thread_id": (
                 review_adapter.execution_thread_id or thread_id
-            )
-        result = await agent.arun(
-            user_query=user_query,
-            obs_file_list=obs_file_list or [],
-            thread_id=execution_thread_id,
-            locale=effective_locale,
-            review_operation=review_operation,
-        )
+                if isinstance(review_adapter, ReviewConversationAdapter)
+                else thread_id
+            ),
+            "locale": effective_locale,
+            "review_operation": review_operation,
+        }
+        if isinstance(review_adapter, ReviewConversationAdapter):
+            arun_kwargs["auto_approve"] = True
+        result = await agent.arun(**arun_kwargs)
     except ReviewClarificationError as exc:
         if isinstance(review_adapter, ReviewConversationAdapter):
             review_adapter.mark_failed()

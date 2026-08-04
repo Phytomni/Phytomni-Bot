@@ -768,6 +768,52 @@ async def test_missing_candidate_fails_readiness_before_settlement() -> None:
 
 
 @pytest.mark.asyncio
+async def test_candidate_validation_persists_captured_report() -> None:
+    """A completed report repairs a structurally valid lagging checkpoint."""
+    states: dict[str, dict[str, Any]] = {_THREAD_ID: {}}
+    updates: list[tuple[str, dict[str, Any]]] = []
+
+    async def aget_state(config: dict[str, Any]) -> dict[str, Any]:
+        """Return the current stable or candidate checkpoint values."""
+        thread_id = config["configurable"]["thread_id"]
+        return states.get(thread_id, {})
+
+    async def aupdate_state(
+        config: dict[str, Any], *, values: dict[str, Any]
+    ) -> None:
+        """Persist the candidate repair for the subsequent validation read."""
+        thread_id = config["configurable"]["thread_id"]
+        updates.append((thread_id, values))
+        states.setdefault(thread_id, {}).update(values)
+
+    agent = _agent_with_app(
+        SimpleNamespace(
+            aget_state=aget_state,
+            aupdate_state=aupdate_state,
+        )
+    )
+    projection = _projection("Review maize heat tolerance", active=False)
+    adapter = ReviewConversationAdapter()
+    await adapter.prepare_from_agent(
+        projection, agent, _THREAD_ID, turn_id="11"
+    )
+    candidate_thread_id = adapter.candidate_thread_id
+    assert candidate_thread_id is not None
+    states[candidate_thread_id] = _candidate_review_state(summary_content="")
+    report = "# Candidate report\n\nCandidate evidence."
+    adapter.capture_result(
+        {
+            "choices": [{"message": {"content": report}}],
+            "phytomni_state": _candidate_review_state(summary_content=report),
+        }
+    )
+
+    assert await adapter.validate_settlement_candidate() is True
+    assert updates == [(candidate_thread_id, {"summary_content": report})]
+    assert states[candidate_thread_id]["summary_content"] == report
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("metadata", "message"),
     [

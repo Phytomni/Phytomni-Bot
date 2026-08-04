@@ -11,9 +11,11 @@ the schema parts.
 
 from __future__ import annotations
 
-from typing import get_type_hints
+from types import SimpleNamespace
+from typing import Any, get_type_hints
 
 import pytest
+from langgraph.types import Command
 
 from mcp_server_phytomni.agents.review import DeepResearchState
 from mcp_server_phytomni.agents.review.agent import DeepResearchAgent
@@ -104,3 +106,59 @@ def test_review_initial_state_seeds_private_conversation_metadata() -> None:
     assert state["review_operation"] is None
     assert state["report_artifact_id"] is None
     assert state["report_revision"] == 0
+
+
+@pytest.mark.asyncio
+async def test_review_arun_auto_approves_only_when_requested() -> None:
+    """Context callers may finish a pause without changing A2UI defaults."""
+
+    def paused_review_app() -> tuple[SimpleNamespace, list[Any]]:
+        """Return a one-interrupt app stub and its captured invocations."""
+        calls: list[Any] = []
+
+        async def ainvoke(value: Any, **_kwargs: Any) -> dict[str, Any]:
+            """Return one approval interrupt, then a terminal response."""
+            calls.append(value)
+            if isinstance(value, Command):
+                return {
+                    "summary_content": "# Review\n\nTerminal evidence.",
+                    "final_response": {
+                        "choices": [
+                            {
+                                "message": {
+                                    "content": "# Review\n\nTerminal evidence."
+                                }
+                            }
+                        ]
+                    },
+                }
+            return {
+                "summary_content": "# Review\n\nDraft evidence.",
+                "final_response": {},
+                "__interrupt__": [{"draft": "# Review\n\nDraft evidence."}],
+            }
+
+        return SimpleNamespace(ainvoke=ainvoke), calls
+
+    paused_agent = DeepResearchAgent.__new__(DeepResearchAgent)
+    paused_app, paused_calls = paused_review_app()
+    setattr(paused_agent, "app", paused_app)
+    paused = await paused_agent.arun(
+        "Review drought tolerance", thread_id="review-pause"
+    )
+    assert len(paused_calls) == 1
+    assert "choices" not in paused
+
+    terminal_agent = DeepResearchAgent.__new__(DeepResearchAgent)
+    terminal_app, terminal_calls = paused_review_app()
+    setattr(terminal_agent, "app", terminal_app)
+    terminal = await terminal_agent.arun(
+        "Review drought tolerance",
+        thread_id="review-terminal",
+        auto_approve=True,
+    )
+    assert terminal["choices"][0]["message"]["content"].startswith("# Review")
+    assert len(terminal_calls) == 2
+    resume = terminal_calls[1]
+    assert isinstance(resume, Command)
+    assert resume.resume == {"approved": True, "edits": None}

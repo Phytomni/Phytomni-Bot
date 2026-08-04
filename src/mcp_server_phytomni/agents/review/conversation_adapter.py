@@ -380,6 +380,18 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         values = _state_values(state)
         snapshot = extract_review_checkpoint(state)
         document = extract_review_report_document(state)
+        if (
+            bool(values)
+            and snapshot is not None
+            and not _usable_report_document(document)
+            and await self._persist_captured_candidate_report()
+        ):
+            state = await _load_review_checkpoint_state(
+                self._agent, self.candidate_thread_id
+            )
+            values = _state_values(state)
+            snapshot = extract_review_checkpoint(state)
+            document = extract_review_report_document(state)
         candidate_ready = (
             bool(values)
             and snapshot is not None
@@ -394,6 +406,27 @@ class ReviewConversationAdapter(_ReviewAdapterProperties):
         self._state.checkpoint.staged_snapshot = snapshot
         self._state.checkpoint.report_document = document
         self._state.result.pending_report_text = document.text
+        return True
+
+    async def _persist_captured_candidate_report(self) -> bool:
+        """Repair a lagging candidate checkpoint from this turn's result."""
+        report = self._state.result.pending_report_text
+        app = getattr(self._agent, "app", None)
+        updater = getattr(app, "aupdate_state", None)
+        if (
+            report is None
+            or not _usable_response_text(report)
+            or not callable(updater)
+            or self.candidate_thread_id is None
+        ):
+            return False
+        self._check_settlement_fence()
+        typed_updater = cast(Callable[..., Awaitable[Any]], updater)
+        await _invoke_checkpoint_updater(
+            typed_updater,
+            self.candidate_thread_id,
+            {"summary_content": report},
+        )
         return True
 
     async def _validate_active_settlement(
