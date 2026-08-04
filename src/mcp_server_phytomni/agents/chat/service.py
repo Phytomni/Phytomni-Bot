@@ -18,7 +18,7 @@ from typing import Any, NamedTuple, NotRequired, TypedDict, Unpack
 from httpx import ConnectError, HTTPStatusError, TimeoutException
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
-from openai import AsyncOpenAI
+from openai import APIConnectionError, AsyncOpenAI
 
 from ...common.docs import format_upload_context
 from ...common.http import (
@@ -653,7 +653,7 @@ async def _run_phyto_chat(
                 message="Failed to generate from Phyto",
             ):
                 continue
-        except (ConnectError, TimeoutException) as exc:
+        except (ConnectError, TimeoutException, APIConnectionError) as exc:
             if await retry_network_or_raise(
                 exc,
                 attempt=attempt,
@@ -691,11 +691,11 @@ async def stream_phyto_chat_chunks(
     provider fields survive intact for the SSE shaper downstream.
 
     Retry policy: the open-stream call is retried up to
-    ``MAX_OPEN_STREAM_RETRIES`` times on ``ConnectError`` /
-    ``TimeoutException`` (the same transient class
-    :func:`_run_phyto_chat` treats as retriable). Once the iterator is
-    returned, any mid-stream failure propagates immediately; retrying
-    after partial delivery would silently lose chunks the client has
+    ``MAX_OPEN_STREAM_RETRIES`` times on raw HTTP transport errors or
+    their OpenAI SDK ``APIConnectionError`` wrapper. This is the same
+    transient class :func:`_run_phyto_chat` treats as retriable. Once the
+    iterator is returned, any mid-stream failure propagates immediately;
+    retrying after partial delivery would silently lose chunks the client has
     already received, so the caller owns the resume decision.
 
     Args:
@@ -782,15 +782,15 @@ async def _open_chat_stream(
 
     Retries up to ``MAX_OPEN_STREAM_RETRIES`` times on the transient
     transport class ``_run_phyto_chat`` already treats as retriable
-    (``ConnectError`` / ``TimeoutException``). Non-transient failures
-    (HTTPStatusError, malformed requests, etc.) propagate immediately
+    (raw HTTP transport errors or ``APIConnectionError``). Non-transient
+    failures (HTTPStatusError, malformed requests, etc.) propagate immediately
     so the API layer can map them to the correct HTTP status.
     """
     last_exc: BaseException | None = None
     for attempt in range(MAX_OPEN_STREAM_RETRIES + 1):
         try:
             return await client.chat.completions.create(**params)
-        except (ConnectError, TimeoutException) as exc:
+        except (ConnectError, TimeoutException, APIConnectionError) as exc:
             last_exc = exc
             if attempt < MAX_OPEN_STREAM_RETRIES:
                 await asyncio.sleep(1.5**attempt)

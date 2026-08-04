@@ -10,11 +10,14 @@ follow-up question attachment without external network calls.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
+from httpx import Request
+from openai import APIConnectionError
 
 from mcp_server_phytomni.agents.chat import service as chat_agents
 from tests.support.chat_fakes import misplaced_reasoning_message
@@ -57,6 +60,50 @@ class FakeChatCompletion:
             Stored assistant message content.
         """
         return self.content
+
+
+async def test_run_phyto_chat_retries_openai_connection_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retry transport failures after the OpenAI SDK wraps them."""
+    calls = 0
+    retries: list[Exception] = []
+    expected = FakeChatCompletion("recovered").model_dump()
+
+    async def fake_run_phyto_chat_cached(**_kwargs: Any) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise APIConnectionError(
+                request=Request("POST", "https://example.invalid/v1")
+            )
+        return expected
+
+    async def fake_retry_network_or_raise(
+        exc: Exception, **_kwargs: Any
+    ) -> bool:
+        retries.append(exc)
+        return True
+
+    monkeypatch.setattr(
+        chat_agents, "run_phyto_chat_cached", fake_run_phyto_chat_cached
+    )
+    monkeypatch.setattr(
+        chat_agents, "retry_network_or_raise", fake_retry_network_or_raise
+    )
+    options: defaultdict[str, Any] = defaultdict(lambda: None)
+    options.update(max_retries=1, retriable_codes=())
+
+    run_phyto_chat = getattr(chat_agents, "_run_phyto_chat")
+    result = await run_phyto_chat(
+        [{"role": "user", "content": "leaf growth"}],
+        options,
+    )
+
+    assert result == expected
+    assert calls == 2
+    assert len(retries) == 1
+    assert isinstance(retries[0], APIConnectionError)
 
 
 async def test_phyto_chat_converts_uploads_and_builds_openai_request(

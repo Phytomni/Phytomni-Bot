@@ -18,8 +18,9 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from httpx import ConnectError, TimeoutException
+from httpx import ConnectError, Request, TimeoutException
 from mcp.shared.exceptions import McpError
+from openai import APIConnectionError
 
 from mcp_server_phytomni.agents.chat import service as chat_service
 
@@ -258,12 +259,22 @@ async def test_stream_phyto_chat_chunks_prepends_upload_context(
     assert captured["download"]["obs_file_list"] == ["obs://paper.pdf"]
 
 
+@pytest.mark.parametrize(
+    "transient",
+    [
+        ConnectError("transient"),
+        APIConnectionError(
+            request=Request("POST", "https://example.invalid/v1")
+        ),
+    ],
+)
 async def test_stream_phyto_chat_chunks_open_retries_transient_then_succeeds(
     monkeypatch: pytest.MonkeyPatch,
+    transient: Exception,
 ) -> None:
-    """One transient ``ConnectError`` on the open-stream call is retried.
+    """A raw or SDK-wrapped open-stream transport error is retried.
 
-    Policy (B): the first ``create`` raises ``ConnectError``, the
+    Policy (B): the first ``create`` raises a transient error, the
     second succeeds; the caller sees the stream without ever knowing
     about the retry. The transient class mirrors what
     :func:`_run_phyto_chat` retries, so non-stream and stream paths
@@ -278,7 +289,7 @@ async def test_stream_phyto_chat_chunks_open_retries_transient_then_succeeds(
         """Raise once then succeed on the second attempt."""
         calls["count"] += 1
         if calls["count"] == 1:
-            raise ConnectError("transient")
+            raise transient
         return _iter_chunks(
             [{"id": "c1", "choices": [{"delta": {"content": "ok"}}]}]
         )

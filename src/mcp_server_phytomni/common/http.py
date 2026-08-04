@@ -25,7 +25,6 @@ from httpx import (
     RemoteProtocolError,
     Response,
     TimeoutException,
-    TransportError,
 )
 from mcp.shared.exceptions import McpError
 from mcp.types import INTERNAL_ERROR, ErrorData
@@ -182,7 +181,7 @@ async def retry_http_status_or_raise(
 
 
 async def retry_network_or_raise(
-    exc: TransportError,
+    exc: Exception,
     *,
     attempt: int,
     max_retries: int,
@@ -191,8 +190,8 @@ async def retry_network_or_raise(
     """Sleep for a retriable network error or raise an MCP error.
 
     Args:
-        exc: The transient transport exception (timeout, network,
-            server disconnect, or proxy error) to evaluate.
+        exc: The transient transport exception or provider SDK wrapper
+            (timeout, network, server disconnect, or proxy error) to evaluate.
         attempt: Current attempt number (0-indexed).
         max_retries: Maximum number of retry attempts
             before raising.
