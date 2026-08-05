@@ -64,6 +64,61 @@ def test_put_object_bytes_sdk_fallback_writes_exact_key(
     assert fake.captured["init"]["server"] == "https://obs.example"
 
 
+def test_put_object_file_sdk_fallback_streams_local_file(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SDK putFile receives the source path instead of buffered file bytes."""
+    source = tmp_path / "archive.zip"
+    source.write_bytes(b"zip-bytes")
+    captured: dict[str, Any] = {}
+
+    class FakeObsClient:
+        """Capture the SDK file-upload call without making a network request."""
+
+        def __init__(self, **kwargs: Any) -> None:
+            captured["init"] = kwargs
+
+        def putFile(self, **kwargs: Any) -> Any:  # noqa: N802
+            captured["put_file"] = kwargs
+            return SimpleNamespace(status=200)
+
+    monkeypatch.setattr(ops, "ObsClient", FakeObsClient)
+
+    returned = ops.put_object_file(
+        "phytomni",
+        "agent_data/runs/archive.zip",
+        source,
+        obs_server="https://obs.example",
+        mount_root=_missing_mount(tmp_path),
+    )
+
+    assert returned == "agent_data/runs/archive.zip"
+    assert captured["put_file"] == {
+        "bucketName": "phytomni",
+        "objectKey": "agent_data/runs/archive.zip",
+        "file_path": str(source),
+    }
+
+
+def test_put_object_file_obsfs_copies_local_file(tmp_path: Any) -> None:
+    """Mounted OBS copies a local archive byte-for-byte with shutil.copyfile."""
+    source = tmp_path / "source.zip"
+    source.write_bytes(b"zip-bytes")
+    mount_root = tmp_path / "mount"
+    (mount_root / "phytomni").mkdir(parents=True)
+
+    ops.put_object_file(
+        "phytomni",
+        "agent_data/runs/archive.zip",
+        source,
+        obs_server="https://unused.example",
+        mount_root=str(mount_root),
+    )
+
+    assert (mount_root / "phytomni/agent_data/runs/archive.zip").read_bytes() == b"zip-bytes"
+
+
 def test_put_dir_marker_sdk_writes_zero_byte_object(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,

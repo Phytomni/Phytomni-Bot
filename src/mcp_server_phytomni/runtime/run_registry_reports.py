@@ -43,6 +43,15 @@ class ReportArtifactSources:
     manifest_loader: ManifestLoader | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class ReportArtifactGroup:
+    """One successful child task's classified terminal artifacts."""
+
+    task_id: str
+    output_dir: str
+    artifact_set: TerminalArtifactSet
+
+
 async def collect_report_artifact_set(
     live: Sequence[dict[str, Any]],
     *,
@@ -51,7 +60,24 @@ async def collect_report_artifact_set(
     manifest_loader: ManifestLoader | None,
 ) -> TerminalArtifactSet:
     """Collect classified artifacts for every successful child task."""
-    sets: list[TerminalArtifactSet] = []
+    groups = await collect_report_artifact_groups(
+        live,
+        lister=lister,
+        object_lister=object_lister,
+        manifest_loader=manifest_loader,
+    )
+    return merge_report_artifact_groups(groups)
+
+
+async def collect_report_artifact_groups(
+    live: Sequence[dict[str, Any]],
+    *,
+    lister: ArtifactLister | None,
+    object_lister: ArtifactObjectLister | None,
+    manifest_loader: ManifestLoader | None,
+) -> tuple[ReportArtifactGroup, ...]:
+    """Collect classified artifacts while retaining successful child identity."""
+    groups: list[ReportArtifactGroup] = []
     for row in live:
         status = str(row.get("status") or "").lower()
         identity = _report_row_identity(
@@ -82,8 +108,14 @@ async def collect_report_artifact_set(
                 output_dir=output_dir,
                 manifest_loader=manifest_loader,
             )
-        sets.append(artifact_set)
-    return _merge_artifact_sets(sets)
+        groups.append(
+            ReportArtifactGroup(
+                task_id=task_id,
+                output_dir=output_dir,
+                artifact_set=artifact_set,
+            )
+        )
+    return tuple(groups)
 
 
 def _report_row_identity(
@@ -104,20 +136,20 @@ def _report_row_identity(
     return task_id, output_dir
 
 
-def _merge_artifact_sets(
-    sets: Sequence[TerminalArtifactSet],
+def merge_report_artifact_groups(
+    groups: Sequence[ReportArtifactGroup],
 ) -> TerminalArtifactSet:
     """Combine child artifact sets while preserving child/list order."""
     return TerminalArtifactSet(
         artifacts=tuple(
             artifact
-            for artifact_set in sets
-            for artifact in artifact_set.artifacts
+            for group in groups
+            for artifact in group.artifact_set.artifacts
         ),
         warnings=tuple(
             warning
-            for artifact_set in sets
-            for warning in artifact_set.warnings
+            for group in groups
+            for warning in group.artifact_set.warnings
         ),
     )
 

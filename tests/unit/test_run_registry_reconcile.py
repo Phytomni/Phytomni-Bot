@@ -18,7 +18,7 @@ from tests.unit.test_run_registry import (
 )
 
 from mcp_server_phytomni.mcp.formatting.models import ReportExecution
-from mcp_server_phytomni.runtime import run_registry
+from mcp_server_phytomni.runtime import run_registry, run_registry_reports
 from mcp_server_phytomni.runtime.artifact_roles import ArtifactRole
 from mcp_server_phytomni.runtime.execution_models import ExecutionWarning
 from mcp_server_phytomni.runtime.run_registry import (
@@ -33,6 +33,49 @@ from mcp_server_phytomni.runtime.terminal_report import (
 from mcp_server_phytomni.storage.artifact_listing import ListedArtifactObject
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.mark.asyncio
+async def test_collect_report_artifact_groups_preserves_child_directories() -> None:
+    """Archive collection retains the task/output boundary before merging."""
+
+    async def lister(output_dir: str) -> list[ListedArtifactObject]:
+        return [
+            ListedArtifactObject(
+                relative_path="report.md",
+                source_path=f"{output_dir}/report.md",
+                size_bytes=1,
+                download_ref=f"{output_dir}/report.md",
+            )
+        ]
+
+    async def manifest(_output_dir: str) -> dict[str, object]:
+        return {
+            "version": "1.0",
+            "artifacts": [
+                {
+                    "path": "report.md",
+                    "role": "scientific_report",
+                    "media_type": "text/markdown",
+                }
+            ],
+        }
+
+    groups = await run_registry_reports.collect_report_artifact_groups(
+        [
+            {"task_id": "child-1", "status": "succeeded", "output_dir": "/obs/run/one"},
+            {"task_id": "child-2", "status": "succeeded", "output_dir": "/obs/run/two"},
+        ],
+        lister=None,
+        object_lister=lister,
+        manifest_loader=manifest,
+    )
+
+    assert [(group.task_id, group.output_dir) for group in groups] == [
+        ("child-1", "/obs/run/one"),
+        ("child-2", "/obs/run/two"),
+    ]
+    assert [artifact.relative_path for artifact in groups[0].artifact_set.artifacts] == ["report.md"]
 
 
 async def _empty_lister(output_dir: str) -> list:

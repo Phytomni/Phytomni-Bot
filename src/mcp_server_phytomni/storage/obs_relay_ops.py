@@ -14,6 +14,7 @@ bucket, preferring the obsfs mount with an SDK fallback.
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,7 @@ from .obs_storage import (
 
 __all__ = [
     "put_object_bytes",
+    "put_object_file",
     "put_dir_marker",
     "get_object_bytes",
     "object_size",
@@ -107,6 +109,39 @@ def put_object_bytes(
     def _sdk() -> None:
         response = _obs_client(obs_server).putContent(
             bucketName=bucket, objectKey=safe_key, content=content
+        )
+        _require_ok(response, "upload")
+
+    obsfs_or_sdk(_obsfs, _sdk)
+    return safe_key
+
+
+def put_object_file(
+    bucket: str,
+    object_key: str,
+    source: Path,
+    *,
+    obs_server: str,
+    mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+) -> str:
+    """Upload one local file at the exact object key without buffering it.
+
+    The obsfs path delegates byte-for-byte copying to ``shutil.copyfile``;
+    the SDK fallback delegates file streaming to the OBS client.
+    """
+    safe_key = normalize_obs_object_key(object_key, bucket)
+
+    def _obsfs() -> None:
+        _require_mount(bucket, mount_root)
+        destination = obsfs_path_for(safe_key, bucket, mount_root)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, destination)
+
+    def _sdk() -> None:
+        response = _obs_client(obs_server).putFile(
+            bucketName=bucket,
+            objectKey=safe_key,
+            file_path=str(source),
         )
         _require_ok(response, "upload")
 
