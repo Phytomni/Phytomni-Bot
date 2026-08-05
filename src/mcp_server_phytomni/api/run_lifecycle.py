@@ -25,6 +25,7 @@ from typing import Any
 
 from fastapi import BackgroundTasks, HTTPException
 
+from ..mcp.formatting.redaction import strip_agent_result
 from ..runtime.async_utils import wait_for_thread_event
 from ..runtime.background_submission import BACKGROUND_RUNTIME_ERRORS
 from ..runtime.checkpoint_backend import build_default_checkpointer
@@ -367,7 +368,11 @@ def extract_answer(result: Any) -> str | None:
 def run_record_to_dict(record: Any) -> dict[str, Any]:
     """Flatten a ``RunRecord`` into the public HTTP run envelope."""
     info = record.request_info
-    result = record.result
+    result = (
+        strip_agent_result(record.result)
+        if isinstance(record.result, dict)
+        else record.result
+    )
     payload: dict[str, Any] = {
         "run_id": record.spec.run_id,
         "agent": record.spec.agent,

@@ -106,6 +106,34 @@ async def test_get_run_returns_terminal_record(
     assert calls["n"] == 0
 
 
+async def test_get_run_strips_private_delivery_state_in_default_and_debug_reads(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """Delivery inventory references are never exposed by either read mode."""
+    result = empty_execution_projection(result_archive_required=True)
+    result["delivery_internal"] = {
+        "inventory_ref": "/obs/private/inventory.json",
+        "attempts_claimed": 1,
+        "last_error_code": "archive_publish_failed",
+    }
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec("run-private-delivery", "u1", "analyst", "remote"),
+        outcome=RunOutcome(status="running", result=result),
+    )
+
+    for suffix in ("", "?debug=true"):
+        response = await api_client.get(
+            f"/v1/runs/run-private-delivery{suffix}",
+            headers={"Authorization": f"Bearer {issued_api_key}"},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert "delivery_internal" not in body["result"]
+        assert "inventory_ref" not in str(body["result"])
+
+
 async def test_get_run_unknown_id_is_404(
     api_client: httpx.AsyncClient,
     issued_api_key: str,

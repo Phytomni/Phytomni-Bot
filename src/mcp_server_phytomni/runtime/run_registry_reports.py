@@ -12,7 +12,11 @@ from pathlib import PurePosixPath
 from typing import Any
 
 from ..mcp.formatting.execution import apply_compatibility_projection
-from ..mcp.formatting.models import ExecutionProjection, FormattedToolResult
+from ..mcp.formatting.models import (
+    ExecutionProjection,
+    FormattedToolResult,
+    ResultDelivery,
+)
 from ..storage.artifact_listing import ListedArtifactObject
 from .execution_models import ExecutionWarning
 from .run_registry_models import _FAILURE_STATUSES
@@ -235,10 +239,11 @@ def canonical_terminal_payload(
     report: TerminalReportAssembly,
     *,
     warnings: list[dict[str, Any]] | None = None,
+    delivery: ResultDelivery | None = None,
 ) -> tuple[dict[str, Any], str | None]:
     """Build the single persisted projection for analyst-class runs."""
     execution = _build_execution_projection(
-        status, live, artifact_set, report, warnings
+        status, live, artifact_set, report, warnings, delivery
     )
     formatted = apply_compatibility_projection(
         FormattedToolResult(answer=report.answer), execution
@@ -255,6 +260,7 @@ def _build_execution_projection(
     artifact_set: TerminalArtifactSet,
     report: TerminalReportAssembly,
     warnings: list[dict[str, Any]] | None,
+    delivery: ResultDelivery | None,
 ) -> ExecutionProjection:
     """Build the bounded operational projection for a terminal report."""
     submission_warnings = _execution_warnings(warnings)
@@ -278,6 +284,7 @@ def _build_execution_projection(
         output_dirs=tuple(_public_output_dirs(live)),
         report=report.report,
         diagnostics=tuple(_failure_diagnostics(status, live)),
+        delivery=delivery,
     )
 
 

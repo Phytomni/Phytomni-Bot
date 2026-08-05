@@ -8,8 +8,30 @@ from __future__ import annotations
 from typing import Any
 
 
-def empty_execution_projection(*, degraded: bool = False) -> dict[str, Any]:
+def empty_execution_projection(
+    *, degraded: bool = False, result_archive_required: bool = False
+) -> dict[str, Any]:
     """Return an empty formatted/execution envelope for a live run."""
+    execution: dict[str, Any] = {
+        "tracking": {"degraded": degraded},
+        "warnings": [],
+        "tasks": [],
+        "artifacts": [],
+        "output_dirs": [],
+        "report": None,
+        "diagnostics": [],
+    }
+    if result_archive_required:
+        execution["delivery"] = {
+            "schema_version": 1,
+            "required": True,
+            "status": "pending",
+            "revision": 1,
+            "inventory_digest": "",
+            "archive": None,
+            "error_code": None,
+            "retryable": False,
+        }
     return {
         "formatted": {
             "answer": "",
@@ -18,15 +40,7 @@ def empty_execution_projection(*, degraded: bool = False) -> dict[str, Any]:
             "tabular": {},
             "metadata": {},
         },
-        "execution": {
-            "tracking": {"degraded": degraded},
-            "warnings": [],
-            "tasks": [],
-            "artifacts": [],
-            "output_dirs": [],
-            "report": None,
-            "diagnostics": [],
-        },
+        "execution": execution,
     }
 
 

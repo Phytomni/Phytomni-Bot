@@ -35,6 +35,59 @@ class ReportExecution:
 
 
 @dataclass(frozen=True, slots=True)
+class ResultArchiveDescriptor:
+    """Public, resolver-safe descriptor for one delivered result archive."""
+
+    role: Literal["result_archive"]
+    name: str
+    media_type: Literal["application/zip"]
+    size_bytes: int
+    downloadable: bool
+    report_context_eligible: bool
+    download_ref: str
+
+    def __post_init__(self) -> None:
+        if (
+            not self.name.endswith("-results.zip")
+            or "/" in self.name
+            or "\\" in self.name
+            or isinstance(self.size_bytes, bool)
+            or self.size_bytes < 0
+            or not self.download_ref.startswith("result-archive:sha256:")
+        ):
+            raise ValueError("invalid result archive descriptor")
+
+
+@dataclass(frozen=True, slots=True)
+class ResultDelivery:
+    """Canonical archive-delivery state for a report-producing run."""
+
+    schema_version: Literal[1]
+    required: bool
+    status: Literal["pending", "ready", "failed"]
+    revision: int
+    inventory_digest: str
+    archive: ResultArchiveDescriptor | None
+    error_code: str | None
+    retryable: bool
+
+    def __post_init__(self) -> None:
+        digest_present = bool(self.inventory_digest)
+        digest_valid = self.inventory_digest.startswith("sha256:") and len(
+            self.inventory_digest
+        ) == 71
+        if (
+            self.revision < 1
+            or (digest_present and not digest_valid)
+            or (self.status == "ready" and not digest_valid)
+            or (self.status == "pending" and (self.archive is not None or self.error_code is not None or self.retryable))
+            or (self.status == "ready" and (self.archive is None or self.error_code is not None or self.retryable))
+            or (self.status == "failed" and (self.archive is not None or not self.error_code))
+        ):
+            raise ValueError("invalid result delivery state")
+
+
+@dataclass(frozen=True, slots=True)
 class ExecutionProjection:
     """Canonical operational projection for one normalized tool result."""
 
@@ -47,6 +100,7 @@ class ExecutionProjection:
     output_dirs: tuple[str, ...] = ()
     report: ReportExecution | None = None
     diagnostics: tuple[Mapping[str, Any], ...] = ()
+    delivery: ResultDelivery | None = None
 
 
 @dataclass(frozen=True)
@@ -85,6 +139,8 @@ __all__ = [
     "FormattedToolChunk",
     "FormattedToolResult",
     "ReportExecution",
+    "ResultArchiveDescriptor",
+    "ResultDelivery",
     "ToolResultEnvelope",
     "format_tool_chunk",
 ]

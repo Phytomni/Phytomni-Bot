@@ -236,7 +236,9 @@ def _initial_submission_result(
             output_dir
             for _task_id, output_dir, _fingerprint, _source in submissions
         ]
-    initial_result = empty_execution_projection()
+    initial_result = empty_execution_projection(
+        result_archive_required=agent in RESULT_DELIVERY_AGENTS
+    )
     initial_result["execution"]["tasks"] = task_rows
     initial_result["execution"]["output_dirs"] = output_dirs
     warnings = project_submission_warnings(result.get("submission_warnings"))

@@ -113,7 +113,7 @@ async def test_decorator_records_task_run_and_passes_result_through(
     assert listing[0].task_ids == ("T-1",)
     # Submit-time write seeds the canonical envelope so a client polling
     # /v1/runs/{id} during running sees the same field ownership as terminal.
-    expected = empty_execution_projection()
+    expected = empty_execution_projection(result_archive_required=True)
     expected["execution"]["tasks"] = [
         {"id": "T-1", "accepted": True, "status": "submitted"}
     ]

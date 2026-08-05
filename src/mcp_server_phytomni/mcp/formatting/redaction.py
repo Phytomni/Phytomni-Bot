@@ -88,8 +88,22 @@ def resolve_debug(per_request: bool | None) -> bool:
 
 
 def strip_agent_result(result: dict) -> dict:
-    """Remove ``raw`` from a result without mutating the original."""
-    return {key: value for key, value in result.items() if key != "raw"}
+    """Remove raw and private delivery coordination without mutation."""
+    return _strip_private_result_fields(result)
+
+
+def _strip_private_result_fields(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            key: _strip_private_result_fields(item)
+            for key, item in value.items()
+            if key not in {"raw", "delivery_internal"}
+        }
+    if isinstance(value, list):
+        return [_strip_private_result_fields(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_strip_private_result_fields(item) for item in value)
+    return value
 
 
 _CHAT_COMPLETION_KEEP = frozenset(

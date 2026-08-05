@@ -12,6 +12,7 @@ Public dataclasses: RunSpec, RunFilter, Timestamps, RunRecord, RunRegistry.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import inspect
 import json
@@ -19,9 +20,28 @@ import sqlite3
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from ..config.defaults import ServerConfig
+from ..mcp.formatting.models import ResultArchiveDescriptor, ResultDelivery
+from ..storage.result_archive_storage import persist_result_archive_inventory
 from .background_policy import is_detached_background_run
 from .execution_defaults import empty_execution_projection
-from .live_tasks import is_live_running
+from .live_tasks import (
+    deregister_live_task,
+    is_live_running,
+    register_live_task,
+)
+from .result_archive import ResultArchiveError, build_result_archive_inventory
+from .run_registry_delivery import (
+    PrivateDeliveryState,
+    ResultDeliveryDependencies,
+    begin_delivery_retry,
+    claim_delivery_attempt,
+    default_result_delivery_dependencies,
+    delivery_task_key,
+    load_private_inventory,
+    settle_delivery_failure,
+    settle_delivery_ready,
+)
 from .run_registry_models import (
     _A2A_COLUMNS,
     _CREATE_A2A_TASK_INDEX,
@@ -60,7 +80,8 @@ from .run_registry_reports import (
     ReportArtifactSources,
     any_degraded,
     canonical_terminal_payload,
-    collect_report_artifact_set,
+    collect_report_artifact_groups,
+    merge_report_artifact_groups,
     persist_report_compatibility,
     stored_submission_warnings,
 )
@@ -144,7 +165,12 @@ class RunRegistry(RunRegistryViewsMixin):
     ``resolve_tasks_db_path`` keeps run rows and child tasks co-located.
     """
 
-    def __init__(self, db_path: str | None = None) -> None:
+    def __init__(
+        self,
+        db_path: str | None = None,
+        *,
+        delivery_dependencies: ResultDeliveryDependencies | None = None,
+    ) -> None:
         """Open or create the run registry at ``db_path``.
 
         Args:
@@ -152,6 +178,9 @@ class RunRegistry(RunRegistryViewsMixin):
                 shared task DB).
         """
         self.db_path = db_path or resolve_tasks_db_path()
+        self._delivery_dependencies = (
+            delivery_dependencies or default_result_delivery_dependencies()
+        )
         self._init_db()
 
     if TYPE_CHECKING:
@@ -622,6 +651,90 @@ class RunRegistry(RunRegistryViewsMixin):
                 records.append(_row_to_record(run_row, task_rows))
         return records
 
+    def begin_delivery_retry(self, run_id: str, *, owner: str) -> bool:
+        """Transition an owned retryable delivery failure to a new revision."""
+        return begin_delivery_retry(self, run_id, owner=owner)
+
+    def _schedule_delivery(
+        self, current: RunRecord, delivery: ResultDelivery
+    ) -> None:
+        """Launch one process-local worker unless that revision is live."""
+        key = delivery_task_key(current.spec.run_id, delivery.revision)
+        if is_live_running(key):
+            return
+        task = asyncio.create_task(
+            self._run_delivery_worker(
+                current.spec.run_id,
+                owner=current.spec.user_id,
+                revision=delivery.revision,
+                inventory_digest=delivery.inventory_digest,
+                task_key=key,
+            )
+        )
+        register_live_task(key, task)
+
+    async def _run_delivery_worker(
+        self,
+        run_id: str,
+        *,
+        owner: str,
+        revision: int,
+        inventory_digest: str,
+        task_key: str,
+    ) -> None:
+        """Claim, publish, and settle one bounded immutable delivery revision."""
+        try:
+            while True:
+                claim = claim_delivery_attempt(
+                    self,
+                    run_id,
+                    owner=owner,
+                    revision=revision,
+                    inventory_digest=inventory_digest,
+                )
+                if claim is None:
+                    return
+                try:
+                    inventory = load_private_inventory(
+                        claim.inventory_ref, inventory_digest
+                    )
+                    archive = await asyncio.to_thread(
+                        self._delivery_dependencies.publish,
+                        inventory,
+                        agent=claim.agent,
+                        summary_markdown=claim.summary_markdown,
+                    )
+                except ResultArchiveError as exc:
+                    error_code, retryable = exc.code, exc.retryable
+                except (OSError, TypeError, ValueError):
+                    error_code, retryable = "archive_publish_failed", True
+                else:
+                    settle_delivery_ready(
+                        self,
+                        run_id,
+                        owner=owner,
+                        revision=revision,
+                        inventory_digest=inventory_digest,
+                        archive=archive,
+                    )
+                    return
+                outcome = settle_delivery_failure(
+                    self,
+                    run_id,
+                    owner=owner,
+                    revision=revision,
+                    inventory_digest=inventory_digest,
+                    error_code=error_code,
+                    retryable=retryable,
+                )
+                if outcome != "retry":
+                    return
+                await self._delivery_dependencies.sleep(
+                    _delivery_backoff(claim.attempts_claimed)
+                )
+        finally:
+            deregister_live_task(task_key)
+
     async def reconcile(
         self,
         *args: Any,
@@ -650,7 +763,31 @@ class RunRegistry(RunRegistryViewsMixin):
             manifest_loader=bound.arguments["manifest_loader"],
         )
         current = self.get_run(request.run_id, owner=request.owner)
-        if current is None or current.status in _NON_POLLABLE_RUN_STATUSES:
+        if current is None:
+            return current
+        delivery = _pending_delivery(current.result)
+        if delivery is not None:
+            private = _private_delivery(current.result)
+            if private is not None and current.status == "running":
+                key = delivery_task_key(current.spec.run_id, delivery.revision)
+                if not is_live_running(key):
+                    if private.attempts_claimed >= 3:
+                        settle_delivery_failure(
+                            self,
+                            current.spec.run_id,
+                            owner=current.spec.user_id,
+                            revision=delivery.revision,
+                            inventory_digest=delivery.inventory_digest,
+                            error_code=private.last_error_code
+                            or "archive_publish_failed",
+                            retryable=True,
+                        )
+                        return self.get_run(
+                            current.spec.run_id, owner=current.spec.user_id
+                        )
+                    self._schedule_delivery(current, delivery)
+                return self.get_run(current.spec.run_id, owner=current.spec.user_id)
+        if current.status in _NON_POLLABLE_RUN_STATUSES:
             return current
         if not current.task_ids and is_detached_background_run(
             agent=current.spec.agent,
@@ -716,12 +853,13 @@ class RunRegistry(RunRegistryViewsMixin):
         sources: ReportArtifactSources,
     ) -> RunRecord | None:
         """Assemble and persist the canonical analyst-class report."""
-        artifact_set = await collect_report_artifact_set(
+        groups = await collect_report_artifact_groups(
             live,
             lister=sources.lister,
             object_lister=sources.object_lister,
             manifest_loader=sources.manifest_loader,
         )
+        artifact_set = merge_report_artifact_groups(groups)
         report = await assemble_terminal_report(
             context=TerminalReportContext(
                 agent=current.spec.agent,
@@ -733,21 +871,92 @@ class RunRegistry(RunRegistryViewsMixin):
             ),
             artifacts=artifact_set.artifacts if status == "succeeded" else (),
         )
-        result_payload, error = canonical_terminal_payload(
+        delivery_required = _delivery_required(current.result)
+        if not delivery_required or status != "succeeded":
+            result_payload, error = canonical_terminal_payload(
+                status,
+                live,
+                artifact_set,
+                report,
+                warnings=stored_submission_warnings(current.result),
+                delivery=_terminal_delivery_marker(current.result),
+            )
+            outcome = RunOutcome(status, result_payload, error)
+            settled = self._settle_terminal(current, outcome)
+            if (
+                settled is not None
+                and settled.status == status
+                and settled.result == result_payload
+            ):
+                persist_report_compatibility(live, report, self.db_path)
+            return settled
+        try:
+            inventory = build_result_archive_inventory(groups)
+            config = ServerConfig()
+            inventory_ref = persist_result_archive_inventory(
+                inventory,
+                bucket=config.BUCKET_NAME,
+                obs_server=config.OBS_SERVER,
+            )
+        except ResultArchiveError as exc:
+            delivery = ResultDelivery(
+                schema_version=1,
+                required=True,
+                status="failed",
+                revision=1,
+                inventory_digest="",
+                archive=None,
+                error_code=exc.code,
+                retryable=False,
+            )
+            result_payload, _error = canonical_terminal_payload(
+                status,
+                live,
+                artifact_set,
+                report,
+                warnings=stored_submission_warnings(current.result),
+                delivery=delivery,
+            )
+            _mark_delivery_degraded(result_payload)
+            settled = self._settle_terminal(
+                current, RunOutcome("succeeded", result_payload, None)
+            )
+            if settled is not None and settled.result == result_payload:
+                persist_report_compatibility(live, report, self.db_path)
+            return settled
+        delivery = ResultDelivery(
+            schema_version=1,
+            required=True,
+            status="pending",
+            revision=1,
+            inventory_digest=inventory.digest,
+            archive=None,
+            error_code=None,
+            retryable=False,
+        )
+        result_payload, _error = canonical_terminal_payload(
             status,
             live,
             artifact_set,
             report,
             warnings=stored_submission_warnings(current.result),
+            delivery=delivery,
         )
-        outcome = RunOutcome(status, result_payload, error)
-        settled = self._settle_terminal(current, outcome)
-        if (
-            settled is not None
-            and settled.status == status
-            and settled.result == result_payload
+        result_payload["delivery_internal"] = {
+            "inventory_ref": inventory_ref,
+            "attempts_claimed": 0,
+            "last_error_code": None,
+        }
+        if not self.update_running_result(
+            current.spec.run_id,
+            owner=current.spec.user_id,
+            result=result_payload,
         ):
+            return self.get_run(current.spec.run_id, owner=current.spec.user_id)
+        settled = self.get_run(current.spec.run_id, owner=current.spec.user_id)
+        if settled is not None and settled.result == result_payload:
             persist_report_compatibility(live, report, self.db_path)
+            self._schedule_delivery(settled, delivery)
         return settled
 
     def purge_expired(self) -> int:
@@ -936,6 +1145,89 @@ def _build_list_where(
         clauses.append("created_at <= ?")
         params.append(run_filter.created_before)
     return " AND ".join(clauses), params
+
+
+def _terminal_delivery_marker(result: object) -> ResultDelivery | None:
+    """Read a validated canonical delivery block without private state."""
+    if not isinstance(result, dict):
+        return None
+    execution = result.get("execution")
+    raw = execution.get("delivery") if isinstance(execution, dict) else None
+    if not isinstance(raw, dict):
+        return None
+    try:
+        archive_raw = raw.get("archive")
+        archive = (
+            ResultArchiveDescriptor(**archive_raw)
+            if isinstance(archive_raw, dict)
+            else None
+        )
+        return ResultDelivery(
+            schema_version=raw.get("schema_version"),
+            required=raw.get("required"),
+            status=raw.get("status"),
+            revision=raw.get("revision"),
+            inventory_digest=raw.get("inventory_digest"),
+            archive=archive,
+            error_code=raw.get("error_code"),
+            retryable=raw.get("retryable"),
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def _delivery_required(result: object) -> bool:
+    """Return the submit-time delivery marker without inferring by agent."""
+    delivery = _terminal_delivery_marker(result)
+    return delivery is not None and delivery.required
+
+
+def _pending_delivery(result: object) -> ResultDelivery | None:
+    """Return an actionable delivery only after immutable inventory exists."""
+    delivery = _terminal_delivery_marker(result)
+    if (
+        delivery is None
+        or delivery.status != "pending"
+        or not delivery.inventory_digest
+    ):
+        return None
+    return delivery
+
+
+def _private_delivery(result: object) -> PrivateDeliveryState | None:
+    """Read bounded private delivery coordination from a stored result."""
+    if not isinstance(result, dict):
+        return None
+    raw = result.get("delivery_internal")
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return PrivateDeliveryState(**raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _delivery_backoff(attempts_claimed: int) -> float:
+    """Return a small bounded delay after one durable failed attempt."""
+    return 0.05 if attempts_claimed <= 1 else 0.1
+
+
+def _mark_delivery_degraded(result: dict[str, Any]) -> None:
+    """Keep a delivery-only failure visible without replacing science text."""
+    execution = result.get("execution")
+    if not isinstance(execution, dict):
+        return
+    execution["tracking"] = {"degraded": True}
+    warnings = execution.get("warnings")
+    values = list(warnings) if isinstance(warnings, list) else []
+    values.append(
+        {
+            "code": "result_archive_delivery_failed",
+            "retryable": False,
+            "stage": "result_delivery",
+        }
+    )
+    execution["warnings"] = values
 
 
 def _terminal_payload(
