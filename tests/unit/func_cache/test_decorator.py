@@ -9,9 +9,11 @@ paths, excluded parameters, corrupted values, and concurrent miss locking.
 """
 
 import asyncio
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from tests.support.logging_helpers import capture_non_propagating_logger
 
 import mcp_server_phytomni.func_cache as func_cache_pkg
 from mcp_server_phytomni.func_cache.decorator import (
@@ -24,6 +26,20 @@ from mcp_server_phytomni.func_cache.key_builder import KeyBuilder
 from mcp_server_phytomni.func_cache.storage import Storage
 
 pytestmark = pytest.mark.unit
+
+_CACHE_LOGGER_NAME = "mcp_server_phytomni.func_cache.core"
+
+
+@pytest.fixture(name="cache_caplog")
+def _cache_caplog_fixture(
+    caplog: pytest.LogCaptureFixture,
+) -> Iterator[pytest.LogCaptureFixture]:
+    """Capture cache warnings even after package logging is configured."""
+    with capture_non_propagating_logger(
+        _CACHE_LOGGER_NAME,
+        caplog.handler,
+    ):
+        yield caplog
 
 
 def test_func_cache_reuses_result_and_exposes_info(tmp_path):
@@ -89,13 +105,13 @@ def test_func_cache_rejects_invalid_cache_if_predicates():
 
 def test_func_cache_fails_closed_for_wrapped_async_predicate(
     tmp_path,
-    caplog,
+    cache_caplog,
 ):
     """Reject awaitables returned by a synchronous predicate wrapper.
 
     Args:
         tmp_path: Temporary directory for the cache database.
-        caplog: Pytest log-capture fixture.
+        cache_caplog: Cache logger capture isolated from package logging.
 
     Returns:
         None after runtime predicate validation assertions pass.
@@ -123,7 +139,7 @@ def test_func_cache_fails_closed_for_wrapped_async_predicate(
     assert fetch() == {"call": 2}
     assert calls["count"] == 2
     assert fetch.cache_info() == {"hits": 0, "misses": 2, "count": 0}
-    assert "Cache admission policy returned an awaitable" in caplog.text
+    assert "Cache admission policy returned an awaitable" in cache_caplog.text
 
 
 def test_func_cache_cache_if_skips_rejected_sync_result(tmp_path):
@@ -200,12 +216,12 @@ def test_func_cache_cache_if_evicts_rejected_sync_hit(tmp_path):
     assert fetch.cache_info() == {"hits": 1, "misses": 2, "count": 1}
 
 
-def test_func_cache_cache_if_exception_fails_closed(tmp_path, caplog):
+def test_func_cache_cache_if_exception_fails_closed(tmp_path, cache_caplog):
     """Reject cache values when their admission predicate raises.
 
     Args:
         tmp_path: Temporary directory for the cache database.
-        caplog: Pytest log-capture fixture.
+        cache_caplog: Cache logger capture isolated from package logging.
 
     Returns:
         None after fail-closed and redaction assertions pass.
@@ -235,21 +251,21 @@ def test_func_cache_cache_if_exception_fails_closed(tmp_path, caplog):
 
     assert calls["count"] == 3
     assert fetch.cache_info() == {"hits": 0, "misses": 3, "count": 0}
-    assert "Cache admission policy failed: RuntimeError" in caplog.text
-    assert "provider-body-must-not-log" not in caplog.text
+    assert "Cache admission policy failed: RuntimeError" in cache_caplog.text
+    assert "provider-body-must-not-log" not in cache_caplog.text
 
 
 def test_func_cache_rejected_delete_error_still_recomputes(
     tmp_path,
     monkeypatch,
-    caplog,
+    cache_caplog,
 ):
     """Recompute when exact cleanup of a rejected cache entry fails.
 
     Args:
         tmp_path: Temporary directory for the cache database.
         monkeypatch: Pytest monkeypatch fixture for the storage boundary.
-        caplog: Pytest log-capture fixture.
+        cache_caplog: Cache logger capture isolated from package logging.
 
     Returns:
         None after cleanup fallback and redaction assertions pass.
@@ -289,8 +305,11 @@ def test_func_cache_rejected_delete_error_still_recomputes(
     assert fetch() == {"choices": ["recovered"]}
     assert calls["count"] == 2
     assert fetch.cache_info() == {"hits": 1, "misses": 2, "count": 1}
-    assert "Cache rejected entry cleanup failed: StorageError" in caplog.text
-    assert "cached-body-must-not-log" not in caplog.text
+    assert (
+        "Cache rejected entry cleanup failed: StorageError"
+        in cache_caplog.text
+    )
+    assert "cached-body-must-not-log" not in cache_caplog.text
 
 
 def test_func_cache_respects_zero_ttl(tmp_path):
@@ -563,13 +582,13 @@ async def test_func_cache_cache_if_skips_rejected_async_result(tmp_path):
 
 async def test_func_cache_cache_if_exception_fails_closed_async(
     tmp_path,
-    caplog,
+    cache_caplog,
 ):
     """Reject async cache values when their admission predicate raises.
 
     Args:
         tmp_path: Temporary directory for the cache database.
-        caplog: Pytest log-capture fixture.
+        cache_caplog: Cache logger capture isolated from package logging.
 
     Returns:
         None after async fail-closed and redaction assertions pass.
@@ -599,21 +618,21 @@ async def test_func_cache_cache_if_exception_fails_closed_async(
 
     assert calls["count"] == 3
     assert fetch.cache_info() == {"hits": 0, "misses": 3, "count": 0}
-    assert "Cache admission policy failed: RuntimeError" in caplog.text
-    assert "async-provider-body-must-not-log" not in caplog.text
+    assert "Cache admission policy failed: RuntimeError" in cache_caplog.text
+    assert "async-provider-body-must-not-log" not in cache_caplog.text
 
 
 async def test_func_cache_rejected_delete_error_still_recomputes_async(
     tmp_path,
     monkeypatch,
-    caplog,
+    cache_caplog,
 ):
     """Recompute async values when rejected-entry cleanup fails.
 
     Args:
         tmp_path: Temporary directory for the cache database.
         monkeypatch: Pytest monkeypatch fixture for the storage boundary.
-        caplog: Pytest log-capture fixture.
+        cache_caplog: Cache logger capture isolated from package logging.
 
     Returns:
         None after async cleanup fallback assertions pass.
@@ -653,8 +672,11 @@ async def test_func_cache_rejected_delete_error_still_recomputes_async(
     assert await fetch() == {"choices": ["recovered"]}
     assert calls["count"] == 2
     assert fetch.cache_info() == {"hits": 1, "misses": 2, "count": 1}
-    assert "Cache rejected entry cleanup failed: StorageError" in caplog.text
-    assert "async-cached-body-must-not-log" not in caplog.text
+    assert (
+        "Cache rejected entry cleanup failed: StorageError"
+        in cache_caplog.text
+    )
+    assert "async-cached-body-must-not-log" not in cache_caplog.text
 
 
 async def test_func_cache_supports_async_round_trip(tmp_path):

@@ -20,6 +20,7 @@ from .run_registry_models import (
     A2UIActionClaim,
     A2UIActionConflict,
     A2UIActionIdentity,
+    RunFilter,
     RunRecord,
     RunRequestInfo,
     RunSpec,
@@ -36,6 +37,44 @@ class RunRegistryViewsMixin:
     """Expose secondary run projections on the primary registry class."""
 
     db_path: str
+
+    def list_runs(
+        self,
+        *,
+        owner: str,
+        run_filter: RunFilter | None = None,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> list[RunRecord]:
+        """Return the newest owner-scoped runs matching all filters."""
+        where, params = _build_list_where(owner, run_filter or RunFilter())
+        params.extend([limit, offset])
+        records: list[RunRecord] = []
+        with sqlite_transaction(self.db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                f"""
+                SELECT run_id, user_id, agent, origin, status,
+                       result_json, error, created_at, updated_at,
+                       expires_at,
+                       dialogue_id, request_id, query, tool_name, model,
+                       request_json,
+                       locale,
+                       a2a_task_id, a2a_context_id, a2a_message_id
+                FROM runs WHERE {where}
+                ORDER BY created_at DESC, run_id
+                LIMIT ? OFFSET ?
+                """,
+                tuple(params),
+            ).fetchall()
+            for run_row in rows:
+                task_rows = conn.execute(
+                    "SELECT task_id FROM tasks WHERE run_id = ? "
+                    "ORDER BY task_id",
+                    (run_row["run_id"],),
+                ).fetchall()
+                records.append(_row_to_record(run_row, task_rows))
+        return records
 
     def claim_a2ui_action(
         self,
@@ -311,3 +350,27 @@ def _row_to_record(row: sqlite3.Row, task_rows: list[Any]) -> RunRecord:
             ),
         ),
     )
+
+
+def _build_list_where(
+    owner: str, run_filter: RunFilter
+) -> tuple[str, list[Any]]:
+    """Return the WHERE fragment and parameters for ``list_runs``."""
+    clauses = ["user_id = ?"]
+    params: list[Any] = [owner]
+    for column, value in (
+        ("status", run_filter.status),
+        ("agent", run_filter.agent),
+        ("origin", run_filter.origin),
+        ("dialogue_id", run_filter.dialogue_id),
+    ):
+        if value is not None:
+            clauses.append(f"{column} = ?")
+            params.append(value)
+    if run_filter.created_after is not None:
+        clauses.append("created_at >= ?")
+        params.append(run_filter.created_after)
+    if run_filter.created_before is not None:
+        clauses.append("created_at <= ?")
+        params.append(run_filter.created_before)
+    return " AND ".join(clauses), params

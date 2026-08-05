@@ -17,6 +17,116 @@ _ARCHIVE_DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _ARCHIVE_NAME = re.compile(
     r"(?:analyst|research|network|design)-results\.zip\Z"
 )
+_DELIVERY_STATUSES = frozenset({"pending", "ready", "failed"})
+
+
+def _is_plain_int(value: object) -> bool:
+    """Return whether a value is an integer but not a Boolean."""
+    return isinstance(value, int) and value.__class__ is int
+
+
+def _is_valid_archive_identity(
+    role: object,
+    name: object,
+    media_type: object,
+) -> bool:
+    """Return whether the archive identity uses supported public values."""
+    return (
+        role == "result_archive"
+        and isinstance(name, str)
+        and _ARCHIVE_NAME.fullmatch(name) is not None
+        and media_type == "application/zip"
+    )
+
+
+def _is_valid_archive_access(
+    size_bytes: object,
+    downloadable: object,
+    report_context_eligible: object,
+    download_ref: object,
+) -> bool:
+    """Return whether public archive access data is resolver-safe."""
+    if not isinstance(size_bytes, int) or isinstance(size_bytes, bool):
+        return False
+    if size_bytes < 0:
+        return False
+    if downloadable is not True or report_context_eligible is not False:
+        return False
+    if not isinstance(download_ref, str):
+        return False
+    digest = download_ref.removeprefix("result-archive:")
+    return (
+        download_ref.startswith("result-archive:")
+        and _ARCHIVE_DIGEST.fullmatch(digest) is not None
+    )
+
+
+def _is_valid_delivery_basics(delivery: ResultDelivery) -> bool:
+    """Return whether delivery fields independent of status are valid."""
+    return (
+        _is_plain_int(delivery.schema_version)
+        and delivery.schema_version == 1
+        and delivery.required is True
+        and isinstance(delivery.status, str)
+        and delivery.status in _DELIVERY_STATUSES
+        and _is_plain_int(delivery.revision)
+        and delivery.revision >= 1
+        and _is_valid_delivery_digest(delivery.inventory_digest)
+        and isinstance(delivery.retryable, bool)
+        and (
+            delivery.archive is None
+            or isinstance(delivery.archive, ResultArchiveDescriptor)
+        )
+        and _is_valid_delivery_error(delivery.error_code)
+    )
+
+
+def _is_valid_delivery_digest(value: object) -> bool:
+    """Return whether an optional delivery inventory digest is valid."""
+    return isinstance(value, str) and (
+        not value or _ARCHIVE_DIGEST.fullmatch(value) is not None
+    )
+
+
+def _is_valid_delivery_error(value: object) -> bool:
+    """Return whether an optional public delivery error code is valid."""
+    return value is None or (isinstance(value, str) and bool(value))
+
+
+def _is_valid_delivery_state(delivery: ResultDelivery) -> bool:
+    """Return whether status-dependent delivery fields agree."""
+    if delivery.status == "pending":
+        return (
+            delivery.archive is None
+            and delivery.error_code is None
+            and not delivery.retryable
+        )
+    if delivery.status == "ready":
+        return _is_valid_ready_delivery(delivery)
+    return _is_valid_failed_delivery(delivery)
+
+
+def _is_valid_ready_delivery(delivery: ResultDelivery) -> bool:
+    """Return whether a ready delivery has its matching archive."""
+    if (
+        not delivery.inventory_digest
+        or delivery.archive is None
+        or delivery.error_code is not None
+        or delivery.retryable
+    ):
+        return False
+    return delivery.archive.download_ref == (
+        f"result-archive:{delivery.inventory_digest}"
+    )
+
+
+def _is_valid_failed_delivery(delivery: ResultDelivery) -> bool:
+    """Return whether a failed delivery has a public error code."""
+    return (
+        delivery.archive is None
+        and delivery.error_code is not None
+        and (bool(delivery.inventory_digest) or not delivery.retryable)
+    )
 
 
 @dataclass(frozen=True)
@@ -53,68 +163,48 @@ class ResultArchiveDescriptor:
     download_ref: str
 
     def __post_init__(self) -> None:
-        if (
-            self.role != "result_archive"
-            or not isinstance(self.name, str)
-            or _ARCHIVE_NAME.fullmatch(self.name) is None
-            or self.media_type != "application/zip"
-            or isinstance(self.size_bytes, bool)
-            or not isinstance(self.size_bytes, int)
-            or self.size_bytes < 0
-            or self.downloadable is not True
-            or self.report_context_eligible is not False
-            or not isinstance(self.download_ref, str)
-            or not self.download_ref.startswith("result-archive:")
-            or _ARCHIVE_DIGEST.fullmatch(
-                self.download_ref.removeprefix("result-archive:")
-            )
-            is None
+        if not _is_valid_archive_identity(
+            self.role,
+            self.name,
+            self.media_type,
+        ) or not _is_valid_archive_access(
+            self.size_bytes,
+            self.downloadable,
+            self.report_context_eligible,
+            self.download_ref,
         ):
             raise ValueError("invalid result archive descriptor")
 
 
 @dataclass(frozen=True, slots=True)
-class ResultDelivery:
-    """Canonical archive-delivery state for a report-producing run."""
+class _ResultDeliveryState:
+    """Stable delivery fields that precede optional archive state."""
 
     schema_version: Literal[1]
     required: bool
     status: Literal["pending", "ready", "failed"]
     revision: int
     inventory_digest: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResultDelivery(_ResultDeliveryState):
+    """Canonical archive-delivery state for a report-producing run."""
+
     archive: ResultArchiveDescriptor | None
     error_code: str | None
     retryable: bool
 
     def __post_init__(self) -> None:
-        digest_valid = isinstance(self.inventory_digest, str) and (
-            not self.inventory_digest
-            or _ARCHIVE_DIGEST.fullmatch(self.inventory_digest) is not None
-        )
-        if (
-            type(self.schema_version) is not int
-            or self.schema_version != 1
-            or self.required is not True
-            or not isinstance(self.status, str)
-            or self.status not in {"pending", "ready", "failed"}
-            or type(self.revision) is not int
-            or self.revision < 1
-            or not digest_valid
-            or type(self.retryable) is not bool
-            or (self.archive is not None and not isinstance(self.archive, ResultArchiveDescriptor))
-            or (self.error_code is not None and (not isinstance(self.error_code, str) or not self.error_code))
-            or (self.status == "pending" and (self.archive is not None or self.error_code is not None or self.retryable))
-            or (self.status == "ready" and (not self.inventory_digest or self.archive is None or self.error_code is not None or self.retryable))
-            or (self.status == "ready" and self.archive is not None and self.archive.download_ref != f"result-archive:{self.inventory_digest}")
-            or (self.status == "failed" and (self.archive is not None or self.error_code is None))
-            or (self.status == "failed" and not self.inventory_digest and self.retryable)
+        if not _is_valid_delivery_basics(self) or not _is_valid_delivery_state(
+            self
         ):
             raise ValueError("invalid result delivery state")
 
 
 @dataclass(frozen=True, slots=True)
-class ExecutionProjection:
-    """Canonical operational projection for one normalized tool result."""
+class _ExecutionProjectionState:
+    """Core execution fields retained in every result projection."""
 
     tracking: Mapping[str, Any] = field(
         default_factory=lambda: {"degraded": False}
@@ -122,6 +212,12 @@ class ExecutionProjection:
     warnings: tuple[ExecutionWarning, ...] = ()
     tasks: tuple[Mapping[str, Any], ...] = ()
     artifacts: tuple[Mapping[str, Any], ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionProjection(_ExecutionProjectionState):
+    """Canonical operational projection for one normalized tool result."""
+
     output_dirs: tuple[str, ...] = ()
     report: ReportExecution | None = None
     diagnostics: tuple[Mapping[str, Any], ...] = ()

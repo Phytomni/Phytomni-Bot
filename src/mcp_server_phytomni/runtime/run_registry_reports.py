@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import PurePosixPath
 from typing import Any
 
+from ..config.defaults import ServerConfig
 from ..mcp.formatting.execution import apply_compatibility_projection
 from ..mcp.formatting.models import (
     ExecutionProjection,
@@ -18,8 +19,18 @@ from ..mcp.formatting.models import (
     ResultDelivery,
 )
 from ..storage.artifact_listing import ListedArtifactObject
+from ..storage.result_archive_storage import persist_result_archive_inventory
 from .execution_models import ExecutionWarning
-from .run_registry_models import _FAILURE_STATUSES
+from .result_archive import (
+    ResultArchiveError,
+    build_result_archive_inventory,
+)
+from .run_registry_delivery import (
+    initial_pending_delivery,
+    mark_degraded_delivery_failure,
+    result_delivery_from_result,
+)
+from .run_registry_models import _FAILURE_STATUSES, RunOutcome
 from .submission_outcome import project_submission_warnings
 from .task_manager import TaskManager
 from .terminal_artifacts import (
@@ -31,7 +42,9 @@ from .terminal_artifacts import (
 )
 from .terminal_report import (
     TerminalReportAssembly,
+    TerminalReportContext,
     TerminalReportResult,
+    assemble_terminal_report,
     persist_terminal_report,
 )
 
@@ -48,12 +61,36 @@ class ReportArtifactSources:
 
 
 @dataclass(frozen=True, slots=True)
+class _ReportSettlementRequest:
+    """Inputs for one report settlement pass."""
+
+    registry: Any
+    current: Any
+    status: str
+    live: list[dict[str, Any]]
+    sources: ReportArtifactSources
+    assembler: Any = None
+
+
+@dataclass(frozen=True, slots=True)
 class ReportArtifactGroup:
     """One successful child task's classified terminal artifacts."""
 
     task_id: str
     output_dir: str
     artifact_set: TerminalArtifactSet
+
+
+@dataclass(frozen=True, slots=True)
+class ReportTerminalState:
+    """All inputs needed to project one terminal report."""
+
+    status: str
+    live: list[dict[str, Any]]
+    artifact_set: TerminalArtifactSet
+    report: TerminalReportAssembly
+    warnings: list[dict[str, Any]] | None = None
+    delivery: ResultDelivery | None = None
 
 
 async def collect_report_artifact_set(
@@ -80,7 +117,7 @@ async def collect_report_artifact_groups(
     object_lister: ArtifactObjectLister | None,
     manifest_loader: ManifestLoader | None,
 ) -> tuple[ReportArtifactGroup, ...]:
-    """Collect classified artifacts while retaining successful child identity."""
+    """Collect artifacts while retaining successful child identity."""
     groups: list[ReportArtifactGroup] = []
     for row in live:
         status = str(row.get("status") or "").lower()
@@ -232,59 +269,255 @@ def persist_report_compatibility(
     )
 
 
-def canonical_terminal_payload(
+async def settle_report_terminal(request: _ReportSettlementRequest) -> Any:
+    """Assemble and persist one analyst-class terminal report."""
+    groups = await collect_report_artifact_groups(
+        request.live,
+        lister=request.sources.lister,
+        object_lister=request.sources.object_lister,
+        manifest_loader=request.sources.manifest_loader,
+    )
+    artifact_set = merge_report_artifact_groups(groups)
+    report = await _assemble_report(
+        request.current,
+        request.status,
+        request.live,
+        artifact_set,
+        request.assembler,
+    )
+    warnings = stored_submission_warnings(request.current.result)
+    marker = result_delivery_from_result(request.current.result)
+    state = ReportTerminalState(
+        status=request.status,
+        live=request.live,
+        artifact_set=artifact_set,
+        report=report,
+        warnings=warnings,
+        delivery=marker,
+    )
+    if not marker or request.status != "succeeded":
+        return _settle_report_without_delivery(
+            request.registry, request.current, state
+        )
+    try:
+        inventory = build_result_archive_inventory(groups)
+        inventory_ref = _persist_report_inventory(inventory)
+    except ResultArchiveError as exc:
+        state = replace(
+            state,
+            delivery=ResultDelivery(
+                schema_version=1,
+                required=True,
+                status="failed",
+                revision=1,
+                inventory_digest="",
+                archive=None,
+                error_code=exc.code,
+                retryable=False,
+            ),
+        )
+        return _settle_report_inventory_failure(
+            request.registry, request.current, state
+        )
+    delivery = initial_pending_delivery(inventory.digest)
+    state = replace(state, delivery=delivery)
+    return _store_pending_report_delivery(
+        request.registry,
+        request.current,
+        state,
+        inventory_ref,
+        delivery,
+    )
+
+
+async def _assemble_report(
+    current: Any,
     status: str,
     live: list[dict[str, Any]],
     artifact_set: TerminalArtifactSet,
-    report: TerminalReportAssembly,
-    *,
-    warnings: list[dict[str, Any]] | None = None,
-    delivery: ResultDelivery | None = None,
+    assembler: Any,
+) -> TerminalReportAssembly:
+    """Build one report through the injected compatibility seam."""
+    report_builder = assembler or assemble_terminal_report
+    return await report_builder(
+        context=TerminalReportContext(
+            agent=current.spec.agent,
+            status=status,
+            live=live,
+            artifacts=artifact_set.artifacts,
+            query=current.request_info.query,
+            locale=current.request_info.locale or "en-US",
+        ),
+        artifacts=artifact_set.artifacts if status == "succeeded" else (),
+    )
+
+
+def _persist_report_inventory(inventory: Any) -> str:
+    """Persist the immutable inventory and return its private reference."""
+    config = ServerConfig()
+    return persist_result_archive_inventory(
+        inventory,
+        bucket=config.BUCKET_NAME,
+        obs_server=config.OBS_SERVER,
+    )
+
+
+def _settle_report_without_delivery(
+    registry: Any,
+    current: Any,
+    state: ReportTerminalState,
+) -> Any:
+    """Settle a report whose result has no required archive delivery."""
+    result_payload, error = canonical_terminal_payload(state)
+    settle_terminal = getattr(registry, "_settle_terminal")
+    settled = settle_terminal(
+        current, RunOutcome(state.status, result_payload, error)
+    )
+    if (
+        settled is not None
+        and settled.status == state.status
+        and settled.result == result_payload
+    ):
+        persist_report_compatibility(
+            state.live, state.report, registry.db_path
+        )
+    return settled
+
+
+def _settle_report_inventory_failure(
+    registry: Any,
+    current: Any,
+    state: ReportTerminalState,
+) -> Any:
+    """Settle a report while exposing only a bounded archive error code."""
+    result_payload, _error = canonical_terminal_payload(state)
+    mark_degraded_delivery_failure(result_payload, False)
+    settle_terminal = getattr(registry, "_settle_terminal")
+    settled = settle_terminal(
+        current, RunOutcome("succeeded", result_payload, None)
+    )
+    if settled is not None and settled.result == result_payload:
+        persist_report_compatibility(
+            state.live, state.report, registry.db_path
+        )
+    return settled
+
+
+def _store_pending_report_delivery(
+    registry: Any,
+    current: Any,
+    state: ReportTerminalState,
+    inventory_ref: str,
+    delivery: ResultDelivery,
+) -> Any:
+    """Store pending delivery state and schedule its worker."""
+    result_payload, _error = canonical_terminal_payload(state)
+    result_payload["delivery_internal"] = {
+        "inventory_ref": inventory_ref,
+        "attempts_claimed": 0,
+        "last_error_code": None,
+    }
+    if not registry.update_running_result(
+        current.spec.run_id,
+        owner=current.spec.user_id,
+        result=result_payload,
+    ):
+        return registry.get_run(
+            current.spec.run_id, owner=current.spec.user_id
+        )
+    settled = registry.get_run(current.spec.run_id, owner=current.spec.user_id)
+    if settled is not None and settled.result == result_payload:
+        persist_report_compatibility(
+            state.live, state.report, registry.db_path
+        )
+        getattr(registry, "_schedule_delivery")(settled, delivery)
+    return settled
+
+
+def canonical_terminal_payload(
+    state: ReportTerminalState,
 ) -> tuple[dict[str, Any], str | None]:
     """Build the single persisted projection for analyst-class runs."""
-    execution = _build_execution_projection(
-        status, live, artifact_set, report, warnings, delivery
-    )
+    execution = _build_execution_projection(state)
     formatted = apply_compatibility_projection(
-        FormattedToolResult(answer=report.answer), execution
+        FormattedToolResult(answer=state.report.answer), execution
     )
     payload = _json_compatible(
         {"formatted": asdict(formatted), "execution": asdict(execution)}
     )
-    return payload, _terminal_error(status, live)
+    return payload, _terminal_error(state.status, state.live)
+
+
+def legacy_terminal_payload(
+    status: str,
+    live: list[dict[str, Any]],
+    artifacts: list[dict[str, Any]],
+    answer: str,
+    *,
+    warnings: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Build the historical projection for non-report terminal runs."""
+    payload: dict[str, Any] = {
+        "task_results": live,
+        "live_status": live,
+        "artifacts": artifacts,
+        "final_report": _first_final_report(live),
+        "degraded": any_degraded(live),
+    }
+    if answer:
+        payload["formatted"] = {"answer": answer}
+    if warnings:
+        payload["execution"] = {"warnings": warnings}
+    if status == "succeeded":
+        return payload, None
+    failed = [
+        row.get("task_id", "?")
+        for row in live
+        if (row.get("status") or "").lower() in _FAILURE_STATUSES
+    ]
+    return payload, f"one or more tasks failed: {', '.join(failed)}"
+
+
+def _first_final_report(live: Sequence[Mapping[str, Any]]) -> str | None:
+    """Return the first non-empty child ``final_report`` value."""
+    for row in live:
+        report = row.get("final_report")
+        if isinstance(report, str) and report:
+            return report
+    return None
 
 
 def _build_execution_projection(
-    status: str,
-    live: list[dict[str, Any]],
-    artifact_set: TerminalArtifactSet,
-    report: TerminalReportAssembly,
-    warnings: list[dict[str, Any]] | None,
-    delivery: ResultDelivery | None,
+    state: ReportTerminalState,
 ) -> ExecutionProjection:
     """Build the bounded operational projection for a terminal report."""
-    submission_warnings = _execution_warnings(warnings)
-    failure_warnings = _failure_warnings(status, live)
+    submission_warnings = _execution_warnings(state.warnings)
+    failure_warnings = _failure_warnings(state.status, state.live)
     return ExecutionProjection(
         tracking={
             "degraded": _tracking_is_degraded(
-                status, live, submission_warnings, artifact_set, report
+                state.status,
+                state.live,
+                submission_warnings,
+                state.artifact_set,
+                state.report,
             )
         },
         warnings=(
             *submission_warnings,
-            *artifact_set.warnings,
+            *state.artifact_set.warnings,
             *failure_warnings,
-            *report.warnings,
+            *state.report.warnings,
         ),
-        tasks=tuple(_public_task_row(row) for row in live),
+        tasks=tuple(_public_task_row(row) for row in state.live),
         artifacts=tuple(
-            asdict(artifact.to_public()) for artifact in artifact_set.artifacts
+            asdict(artifact.to_public())
+            for artifact in state.artifact_set.artifacts
         ),
-        output_dirs=tuple(_public_output_dirs(live)),
-        report=report.report,
-        diagnostics=tuple(_failure_diagnostics(status, live)),
-        delivery=delivery,
+        output_dirs=tuple(_public_output_dirs(state.live)),
+        report=state.report.report,
+        diagnostics=tuple(_failure_diagnostics(state.status, state.live)),
+        delivery=state.delivery,
     )
 
 

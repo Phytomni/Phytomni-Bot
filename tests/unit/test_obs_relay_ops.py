@@ -40,6 +40,27 @@ def _missing_mount(tmp_path: Any) -> str:
     return str(tmp_path / "no-mount")
 
 
+def _capturing_obs_client(
+    captured: dict[str, Any],
+    method_name: str,
+    status: int = 200,
+) -> Callable[..., Any]:
+    """Return a constructor-shaped SDK fake for one OBS write method."""
+    capture_key = {"putContent": "put_content", "putFile": "put_file"}[
+        method_name
+    ]
+
+    def sdk_method(**kwargs: Any) -> Any:
+        captured[capture_key] = kwargs
+        return SimpleNamespace(status=status)
+
+    def factory(**kwargs: Any) -> Any:
+        captured["init"] = kwargs
+        return SimpleNamespace(**{method_name: sdk_method})
+
+    return factory
+
+
 def test_put_object_bytes_sdk_fallback_writes_exact_key(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,
@@ -72,18 +93,11 @@ def test_put_object_file_sdk_fallback_streams_local_file(
     source = tmp_path / "archive.zip"
     source.write_bytes(b"zip-bytes")
     captured: dict[str, Any] = {}
-
-    class FakeObsClient:
-        """Capture the SDK file-upload call without making a network request."""
-
-        def __init__(self, **kwargs: Any) -> None:
-            captured["init"] = kwargs
-
-        def putFile(self, **kwargs: Any) -> Any:  # noqa: N802
-            captured["put_file"] = kwargs
-            return SimpleNamespace(status=200)
-
-    monkeypatch.setattr(ops, "ObsClient", FakeObsClient)
+    monkeypatch.setattr(
+        ops,
+        "ObsClient",
+        _capturing_obs_client(captured, "putFile"),
+    )
 
     returned = ops.put_object_file(
         "phytomni",
@@ -102,7 +116,7 @@ def test_put_object_file_sdk_fallback_streams_local_file(
 
 
 def test_put_object_file_obsfs_copies_local_file(tmp_path: Any) -> None:
-    """Mounted OBS copies a local archive byte-for-byte with shutil.copyfile."""
+    """Mounted OBS copies a local archive byte-for-byte."""
     source = tmp_path / "source.zip"
     source.write_bytes(b"zip-bytes")
     mount_root = tmp_path / "mount"
@@ -116,7 +130,9 @@ def test_put_object_file_obsfs_copies_local_file(tmp_path: Any) -> None:
         mount_root=str(mount_root),
     )
 
-    assert (mount_root / "phytomni/agent_data/runs/archive.zip").read_bytes() == b"zip-bytes"
+    assert (
+        mount_root / "phytomni/agent_data/runs/archive.zip"
+    ).read_bytes() == b"zip-bytes"
 
 
 def test_put_object_bytes_if_absent_sdk_uses_conditional_create(
@@ -125,18 +141,11 @@ def test_put_object_bytes_if_absent_sdk_uses_conditional_create(
 ) -> None:
     """SDK creation sends If-None-Match instead of allowing an overwrite."""
     captured: dict[str, Any] = {}
-
-    class FakeObsClient:
-        """Capture the SDK conditional upload without a network request."""
-
-        def __init__(self, **kwargs: Any) -> None:
-            captured["init"] = kwargs
-
-        def putContent(self, **kwargs: Any) -> Any:  # noqa: N802
-            captured["put_content"] = kwargs
-            return SimpleNamespace(status=200)
-
-    monkeypatch.setattr(ops, "ObsClient", FakeObsClient)
+    monkeypatch.setattr(
+        ops,
+        "ObsClient",
+        _capturing_obs_client(captured, "putContent"),
+    )
 
     ops.put_object_bytes_if_absent(
         "phytomni",
@@ -177,17 +186,11 @@ def test_put_object_bytes_if_absent_sdk_maps_precondition_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A conditional SDK collision is distinguishable from a failed write."""
-
-    class FakeObsClient:
-        """Return the OBS conditional-create collision status."""
-
-        def __init__(self, **_kwargs: Any) -> None:
-            pass
-
-        def putContent(self, **_kwargs: Any) -> Any:  # noqa: N802
-            return SimpleNamespace(status=412)
-
-    monkeypatch.setattr(ops, "ObsClient", FakeObsClient)
+    monkeypatch.setattr(
+        ops,
+        "ObsClient",
+        _capturing_obs_client({}, "putContent", status=412),
+    )
 
     with pytest.raises(ops.ObsObjectAlreadyExistsError):
         ops.put_object_bytes_if_absent(

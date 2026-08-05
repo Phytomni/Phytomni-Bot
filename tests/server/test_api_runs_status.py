@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import sqlite3
 from dataclasses import asdict
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from unittest.mock import AsyncMock
 
 import httpx
@@ -124,7 +124,7 @@ def _seed_delivery_run(
     run_id: str,
     *,
     owner: str = "u1",
-    status: str = "failed",
+    status: Literal["pending", "ready", "failed"] = "failed",
     retryable: bool = True,
 ) -> None:
     """Persist one terminal delivery state for the HTTP route tests."""
@@ -212,7 +212,7 @@ async def test_retry_delivery_rejects_non_retryable_states(
     _seed_delivery_run(
         tasks_db_path,
         f"run-delivery-{status}",
-        status=status,
+        status=cast(Literal["pending", "ready", "failed"], status),
         retryable=retryable,
     )
     response = await api_client.post(
@@ -311,7 +311,7 @@ async def test_get_run_returns_terminal_record(
     assert calls["n"] == 0
 
 
-async def test_get_run_strips_private_delivery_state_in_default_and_debug_reads(
+async def test_get_run_strips_private_delivery_state(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,
@@ -339,7 +339,7 @@ async def test_get_run_strips_private_delivery_state_in_default_and_debug_reads(
         assert "inventory_ref" not in str(body["result"])
 
 
-async def test_list_runs_strips_inventory_ref_outside_delivery_internal(
+async def test_list_runs_strips_private_delivery_refs(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     tasks_db_path: str,

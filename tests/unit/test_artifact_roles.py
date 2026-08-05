@@ -95,7 +95,7 @@ def test_producer_manifest_allows_scientific_data() -> None:
     """Producer-declared scientific data is eligible for Bot archives."""
     item = ArtifactManifestItem(
         path="data/normalized.parquet",
-        role="scientific_data",
+        role=ArtifactRole.SCIENTIFIC_DATA,
         media_type="application/vnd.apache.parquet",
     )
 
@@ -108,7 +108,7 @@ def test_producer_manifest_cannot_claim_result_archive() -> None:
     with pytest.raises(ValidationError):
         ArtifactManifestItem(
             path="results.zip",
-            role="result_archive",
+            role=ArtifactRole.RESULT_ARCHIVE,
             media_type="application/zip",
         )
 

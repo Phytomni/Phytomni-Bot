@@ -12,6 +12,7 @@ import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
+from typing import Any, Protocol
 from zipfile import ZIP_STORED, ZipFile, ZipInfo
 
 from ..config.defaults import ServerConfig
@@ -21,7 +22,6 @@ from ..storage.obs_relay_ops import (
     put_object_file,
 )
 from .artifact_roles import ARCHIVE_ELIGIBLE_ROLES, ArtifactRole
-from .run_registry_reports import ReportArtifactGroup
 
 __all__ = [
     "FORBIDDEN_NESTED_ARCHIVE_SUFFIXES",
@@ -34,15 +34,18 @@ __all__ = [
     "build_and_publish_result_archive",
     "build_result_archive_inventory",
     "inventory_digest",
+    "result_archive_member_to_data",
     "validate_result_archive_inventory",
 ]
 
 MAX_RESULT_ARCHIVE_ARTIFACTS = 200
 MAX_RESULT_ARCHIVE_UNCOMPRESSED_BYTES = 10 * 1024**3
-RESERVED_RESULT_PATHS = frozenset({
-    ".phytomni-artifacts.json",
-    "result_files.json",
-})
+RESERVED_RESULT_PATHS = frozenset(
+    {
+        ".phytomni-artifacts.json",
+        "result_files.json",
+    }
+)
 FORBIDDEN_NESTED_ARCHIVE_SUFFIXES = (
     ".zip",
     ".tar",
@@ -50,20 +53,36 @@ FORBIDDEN_NESTED_ARCHIVE_SUFFIXES = (
     ".tgz",
     ".7z",
 )
-_ALLOWED_ERROR_CODES = frozenset({
-    "artifact_listing_failed",
-    "artifact_manifest_invalid",
-    "no_user_deliverables",
-    "archive_inventory_limit_exceeded",
-    "archive_generation_failed",
-    "archive_publish_failed",
-    "archive_contract_invalid",
-})
+_ALLOWED_ERROR_CODES = frozenset(
+    {
+        "artifact_listing_failed",
+        "artifact_manifest_invalid",
+        "no_user_deliverables",
+        "archive_inventory_limit_exceeded",
+        "archive_generation_failed",
+        "archive_publish_failed",
+        "archive_contract_invalid",
+    }
+)
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 _COPY_CHUNK_SIZE = 1024 * 1024
 
 SERVER_CONFIG = ServerConfig()
 ARCHIVE_TEMP_ROOT = Path(SERVER_CONFIG.TEMP_DIR)
+
+
+class _ReportArtifactGroup(Protocol):
+    """Structural input required from report collection."""
+
+    @property
+    def output_dir(self) -> str:
+        """Return the child output directory."""
+        raise NotImplementedError
+
+    @property
+    def artifact_set(self) -> Any:
+        """Return the classified artifact set."""
+        raise NotImplementedError
 
 
 class ResultArchiveError(Exception):
@@ -100,7 +119,7 @@ class ResultArchiveInventory:
 
 
 def build_result_archive_inventory(
-    groups: Sequence[ReportArtifactGroup],
+    groups: Sequence[_ReportArtifactGroup],
 ) -> ResultArchiveInventory:
     """Select bounded manifest-backed user deliverables from child groups."""
     if not groups:
@@ -116,9 +135,15 @@ def build_result_archive_inventory(
                 continue
             if artifact.role not in ARCHIVE_ELIGIBLE_ROLES:
                 continue
-            if not isinstance(artifact.download_ref, str) or not artifact.download_ref:
+            if (
+                not isinstance(artifact.download_ref, str)
+                or not artifact.download_ref
+            ):
                 raise ResultArchiveError("archive_contract_invalid")
-            if not isinstance(artifact.media_type, str) or not artifact.media_type:
+            if (
+                not isinstance(artifact.media_type, str)
+                or not artifact.media_type
+            ):
                 raise ResultArchiveError("archive_contract_invalid")
             if (
                 isinstance(artifact.size_bytes, bool)
@@ -159,17 +184,7 @@ def build_result_archive_inventory(
 
 def inventory_digest(members: Sequence[ResultArchiveMember]) -> str:
     """Hash canonical member metadata without local paths or file bodies."""
-    payload = [
-        {
-            "archive_path": member.archive_path,
-            "child_index": member.child_index,
-            "download_ref": member.download_ref,
-            "media_type": member.media_type,
-            "role": member.role.value,
-            "size_bytes": member.size_bytes,
-        }
-        for member in members
-    ]
+    payload = [result_archive_member_to_data(member) for member in members]
     encoded = json.dumps(
         payload,
         ensure_ascii=True,
@@ -179,6 +194,20 @@ def inventory_digest(members: Sequence[ResultArchiveMember]) -> str:
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
+def result_archive_member_to_data(
+    member: ResultArchiveMember,
+) -> dict[str, object]:
+    """Return the canonical persisted and digest-bearing member fields."""
+    return {
+        "archive_path": member.archive_path,
+        "child_index": member.child_index,
+        "download_ref": member.download_ref,
+        "media_type": member.media_type,
+        "role": member.role.value,
+        "size_bytes": member.size_bytes,
+    }
+
+
 def validate_result_archive_inventory(
     inventory: ResultArchiveInventory,
 ) -> ResultArchiveInventory:
@@ -186,24 +215,15 @@ def validate_result_archive_inventory(
     if not isinstance(inventory.run_root, str) or not inventory.run_root:
         raise ResultArchiveError("archive_contract_invalid")
     _safe_absolute_path(inventory.run_root)
-    if not inventory.members or len(inventory.members) > MAX_RESULT_ARCHIVE_ARTIFACTS:
+    if (
+        not inventory.members
+        or len(inventory.members) > MAX_RESULT_ARCHIVE_ARTIFACTS
+    ):
         raise ResultArchiveError("archive_contract_invalid")
     total_size_bytes = 0
     paths: set[str] = set()
     for member in inventory.members:
-        if (
-            isinstance(member.child_index, bool)
-            or not isinstance(member.child_index, int)
-            or member.child_index < 1
-            or not isinstance(member.download_ref, str)
-            or not member.download_ref
-            or not isinstance(member.media_type, str)
-            or not member.media_type
-            or isinstance(member.size_bytes, bool)
-            or not isinstance(member.size_bytes, int)
-            or member.size_bytes < 0
-        ):
-            raise ResultArchiveError("archive_contract_invalid")
+        _validate_member_scalars(member)
         _safe_archive_path(member.archive_path, member.child_index)
         if member.role not in ARCHIVE_ELIGIBLE_ROLES:
             raise ResultArchiveError("archive_contract_invalid")
@@ -214,7 +234,10 @@ def validate_result_archive_inventory(
     if total_size_bytes > MAX_RESULT_ARCHIVE_UNCOMPRESSED_BYTES:
         raise ResultArchiveError("archive_contract_invalid")
     digest = inventory_digest(inventory.members)
-    if inventory.digest != digest or inventory.total_size_bytes != total_size_bytes:
+    if (
+        inventory.digest != digest
+        or inventory.total_size_bytes != total_size_bytes
+    ):
         raise ResultArchiveError("archive_contract_invalid")
     return inventory
 
@@ -227,20 +250,27 @@ def build_and_publish_result_archive(
 ) -> str:
     """Create then size-verify one deterministic Zip64 archive in OBS."""
     validate_result_archive_inventory(inventory)
-    if not isinstance(agent, str) or not agent or not agent.replace("_", "").isalnum():
+    if (
+        not isinstance(agent, str)
+        or not agent
+        or not agent.replace("_", "").isalnum()
+    ):
         raise ResultArchiveError("archive_contract_invalid")
     if not isinstance(summary_markdown, str):
         raise ResultArchiveError("archive_contract_invalid")
     digest_hex = inventory.digest.removeprefix("sha256:")
-    object_key = f"{inventory.run_root.rstrip('/')}/delivery/{digest_hex}/{agent}-results.zip"
+    object_key = (
+        f"{inventory.run_root.rstrip('/')}/delivery/{digest_hex}/"
+        f"{agent}-results.zip"
+    )
     ARCHIVE_TEMP_ROOT.mkdir(parents=True, exist_ok=True)
     try:
-        with tempfile.TemporaryDirectory(prefix="result-archive-", dir=ARCHIVE_TEMP_ROOT) as scratch:
+        with tempfile.TemporaryDirectory(
+            prefix="result-archive-", dir=ARCHIVE_TEMP_ROOT
+        ) as scratch:
             archive_path = Path(scratch) / "results.zip"
             try:
                 _write_archive(archive_path, inventory, summary_markdown)
-            except ResultArchiveError:
-                raise
             except (OSError, TypeError, ValueError):
                 raise ResultArchiveError(
                     "archive_generation_failed", retryable=True
@@ -276,14 +306,14 @@ def build_and_publish_result_archive(
                 ) from None
             if published_size != size:
                 raise ResultArchiveError("archive_publish_failed")
-    except ResultArchiveError:
-        raise
     except (OSError, TypeError, ValueError):
-        raise ResultArchiveError("archive_generation_failed", retryable=True) from None
+        raise ResultArchiveError(
+            "archive_generation_failed", retryable=True
+        ) from None
     return object_key
 
 
-def _run_root(groups: Sequence[ReportArtifactGroup]) -> str:
+def _run_root(groups: Sequence[_ReportArtifactGroup]) -> str:
     """Return the common direct parent of every child output directory."""
     parents = []
     for group in groups:
@@ -296,7 +326,27 @@ def _run_root(groups: Sequence[ReportArtifactGroup]) -> str:
     return parents[0]
 
 
-def _raise_group_errors(group: ReportArtifactGroup) -> None:
+def _validate_member_scalars(member: ResultArchiveMember) -> None:
+    """Reject malformed persisted scalar fields without coercion."""
+    if isinstance(member.child_index, bool) or not isinstance(
+        member.child_index, int
+    ):
+        raise ResultArchiveError("archive_contract_invalid")
+    if member.child_index < 1:
+        raise ResultArchiveError("archive_contract_invalid")
+    if not isinstance(member.download_ref, str) or not member.download_ref:
+        raise ResultArchiveError("archive_contract_invalid")
+    if not isinstance(member.media_type, str) or not member.media_type:
+        raise ResultArchiveError("archive_contract_invalid")
+    if isinstance(member.size_bytes, bool) or not isinstance(
+        member.size_bytes, int
+    ):
+        raise ResultArchiveError("archive_contract_invalid")
+    if member.size_bytes < 0:
+        raise ResultArchiveError("archive_contract_invalid")
+
+
+def _raise_group_errors(group: _ReportArtifactGroup) -> None:
     """Map terminal collector warnings into the stable archive error set."""
     codes = {warning.code for warning in group.artifact_set.warnings}
     if "artifact_listing_failed" in codes:
@@ -306,7 +356,7 @@ def _raise_group_errors(group: ReportArtifactGroup) -> None:
 
 
 def _excluded_artifact(relative_path: str, role: ArtifactRole) -> bool:
-    """Return whether an internal, archive, or generated-summary object skips."""
+    """Return whether internal or generated archive content is excluded."""
     name = PurePosixPath(relative_path).name
     return (
         name in RESERVED_RESULT_PATHS
@@ -336,7 +386,9 @@ def _safe_absolute_path(value: str) -> str:
     if "\\" in value:
         raise ResultArchiveError("archive_contract_invalid")
     path = PurePosixPath(value)
-    if not path.is_absolute() or any(part in {".", ".."} for part in path.parts):
+    if not path.is_absolute() or any(
+        part in {".", ".."} for part in path.parts
+    ):
         raise ResultArchiveError("archive_contract_invalid")
     return path.as_posix()
 
@@ -345,7 +397,9 @@ def _safe_archive_path(value: object, child_index: int) -> None:
     """Ensure persisted member paths retain their original child prefix."""
     path = _safe_relative_path(value)
     prefix = f"results/part-{child_index:03d}/"
-    if not path.startswith(prefix) or _excluded_artifact(path.removeprefix(prefix), ArtifactRole.SCIENTIFIC_DATA):
+    if not path.startswith(prefix) or _excluded_artifact(
+        path.removeprefix(prefix), ArtifactRole.SCIENTIFIC_DATA
+    ):
         raise ResultArchiveError("archive_contract_invalid")
 
 
@@ -354,9 +408,13 @@ def _write_archive(
     inventory: ResultArchiveInventory,
     summary_markdown: str,
 ) -> None:
-    """Write summary then immutable members, checking every source byte count."""
-    with ZipFile(archive_path, "w", compression=ZIP_STORED, allowZip64=True) as archive:
-        _write_zip_bytes(archive, "summary.md", _normalized_summary(summary_markdown))
+    """Write summary and members while checking every source byte count."""
+    with ZipFile(
+        archive_path, "w", compression=ZIP_STORED, allowZip64=True
+    ) as archive:
+        _write_zip_bytes(
+            archive, "summary.md", _normalized_summary(summary_markdown)
+        )
         for member in inventory.members:
             info = _zip_info(member.archive_path)
             actual_size = 0

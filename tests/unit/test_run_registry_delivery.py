@@ -18,7 +18,13 @@ from mcp_server_phytomni.mcp.formatting.models import (
 )
 from mcp_server_phytomni.mcp.formatting.redaction import strip_agent_result
 from mcp_server_phytomni.runtime import run_registry as run_registry_module
+from mcp_server_phytomni.runtime import (
+    run_registry_delivery as delivery_module,
+)
 from mcp_server_phytomni.runtime.artifact_roles import ArtifactRole
+from mcp_server_phytomni.runtime.execution_defaults import (
+    empty_execution_projection,
+)
 from mcp_server_phytomni.runtime.result_archive import (
     ResultArchiveError,
     ResultArchiveInventory,
@@ -31,8 +37,11 @@ from mcp_server_phytomni.runtime.run_registry import (
     RunSpec,
 )
 from mcp_server_phytomni.runtime.run_registry_delivery import (
+    DeliveryFailure,
+    DeliveryRevision,
     ResultDeliveryDependencies,
     claim_delivery_attempt,
+    run_delivery_worker,
     settle_delivery_failure,
     settle_delivery_ready,
 )
@@ -44,49 +53,39 @@ from mcp_server_phytomni.runtime.task_manager import (
 
 
 def _inventory() -> ResultArchiveInventory:
+    source_path = "/obs/phytomni/runs/run-1/children/part-001/report.md"
+    archive_path = "results/part-001/report.md"
     member = ResultArchiveMember(
-        1,
-        "/obs/phytomni/runs/run-1/children/part-001/report.md",
-        "results/part-001/report.md",
-        ArtifactRole.SCIENTIFIC_REPORT,
-        "text/markdown",
-        3,
+        child_index=1,
+        download_ref=source_path,
+        archive_path=archive_path,
+        role=ArtifactRole.SCIENTIFIC_REPORT,
+        media_type="text/markdown",
+        size_bytes=3,
     )
+    members = (member,)
     return ResultArchiveInventory(
-        "/obs/phytomni/runs/run-1",
-        (member,),
-        inventory_digest((member,)),
-        3,
+        run_root="/obs/phytomni/runs/run-1",
+        members=members,
+        digest=inventory_digest(members),
+        total_size_bytes=3,
     )
 
 
 def _pending_result(inventory: ResultArchiveInventory) -> dict:
-    return {
-        "formatted": {"answer": "scientific answer"},
-        "execution": {
-            "tracking": {"degraded": False},
-            "warnings": [],
-            "delivery": {
-                "schema_version": 1,
-                "required": True,
-                "status": "pending",
-                "revision": 1,
-                "inventory_digest": inventory.digest,
-                "archive": None,
-                "error_code": None,
-                "retryable": False,
-            },
-        },
-        "delivery_internal": {
-            "inventory_ref": (
-                f"{inventory.run_root}/delivery/"
-                f"{inventory.digest.removeprefix('sha256:')}/"
-                ".phytomni-result-inventory.json"
-            ),
-            "attempts_claimed": 0,
-            "last_error_code": None,
-        },
+    result = empty_execution_projection(result_archive_required=True)
+    result["formatted"]["answer"] = "scientific answer"
+    result["execution"]["delivery"]["inventory_digest"] = inventory.digest
+    result["delivery_internal"] = {
+        "inventory_ref": (
+            f"{inventory.run_root}/delivery/"
+            f"{inventory.digest.removeprefix('sha256:')}/"
+            ".phytomni-result-inventory.json"
+        ),
+        "attempts_claimed": 0,
+        "last_error_code": None,
     }
+    return result
 
 
 def _run_context() -> RunContext:
@@ -102,6 +101,13 @@ def _run_context() -> RunContext:
     )
 
 
+def _delivery_target(
+    inventory: ResultArchiveInventory, revision: int = 1
+) -> DeliveryRevision:
+    """Return the owned immutable identity used by delivery operations."""
+    return DeliveryRevision("run-1", "alice", revision, inventory.digest)
+
+
 def _registry(
     tmp_path: Path, dependencies: ResultDeliveryDependencies
 ) -> tuple[RunRegistry, ResultArchiveInventory]:
@@ -111,7 +117,9 @@ def _registry(
     )
     registry.create_run(
         RunSpec("run-1", "alice", "analyst", "remote"),
-        outcome=RunOutcome(status="running", result=_pending_result(inventory)),
+        outcome=RunOutcome(
+            status="running", result=_pending_result(inventory)
+        ),
     )
     TaskManager(registry.db_path).record(
         Submission(
@@ -171,7 +179,9 @@ def test_ready_delivery_exposes_only_opaque_archive_reference() -> None:
         {"download_ref": "result-archive:sha256:" + "G" * 64},
     ],
 )
-def test_archive_descriptor_rejects_invalid_runtime_values(changes: dict) -> None:
+def test_archive_descriptor_rejects_invalid_runtime_values(
+    changes: dict,
+) -> None:
     """Runtime validation rejects malformed public descriptors uniformly."""
     baseline = {
         "role": "result_archive",
@@ -199,22 +209,26 @@ def test_archive_descriptor_rejects_invalid_runtime_values(changes: dict) -> Non
         {"inventory_digest": "sha256:" + "g" * 64},
         {"retryable": 1},
         {"archive": "not-a-descriptor"},
-        {"status": "pending", "archive": ResultArchiveDescriptor("result_archive", "analyst-results.zip", "application/zip", 1, True, False, "result-archive:sha256:" + "a" * 64)},
+        {
+            "status": "pending",
+            "archive": ResultArchiveDescriptor(
+                "result_archive",
+                "analyst-results.zip",
+                "application/zip",
+                1,
+                True,
+                False,
+                "result-archive:sha256:" + "a" * 64,
+            ),
+        },
         {"status": "failed", "error_code": None},
     ],
 )
 def test_delivery_rejects_invalid_runtime_values(changes: dict) -> None:
     """Delivery invariants reject types, states, and inconsistent payloads."""
-    baseline = {
-        "schema_version": 1,
-        "required": True,
-        "status": "pending",
-        "revision": 1,
-        "inventory_digest": "",
-        "archive": None,
-        "error_code": None,
-        "retryable": False,
-    }
+    baseline = empty_execution_projection(result_archive_required=True)[
+        "execution"
+    ]["delivery"]
 
     with pytest.raises(ValueError, match="invalid result delivery state"):
         ResultDelivery(**(baseline | changes))
@@ -233,7 +247,9 @@ def test_ready_delivery_requires_matching_opaque_archive_reference() -> None:
     )
 
     with pytest.raises(ValueError, match="invalid result delivery state"):
-        ResultDelivery(1, True, "ready", 1, "sha256:" + "a" * 64, archive, None, False)
+        ResultDelivery(
+            1, True, "ready", 1, "sha256:" + "a" * 64, archive, None, False
+        )
 
 
 def test_automatic_attempts_are_capped_then_manual_retry_reuses_inventory(
@@ -270,28 +286,26 @@ def test_automatic_attempts_are_capped_then_manual_retry_reuses_inventory(
     for attempt in range(1, 4):
         claim = claim_delivery_attempt(
             registry,
-            "run-1",
-            owner="alice",
-            revision=1,
-            inventory_digest=inventory.digest,
+            _delivery_target(inventory),
         )
         assert claim is not None
         assert claim.attempts_claimed == attempt
         with pytest.raises(ResultArchiveError, match="archive_publish_failed"):
-            publish(inventory, agent="analyst", summary_markdown="scientific answer")
+            publish(
+                inventory,
+                agent="analyst",
+                summary_markdown="scientific answer",
+            )
         outcome = settle_delivery_failure(
             registry,
-            "run-1",
-            owner="alice",
-            revision=1,
-            inventory_digest=inventory.digest,
-            error_code="archive_publish_failed",
-            retryable=True,
+            _delivery_target(inventory),
+            DeliveryFailure("archive_publish_failed", True),
         )
         assert outcome == ("failed" if attempt == 3 else "retry")
 
     failed = registry.get_run("run-1", owner="alice")
     assert failed is not None
+    assert failed.result is not None
     assert failed.status == "succeeded"
     assert failed.task_ids == ("child-1",)
     assert failed.result["execution"]["delivery"] == {
@@ -310,28 +324,28 @@ def test_automatic_attempts_are_capped_then_manual_retry_reuses_inventory(
 
     claim = claim_delivery_attempt(
         registry,
-        "run-1",
-        owner="alice",
-        revision=2,
-        inventory_digest=inventory.digest,
+        _delivery_target(inventory, revision=2),
     )
     assert claim is not None
     settle_delivery_ready(
         registry,
-        "run-1",
-        owner="alice",
-        revision=2,
-        inventory_digest=inventory.digest,
-        archive=publish(inventory, agent="analyst", summary_markdown="scientific answer"),
+        _delivery_target(inventory, revision=2),
+        publish(
+            inventory, agent="analyst", summary_markdown="scientific answer"
+        ),
     )
 
     ready = registry.get_run("run-1", owner="alice")
     assert ready is not None
+    assert ready.result is not None
     assert ready.status == "succeeded"
     assert ready.task_ids == ("child-1",)
     assert ready.result["execution"]["delivery"]["status"] == "ready"
     assert ready.result["execution"]["delivery"]["revision"] == 2
-    assert ready.result["execution"]["delivery"]["inventory_digest"] == inventory.digest
+    assert (
+        ready.result["execution"]["delivery"]["inventory_digest"]
+        == inventory.digest
+    )
     assert calls == 4
 
 
@@ -339,13 +353,16 @@ def test_manual_retry_owner_and_ready_checks_fail_closed(
     tmp_path: Path,
 ) -> None:
     """Foreign and ready rows are indistinguishable rejected retry requests."""
+
     async def no_sleep(_seconds: float) -> None:
         return None
 
     registry, inventory = _registry(
         tmp_path,
         ResultDeliveryDependencies(
-            publish=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError()),
+            publish=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError()
+            ),
             sleep=no_sleep,
         ),
     )
@@ -360,14 +377,18 @@ def test_manual_retry_owner_and_ready_checks_fail_closed(
         "report_context_eligible": False,
         "download_ref": f"result-archive:{inventory.digest}",
     }
-    registry.settle_run("run-1", owner="alice", status="succeeded", result=result)
+    registry.settle_run(
+        "run-1", owner="alice", status="succeeded", result=result
+    )
 
     assert registry.begin_delivery_retry("run-1", owner="foreign") is False
     assert registry.begin_delivery_retry("run-1", owner="alice") is False
 
 
-def test_private_delivery_state_is_stripped_even_for_debug_projection() -> None:
-    """The private inventory reference never survives generic result redaction."""
+def test_private_delivery_state_is_stripped_even_for_debug_projection() -> (
+    None
+):
+    """Private inventory references never survive result redaction."""
     result = _pending_result(_inventory())
 
     public = strip_agent_result(result)
@@ -377,52 +398,56 @@ def test_private_delivery_state_is_stripped_even_for_debug_projection() -> None:
 
 
 def test_stale_revision_cannot_settle_current_delivery(tmp_path: Path) -> None:
-    """A worker from an older delivery revision cannot replace the new state."""
+    """An older delivery worker cannot replace the new state."""
+
     async def no_sleep(_seconds: float) -> None:
         return None
 
     registry, inventory = _registry(
         tmp_path,
         ResultDeliveryDependencies(
-            publish=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError()),
+            publish=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError()
+            ),
             sleep=no_sleep,
         ),
     )
     for attempt in range(1, 4):
         claim = claim_delivery_attempt(
             registry,
-            "run-1",
-            owner="alice",
-            revision=1,
-            inventory_digest=inventory.digest,
+            _delivery_target(inventory),
         )
         assert claim is not None and claim.attempts_claimed == attempt
         outcome = settle_delivery_failure(
             registry,
-            "run-1",
-            owner="alice",
-            revision=1,
-            inventory_digest=inventory.digest,
-            error_code="archive_publish_failed",
-            retryable=True,
+            _delivery_target(inventory),
+            DeliveryFailure("archive_publish_failed", True),
         )
         assert outcome == ("failed" if attempt == 3 else "retry")
     assert registry.begin_delivery_retry("run-1", owner="alice") is True
     current = registry.get_run("run-1", owner="alice")
     assert current is not None
+    assert current.result is not None
     assert current.result["execution"]["delivery"]["revision"] == 2
     archive = ResultArchiveDescriptor(
-        "result_archive", "analyst-results.zip", "application/zip", 1, True,
-        False, f"result-archive:{inventory.digest}",
+        "result_archive",
+        "analyst-results.zip",
+        "application/zip",
+        1,
+        True,
+        False,
+        f"result-archive:{inventory.digest}",
     )
 
     assert not settle_delivery_ready(
-        registry, "run-1", owner="alice", revision=1,
-        inventory_digest=inventory.digest, archive=archive,
+        registry,
+        _delivery_target(inventory),
+        archive,
     )
     winner = registry.get_run("run-1", owner="alice")
     assert winner is not None
     assert winner.status == "running"
+    assert winner.result is not None
     assert winner.result["execution"]["delivery"]["revision"] == 2
 
 
@@ -437,36 +462,43 @@ async def test_worker_executes_in_to_thread_with_bounded_timeout(
         inventory: ResultArchiveInventory, agent: str, summary_markdown: str
     ) -> ResultArchiveDescriptor:
         publisher_threads.append(threading.get_ident())
+        del agent, summary_markdown
         return ResultArchiveDescriptor(
-            "result_archive", "analyst-results.zip", "application/zip", 1,
-            True, False, f"result-archive:{inventory.digest}",
+            "result_archive",
+            "analyst-results.zip",
+            "application/zip",
+            1,
+            True,
+            False,
+            f"result-archive:{inventory.digest}",
         )
 
     async def no_sleep(_seconds: float) -> None:
         return None
 
-    registry, inventory = _registry(
-        tmp_path, ResultDeliveryDependencies(publish=publish, sleep=no_sleep)
-    )
+    dependencies = ResultDeliveryDependencies(publish=publish, sleep=no_sleep)
+    registry, inventory = _registry(tmp_path, dependencies)
     monkeypatch.setattr(
-        run_registry_module, "load_private_inventory", lambda *_args: inventory
+        delivery_module, "load_private_inventory", lambda *_args: inventory
     )
 
     executor = ThreadPoolExecutor(max_workers=1)
     loop = asyncio.get_running_loop()
-    previous_executor = loop._default_executor  # type: ignore[attr-defined]
+    previous_executor = getattr(loop, "_default_executor", None)
     loop.set_default_executor(executor)
     try:
         await asyncio.wait_for(
-            registry._run_delivery_worker(
-                "run-1", owner="alice", revision=1,
-                inventory_digest=inventory.digest, task_key="worker-thread-test",
+            run_delivery_worker(
+                registry,
+                _delivery_target(inventory),
+                dependencies,
+                "worker-thread-test",
             ),
             timeout=2,
         )
     finally:
         executor.shutdown(wait=True, cancel_futures=True)
-        loop._default_executor = previous_executor  # type: ignore[attr-defined]
+        setattr(loop, "_default_executor", previous_executor)
 
     assert publisher_threads and publisher_threads[0] != threading.get_ident()
 
@@ -475,14 +507,17 @@ async def test_worker_executes_in_to_thread_with_bounded_timeout(
 async def test_reconcile_relaunches_pending_delivery_without_polling_children(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Restart recovery schedules only delivery when private inventory exists."""
+    """Restart recovery schedules only a pending delivery."""
+
     async def no_sleep(_seconds: float) -> None:
         return None
 
     registry, inventory = _registry(
         tmp_path,
         ResultDeliveryDependencies(
-            publish=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError()),
+            publish=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError()
+            ),
             sleep=no_sleep,
         ),
     )
@@ -496,38 +531,49 @@ async def test_reconcile_relaunches_pending_delivery_without_polling_children(
     )
 
     async def unexpected_poll(_task_id: str) -> dict:
-        raise AssertionError("pending delivery must not poll scientific children")
+        raise AssertionError(
+            "pending delivery must not poll scientific children"
+        )
 
     monkeypatch.setattr(run_registry_module, "reconcile_task", unexpected_poll)
     pending = await registry.reconcile("run-1", owner="alice")
 
     assert pending is not None
+    assert pending.result is not None
     assert pending.status == "running"
-    assert pending.result["execution"]["delivery"]["inventory_digest"] == inventory.digest
+    assert (
+        pending.result["execution"]["delivery"]["inventory_digest"]
+        == inventory.digest
+    )
     assert scheduled == [("run-1", 1)]
 
 
 @pytest.mark.asyncio
-async def test_reconcile_exhausted_pending_delivery_never_claims_a_fourth_attempt(
+async def test_exhausted_delivery_never_claims_a_fourth_attempt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A restart with three durable claims settles failed without publishing."""
+    """Three durable claims settle as failed without publication."""
+
     async def no_sleep(_seconds: float) -> None:
         return None
 
     registry, inventory = _registry(
         tmp_path,
         ResultDeliveryDependencies(
-            publish=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError()),
+            publish=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError()
+            ),
             sleep=no_sleep,
         ),
     )
     result = _pending_result(inventory)
     result["delivery_internal"]["attempts_claimed"] = 3
     result["delivery_internal"]["last_error_code"] = "archive_publish_failed"
-    assert registry.update_running_result("run-1", owner="alice", result=result)
+    assert registry.update_running_result(
+        "run-1", owner="alice", result=result
+    )
     monkeypatch.setattr(
-        run_registry_module,
+        delivery_module,
         "claim_delivery_attempt",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError()),
     )
@@ -535,6 +581,7 @@ async def test_reconcile_exhausted_pending_delivery_never_claims_a_fourth_attemp
     record = await registry.reconcile("run-1", owner="alice")
 
     assert record is not None
+    assert record.result is not None
     assert record.status == "succeeded"
     assert record.result["execution"]["delivery"]["status"] == "failed"
     assert record.result["delivery_internal"]["attempts_claimed"] == 3

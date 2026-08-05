@@ -13,6 +13,7 @@ from ..runtime.result_archive import (
     ResultArchiveError,
     ResultArchiveInventory,
     ResultArchiveMember,
+    result_archive_member_to_data,
     validate_result_archive_inventory,
 )
 from .obs_relay_ops import (
@@ -53,17 +54,21 @@ def persist_result_archive_inventory(
             content,
             obs_server=obs_server,
         )
-    except ObsObjectAlreadyExistsError:
+    except ObsObjectAlreadyExistsError as exc:
         existing = _read_existing_inventory(
             bucket,
             object_key,
             obs_server=obs_server,
         )
         if existing is None:
-            raise ResultArchiveError("archive_publish_failed", retryable=True)
+            raise ResultArchiveError(
+                "archive_publish_failed", retryable=True
+            ) from exc
         _require_identical_inventory(existing, content)
     except OSError:
-        raise ResultArchiveError("archive_publish_failed", retryable=True) from None
+        raise ResultArchiveError(
+            "archive_publish_failed", retryable=True
+        ) from None
     return object_key
 
 
@@ -94,12 +99,21 @@ def load_result_archive_inventory(
 
 def _inventory_key(run_root: str, digest: str) -> str:
     """Return the digest-addressed private inventory object path."""
-    if not isinstance(run_root, str) or not isinstance(digest, str) or not digest.startswith("sha256:"):
+    if (
+        not isinstance(run_root, str)
+        or not isinstance(digest, str)
+        or not digest.startswith("sha256:")
+    ):
         raise ResultArchiveError("archive_contract_invalid")
     digest_hex = digest.removeprefix("sha256:")
-    if len(digest_hex) != 64 or any(char not in "0123456789abcdef" for char in digest_hex):
+    if len(digest_hex) != 64 or any(
+        char not in "0123456789abcdef" for char in digest_hex
+    ):
         raise ResultArchiveError("archive_contract_invalid")
-    return f"{run_root.rstrip('/')}/delivery/{digest_hex}/.phytomni-result-inventory.json"
+    return (
+        f"{run_root.rstrip('/')}/delivery/{digest_hex}/"
+        ".phytomni-result-inventory.json"
+    )
 
 
 def _read_existing_inventory(
@@ -114,7 +128,9 @@ def _read_existing_inventory(
     except ObsObjectNotFoundError:
         return None
     except OSError:
-        raise ResultArchiveError("archive_publish_failed", retryable=True) from None
+        raise ResultArchiveError(
+            "archive_publish_failed", retryable=True
+        ) from None
 
 
 def _require_identical_inventory(existing: bytes, content: bytes) -> None:
@@ -124,19 +140,12 @@ def _require_identical_inventory(existing: bytes, content: bytes) -> None:
 
 
 def _serialize_inventory(inventory: ResultArchiveInventory) -> bytes:
-    """Encode bounded inventory data deterministically with no local source path."""
+    """Encode bounded inventory without exposing a local source path."""
     return json.dumps(
         {
             "digest": inventory.digest,
             "members": [
-                {
-                    "archive_path": member.archive_path,
-                    "child_index": member.child_index,
-                    "download_ref": member.download_ref,
-                    "media_type": member.media_type,
-                    "role": member.role.value,
-                    "size_bytes": member.size_bytes,
-                }
+                result_archive_member_to_data(member)
                 for member in inventory.members
             ],
             "run_root": inventory.run_root,
@@ -149,11 +158,20 @@ def _serialize_inventory(inventory: ResultArchiveInventory) -> bytes:
 
 
 def _inventory_from_data(value: object) -> ResultArchiveInventory:
-    """Convert exact persisted JSON shape into immutable inventory dataclasses."""
-    if not isinstance(value, Mapping) or set(value) != {"digest", "members", "run_root", "total_size_bytes"}:
+    """Convert persisted JSON into immutable inventory dataclasses."""
+    if not isinstance(value, Mapping) or set(value) != {
+        "digest",
+        "members",
+        "run_root",
+        "total_size_bytes",
+    }:
         raise ResultArchiveError("archive_contract_invalid")
     raw_members = value.get("members")
-    if not isinstance(raw_members, list) or not raw_members or len(raw_members) > MAX_RESULT_ARCHIVE_ARTIFACTS:
+    if (
+        not isinstance(raw_members, list)
+        or not raw_members
+        or len(raw_members) > MAX_RESULT_ARCHIVE_ARTIFACTS
+    ):
         raise ResultArchiveError("archive_contract_invalid")
     members = tuple(_member_from_data(raw) for raw in raw_members)
     run_root = value.get("run_root")
@@ -171,7 +189,14 @@ def _inventory_from_data(value: object) -> ResultArchiveInventory:
 
 def _member_from_data(value: object) -> ResultArchiveMember:
     """Convert one exact persisted member JSON object."""
-    required = {"archive_path", "child_index", "download_ref", "media_type", "role", "size_bytes"}
+    required = {
+        "archive_path",
+        "child_index",
+        "download_ref",
+        "media_type",
+        "role",
+        "size_bytes",
+    }
     if not isinstance(value, Mapping) or set(value) != required:
         raise ResultArchiveError("archive_contract_invalid")
     try:
@@ -183,14 +208,40 @@ def _member_from_data(value: object) -> ResultArchiveMember:
     download_ref = value.get("download_ref")
     archive_path = value.get("archive_path")
     media_type = value.get("media_type")
-    if (
-        isinstance(child_index, bool)
-        or not isinstance(child_index, int)
-        or isinstance(size_bytes, bool)
-        or not isinstance(size_bytes, int)
-        or not isinstance(download_ref, str)
-        or not isinstance(archive_path, str)
-        or not isinstance(media_type, str)
-    ):
+    (
+        child_index,
+        size_bytes,
+        download_ref,
+        archive_path,
+        media_type,
+    ) = _validate_member_fields(
+        child_index,
+        size_bytes,
+        download_ref,
+        archive_path,
+        media_type,
+    )
+    return ResultArchiveMember(
+        child_index, download_ref, archive_path, role, media_type, size_bytes
+    )
+
+
+def _validate_member_fields(
+    child_index: object,
+    size_bytes: object,
+    download_ref: object,
+    archive_path: object,
+    media_type: object,
+) -> tuple[int, int, str, str, str]:
+    """Reject malformed dynamic member fields before typed construction."""
+    if isinstance(child_index, bool) or not isinstance(child_index, int):
         raise ResultArchiveError("archive_contract_invalid")
-    return ResultArchiveMember(child_index, download_ref, archive_path, role, media_type, size_bytes)
+    if isinstance(size_bytes, bool) or not isinstance(size_bytes, int):
+        raise ResultArchiveError("archive_contract_invalid")
+    if not isinstance(download_ref, str):
+        raise ResultArchiveError("archive_contract_invalid")
+    if not isinstance(archive_path, str):
+        raise ResultArchiveError("archive_contract_invalid")
+    if not isinstance(media_type, str):
+        raise ResultArchiveError("archive_contract_invalid")
+    return child_index, size_bytes, download_ref, archive_path, media_type
