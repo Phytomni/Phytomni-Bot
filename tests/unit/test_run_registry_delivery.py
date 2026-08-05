@@ -4,6 +4,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -30,6 +33,7 @@ from mcp_server_phytomni.runtime.run_registry import (
 from mcp_server_phytomni.runtime.run_registry_delivery import (
     ResultDeliveryDependencies,
     claim_delivery_attempt,
+    initial_pending_delivery,
     settle_delivery_failure,
     settle_delivery_ready,
 )
@@ -86,6 +90,19 @@ def _pending_result(inventory: ResultArchiveInventory) -> dict:
     }
 
 
+def _run_context() -> RunContext:
+    """Return the canonical child-task ownership context for this suite."""
+    timestamp = "2026-08-05T00:00:00+00:00"
+    return RunContext(
+        "run-1",
+        "alice",
+        "analyst",
+        "remote",
+        timestamp,
+        timestamp,
+    )
+
+
 def _registry(
     tmp_path: Path, dependencies: ResultDeliveryDependencies
 ) -> tuple[RunRegistry, ResultArchiveInventory]:
@@ -102,14 +119,7 @@ def _registry(
             task_id="child-1",
             status="succeeded",
             output_dir="/obs/phytomni/runs/run-1/children/part-001",
-            run_context=RunContext(
-                run_id="run-1",
-                user_id="alice",
-                agent="analyst",
-                origin="remote",
-                created_at="2026-08-05T00:00:00+00:00",
-                updated_at="2026-08-05T00:00:00+00:00",
-            ),
+            run_context=_run_context(),
         )
     )
     return registry, inventory
@@ -117,16 +127,7 @@ def _registry(
 
 def test_delivery_models_project_under_execution() -> None:
     """A pending archive requirement has no public private state."""
-    delivery = ResultDelivery(
-        schema_version=1,
-        required=True,
-        status="pending",
-        revision=1,
-        inventory_digest="",
-        archive=None,
-        error_code=None,
-        retryable=False,
-    )
+    delivery = initial_pending_delivery("")
 
     assert ExecutionProjection(delivery=delivery).delivery == delivery
 
@@ -156,6 +157,85 @@ def test_ready_delivery_exposes_only_opaque_archive_reference() -> None:
     assert delivery.archive == archive
 
 
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"role": "scientific_data"},
+        {"name": "../analyst-results.zip"},
+        {"media_type": "application/x-zip-compressed"},
+        {"size_bytes": True},
+        {"size_bytes": -1},
+        {"downloadable": 1},
+        {"report_context_eligible": 0},
+        {"download_ref": "/obs/private/archive.zip"},
+        {"download_ref": "result-archive:sha256:" + "G" * 64},
+    ],
+)
+def test_archive_descriptor_rejects_invalid_runtime_values(changes: dict) -> None:
+    """Runtime validation rejects malformed public descriptors uniformly."""
+    baseline = {
+        "role": "result_archive",
+        "name": "analyst-results.zip",
+        "media_type": "application/zip",
+        "size_bytes": 12,
+        "downloadable": True,
+        "report_context_eligible": False,
+        "download_ref": "result-archive:sha256:" + "a" * 64,
+    }
+
+    with pytest.raises(ValueError, match="invalid result archive descriptor"):
+        ResultArchiveDescriptor(**(baseline | changes))
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"schema_version": True},
+        {"schema_version": 2},
+        {"required": False},
+        {"status": "unknown"},
+        {"revision": True},
+        {"revision": 0},
+        {"inventory_digest": "sha256:" + "g" * 64},
+        {"retryable": 1},
+        {"archive": "not-a-descriptor"},
+        {"status": "pending", "archive": ResultArchiveDescriptor("result_archive", "analyst-results.zip", "application/zip", 1, True, False, "result-archive:sha256:" + "a" * 64)},
+        {"status": "failed", "error_code": None},
+    ],
+)
+def test_delivery_rejects_invalid_runtime_values(changes: dict) -> None:
+    """Delivery invariants reject types, states, and inconsistent payloads."""
+    baseline = {
+        "schema_version": 1,
+        "required": True,
+        "status": "pending",
+        "revision": 1,
+        "inventory_digest": "",
+        "archive": None,
+        "error_code": None,
+        "retryable": False,
+    }
+
+    with pytest.raises(ValueError, match="invalid result delivery state"):
+        ResultDelivery(**(baseline | changes))
+
+
+def test_ready_delivery_requires_matching_opaque_archive_reference() -> None:
+    """A ready archive must be bound to the exact immutable digest."""
+    archive = ResultArchiveDescriptor(
+        "result_archive",
+        "analyst-results.zip",
+        "application/zip",
+        1,
+        True,
+        False,
+        "result-archive:sha256:" + "b" * 64,
+    )
+
+    with pytest.raises(ValueError, match="invalid result delivery state"):
+        ResultDelivery(1, True, "ready", 1, "sha256:" + "a" * 64, archive, None, False)
+
+
 def test_automatic_attempts_are_capped_then_manual_retry_reuses_inventory(
     tmp_path: Path,
 ) -> None:
@@ -163,7 +243,7 @@ def test_automatic_attempts_are_capped_then_manual_retry_reuses_inventory(
     calls = 0
 
     def publish(
-        inventory: ResultArchiveInventory, *, agent: str, summary_markdown: str
+        inventory: ResultArchiveInventory, agent: str, summary_markdown: str
     ) -> ResultArchiveDescriptor:
         nonlocal calls
         calls += 1
@@ -294,6 +374,75 @@ def test_private_delivery_state_is_stripped_even_for_debug_projection() -> None:
 
     assert "delivery_internal" not in public
     assert "inventory_ref" not in str(public)
+
+
+def test_stale_revision_cannot_settle_current_delivery(tmp_path: Path) -> None:
+    """A worker from an older delivery revision cannot replace the new state."""
+    async def no_sleep(_seconds: float) -> None:
+        return None
+
+    registry, inventory = _registry(
+        tmp_path,
+        ResultDeliveryDependencies(
+            publish=lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError()),
+            sleep=no_sleep,
+        ),
+    )
+    assert registry.begin_delivery_retry("run-1", owner="alice") is False
+    archive = ResultArchiveDescriptor(
+        "result_archive", "analyst-results.zip", "application/zip", 1, True,
+        False, f"result-archive:{inventory.digest}",
+    )
+
+    assert not settle_delivery_ready(
+        registry, "run-1", owner="alice", revision=2,
+        inventory_digest=inventory.digest, archive=archive,
+    )
+
+
+@pytest.mark.asyncio
+async def test_worker_executes_in_to_thread_with_bounded_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The worker runs a synchronous publisher off the event-loop thread."""
+    publisher_threads: list[int] = []
+
+    def publish(
+        inventory: ResultArchiveInventory, agent: str, summary_markdown: str
+    ) -> ResultArchiveDescriptor:
+        publisher_threads.append(threading.get_ident())
+        return ResultArchiveDescriptor(
+            "result_archive", "analyst-results.zip", "application/zip", 1,
+            True, False, f"result-archive:{inventory.digest}",
+        )
+
+    async def no_sleep(_seconds: float) -> None:
+        return None
+
+    registry, inventory = _registry(
+        tmp_path, ResultDeliveryDependencies(publish=publish, sleep=no_sleep)
+    )
+    monkeypatch.setattr(
+        run_registry_module, "load_private_inventory", lambda *_args: inventory
+    )
+
+    executor = ThreadPoolExecutor(max_workers=1)
+    loop = asyncio.get_running_loop()
+    previous_executor = loop._default_executor  # type: ignore[attr-defined]
+    loop.set_default_executor(executor)
+    try:
+        await asyncio.wait_for(
+            registry._run_delivery_worker(
+                "run-1", owner="alice", revision=1,
+                inventory_digest=inventory.digest, task_key="worker-thread-test",
+            ),
+            timeout=2,
+        )
+    finally:
+        executor.shutdown(wait=True, cancel_futures=True)
+        loop._default_executor = previous_executor  # type: ignore[attr-defined]
+
+    assert publisher_threads and publisher_threads[0] != threading.get_ident()
 
 
 @pytest.mark.asyncio

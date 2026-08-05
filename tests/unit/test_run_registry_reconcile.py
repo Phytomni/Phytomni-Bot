@@ -20,6 +20,9 @@ from tests.unit.test_run_registry import (
 from mcp_server_phytomni.mcp.formatting.models import ReportExecution
 from mcp_server_phytomni.runtime import run_registry, run_registry_reports
 from mcp_server_phytomni.runtime.artifact_roles import ArtifactRole
+from mcp_server_phytomni.runtime.execution_defaults import (
+    empty_execution_projection,
+)
 from mcp_server_phytomni.runtime.execution_models import ExecutionWarning
 from mcp_server_phytomni.runtime.run_registry import (
     RunOutcome,
@@ -76,6 +79,43 @@ async def test_collect_report_artifact_groups_preserves_child_directories() -> N
         ("child-2", "/obs/run/two"),
     ]
     assert [artifact.relative_path for artifact in groups[0].artifact_set.artifacts] == ["report.md"]
+
+
+@pytest.mark.asyncio
+async def test_scientific_child_failure_never_builds_or_publishes_delivery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed scientific child remains terminal without partial delivery."""
+    registry, manager, _ = _make_registry(tmp_path)
+    spec = RunSpec("run-delivery-child-failure", "alice", "analyst", "remote")
+    _seed_async_run(registry, manager, spec, ("child-failed",))
+    assert registry.update_running_result(
+        spec.run_id,
+        owner="alice",
+        result=empty_execution_projection(result_archive_required=True),
+    )
+
+    async def failed_child(task_id: str) -> dict[str, Any]:
+        return {"task_id": task_id, "status": "failed", "output_dir": "/obs/run"}
+
+    monkeypatch.setattr(run_registry, "reconcile_task", failed_child)
+    monkeypatch.setattr(
+        run_registry,
+        "build_result_archive_inventory",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("must not build")),
+    )
+    monkeypatch.setattr(
+        run_registry,
+        "persist_result_archive_inventory",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not publish")),
+    )
+
+    record = await registry.reconcile(spec.run_id, owner="alice", lister=_empty_lister)
+
+    assert record is not None
+    assert record.status == "failed"
+    assert record.result["execution"]["delivery"]["status"] == "pending"
+    assert "delivery_internal" not in record.result
 
 
 async def _empty_lister(output_dir: str) -> list:

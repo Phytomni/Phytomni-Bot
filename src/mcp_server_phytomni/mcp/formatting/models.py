@@ -6,11 +6,15 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from ...runtime.execution_models import ExecutionWarning
+
+_ARCHIVE_DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
+_ARCHIVE_NAME = re.compile(r"[a-z][a-z0-9_]*-results\.zip\Z")
 
 
 @dataclass(frozen=True)
@@ -48,12 +52,21 @@ class ResultArchiveDescriptor:
 
     def __post_init__(self) -> None:
         if (
-            not self.name.endswith("-results.zip")
-            or "/" in self.name
-            or "\\" in self.name
+            self.role != "result_archive"
+            or not isinstance(self.name, str)
+            or _ARCHIVE_NAME.fullmatch(self.name) is None
+            or self.media_type != "application/zip"
             or isinstance(self.size_bytes, bool)
+            or not isinstance(self.size_bytes, int)
             or self.size_bytes < 0
-            or not self.download_ref.startswith("result-archive:sha256:")
+            or self.downloadable is not True
+            or self.report_context_eligible is not False
+            or not isinstance(self.download_ref, str)
+            or not self.download_ref.startswith("result-archive:")
+            or _ARCHIVE_DIGEST.fullmatch(
+                self.download_ref.removeprefix("result-archive:")
+            )
+            is None
         ):
             raise ValueError("invalid result archive descriptor")
 
@@ -72,17 +85,27 @@ class ResultDelivery:
     retryable: bool
 
     def __post_init__(self) -> None:
-        digest_present = bool(self.inventory_digest)
-        digest_valid = self.inventory_digest.startswith("sha256:") and len(
-            self.inventory_digest
-        ) == 71
+        digest_valid = isinstance(self.inventory_digest, str) and (
+            not self.inventory_digest
+            or _ARCHIVE_DIGEST.fullmatch(self.inventory_digest) is not None
+        )
         if (
-            self.revision < 1
-            or (digest_present and not digest_valid)
-            or (self.status == "ready" and not digest_valid)
+            type(self.schema_version) is not int
+            or self.schema_version != 1
+            or self.required is not True
+            or not isinstance(self.status, str)
+            or self.status not in {"pending", "ready", "failed"}
+            or type(self.revision) is not int
+            or self.revision < 1
+            or not digest_valid
+            or type(self.retryable) is not bool
+            or (self.archive is not None and not isinstance(self.archive, ResultArchiveDescriptor))
+            or (self.error_code is not None and (not isinstance(self.error_code, str) or not self.error_code))
             or (self.status == "pending" and (self.archive is not None or self.error_code is not None or self.retryable))
-            or (self.status == "ready" and (self.archive is None or self.error_code is not None or self.retryable))
-            or (self.status == "failed" and (self.archive is not None or not self.error_code))
+            or (self.status == "ready" and (not self.inventory_digest or self.archive is None or self.error_code is not None or self.retryable))
+            or (self.status == "ready" and self.archive is not None and self.archive.download_ref != f"result-archive:{self.inventory_digest}")
+            or (self.status == "failed" and (self.archive is not None or self.error_code is None))
+            or (self.status == "failed" and not self.inventory_digest and self.retryable)
         ):
             raise ValueError("invalid result delivery state")
 

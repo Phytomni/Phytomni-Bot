@@ -97,7 +97,7 @@ def _strip_private_result_fields(value: Any) -> Any:
         return {
             key: _strip_private_result_fields(item)
             for key, item in value.items()
-            if key not in {"raw", "delivery_internal"}
+            if key not in {"raw", "delivery_internal", "inventory_ref"}
         }
     if isinstance(value, list):
         return [_strip_private_result_fields(item) for item in value]

@@ -134,6 +134,34 @@ async def test_get_run_strips_private_delivery_state_in_default_and_debug_reads(
         assert "inventory_ref" not in str(body["result"])
 
 
+async def test_list_runs_strips_inventory_ref_outside_delivery_internal(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """List/default and list/debug projections remove recursively injected refs."""
+    result = empty_execution_projection(result_archive_required=True)
+    result["formatted"]["metadata"] = {"inventory_ref": "/obs/private/ref"}
+    result["execution"]["diagnostics"] = [{"inventory_ref": "private"}]
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec("run-list-private-delivery", "u1", "analyst", "remote"),
+        outcome=RunOutcome(status="running", result=result),
+    )
+
+    for suffix in ("", "?debug=true"):
+        response = await api_client.get(
+            f"/v1/runs{suffix}",
+            headers={"Authorization": f"Bearer {issued_api_key}"},
+        )
+        assert response.status_code == 200
+        row = next(
+            item
+            for item in response.json()["data"]
+            if item["run_id"] == "run-list-private-delivery"
+        )
+        assert "inventory_ref" not in str(row["result"])
+
+
 async def test_get_run_unknown_id_is_404(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
