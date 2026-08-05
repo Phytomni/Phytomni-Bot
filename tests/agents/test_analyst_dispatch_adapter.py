@@ -19,7 +19,9 @@ from typing import Any
 
 import pytest
 
+import mcp_server_phytomni.agents.analyst.graph as _analyst_graph_mod
 import mcp_server_phytomni.agents.shared.analysis as _analysis_mod
+from mcp_server_phytomni.agents.analyst.graph import AnalystGraphMixin
 from mcp_server_phytomni.agents.analyst.state import AnalystInput
 from mcp_server_phytomni.graphs import analyst_dispatch_adapters as ada
 from mcp_server_phytomni.graphs.analyst_dispatch_adapters import (
@@ -371,3 +373,83 @@ async def test_dispatch_child_directory_skips_fingerprint_reuse(
     )
 
     assert result["task_id"] == "T-child"
+
+
+@pytest.mark.parametrize(
+    "output_dir",
+    ("/obs/run", "", "/obs/run/children/part-000"),
+)
+async def test_dispatch_child_flag_requires_an_exact_directory(
+    output_dir: str,
+) -> None:
+    """Invalid child flags fail before the adapter can skip fingerprint reuse."""
+    request = {
+        **_dispatch_request(),
+        "output_dir": output_dir,
+        "output_dir_is_result_child": True,
+    }
+
+    with pytest.raises(ValueError, match="result child"):
+        await ada.submit_analyst_via_subgraph(
+            fake_submitting_agent("T-invalid-child"),
+            SimpleNamespace(USER_ID="user-child"),
+            object(),
+            request,
+            is_polling=False,
+        )
+
+
+def test_dispatch_context_rejects_an_invalid_flagged_child() -> None:
+    """The shared context validates flagged paths for direct callers too."""
+    with pytest.raises(ValueError, match="result child"):
+        _analysis_mod.prepare_analyst_dispatch_context(
+            SimpleNamespace(USER_ID="user-child"),
+            object(),
+            {
+                "analysis_type": "design_analysis",
+                "target_id": "AT1G01010",
+                "output_dir": "/obs/run",
+                "output_dir_is_result_child": True,
+            },
+        )
+
+
+def test_standalone_analyst_projects_the_ensured_root_to_first_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Standalone Analyst submits use the first child below their run root."""
+    monkeypatch.setattr(
+        _analyst_graph_mod,
+        "ensure_run_output_dir",
+        lambda *_args, **_kwargs: "/obs/run-root",
+    )
+    agent = SimpleNamespace(
+        analyst_config=SimpleNamespace(CREATE_DIR=True),
+        sensitive_config=object(),
+    )
+
+    output_dir = AnalystGraphMixin._submit_output_dir(
+        agent,
+        {"output_dir": "", "input_fingerprint": "fingerprint"},
+        object(),
+    )
+
+    assert output_dir == "/obs/run-root/children/part-001"
+
+
+def test_analyst_rejects_an_invalid_flagged_child() -> None:
+    """The Analyst node revalidates flagged state before skipping creation."""
+    agent = SimpleNamespace(
+        analyst_config=SimpleNamespace(CREATE_DIR=True),
+        sensitive_config=object(),
+    )
+
+    with pytest.raises(ValueError, match="result child"):
+        AnalystGraphMixin._submit_output_dir(
+            agent,
+            {
+                "output_dir": "/obs/run",
+                "output_dir_is_result_child": True,
+            },
+            object(),
+        )

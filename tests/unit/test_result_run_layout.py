@@ -25,5 +25,15 @@ def test_result_run_root_from_child_requires_the_scoped_layout() -> None:
     assert result_run_root_from_child("obs://bucket/run/children/part-001") == (
         "obs://bucket/run"
     )
-    with pytest.raises(ValueError, match="result child"):
-        result_run_root_from_child("obs://bucket/run/children/part-1")
+    assert result_run_root_from_child("obs://bucket/run/children/part-199") == (
+        "obs://bucket/run"
+    )
+    for invalid_child in ("part-1", "part-000", "part-200", "part-999"):
+        with pytest.raises(ValueError, match="result child"):
+            result_run_root_from_child(f"obs://bucket/run/children/{invalid_child}")
+
+
+def test_result_child_output_dir_rejects_the_upper_bound() -> None:
+    assert result_child_output_dir("obs://bucket/run", 198).endswith("part-199")
+    with pytest.raises(ValueError, match="invalid result child layout"):
+        result_child_output_dir("obs://bucket/run", 199)

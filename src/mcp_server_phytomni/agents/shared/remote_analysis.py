@@ -14,6 +14,7 @@ from mcp.shared.exceptions import McpError
 
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
 from ...runtime.error_types import RemoteAnalysisSubmissionError
+from ...runtime.result_run_layout import result_run_root_from_child
 from ...runtime.submission_outcome import (
     AcceptedSubmission,
     RejectedSubmission,
@@ -109,6 +110,8 @@ async def submit_remote_analysis(
             id.
         asyncio.CancelledError: Propagated unchanged for task cleanup.
     """
+    if request.output_dir_is_result_child:
+        result_run_root_from_child(str(request.output_dir or ""))
     payload = {
         "analysis_type": request.analysis_type,
         "target_id": request.target_id,

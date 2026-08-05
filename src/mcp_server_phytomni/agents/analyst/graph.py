@@ -34,6 +34,10 @@ from ...common.prompts import get_prompt
 from ...common.relay_client import current_relay_client
 from ...config.relay_mode import relay_mode_enabled
 from ...runtime.artifact_roles import append_artifact_manifest_contract
+from ...runtime.result_run_layout import (
+    result_child_output_dir,
+    result_run_root_from_child,
+)
 from ...storage.path_policy import RunIdentity, task_tmp_key
 from ..knowledge.retrieval import retrieve
 from ..shared.analysis_storage import ensure_run_output_dir
@@ -177,17 +181,21 @@ class AnalystGraphMixin:
         """Return an existing or newly created submit output directory."""
         output_dir = str(state.get("output_dir") or "")
         if state.get("output_dir_is_result_child") is True:
+            result_run_root_from_child(output_dir)
             return output_dir
         if not self.analyst_config.CREATE_DIR:
             return output_dir
         fingerprint = state.get("input_fingerprint") or ""
-        return ensure_run_output_dir(
-            self.analyst_config,
-            self.sensitive_config,
-            "analysis_agents_task",
-            run_identity,
-            output_dir,
-            fingerprint=fingerprint,
+        return result_child_output_dir(
+            ensure_run_output_dir(
+                self.analyst_config,
+                self.sensitive_config,
+                "analysis_agents_task",
+                run_identity,
+                output_dir,
+                fingerprint=fingerprint,
+            ),
+            0,
         )
 
     async def _upload_submit_meta(

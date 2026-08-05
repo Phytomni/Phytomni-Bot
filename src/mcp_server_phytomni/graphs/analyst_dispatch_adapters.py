@@ -29,6 +29,7 @@ from ..agents.shared.analysis_requests import (
     build_analyst_prompt_parts,
 )
 from ..agents.shared.options import resolve_agent_locale
+from ..runtime.result_run_layout import result_run_root_from_child
 from ..runtime.task_dedup import (
     analyst_task_fingerprint,
     mint_caller_owned_task_id,
@@ -210,6 +211,8 @@ async def submit_analyst_via_subgraph(
     output_dir_is_result_child = (
         request.get("output_dir_is_result_child") is True
     )
+    if output_dir_is_result_child:
+        result_run_root_from_child(str(request.get("output_dir") or ""))
     fingerprint = None if output_dir_is_result_child else _dispatch_fingerprint(request)
     context = prepare_analyst_dispatch_context(
         config, sensitive_config, request, fingerprint

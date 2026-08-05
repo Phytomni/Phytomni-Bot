@@ -7,13 +7,13 @@ from __future__ import annotations
 import re
 
 RESULT_DELIVERY_AGENTS = frozenset({"analyst", "research", "network", "design"})
-_CHILD_SEGMENT = re.compile(r"^part-[0-9]{3}$")
+_CHILD_SEGMENT = re.compile(r"^part-(?:00[1-9]|0[1-9][0-9]|1[0-9]{2})$")
 
 
 def result_child_output_dir(run_root: str, child_index: int) -> str:
     """Return the stable one-based child directory below one run root."""
     root = run_root.rstrip("/")
-    if not root or child_index < 0 or child_index >= 200:
+    if not root or child_index < 0 or child_index >= 199:
         raise ValueError("invalid result child layout")
     return f"{root}/children/part-{child_index + 1:03d}"
 

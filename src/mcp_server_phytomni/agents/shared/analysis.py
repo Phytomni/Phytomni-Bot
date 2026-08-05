@@ -31,7 +31,10 @@ from ...runtime.langgraph_runner import (
     capture_workflow_boundary,
 )
 from ...runtime.request_context import bind_accepted_task_ids
-from ...runtime.result_run_layout import result_child_output_dir
+from ...runtime.result_run_layout import (
+    result_child_output_dir,
+    result_run_root_from_child,
+)
 from ...runtime.submission_outcome import SubmissionOutcome
 from ...storage.path_policy import RunIdentity
 from ..analyst.agent import (
@@ -178,6 +181,7 @@ def prepare_analyst_dispatch_context(
     )
     if request.get("output_dir_is_result_child") is True:
         output_dir = str(request["output_dir"])
+        result_run_root_from_child(output_dir)
     else:
         output_dir = result_child_output_dir(
             ensure_analysis_output_dir(

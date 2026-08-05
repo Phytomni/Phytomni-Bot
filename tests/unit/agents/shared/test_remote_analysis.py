@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from typing import Any
 
 import pytest
@@ -88,6 +88,7 @@ async def test_request_is_frozen_and_projects_dispatch_shape(
                 {"expression.tsv": "expression data"},
             ),
             "compute_resource": "medium",
+            "output_dir_is_result_child": False,
         },
         "is_polling": False,
     }
@@ -133,3 +134,30 @@ async def test_submission_propagates_cancellation(
         await submit_remote_analysis(
             object(), object(), object(), remote_request
         )
+
+
+@pytest.mark.parametrize(
+    "output_dir",
+    ("/obs/output", "", "/obs/run/children/part-000"),
+)
+async def test_flagged_request_requires_an_exact_child_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    remote_request: RemoteAnalysisRequest,
+    output_dir: str,
+) -> None:
+    """A flagged request cannot bypass the layout with an arbitrary path."""
+
+    async def unexpected_submit(*_: Any, **__: Any) -> dict[str, Any]:
+        raise AssertionError("invalid child request reached the adapter")
+
+    monkeypatch.setattr(
+        remote_analysis, "submit_analyst_via_subgraph", unexpected_submit
+    )
+    request = replace(
+        remote_request,
+        output_dir=output_dir,
+        output_dir_is_result_child=True,
+    )
+
+    with pytest.raises(ValueError, match="result child"):
+        await submit_remote_analysis(object(), object(), object(), request)
