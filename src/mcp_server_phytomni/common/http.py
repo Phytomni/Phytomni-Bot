@@ -187,11 +187,11 @@ async def retry_network_or_raise(
     max_retries: int,
     message: str = "Network error",
 ) -> bool:
-    """Sleep for a retriable network error or raise an MCP error.
+    """Sleep for a transient upstream failure or raise an MCP error.
 
     Args:
-        exc: The transient transport exception or provider SDK wrapper
-            (timeout, network, server disconnect, or proxy error) to evaluate.
+        exc: Transient transport, provider SDK, or fixed-reason protocol
+            exception to evaluate.
         attempt: Current attempt number (0-indexed).
         max_retries: Maximum number of retry attempts
             before raising.
@@ -209,7 +209,7 @@ async def retry_network_or_raise(
         await asyncio.sleep(1.5**attempt)
         return True
     logger.exception(
-        "%s: transport failure after %s retries", message, attempt
+        "%s: transient upstream failure after %s retries", message, attempt
     )
     raise McpError(
         ErrorData(

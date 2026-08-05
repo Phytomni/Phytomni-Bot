@@ -47,6 +47,11 @@ from ...runtime.locale import (
 )
 from ...storage.downloads import download_list_convert
 from ..shared.conversation_messages import normalize_conversation_messages
+from .completion_validation import (
+    InvalidChatCompletionError,
+    is_cacheable_chat_completion,
+    require_successful_chat_completion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -517,7 +522,11 @@ def _relay_timeout_headers(profile: str | None) -> dict[str, str] | None:
     return {RELAY_TIMEOUT_PROFILE_HEADER: profile}
 
 
-@func_cache(key_params=["cache_key"], ttl=LONG_TTL_SECONDS)
+@func_cache(
+    key_params=["cache_key"],
+    ttl=LONG_TTL_SECONDS,
+    cache_if=is_cacheable_chat_completion,
+)
 async def _run_chat_completion_cached(
     cache_key: _ChatCacheKey,
     request: _ChatCacheRequest,
@@ -529,10 +538,9 @@ async def _run_chat_completion_cached(
     in ``request`` so rotating credentials, endpoints, or transport flags
     cannot change cache identity.
 
-    Any failure (HTTP error, transport error) propagates as an
-    exception so the cache never persists a None or partial result —
-    the outer retry/dispatcher layer owns the retry-exhaustion path
-    and the None contract callers depend on.
+    HTTP and transport failures propagate as exceptions. Structurally invalid
+    normal values are rejected after normalization, while the cache admission
+    predicate also lazily rejects historical values under the same policy.
     """
     api_key, base_url = _relay_llm_endpoint(
         request.api_key,
@@ -563,7 +571,8 @@ async def _run_chat_completion_cached(
         payload = await _stream_response_to_dict(chat_completions)
     else:
         payload = chat_completions.model_dump()
-    return normalize_chat_completion_dict(payload)
+    normalized = normalize_chat_completion_dict(payload)
+    return require_successful_chat_completion(normalized)
 
 
 async def run_phyto_chat_cached(
@@ -615,13 +624,11 @@ async def _run_phyto_chat(
     """Call the Phyto chat endpoint with retry handling.
 
     Thin dispatcher around ``run_phyto_chat_cached`` that owns the
-    retry loop. The cached inner handles a single attempt and raises
-    on any exception so the cache never stores a failure. Both retry
-    helpers (``retry_http_status_or_raise`` /
-    ``retry_network_or_raise``) either return True (sleep + retry) or
-    raise ``McpError`` when retries are exhausted or the failure is
-    non-retriable, so this function either returns a Dict from a
-    successful attempt or propagates the helper's McpError.
+    retry loop. The cached inner handles a single attempt and rejects
+    transport, HTTP, and structurally invalid provider results. Both retry
+    helpers (``retry_http_status_or_raise`` / ``retry_network_or_raise``)
+    either return True (sleep + retry) or raise ``McpError`` when retries are
+    exhausted or the failure is non-retriable.
     """
     for attempt in range(options["max_retries"] + 1):
         try:
@@ -658,6 +665,14 @@ async def _run_phyto_chat(
                 exc,
                 attempt=attempt,
                 max_retries=options["max_retries"],
+            ):
+                continue
+        except InvalidChatCompletionError as exc:
+            if await retry_network_or_raise(
+                exc,
+                attempt=attempt,
+                max_retries=options["max_retries"],
+                message="Failed to generate from Phyto",
             ):
                 continue
     # Unreachable: every loop iteration either returns from the try
