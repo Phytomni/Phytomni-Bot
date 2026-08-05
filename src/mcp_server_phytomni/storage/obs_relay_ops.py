@@ -30,7 +30,10 @@ from .obs_storage import (
 )
 
 __all__ = [
+    "ObsObjectAlreadyExistsError",
+    "ObsObjectNotFoundError",
     "put_object_bytes",
+    "put_object_bytes_if_absent",
     "put_object_file",
     "put_dir_marker",
     "get_object_bytes",
@@ -41,6 +44,14 @@ __all__ = [
 
 _LIST_MAX_KEYS = 1000
 _DOWNLOAD_CHUNK_BYTES = 1024 * 1024
+
+
+class ObsObjectNotFoundError(FileNotFoundError):
+    """Raised when a requested OBS object is confirmed absent."""
+
+
+class ObsObjectAlreadyExistsError(FileExistsError):
+    """Raised when a conditional OBS object creation finds an existing key."""
 
 
 def _obs_client(obs_server: str) -> ObsClient:
@@ -57,6 +68,10 @@ def _require_ok(response: Any, action: str) -> None:
     """Raise ``OSError`` when an OBS SDK response is missing or >= 300."""
     status = getattr(response, "status", None)
     if status is None or status >= 300:
+        if status == 404 and action in {"download", "head"}:
+            raise ObsObjectNotFoundError("OBS object not found")
+        if action == "conditional upload" and status in {409, 412}:
+            raise ObsObjectAlreadyExistsError("OBS object already exists")
         raise OSError(
             f"OBS {action} failed: "
             f"requestId={getattr(response, 'requestId', 'unknown')} "
@@ -113,6 +128,55 @@ def put_object_bytes(
         _require_ok(response, "upload")
 
     obsfs_or_sdk(_obsfs, _sdk)
+    return safe_key
+
+
+def put_object_bytes_if_absent(
+    bucket: str,
+    object_key: str,
+    content: bytes,
+    *,
+    obs_server: str,
+    mount_root: str = DEFAULT_OBSFS_MOUNT_ROOT,
+) -> str:
+    """Create an object only when its key is absent, without overwriting.
+
+    The obsfs path uses exclusive creation. The SDK path sends the standard
+    conditional request header so a concurrent writer receives a stable
+    ``ObsObjectAlreadyExistsError`` instead of replacing private inventory.
+    """
+    safe_key = normalize_obs_object_key(object_key, bucket)
+
+    def _obsfs() -> None:
+        _require_mount(bucket, mount_root)
+        destination = obsfs_path_for(safe_key, bucket, mount_root)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with destination.open("xb") as handle:
+                handle.write(content)
+        except FileExistsError:
+            raise ObsObjectAlreadyExistsError(
+                "OBS object already exists"
+            ) from None
+
+    def _sdk() -> None:
+        response = _obs_client(obs_server).putContent(
+            bucketName=bucket,
+            objectKey=safe_key,
+            content=content,
+            extensionHeaders={"If-None-Match": "*"},
+        )
+        _require_ok(response, "conditional upload")
+
+    if not obsfs_bucket_available(bucket, mount_root):
+        _sdk()
+    else:
+        try:
+            _obsfs()
+        except ObsObjectAlreadyExistsError:
+            raise
+        except OSError:
+            _sdk()
     return safe_key
 
 

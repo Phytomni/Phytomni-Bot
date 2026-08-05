@@ -15,7 +15,12 @@ from ..runtime.result_archive import (
     ResultArchiveMember,
     validate_result_archive_inventory,
 )
-from .obs_relay_ops import get_object_bytes, put_object_bytes
+from .obs_relay_ops import (
+    ObsObjectAlreadyExistsError,
+    ObsObjectNotFoundError,
+    get_object_bytes,
+    put_object_bytes_if_absent,
+)
 
 __all__ = [
     "load_result_archive_inventory",
@@ -33,16 +38,30 @@ def persist_result_archive_inventory(
     validate_result_archive_inventory(inventory)
     object_key = _inventory_key(inventory.run_root, inventory.digest)
     content = _serialize_inventory(inventory)
-    try:
-        existing = get_object_bytes(bucket, object_key, obs_server=obs_server)
-    except OSError:
-        existing = None
+    existing = _read_existing_inventory(
+        bucket,
+        object_key,
+        obs_server=obs_server,
+    )
     if existing is not None:
-        if existing != content:
-            raise ResultArchiveError("archive_contract_invalid")
+        _require_identical_inventory(existing, content)
         return object_key
     try:
-        put_object_bytes(bucket, object_key, content, obs_server=obs_server)
+        put_object_bytes_if_absent(
+            bucket,
+            object_key,
+            content,
+            obs_server=obs_server,
+        )
+    except ObsObjectAlreadyExistsError:
+        existing = _read_existing_inventory(
+            bucket,
+            object_key,
+            obs_server=obs_server,
+        )
+        if existing is None:
+            raise ResultArchiveError("archive_publish_failed", retryable=True)
+        _require_identical_inventory(existing, content)
     except OSError:
         raise ResultArchiveError("archive_publish_failed", retryable=True) from None
     return object_key
@@ -81,6 +100,27 @@ def _inventory_key(run_root: str, digest: str) -> str:
     if len(digest_hex) != 64 or any(char not in "0123456789abcdef" for char in digest_hex):
         raise ResultArchiveError("archive_contract_invalid")
     return f"{run_root.rstrip('/')}/delivery/{digest_hex}/.phytomni-result-inventory.json"
+
+
+def _read_existing_inventory(
+    bucket: str,
+    object_key: str,
+    *,
+    obs_server: str,
+) -> bytes | None:
+    """Read one inventory, treating only a confirmed 404 as absence."""
+    try:
+        return get_object_bytes(bucket, object_key, obs_server=obs_server)
+    except ObsObjectNotFoundError:
+        return None
+    except OSError:
+        raise ResultArchiveError("archive_publish_failed", retryable=True) from None
+
+
+def _require_identical_inventory(existing: bytes, content: bytes) -> None:
+    """Reject a digest-key collision whose immutable bytes differ."""
+    if existing != content:
+        raise ResultArchiveError("archive_contract_invalid")
 
 
 def _serialize_inventory(inventory: ResultArchiveInventory) -> bytes:

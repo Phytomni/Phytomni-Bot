@@ -120,7 +120,11 @@ def build_result_archive_inventory(
                 raise ResultArchiveError("archive_contract_invalid")
             if not isinstance(artifact.media_type, str) or not artifact.media_type:
                 raise ResultArchiveError("archive_contract_invalid")
-            if isinstance(artifact.size_bytes, bool) or artifact.size_bytes < 0:
+            if (
+                isinstance(artifact.size_bytes, bool)
+                or not isinstance(artifact.size_bytes, int)
+                or artifact.size_bytes < 0
+            ):
                 raise ResultArchiveError("archive_contract_invalid")
             archive_path = f"results/part-{child_index:03d}/{relative_path}"
             if archive_path in paths:

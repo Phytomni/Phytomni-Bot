@@ -119,6 +119,86 @@ def test_put_object_file_obsfs_copies_local_file(tmp_path: Any) -> None:
     assert (mount_root / "phytomni/agent_data/runs/archive.zip").read_bytes() == b"zip-bytes"
 
 
+def test_put_object_bytes_if_absent_sdk_uses_conditional_create(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SDK creation sends If-None-Match instead of allowing an overwrite."""
+    captured: dict[str, Any] = {}
+
+    class FakeObsClient:
+        """Capture the SDK conditional upload without a network request."""
+
+        def __init__(self, **kwargs: Any) -> None:
+            captured["init"] = kwargs
+
+        def putContent(self, **kwargs: Any) -> Any:  # noqa: N802
+            captured["put_content"] = kwargs
+            return SimpleNamespace(status=200)
+
+    monkeypatch.setattr(ops, "ObsClient", FakeObsClient)
+
+    ops.put_object_bytes_if_absent(
+        "phytomni",
+        "agent_data/runs/private.json",
+        b"{}",
+        obs_server="https://obs.example",
+        mount_root=_missing_mount(tmp_path),
+    )
+
+    assert captured["put_content"]["extensionHeaders"] == {
+        "If-None-Match": "*"
+    }
+
+
+def test_put_object_bytes_if_absent_obsfs_rejects_existing_object(
+    tmp_path: Any,
+) -> None:
+    """Mounted OBS uses exclusive create and leaves existing content intact."""
+    mount_root = tmp_path / "mount"
+    existing = mount_root / "phytomni/agent_data/runs/private.json"
+    existing.parent.mkdir(parents=True)
+    existing.write_bytes(b"original")
+
+    with pytest.raises(ops.ObsObjectAlreadyExistsError):
+        ops.put_object_bytes_if_absent(
+            "phytomni",
+            "agent_data/runs/private.json",
+            b"replacement",
+            obs_server="https://unused.example",
+            mount_root=str(mount_root),
+        )
+
+    assert existing.read_bytes() == b"original"
+
+
+def test_put_object_bytes_if_absent_sdk_maps_precondition_failure(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A conditional SDK collision is distinguishable from a failed write."""
+
+    class FakeObsClient:
+        """Return the OBS conditional-create collision status."""
+
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        def putContent(self, **_kwargs: Any) -> Any:  # noqa: N802
+            return SimpleNamespace(status=412)
+
+    monkeypatch.setattr(ops, "ObsClient", FakeObsClient)
+
+    with pytest.raises(ops.ObsObjectAlreadyExistsError):
+        ops.put_object_bytes_if_absent(
+            "phytomni",
+            "agent_data/runs/private.json",
+            b"{}",
+            obs_server="https://obs.example",
+            mount_root=_missing_mount(tmp_path),
+        )
+
+
 def test_put_dir_marker_sdk_writes_zero_byte_object(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,

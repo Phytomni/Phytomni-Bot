@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import stat
 from io import BytesIO
 from types import SimpleNamespace
 from zipfile import ZipFile
@@ -30,14 +32,14 @@ def _artifact(
     path: str,
     *,
     role: ArtifactRole = ArtifactRole.SCIENTIFIC_DATA,
-    size: int = 3,
+    size: object = 3,
 ) -> ClassifiedArtifact:
     return ClassifiedArtifact(
         source_path=f"private/{path}",
         relative_path=path,
         role=role,
         media_type="application/octet-stream",
-        size_bytes=size,
+        size_bytes=size,  # type: ignore[arg-type]
         download_ref=f"/obs/phytomni/runs/run-1/{path}",
     )
 
@@ -114,6 +116,12 @@ def test_inventory_rejects_duplicate_members_and_bounds() -> None:
         build_result_archive_inventory(_groups(_set(_artifact("large.csv", size=10 * 1024**3 + 1))))
 
 
+@pytest.mark.parametrize("size", ["3", 3.5, math.nan, True])
+def test_inventory_rejects_non_integer_source_sizes(size: object) -> None:
+    with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
+        build_result_archive_inventory(_groups(_set(_artifact("report.md", size=size))))
+
+
 def test_inventory_is_deterministic_and_excludes_summary_and_producer_archive() -> None:
     groups = _groups(_set(_artifact("report.md"), _artifact("producer.zip", role=ArtifactRole.RESULT_ARCHIVE)))
     first = build_result_archive_inventory(groups)
@@ -130,10 +138,18 @@ def test_publish_writes_deterministic_zip_and_reuses_matching_object(
     data = {inventory.members[0].download_ref: b"abc"}
     uploaded: dict[str, bytes] = {}
     sizes: dict[str, int] = {}
+    generated: list[bytes] = []
 
     monkeypatch.setattr(result_archive, "ARCHIVE_TEMP_ROOT", tmp_path)
     monkeypatch.setattr(result_archive, "SERVER_CONFIG", SimpleNamespace(BUCKET_NAME="phytomni", OBS_SERVER="https://obs.example"))
     monkeypatch.setattr(result_archive, "iter_object_chunks", lambda _bucket, ref, **_kwargs: iter((data[ref],)))
+    write_archive = result_archive._write_archive
+
+    def capture_generated(*args: object, **kwargs: object) -> None:
+        write_archive(*args, **kwargs)
+        generated.append(args[0].read_bytes())
+
+    monkeypatch.setattr(result_archive, "_write_archive", capture_generated)
 
     def put_file(_bucket: str, key: str, source, **_kwargs: object) -> str:
         uploaded[key] = source.read_bytes()
@@ -155,10 +171,16 @@ def test_publish_writes_deterministic_zip_and_reuses_matching_object(
         assert archive.read("summary.md") == b"safe answer\n"
         assert archive.read("results/part-001/report.md") == b"abc"
         assert all(item.date_time == (1980, 1, 1, 0, 0, 0) for item in archive.infolist())
+        assert all(
+            stat.S_IFMT(item.external_attr >> 16) == stat.S_IFREG
+            and stat.S_IMODE(item.external_attr >> 16) == 0o644
+            for item in archive.infolist()
+        )
     assert not list(tmp_path.iterdir())
 
     assert result_archive.build_and_publish_result_archive(inventory, agent="analyst", summary_markdown="safe answer\n\n") == key
     assert len(uploaded) == 1
+    assert generated == [uploaded[key], uploaded[key]]
 
 
 @pytest.mark.parametrize("stream", [lambda: iter((b"ab",)), lambda: iter((b"abcd",))])

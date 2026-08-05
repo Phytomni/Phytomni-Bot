@@ -28,11 +28,16 @@ def test_persist_accepts_identical_content_and_load_revalidates(monkeypatch: pyt
     objects: dict[str, bytes] = {}
     def get_object(_bucket: str, key: str, **_kwargs: object) -> bytes:
         if key not in objects:
-            raise OSError("not found")
+            raise storage.ObsObjectNotFoundError("missing")
         return objects[key]
 
     monkeypatch.setattr(storage, "get_object_bytes", get_object)
-    monkeypatch.setattr(storage, "put_object_bytes", lambda _bucket, key, content, **_kwargs: objects.setdefault(key, content) or key)
+    monkeypatch.setattr(
+        storage,
+        "put_object_bytes_if_absent",
+        lambda _bucket, key, content, **_kwargs: objects.setdefault(key, content)
+        or key,
+    )
 
     key = storage.persist_result_archive_inventory(inventory, bucket="phytomni", obs_server="https://obs.example")
     assert key.endswith(f"delivery/{inventory.digest.removeprefix('sha256:')}/.phytomni-result-inventory.json")
@@ -45,6 +50,60 @@ def test_persist_rejects_different_existing_content(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(storage, "get_object_bytes", lambda *_args, **_kwargs: b"{}")
     with pytest.raises(ResultArchiveError, match="archive_contract_invalid"):
         storage.persist_result_archive_inventory(inventory, bucket="phytomni", obs_server="https://obs.example")
+
+
+def test_persist_fails_closed_when_inventory_read_is_not_not_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inventory = _inventory()
+    writes: list[bytes] = []
+
+    def denied(*_args: object, **_kwargs: object) -> bytes:
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(storage, "get_object_bytes", denied)
+    monkeypatch.setattr(
+        storage,
+        "put_object_bytes_if_absent",
+        lambda *_args, **_kwargs: writes.append(b"unexpected"),
+    )
+
+    with pytest.raises(ResultArchiveError, match="archive_publish_failed") as exc_info:
+        storage.persist_result_archive_inventory(
+            inventory,
+            bucket="phytomni",
+            obs_server="https://obs.example",
+        )
+
+    assert exc_info.value.retryable is True
+    assert not writes
+
+
+def test_persist_reloads_after_conditional_create_race(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inventory = _inventory()
+    calls = 0
+
+    def get_object(*_args: object, **_kwargs: object) -> bytes:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise storage.ObsObjectNotFoundError("missing")
+        return storage._serialize_inventory(inventory)
+
+    def raced_create(*_args: object, **_kwargs: object) -> str:
+        raise storage.ObsObjectAlreadyExistsError("exists")
+
+    monkeypatch.setattr(storage, "get_object_bytes", get_object)
+    monkeypatch.setattr(storage, "put_object_bytes_if_absent", raced_create)
+
+    assert storage.persist_result_archive_inventory(
+        inventory,
+        bucket="phytomni",
+        obs_server="https://obs.example",
+    ).endswith(".phytomni-result-inventory.json")
+    assert calls == 2
 
 
 def test_load_rejects_tampered_digest(monkeypatch: pytest.MonkeyPatch) -> None:
