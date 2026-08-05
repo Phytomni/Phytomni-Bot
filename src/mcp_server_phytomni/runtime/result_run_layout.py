@@ -1,12 +1,16 @@
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
+# Author: xieshang (xieshang0608@gmail.com)
+#         guxiaofeng (guxiaofeng@caas.cn)
 """Stable output layout for result-delivery child submissions."""
 
 from __future__ import annotations
 
 import re
 
-RESULT_DELIVERY_AGENTS = frozenset({"analyst", "research", "network", "design"})
+RESULT_DELIVERY_AGENTS = frozenset(
+    {"analyst", "research", "network", "design"}
+)
 _CHILD_SEGMENT = re.compile(r"^part-(?:00[1-9]|0[1-9][0-9]|1[0-9]{2})$")
 
 

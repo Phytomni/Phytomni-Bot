@@ -18,6 +18,7 @@ __all__ = [
     "has_pending_a2a",
     "rejected_submissions_from_state",
     "project_submission_warnings",
+    "task_output_pairs_from_records",
 ]
 
 
@@ -31,6 +32,28 @@ class AcceptedSubmission:
     def __post_init__(self) -> None:
         if not self.task_id.strip():
             raise ValueError("accepted task id must be nonblank")
+
+
+def task_output_pairs_from_records(
+    raw: object,
+) -> tuple[tuple[str, str], ...]:
+    """Extract complete string task identities from canonical records."""
+    if not isinstance(raw, list):
+        return ()
+    pairs: list[tuple[str, str]] = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            continue
+        task_id = item.get("task_id")
+        output_dir = item.get("output_dir")
+        if (
+            isinstance(task_id, str)
+            and task_id
+            and isinstance(output_dir, str)
+            and output_dir
+        ):
+            pairs.append((task_id, output_dir))
+    return tuple(pairs)
 
 
 @dataclass(frozen=True, slots=True)

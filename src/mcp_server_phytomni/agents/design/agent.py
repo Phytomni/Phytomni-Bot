@@ -84,6 +84,7 @@ from ..shared.parallel_dispatch import (
 )
 from ..shared.remote_analysis import (
     REMOTE_FANOUT_ERRORS,
+    RemoteAnalysisPrompt,
     RemoteAnalysisRequest,
     accepted_submission,
     rejected_submission,
@@ -371,9 +372,11 @@ class DigitalDesignAgents:
             analysis_type=analysis_type,
             target_id=gene_id,
             output_dir=options.output_dir,
-            goal_description=goal_description,
-            meta=meta,
-            data_list=data_list,
+            prompt=RemoteAnalysisPrompt(
+                goal_description=goal_description,
+                meta=meta,
+                data_list=data_list,
+            ),
             compute_resource=self._get_compute_resource(analysis_type),
             output_dir_is_result_child=True,
         )
@@ -517,7 +520,9 @@ class DigitalDesignAgents:
             user_id=state.get("user_id"),
             scope="digital_design_task",
         )
-        access_key_id, secret_access_key = self.sensitive_config.obs_credentials()
+        access_key_id, secret_access_key = (
+            self.sensitive_config.obs_credentials()
+        )
         output_dir = state.get("output_dir") or create_output_dir(
             user_id=run_identity.user_id,
             task="digital_design_task",

@@ -21,6 +21,7 @@ from ...runtime.submission_outcome import (
 )
 
 __all__ = [
+    "RemoteAnalysisPrompt",
     "RemoteAnalysisRequest",
     "RemoteAnalysisSubmissionError",
     "REMOTE_FANOUT_ERRORS",
@@ -32,17 +33,39 @@ __all__ = [
 
 
 @dataclass(frozen=True, slots=True)
+class RemoteAnalysisPrompt:
+    """Prompt parts forwarded together to the Analyst adapter."""
+
+    goal_description: str
+    meta: str
+    data_list: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
 class RemoteAnalysisRequest:
     """Immutable input required for one remote Analyst submission."""
 
     analysis_type: str
     target_id: str
     output_dir: str | None
-    goal_description: str
-    meta: str
-    data_list: dict[str, Any]
+    prompt: RemoteAnalysisPrompt
     compute_resource: str
     output_dir_is_result_child: bool = False
+
+    @property
+    def goal_description(self) -> str:
+        """Return the prompt goal through the historical read surface."""
+        return self.prompt.goal_description
+
+    @property
+    def meta(self) -> str:
+        """Return the prompt metadata through the historical read surface."""
+        return self.prompt.meta
+
+    @property
+    def data_list(self) -> dict[str, Any]:
+        """Return prompt datasets through the historical read surface."""
+        return self.prompt.data_list
 
 
 REMOTE_SUBMISSION_ERRORS: tuple[type[Exception], ...] = (

@@ -326,7 +326,9 @@ class GeneNetworkAgents:
             user_id=state.get("user_id"),
             scope="gene_network_task",
         )
-        access_key_id, secret_access_key = self.sensitive_config.obs_credentials()
+        access_key_id, secret_access_key = (
+            self.sensitive_config.obs_credentials()
+        )
         output_dir = state.get("output_dir") or create_output_dir(
             user_id=run_identity.user_id,
             task="gene_network_task",

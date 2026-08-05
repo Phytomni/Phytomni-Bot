@@ -109,6 +109,7 @@ def test_analyst_state_carries_full_field_union() -> None:
         "obs_file_list",
         "data_list",
         "output_dir",
+        "output_dir_is_result_child",
         "compute_resource",
         "job_name",
         "method_context",

@@ -487,8 +487,9 @@ class AnalystAgent(
                 initial graph state (``goal_description``, ``user_id``,
                 ``output_dir``, ``compute_resource``, ``obs_file_list``,
                 ``preset_plan``, ``thread_id``, ``is_auto_select``,
-                ``is_polling``, ``is_preset_plan``) plus per-call config
-                overrides bound through ``ANALYST_CONFIG_FIELD_MAP``.
+                ``is_polling``, ``is_preset_plan``,
+                ``output_dir_is_result_child``) plus per-call config overrides
+                bound through ``ANALYST_CONFIG_FIELD_MAP``.
 
         Returns:
             A dictionary containing task_id, output_dir, job_name, and
@@ -551,6 +552,9 @@ class AnalystAgent(
             "obs_file_list": obs_file_list,
             "data_list": kwargs.get("preset_data_list") or {},
             "output_dir": compatibility_config.OUTPUT_DIR,
+            "output_dir_is_result_child": (
+                kwargs.get("output_dir_is_result_child") is True
+            ),
             "compute_resource": compatibility_config.COMPUTE_RESOURCE,
             "method_context": None,
             "preset_plan": kwargs.get("preset_plan"),

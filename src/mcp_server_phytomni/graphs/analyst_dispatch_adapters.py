@@ -213,31 +213,32 @@ async def submit_analyst_via_subgraph(
     )
     if output_dir_is_result_child:
         result_run_root_from_child(str(request.get("output_dir") or ""))
-    fingerprint = None if output_dir_is_result_child else _dispatch_fingerprint(request)
+    fingerprint = (
+        None if output_dir_is_result_child else _dispatch_fingerprint(request)
+    )
     context = prepare_analyst_dispatch_context(
         config, sensitive_config, request, fingerprint
     )
-    reused = None
     if fingerprint is not None:
         reused = await _reuse_prior_dispatch(
             fingerprint, require_terminal_success=is_polling
         )
-    if reused is not None:
-        reused = _normalize_reused_submission(reused)
-        logger.info(
-            "Reusing prior %s task via fingerprint dedup "
-            "(caller task_id: %s, source_task_id: %s)",
-            context.analysis_type,
-            reused["task_id"],
-            reused["source_task_id"],
-        )
-        record_dispatch_submission(
-            reused["task_id"],
-            reused["output_dir"],
-            fingerprint,
-            source_task_id=reused["source_task_id"],
-        )
-        return reused
+        if reused is not None:
+            reused = _normalize_reused_submission(reused)
+            logger.info(
+                "Reusing prior %s task via fingerprint dedup "
+                "(caller task_id: %s, source_task_id: %s)",
+                context.analysis_type,
+                reused["task_id"],
+                reused["source_task_id"],
+            )
+            record_dispatch_submission(
+                reused["task_id"],
+                reused["output_dir"],
+                fingerprint,
+                source_task_id=reused["source_task_id"],
+            )
+            return reused
     enriched_request = {
         **request,
         "output_dir": context.output_dir,

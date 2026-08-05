@@ -16,7 +16,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal, NamedTuple
 
-from ..shared.remote_analysis import RemoteAnalysisRequest
+from ..shared.remote_analysis import (
+    RemoteAnalysisPrompt,
+    RemoteAnalysisRequest,
+)
 
 
 class _DesignAnalysisSpec(NamedTuple):
@@ -76,9 +79,11 @@ async def submit_design_analysis(
         analysis_type=request.spec.analysis_type,
         target_id=request.gene_id,
         output_dir=request.output_dir,
-        goal_description=goal_description,
-        meta=meta,
-        data_list=data_list,
+        prompt=RemoteAnalysisPrompt(
+            goal_description=goal_description,
+            meta=meta,
+            data_list=data_list,
+        ),
         compute_resource=request.spec.compute_resource,
     )
     return await dependencies.submit_remote_analysis(

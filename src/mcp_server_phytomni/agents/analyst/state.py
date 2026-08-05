@@ -101,6 +101,7 @@ class AnalystState(TypedDict):
     obs_file_list: list
     data_list: dict[str, str]
     output_dir: str
+    output_dir_is_result_child: NotRequired[bool]
     compute_resource: str
     job_name: str
     method_context: dict[str, str]

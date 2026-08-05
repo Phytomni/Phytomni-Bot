@@ -22,13 +22,14 @@ import pytest
 import mcp_server_phytomni.agents.analyst.graph as _analyst_graph_mod
 import mcp_server_phytomni.agents.shared.analysis as _analysis_mod
 from mcp_server_phytomni.agents.analyst.graph import AnalystGraphMixin
-from mcp_server_phytomni.agents.analyst.state import AnalystInput
+from mcp_server_phytomni.agents.analyst.state import AnalystInput, AnalystState
 from mcp_server_phytomni.graphs import analyst_dispatch_adapters as ada
 from mcp_server_phytomni.graphs.analyst_dispatch_adapters import (
     map_analyst_output_to_dispatch_state,
     map_send_payload_to_analyst_input,
 )
 from mcp_server_phytomni.runtime.task_dedup import analyst_task_fingerprint
+from mcp_server_phytomni.storage.path_policy import RunIdentity
 
 from ._analyst_fakes import fake_submitting_agent
 
@@ -64,6 +65,13 @@ def test_map_send_payload_returns_analyst_input_field_set() -> None:
     optional_keys = set(getattr(AnalystInput, "__optional_keys__", set()))
     expected_optionals = optional_keys - {"obs_file_list"}
     assert set(result.keys()) == expected_optionals | {"query"}
+
+
+def test_result_child_flag_is_retained_by_analyst_state() -> None:
+    """The full graph state keeps the optional dispatch ownership flag."""
+    optional_keys = set(getattr(AnalystState, "__optional_keys__", set()))
+
+    assert "output_dir_is_result_child" in optional_keys
 
 
 def test_map_send_payload_unpacks_prompt_parts() -> None:
@@ -382,7 +390,7 @@ async def test_dispatch_child_directory_skips_fingerprint_reuse(
 async def test_dispatch_child_flag_requires_an_exact_directory(
     output_dir: str,
 ) -> None:
-    """Invalid child flags fail before the adapter can skip fingerprint reuse."""
+    """Invalid child flags fail before fingerprint reuse can be skipped."""
     request = {
         **_dispatch_request(),
         "output_dir": output_dir,
@@ -428,10 +436,10 @@ def test_standalone_analyst_projects_the_ensured_root_to_first_child(
         sensitive_config=object(),
     )
 
-    output_dir = AnalystGraphMixin._submit_output_dir(
+    output_dir = getattr(AnalystGraphMixin, "_submit_output_dir")(
         agent,
         {"output_dir": "", "input_fingerprint": "fingerprint"},
-        object(),
+        RunIdentity.create(user_id="user-child"),
     )
 
     assert output_dir == "/obs/run-root/children/part-001"
@@ -445,11 +453,11 @@ def test_analyst_rejects_an_invalid_flagged_child() -> None:
     )
 
     with pytest.raises(ValueError, match="result child"):
-        AnalystGraphMixin._submit_output_dir(
+        getattr(AnalystGraphMixin, "_submit_output_dir")(
             agent,
             {
                 "output_dir": "/obs/run",
                 "output_dir_is_result_child": True,
             },
-            object(),
+            RunIdentity.create(user_id="user-child"),
         )

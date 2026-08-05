@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+from collections.abc import Mapping
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
@@ -176,7 +177,7 @@ class AnalystGraphMixin:
 
     def _submit_output_dir(
         self: Any,
-        state: AnalystAgentsState,
+        state: Mapping[str, Any],
         run_identity: RunIdentity,
     ) -> str:
         """Return an existing or newly created submit output directory."""

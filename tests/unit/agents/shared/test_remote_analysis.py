@@ -14,6 +14,7 @@ import pytest
 
 from mcp_server_phytomni.agents.shared import remote_analysis
 from mcp_server_phytomni.agents.shared.remote_analysis import (
+    RemoteAnalysisPrompt,
     RemoteAnalysisRequest,
     RemoteAnalysisSubmissionError,
     submit_remote_analysis,
@@ -29,9 +30,11 @@ def _remote_request() -> RemoteAnalysisRequest:
         analysis_type="example_analysis",
         target_id="gene-1",
         output_dir="/obs/output",
-        goal_description="Describe the target.",
-        meta="Use the supplied evidence.",
-        data_list={"expression.tsv": "expression data"},
+        prompt=RemoteAnalysisPrompt(
+            goal_description="Describe the target.",
+            meta="Use the supplied evidence.",
+            data_list={"expression.tsv": "expression data"},
+        ),
         compute_resource="medium",
     )
 

@@ -43,6 +43,7 @@ from ...runtime.submission_outcome import (
     classify_submissions,
     has_pending_a2a,
     rejected_submissions_from_state,
+    task_output_pairs_from_records,
 )
 from ...storage.path_policy import RunIdentity
 from ..analyst.agent import (
@@ -84,6 +85,7 @@ from ..shared.parallel_dispatch import (
 )
 from ..shared.remote_analysis import (
     REMOTE_FANOUT_ERRORS,
+    RemoteAnalysisPrompt,
     RemoteAnalysisRequest,
     accepted_submission,
     rejected_submission,
@@ -189,22 +191,13 @@ def _research_submission_outcome(
 ) -> SubmissionOutcome:
     """Classify the remote submissions represented by one graph result."""
     accepted: list[AcceptedSubmission] = []
-    exact_submissions = result.get("research_submissions")
-    if isinstance(exact_submissions, list):
-        for submission in exact_submissions:
-            if not isinstance(submission, Mapping):
-                continue
-            task_id = submission.get("task_id")
-            output_dir = submission.get("output_dir")
-            if (
-                isinstance(task_id, str)
-                and task_id.strip()
-                and isinstance(output_dir, str)
-                and output_dir.strip()
-            ):
-                accepted.append(
-                    AcceptedSubmission(task_id=task_id, output_dir=output_dir)
-                )
+    accepted.extend(
+        AcceptedSubmission(task_id=task_id, output_dir=output_dir)
+        for task_id, output_dir in task_output_pairs_from_records(
+            result.get("research_submissions")
+        )
+        if task_id.strip() and output_dir.strip()
+    )
     task_ids = result.get("task_ids")
     output_dir = str(result.get("output_dir") or "")
     if not accepted and isinstance(task_ids, Mapping):
@@ -253,22 +246,13 @@ def _accepted_research_submissions(
     updates: Mapping[str, Any],
 ) -> list[dict[str, str]]:
     """Capture accepted task-directory pairs before evidence filtering."""
-    accepted_submissions: list[dict[str, str]] = []
-    for item in updates.get("evidence", []):
-        if not isinstance(item, Mapping):
-            continue
-        task_id = item.get("task_id")
-        output_dir = item.get("output_dir")
-        if (
-            isinstance(task_id, str)
-            and task_id.strip()
-            and isinstance(output_dir, str)
-            and output_dir.strip()
-        ):
-            accepted_submissions.append(
-                {"task_id": task_id, "output_dir": output_dir}
-            )
-    return accepted_submissions
+    return [
+        {"task_id": task_id, "output_dir": output_dir}
+        for task_id, output_dir in task_output_pairs_from_records(
+            updates.get("evidence")
+        )
+        if task_id.strip() and output_dir.strip()
+    ]
 
 
 class InSilicoResearchAgents:
@@ -437,9 +421,11 @@ class InSilicoResearchAgents:
             analysis_type=task.task_name,
             target_id=task.task_name,
             output_dir=task.output_dir,
-            goal_description=task.goal_description,
-            meta=prompt_context,
-            data_list=task.data_list,
+            prompt=RemoteAnalysisPrompt(
+                goal_description=task.goal_description,
+                meta=prompt_context,
+                data_list=task.data_list,
+            ),
             compute_resource="medium",
             output_dir_is_result_child=True,
         )

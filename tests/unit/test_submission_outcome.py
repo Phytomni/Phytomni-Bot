@@ -14,6 +14,7 @@ from mcp_server_phytomni.runtime.submission_outcome import (
     AcceptedSubmission,
     RejectedSubmission,
     classify_submissions,
+    task_output_pairs_from_records,
 )
 
 pytestmark = pytest.mark.unit
@@ -64,3 +65,21 @@ def test_accepted_submission_rejects_blank_task_id_and_is_frozen() -> None:
     accepted = AcceptedSubmission(task_id="task-1", output_dir="tenant/out")
     with pytest.raises(FrozenInstanceError):
         setattr(accepted, "task_id", "task-2")
+
+
+def test_task_output_pairs_extract_only_string_identities() -> None:
+    """Canonical submission records expose only complete string pairs."""
+    records = [
+        {"task_id": "task-1", "output_dir": "tenant/out-1"},
+        {"task_id": "", "output_dir": "tenant/empty-id"},
+        {"task_id": "task-no-dir"},
+        {"task_id": 2, "output_dir": "tenant/wrong-id"},
+        "not-a-record",
+        {"task_id": "task-2", "output_dir": "tenant/out-2"},
+    ]
+
+    assert task_output_pairs_from_records(records) == (
+        ("task-1", "tenant/out-1"),
+        ("task-2", "tenant/out-2"),
+    )
+    assert not task_output_pairs_from_records({"task_id": "not-a-list"})

@@ -97,6 +97,7 @@ ANALYST_CHAT_MOUNT_TOPOLOGY = ChatMountTopology(
         "obs_file_list",
         "compute_resource",
         "output_dir",
+        "output_dir_is_result_child",
         "is_polling",
         "is_auto_select",
         "is_preset_plan",

@@ -36,7 +36,10 @@ from .result_run_layout import (
     result_run_root_from_child,
 )
 from .run_registry import RunOutcome, RunRegistry, RunRequestInfo, RunSpec
-from .submission_outcome import project_submission_warnings
+from .submission_outcome import (
+    project_submission_warnings,
+    task_output_pairs_from_records,
+)
 from .task_manager import (
     RunContext,
     Submission,
@@ -93,23 +96,14 @@ def _extract_research_submissions(
     result: Mapping[str, Any],
 ) -> tuple[SubmissionTuple, ...]:
     """Extract the canonical or legacy research task-id collection."""
-    exact_submissions = result.get("research_submissions")
-    if isinstance(exact_submissions, list):
-        pairs: list[SubmissionTuple] = []
-        for submission in exact_submissions:
-            if not isinstance(submission, Mapping):
-                continue
-            task_id = submission.get("task_id")
-            output_dir = submission.get("output_dir")
-            if (
-                isinstance(task_id, str)
-                and task_id
-                and isinstance(output_dir, str)
-                and output_dir
-            ):
-                pairs.append((task_id, output_dir, None, None))
-        if pairs:
-            return tuple(pairs)
+    exact_pairs = task_output_pairs_from_records(
+        result.get("research_submissions")
+    )
+    if exact_pairs:
+        return tuple(
+            (task_id, output_dir, None, None)
+            for task_id, output_dir in exact_pairs
+        )
     task_values = result.get("task_ids")
     if isinstance(task_values, Mapping):
         task_values = task_values.values()
