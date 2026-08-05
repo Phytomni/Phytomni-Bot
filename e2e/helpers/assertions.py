@@ -297,14 +297,11 @@ def fetch_authenticated_result_archive(
     archive = assert_remote_run_terminal_payload(result, agent=agent)
     execution = result["execution"]
     output_dirs = execution.get("output_dirs")
-    assert isinstance(output_dirs, list) and output_dirs
-    parents: set[str] = set()
-    for value in output_dirs:
-        assert isinstance(value, str) and value
-        path = PurePosixPath(value)
-        assert path.is_absolute() and ".." not in path.parts
-        parents.add(str(path.parent))
-    assert len(parents) == 1, "result children did not share one root"
+    assert isinstance(output_dirs, list) and len(output_dirs) == 1
+    run_root = output_dirs[0]
+    assert isinstance(run_root, str) and run_root
+    path = PurePosixPath(run_root)
+    assert path.is_absolute() and ".." not in path.parts
 
     delivery = execution["delivery"]
     digest = delivery.get("inventory_digest")
@@ -313,7 +310,7 @@ def fetch_authenticated_result_archive(
     assert len(digest_hex) == 64 and all(
         character in "0123456789abcdef" for character in digest_hex
     )
-    object_ref = f"{parents.pop()}/delivery/{digest_hex}/{archive['name']}"
+    object_ref = f"{path}/delivery/{digest_hex}/{archive['name']}"
     config = ServerConfig()
     return get_object_bytes(
         config.BUCKET_NAME,

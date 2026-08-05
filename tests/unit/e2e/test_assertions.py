@@ -6,11 +6,14 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
+from e2e.helpers import assertions
 from e2e.helpers.assertions import (
     assert_deep_genome_terminal,
     assert_terminal_report_and_artifacts,
+    fetch_authenticated_result_archive,
 )
 from tests.unit.e2e.state_fakes import build_task_state
 
@@ -75,3 +78,66 @@ def test_artifact_requirement_rejects_directoryless_success() -> None:
 
     with pytest.raises(AssertionError):
         assert_terminal_report_and_artifacts(state, needs_artifacts=True)
+
+
+def test_result_archive_fetch_uses_public_run_root(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Archive fetches resolve from the public umbrella run root."""
+    digest_hex = "a" * 64
+    observed: dict[str, str] = {}
+    monkeypatch.setattr(
+        assertions,
+        "ServerConfig",
+        lambda: SimpleNamespace(
+            BUCKET_NAME="test-bucket",
+            OBS_SERVER="https://obs.example.test",
+        ),
+    )
+
+    def get_object_bytes(
+        bucket: str, object_ref: str, *, obs_server: str
+    ) -> bytes:
+        observed.update(
+            bucket=bucket,
+            object_ref=object_ref,
+            obs_server=obs_server,
+        )
+        return b"archive"
+
+    monkeypatch.setattr(assertions, "get_object_bytes", get_object_bytes)
+    run_record = {
+        "user_id": "user-1",
+        "agent": "network",
+        "result": {
+            "formatted": {"answer": "Archive ready."},
+            "execution": {
+                "output_dirs": ["/obs/runs/network-run"],
+                "delivery": {
+                    "status": "ready",
+                    "inventory_digest": f"sha256:{digest_hex}",
+                    "archive": {
+                        "role": "result_archive",
+                        "name": "network-results.zip",
+                        "size_bytes": 1,
+                    },
+                },
+            },
+        },
+    }
+
+    assert (
+        fetch_authenticated_result_archive(
+            run_record,
+            authenticated_user="user-1",
+            agent="network",
+        )
+        == b"archive"
+    )
+    assert observed == {
+        "bucket": "test-bucket",
+        "object_ref": (
+            f"/obs/runs/network-run/delivery/{digest_hex}/network-results.zip"
+        ),
+        "obs_server": "https://obs.example.test",
+    }
