@@ -33,7 +33,6 @@ from mcp_server_phytomni.runtime.run_registry import (
 from mcp_server_phytomni.runtime.run_registry_delivery import (
     ResultDeliveryDependencies,
     claim_delivery_attempt,
-    initial_pending_delivery,
     settle_delivery_failure,
     settle_delivery_ready,
 )
@@ -127,7 +126,7 @@ def _registry(
 
 def test_delivery_models_project_under_execution() -> None:
     """A pending archive requirement has no public private state."""
-    delivery = initial_pending_delivery("")
+    delivery = ResultDelivery(1, True, "pending", 1, "", None, None, False)
 
     assert ExecutionProjection(delivery=delivery).delivery == delivery
 
@@ -161,6 +160,7 @@ def test_ready_delivery_exposes_only_opaque_archive_reference() -> None:
     "changes",
     [
         {"role": "scientific_data"},
+        {"name": "foo-results.zip"},
         {"name": "../analyst-results.zip"},
         {"media_type": "application/x-zip-compressed"},
         {"size_bytes": True},
@@ -388,16 +388,42 @@ def test_stale_revision_cannot_settle_current_delivery(tmp_path: Path) -> None:
             sleep=no_sleep,
         ),
     )
-    assert registry.begin_delivery_retry("run-1", owner="alice") is False
+    for attempt in range(1, 4):
+        claim = claim_delivery_attempt(
+            registry,
+            "run-1",
+            owner="alice",
+            revision=1,
+            inventory_digest=inventory.digest,
+        )
+        assert claim is not None and claim.attempts_claimed == attempt
+        outcome = settle_delivery_failure(
+            registry,
+            "run-1",
+            owner="alice",
+            revision=1,
+            inventory_digest=inventory.digest,
+            error_code="archive_publish_failed",
+            retryable=True,
+        )
+        assert outcome == ("failed" if attempt == 3 else "retry")
+    assert registry.begin_delivery_retry("run-1", owner="alice") is True
+    current = registry.get_run("run-1", owner="alice")
+    assert current is not None
+    assert current.result["execution"]["delivery"]["revision"] == 2
     archive = ResultArchiveDescriptor(
         "result_archive", "analyst-results.zip", "application/zip", 1, True,
         False, f"result-archive:{inventory.digest}",
     )
 
     assert not settle_delivery_ready(
-        registry, "run-1", owner="alice", revision=2,
+        registry, "run-1", owner="alice", revision=1,
         inventory_digest=inventory.digest, archive=archive,
     )
+    winner = registry.get_run("run-1", owner="alice")
+    assert winner is not None
+    assert winner.status == "running"
+    assert winner.result["execution"]["delivery"]["revision"] == 2
 
 
 @pytest.mark.asyncio

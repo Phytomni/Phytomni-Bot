@@ -14,7 +14,9 @@ from typing import Any, Literal
 from ...runtime.execution_models import ExecutionWarning
 
 _ARCHIVE_DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
-_ARCHIVE_NAME = re.compile(r"[a-z][a-z0-9_]*-results\.zip\Z")
+_ARCHIVE_NAME = re.compile(
+    r"(?:analyst|research|network|design)-results\.zip\Z"
+)
 
 
 @dataclass(frozen=True)
