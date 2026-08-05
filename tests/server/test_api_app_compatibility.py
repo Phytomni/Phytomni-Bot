@@ -60,7 +60,7 @@ _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 # native conversation envelope, and resumable attachment references. The
 # ``_normalized_openapi`` helper removes only unstable version/server fields.
 _OPENAPI_HASH = (
-    "f294c59febe3df685b4e605db3cde06dcf2369dc23c3d0f60f04b6f454c73c0e"
+    "1162d437308eed601bf7d75b1511f4d2a7887b0293c6e0f55b8d006b247dd24e"
 )
 
 
@@ -259,6 +259,14 @@ _DEFAULT_ROUTES = (
         None,
         ("agents",),
         "get_run",
+    ),
+    _route(
+        "/v1/runs/{run_id}/delivery/retry",
+        ("POST",),
+        200,
+        None,
+        ("agents",),
+        "retry_run_delivery",
     ),
     _route(
         "/v1/runs/{run_id}/a2ui-actions",
@@ -509,9 +517,9 @@ def _all_flag_routes() -> tuple[_RouteContract, ...]:
         (_INTEROP_ROUTE,)
         + _DEFAULT_ROUTES[:3]
         + _MEMORY_ROUTES
-        + _DEFAULT_ROUTES[3:23]
+        + _DEFAULT_ROUTES[3:24]
         + _A2A_ROUTES
-        + _DEFAULT_ROUTES[23:]
+        + _DEFAULT_ROUTES[24:]
     )
 
 
@@ -559,7 +567,7 @@ def test_default_application_contract_is_literal() -> None:
     document = _normalized_openapi(app)
     if os.environ.get("PHYTOMNI_DEPENDENCY_FLOOR") != "1":
         assert _openapi_hash(app) == _OPENAPI_HASH
-    assert len(document["paths"]) == 37
+    assert len(document["paths"]) == 38
     assert len(document["components"]["schemas"]) == 26
     assert all(
         operation.get("operationId")
@@ -588,7 +596,7 @@ def test_optional_application_contract_is_literal(
     app = create_app()
 
     assert _route_manifest(app) == _all_flag_routes()
-    assert len(app.openapi()["paths"]) == 44
+    assert len(app.openapi()["paths"]) == 45
     assert _original_lifespan_name(app) == "_http_lifespan"
 
 

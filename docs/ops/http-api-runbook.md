@@ -302,6 +302,12 @@ Use [CLI Reference](../reference/cli.md) for the complete command reference.
   **Operational use:** Owner-scoped run lookup.
 
 - **Method:** `POST`
+  **Path:** `/v1/runs/{run_id}/delivery/retry`
+  **Auth:** yes
+  **Operational use:** Retry a retryable result-archive publication for an
+  owner-scoped run.
+
+- **Method:** `POST`
   **Path:** `/v1/runs/{thread_id}/resume`
   **Auth:** yes
   **Operational use:** Resume a ReviewAgent human-approval pause.

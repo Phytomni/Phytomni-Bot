@@ -110,7 +110,10 @@ async def test_dispatch_tool_validates_calls_handler_and_wraps_json(
             "tabular": None,
             "output_dirs": [],
         },
-        "execution": empty_execution_projection()["execution"],
+        "execution": {
+            **empty_execution_projection()["execution"],
+            "delivery": None,
+        },
         "raw": {
             "answer": "hello",
             "files": [],

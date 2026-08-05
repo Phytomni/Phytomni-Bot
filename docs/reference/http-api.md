@@ -259,6 +259,12 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
   **Purpose:** Returns one owner-isolated run state.
 
 - **Method:** `POST`
+  **Path:** `/v1/runs/{run_id}/delivery/retry`
+  **Auth:** yes
+  **Purpose:** Retries a retryable result-archive publication for an owner-
+  isolated run.
+
+- **Method:** `POST`
   **Path:** `/v1/runs/{thread_id}/resume`
   **Auth:** yes
   **Purpose:** Resumes a ReviewAgent run paused at a human approval interrupt.
