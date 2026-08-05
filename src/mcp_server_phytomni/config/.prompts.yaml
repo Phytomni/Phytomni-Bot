@@ -4447,54 +4447,61 @@ user:
             predict this design promoter file using smep and smoc;
     </get_promoter_design>
     <smep>
-        Tool_Usage:
-            perl /opt/health/epic_models/semp/smep_prediction_py3.5.pl -I
-            $fasta_file -O /$output_dir/$out_file -T
-            $epigenetic_modification_type
-            $epigenetic_modification_type:
-                1. 5mC
-                2. 6mA
-                3. m6A
-                4. H3K27me3
-                5. H3K4me3
-                6. H3K9ac
-            Note1: When you run the script, you must be under the path
-            /opt/health/epic_models/smep/
-            Note2: The fasta_file must be saved under the path
-            /opt/health/epic_models/smep/
-            Note3: out_file You can specify files in any path
+        usage: run_smep_main.py [-h] -I INFILE -O OUTFILE -T
+                          {5mC,6mA,m6A,H3K27me3,H3K4me3,H3K9ac}
 
-        Tool_Usage_Example:
-            question: please help me to predict the 5mC modification of A gene
-            prompter
-            commond_line: conda activate epic && cp A_gene_prompter.fa
-            /opt/health/epic_models/smep && cd /opt/health/epic_models/smep &&
-            perl smep_prediction_py3.5.pl -I A_gene_prompter.fa -O
-            /$output_dir/A_gene_prompter_5mC.out -T 5mC
+        SMEP Prediction Tool: Preprocesses FASTA files, runs prediction, and
+        formats
+        output.
+
+        optional arguments:
+          -h, --help            show this help message and exit
+          -I INFILE, --infile INFILE
+                                Sequence file in FASTA format.
+          -O OUTFILE, --outfile OUTFILE
+                                Output file for the prediction results.
+          -T {5mC,6mA,m6A,H3K27me3,H3K4me3,H3K9ac}, --tarclass
+          {5mC,6mA,m6A,H3K27me3,H3K4me3,H3K9ac}
+                                Modification type (5mC, 6mA, m6A, H3K27me3,
+                                H3K4me3 or
+                                H3K9ac).
+        python /opt/workspace/models/epic/SMEP/run_smep_main.py -I
+        $fasta_file -O /$output_dir/$out_file -T
+        $epigenetic_modification_type
+        $epigenetic_modification_type:
+        1. 5mC
+        2. 6mA
+        3. m6A
+        4. H3K27me3
+        5. H3K4me3
+        6. H3K9ac
     </smep>
     <smoc>
         Tool_Usage:
-            python /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py
-            --input $input_fasta --model
-            /opt/health/epic_models/smoc/model/$model_type --output $out_dir
-            --threshold 0.8 --window_size 800
-                $model_type:
-                1. Best_model_9311CK.h5: Wild-type chromatin accessibility of
-                variety 9311
-                2. Best_model_9311HS.h5: Chromatin accessibility in the
-                heat-excited state of variety 9311
-                3. Best_model_NIPCK.h5: Wild-type chromatin accessibility of
-                variety NIP
-                4. Best_model_NIPHS.h5: Chromatin accessibility in the
-                heat-excited state of variety NIP
+            python /opt/workspace/models/epic/SMOC/run_smoc_main.py
+              --input $input_fasta --model
+              /opt/workspace/models/epic/SMOC/data/$model_type --output $out_dir
+              --threshold 0.8 --window_size 800
+              $model_type:
+              1. Best_model_9311CK.h5: Wild-type chromatin accessibility of
+              variety 9311
+              2. Best_model_9311HS.h5: Chromatin accessibility in the heat-excited
+              state of variety 9311
+              3. Best_model_NIPCK.h5: Wild-type chromatin accessibility of variety
+              NIP
+              4. Best_model_NIPHS.h5: Chromatin accessibility in the heat-excited
+              state of variety NIP
 
         Tool_Usage_Example:
             question: please help me to predict the wild-type chromatin
             accessibility of Oryza sativa Os12g0263100 gene prompter in 9311.
             commond_line: conda activate epic && python
-            /opt/health/epic_models/smoc/script/smoc_pred_dw_v1.py --input
+            /opt/workspace/models/epic/SMOC/run_smoc_main.py --input
             $input_fasta --model
-            /opt/health/epic_models/smoc/model/Best_model_9311CK.h5 --output ./
+            /opt/workspace/models/epic/SMOC/data/Best_model_9311CK.h5 --output
+            ./
+            Note: you will generate a *.csv file in output_dir, and you need to
+            use this file to plot the figuer and summary the result.
     </smoc>
   protein_design_analysis: |-
     You are a bioinformatician specialized in the field of protein design
