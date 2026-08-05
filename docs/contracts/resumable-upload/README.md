@@ -25,7 +25,9 @@ The Bot owns these routes:
 The public capability descriptor is pinned in `capability.json`. It is the
 serialized output of `serialize_file_upload_capability()` and includes the
 inclusive 10 GiB limit, 128 MiB part size, four-part concurrency limit, and
-the seven-day session lifetime.
+the seven-day session lifetime. Protocol identity is advertised separately by
+the top-level `protocols` map in `GET /v1/agents`; it is not duplicated inside
+the capability descriptor.
 
 ## Wire rules
 

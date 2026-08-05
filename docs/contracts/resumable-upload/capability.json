@@ -1,5 +1,4 @@
 {
-  "protocol": "obs-multipart-v2",
   "route_family": "resumable_files",
   "routes": [
     {

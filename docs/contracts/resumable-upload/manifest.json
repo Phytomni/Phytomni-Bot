@@ -1,9 +1,9 @@
 {
   "protocol": "obs-multipart-v2",
-  "fixture_version": "2026-08-02",
+  "fixture_version": "2026-08-05",
   "files": {
     "abort_response.json": "61af084446e79e0900f4ae1db9529af32ff47f2732690f6f73689d419692c962",
-    "capability.json": "6716e966e9b92c5284c9a3cb55045ce7e0fd847a146abe019b4c451110f29e23",
+    "capability.json": "b8317dab6e3dafa3c35324e5f12e31c50823e6a8eed07011c4a0eb14e61a91cf",
     "complete_request.json": "658b1c38bd53a42e9761dc6945520de111e454d2fd284ae0b7ce0510bf35ec1c",
     "complete_response.json": "7d13ca2e0e9f43334a7cf9f84a94832237c601f8158093af225795a5d01157c6",
     "create_request.json": "32c918c4755a1013f299139ccfe20bc0ac37b4212ddbd5aad6367edf6195e63c",
