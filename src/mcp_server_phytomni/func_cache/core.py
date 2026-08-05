@@ -11,8 +11,10 @@ helpers live in decorator.py and lifecycle.py respectively.
 
 import asyncio
 import contextlib
+import inspect
 import logging
 from dataclasses import dataclass
+from types import TracebackType
 from typing import Any
 
 from .exceptions import CacheError
@@ -39,6 +41,18 @@ _CACHE_MISS = object()
 def _log_warning(message: str) -> None:
     """Log a preformatted warning message."""
     logger.warning(message)
+
+
+def _suppress_admission_error(
+    exc_type: type[BaseException] | None,
+    _exc_value: BaseException | None,
+    _traceback: TracebackType | None,
+) -> bool:
+    """Log and suppress ordinary admission callback failures."""
+    if exc_type is None or not issubclass(exc_type, Exception):
+        return False
+    _log_warning(f"Cache admission policy failed: {exc_type.__name__}")
+    return True
 
 
 @dataclass
@@ -164,7 +178,13 @@ class CacheRuntime:
         except CacheError as exc:
             _log_warning(f"Cache read error, falling back: {exc}")
             return _CACHE_MISS
-        return self.deserialize_cached(cache_key, cached)
+        result = self.deserialize_cached(cache_key, cached)
+        if result is not _CACHE_MISS and not self._cache_value_accepted(
+            result
+        ):
+            self._delete_rejected(cache_key)
+            return _CACHE_MISS
+        return result
 
     async def read_cached_async(self, cache_key: str):
         """Return cached async value or a miss sentinel.
@@ -180,7 +200,13 @@ class CacheRuntime:
         except CacheError as exc:
             _log_warning(f"Cache read error, falling back: {exc}")
             return _CACHE_MISS
-        return await self.deserialize_cached_async(cache_key, cached)
+        result = await self.deserialize_cached_async(cache_key, cached)
+        if result is not _CACHE_MISS and not self._cache_value_accepted(
+            result
+        ):
+            await self._delete_rejected_async(cache_key)
+            return _CACHE_MISS
+        return result
 
     def write_cached(self, cache_key: str, result: Any) -> None:
         """Serialize and store a cache value.
@@ -192,6 +218,8 @@ class CacheRuntime:
         Returns:
             None. Storage failures are logged and ignored.
         """
+        if not self._cache_value_accepted(result):
+            return
         try:
             value = dumps(result, self.options.compress)
             self.storage.set(
@@ -213,6 +241,8 @@ class CacheRuntime:
         Returns:
             None. Storage failures are logged and ignored.
         """
+        if not self._cache_value_accepted(result):
+            return
         try:
             value = dumps(result, self.options.compress)
             self.storage.set(
@@ -223,6 +253,30 @@ class CacheRuntime:
             )
         except CacheError as exc:
             _log_warning(f"Cache write failed: {exc}")
+
+    def _cache_value_accepted(self, result: Any) -> bool:
+        """Return whether the configured admission policy accepts a result.
+
+        Args:
+            result: Deserialized or newly computed cache result.
+
+        Returns:
+            True when no predicate is configured or the predicate accepts.
+        """
+        predicate = self.options.cache_if
+        if predicate is None:
+            return True
+        accepted = False
+        with contextlib.ExitStack() as stack:
+            stack.push(_suppress_admission_error)
+            decision = predicate(result)
+            if inspect.isawaitable(decision):
+                if inspect.iscoroutine(decision):
+                    decision.close()
+                _log_warning("Cache admission policy returned an awaitable")
+                return False
+            accepted = bool(decision)
+        return accepted
 
     def compute_locked(
         self,
@@ -462,6 +516,24 @@ class CacheRuntime:
         """Delete one corrupted cache entry, ignoring storage failures."""
         with contextlib.suppress(CacheError):
             self.storage.delete_entry(self.key_builder.func_id, cache_key)
+
+    def _delete_rejected(self, cache_key: str) -> None:
+        """Delete one value rejected by the result admission policy."""
+        try:
+            self.storage.delete_entry(self.key_builder.func_id, cache_key)
+        except CacheError as exc:
+            _log_warning(
+                "Cache rejected entry cleanup failed: " f"{type(exc).__name__}"
+            )
+
+    async def _delete_rejected_async(self, cache_key: str) -> None:
+        """Delete one async value rejected by the admission policy."""
+        try:
+            self.storage.delete_entry(self.key_builder.func_id, cache_key)
+        except CacheError as exc:
+            _log_warning(
+                "Cache rejected entry cleanup failed: " f"{type(exc).__name__}"
+            )
 
     def _log_corrupted_entry(self, cache_key: str) -> None:
         """Log a corrupted cache entry warning."""
