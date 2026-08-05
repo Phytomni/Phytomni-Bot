@@ -234,6 +234,8 @@ async def test_injected_registry_factory_is_used_by_fetch_and_retry_routes(
     calls: list[str] = []
 
     class RegistryFactory:
+        """Record and construct the registry instances requested by the app."""
+
         def __bool__(self) -> bool:
             return False
 
