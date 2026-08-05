@@ -45,6 +45,7 @@ class RunProjectionDependencies:
 
     reconcile_task_logs: Callable[..., Awaitable[dict[str, Any]]]
     fetch_owner_run: Callable[..., Awaitable[dict[str, Any]]]
+    retry_owner_delivery: Callable[..., Awaitable[dict[str, Any]]]
     list_owner_runs: Callable[[RunListRequest], dict[str, Any]]
     strip_run_result: Callable[[dict[str, Any]], dict[str, Any]]
 
@@ -205,6 +206,17 @@ def _register_status_routes(
                 "result": strip_agent_result(record["result"]),
             }
         return JSONResponse(record)
+
+    @app.post("/v1/runs/{run_id}/delivery/retry")
+    async def retry_run_delivery(
+        run_id: str,
+        principal: ApiPrincipal = Depends(dependencies.auth.require_agents),
+    ) -> JSONResponse:
+        """Begin one owner-scoped archive delivery retry."""
+        del principal
+        return JSONResponse(
+            await dependencies.projection.retry_owner_delivery(run_id)
+        )
 
 
 def _register_pause_routes(

@@ -11,6 +11,11 @@ from pathlib import Path
 
 import pytest
 
+from mcp_server_phytomni.api.advertised_protocols import (
+    RESULT_ARCHIVE_PROTOCOL,
+    RESULT_ARCHIVE_PROTOCOL_VERSION,
+    serialize_protocols,
+)
 from mcp_server_phytomni.api.agent_capabilities import (
     AGENT_CAPABILITIES,
     agent_supports_attachment_channels,
@@ -99,6 +104,20 @@ def test_capability_descriptors_are_explicit_and_json_compatible() -> None:
         assert capability["report_states"] == ["final"]
         assert capability["artifacts"] is True
         assert capability["degraded_outcomes"] is True
+
+
+def test_result_archive_protocol_requires_direct_storage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The archive protocol is advertised only outside relay-only mode."""
+    monkeypatch.delenv("PHYTOMNI_RELAY_MODE", raising=False)
+    monkeypatch.delenv("RELAY_MODE", raising=False)
+
+    direct = serialize_protocols(lambda: False)
+
+    assert direct[RESULT_ARCHIVE_PROTOCOL] == [RESULT_ARCHIVE_PROTOCOL_VERSION]
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
+    assert RESULT_ARCHIVE_PROTOCOL not in serialize_protocols(lambda: False)
 
 
 def test_attachment_matrix_is_exact() -> None:

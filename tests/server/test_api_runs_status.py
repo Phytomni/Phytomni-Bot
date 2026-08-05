@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from typing import Any
+from dataclasses import asdict
+from typing import Any, Literal
 from unittest.mock import AsyncMock
 
 import httpx
@@ -33,6 +34,10 @@ from tests.support.run_registry_fakes import (
 )
 
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
+from mcp_server_phytomni.mcp.formatting.models import (
+    ResultArchiveDescriptor,
+    ResultDelivery,
+)
 from mcp_server_phytomni.runtime import run_registry as run_registry_module
 from mcp_server_phytomni.runtime import (
     run_registry_reports as run_registry_reports_module,
@@ -59,6 +64,163 @@ from mcp_server_phytomni.runtime.task_manager import (
 from mcp_server_phytomni.runtime.terminal_artifacts import TerminalArtifactSet
 
 pytestmark = pytest.mark.server
+
+
+_DELIVERY_DIGEST = "sha256:" + "a" * 64
+
+
+def _delivery_run_result(
+    *,
+    status: Literal["pending", "ready", "failed"],
+    retryable: bool,
+    revision: int = 1,
+) -> dict[str, Any]:
+    """Build one bounded result with private retry coordination state."""
+    result = empty_execution_projection(result_archive_required=True)
+    result["formatted"]["answer"] = "scientific answer"
+    archive = (
+        ResultArchiveDescriptor(
+            role="result_archive",
+            name="analyst-results.zip",
+            media_type="application/zip",
+            size_bytes=128,
+            downloadable=True,
+            report_context_eligible=False,
+            download_ref=f"result-archive:{_DELIVERY_DIGEST}",
+        )
+        if status == "ready"
+        else None
+    )
+    result["execution"]["delivery"] = asdict(
+        ResultDelivery(
+            schema_version=1,
+            required=True,
+            status=status,
+            revision=revision,
+            inventory_digest=(
+                _DELIVERY_DIGEST if status != "failed" or retryable else ""
+            ),
+            archive=archive,
+            error_code=(
+                None
+                if status in {"pending", "ready"}
+                else "archive_publish_failed"
+            ),
+            retryable=retryable,
+        )
+    )
+    result["delivery_internal"] = {
+        "inventory_ref": "/private/obs/inventory.json",
+        "attempts_claimed": 3,
+        "last_error_code": "archive_publish_failed",
+    }
+    return result
+
+
+def _seed_delivery_run(
+    tasks_db_path: str,
+    run_id: str,
+    *,
+    owner: str = "u1",
+    status: str = "failed",
+    retryable: bool = True,
+) -> None:
+    """Persist one terminal delivery state for the HTTP route tests."""
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec(run_id, owner, "analyst", "remote"),
+        outcome=RunOutcome(
+            status="succeeded",
+            result=_delivery_run_result(status=status, retryable=retryable),
+        ),
+    )
+
+
+async def test_retry_delivery_is_owner_scoped_idempotent_and_public(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """Owner retry returns one public pending revision and is idempotent."""
+    _seed_delivery_run(tasks_db_path, "run-delivery-retry")
+    headers = {"Authorization": f"Bearer {issued_api_key}"}
+
+    first = await api_client.post(
+        "/v1/runs/run-delivery-retry/delivery/retry", headers=headers
+    )
+    second = await api_client.post(
+        "/v1/runs/run-delivery-retry/delivery/retry", headers=headers
+    )
+
+    assert first.status_code == second.status_code == 200
+    assert first.json() == second.json()
+    assert set(first.json()) == {
+        "schema_version",
+        "required",
+        "status",
+        "revision",
+        "inventory_digest",
+        "archive",
+        "error_code",
+        "retryable",
+    }
+    assert first.json()["status"] == "pending"
+    assert first.json()["revision"] == 2
+    assert "/private/obs/inventory.json" not in first.text
+    assert "archive_publish_failed" not in first.text
+
+
+async def test_retry_delivery_hides_missing_and_foreign_runs(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """Missing and foreign owners receive the same safe 404 response."""
+    _seed_delivery_run(
+        tasks_db_path,
+        "run-delivery-foreign",
+        owner="someone-else",
+    )
+    headers = {"Authorization": f"Bearer {issued_api_key}"}
+    foreign = await api_client.post(
+        "/v1/runs/run-delivery-foreign/delivery/retry", headers=headers
+    )
+    missing = await api_client.post(
+        "/v1/runs/run-delivery-missing/delivery/retry", headers=headers
+    )
+
+    assert foreign.status_code == missing.status_code == 404
+    for field in ("code", "message", "stage", "retryable"):
+        assert foreign.json()["error"].get(field) == missing.json()[
+            "error"
+        ].get(field)
+
+
+@pytest.mark.parametrize(
+    ("status", "retryable"),
+    [("failed", False), ("ready", False)],
+)
+async def test_retry_delivery_rejects_non_retryable_states(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    status: str,
+    retryable: bool,
+) -> None:
+    """Ready and non-retryable failed delivery cannot start a new revision."""
+    _seed_delivery_run(
+        tasks_db_path,
+        f"run-delivery-{status}",
+        status=status,
+        retryable=retryable,
+    )
+    response = await api_client.post(
+        f"/v1/runs/run-delivery-{status}/delivery/retry",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "run_state_conflict"
+    assert "/private/obs/inventory.json" not in response.text
 
 
 async def test_get_run_returns_terminal_record(
@@ -139,7 +301,7 @@ async def test_list_runs_strips_inventory_ref_outside_delivery_internal(
     issued_api_key: str,
     tasks_db_path: str,
 ) -> None:
-    """List/default and list/debug projections remove recursively injected refs."""
+    """List projections remove recursively injected private references."""
     result = empty_execution_projection(result_archive_required=True)
     result["formatted"]["metadata"] = {"inventory_ref": "/obs/private/ref"}
     result["execution"]["diagnostics"] = [{"inventory_ref": "private"}]

@@ -635,7 +635,10 @@ def _project_public_run_record(
 
 
 async def _fetch_owner_run(
-    run_id: str, *, debug: bool = False
+    run_id: str,
+    *,
+    debug: bool = False,
+    registry_factory: Any = RunRegistry,
 ) -> dict[str, Any]:
     """Compatibility seam for owner-checked run lookup and reconciliation."""
     return await run_lifecycle.fetch_owner_run(
@@ -643,6 +646,19 @@ async def _fetch_owner_run(
         owner=current_request_user() or "anonymous",
         debug=debug,
         db_path=resolve_tasks_db_path(),
+        registry_factory=registry_factory,
+    )
+
+
+async def _retry_owner_delivery(
+    run_id: str, *, registry_factory: Any = RunRegistry
+) -> dict[str, Any]:
+    """Compatibility seam for owner-scoped archive delivery retry."""
+    return await run_lifecycle.retry_owner_delivery(
+        run_id,
+        owner=current_request_user() or "anonymous",
+        db_path=resolve_tasks_db_path(),
+        registry_factory=registry_factory,
     )
 
 
@@ -786,7 +802,11 @@ def _stamp_remote_request_info(
     )
 
 
-def create_app(*, context_executor: Any | None = None) -> FastAPI:
+def create_app(
+    *,
+    context_executor: Any | None = None,
+    run_registry_factory: Any | None = None,
+) -> FastAPI:
     """Build the FastAPI application.
 
     Returns:
@@ -800,4 +820,7 @@ def create_app(*, context_executor: Any | None = None) -> FastAPI:
     ``_route_expert_query``, and ``resolve_chat_query`` through this module so
     existing integrations and tests can patch those names.
     """
-    return _factory.build_app(context_executor=context_executor)
+    return _factory.build_app(
+        context_executor=context_executor,
+        run_registry_factory=run_registry_factory,
+    )

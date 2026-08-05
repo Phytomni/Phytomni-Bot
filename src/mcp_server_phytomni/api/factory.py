@@ -262,6 +262,10 @@ class _RouteAdapters:
             return canonicalize_run_record(record, debug=debug)
         return record
 
+    async def _retry_owner_delivery(self, run_id: str) -> dict[str, Any]:
+        """Begin one archive retry through the app compatibility seam."""
+        return await _app_attr("_retry_owner_delivery")(run_id)
+
     def list_owner_runs(
         self,
         request: run_routes.RunListRequest,
@@ -740,6 +744,9 @@ def _register_run_routes(
             projection=run_routes.RunProjectionDependencies(
                 reconcile_task_logs=adapters.reconcile_task_logs,
                 fetch_owner_run=adapters.fetch_owner_run,
+                retry_owner_delivery=getattr(
+                    adapters, "_retry_owner_delivery"
+                ),
                 list_owner_runs=adapters.list_owner_runs,
                 strip_run_result=adapters.strip_run_result,
             ),
@@ -962,7 +969,8 @@ def _build_context_executor(
 
 
 def build_app(
-    *, context_executor: ConversationContextExecutor | None = None
+    *,
+    context_executor: ConversationContextExecutor | None = None,
 ) -> FastAPI:
     """Build the complete FastAPI application from typed route seams."""
     app = _build_base_app()

@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from ..config.relay_mode import relay_mode_enabled
 from ..runtime.conversation_context.models import (
     CONVERSATION_CONTEXT_PROTOCOL_VERSION,
 )
@@ -21,6 +22,17 @@ from ..runtime.resumable_uploads import (
     UPLOAD_PROTOCOL,
     UPLOAD_PROTOCOL_VERSION,
 )
+
+RESULT_ARCHIVE_PROTOCOL = "result_archive_v1"
+RESULT_ARCHIVE_PROTOCOL_VERSION = 1
+
+__all__ = [
+    "RESULT_ARCHIVE_PROTOCOL",
+    "RESULT_ARCHIVE_PROTOCOL_VERSION",
+    "result_archive_backend_available",
+    "advertised_protocols",
+    "serialize_protocols",
+]
 
 # Conversation-context enablement is read at call time from the live catalog
 # config, so the route passes the predicate in. Upload is unconditionally
@@ -31,6 +43,11 @@ from ..runtime.resumable_uploads import (
 def _upload_enabled() -> bool:
     """Upload routes are always available once registered."""
     return True
+
+
+def result_archive_backend_available() -> bool:
+    """Return whether direct file-backed storage is available."""
+    return not relay_mode_enabled()
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +77,11 @@ def advertised_protocols(
             name="conversation_context",
             version=CONVERSATION_CONTEXT_PROTOCOL_VERSION,
             enabled=context_enabled,
+        ),
+        AdvertisedProtocol(
+            name=RESULT_ARCHIVE_PROTOCOL,
+            version=RESULT_ARCHIVE_PROTOCOL_VERSION,
+            enabled=result_archive_backend_available,
         ),
     )
 

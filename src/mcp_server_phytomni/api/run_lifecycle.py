@@ -19,12 +19,13 @@ import os
 import sqlite3
 import threading
 from collections.abc import Awaitable, Callable, Coroutine, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import BackgroundTasks, HTTPException
 
+from ..mcp.formatting.models import ResultDelivery
 from ..mcp.formatting.redaction import strip_agent_result
 from ..runtime.async_utils import wait_for_thread_event
 from ..runtime.background_submission import BACKGROUND_RUNTIME_ERRORS
@@ -40,6 +41,7 @@ from ..runtime.run_registry import (
     RunRequestInfo,
     local_run_spec,
 )
+from ..runtime.run_registry_delivery import result_delivery_from_result
 from ..runtime.task_manager import resolve_tasks_db_path
 from ..storage.path_policy import IdFactory
 
@@ -52,6 +54,7 @@ __all__ = [
     "claim_run_gc",
     "create_running_stream_run",
     "fetch_owner_run",
+    "retry_owner_delivery",
     "list_owner_runs",
     "project_deep_genome_run",
     "project_public_run_record",
@@ -529,9 +532,10 @@ async def fetch_owner_run(
     owner: str,
     debug: bool = False,
     db_path: str | None = None,
+    registry_factory: RegistryFactory = RunRegistry,
 ) -> dict[str, Any]:
     """Reconcile and flatten one owner-scoped run, or raise HTTP 404."""
-    registry = RunRegistry(_database_path(db_path))
+    registry = registry_factory(_database_path(db_path))
     record = registry.get_run(run_id, owner=owner)
     if record is None:
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
@@ -541,6 +545,57 @@ async def fetch_owner_run(
     if record is None:
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
     return project_public_run_record(record, debug=debug, db_path=db_path)
+
+
+def _public_result_delivery(delivery: ResultDelivery) -> dict[str, Any]:
+    """Serialize only the bounded public delivery fields."""
+    return asdict(delivery)
+
+
+async def retry_owner_delivery(
+    run_id: str,
+    *,
+    owner: str,
+    db_path: str | None = None,
+    registry_factory: RegistryFactory = RunRegistry,
+) -> dict[str, Any]:
+    """Begin an owner-authorized delivery retry without rerunning science."""
+    registry = registry_factory(_database_path(db_path))
+    record = registry.get_run(run_id, owner=owner)
+    if record is None:
+        raise HTTPException(status_code=404, detail="run not found")
+
+    delivery = result_delivery_from_result(record.result)
+    if delivery is None:
+        raise HTTPException(status_code=409, detail="delivery retry conflict")
+    if delivery.status == "pending":
+        return _public_result_delivery(delivery)
+    if delivery.status != "failed" or not delivery.retryable:
+        raise HTTPException(status_code=409, detail="delivery retry conflict")
+
+    if not registry.begin_delivery_retry(run_id, owner=owner):
+        current = registry.get_run(run_id, owner=owner)
+        current_delivery = (
+            result_delivery_from_result(current.result)
+            if current is not None
+            else None
+        )
+        if (
+            current_delivery is not None
+            and current_delivery.status == "pending"
+        ):
+            return _public_result_delivery(current_delivery)
+        raise HTTPException(status_code=409, detail="delivery retry conflict")
+
+    current = registry.get_run(run_id, owner=owner)
+    current_delivery = (
+        result_delivery_from_result(current.result)
+        if current is not None
+        else None
+    )
+    if current_delivery is None or current_delivery.status != "pending":
+        raise HTTPException(status_code=409, detail="delivery retry conflict")
+    return _public_result_delivery(current_delivery)
 
 
 def list_owner_runs(

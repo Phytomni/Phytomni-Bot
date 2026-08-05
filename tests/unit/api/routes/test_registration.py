@@ -181,6 +181,7 @@ def test_admin_and_run_registration_preserve_public_contract() -> None:
             projection=runs.RunProjectionDependencies(
                 reconcile_task_logs=_empty_run_dict,
                 fetch_owner_run=_empty_run_dict,
+                retry_owner_delivery=_empty_run_dict,
                 list_owner_runs=lambda _request: {"data": []},
                 strip_run_result=lambda record: record,
             ),
@@ -202,6 +203,7 @@ def test_admin_and_run_registration_preserve_public_contract() -> None:
         ("/v1/relay/audit/{request_id}", ("GET",)),
         ("/v1/runs/{run_id}/logs", ("GET",)),
         ("/v1/runs/{run_id}", ("GET",)),
+        ("/v1/runs/{run_id}/delivery/retry", ("POST",)),
         ("/v1/runs/{run_id}/a2ui-actions", ("POST",)),
         ("/v1/runs/{thread_id}/resume", ("POST",)),
         ("/v1/runs", ("GET",)),
