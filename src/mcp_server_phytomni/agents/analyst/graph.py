@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
 import yaml
@@ -186,13 +187,17 @@ class AnalystGraphMixin:
         if not self.analyst_config.CREATE_DIR:
             return output_dir
         fingerprint = state.get("input_fingerprint") or ""
+        run_root = output_dir
+        if output_dir:
+            with suppress(ValueError):
+                run_root = result_run_root_from_child(output_dir)
         return result_child_output_dir(
             ensure_run_output_dir(
                 self.analyst_config,
                 self.sensitive_config,
                 "analysis_agents_task",
                 run_identity,
-                output_dir,
+                run_root,
                 fingerprint=fingerprint,
             ),
             0,
