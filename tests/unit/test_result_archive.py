@@ -10,6 +10,7 @@ import math
 import stat
 from io import BytesIO
 from types import SimpleNamespace
+from typing import cast
 from zipfile import ZipFile
 
 import pytest
@@ -43,7 +44,7 @@ def _artifact(
         relative_path=path,
         role=role,
         media_type="application/octet-stream",
-        size_bytes=size,  # type: ignore[arg-type]
+        size_bytes=cast(int, size),
         download_ref=f"/obs/phytomni/runs/run-1/{path}",
     )
 
