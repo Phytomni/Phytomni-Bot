@@ -97,11 +97,15 @@ async def test_design_state_reduction_merges_two_parallel_tasks(
         """
         assert species_code == "ath"
         assert gene_id == "AT1G01010"
-        assert options.output_dir == "/tmp/design-out"
+        expected_dirs = {
+            "protein_design_analysis": "/tmp/design-out/children/part-001",
+            "promoter_design_analysis": "/tmp/design-out/children/part-002",
+        }
+        assert options.output_dir == expected_dirs[analysis_type]
         dispatched.append(analysis_type)
         return {
             "task_id": f"task-{analysis_type}",
-            "output_dir": "/tmp/design-out",
+            "output_dir": options.output_dir,
             "analysis_type": analysis_type,
         }
 

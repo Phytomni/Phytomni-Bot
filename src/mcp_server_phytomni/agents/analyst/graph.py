@@ -176,6 +176,8 @@ class AnalystGraphMixin:
     ) -> str:
         """Return an existing or newly created submit output directory."""
         output_dir = str(state.get("output_dir") or "")
+        if state.get("output_dir_is_result_child") is True:
+            return output_dir
         if not self.analyst_config.CREATE_DIR:
             return output_dir
         fingerprint = state.get("input_fingerprint") or ""

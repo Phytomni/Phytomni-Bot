@@ -149,6 +149,12 @@ async def test_research_state_reduction_dispatches_single_goal(
     assert final_state["task_ids"] == {
         "research_goal_0": "task-research_goal_0",
     }
+    assert final_state["research_submissions"] == [
+        {
+            "task_id": "task-research_goal_0",
+            "output_dir": "/tmp/research-out/children/part-001",
+        }
+    ]
     assert final_state["completed_count"] == 1
     assert final_state["goals"] == extracted
     assert final_state.get("error") is None
@@ -230,6 +236,16 @@ async def test_research_state_reduction_handles_multiple_goals(
         "research_goal_0": "task-research_goal_0",
         "research_goal_1": "task-research_goal_1",
     }
+    assert final_state["research_submissions"] == [
+        {
+            "task_id": "task-research_goal_0",
+            "output_dir": "/tmp/research-out/children/part-001",
+        },
+        {
+            "task_id": "task-research_goal_1",
+            "output_dir": "/tmp/research-out/children/part-002",
+        },
+    ]
     assert final_state["completed_count"] == 2
     assert final_state["goals"] == extracted
     assert final_state.get("error") is None

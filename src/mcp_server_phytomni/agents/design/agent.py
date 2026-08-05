@@ -32,6 +32,7 @@ from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...interop.planner import InteropMode
 from ...runtime.langgraph_runner import ensure_checkpointer
 from ...runtime.locale import SupportedLocale
+from ...runtime.result_run_layout import result_child_output_dir
 from ...runtime.submission_outcome import (
     AcceptedSubmission,
     SubmissionOutcome,
@@ -39,6 +40,7 @@ from ...runtime.submission_outcome import (
     has_pending_a2a,
     rejected_submissions_from_state,
 )
+from ...storage.path_policy import RunIdentity
 from ..analyst.agent import (
     ANALYST_CONFIG_FIELD_MAP,
     AnalystAgent,
@@ -54,7 +56,11 @@ from ..shared.analysis import (
     route_analysis_tasks,
     run_analysis_graph,
 )
-from ..shared.analysis_storage import get_data_list, resolve_data_list_key
+from ..shared.analysis_storage import (
+    create_output_dir,
+    get_data_list,
+    resolve_data_list_key,
+)
 from ..shared.interop import (
     InteropAttempt,
     a2a_pending_state_update,
@@ -369,6 +375,7 @@ class DigitalDesignAgents:
             meta=meta,
             data_list=data_list,
             compute_resource=self._get_compute_resource(analysis_type),
+            output_dir_is_result_child=True,
         )
         result = await submit_remote_analysis(
             self.analyst_agent,
@@ -506,12 +513,36 @@ class DigitalDesignAgents:
         Returns:
             State update with design tasks and counters initialized.
         """
-        _ = state
+        run_identity = RunIdentity.create(
+            user_id=state.get("user_id"),
+            scope="digital_design_task",
+        )
+        access_key_id, secret_access_key = self.sensitive_config.obs_credentials()
+        output_dir = state.get("output_dir") or create_output_dir(
+            user_id=run_identity.user_id,
+            task="digital_design_task",
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=self.digital_design_config.OBS_SERVER,
+            bucket_name=self.digital_design_config.BUCKET_NAME,
+            run_identity=run_identity,
+        )
         tasks = [
-            {"analysis_type": "protein_design_analysis"},
-            {"analysis_type": "promoter_design_analysis"},
+            {
+                "analysis_type": "protein_design_analysis",
+                "output_dir": result_child_output_dir(output_dir, 0),
+            },
+            {
+                "analysis_type": "promoter_design_analysis",
+                "output_dir": result_child_output_dir(output_dir, 1),
+            },
         ]
-        return {"design_tasks": tasks, "task_ids": {}, "completed_count": 0}
+        return {
+            "design_tasks": tasks,
+            "output_dir": output_dir,
+            "task_ids": {},
+            "completed_count": 0,
+        }
 
     async def run_design_node(
         self,

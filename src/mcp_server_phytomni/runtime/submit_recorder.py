@@ -31,6 +31,10 @@ from .request_context import (
     current_request_user,
     current_run_id,
 )
+from .result_run_layout import (
+    RESULT_DELIVERY_AGENTS,
+    result_run_root_from_child,
+)
 from .run_registry import RunOutcome, RunRegistry, RunRequestInfo, RunSpec
 from .submission_outcome import project_submission_warnings
 from .task_manager import (
@@ -89,6 +93,23 @@ def _extract_research_submissions(
     result: Mapping[str, Any],
 ) -> tuple[SubmissionTuple, ...]:
     """Extract the canonical or legacy research task-id collection."""
+    exact_submissions = result.get("research_submissions")
+    if isinstance(exact_submissions, list):
+        pairs: list[SubmissionTuple] = []
+        for submission in exact_submissions:
+            if not isinstance(submission, Mapping):
+                continue
+            task_id = submission.get("task_id")
+            output_dir = submission.get("output_dir")
+            if (
+                isinstance(task_id, str)
+                and task_id
+                and isinstance(output_dir, str)
+                and output_dir
+            ):
+                pairs.append((task_id, output_dir, None, None))
+        if pairs:
+            return tuple(pairs)
     task_values = result.get("task_ids")
     if isinstance(task_values, Mapping):
         task_values = task_values.values()
@@ -184,6 +205,7 @@ def extract_task_submissions(
 def _initial_submission_result(
     result: Mapping[str, Any],
     submissions: tuple[SubmissionTuple, ...],
+    agent: str,
 ) -> dict[str, Any]:
     """Build the in-flight result envelope seeded before child writes."""
     task_rows = [
@@ -194,10 +216,32 @@ def _initial_submission_result(
         }
         for task_id, _output_dir, _fingerprint, _source in submissions
     ]
-    output_dirs = [
-        output_dir
-        for _task_id, output_dir, _fingerprint, _source in submissions
-    ]
+    if agent in RESULT_DELIVERY_AGENTS:
+        child_outputs = [
+            output_dir
+            for _task_id, output_dir, _fingerprint, _source in submissions
+            if "/children/" in output_dir
+        ]
+        if child_outputs:
+            if len(child_outputs) != len(submissions):
+                raise ValueError("result children must share one run root")
+            output_roots = {
+                result_run_root_from_child(output_dir)
+                for output_dir in child_outputs
+            }
+            if len(output_roots) != 1:
+                raise ValueError("result children must share one run root")
+            output_dirs = [output_roots.pop()]
+        else:
+            output_dirs = [
+                output_dir
+                for _task_id, output_dir, _fingerprint, _source in submissions
+            ]
+    else:
+        output_dirs = [
+            output_dir
+            for _task_id, output_dir, _fingerprint, _source in submissions
+        ]
     initial_result = empty_execution_projection()
     initial_result["execution"]["tasks"] = task_rows
     initial_result["execution"]["output_dirs"] = output_dirs
@@ -322,8 +366,8 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
     # writes later so a client polling ``GET /v1/runs/{id}`` while the run is
     # still in flight sees empty scientific content and submitted execution
     # rows without a field-ownership transition at terminal settlement.
-    initial_result = _initial_submission_result(result, submissions)
     try:
+        initial_result = _initial_submission_result(result, submissions, agent)
         registry = RunRegistry(db_path)
         if bound_run_id is not None:
             child_submissions = _build_child_submissions(
@@ -375,7 +419,7 @@ def record_submitted_task(result: Any, *, agent: str) -> None:
                 "agent": agent,
             },
         )
-    except (sqlite3.Error, OSError) as exc:
+    except (sqlite3.Error, OSError, ValueError) as exc:
         logger.error(
             "Failed to persist remote submission",
             extra={

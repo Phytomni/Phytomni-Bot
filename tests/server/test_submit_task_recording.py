@@ -579,6 +579,66 @@ def test_record_handles_canonical_research_task_ids_list(
     assert runs[0].task_ids == ("T-R1", "T-R2")
 
 
+def test_record_prefers_scoped_research_submission_directories(
+    tasks_db_path: str,
+) -> None:
+    """Task rows retain children while the run projects their umbrella."""
+    record_submitted_task(
+        {
+            "research_submissions": [
+                {
+                    "task_id": "T-R1",
+                    "output_dir": "/obs/research/children/part-001",
+                },
+                {
+                    "task_id": "T-R2",
+                    "output_dir": "/obs/research/children/part-002",
+                },
+            ],
+            "task_ids": ["legacy-ignored"],
+            "output_dir": "/obs/research",
+        },
+        agent="research",
+    )
+
+    run = RunRegistry(tasks_db_path).list_runs(owner="anonymous")[0]
+    assert run.result is not None
+    assert run.result["execution"]["output_dirs"] == ["/obs/research"]
+    with closed_sqlite_connection(tasks_db_path) as conn:
+        rows = conn.execute(
+            "SELECT task_id, output_dir FROM tasks WHERE run_id = ? "
+            "ORDER BY task_id",
+            (run.spec.run_id,),
+        ).fetchall()
+    assert rows == [
+        ("T-R1", "/obs/research/children/part-001"),
+        ("T-R2", "/obs/research/children/part-002"),
+    ]
+
+
+def test_record_rejects_mixed_scoped_child_roots(tasks_db_path: str) -> None:
+    """Mixed child roots leave no widened umbrella record behind."""
+    record_submitted_task(
+        {
+            "design_task_result": [
+                {
+                    "task_id": "T-D1",
+                    "output_dir": "/obs/one/children/part-001",
+                },
+                {
+                    "task_id": "T-D2",
+                    "output_dir": "/obs/two/children/part-002",
+                },
+            ]
+        },
+        agent="design",
+    )
+
+    assert current_recorder_degraded() is True
+    assert not RunRegistry(tasks_db_path).list_runs(owner="anonymous")
+    submit_recorder_module.bind_recorder_degraded(False)
+
+
 def test_record_persists_safe_submission_warnings(
     tasks_db_path: str,
 ) -> None:

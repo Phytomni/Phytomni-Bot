@@ -39,6 +39,7 @@ class AnalystInput(TypedDict, total=False):
     obs_file_list: list
     compute_resource: str
     output_dir: str
+    output_dir_is_result_child: bool
     is_polling: bool
     is_auto_select: bool
     is_preset_plan: bool

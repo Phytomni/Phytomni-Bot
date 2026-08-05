@@ -114,6 +114,9 @@ def map_send_payload_to_analyst_input(
         data_list=data_list,
         compute_resource=payload["compute_resource"],
         output_dir=payload.get("output_dir") or "",
+        output_dir_is_result_child=(
+            payload.get("output_dir_is_result_child") is True
+        ),
         locale=resolve_agent_locale(payload.get("locale")),
         is_polling=is_polling,
         is_auto_select=False,
@@ -204,13 +207,18 @@ async def submit_analyst_via_subgraph(
         carries the prior tenant's remote id; the seam persists a
         caller-owned task row so the reuse caller polls a row they own.
     """
-    fingerprint = _dispatch_fingerprint(request)
+    output_dir_is_result_child = (
+        request.get("output_dir_is_result_child") is True
+    )
+    fingerprint = None if output_dir_is_result_child else _dispatch_fingerprint(request)
     context = prepare_analyst_dispatch_context(
         config, sensitive_config, request, fingerprint
     )
-    reused = await _reuse_prior_dispatch(
-        fingerprint, require_terminal_success=is_polling
-    )
+    reused = None
+    if fingerprint is not None:
+        reused = await _reuse_prior_dispatch(
+            fingerprint, require_terminal_success=is_polling
+        )
     if reused is not None:
         reused = _normalize_reused_submission(reused)
         logger.info(
@@ -227,7 +235,11 @@ async def submit_analyst_via_subgraph(
             source_task_id=reused["source_task_id"],
         )
         return reused
-    enriched_request = {**request, "output_dir": context.output_dir}
+    enriched_request = {
+        **request,
+        "output_dir": context.output_dir,
+        "output_dir_is_result_child": output_dir_is_result_child,
+    }
     analyst_input = map_send_payload_to_analyst_input(
         enriched_request, is_polling=is_polling
     )
@@ -242,9 +254,11 @@ async def submit_analyst_via_subgraph(
     )
     result = map_analyst_output_to_dispatch_state(final_state)
     task_id = result.get("task_id")
-    if isinstance(task_id, str) and task_id:
+    if isinstance(task_id, str) and task_id and fingerprint is not None:
         record_dispatch_submission(
-            task_id, str(result.get("output_dir") or ""), fingerprint
+            task_id,
+            str(result.get("output_dir") or ""),
+            fingerprint,
         )
     logger.info(
         "%s task completed via subgraph (task_id: %s)",

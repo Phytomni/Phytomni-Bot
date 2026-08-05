@@ -27,6 +27,7 @@ from ...config.settings import SensitiveConfig, get_sensitive_config
 from ...graphs.analyst_dispatch_adapters import submit_analyst_via_subgraph
 from ...runtime.langgraph_runner import ensure_checkpointer
 from ...runtime.locale import SupportedLocale
+from ...runtime.result_run_layout import result_child_output_dir
 from ...runtime.submission_outcome import (
     AcceptedSubmission,
     RejectedSubmission,
@@ -34,6 +35,7 @@ from ...runtime.submission_outcome import (
     classify_submissions,
     rejected_submissions_from_state,
 )
+from ...storage.path_policy import RunIdentity
 from ..analyst.agent import (
     ANALYST_CONFIG_FIELD_MAP,
     AnalystAgent,
@@ -48,7 +50,7 @@ from ..shared.analysis import (
     route_analysis_tasks,
     run_analysis_graph,
 )
-from ..shared.analysis_storage import get_data_list
+from ..shared.analysis_storage import create_output_dir, get_data_list
 from ..shared.options import resolve_agent_locale
 from ..shared.parallel_dispatch import (
     ParallelDispatchSpec,
@@ -269,6 +271,7 @@ class GeneNetworkAgents:
             "output_dir": output_dir,
             "prompt_parts": (goal_description, meta, data_list),
             "compute_resource": self._get_compute_resource(analysis_type),
+            "output_dir_is_result_child": True,
         }
         result = await submit_analyst_via_subgraph(
             self.analyst_agent,
@@ -319,9 +322,32 @@ class GeneNetworkAgents:
         Returns:
             State update with network tasks and counters initialized.
         """
-        _ = state
-        tasks = [{"analysis_type": "gene_network_analysis"}]
-        return {"network_tasks": tasks, "task_ids": {}, "completed_count": 0}
+        run_identity = RunIdentity.create(
+            user_id=state.get("user_id"),
+            scope="gene_network_task",
+        )
+        access_key_id, secret_access_key = self.sensitive_config.obs_credentials()
+        output_dir = state.get("output_dir") or create_output_dir(
+            user_id=run_identity.user_id,
+            task="gene_network_task",
+            access_key_id=access_key_id,
+            secret_access_key=secret_access_key,
+            obs_server=self.gene_network_config.OBS_SERVER,
+            bucket_name=self.gene_network_config.BUCKET_NAME,
+            run_identity=run_identity,
+        )
+        tasks = [
+            {
+                "analysis_type": "gene_network_analysis",
+                "output_dir": result_child_output_dir(output_dir, 0),
+            }
+        ]
+        return {
+            "network_tasks": tasks,
+            "output_dir": output_dir,
+            "task_ids": {},
+            "completed_count": 0,
+        }
 
     async def run_network_node(self, state: GeneNetworkState) -> dict:
         """Execute a single network analysis task dispatched via Send API.

@@ -344,3 +344,30 @@ async def test_dispatch_seam_passes_fingerprint_to_output_dir_creator(
         "fingerprint" in captured
     ), "ensure_analysis_output_dir was not called or captured no fingerprint"
     assert captured["fingerprint"] == expected_fp
+
+
+async def test_dispatch_child_directory_skips_fingerprint_reuse(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A scoped child directory bypasses shared fingerprint reuse."""
+    monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(tmp_path / "tasks.sqlite"))
+
+    async def unexpected_reuse(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("child dispatch must not reuse a fingerprint")
+
+    monkeypatch.setattr(ada, "_reuse_prior_dispatch", unexpected_reuse)
+    request = {
+        **_dispatch_request(),
+        "output_dir": "/obs/run/children/part-001",
+        "output_dir_is_result_child": True,
+    }
+
+    result = await ada.submit_analyst_via_subgraph(
+        fake_submitting_agent("T-child"),
+        SimpleNamespace(USER_ID="user-child"),
+        object(),
+        request,
+        is_polling=False,
+    )
+
+    assert result["task_id"] == "T-child"

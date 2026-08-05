@@ -41,6 +41,7 @@ class RemoteAnalysisRequest:
     meta: str
     data_list: dict[str, Any]
     compute_resource: str
+    output_dir_is_result_child: bool = False
 
 
 REMOTE_SUBMISSION_ERRORS: tuple[type[Exception], ...] = (
@@ -118,6 +119,7 @@ async def submit_remote_analysis(
             request.data_list,
         ),
         "compute_resource": request.compute_resource,
+        "output_dir_is_result_child": request.output_dir_is_result_child,
     }
     result = await submit_analyst_via_subgraph(
         analyst_agent,

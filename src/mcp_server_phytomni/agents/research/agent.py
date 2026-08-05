@@ -36,6 +36,7 @@ from ...runtime.langgraph_runner import (
     ensure_checkpointer,
 )
 from ...runtime.locale import SupportedLocale
+from ...runtime.result_run_layout import result_child_output_dir
 from ...runtime.submission_outcome import (
     AcceptedSubmission,
     SubmissionOutcome,
@@ -180,6 +181,7 @@ class InSilicoResearchState(ParallelDispatchState):
     a2a_pending: Annotated[list[ResearchA2APending], operator.add]
     a2a_task_ids: Annotated[dict[str, str], operator.or_]
     submission_rejections: Annotated[list[dict[str, str]], operator.add]
+    research_submissions: Annotated[list[dict[str, str]], operator.add]
 
 
 def _research_submission_outcome(
@@ -187,9 +189,25 @@ def _research_submission_outcome(
 ) -> SubmissionOutcome:
     """Classify the remote submissions represented by one graph result."""
     accepted: list[AcceptedSubmission] = []
+    exact_submissions = result.get("research_submissions")
+    if isinstance(exact_submissions, list):
+        for submission in exact_submissions:
+            if not isinstance(submission, Mapping):
+                continue
+            task_id = submission.get("task_id")
+            output_dir = submission.get("output_dir")
+            if (
+                isinstance(task_id, str)
+                and task_id.strip()
+                and isinstance(output_dir, str)
+                and output_dir.strip()
+            ):
+                accepted.append(
+                    AcceptedSubmission(task_id=task_id, output_dir=output_dir)
+                )
     task_ids = result.get("task_ids")
     output_dir = str(result.get("output_dir") or "")
-    if isinstance(task_ids, Mapping):
+    if not accepted and isinstance(task_ids, Mapping):
         for task_id in task_ids.values():
             if isinstance(task_id, str) and task_id.strip():
                 accepted.append(
@@ -229,6 +247,28 @@ def _project_research_submission_updates(
     if submission_rejections:
         updates["submission_rejections"] = submission_rejections
     return updates
+
+
+def _accepted_research_submissions(
+    updates: Mapping[str, Any],
+) -> list[dict[str, str]]:
+    """Capture accepted task-directory pairs before evidence filtering."""
+    accepted_submissions: list[dict[str, str]] = []
+    for item in updates.get("evidence", []):
+        if not isinstance(item, Mapping):
+            continue
+        task_id = item.get("task_id")
+        output_dir = item.get("output_dir")
+        if (
+            isinstance(task_id, str)
+            and task_id.strip()
+            and isinstance(output_dir, str)
+            and output_dir.strip()
+        ):
+            accepted_submissions.append(
+                {"task_id": task_id, "output_dir": output_dir}
+            )
+    return accepted_submissions
 
 
 class InSilicoResearchAgents:
@@ -401,6 +441,7 @@ class InSilicoResearchAgents:
             meta=prompt_context,
             data_list=task.data_list,
             compute_resource="medium",
+            output_dir_is_result_child=True,
         )
         result = await submit_remote_analysis(
             self.analyst_agent,
@@ -598,6 +639,7 @@ class InSilicoResearchAgents:
                 "context": goal.get("context") or "",
                 "task_name": f"research_goal_{i}",
                 "thread_id": run_identity.scoped_id("thread", i),
+                "output_dir": result_child_output_dir(output_dir, i),
             }
             for i, goal in enumerate(goals)
         ]
@@ -607,6 +649,7 @@ class InSilicoResearchAgents:
             "output_dir": output_dir,
             "task_ids": {},
             "completed_count": 0,
+            "research_submissions": [],
         }
 
     async def run_research_node(
@@ -719,7 +762,10 @@ class InSilicoResearchAgents:
                 captured_exceptions=(),
             ),
         )
+        accepted_submissions = _accepted_research_submissions(updates)
         updates = _project_research_submission_updates(updates)
+        if accepted_submissions:
+            updates["research_submissions"] = accepted_submissions
         updates.update(self._research_interop_update(task, external, started))
         return updates
 
@@ -804,7 +850,10 @@ class InSilicoResearchAgents:
                 captured_exceptions=(),
             ),
         )
+        accepted_submissions = _accepted_research_submissions(updates)
         updates = _project_research_submission_updates(updates)
+        if accepted_submissions:
+            updates["research_submissions"] = accepted_submissions
         updates.update(
             completed_interop_evidence_update(
                 evidence, perf_counter() - started
@@ -847,6 +896,8 @@ class InSilicoResearchAgents:
                 "error",
                 "failures",
                 "evidence",
+                "output_dir",
+                "research_submissions",
             ),
             AnalysisStateSpec(
                 tasks_key="research_tasks",
@@ -854,6 +905,7 @@ class InSilicoResearchAgents:
                     "goals": [],
                     "evidence": [],
                     "submission_rejections": [],
+                    "research_submissions": [],
                 },
             ),
         )

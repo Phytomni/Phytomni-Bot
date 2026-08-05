@@ -94,11 +94,11 @@ async def test_network_state_reduction_dispatches_single_task(
         """
         assert species_code == "osa"
         assert to_id == "TO:0000207"
-        assert output_dir == "/tmp/network-out"
+        assert output_dir == "/tmp/network-out/children/part-001"
         dispatched.append(analysis_type)
         return {
             "task_id": f"task-{analysis_type}",
-            "output_dir": "/tmp/network-out",
+            "output_dir": output_dir,
             "analysis_type": analysis_type,
         }
 
