@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import threading
+from itertools import count
 from pathlib import Path
 
 from mcp_server_phytomni.api.app import create_app
@@ -23,7 +24,7 @@ from mcp_server_phytomni.runtime.run_registry_delivery import (
 
 _REQUIRED_FAILURES = 3
 _FAILURE_LOCK = threading.Lock()
-_FAILURES_RAISED = 0
+_FAILURE_COUNTER = count()
 
 
 def _require_test_environment() -> None:
@@ -54,11 +55,8 @@ def _fail_then_publish(
     summary_markdown: str,
 ) -> ResultArchiveDescriptor:
     """Raise three retryable failures process-wide, then publish normally."""
-    global _FAILURES_RAISED  # pylint: disable=global-statement
     with _FAILURE_LOCK:
-        should_fail = _FAILURES_RAISED < _REQUIRED_FAILURES
-        if should_fail:
-            _FAILURES_RAISED += 1
+        should_fail = next(_FAILURE_COUNTER) < _REQUIRED_FAILURES
     if should_fail:
         raise ResultArchiveError("archive_publish_failed", retryable=True)
     return _REAL_DELIVERY.publish(inventory, agent, summary_markdown)
