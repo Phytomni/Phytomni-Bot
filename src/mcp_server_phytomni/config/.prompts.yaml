@@ -4485,12 +4485,12 @@ user:
               $model_type:
               1. Best_model_9311CK.h5: Wild-type chromatin accessibility of
               variety 9311
-              2. Best_model_9311HS.h5: Chromatin accessibility in the heat-excited
-              state of variety 9311
-              3. Best_model_NIPCK.h5: Wild-type chromatin accessibility of variety
-              NIP
-              4. Best_model_NIPHS.h5: Chromatin accessibility in the heat-excited
-              state of variety NIP
+              2. Best_model_9311HS.h5: Chromatin accessibility in the
+              heat-excited state of variety 9311
+              3. Best_model_NIPCK.h5: Wild-type chromatin accessibility
+              of variety NIP
+              4. Best_model_NIPHS.h5: Chromatin accessibility in the
+              heat-excited state of variety NIP
 
         Tool_Usage_Example:
             question: please help me to predict the wild-type chromatin
