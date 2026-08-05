@@ -12,7 +12,9 @@ import pytest
 from pydantic import ValidationError
 
 from mcp_server_phytomni.runtime.artifact_roles import (
+    ARCHIVE_ELIGIBLE_ROLES,
     ArtifactManifest,
+    ArtifactManifestItem,
     ArtifactRole,
     ClassifiedArtifact,
     classify_artifacts,
@@ -64,6 +66,8 @@ def manifest_for(*paths: str) -> ArtifactManifest:
         "scientific_table",
         "scientific_text",
         "scientific_figure",
+        "scientific_data",
+        "result_archive",
         "input",
         "execution_log",
         "diagnostic",
@@ -85,6 +89,28 @@ def test_csv_without_manifest_is_unknown() -> None:
     assert artifacts[0].role is ArtifactRole.UNKNOWN
     assert artifacts[0].report_context_eligible is False
     assert warnings[0].code == "artifact_manifest_missing"
+
+
+def test_producer_manifest_allows_scientific_data() -> None:
+    """Producer-declared scientific data is eligible for Bot archives."""
+    item = ArtifactManifestItem(
+        path="data/normalized.parquet",
+        role="scientific_data",
+        media_type="application/vnd.apache.parquet",
+    )
+
+    assert item.role is ArtifactRole.SCIENTIFIC_DATA
+    assert item.role in ARCHIVE_ELIGIBLE_ROLES
+
+
+def test_producer_manifest_cannot_claim_result_archive() -> None:
+    """Only Bot may declare an archive artifact."""
+    with pytest.raises(ValidationError):
+        ArtifactManifestItem(
+            path="results.zip",
+            role="result_archive",
+            media_type="application/zip",
+        )
 
 
 def test_public_descriptor_omits_private_source_path() -> None:

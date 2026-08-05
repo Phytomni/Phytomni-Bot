@@ -32,6 +32,7 @@ from .execution_models import ExecutionWarning
 __all__ = [
     "ARTIFACT_MANIFEST_FILENAME",
     "ARTIFACT_MANIFEST_INSTRUCTIONS",
+    "ARCHIVE_ELIGIBLE_ROLES",
     "ArtifactManifest",
     "ArtifactManifestItem",
     "ArtifactRole",
@@ -65,13 +66,14 @@ exactly once:
 }
 
 Allowed roles are `scientific_report`, `scientific_table`,
-`scientific_text`, `scientific_figure`, `input`, `execution_log`,
-`diagnostic`, and `unknown`. Use paths relative to the output directory.
-Do not classify by filename extension; classify by semantic producer
-knowledge. Use `unknown` when the producer cannot prove a role. Do not put
-credentials, provider payloads, or absolute paths in the manifest. Keep
-writing `result_files.json` for compatibility, but it does not grant report
-eligibility.
+`scientific_text`, `scientific_figure`, `scientific_data`, `input`,
+`execution_log`, `diagnostic`, and `unknown`. `result_archive` is reserved for
+Bot and must not appear in this producer manifest. Use paths relative to the
+output directory. Do not classify by filename extension; classify by semantic
+producer knowledge. Use `unknown` when the producer cannot prove a role. Do
+not put credentials, provider payloads, or absolute paths in the manifest.
+Keep writing `result_files.json` for compatibility, but it does not grant
+report eligibility.
 """
 _UNKNOWN_MEDIA_TYPE = "application/octet-stream"
 _MANIFEST_WARNING_STAGE = "artifact_manifest"
@@ -91,10 +93,23 @@ class ArtifactRole(StrEnum):
     SCIENTIFIC_TABLE = "scientific_table"
     SCIENTIFIC_TEXT = "scientific_text"
     SCIENTIFIC_FIGURE = "scientific_figure"
+    SCIENTIFIC_DATA = "scientific_data"
+    RESULT_ARCHIVE = "result_archive"
     INPUT = "input"
     EXECUTION_LOG = "execution_log"
     DIAGNOSTIC = "diagnostic"
     UNKNOWN = "unknown"
+
+
+ARCHIVE_ELIGIBLE_ROLES = frozenset(
+    {
+        ArtifactRole.SCIENTIFIC_REPORT,
+        ArtifactRole.SCIENTIFIC_TABLE,
+        ArtifactRole.SCIENTIFIC_TEXT,
+        ArtifactRole.SCIENTIFIC_FIGURE,
+        ArtifactRole.SCIENTIFIC_DATA,
+    }
+)
 
 
 class ArtifactManifestItem(BaseModel):
@@ -105,6 +120,14 @@ class ArtifactManifestItem(BaseModel):
     path: StrictStr = Field(min_length=1, max_length=1024)
     role: ArtifactRole
     media_type: StrictStr = Field(min_length=1, max_length=255)
+
+    @field_validator("role")
+    @classmethod
+    def _validate_producer_role(cls, value: ArtifactRole) -> ArtifactRole:
+        """Keep Bot-owned result archives out of producer declarations."""
+        if value is ArtifactRole.RESULT_ARCHIVE:
+            raise ValueError("result_archive is reserved for Bot")
+        return value
 
     @field_validator("path")
     @classmethod

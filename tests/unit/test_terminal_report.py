@@ -70,6 +70,10 @@ def test_only_scientific_text_roles_are_report_context_eligible() -> None:
         "scientific_text",
     }
 
+    assert not _classified_artifact(
+        "normalized.parquet", ArtifactRole.SCIENTIFIC_DATA
+    ).report_context_eligible
+
 
 def test_select_text_artifact_paths_filters_and_caps() -> None:
     """Text extensions pass; figures and archives are filtered; cap holds."""
@@ -383,6 +387,7 @@ async def test_only_explicit_scientific_text_enters_prompt() -> None:
         _classified_artifact("table.csv", ArtifactRole.SCIENTIFIC_TABLE),
         _classified_artifact("notes.txt", ArtifactRole.SCIENTIFIC_TEXT),
         _classified_artifact("figure.png", ArtifactRole.SCIENTIFIC_FIGURE),
+        _classified_artifact("normalized.parquet", ArtifactRole.SCIENTIFIC_DATA),
         _classified_artifact("analysis.log", ArtifactRole.EXECUTION_LOG),
         _classified_artifact("diag.json", ArtifactRole.DIAGNOSTIC),
         _classified_artifact("input.csv", ArtifactRole.INPUT),
@@ -393,6 +398,7 @@ async def test_only_explicit_scientific_text_enters_prompt() -> None:
         "fixture://table.csv": "TABLE-SENTINEL",
         "fixture://notes.txt": "TEXT-SENTINEL",
         "fixture://figure.png": "FIGURE-SENTINEL",
+        "fixture://normalized.parquet": "DATA-SENTINEL",
         "fixture://analysis.log": "LOG-SENTINEL",
         "fixture://diag.json": "DIAG-SENTINEL",
         "fixture://input.csv": "INPUT-SENTINEL",
@@ -422,6 +428,7 @@ async def test_only_explicit_scientific_text_enters_prompt() -> None:
         assert included in prompt
     for excluded in (
         "FIGURE-SENTINEL",
+        "DATA-SENTINEL",
         "LOG-SENTINEL",
         "DIAG-SENTINEL",
         "INPUT-SENTINEL",

@@ -57,6 +57,27 @@ def test_obsfs_branch_lists_objects_with_actual_sizes(tmp_path):
     )
 
 
+def test_obsfs_object_listing_omits_symlinks(tmp_path):
+    """A symlink inside the child directory cannot enter artifact listings."""
+    bucket = "phytomni"
+    mount_root = tmp_path
+    run_dir = mount_root / bucket / "agent_data" / "u1" / "run0"
+    run_dir.mkdir(parents=True)
+    (run_dir / "summary.csv").write_bytes(b"safe")
+    outside = tmp_path / "outside.csv"
+    outside.write_bytes(b"private")
+    (run_dir / "escaped.csv").symlink_to(outside)
+
+    objects = artifact_listing.list_artifact_objects(
+        f"/obs/{bucket}/agent_data/u1/run0",
+        bucket_name=bucket,
+        obs_server="https://obs.example",
+        mount_root=str(mount_root),
+    )
+
+    assert [item.relative_path for item in objects] == ["summary.csv"]
+
+
 def test_sdk_branch_used_when_obsfs_absent(monkeypatch, tmp_path):
     """With no obsfs mount, the SDK list path is used and its keys are
     converted to public paths."""

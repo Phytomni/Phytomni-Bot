@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
+from mcp_server_phytomni.agents.analyst.graph import AnalystGraphMixin
 from mcp_server_phytomni.runtime import terminal_artifacts
 from mcp_server_phytomni.runtime.artifact_roles import ArtifactRole
 from mcp_server_phytomni.runtime.terminal_artifacts import (
@@ -204,6 +205,18 @@ def test_collect_reads_enumerated_paths() -> None:
     assert artifacts[0]["paths"] == ["/obs/p/r1/fig.png"]
 
 
+def test_submit_meta_keeps_manifest_contract_without_zip_authority() -> None:
+    """Producers declare artifacts but never construct the Bot archive."""
+    submit_meta = getattr(AnalystGraphMixin, "_submit_meta")
+    prompt = submit_meta(cast(Any, {"plan": "plan", "tool_usages": "tools"}))
+    normalized_prompt = " ".join(prompt.split())
+
+    assert ".phytomni-artifacts.json" in prompt
+    assert "scientific_data" in prompt
+    assert "`result_archive` is reserved for Bot" in normalized_prompt
+    assert "zip -r" not in prompt
+
+
 def _listed_object(relative_path: str) -> ListedArtifactObject:
     """Build one listed object with private provenance for structured tests."""
     return ListedArtifactObject(
@@ -277,4 +290,34 @@ async def test_manifest_path_escape_fails_closed(bad_path: str) -> None:
 
     assert isinstance(result, TerminalArtifactSet)
     assert all(item.role is ArtifactRole.UNKNOWN for item in result.artifacts)
+    assert result.warnings[0].code == "artifact_manifest_invalid"
+
+
+@pytest.mark.asyncio
+async def test_result_archive_manifest_role_fails_closed() -> None:
+    """A producer cannot elevate an object to the Bot-owned archive role."""
+
+    async def fake_objects(_output_dir: str) -> list[ListedArtifactObject]:
+        return [_listed_object("results.zip")]
+
+    async def manifest_loader(_output_dir: str) -> dict[str, Any]:
+        return {
+            "version": "1.0",
+            "artifacts": [
+                {
+                    "path": "results.zip",
+                    "role": "result_archive",
+                    "media_type": "application/zip",
+                }
+            ],
+        }
+
+    result = await collect_terminal_artifacts(
+        task_id="task-1",
+        output_dir="owner/out",
+        lister=fake_objects,
+        manifest_loader=manifest_loader,
+    )
+
+    assert result.artifacts[0].role is ArtifactRole.UNKNOWN
     assert result.warnings[0].code == "artifact_manifest_invalid"

@@ -307,9 +307,7 @@ class AnalystGraphMixin:
             "(including images, result files, etc.) into a json file (named "
             "`result_files.json`) and save it, with the key of the file "
             "being the absolute path of the generated result and the value "
-            "being a detailed description of the file.\nlast step, compress "
-            "the output folder into a zip file (zip -r $output_dir.zip "
-            "$output_dir)."
+            "being a detailed description of the file."
         )
         return append_artifact_manifest_contract(
             f"  ### EXECUTION PLAN\n{plan}\n\n"

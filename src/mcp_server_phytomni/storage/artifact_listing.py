@@ -88,9 +88,15 @@ def _list_obsfs_objects(
 ) -> list[ListedArtifactObject]:
     """Build object records from one confined obsfs directory."""
     dir_path = directory
+    resolved_dir_path = dir_path.resolve()
     objects: list[ListedArtifactObject] = []
     for path in sorted(dir_path.rglob("*")):
-        if not path.is_file():
+        if path.is_symlink() or not path.is_file():
+            continue
+        resolved_path = path.resolve()
+        try:
+            resolved_path.relative_to(resolved_dir_path)
+        except ValueError:
             continue
         relative_path = path.relative_to(dir_path).as_posix()
         object_key = (
@@ -101,7 +107,7 @@ def _list_obsfs_objects(
             ListedArtifactObject(
                 relative_path=relative_path,
                 source_path=str(path),
-                size_bytes=path.stat().st_size,
+                size_bytes=resolved_path.stat().st_size,
                 download_ref=download_ref,
             )
         )
