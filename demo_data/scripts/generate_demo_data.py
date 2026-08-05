@@ -18,6 +18,8 @@ Outputs:
       normalized ZIP timestamps for byte-equality across runs.
     * ``sequences/arabidopsis_sample.fasta`` -- five short curated
       Arabidopsis sequences.
+    * ``sequences/sample_rep{1,2}.fastq.gz`` -- deterministic Analyst
+      ATAC-seq inputs.
     * ``manifest.json`` and ``README.md`` -- index for humans and tests.
 
 Install the optional extras before running::
@@ -28,6 +30,8 @@ Install the optional extras before running::
 
 from __future__ import annotations
 
+import gzip
+import hashlib
 import json
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
@@ -241,6 +245,26 @@ MAFRTHLISIVNFGKKWLGQLEKAYLTSKDLDPVKAFKRVSLVFLLAEAA
 MGRGRVELKRIENKINRQVTFAKRRNGLLKKAYELSVLCDAEVALIIFSS
 """
 
+ANALYST_FASTQ_REP1 = b"""@phytomni_rep1_read1
+ACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTACGTAC
++
+IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
+@phytomni_rep1_read2
+TGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATGCATG
++
+IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
+"""
+
+ANALYST_FASTQ_REP2 = b"""@phytomni_rep2_read1
+GATTACAGATTACAGATTACAGATTACAGATTACAGATTACAGATTACAG
++
+JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ
+@phytomni_rep2_read2
+CCGTACCGTACCGTACCGTACCGTACCGTACCGTACCGTACCGTACCGTA
++
+HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH
+"""
+
 
 METADATA_HEADER: list[str] = [
     "sample_id",
@@ -352,6 +376,14 @@ FILE_INDEX: Mapping[str, str] = {
         "Five short curated Arabidopsis thaliana protein sequences for "
         "orthology and motif benchmarking."
     ),
+    "sequences/sample_rep1.fastq.gz": (
+        "Deterministic 50 bp single-end rice ATAC-seq demo reads for "
+        "Analyst replicate 1."
+    ),
+    "sequences/sample_rep2.fastq.gz": (
+        "Deterministic 50 bp single-end rice ATAC-seq demo reads for "
+        "Analyst replicate 2."
+    ),
 }
 
 README_TEMPLATE = """# demo_data
@@ -372,8 +404,8 @@ working tree stays clean after a rerun.
 
 ## Supporting fixtures
 
-| Path | Description |
-| --- | --- |
+| Path | Description | Size (bytes) | SHA-256 |
+| --- | --- | ---: | --- |
 {file_table}
 
 ## Regenerate
@@ -411,6 +443,12 @@ def write_text(path: Path, text: str) -> None:
     """Write text with LF newlines and no BOM."""
     _ensure_parent(path)
     path.write_bytes(text.encode("utf-8"))
+
+
+def write_bytes(path: Path, content: bytes) -> None:
+    """Write deterministic binary content after creating its parent."""
+    _ensure_parent(path)
+    path.write_bytes(content)
 
 
 def write_pdf(path: Path, paragraphs: Iterable[str]) -> None:
@@ -489,10 +527,13 @@ def _render_readme() -> str:
         )
         for entry in TOOL_INDEX
     ]
-    file_lines = [
-        f"| [{name}]({name}) | {description} |"
-        for name, description in sorted(FILE_INDEX.items())
-    ]
+    file_lines = []
+    for name, description in sorted(FILE_INDEX.items()):
+        metadata = _file_metadata(name, description)
+        file_lines.append(
+            f"| [{name}]({name}) | {description} | "
+            f"{metadata['size_bytes']} | `{metadata['sha256']}` |"
+        )
     return README_TEMPLATE.format(
         tool_table="\n".join(tool_lines),
         file_table="\n".join(file_lines),
@@ -501,8 +542,21 @@ def _render_readme() -> str:
 
 def _build_manifest() -> dict[str, Any]:
     return {
-        "files": dict(sorted(FILE_INDEX.items())),
+        "files": {
+            name: _file_metadata(name, description)
+            for name, description in sorted(FILE_INDEX.items())
+        },
         "tools": list(TOOL_INDEX),
+    }
+
+
+def _file_metadata(name: str, description: str) -> dict[str, Any]:
+    """Return deterministic integrity metadata for one generated file."""
+    content = (DEMO_ROOT / name).read_bytes()
+    return {
+        "description": description,
+        "size_bytes": len(content),
+        "sha256": hashlib.sha256(content).hexdigest(),
     }
 
 
@@ -542,6 +596,14 @@ def main() -> None:
     write_text(
         DEMO_ROOT / "sequences" / "arabidopsis_sample.fasta",
         ARABIDOPSIS_FASTA,
+    )
+    write_bytes(
+        DEMO_ROOT / "sequences" / "sample_rep1.fastq.gz",
+        gzip.compress(ANALYST_FASTQ_REP1, compresslevel=9, mtime=0),
+    )
+    write_bytes(
+        DEMO_ROOT / "sequences" / "sample_rep2.fastq.gz",
+        gzip.compress(ANALYST_FASTQ_REP2, compresslevel=9, mtime=0),
     )
 
     write_json(DEMO_ROOT / "manifest.json", _build_manifest())

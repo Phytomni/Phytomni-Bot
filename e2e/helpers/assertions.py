@@ -12,9 +12,14 @@ from __future__ import annotations
 
 import json
 import re
+from io import BytesIO
+from pathlib import PurePosixPath
 from typing import Any
+from zipfile import ZipFile
 
 from mcp_server_phytomni.common.responses import assert_no_citation_residue
+from mcp_server_phytomni.config.defaults import ServerConfig
+from mcp_server_phytomni.storage.obs_relay_ops import get_object_bytes
 
 from .polling import TaskState
 
@@ -231,8 +236,10 @@ def assert_brief_gene_answer(answer: str) -> None:
     )
 
 
-def assert_remote_run_terminal_payload(result: dict[str, Any]) -> None:
-    """Assert a terminal remote run carries a renderable answer and paths.
+def assert_remote_run_terminal_payload(
+    result: dict[str, Any], *, agent: str
+) -> dict[str, Any]:
+    """Assert a terminal remote run carries one ready result archive.
 
     Fire-and-forget agents (research / design / network / analyst) have no
     in-process completion stage; the HTTP run-level surface
@@ -242,20 +249,90 @@ def assert_remote_run_terminal_payload(result: dict[str, Any]) -> None:
 
     Args:
         result: The ``result`` object from a terminal ``/v1/runs/{id}``
-            response (``{"formatted": {...}, "artifacts": [...], ...}``).
+            response.
+        agent: Canonical result-producing Agent slug.
+
+    Returns:
+        The validated public archive descriptor.
 
     Raises:
-        AssertionError: When ``formatted.answer`` is empty or no artifact
-            descriptor carries a non-empty ``paths`` list.
+        AssertionError: When the answer or canonical delivery is invalid.
     """
     formatted = result.get("formatted") or {}
-    assert formatted.get(
-        "answer"
-    ), f"terminal remote run carried no formatted.answer; got: {result!r}"
-    artifacts = result.get("artifacts") or []
+    assert formatted.get("answer"), "terminal run carried no visible answer"
+    execution = result.get("execution")
+    assert isinstance(execution, dict), "terminal run carried no execution"
+    delivery = execution.get("delivery")
+    assert isinstance(delivery, dict), "terminal run carried no delivery"
+    assert delivery.get("status") == "ready", "archive delivery was not ready"
+    archive = delivery.get("archive")
+    assert isinstance(archive, dict), "ready delivery carried no archive"
+    assert archive.get("role") == "result_archive"
+    assert archive.get("name") == f"{agent}-results.zip"
+    size_bytes = archive.get("size_bytes")
+    assert (
+        isinstance(size_bytes, int)
+        and not isinstance(size_bytes, bool)
+        and size_bytes > 0
+    ), "result archive size was not positive"
+    return archive
+
+
+def fetch_authenticated_result_archive(
+    run_record: dict[str, Any],
+    *,
+    authenticated_user: str,
+    agent: str,
+) -> bytes:
+    """Fetch one archive after pinning the owner-scoped public record.
+
+    The live test enters through an authenticated HTTP read, then this
+    Bot-side helper reconstructs the private digest-addressed object key.
+    Browser-facing code never receives the key or archive bytes.
+    """
+    assert run_record.get("user_id") == authenticated_user
+    assert run_record.get("agent") == agent
+    result = run_record.get("result")
+    assert isinstance(result, dict)
+    archive = assert_remote_run_terminal_payload(result, agent=agent)
+    execution = result["execution"]
+    output_dirs = execution.get("output_dirs")
+    assert isinstance(output_dirs, list) and output_dirs
+    parents: set[str] = set()
+    for value in output_dirs:
+        assert isinstance(value, str) and value
+        path = PurePosixPath(value)
+        assert path.is_absolute() and ".." not in path.parts
+        parents.add(str(path.parent))
+    assert len(parents) == 1, "result children did not share one root"
+
+    delivery = execution["delivery"]
+    digest = delivery.get("inventory_digest")
+    assert isinstance(digest, str) and digest.startswith("sha256:")
+    digest_hex = digest.removeprefix("sha256:")
+    assert len(digest_hex) == 64 and all(
+        character in "0123456789abcdef" for character in digest_hex
+    )
+    object_ref = f"{parents.pop()}/delivery/{digest_hex}/{archive['name']}"
+    config = ServerConfig()
+    return get_object_bytes(
+        config.BUCKET_NAME,
+        object_ref,
+        obs_server=config.OBS_SERVER,
+    )
+
+
+def assert_result_archive_members(content: bytes) -> None:
+    """Require summary markdown plus one admitted scientific ZIP member."""
+    assert content, "result archive was empty"
+    with ZipFile(BytesIO(content)) as archive:
+        members = tuple(
+            info.filename for info in archive.infolist() if not info.is_dir()
+        )
+    assert "summary.md" in members, "result archive omitted summary.md"
     assert any(
-        item.get("paths") for item in artifacts
-    ), f"terminal remote run populated no artifact paths; got: {artifacts!r}"
+        name.startswith("results/part-") for name in members
+    ), "result archive omitted scientific result members"
 
 
 def assert_deep_genome_terminal(state: TaskState) -> None:

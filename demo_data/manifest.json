@@ -1,9 +1,35 @@
 {
   "files": {
-    "docs/plant_science_brief.md": "Source markdown for the plant-science brief used by Review, Knowledge, and InSilicoResearch demo runs.",
-    "docs/plant_science_brief.pdf": "Deterministic PDF render of the brief, attached via obs_file_list for upload-enabled tools.",
-    "docs/sample_metadata.xlsx": "Five-row sample metadata workbook covering species, tissue, treatment, and biological replicate columns.",
-    "sequences/arabidopsis_sample.fasta": "Five short curated Arabidopsis thaliana protein sequences for orthology and motif benchmarking."
+    "docs/plant_science_brief.md": {
+      "description": "Source markdown for the plant-science brief used by Review, Knowledge, and InSilicoResearch demo runs.",
+      "sha256": "e6bb5c0dfb30ec9e3db132ccf35a0cf21551f691037786499144023221ec7cd2",
+      "size_bytes": 1769
+    },
+    "docs/plant_science_brief.pdf": {
+      "description": "Deterministic PDF render of the brief, attached via obs_file_list for upload-enabled tools.",
+      "sha256": "5b21c11416d777b7b5589b517f30d124d268c067eea1bf7e54d83a5d14324697",
+      "size_bytes": 3406
+    },
+    "docs/sample_metadata.xlsx": {
+      "description": "Five-row sample metadata workbook covering species, tissue, treatment, and biological replicate columns.",
+      "sha256": "03ff21a5fff6d7f05d1ee756de484740090c64dcac7b439901d3c80ff94d86a2",
+      "size_bytes": 5120
+    },
+    "sequences/arabidopsis_sample.fasta": {
+      "description": "Five short curated Arabidopsis thaliana protein sequences for orthology and motif benchmarking.",
+      "sha256": "627d05f38dd5cd7441f8eac8cd14a799daf0ad4f7e746c6a2a94c3d9cba8e129",
+      "size_bytes": 509
+    },
+    "sequences/sample_rep1.fastq.gz": {
+      "description": "Deterministic 50 bp single-end rice ATAC-seq demo reads for Analyst replicate 1.",
+      "sha256": "a3963d9834b0a010d0c6348a8338977830d96ef0991d20812dc02b6d5f79e82f",
+      "size_bytes": 66
+    },
+    "sequences/sample_rep2.fastq.gz": {
+      "description": "Deterministic 50 bp single-end rice ATAC-seq demo reads for Analyst replicate 2.",
+      "sha256": "e67af5012f090558fbfdded996d632d48502a7063c5222a142026fd0307bc91e",
+      "size_bytes": 74
+    }
   },
   "tools": [
     {

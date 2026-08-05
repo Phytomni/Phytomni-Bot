@@ -204,6 +204,25 @@ Tunables: `PHYTOMNI_E2E_API_STARTUP_SECONDS` (health-gate budget,
 default 120) and `PHYTOMNI_E2E_API_READ_TIMEOUT_SECONDS` (per-request
 read timeout, default 1200).
 
+### Result archive delivery e2e
+
+The terminal archive suite submits Analyst, Research, Network, and Design over
+their native HTTP routes, then verifies the authenticated Bot-side ZIP contains
+`summary.md` plus at least one admitted scientific result. The retry suite boots
+the guarded `helpers/fault_injected_api.py` module, exhausts exactly three
+automatic publication attempts, and proves manual retry reuses the same child
+tasks and inventory digest:
+
+```bash
+PHYTOMNI_RUN_INTEGRATION=1 PHYTOMNI_ALLOW_NETWORK=1 \
+    uv run pytest e2e/test_remote_run_terminal_payload_e2e.py \
+    e2e/test_result_delivery_retry_e2e.py -v
+```
+
+The fault-injected module refuses to start unless integration is explicitly
+enabled, the failure count is exactly three, and its task database resolves
+below `/tmp`.
+
 ### Rerank isolation probe
 
 `test_rerank_probe_e2e.py` isolates the rerank hop of the

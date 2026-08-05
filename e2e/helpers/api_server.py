@@ -28,7 +28,7 @@ import sys
 import threading
 import time
 from collections import deque
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import AsyncGenerator, Generator, Mapping
 from contextlib import asynccontextmanager, contextmanager
 from typing import IO, NamedTuple
 
@@ -41,6 +41,7 @@ _STARTUP_DEADLINE_DEFAULT = 120.0
 _READ_TIMEOUT_DEFAULT = 1200.0
 _LOG_TAIL = 500
 _E2E_SERVICE_TOKEN = "e2e-service-token"
+_DEFAULT_APP_MODULE = "mcp_server_phytomni.api.server"
 
 
 class ApiServer(NamedTuple):
@@ -181,9 +182,28 @@ def _await_healthy(
     )
 
 
+def _api_command(app_module: str, port: int) -> list[str]:
+    """Return the default launcher or a test-only ASGI module command."""
+    if app_module == _DEFAULT_APP_MODULE:
+        return [sys.executable, "-m", app_module]
+    return [
+        sys.executable,
+        "-m",
+        "uvicorn",
+        f"{app_module}:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+    ]
+
+
 @contextmanager
 def boot_phytomni_api(
     tmp_path_factory: pytest.TempPathFactory,
+    *,
+    app_module: str = _DEFAULT_APP_MODULE,
+    environment: Mapping[str, str] | None = None,
 ) -> Generator[ApiServer, None, None]:
     """Boot the HTTP API subprocess and yield its connection details.
 
@@ -194,6 +214,9 @@ def boot_phytomni_api(
     Args:
         tmp_path_factory: Pytest temp-dir factory for the throwaway
             SQLite stores.
+        app_module: Importable module launched in the API subprocess.
+        environment: Test-only environment additions applied before the
+            helper pins its host, port, key store, and task database.
 
     Yields:
         Connection details for the running API process.
@@ -207,6 +230,7 @@ def boot_phytomni_api(
     port = _free_port()
     base_url = f"http://127.0.0.1:{port}"
     env = os.environ.copy()
+    env.update(environment or {})
     env.pop("PHYTOMNI_TESTING", None)
     env["API_HOST"] = "127.0.0.1"
     env["API_PORT"] = str(port)
@@ -219,7 +243,7 @@ def boot_phytomni_api(
     env["PHYTOMNI_TASKS_DB"] = runs_db
     env["PHYTOMNI_API_SERVICE_TOKEN"] = _E2E_SERVICE_TOKEN
 
-    cmd = [sys.executable, "-m", "mcp_server_phytomni.api.server"]
+    cmd = _api_command(app_module, port)
     logs: deque[str] = deque(maxlen=_LOG_TAIL)
     with subprocess.Popen(
         cmd,

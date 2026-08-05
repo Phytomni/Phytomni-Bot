@@ -26,12 +26,14 @@ working tree stays clean after a rerun.
 
 ## Supporting fixtures
 
-| Path | Description |
-| --- | --- |
-| [docs/plant_science_brief.md](docs/plant_science_brief.md) | Source markdown for the plant-science brief used by Review, Knowledge, and InSilicoResearch demo runs. |
-| [docs/plant_science_brief.pdf](docs/plant_science_brief.pdf) | Deterministic PDF render of the brief, attached via obs_file_list for upload-enabled tools. |
-| [docs/sample_metadata.xlsx](docs/sample_metadata.xlsx) | Five-row sample metadata workbook covering species, tissue, treatment, and biological replicate columns. |
-| [sequences/arabidopsis_sample.fasta](sequences/arabidopsis_sample.fasta) | Five short curated Arabidopsis thaliana protein sequences for orthology and motif benchmarking. |
+| Path | Description | Size (bytes) | SHA-256 |
+| --- | --- | ---: | --- |
+| [docs/plant_science_brief.md](docs/plant_science_brief.md) | Source markdown for the plant-science brief used by Review, Knowledge, and InSilicoResearch demo runs. | 1769 | `e6bb5c0dfb30ec9e3db132ccf35a0cf21551f691037786499144023221ec7cd2` |
+| [docs/plant_science_brief.pdf](docs/plant_science_brief.pdf) | Deterministic PDF render of the brief, attached via obs_file_list for upload-enabled tools. | 3406 | `5b21c11416d777b7b5589b517f30d124d268c067eea1bf7e54d83a5d14324697` |
+| [docs/sample_metadata.xlsx](docs/sample_metadata.xlsx) | Five-row sample metadata workbook covering species, tissue, treatment, and biological replicate columns. | 5120 | `03ff21a5fff6d7f05d1ee756de484740090c64dcac7b439901d3c80ff94d86a2` |
+| [sequences/arabidopsis_sample.fasta](sequences/arabidopsis_sample.fasta) | Five short curated Arabidopsis thaliana protein sequences for orthology and motif benchmarking. | 509 | `627d05f38dd5cd7441f8eac8cd14a799daf0ad4f7e746c6a2a94c3d9cba8e129` |
+| [sequences/sample_rep1.fastq.gz](sequences/sample_rep1.fastq.gz) | Deterministic 50 bp single-end rice ATAC-seq demo reads for Analyst replicate 1. | 66 | `a3963d9834b0a010d0c6348a8338977830d96ef0991d20812dc02b6d5f79e82f` |
+| [sequences/sample_rep2.fastq.gz](sequences/sample_rep2.fastq.gz) | Deterministic 50 bp single-end rice ATAC-seq demo reads for Analyst replicate 2. | 74 | `e67af5012f090558fbfdded996d632d48502a7063c5222a142026fd0307bc91e` |
 
 ## Regenerate
 
