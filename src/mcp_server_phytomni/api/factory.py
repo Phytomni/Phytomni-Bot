@@ -35,7 +35,6 @@ from google.protobuf import json_format
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from ..agents.review.agent import load_review_settlement_adapter
 from ..config.defaults import ApiConfig, BriefGeneConfig
 from ..config.settings import SensitiveConfig
 from ..interop.cache import DiscoveryCache
@@ -46,7 +45,6 @@ from ..runtime.conversation_context.adapters import (
 )
 from ..runtime.conversation_context.store import (
     ConversationContextStore,
-    StoredTurn,
 )
 from ..runtime.locale import message_for
 from ..runtime.memory import (
@@ -55,7 +53,7 @@ from ..runtime.memory import (
     MemoryWrite,
     memory_policy_from_config,
 )
-from ..runtime.run_registry import RunFilter, RunRequestInfo
+from ..runtime.run_registry import RunFilter, RunRegistry, RunRequestInfo
 from ..runtime.stage_trace import current_stage_trace
 from . import run_lifecycle
 from . import stage_errors as _stage_errors
@@ -70,6 +68,7 @@ from .auth import (
 from .auth import (
     require_scope as build_scope_dependency,
 )
+from .context_executor_factory import build_context_executor
 from .lifecycle_contract import (
     LifecycleInvariantError,
     SafeApiError,
@@ -212,6 +211,7 @@ class _RouteAdapters:
     """Request-time adapters preserving the app-level patch seams."""
 
     runtime: _RuntimeState
+    run_registry_factory: Callable[[str], Any] = RunRegistry
 
     def memory_write(self, owner: str, payload: Any) -> MemoryWrite:
         """Project a memory write through the app-level helper."""
@@ -257,14 +257,20 @@ class _RouteAdapters:
         debug: bool = False,
     ) -> dict[str, Any]:
         """Fetch one owner-scoped run through the app-level seam."""
-        record = await _app_attr("_fetch_owner_run")(run_id, debug=debug)
+        record = await _app_attr("_fetch_owner_run")(
+            run_id,
+            debug=debug,
+            registry_factory=self.run_registry_factory,
+        )
         if isinstance(record, Mapping):
             return canonicalize_run_record(record, debug=debug)
         return record
 
     async def _retry_owner_delivery(self, run_id: str) -> dict[str, Any]:
         """Begin one archive retry through the app compatibility seam."""
-        return await _app_attr("_retry_owner_delivery")(run_id)
+        return await _app_attr("_retry_owner_delivery")(
+            run_id, registry_factory=self.run_registry_factory
+        )
 
     def list_owner_runs(
         self,
@@ -943,41 +949,28 @@ def _register_error_handlers(app: FastAPI) -> None:
     register_upload_error_handler(app, _app_attr("_error_response"))
 
 
-def _build_context_executor(
-    runtime: _RuntimeState,
-) -> ConversationContextExecutor:
-    """Build the lazy, Bot-owned conversation context executor."""
-
-    async def select_agent(*args: Any, **kwargs: Any) -> Any:
-        """Resolve the selector lazily so established test seams
-        remain live.
-        """
-        return await _app_attr("select_agent_tool")(*args, **kwargs)
-
-    async def load_review_settlement(
-        metadata: Mapping[str, Any], staged_turn: StoredTurn
-    ) -> Any:
-        """Rebuild Review promotion state through its private agent seam."""
-        return await load_review_settlement_adapter(metadata, staged_turn)
-
-    return ConversationContextExecutor(
-        store_factory=runtime.get_conversation_context_store,
-        select_agent=select_agent,
-        api_config_factory=_api_config,
-        review_settlement_loader=load_review_settlement,
-    )
-
-
 def build_app(
     *,
     context_executor: ConversationContextExecutor | None = None,
+    run_registry_factory: Callable[[str], Any] | None = None,
 ) -> FastAPI:
     """Build the complete FastAPI application from typed route seams."""
     app = _build_base_app()
     runtime = _RuntimeState(rate_limit=_app_attr("make_rate_limiter")())
     scope = partial(build_scope_dependency, runtime.authorized)
-    adapters = _RouteAdapters(runtime)
-    context_executor = context_executor or _build_context_executor(runtime)
+    adapters = _RouteAdapters(
+        runtime,
+        run_registry_factory=(
+            run_registry_factory
+            if run_registry_factory is not None
+            else RunRegistry
+        ),
+    )
+    context_executor = context_executor or build_context_executor(
+        runtime,
+        app_attr=_app_attr,
+        api_config_factory=_api_config,
+    )
     agent_dependencies = _build_agent_dependencies(
         runtime,
         adapters,

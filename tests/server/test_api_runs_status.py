@@ -25,6 +25,7 @@ from tests.agents.shared.deep_genome_fixtures import (
     attach_formatted_result,
     seed_partial_deep_genome_run,
 )
+from tests.support.http_fakes import open_asgi_client
 from tests.support.run_registry_fakes import (
     assert_not_found_response,
     foreign_run_spec,
@@ -33,6 +34,7 @@ from tests.support.run_registry_fakes import (
     seed_remote_run_with_task,
 )
 
+from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
 from mcp_server_phytomni.mcp.formatting.models import (
     ResultArchiveDescriptor,
@@ -221,6 +223,47 @@ async def test_retry_delivery_rejects_non_retryable_states(
     assert response.status_code == 409
     assert response.json()["error"]["code"] == "run_state_conflict"
     assert "/private/obs/inventory.json" not in response.text
+
+
+async def test_injected_registry_factory_is_used_by_fetch_and_retry_routes(
+    monkeypatch: pytest.MonkeyPatch,
+    issued_api_key: str,
+    tasks_db_path: str,
+) -> None:
+    """App construction applies one injected registry policy to both routes."""
+    calls: list[str] = []
+
+    class RegistryFactory:
+        def __bool__(self) -> bool:
+            return False
+
+        def __call__(self, db_path: str) -> RunRegistry:
+            calls.append(db_path)
+            return RunRegistry(db_path)
+
+    registry_factory = RegistryFactory()
+
+    _seed_delivery_run(tasks_db_path, "run-injected-retry")
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec("run-injected-fetch", "u1", "chat", "local"),
+        outcome=RunOutcome(status="succeeded", result=empty_agent_result()),
+    )
+    app = create_app(run_registry_factory=registry_factory)
+    headers = {"Authorization": f"Bearer {issued_api_key}"}
+
+    async with open_asgi_client(
+        monkeypatch, app, base_url="http://api.injected"
+    ) as client:
+        retry = await client.post(
+            "/v1/runs/run-injected-retry/delivery/retry", headers=headers
+        )
+        fetch = await client.get(
+            "/v1/runs/run-injected-fetch", headers=headers
+        )
+
+    assert retry.status_code == 200
+    assert fetch.status_code == 200
+    assert calls == [tasks_db_path, tasks_db_path]
 
 
 async def test_get_run_returns_terminal_record(
