@@ -207,6 +207,44 @@ async def test_reconcile_task_log_returns_cached_payload_without_remote(
 
 
 @pytest.mark.asyncio
+async def test_reconcile_task_log_projects_legacy_cached_content(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pre-fix cached chunks also expose the public text projection."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    mgr = TaskManager(mgr_path)
+    task_id = mgr.create_task()
+    mgr.set_task_log(
+        task_id,
+        {
+            "logs": [
+                {"content": "cached first\n"},
+                {"content": "cached second\n"},
+            ]
+        },
+    )
+
+    async def _unexpected_remote(_t_id: str, **_: Any) -> dict:
+        raise AssertionError("cached logs must not trigger a remote request")
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_log",
+        _unexpected_remote,
+    )
+
+    assert await reconcile_task_log(task_id) == {
+        "logs": [
+            {"content": "cached first\n"},
+            {"content": "cached second\n"},
+        ],
+        "text": "cached first\ncached second\n",
+    }
+
+
+@pytest.mark.asyncio
 async def test_reconcile_task_log_fetches_and_caches_on_miss(
     mgr_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -236,6 +274,38 @@ async def test_reconcile_task_log_fetches_and_caches_on_miss(
     result = await reconcile_task_log(task_id)
     assert result == fetched
     assert mgr.get_task_log(task_id) == fetched
+
+
+@pytest.mark.asyncio
+async def test_reconcile_task_log_projects_platform_content_as_text(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Platform log chunks become one ordered public text field."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    mgr = TaskManager(mgr_path)
+    task_id = mgr.create_task()
+    platform_payload = {
+        "logs": [
+            {"content": "Get conda environment finish!\n"},
+            {"content": "[MCP] Loaded 35 tool(s).\n"},
+        ]
+    }
+
+    async def _fake_task_log(_t_id: str, **_: Any) -> dict:
+        return platform_payload
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_log",
+        _fake_task_log,
+    )
+
+    assert await reconcile_task_log(task_id) == {
+        **platform_payload,
+        "text": "Get conda environment finish!\n[MCP] Loaded 35 tool(s).\n",
+    }
 
 
 @pytest.mark.asyncio
@@ -380,6 +450,39 @@ async def test_reconcile_task_log_returns_none_on_remote_failure(
     assert await reconcile_task_log(task_id) is None
     # Nothing was cached — the row still has task_log = NULL.
     assert mgr.get_task_log(task_id) is None
+
+
+@pytest.mark.asyncio
+async def test_reconcile_task_log_fetches_source_task_when_present(
+    mgr_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A deduplicated caller fetches logs from the remote source task."""
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.resolve_tasks_db_path",
+        lambda: mgr_path,
+    )
+    mgr = TaskManager(mgr_path)
+    mgr.record(
+        Submission(
+            task_id="T-local",
+            status="submitted",
+            output_dir="/obs/run",
+            source_task_id="R-remote",
+        )
+    )
+    fetched_ids: list[str] = []
+
+    async def _capturing_log(t_id: str, **_: Any) -> dict:
+        fetched_ids.append(t_id)
+        return {"logs": [{"content": "remote output"}]}
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_log",
+        _capturing_log,
+    )
+
+    await reconcile_task_log("T-local")
+    assert fetched_ids == ["R-remote"]
 
 
 @pytest.mark.asyncio

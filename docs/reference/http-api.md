@@ -1036,6 +1036,15 @@ the candidate-A architecture every log already belongs to the single
 `web` user, and broadening to multi-tenant delegation would happen
 alongside the candidate-B owner-key revival.
 
+For Analyst tasks, reconciliation queries the effective remote task id
+(`source_task_id` for a deduplicated caller-owned row, otherwise `task_id`).
+When the analysis platform returns ordered `logs[].content` strings, each
+per-task payload preserves the provider fields and adds `text` containing
+those strings concatenated in array order without an inserted delimiter.
+This additive projection also applies to cached payloads written before the
+field existed, so Web can consume `task_logs[].text` without a new provider
+request.
+
 Consumer impact: this `{run_id, task_ids, task_logs}` shape is NOT a
 drop-in replacement for the legacy Web `/query/analyst/update_log`
 contract — the old top-level `init_info` / `steps` payload is never

@@ -1021,6 +1021,16 @@ the candidate-A architecture every log already belongs to the single
 `web` user, and broadening to multi-tenant delegation would land
 alongside the candidate-B owner-key revival.
 
+For Analyst tasks, reconciliation queries the effective remote task id
+(`source_task_id` for a deduplicated caller-owned row, otherwise `task_id`).
+An analysis-platform response containing ordered `logs[].content` strings
+keeps its provider fields and gains a `text` field made by concatenating
+those strings in array order without an inserted delimiter. The same
+projection is applied when reading legacy cached payloads. If an expected
+Analyst log stays empty, first compare the caller task id with its persisted
+`source_task_id`, then verify that the platform response contains string
+`content` values.
+
 The resumable upload runbook has two auth planes. The control plane
 (`POST /v1/files` and `/capability`) requires an API key with the explicit
 `files:delegate` scope. The browser data plane uses only the opaque

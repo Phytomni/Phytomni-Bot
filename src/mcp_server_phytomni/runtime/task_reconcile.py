@@ -34,6 +34,21 @@ _NON_TERMINAL_STATUSES = frozenset({"running", "submitted", "pending"})
 _RESTART_ORPHAN_REASON = "workflow interrupted by service restart"
 
 
+def _project_task_log_text(payload: dict[str, Any]) -> dict[str, Any]:
+    """Add ordered public text for the analyst platform's log chunks."""
+    logs = payload.get("logs")
+    if not isinstance(logs, list):
+        return payload
+    contents = [
+        item["content"]
+        for item in logs
+        if isinstance(item, dict) and isinstance(item.get("content"), str)
+    ]
+    if not contents:
+        return payload
+    return {**payload, "text": "".join(contents)}
+
+
 def _project_deep_genome_snapshot(
     result: dict[str, Any], snapshot: Any
 ) -> dict[str, Any]:
@@ -185,10 +200,12 @@ async def reconcile_task(task_id: str) -> dict[str, Any]:
 async def reconcile_task_log(task_id: str) -> dict[str, Any] | None:
     """Return cached log or fetch from remote + cache, best-effort.
 
-    Reads ``tasks.task_log`` first; on hit, returns the cached dict
-    immediately. On miss, calls ``agents.analyst.task_ops.task_log``
-    against the remote analysis platform, writes the response into the
-    local column via ``TaskManager.set_task_log``, and returns it.
+    Reads ``tasks.task_log`` first. On a miss, calls
+    ``agents.analyst.task_ops.task_log`` with ``source_task_id`` when the
+    caller-owned row points at a deduplicated remote task, writes the raw
+    response via ``TaskManager.set_task_log``, and returns it. Both cached
+    and fresh platform payloads gain an additive ``text`` projection when
+    they contain ordered string values at ``logs[].content``.
     A remote failure (any ``McpError`` from ``task_log``) logs at
     ``warning`` and returns ``None`` — the caller (HTTP route) treats
     ``None`` as "no log available yet" rather than surfacing the
@@ -205,11 +222,15 @@ async def reconcile_task_log(task_id: str) -> dict[str, Any] | None:
     mgr = TaskManager(resolve_tasks_db_path())
     cached = mgr.get_task_log(task_id)
     if cached is not None:
-        return cached
+        return _project_task_log_text(cached)
+    row = mgr.get_task(task_id)
+    probe_id = task_id
+    if row is not None and row["source_task_id"]:
+        probe_id = row["source_task_id"]
     analyst_config = AnalystConfig()
     try:
         payload = await task_log(
-            task_id,
+            probe_id,
             analysis_url=analyst_config.ANALYSIS_URL,
             region=analyst_config.ANALYSIS_REGION,
             timeout=analyst_config.TIMEOUT,
@@ -223,4 +244,4 @@ async def reconcile_task_log(task_id: str) -> dict[str, Any] | None:
         )
         return None
     mgr.set_task_log(task_id, payload)
-    return payload
+    return _project_task_log_text(payload)

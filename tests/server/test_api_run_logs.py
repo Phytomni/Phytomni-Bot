@@ -113,6 +113,62 @@ async def test_get_run_logs_returns_reconciled_task_logs(
     assert len(reconcile_calls) == 2
 
 
+async def test_get_run_logs_projects_remote_analyst_content_as_text(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    tasks_db_path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The HTTP contract exposes ordered analyst log chunks as text."""
+    RunRegistry(tasks_db_path).create_run(
+        RunSpec("run-platform-log", "u1", "analyst", "remote"),
+        outcome=RunOutcome(status="succeeded"),
+    )
+    TaskManager(tasks_db_path).record(
+        Submission(
+            task_id="task-local-log",
+            status="succeeded",
+            output_dir="/tmp/task-local-log",
+            run_context=RunContext(run_id="run-platform-log"),
+            source_task_id="task-remote-log",
+        )
+    )
+    fetched_ids: list[str] = []
+
+    async def fake_remote_log(task_id: str, **_: Any) -> dict[str, Any]:
+        fetched_ids.append(task_id)
+        return {
+            "logs": [
+                {"content": "Get conda environment finish!\n"},
+                {"content": "[MCP] Loaded 35 tool(s).\n"},
+            ]
+        }
+
+    monkeypatch.setattr(
+        "mcp_server_phytomni.runtime.task_reconcile.task_log",
+        fake_remote_log,
+    )
+
+    response = await api_client.get(
+        "/v1/runs/run-platform-log/logs",
+        headers={"Authorization": f"Bearer {issued_api_key}"},
+    )
+
+    assert response.status_code == 200
+    assert fetched_ids == ["task-remote-log"]
+    assert response.json()["task_logs"] == [
+        {
+            "logs": [
+                {"content": "Get conda environment finish!\n"},
+                {"content": "[MCP] Loaded 35 tool(s).\n"},
+            ],
+            "text": (
+                "Get conda environment finish!\n[MCP] Loaded 35 tool(s).\n"
+            ),
+        }
+    ]
+
+
 async def test_get_run_logs_empty_tasks(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
