@@ -20,6 +20,7 @@ from tests.support.handler_fakes import network_run_arguments
 from tests.support.resolver_fakes import assert_invalid_argument_response
 
 from mcp_server_phytomni import server
+from mcp_server_phytomni.agents.network import resolve_query as nw_module
 from mcp_server_phytomni.agents.network.resolve_query import (
     GeneNetworkResolveError,
     GeneNetworkResolveResult,
@@ -152,6 +153,46 @@ async def test_native_runs_resolves_when_flag_true(
     assert metadata.get("resolved_to_id") == "TO:0000207"
     assert metadata.get("resolved_species_code") == "osa"
     assert metadata.get("resolve_to_id") is True
+
+
+async def test_native_runs_defaults_bare_to_id_to_rice_without_llm(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tasks_db_path: str,
+) -> None:
+    """A bare TO id resolves to rice before the Network handler runs."""
+    captured: dict[str, Any] = {}
+    _stub_network_handler(monkeypatch, captured)
+
+    async def fail_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
+        pytest.fail("bare TO ids must not invoke the LLM resolver")
+
+    monkeypatch.setattr(nw_module, "phyto_chat", fail_phyto_chat)
+
+    response = await _post_run(
+        api_client,
+        issued_api_key,
+        "network",
+        {
+            "obs_file_list": [],
+            "user_query": "TO:0000227",
+            "resolve_to_id": True,
+        },
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    record = await _wait_for_background_run(tasks_db_path, body["run_id"])
+    assert captured == {
+        "species_code": "osa",
+        "to_id": "TO:0000227",
+    }
+    assert record.result is not None
+    metadata = record.result["formatted"].get("metadata") or {}
+    assert metadata.get("original_query") == "TO:0000227"
+    assert metadata.get("resolved_to_id") == "TO:0000227"
+    assert metadata.get("resolved_species_code") == "osa"
 
 
 async def test_native_runs_skips_resolver_when_flag_false(

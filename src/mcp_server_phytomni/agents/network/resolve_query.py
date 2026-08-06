@@ -14,6 +14,7 @@ validates the returned id against it; fabricated ids drop inside
 from __future__ import annotations
 
 import logging
+import re
 from functools import lru_cache
 from typing import Any
 
@@ -50,6 +51,8 @@ __all__ = [
 
 _RESOLVER_SYSTEM_PROMPT_PATH = "system/gene_network_resolve_to_id"
 _RESOLVER_USER_PROMPT_PATH = "user/gene_network_resolve_to_id"
+_BARE_TO_ID_PATTERN = re.compile(r"TO:\d{7}")
+_BARE_TO_ID_DEFAULT_SPECIES = "osa"
 
 
 class GeneNetworkResolveError(ValueError):
@@ -123,6 +126,33 @@ _RESOLVER_JSON_SCHEMA: dict[str, Any] = {
 }
 
 
+def _resolve_bare_to_id(
+    raw_query: str,
+    valid_to_ids: set[str],
+) -> GeneNetworkResolveResult | None:
+    """Resolve one exact catalog TO id to the default rice species."""
+    normalized_query = raw_query.strip()
+    if not _BARE_TO_ID_PATTERN.fullmatch(normalized_query):
+        return None
+    if normalized_query not in valid_to_ids:
+        raise GeneNetworkResolveError(
+            f"TO id not in the catalog: '{normalized_query}'"
+        )
+    _warn_if_deprecated(normalized_query, raw_query)
+    return GeneNetworkResolveResult(
+        to_id=normalized_query,
+        species_code=_BARE_TO_ID_DEFAULT_SPECIES,
+        raw_query=raw_query,
+        candidates=[
+            GeneNetworkToIdCandidate(
+                to_id=normalized_query,
+                confidence=1.0,
+                species_code=_BARE_TO_ID_DEFAULT_SPECIES,
+            )
+        ],
+    )
+
+
 async def resolve_network_user_query(
     raw_query: str,
     *,
@@ -161,6 +191,9 @@ async def resolve_network_user_query(
     catalog_entries = load_to_ontology()
     catalog_text = format_to_ontology_for_prompt(catalog_entries)
     valid_to_ids = {entry.id for entry in catalog_entries}
+    bare_to_id = _resolve_bare_to_id(raw_query, valid_to_ids)
+    if bare_to_id is not None:
+        return bare_to_id
 
     rendered_user_query = get_prompt(
         network_config.PROMPT_FILE,

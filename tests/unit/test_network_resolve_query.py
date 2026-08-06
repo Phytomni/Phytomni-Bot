@@ -104,6 +104,58 @@ async def test_resolver_returns_typed_result_for_valid_to_id(
     assert "TO:0000207 | plant height" in captured["kwargs"]["user_query"]
 
 
+async def test_resolver_defaults_bare_to_id_to_rice_without_llm(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[GeneNetworkConfig, SensitiveConfig],
+) -> None:
+    """A catalog-valid bare TO id deterministically defaults to rice."""
+
+    async def fail_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
+        pytest.fail("bare TO ids must not invoke the LLM resolver")
+
+    monkeypatch.setattr(nw_module, "phyto_chat", fail_phyto_chat)
+    network_config, sensitive_config = configs
+
+    result = await resolve_network_user_query(
+        "  TO:0000227  ",
+        network_config=network_config,
+        sensitive_config=sensitive_config,
+    )
+
+    assert result.to_id == "TO:0000227"
+    assert result.species_code == "osa"
+    assert result.raw_query == "  TO:0000227  "
+    assert result.candidates == [
+        GeneNetworkToIdCandidate(
+            to_id="TO:0000227",
+            confidence=1.0,
+            species_code="osa",
+        )
+    ]
+
+
+async def test_resolver_rejects_unknown_bare_to_id_without_llm(
+    monkeypatch: pytest.MonkeyPatch,
+    configs: tuple[GeneNetworkConfig, SensitiveConfig],
+) -> None:
+    """A syntactically valid but unknown bare TO id never reaches the LLM."""
+
+    async def fail_phyto_chat(**_kwargs: Any) -> dict[str, Any]:
+        pytest.fail("unknown bare TO ids must not invoke the LLM resolver")
+
+    monkeypatch.setattr(nw_module, "phyto_chat", fail_phyto_chat)
+    network_config, sensitive_config = configs
+
+    with pytest.raises(GeneNetworkResolveError) as excinfo:
+        await resolve_network_user_query(
+            "TO:9999999",
+            network_config=network_config,
+            sensitive_config=sensitive_config,
+        )
+
+    assert "not in the catalog" in str(excinfo.value)
+
+
 async def test_resolver_warns_but_accepts_unsupported_species(
     monkeypatch: pytest.MonkeyPatch,
     configs: tuple[GeneNetworkConfig, SensitiveConfig],

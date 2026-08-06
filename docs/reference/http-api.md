@@ -1597,8 +1597,17 @@ into `arguments.to_id`. The same structured LLM call also produces
 the `species_code` matching the trait query, and the network branch
 injects **both** `arguments.to_id` AND `arguments.species_code`
 because `GeneNetworkAgent` requires both. A blank `species_code`
-returns `400` rather than falling through. The flag is rejected with
-`400` on any other agent slug.
+is rejected rather than falling through. The flag is rejected on any
+other agent slug.
+
+A `user_query` that, after trimming, consists only of an exact
+`TO:NNNNNNN` identifier bypasses the LLM resolver. If the id is in the
+committed catalog, the resolver deterministically uses that id and
+defaults `species_code` to `osa` (rice). A syntactically valid bare TO
+id outside the catalog is rejected without an LLM call or downstream
+task submission. On the asynchronous native-runs path, resolver errors
+settle the already-accepted parent run as failed with no child task;
+synchronous resolver consumers map the same error to `400`.
 
 Of the 573 catalog ids, 32 carry `status: deprecated_upstream` because
 the upstream PTO release either marks them `is_obsolete: true` (31, no
