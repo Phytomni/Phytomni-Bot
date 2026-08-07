@@ -6,11 +6,14 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Barrier
 from typing import cast
 
 import pytest
@@ -23,8 +26,10 @@ from mcp_server_phytomni.runtime.resumable_uploads import (
     _ASSET_COLUMNS,
     AssetCreateSpec,
     AssetRecord,
+    CapabilityAuthorization,
     PartRecord,
     ResumableUploadRegistry,
+    ResumableUploadRegistryConfig,
     UploadAssetPurpose,
     UploadStateError,
     _asset_from_row,
@@ -86,6 +91,27 @@ def _part(
         etag=f"etag-{number}",
         received_at=NOW,
     )
+
+
+def _stored_activation(
+    registry: ResumableUploadRegistry, asset_id: str
+) -> str | None:
+    """Read one private activation marker directly from SQLite."""
+    with sqlite3.connect(registry.db_path) as conn:
+        return cast(
+            str | None,
+            conn.execute(
+                "SELECT activated_at FROM upload_assets WHERE asset_id = ?",
+                (asset_id,),
+            ).fetchone()[0],
+        )
+
+
+def _assert_state_error(code: str, operation: Callable[[], object]) -> None:
+    """Run one operation and assert its stable registry error code."""
+    with pytest.raises(UploadStateError) as error:
+        operation()
+    assert error.value.code == code
 
 
 _LEGACY_ASSETS_DDL = """
@@ -549,6 +575,402 @@ def test_capability_scope_expiry_and_revocation(tmp_path: Path) -> None:
             operation="part",
             now=NOW + timedelta(minutes=16),
         )
+
+
+def test_authorization_activates_only_data_plane_takeover_operations(
+    tmp_path: Path,
+) -> None:
+    """Only HEAD, part, and complete prove browser takeover."""
+    registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
+    activation_time = NOW + timedelta(seconds=1)
+
+    for index, operation in enumerate(("head", "part", "complete")):
+        asset, secret = registry.create_or_replay(
+            _spec(key=f"activate-{index}"), now=NOW
+        )
+        record, authorized = registry.authorize_capability(
+            secret.raw_token,
+            asset_id=asset.asset_id,
+            authorization=CapabilityAuthorization(operation, True),
+            now=activation_time,
+        )
+        assert record.owner_subject == "owner-1"
+        assert authorized.activated_at == activation_time
+        assert _stored_activation(registry, asset.asset_id) == (
+            activation_time.isoformat()
+        )
+        registry.abort_asset(asset.asset_id, owner="owner-1", now=NOW)
+
+    untouched, original = registry.create_or_replay(
+        _spec(key="non-activation"), now=NOW
+    )
+    replay, replay_secret = registry.create_or_replay(
+        _spec(key="non-activation"), now=NOW
+    )
+    renewed = registry.issue_capability(
+        untouched.asset_id,
+        owner="owner-1",
+        now=NOW,
+        operations=("head", "part", "complete", "abort"),
+    )
+    registry.authorize_capability(
+        renewed.raw_token,
+        asset_id=untouched.asset_id,
+        authorization=CapabilityAuthorization("abort", False),
+        now=activation_time,
+    )
+
+    assert replay.asset_id == untouched.asset_id
+    assert original.raw_token != replay_secret.raw_token
+    assert _stored_activation(registry, untouched.asset_id) is None
+
+
+def test_repeated_authorization_does_not_refresh_activation(
+    tmp_path: Path,
+) -> None:
+    """The first takeover timestamp is immutable across later requests."""
+    registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
+    asset, secret = registry.create_or_replay(_spec(), now=NOW)
+    first_clock = NOW + timedelta(seconds=1)
+    second_clock = NOW + timedelta(minutes=2)
+
+    _record, first = registry.authorize_capability(
+        secret.raw_token,
+        asset_id=asset.asset_id,
+        authorization=CapabilityAuthorization("head", True),
+        now=first_clock,
+    )
+    _record, second = registry.authorize_capability(
+        secret.raw_token,
+        asset_id=asset.asset_id,
+        authorization=CapabilityAuthorization("part", True),
+        now=second_clock,
+    )
+
+    assert first.activated_at == first_clock
+    assert second.activated_at == first_clock
+    assert second.session_expires_at == asset.session_expires_at
+
+
+def test_provisional_deadline_boundary_is_exact(tmp_path: Path) -> None:
+    """An unactivated row is valid before, but not at, its deadline."""
+    registry = ResumableUploadRegistry(
+        str(tmp_path / "tasks.db"),
+        ResumableUploadRegistryConfig(capability_ttl=timedelta(hours=4)),
+    )
+    before_asset, before_secret = registry.create_or_replay(
+        _spec(key="before"), now=NOW
+    )
+    due_asset, due_secret = registry.create_or_replay(
+        _spec(key="due"), now=NOW
+    )
+    deadline = NOW + timedelta(minutes=180)
+
+    _record, authorized = registry.authorize_capability(
+        before_secret.raw_token,
+        asset_id=before_asset.asset_id,
+        authorization=CapabilityAuthorization("abort", False),
+        now=deadline - timedelta(microseconds=1),
+    )
+    assert authorized.status == "uploading"
+    _assert_state_error(
+        "upload_session_expired",
+        lambda: registry.authorize_capability(
+            due_secret.raw_token,
+            asset_id=due_asset.asset_id,
+            authorization=CapabilityAuthorization("abort", False),
+            now=deadline,
+        ),
+    )
+    expired = registry.get_asset(due_asset.asset_id, owner="owner-1")
+    assert expired is not None
+    assert expired.status == "expired"
+    assert expired.reserved_bytes == 0
+
+
+def test_normal_session_deadline_boundary_is_exact(tmp_path: Path) -> None:
+    """Activation cannot refresh or bypass the normal session deadline."""
+    registry = ResumableUploadRegistry(
+        str(tmp_path / "tasks.db"),
+        ResumableUploadRegistryConfig(
+            session_ttl=timedelta(hours=1),
+            capability_ttl=timedelta(hours=2),
+            provisional_ttl=timedelta(hours=3),
+        ),
+    )
+    before_asset, before_secret = registry.create_or_replay(
+        _spec(key="before"), now=NOW
+    )
+    due_asset, due_secret = registry.create_or_replay(
+        _spec(key="due"), now=NOW
+    )
+    for asset, secret in (
+        (before_asset, before_secret),
+        (due_asset, due_secret),
+    ):
+        registry.authorize_capability(
+            secret.raw_token,
+            asset_id=asset.asset_id,
+            authorization=CapabilityAuthorization("head", True),
+            now=NOW + timedelta(seconds=1),
+        )
+    deadline = NOW + timedelta(hours=1)
+
+    _record, authorized = registry.authorize_capability(
+        before_secret.raw_token,
+        asset_id=before_asset.asset_id,
+        authorization=CapabilityAuthorization("head", True),
+        now=deadline - timedelta(microseconds=1),
+    )
+    assert authorized.status == "uploading"
+    _assert_state_error(
+        "upload_session_expired",
+        lambda: registry.authorize_capability(
+            due_secret.raw_token,
+            asset_id=due_asset.asset_id,
+            authorization=CapabilityAuthorization("head", True),
+            now=deadline,
+        ),
+    )
+    due = registry.get_asset(due_asset.asset_id, owner="owner-1")
+    assert due is not None
+    assert due.status == "expired"
+    assert due.activated_at == NOW + timedelta(seconds=1)
+
+
+def test_activation_and_cleanup_race_has_one_valid_winner(
+    tmp_path: Path,
+) -> None:
+    """Serialized activation and cleanup cannot create a split-brain row."""
+    registry = ResumableUploadRegistry(
+        str(tmp_path / "tasks.db"),
+        ResumableUploadRegistryConfig(capability_ttl=timedelta(hours=4)),
+    )
+    asset, secret = registry.create_or_replay(_spec(), now=NOW)
+    deadline = NOW + timedelta(minutes=180)
+    barrier = Barrier(2)
+
+    def activate() -> str:
+        barrier.wait()
+        try:
+            registry.authorize_capability(
+                secret.raw_token,
+                asset_id=asset.asset_id,
+                authorization=CapabilityAuthorization("head", True),
+                now=deadline - timedelta(microseconds=1),
+            )
+        except UploadStateError as error:
+            return error.code
+        return "activated"
+
+    def cleanup() -> tuple[str, ...]:
+        barrier.wait()
+        return registry.cleanup_expired(now=deadline)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        activation_future = executor.submit(activate)
+        cleanup_future = executor.submit(cleanup)
+        activation_result = activation_future.result()
+        cleanup_result = cleanup_future.result()
+
+    final = registry.get_asset(asset.asset_id, owner="owner-1")
+    assert final is not None
+    assert (final.status, final.activated_at) in {
+        ("uploading", deadline - timedelta(microseconds=1)),
+        ("expired", None),
+    }
+    if final.status == "uploading":
+        assert activation_result == "activated"
+        assert cleanup_result == ()
+    else:
+        assert activation_result == "upload_session_expired"
+        assert cleanup_result == (asset.asset_id,)
+
+    registry.cleanup_expired(now=NOW + timedelta(days=8))
+    _assert_state_error(
+        "upload_session_expired",
+        lambda: registry.authorize_capability(
+            secret.raw_token,
+            asset_id=asset.asset_id,
+            authorization=CapabilityAuthorization("head", True),
+            now=NOW + timedelta(days=8),
+        ),
+    )
+    terminal = registry.get_asset(asset.asset_id, owner="owner-1")
+    assert terminal is not None
+    assert terminal.status == "expired"
+
+
+def test_create_reclaims_due_owner_rows_before_quota_checks(
+    tmp_path: Path,
+) -> None:
+    """One create transaction reclaims all due provisional allocations."""
+    registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
+    old_assets = [
+        registry.create_or_replay(_spec(key=f"old-{index}"), now=NOW)[0]
+        for index in range(3)
+    ]
+
+    created, _secret = registry.create_or_replay(
+        _spec(key="replacement"), now=NOW + timedelta(minutes=180)
+    )
+
+    assert created.status == "uploading"
+    reclaimed = [
+        registry.get_asset(item.asset_id, owner="owner-1")
+        for item in old_assets
+    ]
+    assert all(item is not None for item in reclaimed)
+    assert [item.status for item in reclaimed if item is not None] == [
+        "expired",
+        "expired",
+        "expired",
+    ]
+    with sqlite3.connect(registry.db_path) as conn:
+        event_count, accepted_bytes = conn.execute(
+            "SELECT COUNT(*), SUM(byte_size) FROM upload_quota_events "
+            "WHERE owner_subject = ? AND event_kind = 'create'",
+            ("owner-1",),
+        ).fetchone()
+    assert event_count == 4
+    assert accepted_bytes == 12
+
+
+def test_activated_zero_part_rows_keep_slots_until_normal_ttl(
+    tmp_path: Path,
+) -> None:
+    """Takeover preserves active reservations until the normal deadline."""
+    registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
+    for index in range(3):
+        asset, secret = registry.create_or_replay(
+            _spec(key=f"active-{index}"), now=NOW
+        )
+        registry.authorize_capability(
+            secret.raw_token,
+            asset_id=asset.asset_id,
+            authorization=CapabilityAuthorization("head", True),
+            now=NOW + timedelta(seconds=1),
+        )
+
+    _assert_state_error(
+        "upload_limit_exceeded",
+        lambda: registry.create_or_replay(
+            _spec(key="fourth"), now=NOW + timedelta(minutes=181)
+        ),
+    )
+
+
+def test_idempotency_replays_preserve_terminal_error_distinctions(
+    tmp_path: Path,
+) -> None:
+    """Terminal idempotency mappings never allocate a replacement row."""
+    registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
+    _expired, _secret = registry.create_or_replay(
+        _spec(key="expired"), now=NOW
+    )
+    completed, _secret = registry.create_or_replay(
+        _spec(key="completed"), now=NOW
+    )
+    aborted, _secret = registry.create_or_replay(_spec(key="aborted"), now=NOW)
+    registry.record_part(_part(completed.asset_id), now=NOW)
+    registry.complete_asset(completed.asset_id, owner="owner-1", now=NOW)
+    registry.abort_asset(aborted.asset_id, owner="owner-1", now=NOW)
+    registry.cleanup_expired(now=NOW + timedelta(minutes=180))
+
+    _assert_state_error(
+        "upload_session_expired",
+        lambda: registry.create_or_replay(_spec(key="expired"), now=NOW),
+    )
+    for key in ("completed", "aborted"):
+        with pytest.raises(UploadStateError) as error:
+            registry.create_or_replay(_spec(key=key), now=NOW)
+        assert error.value.code == "upload_state_conflict"
+    with sqlite3.connect(registry.db_path) as conn:
+        assert (
+            conn.execute("SELECT COUNT(*) FROM upload_assets").fetchone()[0]
+            == 3
+        )
+
+
+def test_capability_renewal_cannot_revive_stale_provisional_row(
+    tmp_path: Path,
+) -> None:
+    """Renewal classifies and terminalizes a due unactivated allocation."""
+    registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
+    asset, _secret = registry.create_or_replay(_spec(), now=NOW)
+    renewed = registry.issue_capability(
+        asset.asset_id,
+        owner="owner-1",
+        now=NOW + timedelta(minutes=179),
+        operations=("head", "part", "complete", "abort"),
+    )
+    assert renewed.record.expires_at == NOW + timedelta(minutes=180)
+
+    _assert_state_error(
+        "upload_session_expired",
+        lambda: registry.issue_capability(
+            asset.asset_id,
+            owner="owner-1",
+            now=NOW + timedelta(minutes=180),
+            operations=("head", "part", "complete", "abort"),
+        ),
+    )
+
+    expired = registry.get_asset(asset.asset_id, owner="owner-1")
+    assert expired is not None
+    assert expired.status == "expired"
+    assert expired.activated_at is None
+
+
+def test_cleanup_reports_aggregate_expiry_reason_without_row_identity(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Cleanup logs only the applicable deadline class and aggregate count."""
+    registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
+    asset, _secret = registry.create_or_replay(_spec(), now=NOW)
+
+    with caplog.at_level(logging.INFO):
+        registry.cleanup_expired(now=NOW + timedelta(minutes=180))
+
+    assert "provisional_deadline=1" in caplog.text
+    assert asset.asset_id not in caplog.text
+
+
+def test_shared_terminalization_releases_all_ephemeral_state(
+    tmp_path: Path,
+) -> None:
+    """Every terminal transition uses the same reservation cleanup rules."""
+    registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
+    completed, _secret = registry.create_or_replay(
+        _spec(key="completed"), now=NOW
+    )
+    aborted, _secret = registry.create_or_replay(_spec(key="aborted"), now=NOW)
+    expired, _secret = registry.create_or_replay(_spec(key="expired"), now=NOW)
+    for asset in (completed, aborted, expired):
+        registry.acquire_part_lease(asset.asset_id, owner="owner-1", now=NOW)
+    registry.record_part(_part(completed.asset_id), now=NOW)
+    registry.complete_asset(completed.asset_id, owner="owner-1", now=NOW)
+    registry.abort_asset(aborted.asset_id, owner="owner-1", now=NOW)
+    registry.cleanup_expired(now=NOW + timedelta(minutes=180))
+
+    with sqlite3.connect(registry.db_path) as conn:
+        rows = conn.execute(
+            "SELECT status, state_version, reserved_bytes "
+            "FROM upload_assets ORDER BY status"
+        ).fetchall()
+        live_capabilities = conn.execute(
+            "SELECT COUNT(*) FROM upload_capabilities WHERE revoked_at IS NULL"
+        ).fetchone()[0]
+        leases = conn.execute(
+            "SELECT COUNT(*) FROM upload_part_leases"
+        ).fetchone()[0]
+    assert rows == [
+        ("aborted", 2, 0),
+        ("completed", 2, 0),
+        ("expired", 2, 0),
+    ]
+    assert live_capabilities == 0
+    assert leases == 0
 
 
 def test_cleanup_is_restart_safe_and_does_not_touch_completed(

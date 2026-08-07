@@ -17,6 +17,7 @@ from typing import BinaryIO, Literal, cast
 from ..runtime.resumable_uploads import (
     AssetCreateSpec,
     AssetRecord,
+    CapabilityAuthorization,
     CapabilityRecord,
     PartRecord,
     ResumableUploadRegistry,
@@ -54,6 +55,7 @@ UPLOAD_PROTOCOL: Literal["obs-multipart-v2"] = "obs-multipart-v2"
 PART_SIZE_BYTES = 128 * 1024**2
 MAX_UPLOAD_BYTES = 10 * 1024**3
 MAX_PARALLEL_PARTS = 4
+_ACTIVATION_OPERATIONS = frozenset({"head", "part", "complete"})
 
 
 class UploadContractError(ValueError):
@@ -381,22 +383,16 @@ class ResumableUploadService:
     def _authorized_asset(
         self, asset_id: str, capability: str, *, operation: str
     ) -> tuple[CapabilityRecord, AssetRecord]:
-        """Verify a capability before loading its owner-scoped asset."""
-        now = self._now()
-        record = self.registry.verify_capability(
+        """Authorize an operation and record data-plane takeover only."""
+        return self.registry.authorize_capability(
             capability,
             asset_id=asset_id,
-            operation=operation,
-            now=now,
+            authorization=CapabilityAuthorization(
+                operation,
+                operation in _ACTIVATION_OPERATIONS,
+            ),
+            now=self._now(),
         )
-        asset = self.registry.get_asset(asset_id, owner=record.owner_subject)
-        if asset is None:
-            raise UploadStateError("upload_asset_not_found")
-        if asset.status != "uploading":
-            raise UploadStateError("upload_state_conflict")
-        if asset.session_expires_at <= _as_utc(now):
-            raise UploadStateError("upload_session_expired")
-        return record, asset
 
     def _status(self, asset: AssetRecord) -> UploadStatusResponse:
         """Build a safe status response without provider coordinates."""
@@ -594,10 +590,3 @@ def _abort_quietly(
 def _utc_now() -> datetime:
     """Return the service clock's default timezone-aware value."""
     return datetime.now(UTC)
-
-
-def _as_utc(value: datetime) -> datetime:
-    """Normalize injected clocks before comparing session expiry."""
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import secrets
 import sqlite3
 from collections.abc import Iterable, Sequence
@@ -16,11 +17,28 @@ from datetime import UTC, datetime, timedelta
 from math import ceil
 from typing import Literal, NamedTuple, cast
 
+from ._resumable_upload_sqlite import (
+    _ASSET_COLUMNS,
+    _CREATE_ASSETS_TABLE,
+    _CREATE_CAPABILITIES_TABLE,
+    _CREATE_CAPABILITY_INDEX,
+    _CREATE_IDEMPOTENCY_TABLE,
+    _CREATE_OWNER_INDEX,
+    _CREATE_PART_LEASES_TABLE,
+    _CREATE_PARTS_TABLE,
+    _CREATE_QUOTA_EVENTS_TABLE,
+    _CREATE_QUOTA_INDEX,
+    _asset_values_from_row,
+    _build_part_from_row,
+    _initialize_activation_column,
+    _parse_time,
+)
 from .sqlite import sqlite_connection, sqlite_transaction
 
 __all__ = [
     "AssetCreateSpec",
     "AssetRecord",
+    "CapabilityAuthorization",
     "CapabilityRecord",
     "CapabilitySecret",
     "PartRecord",
@@ -32,8 +50,7 @@ __all__ = [
 ]
 
 UPLOAD_PROTOCOL = "obs-multipart-v2"
-# Mirrors the Web-side ResumableUploadProtocolVersion constant; the upload
-# routes are v2-only, so this version is implicit in the route surface.
+# Upload routes are v2-only; this mirrors Web's protocol version constant.
 UPLOAD_PROTOCOL_VERSION = 2
 PART_SIZE_BYTES = 128 * 1024**2
 MAX_UPLOAD_BYTES = 10 * 1024**3
@@ -48,6 +65,9 @@ PROVISIONAL_TTL = timedelta(minutes=180)
 AssetStatus = Literal["uploading", "completed", "aborted", "expired"]
 UploadAssetPurpose = Literal["chat_attachment", "dataset", "document"]
 UPLOAD_ASSET_PURPOSES = frozenset({"chat_attachment", "dataset", "document"})
+ExpiryReason = Literal["normal_deadline", "provisional_deadline"]
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,111 +148,19 @@ class CapabilitySecret:
     record: CapabilityRecord
 
 
+class CapabilityAuthorization(NamedTuple):
+    """Operation scope plus the caller's explicit activation decision."""
+
+    operation: str
+    activate: bool
+
+
 class UploadStateError(RuntimeError):
     """Stable internal state error that carries no storage details."""
 
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
-
-
-_CREATE_ASSETS_TABLE = """
-CREATE TABLE IF NOT EXISTS upload_assets (
-    asset_id TEXT PRIMARY KEY,
-    owner_subject TEXT NOT NULL,
-    filename TEXT NOT NULL,
-    content_type TEXT NOT NULL,
-    purpose TEXT NOT NULL,
-    size_bytes INTEGER NOT NULL,
-    part_size_bytes INTEGER NOT NULL,
-    part_count INTEGER NOT NULL,
-    status TEXT NOT NULL,
-    object_key TEXT NOT NULL UNIQUE,
-    obs_upload_id TEXT,
-    idempotency_key TEXT NOT NULL,
-    request_fingerprint TEXT NOT NULL,
-    state_version INTEGER NOT NULL,
-    reserved_bytes INTEGER NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    session_expires_at TEXT NOT NULL,
-    completed_at TEXT,
-    activated_at TEXT,
-    UNIQUE(owner_subject, idempotency_key)
-)
-"""
-_CREATE_PARTS_TABLE = """
-CREATE TABLE IF NOT EXISTS upload_parts (
-    asset_id TEXT NOT NULL,
-    part_number INTEGER NOT NULL,
-    byte_size INTEGER NOT NULL,
-    sha256 TEXT NOT NULL,
-    etag TEXT NOT NULL,
-    received_at TEXT NOT NULL,
-    PRIMARY KEY(asset_id, part_number),
-    FOREIGN KEY(asset_id) REFERENCES upload_assets(asset_id)
-)
-"""
-_CREATE_CAPABILITIES_TABLE = """
-CREATE TABLE IF NOT EXISTS upload_capabilities (
-    token_hash TEXT PRIMARY KEY,
-    asset_id TEXT NOT NULL,
-    owner_subject TEXT NOT NULL,
-    operations TEXT NOT NULL,
-    declared_bytes INTEGER NOT NULL,
-    expires_at TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    revoked_at TEXT,
-    FOREIGN KEY(asset_id) REFERENCES upload_assets(asset_id)
-)
-"""
-_CREATE_IDEMPOTENCY_TABLE = """
-CREATE TABLE IF NOT EXISTS upload_idempotency (
-    owner_subject TEXT NOT NULL,
-    idempotency_key TEXT NOT NULL,
-    request_fingerprint TEXT NOT NULL,
-    asset_id TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    PRIMARY KEY(owner_subject, idempotency_key),
-    FOREIGN KEY(asset_id) REFERENCES upload_assets(asset_id)
-)
-"""
-_CREATE_QUOTA_EVENTS_TABLE = """
-CREATE TABLE IF NOT EXISTS upload_quota_events (
-    event_id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_subject TEXT NOT NULL,
-    event_kind TEXT NOT NULL,
-    byte_size INTEGER NOT NULL,
-    created_at TEXT NOT NULL
-)
-"""
-_CREATE_PART_LEASES_TABLE = """
-CREATE TABLE IF NOT EXISTS upload_part_leases (
-    lease_id TEXT PRIMARY KEY,
-    owner_subject TEXT NOT NULL,
-    asset_id TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY(asset_id) REFERENCES upload_assets(asset_id)
-)
-"""
-_CREATE_OWNER_INDEX = (
-    "CREATE INDEX IF NOT EXISTS idx_upload_assets_owner_status "
-    "ON upload_assets(owner_subject, status)"
-)
-_CREATE_CAPABILITY_INDEX = (
-    "CREATE INDEX IF NOT EXISTS idx_upload_capabilities_asset "
-    "ON upload_capabilities(asset_id, revoked_at)"
-)
-_CREATE_QUOTA_INDEX = (
-    "CREATE INDEX IF NOT EXISTS idx_upload_quota_owner_time "
-    "ON upload_quota_events(owner_subject, created_at)"
-)
-_ASSET_COLUMNS = (
-    "asset_id, owner_subject, filename, content_type, purpose, size_bytes, "
-    "part_size_bytes, part_count, status, object_key, obs_upload_id, "
-    "idempotency_key, state_version, reserved_bytes, created_at, updated_at, "
-    "session_expires_at, completed_at, activated_at"
-)
 
 
 class ResumableUploadRegistry:
@@ -275,8 +203,16 @@ class ResumableUploadRegistry:
         _validate_spec(spec, max_upload_bytes=self.max_upload_bytes)
         created_at = _utc(now)
         fingerprint = _fingerprint(spec)
+        result: tuple[AssetRecord, CapabilitySecret] | None = None
+        error_code: str | None = None
+        expiry_counts: dict[ExpiryReason, int] = {}
         with sqlite_transaction(self.db_path) as conn:
             conn.execute("BEGIN IMMEDIATE")
+            _expired_ids, expiry_counts = self._expire_due_assets(
+                conn,
+                now=created_at,
+                owner=spec.owner_subject,
+            )
             existing = conn.execute(
                 "SELECT asset_id, request_fingerprint FROM upload_idempotency "
                 "WHERE owner_subject = ? AND idempotency_key = ?",
@@ -284,124 +220,154 @@ class ResumableUploadRegistry:
             ).fetchone()
             if existing is not None:
                 if existing[1] != fingerprint:
-                    raise UploadStateError("upload_state_conflict")
-                asset = self._fetch_asset(conn, existing[0])
-                return asset, self._issue_capability(
-                    conn,
-                    asset,
-                    now=created_at,
-                    operations=("head", "part", "complete", "abort"),
-                )
+                    error_code = "upload_state_conflict"
+                else:
+                    asset = self._fetch_asset(conn, existing[0])
+                    error_code = _terminal_error(asset)
+                    if error_code is None:
+                        result = (
+                            asset,
+                            self._issue_capability(
+                                conn,
+                                asset,
+                                now=created_at,
+                                operations=(
+                                    "head",
+                                    "part",
+                                    "complete",
+                                    "abort",
+                                ),
+                            ),
+                        )
+            else:
+                active_count = conn.execute(
+                    "SELECT COUNT(*) FROM upload_assets "
+                    "WHERE owner_subject = ? AND status = 'uploading'",
+                    (spec.owner_subject,),
+                ).fetchone()[0]
+                unfinished = conn.execute(
+                    "SELECT COALESCE(SUM(reserved_bytes), 0) "
+                    "FROM upload_assets WHERE owner_subject = ? "
+                    "AND status = 'uploading'",
+                    (spec.owner_subject,),
+                ).fetchone()[0]
+                accepted = conn.execute(
+                    "SELECT COALESCE(SUM(byte_size), 0) "
+                    "FROM upload_quota_events WHERE owner_subject = ? "
+                    "AND event_kind = 'create' AND created_at >= ?",
+                    (
+                        spec.owner_subject,
+                        _iso(created_at - timedelta(hours=24)),
+                    ),
+                ).fetchone()[0]
+                if (
+                    active_count >= MAX_ACTIVE_ASSETS
+                    or unfinished + spec.size_bytes > MAX_UNFINISHED_BYTES
+                    or accepted + spec.size_bytes > MAX_ACCEPTED_CREATE_BYTES
+                ):
+                    error_code = "upload_limit_exceeded"
+                else:
+                    asset = self._insert_asset(
+                        conn,
+                        spec,
+                        fingerprint=fingerprint,
+                        created_at=created_at,
+                    )
+                    result = (
+                        asset,
+                        self._issue_capability(
+                            conn,
+                            asset,
+                            now=created_at,
+                            operations=(
+                                "head",
+                                "part",
+                                "complete",
+                                "abort",
+                            ),
+                        ),
+                    )
+        _report_expirations(expiry_counts)
+        if error_code is not None:
+            raise UploadStateError(error_code)
+        if result is None:
+            raise RuntimeError("upload create transaction produced no result")
+        return result
 
-            active_count = conn.execute(
-                "SELECT COUNT(*) FROM upload_assets "
-                "WHERE owner_subject = ? AND status = 'uploading'",
-                (spec.owner_subject,),
-            ).fetchone()[0]
-            unfinished = conn.execute(
-                "SELECT COALESCE(SUM(reserved_bytes), 0) "
-                "FROM upload_assets WHERE owner_subject = ? "
-                "AND status = 'uploading'",
-                (spec.owner_subject,),
-            ).fetchone()[0]
-            window_start = created_at - timedelta(hours=24)
-            accepted = conn.execute(
-                "SELECT COALESCE(SUM(byte_size), 0) FROM upload_quota_events "
-                "WHERE owner_subject = ? AND event_kind = 'create' "
-                "AND created_at >= ?",
-                (spec.owner_subject, _iso(window_start)),
-            ).fetchone()[0]
-            if active_count >= MAX_ACTIVE_ASSETS:
-                raise UploadStateError("upload_limit_exceeded")
-            if unfinished + spec.size_bytes > MAX_UNFINISHED_BYTES:
-                raise UploadStateError("upload_limit_exceeded")
-            if accepted + spec.size_bytes > MAX_ACCEPTED_CREATE_BYTES:
-                raise UploadStateError("upload_limit_exceeded")
-
-            asset_id = f"file_{secrets.token_hex(16)}"
-            object_key = (
+    def _insert_asset(
+        self,
+        conn: sqlite3.Connection,
+        spec: AssetCreateSpec,
+        *,
+        fingerprint: str,
+        created_at: datetime,
+    ) -> AssetRecord:
+        """Insert one accepted asset while the caller owns the transaction."""
+        asset_id = f"file_{secrets.token_hex(16)}"
+        asset = AssetRecord(
+            asset_id=asset_id,
+            owner_subject=spec.owner_subject,
+            filename=spec.filename,
+            content_type=spec.content_type,
+            purpose=spec.purpose,
+            size_bytes=spec.size_bytes,
+            part_size_bytes=self.part_size_bytes,
+            part_count=ceil(spec.size_bytes / self.part_size_bytes),
+            status="uploading",
+            object_key=(
                 f"agent_data/uploads/{_safe_owner(spec.owner_subject)}"
                 f"/{asset_id}"
-            )
-            session_expires_at = created_at + self.session_ttl
-            asset = AssetRecord(
-                asset_id=asset_id,
-                owner_subject=spec.owner_subject,
-                filename=spec.filename,
-                content_type=spec.content_type,
-                purpose=spec.purpose,
-                size_bytes=spec.size_bytes,
-                part_size_bytes=self.part_size_bytes,
-                part_count=ceil(spec.size_bytes / self.part_size_bytes),
-                status="uploading",
-                object_key=object_key,
-                obs_upload_id=None,
-                idempotency_key=spec.idempotency_key,
-                state_version=1,
-                reserved_bytes=spec.size_bytes,
-                created_at=created_at,
-                updated_at=created_at,
-                session_expires_at=session_expires_at,
-                completed_at=None,
-                activated_at=None,
-            )
-            conn.execute(
-                "INSERT INTO upload_assets ("
-                "asset_id, owner_subject, filename, content_type, purpose, "
-                "size_bytes, part_size_bytes, part_count, status, object_key, "
-                "obs_upload_id, idempotency_key, request_fingerprint, "
-                "state_version, reserved_bytes, created_at, updated_at, "
-                "session_expires_at, completed_at, activated_at"
-                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-                "?, ?, ?, ?, ?)",
-                (
-                    asset.asset_id,
-                    asset.owner_subject,
-                    asset.filename,
-                    asset.content_type,
-                    asset.purpose,
-                    asset.size_bytes,
-                    asset.part_size_bytes,
-                    asset.part_count,
-                    asset.status,
-                    asset.object_key,
-                    asset.obs_upload_id,
-                    asset.idempotency_key,
-                    fingerprint,
-                    asset.state_version,
-                    asset.reserved_bytes,
-                    _iso(asset.created_at),
-                    _iso(asset.updated_at),
-                    _iso(asset.session_expires_at),
-                    None,
-                    None,
-                ),
-            )
-            conn.execute(
-                "INSERT INTO upload_idempotency ("
-                "owner_subject, idempotency_key, request_fingerprint, "
-                "asset_id, created_at"
-                ") VALUES (?, ?, ?, ?, ?)",
-                (
-                    spec.owner_subject,
-                    spec.idempotency_key,
-                    fingerprint,
-                    asset.asset_id,
-                    _iso(created_at),
-                ),
-            )
-            conn.execute(
-                "INSERT INTO upload_quota_events ("
-                "owner_subject, event_kind, byte_size, created_at"
-                ") VALUES (?, 'create', ?, ?)",
-                (spec.owner_subject, spec.size_bytes, _iso(created_at)),
-            )
-            return asset, self._issue_capability(
-                conn,
-                asset,
-                now=created_at,
-                operations=("head", "part", "complete", "abort"),
-            )
+            ),
+            obs_upload_id=None,
+            idempotency_key=spec.idempotency_key,
+            state_version=1,
+            reserved_bytes=spec.size_bytes,
+            created_at=created_at,
+            updated_at=created_at,
+            session_expires_at=created_at + self.session_ttl,
+            completed_at=None,
+            activated_at=None,
+        )
+        conn.execute(
+            "INSERT INTO upload_assets ("
+            "asset_id, owner_subject, filename, content_type, purpose, "
+            "size_bytes, part_size_bytes, part_count, status, object_key, "
+            "obs_upload_id, idempotency_key, request_fingerprint, "
+            "state_version, reserved_bytes, created_at, updated_at, "
+            "session_expires_at, completed_at, activated_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+            "?, ?, ?, ?, ?)",
+            (
+                *asset[:12],
+                fingerprint,
+                asset.state_version,
+                asset.reserved_bytes,
+                _iso(asset.created_at),
+                _iso(asset.updated_at),
+                _iso(asset.session_expires_at),
+                None,
+                None,
+            ),
+        )
+        conn.execute(
+            "INSERT INTO upload_idempotency ("
+            "owner_subject, idempotency_key, request_fingerprint, "
+            "asset_id, created_at) VALUES (?, ?, ?, ?, ?)",
+            (
+                spec.owner_subject,
+                spec.idempotency_key,
+                fingerprint,
+                asset.asset_id,
+                _iso(created_at),
+            ),
+        )
+        conn.execute(
+            "INSERT INTO upload_quota_events ("
+            "owner_subject, event_kind, byte_size, created_at"
+            ") VALUES (?, 'create', ?, ?)",
+            (spec.owner_subject, spec.size_bytes, _iso(created_at)),
+        )
+        return asset
 
     def get_asset(self, asset_id: str, *, owner: str) -> AssetRecord | None:
         """Return an asset only for its canonical owner."""
@@ -452,7 +418,7 @@ class ResumableUploadRegistry:
                 "ORDER BY part_number",
                 (asset_id,),
             ).fetchall()
-        return tuple(_part_from_row(row) for row in rows)
+        return tuple(_build_part_from_row(row, PartRecord) for row in rows)
 
     def get_part(
         self, asset_id: str, part_number: int, *, owner: str
@@ -467,7 +433,7 @@ class ResumableUploadRegistry:
                 "AND a.owner_subject = ?",
                 (asset_id, part_number, owner),
             ).fetchone()
-        return None if row is None else _part_from_row(row)
+        return None if row is None else _build_part_from_row(row, PartRecord)
 
     def set_provider_session(
         self,
@@ -519,7 +485,7 @@ class ResumableUploadRegistry:
                 (part.asset_id, part.part_number),
             ).fetchone()
             if existing is not None:
-                stored = _part_from_row(existing)
+                stored = _build_part_from_row(existing, PartRecord)
                 if (
                     stored.byte_size == part.byte_size
                     and stored.sha256 == part.sha256
@@ -577,15 +543,12 @@ class ResumableUploadRegistry:
                 raise UploadStateError("upload_state_conflict")
             if sum(row[1] for row in parts) != asset.size_bytes:
                 raise UploadStateError("upload_state_conflict")
-            conn.execute(
-                "UPDATE upload_assets SET status = 'completed', "
-                "reserved_bytes = 0, state_version = state_version + 1, "
-                "updated_at = ?, completed_at = ? WHERE asset_id = ? "
-                "AND status = 'uploading'",
-                (_iso(completed_at), _iso(completed_at), asset_id),
+            return self._terminalize_asset(
+                conn,
+                asset,
+                status="completed",
+                now=completed_at,
             )
-            self._revoke_capabilities(conn, asset_id, completed_at)
-            return self._fetch_asset(conn, asset_id)
 
     def abort_asset(
         self,
@@ -603,36 +566,32 @@ class ResumableUploadRegistry:
                 raise UploadStateError("upload_asset_not_found")
             if asset.status in {"completed", "aborted", "expired"}:
                 return asset
-            conn.execute(
-                "UPDATE upload_assets SET status = 'aborted', "
-                "reserved_bytes = 0, state_version = state_version + 1, "
-                "updated_at = ? WHERE asset_id = ? AND status = 'uploading'",
-                (_iso(aborted_at), asset_id),
+            return self._terminalize_asset(
+                conn,
+                asset,
+                status="aborted",
+                now=aborted_at,
             )
-            self._revoke_capabilities(conn, asset_id, aborted_at)
-            return self._fetch_asset(conn, asset_id)
 
     def cleanup_expired(self, *, now: datetime) -> tuple[str, ...]:
         """Expire unfinished sessions and release reservations safely."""
         expired_at = _utc(now)
+        expiry_counts: dict[ExpiryReason, int]
         with sqlite_transaction(self.db_path) as conn:
             conn.execute("BEGIN IMMEDIATE")
+            newly_expired, expiry_counts = self._expire_due_assets(
+                conn, now=expired_at
+            )
             rows = conn.execute(
                 "SELECT asset_id FROM upload_assets "
-                "WHERE (status = 'uploading' AND session_expires_at <= ?) "
-                "OR (status = 'expired' AND obs_upload_id IS NOT NULL)",
-                (_iso(expired_at),),
+                "WHERE status = 'expired' AND obs_upload_id IS NOT NULL "
+                "ORDER BY created_at, asset_id"
             ).fetchall()
-            asset_ids = tuple(row[0] for row in rows)
-            for asset_id in asset_ids:
-                conn.execute(
-                    "UPDATE upload_assets SET status = 'expired', "
-                    "reserved_bytes = 0, state_version = state_version + 1, "
-                    "updated_at = ? WHERE asset_id = ? "
-                    "AND status = 'uploading'",
-                    (_iso(expired_at), asset_id),
-                )
-                self._revoke_capabilities(conn, asset_id, expired_at)
+            pending_provider = tuple(row[0] for row in rows)
+            asset_ids = tuple(
+                dict.fromkeys((*newly_expired, *pending_provider))
+            )
+        _report_expirations(expiry_counts)
         return asset_ids
 
     def acquire_part_lease(
@@ -681,14 +640,116 @@ class ResumableUploadRegistry:
         operations: Iterable[str],
     ) -> CapabilitySecret:
         """Issue a fresh hash-only capability for an owner-scoped asset."""
+        current = _utc(now)
+        result: CapabilitySecret | None = None
+        error_code: str | None = None
+        expiry_counts: dict[ExpiryReason, int] = {}
         with sqlite_transaction(self.db_path) as conn:
             conn.execute("BEGIN IMMEDIATE")
             asset = self._fetch_asset(conn, asset_id)
             if asset.owner_subject != owner:
                 raise UploadStateError("upload_asset_not_found")
-            return self._issue_capability(
-                conn, asset, now=_utc(now), operations=tuple(operations)
-            )
+            reason = self._deadline_reason(asset, current)
+            if reason is not None:
+                self._terminalize_asset(
+                    conn, asset, status="expired", now=current
+                )
+                expiry_counts[reason] = 1
+                error_code = "upload_session_expired"
+            else:
+                error_code = _terminal_error(asset)
+                if error_code is None:
+                    result = self._issue_capability(
+                        conn,
+                        asset,
+                        now=current,
+                        operations=tuple(operations),
+                    )
+        _report_expirations(expiry_counts)
+        if error_code is not None:
+            raise UploadStateError(error_code)
+        if result is None:
+            raise RuntimeError("capability transaction produced no result")
+        return result
+
+    def authorize_capability(
+        self,
+        raw_token: str,
+        *,
+        asset_id: str,
+        authorization: CapabilityAuthorization,
+        now: datetime,
+    ) -> tuple[CapabilityRecord, AssetRecord]:
+        """Authorize one operation and optionally record browser takeover."""
+        current = _utc(now)
+        result: tuple[CapabilityRecord, AssetRecord] | None = None
+        error_code: str | None = None
+        expiry_counts: dict[ExpiryReason, int] = {}
+        with sqlite_transaction(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT asset_id, owner_subject, operations, declared_bytes, "
+                "expires_at, revoked_at FROM upload_capabilities "
+                "WHERE token_hash = ? AND asset_id = ?",
+                (_token_hash(raw_token), asset_id),
+            ).fetchone()
+            if row is None:
+                raise UploadStateError("upload_capability_invalid")
+            operations = frozenset(json.loads(row[2]))
+            if authorization.operation not in operations:
+                raise UploadStateError("upload_capability_invalid")
+            asset = self._fetch_asset(conn, asset_id)
+            if row[1] != asset.owner_subject:
+                raise UploadStateError("upload_capability_invalid")
+            reason = self._deadline_reason(asset, current)
+            if reason is not None:
+                self._terminalize_asset(
+                    conn, asset, status="expired", now=current
+                )
+                expiry_counts[reason] = 1
+                error_code = "upload_session_expired"
+            else:
+                error_code = _terminal_error(asset)
+                expires_at = _parse_time(row[4])
+                if error_code is None and row[5] is not None:
+                    error_code = "upload_capability_invalid"
+                if error_code is None and expires_at <= current:
+                    error_code = "upload_capability_invalid"
+                if error_code is None:
+                    if authorization.activate and asset.activated_at is None:
+                        conn.execute(
+                            "UPDATE upload_assets SET activated_at = ?, "
+                            "updated_at = ?, "
+                            "state_version = state_version + 1 "
+                            "WHERE asset_id = ? AND status = 'uploading' "
+                            "AND activated_at IS NULL "
+                            "AND session_expires_at > ? AND ? > ?",
+                            (
+                                _iso(current),
+                                _iso(current),
+                                asset.asset_id,
+                                _iso(current),
+                                _iso(asset.created_at + self.provisional_ttl),
+                                _iso(current),
+                            ),
+                        )
+                        asset = self._fetch_asset(conn, asset_id)
+                    result = (
+                        CapabilityRecord(
+                            asset_id=cast(str, row[0]),
+                            owner_subject=cast(str, row[1]),
+                            operations=operations,
+                            declared_bytes=cast(int, row[3]),
+                            expires_at=expires_at,
+                        ),
+                        asset,
+                    )
+        _report_expirations(expiry_counts)
+        if error_code is not None:
+            raise UploadStateError(error_code)
+        if result is None:
+            raise RuntimeError("authorization transaction produced no result")
+        return result
 
     def verify_capability(
         self,
@@ -699,29 +760,104 @@ class ResumableUploadRegistry:
         now: datetime,
     ) -> CapabilityRecord:
         """Verify a raw token without returning or persisting it."""
-        token_hash = _token_hash(raw_token)
-        with sqlite_connection(self.db_path) as conn:
-            row = conn.execute(
-                "SELECT asset_id, owner_subject, operations, declared_bytes, "
-                "expires_at, revoked_at FROM upload_capabilities "
-                "WHERE token_hash = ? AND asset_id = ?",
-                (token_hash, asset_id),
-            ).fetchone()
-        if row is None or row[5] is not None:
-            raise UploadStateError("upload_capability_invalid")
-        expires_at = _parse_time(row[4])
-        if expires_at <= _utc(now):
-            raise UploadStateError("upload_capability_invalid")
-        operations = frozenset(json.loads(row[2]))
-        if operation not in operations:
-            raise UploadStateError("upload_capability_invalid")
-        return CapabilityRecord(
-            asset_id=row[0],
-            owner_subject=row[1],
-            operations=operations,
-            declared_bytes=row[3],
-            expires_at=expires_at,
+        record, _asset = self.authorize_capability(
+            raw_token,
+            asset_id=asset_id,
+            authorization=CapabilityAuthorization(operation, False),
+            now=now,
         )
+        return record
+
+    def _effective_deadline(self, asset: AssetRecord) -> datetime:
+        """Return the immutable deadline that currently governs one row."""
+        return min(
+            asset.session_expires_at,
+            (
+                asset.session_expires_at
+                if asset.activated_at is not None
+                else asset.created_at + self.provisional_ttl
+            ),
+        )
+
+    def _deadline_reason(
+        self, asset: AssetRecord, now: datetime
+    ) -> ExpiryReason | None:
+        """Classify a due upload without changing its persisted state."""
+        if asset.status != "uploading":
+            return None
+        normal_deadline = asset.session_expires_at
+        if asset.activated_at is None:
+            provisional_deadline = asset.created_at + self.provisional_ttl
+            if provisional_deadline <= normal_deadline:
+                deadline = provisional_deadline
+                reason: ExpiryReason = "provisional_deadline"
+            else:
+                deadline = normal_deadline
+                reason = "normal_deadline"
+        else:
+            deadline = normal_deadline
+            reason = "normal_deadline"
+        return reason if deadline <= now else None
+
+    def _expire_due_assets(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        now: datetime,
+        owner: str | None = None,
+    ) -> tuple[tuple[str, ...], dict[ExpiryReason, int]]:
+        """Terminalize due rows while the caller holds the write lock."""
+        statement = (
+            f"SELECT {_ASSET_COLUMNS} FROM upload_assets "
+            "WHERE status = 'uploading'"
+        )
+        parameters: tuple[str, ...] = ()
+        if owner is not None:
+            statement += " AND owner_subject = ?"
+            parameters = (owner,)
+        statement += " ORDER BY created_at, asset_id"
+        rows = conn.execute(statement, parameters).fetchall()
+        expired_ids: list[str] = []
+        counts: dict[ExpiryReason, int] = {}
+        for row in rows:
+            asset = _asset_from_row(row)
+            reason = self._deadline_reason(asset, now)
+            if reason is None:
+                continue
+            self._terminalize_asset(
+                conn,
+                asset,
+                status="expired",
+                now=now,
+            )
+            expired_ids.append(asset.asset_id)
+            counts[reason] = counts.get(reason, 0) + 1
+        return tuple(expired_ids), counts
+
+    def _terminalize_asset(
+        self,
+        conn: sqlite3.Connection,
+        asset: AssetRecord,
+        *,
+        status: Literal["completed", "aborted", "expired"],
+        now: datetime,
+    ) -> AssetRecord:
+        """Apply every terminal-state side effect in one transaction."""
+        if asset.status != "uploading":
+            return asset
+        completed_at = _iso(now) if status == "completed" else None
+        conn.execute(
+            "UPDATE upload_assets SET status = ?, reserved_bytes = 0, "
+            "state_version = state_version + 1, updated_at = ?, "
+            "completed_at = ? WHERE asset_id = ? AND status = 'uploading'",
+            (status, _iso(now), completed_at, asset.asset_id),
+        )
+        self._revoke_capabilities(conn, asset.asset_id, now)
+        conn.execute(
+            "DELETE FROM upload_part_leases WHERE asset_id = ?",
+            (asset.asset_id,),
+        )
+        return self._fetch_asset(conn, asset.asset_id)
 
     def _issue_capability(
         self,
@@ -735,7 +871,10 @@ class ResumableUploadRegistry:
         if asset.status != "uploading":
             raise UploadStateError("upload_state_conflict")
         raw_token = secrets.token_urlsafe(32)
-        expires_at = now + self.capability_ttl
+        expires_at = min(
+            now + self.capability_ttl,
+            self._effective_deadline(asset),
+        )
         record = CapabilityRecord(
             asset_id=asset.asset_id,
             owner_subject=asset.owner_subject,
@@ -822,83 +961,31 @@ def _token_hash(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
+def _terminal_error(asset: AssetRecord) -> str | None:
+    """Map persisted terminal states to stable replay errors."""
+    if asset.status == "uploading":
+        return None
+    return (
+        "upload_session_expired"
+        if asset.status == "expired"
+        else "upload_state_conflict"
+    )
+
+
+def _report_expirations(counts: dict[ExpiryReason, int]) -> None:
+    """Report aggregate expiry reasons without logging row identities."""
+    for reason, count in sorted(counts.items()):
+        _LOGGER.info("Upload sessions expired: %s=%d", reason, count)
+
+
 def _safe_owner(owner: str) -> str:
     """Generate a non-path owner component for internal object keys."""
     return hashlib.sha256(owner.encode("utf-8")).hexdigest()[:32]
 
 
-def _initialize_activation_column(conn: sqlite3.Connection) -> None:
-    """Add and backfill the internal activation marker exactly once."""
-    if not _upload_assets_has_column(conn, "activated_at"):
-        try:
-            conn.execute(
-                "ALTER TABLE upload_assets ADD COLUMN activated_at TEXT"
-            )
-        except sqlite3.OperationalError as error:
-            if not _is_duplicate_activation_column_error(
-                error
-            ) or not _upload_assets_has_column(conn, "activated_at"):
-                raise
-    conn.execute(
-        "UPDATE upload_assets SET activated_at = ("
-        "SELECT MIN(received_at) FROM upload_parts "
-        "WHERE upload_parts.asset_id = upload_assets.asset_id"
-        ") WHERE activated_at IS NULL AND status = 'uploading' "
-        "AND EXISTS (SELECT 1 FROM upload_parts "
-        "WHERE upload_parts.asset_id = upload_assets.asset_id)"
-    )
-
-
-def _upload_assets_has_column(conn: sqlite3.Connection, column: str) -> bool:
-    """Return whether the current upload-asset schema includes one column."""
-    return any(
-        row[1] == column
-        for row in conn.execute("PRAGMA table_info(upload_assets)")
-    )
-
-
-def _is_duplicate_activation_column_error(
-    error: sqlite3.OperationalError,
-) -> bool:
-    """Recognize only SQLite's expected concurrent-column migration error."""
-    return str(error).strip().lower() == "duplicate column name: activated_at"
-
-
 def _asset_from_row(row: sqlite3.Row | tuple[object, ...]) -> AssetRecord:
     """Map one positional SQLite row to its typed asset record."""
-    return AssetRecord(
-        asset_id=cast(str, row[0]),
-        owner_subject=cast(str, row[1]),
-        filename=cast(str, row[2]),
-        content_type=cast(str, row[3]),
-        purpose=cast(str, row[4]),
-        size_bytes=cast(int, row[5]),
-        part_size_bytes=cast(int, row[6]),
-        part_count=cast(int, row[7]),
-        status=cast(AssetStatus, row[8]),
-        object_key=cast(str, row[9]),
-        obs_upload_id=cast(str | None, row[10]),
-        idempotency_key=cast(str, row[11]),
-        state_version=cast(int, row[12]),
-        reserved_bytes=cast(int, row[13]),
-        created_at=_parse_time(row[14]),
-        updated_at=_parse_time(row[15]),
-        session_expires_at=_parse_time(row[16]),
-        completed_at=None if row[17] is None else _parse_time(row[17]),
-        activated_at=None if row[18] is None else _parse_time(row[18]),
-    )
-
-
-def _part_from_row(row: sqlite3.Row | tuple[object, ...]) -> PartRecord:
-    """Map one positional SQLite row to a typed part record."""
-    return PartRecord(
-        asset_id=cast(str, row[0]),
-        part_number=cast(int, row[1]),
-        byte_size=cast(int, row[2]),
-        sha256=cast(str, row[3]),
-        etag=cast(str, row[4]),
-        received_at=_parse_time(row[5]),
-    )
+    return AssetRecord._make(_asset_values_from_row(row))
 
 
 def _utc(value: datetime) -> datetime:
@@ -911,10 +998,3 @@ def _utc(value: datetime) -> datetime:
 def _iso(value: datetime) -> str:
     """Serialize one UTC timestamp."""
     return _utc(value).isoformat()
-
-
-def _parse_time(value: object) -> datetime:
-    """Parse one trusted persisted UTC timestamp."""
-    if not isinstance(value, str):
-        raise TypeError("invalid persisted timestamp")
-    return _utc(datetime.fromisoformat(value))

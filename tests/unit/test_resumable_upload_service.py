@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
@@ -24,6 +24,7 @@ from mcp_server_phytomni.api.schemas import (
 )
 from mcp_server_phytomni.runtime.resumable_uploads import (
     ResumableUploadRegistry,
+    ResumableUploadRegistryConfig,
     UploadAssetPurpose,
 )
 from mcp_server_phytomni.storage.multipart import (
@@ -252,3 +253,42 @@ def test_abort_releases_the_provider_session(tmp_path: Path) -> None:
     assert status.status == "aborted"
     state = next(iter(storage.sessions.values()))
     assert state.aborted is True
+
+
+def test_service_activation_and_stale_renewal_use_registry_policy(
+    tmp_path: Path,
+) -> None:
+    """Service operations pass takeover intent and preserve expiry errors."""
+    clock = [NOW]
+    registry = ResumableUploadRegistry(
+        str(tmp_path / "uploads.db"),
+        ResumableUploadRegistryConfig(provisional_ttl=timedelta(minutes=1)),
+    )
+    service = ResumableUploadService(
+        registry,
+        FakeMultipartStorage(),
+        UploadServiceConfig(
+            bucket_name="bot-bucket",
+            upload_origin="https://bot.example/",
+            now=lambda: clock[0],
+        ),
+    )
+    aborted = service.create(_request(key="abort"))
+    service.abort(aborted.asset_id, aborted.capability)
+    aborted_record = registry.get_asset(aborted.asset_id, owner="owner-1")
+    assert aborted_record is not None
+    assert aborted_record.activated_at is None
+
+    headed = service.create(_request(key="head"))
+    clock[0] = NOW + timedelta(seconds=1)
+    service.head(headed.asset_id, headed.capability)
+    headed_record = registry.get_asset(headed.asset_id, owner="owner-1")
+    assert headed_record is not None
+    assert headed_record.activated_at == clock[0]
+
+    stale = service.create(_request(key="stale"))
+    clock[0] = NOW + timedelta(minutes=2)
+    with pytest.raises(UploadContractError) as error:
+        service.renew(stale.asset_id, "owner-1")
+    assert error.value.code == "upload_session_expired"
+    assert error.value.status_code == 410
