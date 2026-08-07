@@ -118,9 +118,7 @@ def test_current_message_accepts_research_structural_hard_maximum() -> None:
     assert ConversationEnvelopeV1.model_validate(payload).current_message
 
 
-def test_current_message_rejects_research_structural_hard_maximum_plus_one() -> (
-    None
-):
+def test_current_message_rejects_hard_maximum_plus_one() -> None:
     """The current message rejects content beyond the structural hard cap."""
     payload = _valid_envelope()
     payload["current_message"] = {
