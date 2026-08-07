@@ -14,6 +14,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from tests.support.attachment_fakes import (
+    ManagedAttachmentEvidenceSpec,
+    managed_attachment_evidence_item,
+)
 from tests.support.resumable_asset_fakes import (
     ResumableAssetHarness,
     ResumableAssetSpec,
@@ -28,7 +32,6 @@ from mcp_server_phytomni.api.asset_resolver import (
 from mcp_server_phytomni.api.attachments import (
     AttachmentContractError,
     ManagedAttachmentEvidence,
-    ManagedAttachmentEvidenceItem,
     redact_managed_attachment_values,
     validate_agent_attachments,
 )
@@ -37,7 +40,6 @@ from mcp_server_phytomni.api.routes.attachment_inputs import (
     ResolvedAttachmentInput,
     prepare_native_attachment_arguments,
 )
-from mcp_server_phytomni.runtime.attachment_assets import ResolvedAsset
 from mcp_server_phytomni.runtime.upload_registry import (
     UploadMetadata,
     UploadRegistry,
@@ -236,27 +238,27 @@ def test_redact_managed_attachment_values_is_recursive_and_nonmutating() -> (
     evidence = ManagedAttachmentEvidence(
         attachment_owner="u1",
         items=(
-            ManagedAttachmentEvidenceItem(
-                asset=ResolvedAsset(
+            managed_attachment_evidence_item(
+                ManagedAttachmentEvidenceSpec(
                     asset_id="file_document",
                     reference=document_reference,
                     filename="document.pdf",
                     content_type="application/pdf",
                     size_bytes=1,
                     purpose="document",
-                ),
-                projected_channel="obs_file_list",
+                    projected_channel="obs_file_list",
+                )
             ),
-            ManagedAttachmentEvidenceItem(
-                asset=ResolvedAsset(
+            managed_attachment_evidence_item(
+                ManagedAttachmentEvidenceSpec(
                     asset_id="file_dataset",
                     reference=dataset_reference,
                     filename="dataset.h5ad",
                     content_type="application/octet-stream",
                     size_bytes=1,
                     purpose="dataset",
-                ),
-                projected_channel="data_list",
+                    projected_channel="data_list",
+                )
             ),
         ),
     )

@@ -9,13 +9,13 @@ import inspect
 from typing import Any
 
 import pytest
+from tests.support.attachment_fakes import (
+    ManagedAttachmentEvidenceSpec,
+    managed_attachment_evidence_item,
+)
 
 from mcp_server_phytomni.api import app as api_app_module
-from mcp_server_phytomni.api.attachments import (
-    ManagedAttachmentEvidence,
-    ManagedAttachmentEvidenceItem,
-)
-from mcp_server_phytomni.runtime.attachment_assets import ResolvedAsset
+from mcp_server_phytomni.api.attachments import ManagedAttachmentEvidence
 
 pytestmark = pytest.mark.server
 
@@ -136,16 +136,16 @@ def test_native_run_preflight_keeps_attachment_owner_separate(
     evidence = ManagedAttachmentEvidence(
         attachment_owner="delegated-owner",
         items=(
-            ManagedAttachmentEvidenceItem(
-                asset=ResolvedAsset(
+            managed_attachment_evidence_item(
+                ManagedAttachmentEvidenceSpec(
                     asset_id="file_dataset",
                     reference="obs://dataset",
                     filename="dataset.h5ad",
                     content_type="application/octet-stream",
                     size_bytes=1,
                     purpose="dataset",
-                ),
-                projected_channel="data_list",
+                    projected_channel="data_list",
+                )
             ),
         ),
     )
