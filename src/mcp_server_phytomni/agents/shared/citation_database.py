@@ -369,7 +369,7 @@ def _validate_metadata_equations(
         or metadata.unique_id_count
         != metadata.imported_record_count + metadata.conflict_id_count
         or metadata.source_record_count
-        != metadata.unique_id_count
+        != metadata.imported_record_count
         + metadata.exact_duplicate_row_count
         + metadata.quarantined_row_count
     ):

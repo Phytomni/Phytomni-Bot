@@ -182,17 +182,16 @@ def test_validate_accepts_exact_schema_and_metadata(tmp_path: Path) -> None:
     path = create_valid_citation_database(
         tmp_path / "citation.sqlite",
         records=(_record("first"), _record("second")),
-        conflicts=({"file_id": "conflict"},),
     )
     metadata = validate_citation_database(path)
 
     assert metadata.schema_version == CITATION_SCHEMA_VERSION
     assert metadata.source_sha256 == "a" * 64
-    assert metadata.source_record_count == 3
-    assert metadata.unique_id_count == 3
+    assert metadata.source_record_count == 2
+    assert metadata.unique_id_count == 2
     assert metadata.imported_record_count == 2
     assert metadata.exact_duplicate_row_count == 0
-    assert metadata.conflict_id_count == 1
+    assert metadata.conflict_id_count == 0
     assert metadata.quarantined_row_count == 0
     assert metadata.missing_doi_count == 0
     assert metadata.invalid_doi_count == 0
@@ -201,7 +200,7 @@ def test_validate_accepts_exact_schema_and_metadata(tmp_path: Path) -> None:
         metadata.imported_record_count + metadata.conflict_id_count
     )
     assert metadata.source_record_count == (
-        metadata.unique_id_count
+        metadata.imported_record_count
         + metadata.exact_duplicate_row_count
         + metadata.quarantined_row_count
     )
@@ -238,8 +237,36 @@ def test_validate_accepts_exact_schema_and_metadata(tmp_path: Path) -> None:
             connection.execute(
                 "SELECT COUNT(*) FROM citation_conflicts"
             ).fetchone()[0]
-            == 1
+            == 0
         )
+
+
+def test_validate_accepts_imported_duplicate_and_quarantined_conflict(
+    tmp_path: Path,
+) -> None:
+    """Source accounting uses imported rows, not unique IDs."""
+    path = create_valid_citation_database(
+        tmp_path / "citation.sqlite",
+        records=(_record("first"), _record("second"), _record("third")),
+        conflicts=({"file_id": "conflict"},),
+    )
+    with _connection(path) as connection:
+        connection.execute(
+            "UPDATE citation_build_metadata SET "
+            "source_record_count=7, unique_id_count=4, "
+            "imported_record_count=3, exact_duplicate_row_count=1, "
+            "conflict_id_count=1, quarantined_row_count=3"
+        )
+        connection.commit()
+
+    metadata = validate_citation_database(path)
+
+    assert metadata.source_record_count == 7
+    assert metadata.unique_id_count == 4
+    assert metadata.imported_record_count == 3
+    assert metadata.exact_duplicate_row_count == 1
+    assert metadata.conflict_id_count == 1
+    assert metadata.quarantined_row_count == 3
 
 
 def _column_names(
