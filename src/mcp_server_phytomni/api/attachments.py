@@ -166,12 +166,46 @@ def validate_agent_attachments(
         managed_evidence,
         owner=owner,
     )
-    documents: list[UploadMetadata | ResolvedAsset] = []
-    datasets: list[UploadMetadata | ResolvedAsset] = []
-    legacy_paths: list[str] = []
-    budget_sizes: list[int] = []
+    documents, document_sizes = _validate_document_paths(
+        document_paths,
+        owner=owner,
+        registry=registry,
+        managed_items=managed_items,
+    )
+    datasets, legacy_paths, dataset_sizes = _validate_dataset_items(
+        dataset_items,
+        owner=owner,
+        registry=registry,
+        managed_items=managed_items,
+    )
 
-    for path in document_paths:
+    if managed_items:
+        _raise(
+            "attachment_not_found",
+            "The attachment could not be verified.",
+        )
+    _validate_budget_sizes((*document_sizes, *dataset_sizes))
+    return AttachmentSelection(
+        documents=documents,
+        datasets=datasets,
+        legacy_dataset_paths=legacy_paths,
+    )
+
+
+def _validate_document_paths(
+    paths: Sequence[str],
+    *,
+    owner: str,
+    registry: UploadRegistry,
+    managed_items: dict[str, ManagedAttachmentEvidenceItem],
+) -> tuple[
+    tuple[UploadMetadata | ResolvedAsset, ...],
+    tuple[int, ...],
+]:
+    """Resolve document paths in order and collect verified sizes."""
+    documents: list[UploadMetadata | ResolvedAsset] = []
+    sizes: list[int] = []
+    for path in paths:
         evidence_item = _consume_managed_evidence(
             managed_items,
             path=path,
@@ -180,14 +214,31 @@ def validate_agent_attachments(
         if evidence_item is not None:
             _validate_managed_item(evidence_item)
             documents.append(evidence_item.asset)
-            budget_sizes.append(evidence_item.asset.size_bytes)
+            sizes.append(evidence_item.asset.size_bytes)
             continue
         metadata = _resolve_document_path(path, owner=owner, registry=registry)
         _validate_metadata(metadata, channel="documents")
         documents.append(metadata)
-        budget_sizes.append(metadata.byte_size)
+        sizes.append(metadata.byte_size)
+    return tuple(documents), tuple(sizes)
 
-    for path, description in dataset_items:
+
+def _validate_dataset_items(
+    items: Sequence[tuple[str, Any]],
+    *,
+    owner: str,
+    registry: UploadRegistry,
+    managed_items: dict[str, ManagedAttachmentEvidenceItem],
+) -> tuple[
+    tuple[UploadMetadata | ResolvedAsset, ...],
+    tuple[str, ...],
+    tuple[int, ...],
+]:
+    """Resolve dataset items in order and retain approved legacy paths."""
+    datasets: list[UploadMetadata | ResolvedAsset] = []
+    legacy_paths: list[str] = []
+    sizes: list[int] = []
+    for path, description in items:
         evidence_item = _consume_managed_evidence(
             managed_items,
             path=path,
@@ -201,7 +252,7 @@ def validate_agent_attachments(
                     "Managed dataset values must be empty.",
                 )
             datasets.append(evidence_item.asset)
-            budget_sizes.append(evidence_item.asset.size_bytes)
+            sizes.append(evidence_item.asset.size_bytes)
             continue
         dataset_metadata, is_legacy = _resolve_dataset_path(
             path,
@@ -219,19 +270,8 @@ def validate_agent_attachments(
             )
         _validate_metadata(dataset_metadata, channel="datasets")
         datasets.append(dataset_metadata)
-        budget_sizes.append(dataset_metadata.byte_size)
-
-    if managed_items:
-        _raise(
-            "attachment_not_found",
-            "The attachment could not be verified.",
-        )
-    _validate_budget_sizes(budget_sizes)
-    return AttachmentSelection(
-        documents=tuple(documents),
-        datasets=tuple(datasets),
-        legacy_dataset_paths=tuple(legacy_paths),
-    )
+        sizes.append(dataset_metadata.byte_size)
+    return tuple(datasets), tuple(legacy_paths), tuple(sizes)
 
 
 def _managed_evidence_by_reference(
