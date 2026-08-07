@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Final
 
+from ..agents.research.scientific_formats import advertised_research_formats
+from ..config.api_limits import ApiLimitsConfig
 from ..runtime.attachment_assets import ResolvedAttachmentBundle
 from ..runtime.resumable_uploads import (
     CAPABILITY_TTL,
@@ -26,9 +28,11 @@ __all__ = [
     "DatasetCapability",
     "DocumentContextCapability",
     "ExpertAttachmentRequirement",
+    "ResearchInputResolutionDescriptor",
     "agent_has_any_attachment_channel",
     "agent_supports_attachment_channels",
     "agent_uses_user_query",
+    "build_research_input_descriptor",
     "filter_tools_for_expert_attachments",
     "filter_tools_for_attachment_channels",
     "get_agent_slug_for_tool",
@@ -204,6 +208,17 @@ class AgentCapability:
             "degraded_outcomes": self.degraded_outcomes,
             "attachments": self.attachments.to_public_dict(),
         }
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchInputResolutionDescriptor:
+    """Effective limits and formats for the versioned Research contract."""
+
+    max_user_query_chars: int
+    max_attachments_per_request: int
+    max_research_dataset_paths: int
+    max_research_input_references: int
+    dataset_formats: tuple[str, ...]
 
 
 _DOCUMENTS = DocumentContextCapability()
@@ -383,6 +398,19 @@ def filter_tools_for_attachment_channels(
 def serialize_agent_capability(slug: str) -> dict[str, Any]:
     """Return one JSON-compatible capability descriptor for ``slug``."""
     return get_agent_capability(slug).to_public_dict()
+
+
+def build_research_input_descriptor(
+    config: ApiLimitsConfig,
+) -> ResearchInputResolutionDescriptor:
+    """Project the effective Research input contract without advertising it."""
+    return ResearchInputResolutionDescriptor(
+        max_user_query_chars=config.API_MAX_USER_QUERY_CHARS,
+        max_attachments_per_request=config.API_MAX_ATTACHMENTS_PER_REQUEST,
+        max_research_dataset_paths=config.API_MAX_RESEARCH_DATASET_PATHS,
+        max_research_input_references=config.API_MAX_RESEARCH_INPUT_REFERENCES,
+        dataset_formats=advertised_research_formats(),
+    )
 
 
 def serialize_file_upload_capability(

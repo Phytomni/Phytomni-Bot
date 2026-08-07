@@ -12,8 +12,9 @@ protocol here and it flows into the catalog automatically.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
+from ..config.api_limits import ApiLimitsConfig
 from ..config.relay_mode import relay_mode_enabled
 from ..runtime.conversation_context.models import (
     CONVERSATION_CONTEXT_PROTOCOL_VERSION,
@@ -22,16 +23,22 @@ from ..runtime.resumable_uploads import (
     UPLOAD_PROTOCOL,
     UPLOAD_PROTOCOL_VERSION,
 )
+from .agent_capabilities import build_research_input_descriptor
 
 RESULT_ARCHIVE_PROTOCOL = "result_archive_v1"
 RESULT_ARCHIVE_PROTOCOL_VERSION = 1
+RESEARCH_INPUT_PROTOCOL = "research_input_resolution_v1"
+RESEARCH_INPUT_PROTOCOL_VERSION = 1
 
 __all__ = [
     "RESULT_ARCHIVE_PROTOCOL",
     "RESULT_ARCHIVE_PROTOCOL_VERSION",
+    "RESEARCH_INPUT_PROTOCOL",
+    "RESEARCH_INPUT_PROTOCOL_VERSION",
     "result_archive_backend_available",
     "advertised_protocols",
     "serialize_protocols",
+    "serialize_research_input_descriptor",
 ]
 
 # Conversation-context enablement is read at call time from the live catalog
@@ -95,3 +102,12 @@ def serialize_protocols(
         for entry in advertised_protocols(context_enabled)
         if entry.enabled()
     }
+
+
+def serialize_research_input_descriptor(
+    config: ApiLimitsConfig,
+) -> dict[str, object]:
+    """Serialize the detached Research descriptor without catalog wiring."""
+    descriptor = asdict(build_research_input_descriptor(config))
+    descriptor["dataset_formats"] = list(descriptor["dataset_formats"])
+    return descriptor

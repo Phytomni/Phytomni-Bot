@@ -11,15 +11,22 @@ from pathlib import Path
 
 import pytest
 
+from mcp_server_phytomni.agents.research.scientific_formats import (
+    advertised_research_formats,
+)
 from mcp_server_phytomni.api.advertised_protocols import (
+    RESEARCH_INPUT_PROTOCOL,
+    RESEARCH_INPUT_PROTOCOL_VERSION,
     RESULT_ARCHIVE_PROTOCOL,
     RESULT_ARCHIVE_PROTOCOL_VERSION,
     serialize_protocols,
+    serialize_research_input_descriptor,
 )
 from mcp_server_phytomni.api.agent_capabilities import (
     AGENT_CAPABILITIES,
     ExpertAttachmentRequirement,
     agent_supports_attachment_channels,
+    build_research_input_descriptor,
     filter_tools_for_attachment_channels,
     filter_tools_for_expert_attachments,
     get_agent_capability,
@@ -32,6 +39,7 @@ from mcp_server_phytomni.api.openai_mapping import (
     tool_accepts_obs,
     tool_accepts_stream,
 )
+from mcp_server_phytomni.config.api_limits import ApiLimitsConfig
 from mcp_server_phytomni.mcp.schemas import AGENT_TOOL_DEFINITIONS
 from mcp_server_phytomni.runtime.attachment_assets import (
     ResolvedAsset,
@@ -135,6 +143,47 @@ def test_result_archive_protocol_requires_direct_storage(
     assert direct[RESULT_ARCHIVE_PROTOCOL] == [RESULT_ARCHIVE_PROTOCOL_VERSION]
     monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
     assert RESULT_ARCHIVE_PROTOCOL not in serialize_protocols(lambda: False)
+
+
+def test_research_input_descriptor_projects_effective_limits_and_formats() -> (
+    None
+):
+    """The detached descriptor shares config limits and registry formats."""
+    config = ApiLimitsConfig()
+
+    descriptor = build_research_input_descriptor(config)
+
+    assert descriptor.max_user_query_chars == config.API_MAX_USER_QUERY_CHARS
+    assert (
+        descriptor.max_attachments_per_request
+        == config.API_MAX_ATTACHMENTS_PER_REQUEST
+    )
+    assert (
+        descriptor.max_research_dataset_paths
+        == config.API_MAX_RESEARCH_DATASET_PATHS
+    )
+    assert (
+        descriptor.max_research_input_references
+        == config.API_MAX_RESEARCH_INPUT_REFERENCES
+    )
+    assert descriptor.dataset_formats == advertised_research_formats()
+    assert serialize_research_input_descriptor(config) == {
+        "max_user_query_chars": config.API_MAX_USER_QUERY_CHARS,
+        "max_attachments_per_request": config.API_MAX_ATTACHMENTS_PER_REQUEST,
+        "max_research_dataset_paths": config.API_MAX_RESEARCH_DATASET_PATHS,
+        "max_research_input_references": (
+            config.API_MAX_RESEARCH_INPUT_REFERENCES
+        ),
+        "dataset_formats": list(advertised_research_formats()),
+    }
+
+
+def test_research_protocol_is_not_registered_before_readiness() -> None:
+    """Pure descriptor support does not prematurely change the catalog."""
+    protocols = serialize_protocols(lambda: False)
+
+    assert RESEARCH_INPUT_PROTOCOL not in protocols
+    assert RESEARCH_INPUT_PROTOCOL_VERSION == 1
 
 
 def test_attachment_matrix_is_exact() -> None:
