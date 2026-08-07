@@ -39,8 +39,8 @@ def _asset(name: str, purpose: EffectiveAssetPurpose) -> ResolvedAsset:
     )
 
 
-@pytest.fixture
-def ordered_bundle() -> ResolvedAttachmentBundle:
+@pytest.fixture(name="ordered_bundle_fixture")
+def _ordered_bundle_fixture() -> ResolvedAttachmentBundle:
     """Return the supplied order independent from effective purpose."""
     return ResolvedAttachmentBundle(
         assets=(
@@ -65,36 +65,30 @@ def test_empty_bundle_projects_to_empty_channels(
     capability: AttachmentCapability,
 ) -> None:
     """Every capability shape preserves an empty managed bundle."""
-    assert (
-        project_managed_attachments(
-            ResolvedAttachmentBundle(), capability
-        ).obs_assets
-        == ()
-    )
-    assert (
-        project_managed_attachments(
-            ResolvedAttachmentBundle(), capability
-        ).data_assets
-        == ()
-    )
+    assert not project_managed_attachments(
+        ResolvedAttachmentBundle(), capability
+    ).obs_assets
+    assert not project_managed_attachments(
+        ResolvedAttachmentBundle(), capability
+    ).data_assets
 
 
 def test_dual_channel_projection_preserves_purpose_lanes_and_identity(
-    ordered_bundle: ResolvedAttachmentBundle,
+    ordered_bundle_fixture: ResolvedAttachmentBundle,
 ) -> None:
     """Dual channels preserve source objects while separating purposes."""
     projected = project_managed_attachments(
-        ordered_bundle,
+        ordered_bundle_fixture,
         AttachmentCapability(DocumentContextCapability(), DatasetCapability()),
     )
 
     assert projected.obs_assets == (
-        ordered_bundle.assets[1],
-        ordered_bundle.assets[3],
+        ordered_bundle_fixture.assets[1],
+        ordered_bundle_fixture.assets[3],
     )
     assert projected.data_assets == (
-        ordered_bundle.assets[0],
-        ordered_bundle.assets[2],
+        ordered_bundle_fixture.assets[0],
+        ordered_bundle_fixture.assets[2],
     )
     assert [asset.purpose for asset in projected.obs_assets] == [
         "document",
@@ -109,10 +103,10 @@ def test_dual_channel_projection_preserves_purpose_lanes_and_identity(
         for projected_asset, source_asset in zip(
             (*projected.obs_assets, *projected.data_assets),
             (
-                ordered_bundle.assets[1],
-                ordered_bundle.assets[3],
-                ordered_bundle.assets[0],
-                ordered_bundle.assets[2],
+                ordered_bundle_fixture.assets[1],
+                ordered_bundle_fixture.assets[3],
+                ordered_bundle_fixture.assets[0],
+                ordered_bundle_fixture.assets[2],
             ),
             strict=True,
         )
@@ -120,48 +114,50 @@ def test_dual_channel_projection_preserves_purpose_lanes_and_identity(
 
 
 def test_document_only_projection_preserves_source_order_and_identity(
-    ordered_bundle: ResolvedAttachmentBundle,
+    ordered_bundle_fixture: ResolvedAttachmentBundle,
 ) -> None:
     """A document-only consumer receives every original object in order."""
     projected = project_managed_attachments(
-        ordered_bundle,
+        ordered_bundle_fixture,
         AttachmentCapability(document_context=DocumentContextCapability()),
     )
 
-    assert projected.obs_assets == ordered_bundle.assets
-    assert projected.data_assets == ()
+    assert projected.obs_assets == ordered_bundle_fixture.assets
+    assert not projected.data_assets
     assert all(
         projected_asset is source_asset
         for projected_asset, source_asset in zip(
-            projected.obs_assets, ordered_bundle.assets, strict=True
+            projected.obs_assets, ordered_bundle_fixture.assets, strict=True
         )
     )
 
 
 def test_dataset_only_projection_preserves_source_order_and_identity(
-    ordered_bundle: ResolvedAttachmentBundle,
+    ordered_bundle_fixture: ResolvedAttachmentBundle,
 ) -> None:
     """A dataset-only consumer receives every original object in order."""
     projected = project_managed_attachments(
-        ordered_bundle,
+        ordered_bundle_fixture,
         AttachmentCapability(datasets=DatasetCapability()),
     )
 
-    assert projected.obs_assets == ()
-    assert projected.data_assets == ordered_bundle.assets
+    assert not projected.obs_assets
+    assert projected.data_assets == ordered_bundle_fixture.assets
     assert all(
         projected_asset is source_asset
         for projected_asset, source_asset in zip(
-            projected.data_assets, ordered_bundle.assets, strict=True
+            projected.data_assets, ordered_bundle_fixture.assets, strict=True
         )
     )
 
 
 def test_zero_channel_projection_rejects_nonempty_bundle(
-    ordered_bundle: ResolvedAttachmentBundle,
+    ordered_bundle_fixture: ResolvedAttachmentBundle,
 ) -> None:
     """Managed input cannot reach an attachmentless capability."""
     with pytest.raises(AttachmentProjectionError) as error:
-        project_managed_attachments(ordered_bundle, AttachmentCapability())
+        project_managed_attachments(
+            ordered_bundle_fixture, AttachmentCapability()
+        )
 
     assert error.value.code == "attachment_not_supported"
