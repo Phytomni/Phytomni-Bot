@@ -441,6 +441,39 @@ async def test_expert_rejects_unfiltered_router_selection(
     assert not agent_calls
 
 
+async def test_expert_rejects_authorized_zero_channel_selection(
+    asset_http_context: AssetHttpTestContext,
+) -> None:
+    """An originally allowed zero-channel tool cannot bypass prefiltering."""
+    assets = _install_expert_purpose_assets(asset_http_context)
+    _patch_select(
+        asset_http_context.monkeypatch,
+        ToolSelection("DataAgent", {"user_query": "selector rewrite"}),
+    )
+    agent_calls: list[Any] = []
+
+    async def forbid_invoke(**_kwargs: Any) -> tuple[dict[str, Any], int]:
+        agent_calls.append(1)
+        raise AssertionError("agent must not run")
+
+    asset_http_context.monkeypatch.setattr(
+        api_app, "_invoke_agent_run", forbid_invoke
+    )
+    response = await _post_expert_route(
+        asset_http_context,
+        assets.app,
+        payload={
+            "user_query": "original expert query",
+            "allowed_tools": ["DataAgent", "AnalystAgent"],
+            "attachments": _attachments_for(assets, "dataset"),
+        },
+        base_url="http://api.expert-authorized-zero-channel.test",
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "attachment_not_supported"
+    assert not agent_calls
+
+
 async def test_expert_supported_forced_tool_stays_forced(
     asset_http_context: AssetHttpTestContext,
 ) -> None:
