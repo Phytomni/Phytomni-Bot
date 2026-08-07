@@ -477,6 +477,26 @@ def test_reference_payload_flattens_and_escapes_multiline_sources() -> None:
     assert r"\*Name\*" in citation
 
 
+def test_reference_payload_replaces_c0_and_c1_source_controls() -> None:
+    """Public citation text replaces C0/C1 controls with safe spacing."""
+    payload = _reference_payload(
+        {
+            "title": "fallback",
+            "au": "Smith, J\x00; Jones, A\x1b",
+            "ti": "Control\x00Title\x1bSafe\u0085Text",
+            "so": "Journal\x7fName",
+        }
+    )
+
+    citation = payload["formatted_citation"]
+    assert citation == (
+        "Smith, J. & Jones, A. Control Title Safe Text. *Journal Name*."
+    )
+    assert not any(
+        ord(char) < 32 or 127 <= ord(char) <= 159 for char in citation
+    )
+
+
 @pytest.mark.parametrize(
     "status", (CITATION_STATUS_MISSING, CITATION_STATUS_LOOKUP_FAILED)
 )

@@ -51,7 +51,7 @@ _RETRIEVAL_FILE_SUFFIXES = (
 )
 _AUTHOR_SUFFIXES = frozenset(("Jr", "Sr", "II", "III", "IV"))
 _MARKDOWN_CONTROL_PATTERN = re.compile(r"([\\`*_\[\]{}()#+!|])")
-_DISPLAY_LINE_BREAK_PATTERN = re.compile(r"[\t\n\r\f\v\u2028\u2029]+")
+_DISPLAY_CONTROL_PATTERN = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -371,8 +371,8 @@ def _markdown_escape(value: str) -> str:
 
 
 def _single_line_text(value: str) -> str:
-    """Flatten source-controlled line breaks before display formatting."""
-    return _DISPLAY_LINE_BREAK_PATTERN.sub(" ", value)
+    """Replace source-controlled controls before display formatting."""
+    return _DISPLAY_CONTROL_PATTERN.sub(" ", value)
 
 
 def _sentence(value: str) -> str:
