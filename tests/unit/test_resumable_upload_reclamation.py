@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from mcp_server_phytomni.common.logging_config import configure_logging
 from mcp_server_phytomni.runtime.resumable_uploads import (
     AssetCreateSpec,
     CapabilityAuthorization,
@@ -60,14 +61,21 @@ def test_expired_capability_cannot_terminalize_due_session(
 
 
 def test_cleanup_reports_aggregate_expiry_reason_without_row_identity(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
+    tmp_path: Path,
+    capfd: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Cleanup logs only the applicable deadline class and aggregate count."""
     registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
     asset, _secret = registry.create_or_replay(_spec(), now=NOW)
 
-    with caplog.at_level(logging.INFO):
-        registry.cleanup_expired(now=NOW + timedelta(minutes=180))
+    package_logger = logging.getLogger("mcp_server_phytomni")
+    monkeypatch.setattr(package_logger, "handlers", [])
+    monkeypatch.setattr(package_logger, "level", package_logger.level)
+    monkeypatch.setattr(package_logger, "propagate", package_logger.propagate)
+    configure_logging()
+    registry.cleanup_expired(now=NOW + timedelta(minutes=180))
 
-    assert "provisional_deadline=1" in caplog.text
-    assert asset.asset_id not in caplog.text
+    captured = capfd.readouterr()
+    assert "provisional_deadline=1" in captured.err
+    assert asset.asset_id not in captured.err
