@@ -122,6 +122,15 @@ class ApiConfig(ApiLimitsConfig):
             "PHYTOMNI_API_UPLOAD_V2_SESSION_TTL_SECONDS",
         ),
     )
+    API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS: int = Field(
+        default=180 * 60,
+        ge=60,
+        le=7 * 24 * 60 * 60,
+        validation_alias=AliasChoices(
+            "API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS",
+            "PHYTOMNI_API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS",
+        ),
+    )
     API_UPLOAD_V2_CLEANUP_INTERVAL_SECONDS: int = Field(
         default=300,
         ge=30,

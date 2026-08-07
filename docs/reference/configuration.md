@@ -341,6 +341,12 @@ single env var carries the full map.
   **Purpose:** Lifetime of an unfinished upload session, bounded to
   1 hour-7 days.
 
+- **Variable:** `API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS`
+  **Default:** `10800`
+  **Sensitive?:** no
+  **Purpose:** Browser-takeover grace period for an allocated upload session,
+  bounded to 60 seconds-7 days. Allocation alone is not activation evidence.
+
 - **Variable:** `API_UPLOAD_V2_CLEANUP_INTERVAL_SECONDS`
   **Default:** `300`
   **Sensitive?:** no

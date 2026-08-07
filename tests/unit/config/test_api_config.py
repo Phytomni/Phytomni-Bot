@@ -86,6 +86,7 @@ def test_resumable_upload_config_defaults() -> None:
     assert config.API_UPLOAD_V2_MAX_PARALLEL_PARTS == 4
     assert config.API_UPLOAD_V2_CAPABILITY_TTL_SECONDS == 900
     assert config.API_UPLOAD_V2_SESSION_TTL_SECONDS == 604800
+    assert config.API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS == 10800
     assert config.API_UPLOAD_V2_CLEANUP_INTERVAL_SECONDS == 300
     assert config.API_UPLOAD_V2_ALLOWED_ORIGINS == []
 
@@ -118,6 +119,7 @@ def test_resumable_upload_config_accepts_prefixed_aliases(
         '["https://web.example.com"]',
     )
     monkeypatch.setenv("PHYTOMNI_API_UPLOAD_V2_CLEANUP_INTERVAL_SECONDS", "60")
+    monkeypatch.setenv("PHYTOMNI_API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS", "60")
 
     config = ApiConfig()
 
@@ -125,6 +127,43 @@ def test_resumable_upload_config_accepts_prefixed_aliases(
     assert config.API_UPLOAD_V2_BUCKET == "science-bucket"
     assert config.API_UPLOAD_V2_ALLOWED_ORIGINS == ["https://web.example.com"]
     assert config.API_UPLOAD_V2_CLEANUP_INTERVAL_SECONDS == 60
+    assert config.API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS == 60
+
+
+@pytest.mark.parametrize(
+    "variable",
+    [
+        "API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS",
+        "PHYTOMNI_API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS",
+    ],
+)
+def test_resumable_upload_provisional_ttl_accepts_both_aliases(
+    monkeypatch: pytest.MonkeyPatch, variable: str
+) -> None:
+    """The provisional activation policy accepts both deployment aliases."""
+    monkeypatch.setenv(variable, "604800")
+
+    assert ApiConfig().API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS == 604800
+
+
+@pytest.mark.parametrize(
+    "value, valid",
+    [(59, False), (60, True), (604800, True), (604801, False)],
+)
+def test_resumable_upload_provisional_ttl_has_exact_bounds(
+    monkeypatch: pytest.MonkeyPatch, value: int, valid: bool
+) -> None:
+    """Keep the activation window bounded to one minute through seven days."""
+    monkeypatch.setenv("API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS", str(value))
+
+    if valid:
+        assert value == ApiConfig().API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS
+    else:
+        with pytest.raises(
+            ValidationError,
+            match="API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS",
+        ):
+            ApiConfig()
 
 
 @pytest.mark.parametrize(

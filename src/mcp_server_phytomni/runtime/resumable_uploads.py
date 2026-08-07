@@ -43,6 +43,7 @@ MAX_UNFINISHED_BYTES = 30 * 1024**3
 MAX_ACCEPTED_CREATE_BYTES = 100 * 1024**3
 SESSION_TTL = timedelta(days=7)
 CAPABILITY_TTL = timedelta(minutes=15)
+PROVISIONAL_TTL = timedelta(minutes=180)
 
 AssetStatus = Literal["uploading", "completed", "aborted", "expired"]
 UploadAssetPurpose = Literal["chat_attachment", "dataset", "document"]
@@ -57,6 +58,7 @@ class ResumableUploadRegistryConfig:
     part_size_bytes: int = PART_SIZE_BYTES
     session_ttl: timedelta = SESSION_TTL
     capability_ttl: timedelta = CAPABILITY_TTL
+    provisional_ttl: timedelta = PROVISIONAL_TTL
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +94,7 @@ class AssetRecord(NamedTuple):
     updated_at: datetime
     session_expires_at: datetime
     completed_at: datetime | None
+    activated_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +157,7 @@ CREATE TABLE IF NOT EXISTS upload_assets (
     updated_at TEXT NOT NULL,
     session_expires_at TEXT NOT NULL,
     completed_at TEXT,
+    activated_at TEXT,
     UNIQUE(owner_subject, idempotency_key)
 )
 """
@@ -223,6 +227,12 @@ _CREATE_QUOTA_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_upload_quota_owner_time "
     "ON upload_quota_events(owner_subject, created_at)"
 )
+_ASSET_COLUMNS = (
+    "asset_id, owner_subject, filename, content_type, purpose, size_bytes, "
+    "part_size_bytes, part_count, status, object_key, obs_upload_id, "
+    "idempotency_key, state_version, reserved_bytes, created_at, updated_at, "
+    "session_expires_at, completed_at, activated_at"
+)
 
 
 class ResumableUploadRegistry:
@@ -239,6 +249,7 @@ class ResumableUploadRegistry:
         self.part_size_bytes = config.part_size_bytes
         self.session_ttl = config.session_ttl
         self.capability_ttl = config.capability_ttl
+        self.provisional_ttl = config.provisional_ttl
         with sqlite_transaction(db_path) as conn:
             for statement in (
                 _CREATE_ASSETS_TABLE,
@@ -252,6 +263,7 @@ class ResumableUploadRegistry:
                 _CREATE_QUOTA_INDEX,
             ):
                 conn.execute(statement)
+            _initialize_activation_column(conn)
 
     def create_or_replay(
         self,
@@ -331,6 +343,7 @@ class ResumableUploadRegistry:
                 updated_at=created_at,
                 session_expires_at=session_expires_at,
                 completed_at=None,
+                activated_at=None,
             )
             conn.execute(
                 "INSERT INTO upload_assets ("
@@ -338,9 +351,9 @@ class ResumableUploadRegistry:
                 "size_bytes, part_size_bytes, part_count, status, object_key, "
                 "obs_upload_id, idempotency_key, request_fingerprint, "
                 "state_version, reserved_bytes, created_at, updated_at, "
-                "session_expires_at, completed_at"
+                "session_expires_at, completed_at, activated_at"
                 ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-                "?, ?, ?, ?)",
+                "?, ?, ?, ?, ?)",
                 (
                     asset.asset_id,
                     asset.owner_subject,
@@ -360,6 +373,7 @@ class ResumableUploadRegistry:
                     _iso(asset.created_at),
                     _iso(asset.updated_at),
                     _iso(asset.session_expires_at),
+                    None,
                     None,
                 ),
             )
@@ -393,7 +407,8 @@ class ResumableUploadRegistry:
         """Return an asset only for its canonical owner."""
         with sqlite_connection(self.db_path) as conn:
             asset = conn.execute(
-                "SELECT * FROM upload_assets WHERE asset_id = ? "
+                f"SELECT {_ASSET_COLUMNS} "
+                "FROM upload_assets WHERE asset_id = ? "
                 "AND owner_subject = ?",
                 (asset_id, owner),
             ).fetchone()
@@ -403,7 +418,9 @@ class ResumableUploadRegistry:
         """Return one asset for internal cleanup and reconciliation."""
         with sqlite_connection(self.db_path) as conn:
             asset = conn.execute(
-                "SELECT * FROM upload_assets WHERE asset_id = ?", (asset_id,)
+                f"SELECT {_ASSET_COLUMNS} "
+                "FROM upload_assets WHERE asset_id = ?",
+                (asset_id,),
             ).fetchone()
         return None if asset is None else _asset_from_row(asset)
 
@@ -747,7 +764,8 @@ class ResumableUploadRegistry:
     def _fetch_asset(conn: sqlite3.Connection, asset_id: str) -> AssetRecord:
         """Fetch one asset or use the stable not-found state error."""
         row = conn.execute(
-            "SELECT * FROM upload_assets WHERE asset_id = ?", (asset_id,)
+            f"SELECT {_ASSET_COLUMNS} FROM upload_assets WHERE asset_id = ?",
+            (asset_id,),
         ).fetchone()
         if row is None:
             raise UploadStateError("upload_asset_not_found")
@@ -809,6 +827,34 @@ def _safe_owner(owner: str) -> str:
     return hashlib.sha256(owner.encode("utf-8")).hexdigest()[:32]
 
 
+def _initialize_activation_column(conn: sqlite3.Connection) -> None:
+    """Add and backfill the internal activation marker exactly once."""
+    if not _upload_assets_has_column(conn, "activated_at"):
+        try:
+            conn.execute(
+                "ALTER TABLE upload_assets ADD COLUMN activated_at TEXT"
+            )
+        except sqlite3.OperationalError:
+            if not _upload_assets_has_column(conn, "activated_at"):
+                raise
+    conn.execute(
+        "UPDATE upload_assets SET activated_at = ("
+        "SELECT MIN(received_at) FROM upload_parts "
+        "WHERE upload_parts.asset_id = upload_assets.asset_id"
+        ") WHERE activated_at IS NULL AND status = 'uploading' "
+        "AND EXISTS (SELECT 1 FROM upload_parts "
+        "WHERE upload_parts.asset_id = upload_assets.asset_id)"
+    )
+
+
+def _upload_assets_has_column(conn: sqlite3.Connection, column: str) -> bool:
+    """Return whether the current upload-asset schema includes one column."""
+    return any(
+        row[1] == column
+        for row in conn.execute("PRAGMA table_info(upload_assets)")
+    )
+
+
 def _asset_from_row(row: sqlite3.Row | tuple[object, ...]) -> AssetRecord:
     """Map one positional SQLite row to its typed asset record."""
     return AssetRecord(
@@ -824,12 +870,13 @@ def _asset_from_row(row: sqlite3.Row | tuple[object, ...]) -> AssetRecord:
         object_key=cast(str, row[9]),
         obs_upload_id=cast(str | None, row[10]),
         idempotency_key=cast(str, row[11]),
-        state_version=cast(int, row[13]),
-        reserved_bytes=cast(int, row[14]),
-        created_at=_parse_time(row[15]),
-        updated_at=_parse_time(row[16]),
-        session_expires_at=_parse_time(row[17]),
-        completed_at=None if row[18] is None else _parse_time(row[18]),
+        state_version=cast(int, row[12]),
+        reserved_bytes=cast(int, row[13]),
+        created_at=_parse_time(row[14]),
+        updated_at=_parse_time(row[15]),
+        session_expires_at=_parse_time(row[16]),
+        completed_at=None if row[17] is None else _parse_time(row[17]),
+        activated_at=None if row[18] is None else _parse_time(row[18]),
     )
 
 

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -14,12 +15,19 @@ from typing import cast
 
 import pytest
 
+from mcp_server_phytomni.api.schemas import (
+    AssetDescriptor,
+    UploadStatusResponse,
+)
 from mcp_server_phytomni.runtime.resumable_uploads import (
+    _ASSET_COLUMNS,
     AssetCreateSpec,
+    AssetRecord,
     PartRecord,
     ResumableUploadRegistry,
     UploadAssetPurpose,
     UploadStateError,
+    _asset_from_row,
 )
 
 pytestmark = pytest.mark.unit
@@ -58,6 +66,280 @@ def _part(
         etag=f"etag-{number}",
         received_at=NOW,
     )
+
+
+_LEGACY_ASSETS_DDL = """
+CREATE TABLE upload_assets (
+    asset_id TEXT PRIMARY KEY,
+    owner_subject TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    purpose TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    part_size_bytes INTEGER NOT NULL,
+    part_count INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    object_key TEXT NOT NULL UNIQUE,
+    obs_upload_id TEXT,
+    idempotency_key TEXT NOT NULL,
+    request_fingerprint TEXT NOT NULL,
+    state_version INTEGER NOT NULL,
+    reserved_bytes INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    session_expires_at TEXT NOT NULL,
+    completed_at TEXT,
+    UNIQUE(owner_subject, idempotency_key)
+)
+"""
+_LEGACY_PARTS_DDL = """
+CREATE TABLE upload_parts (
+    asset_id TEXT NOT NULL,
+    part_number INTEGER NOT NULL,
+    byte_size INTEGER NOT NULL,
+    sha256 TEXT NOT NULL,
+    etag TEXT NOT NULL,
+    received_at TEXT NOT NULL,
+    PRIMARY KEY(asset_id, part_number),
+    FOREIGN KEY(asset_id) REFERENCES upload_assets(asset_id)
+)
+"""
+
+
+def _insert_legacy_asset(
+    conn: sqlite3.Connection,
+    *,
+    asset_id: str,
+    status: str,
+    created_at: datetime,
+    size_bytes: int = 3,
+    part_count: int = 1,
+    completed_at: datetime | None = None,
+) -> None:
+    """Insert a valid row from the upload schema before activation tracking."""
+    conn.execute(
+        "INSERT INTO upload_assets ("
+        "asset_id, owner_subject, filename, content_type, purpose, "
+        "size_bytes, part_size_bytes, part_count, status, object_key, "
+        "obs_upload_id, idempotency_key, request_fingerprint, state_version, "
+        "reserved_bytes, created_at, updated_at, session_expires_at, "
+        "completed_at"
+        ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            asset_id,
+            "owner-1",
+            "legacy.fa",
+            "application/octet-stream",
+            "chat_attachment",
+            size_bytes,
+            3,
+            part_count,
+            status,
+            f"agent_data/uploads/owner-1/{asset_id}",
+            None,
+            f"key-{asset_id}",
+            f"fingerprint-{asset_id}",
+            1,
+            size_bytes if status == "uploading" else 0,
+            created_at.isoformat(),
+            created_at.isoformat(),
+            (created_at + timedelta(days=7)).isoformat(),
+            None if completed_at is None else completed_at.isoformat(),
+        ),
+    )
+
+
+def _build_legacy_registry_db(db_path: Path) -> datetime:
+    """Create the pre-activation schema and representative historical rows."""
+    first_part_at = NOW - timedelta(hours=2)
+    later_part_at = first_part_at + timedelta(minutes=1)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(_LEGACY_ASSETS_DDL)
+        conn.execute(_LEGACY_PARTS_DDL)
+        _insert_legacy_asset(
+            conn,
+            asset_id="uploading-with-part",
+            status="uploading",
+            created_at=NOW - timedelta(hours=3),
+            size_bytes=6,
+            part_count=2,
+        )
+        _insert_legacy_asset(
+            conn,
+            asset_id="recent-zero-part",
+            status="uploading",
+            created_at=NOW - timedelta(minutes=5),
+        )
+        _insert_legacy_asset(
+            conn,
+            asset_id="old-zero-part",
+            status="uploading",
+            created_at=NOW - timedelta(days=8),
+        )
+        _insert_legacy_asset(
+            conn,
+            asset_id="completed-row",
+            status="completed",
+            created_at=NOW - timedelta(days=1),
+            completed_at=NOW - timedelta(hours=1),
+        )
+        _insert_legacy_asset(
+            conn,
+            asset_id="aborted-row",
+            status="aborted",
+            created_at=NOW - timedelta(days=1),
+        )
+        conn.execute(
+            "INSERT INTO upload_parts ("
+            "asset_id, part_number, byte_size, sha256, etag, received_at"
+            ") VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "uploading-with-part",
+                1,
+                3,
+                "a" * 64,
+                "legacy-etag",
+                later_part_at.isoformat(),
+            ),
+        )
+        conn.execute(
+            "INSERT INTO upload_parts ("
+            "asset_id, part_number, byte_size, sha256, etag, received_at"
+            ") VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "uploading-with-part",
+                2,
+                3,
+                "b" * 64,
+                "legacy-etag-2",
+                first_part_at.isoformat(),
+            ),
+        )
+        conn.execute(
+            "INSERT INTO upload_parts ("
+            "asset_id, part_number, byte_size, sha256, etag, received_at"
+            ") VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "completed-row",
+                1,
+                3,
+                "c" * 64,
+                "completed-etag",
+                (NOW - timedelta(hours=2)).isoformat(),
+            ),
+        )
+    return first_part_at
+
+
+def test_fresh_activation_column_is_internal_and_starts_null(
+    tmp_path: Path,
+) -> None:
+    """Fresh rows reserve a private marker outside public responses."""
+    registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
+    asset, _secret = registry.create_or_replay(_spec(), now=NOW)
+
+    with sqlite3.connect(registry.db_path) as conn:
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(upload_assets)")
+        }
+        activated_at = conn.execute(
+            "SELECT activated_at FROM upload_assets WHERE asset_id = ?",
+            (asset.asset_id,),
+        ).fetchone()[0]
+
+    assert "activated_at" in columns
+    assert asset.activated_at is None
+    assert activated_at is None
+    assert "activated_at" not in UploadStatusResponse.model_fields
+    assert "activated_at" not in AssetDescriptor.model_fields
+
+
+def test_legacy_initialization_backfills_only_part_bearing_uploads(
+    tmp_path: Path,
+) -> None:
+    """Migration uses authoritative part evidence, never row age alone."""
+    db_path = tmp_path / "legacy.db"
+    first_part_at = _build_legacy_registry_db(db_path)
+
+    ResumableUploadRegistry(str(db_path))
+
+    with sqlite3.connect(db_path) as conn:
+        activation_by_asset = dict(
+            conn.execute(
+                "SELECT asset_id, activated_at FROM upload_assets "
+                "ORDER BY asset_id"
+            )
+        )
+
+    assert activation_by_asset == {
+        "aborted-row": None,
+        "completed-row": None,
+        "old-zero-part": None,
+        "recent-zero-part": None,
+        "uploading-with-part": first_part_at.isoformat(),
+    }
+
+
+def test_activation_migration_is_repeatable_and_concurrent(
+    tmp_path: Path,
+) -> None:
+    """Concurrent constructors converge on one marker without overwrites."""
+    db_path = tmp_path / "legacy.db"
+    first_part_at = _build_legacy_registry_db(db_path)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(ResumableUploadRegistry, str(db_path))
+            for _index in range(2)
+        ]
+        for future in futures:
+            future.result()
+    ResumableUploadRegistry(str(db_path))
+    ResumableUploadRegistry(str(db_path))
+
+    with sqlite3.connect(db_path) as conn:
+        columns = [
+            row[1] for row in conn.execute("PRAGMA table_info(upload_assets)")
+        ]
+        conn.execute(
+            "UPDATE upload_assets SET activated_at = ? WHERE asset_id = ?",
+            ("2026-01-01T00:00:00+00:00", "uploading-with-part"),
+        )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(ResumableUploadRegistry, str(db_path))
+            for _index in range(2)
+        ]
+        for future in futures:
+            future.result()
+
+    with sqlite3.connect(db_path) as conn:
+        activated_at = conn.execute(
+            "SELECT activated_at FROM upload_assets WHERE asset_id = ?",
+            ("uploading-with-part",),
+        ).fetchone()[0]
+
+    assert columns.count("activated_at") == 1
+    assert first_part_at.isoformat() != activated_at
+    assert activated_at == "2026-01-01T00:00:00+00:00"
+
+
+def test_explicit_asset_projection_reconstructs_every_record_field(
+    tmp_path: Path,
+) -> None:
+    """The explicit row order maps every persisted record field exactly."""
+    registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
+    created, _secret = registry.create_or_replay(_spec(), now=NOW)
+
+    with sqlite3.connect(registry.db_path) as conn:
+        row = conn.execute(
+            f"SELECT {_ASSET_COLUMNS} FROM upload_assets WHERE asset_id = ?",
+            (created.asset_id,),
+        ).fetchone()
+
+    assert row is not None
+    assert len(row) == len(AssetRecord._fields)
+    assert _asset_from_row(row) == created
 
 
 def test_registry_is_additive_and_owner_scoped(tmp_path: Path) -> None:
