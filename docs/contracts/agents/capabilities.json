@@ -8,14 +8,6 @@
     "attachments": {
       "document_context": {
         "argument": "obs_file_list",
-        "extensions": [
-          "pdf",
-          "docx",
-          "pptx",
-          "xls",
-          "xlsx",
-          "msg"
-        ],
         "max_file_bytes": 26214400,
         "max_files": 10,
         "max_total_bytes": 52428800
@@ -33,14 +25,6 @@
     "attachments": {
       "document_context": {
         "argument": "obs_file_list",
-        "extensions": [
-          "pdf",
-          "docx",
-          "pptx",
-          "xls",
-          "xlsx",
-          "msg"
-        ],
         "max_file_bytes": 26214400,
         "max_files": 10,
         "max_total_bytes": 52428800
@@ -70,14 +54,6 @@
     "attachments": {
       "document_context": {
         "argument": "obs_file_list",
-        "extensions": [
-          "pdf",
-          "docx",
-          "pptx",
-          "xls",
-          "xlsx",
-          "msg"
-        ],
         "max_file_bytes": 26214400,
         "max_files": 10,
         "max_total_bytes": 52428800
@@ -109,30 +85,12 @@
     "attachments": {
       "document_context": {
         "argument": "obs_file_list",
-        "extensions": [
-          "pdf",
-          "docx",
-          "pptx",
-          "xls",
-          "xlsx",
-          "msg"
-        ],
         "max_file_bytes": 26214400,
         "max_files": 10,
         "max_total_bytes": 52428800
       },
       "datasets": {
         "argument": "data_list",
-        "formats": [
-          "csv"
-        ],
-        "encoding": [
-          "utf-8",
-          "utf-8-bom"
-        ],
-        "delimiter": ",",
-        "requires_description": true,
-        "compressed": false,
         "max_file_bytes": 26214400,
         "max_files": 10,
         "max_total_bytes": 52428800
@@ -166,30 +124,12 @@
     "attachments": {
       "document_context": {
         "argument": "obs_file_list",
-        "extensions": [
-          "pdf",
-          "docx",
-          "pptx",
-          "xls",
-          "xlsx",
-          "msg"
-        ],
         "max_file_bytes": 26214400,
         "max_files": 10,
         "max_total_bytes": 52428800
       },
       "datasets": {
         "argument": "data_list",
-        "formats": [
-          "csv"
-        ],
-        "encoding": [
-          "utf-8",
-          "utf-8-bom"
-        ],
-        "delimiter": ",",
-        "requires_description": true,
-        "compressed": false,
         "max_file_bytes": 26214400,
         "max_files": 10,
         "max_total_bytes": 52428800
@@ -208,14 +148,6 @@
     "attachments": {
       "document_context": {
         "argument": "obs_file_list",
-        "extensions": [
-          "pdf",
-          "docx",
-          "pptx",
-          "xls",
-          "xlsx",
-          "msg"
-        ],
         "max_file_bytes": 26214400,
         "max_files": 10,
         "max_total_bytes": 52428800
@@ -235,14 +167,6 @@
     "attachments": {
       "document_context": {
         "argument": "obs_file_list",
-        "extensions": [
-          "pdf",
-          "docx",
-          "pptx",
-          "xls",
-          "xlsx",
-          "msg"
-        ],
         "max_file_bytes": 26214400,
         "max_files": 10,
         "max_total_bytes": 52428800

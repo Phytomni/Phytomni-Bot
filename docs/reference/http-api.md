@@ -467,14 +467,13 @@ than silently inherit `[]`.
 Each row also carries an additive `capabilities` object. Its stable keys are
 `streaming`, `interactive`, `report_states`, `artifacts`, and
 `degraded_outcomes`, and `attachments`; `report_states` is always a JSON
-list. The attachment descriptor is either `null` or an object with a public
-argument name, formats, and exact limits. A representative document
-descriptor is:
+list. Each attachment channel is either `null` or an object with exactly the
+native argument name and inclusive operational limits. A representative
+document descriptor is:
 
 ```json
 {
   "argument": "obs_file_list",
-  "extensions": ["pdf", "docx", "pptx", "xls", "xlsx", "msg"],
   "max_file_bytes": 26214400,
   "max_files": 10,
   "max_total_bytes": 52428800
@@ -493,20 +492,23 @@ The current attachment matrix is:
 | `analyst`     | `obs_file_list`  | `data_list`  | no                |
 | `deep_genome` | no               | no           | no                |
 | `research`    | `obs_file_list`  | `data_list`  | no                |
-| `design`      | no               | no           | no                |
-| `network`     | no               | no           | no                |
+| `design`      | `obs_file_list`  | no           | no                |
+| `network`     | `obs_file_list`  | no           | no                |
 
 `agent_context` and `document` / legacy `chat_attachment` uploads are
 document-class managed assets; `dataset` uploads are dataset-class managed
 assets. Their selected Agent capability determines the final native channel.
-Managed `data_list` projections use exact empty-string values; arbitrary
-non-managed path maps still require nonblank descriptions and retain their
-legacy CSV/purpose validation.
+Managed channel descriptors describe only this class-to-argument mapping and
+the invocation limits; they do not advertise general managed support for
+extensions, formats, encoding, delimiters, compression, or descriptions.
+Managed `data_list` projections use exact empty-string values. Legacy raw
+native path maps still retain their existing filename, CSV, purpose, and
+description validation.
 The complete deterministic golden
 is
 [`docs/contracts/agents/capabilities.json`](../contracts/agents/capabilities.json)
 with SHA256
-`b13f327b1dd1012ef24936cf3183bd37a19d0e1e8ec3dd7a5115352d0ea492b5` for the
+`df66c45577cba256d210945a637fb8eb805feb8550e7e3841b663b2364527a27` for the
 current UTF-8 file including its final newline. Consumers must treat this
 object as the capability source of truth and fail closed for an unknown slug;
 it does not grant permission or change the canonical route name.

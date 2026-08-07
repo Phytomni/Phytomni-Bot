@@ -575,7 +575,6 @@ adds a JSON-compatible `capabilities` object:
   "attachments": {
     "document_context": {
       "argument": "obs_file_list",
-      "extensions": ["pdf", "docx", "pptx", "xls", "xlsx", "msg"],
       "max_file_bytes": 26214400,
       "max_files": 10,
       "max_total_bytes": 52428800
@@ -601,10 +600,15 @@ separate from this metadata.
 
 The attachment channels are exact: Chat, Knowledge, and Review accept
 document context; Analyst and Research accept document context plus CSV
-datasets; Data, BriefGene, DeepGenome, Design, and Network accept neither.
+datasets; Design and Network accept document context only; Data, BriefGene,
+and DeepGenome accept neither. A non-null channel publishes only its native
+argument (`obs_file_list` or `data_list`) and the three inclusive invocation
+limits; it does not claim managed support for extensions, formats, encoding,
+delimiters, compression, or descriptions. The outer `expert_forwarding` flag
+remains compatibility metadata for the Expert forwarding path.
 The complete deterministic golden is
 `docs/contracts/agents/capabilities.json` (SHA256
-`b13f327b1dd1012ef24936cf3183bd37a19d0e1e8ec3dd7a5115352d0ea492b5`). The
+`df66c45577cba256d210945a637fb8eb805feb8550e7e3841b663b2364527a27`). The
 descriptor is a capability preflight, not an authorization grant.
 
 ### Native conversation-context V1 probes (non-production only)
@@ -1151,16 +1155,21 @@ failures remain retryable on a later pass.
 Native runs and Expert routing validate asset ids before invoking the selected
 handler. A resumable asset must be completed and owned by the authenticated
 user before the resolver projects its internal `obs_file_list` reference.
-The purpose, filename extension, byte size, and channel must match the public
-capability descriptor. Arbitrary managed-prefix paths, incomplete assets, and
-foreign-owner rows are rejected; do not infer ownership from an OBS key.
+The public capability descriptor determines only managed channel presence,
+native argument name, and inclusive invocation limits. It deliberately does
+not advertise a general managed extension, format, encoding, delimiter,
+compression, or description contract. Arbitrary managed-prefix paths,
+incomplete assets, and foreign-owner rows are rejected; do not infer ownership
+from an OBS key.
 
 Use the following exact limits for registered uploads: 10 files per request,
 26,214,400 bytes per file, and 52,428,800 bytes in total. The limits are
-inclusive. Duplicate asset ids are rejected before budget checks. Dataset descriptions
-must be nonblank. Legacy preconfigured OBS paths in `data_list` are a
-separate Analyst/Research policy, are not upload-registry evidence, and are
-not automatically migrated.
+inclusive. Duplicate asset ids are rejected before budget checks. Managed
+`data_list` values are exact empty strings. Legacy raw native document paths
+still use their purpose and filename-extension checks; legacy dataset maps
+still require CSV/purpose validation and nonblank descriptions. Legacy
+preconfigured OBS paths in `data_list` are a separate Analyst/Research
+policy, are not upload-registry evidence, and are not automatically migrated.
 
 The stable native/Expert `422` codes are `attachment_not_found`,
 `attachment_not_supported`, `attachment_format_unsupported`,

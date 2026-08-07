@@ -95,7 +95,6 @@ class DocumentContextCapability:
     """Limits and input shape for document-context attachments."""
 
     argument: str = "obs_file_list"
-    extensions: tuple[str, ...] = DOCUMENT_EXTENSIONS
     max_file_bytes: int = MAX_FILE_BYTES
     max_files: int = MAX_FILES
     max_total_bytes: int = MAX_TOTAL_BYTES
@@ -104,7 +103,6 @@ class DocumentContextCapability:
         """Serialize the immutable descriptor into JSON-compatible values."""
         return {
             "argument": self.argument,
-            "extensions": list(self.extensions),
             "max_file_bytes": self.max_file_bytes,
             "max_files": self.max_files,
             "max_total_bytes": self.max_total_bytes,
@@ -125,11 +123,6 @@ class DatasetCapability:
     """Limits and input shape for structured CSV dataset attachments."""
 
     argument: str = "data_list"
-    formats: tuple[str, ...] = ("csv",)
-    encoding: tuple[str, ...] = ("utf-8", "utf-8-bom")
-    delimiter: str = ","
-    requires_description: bool = True
-    compressed: bool = False
     _limits: _AttachmentLimits = _AttachmentLimits()
 
     @property
@@ -151,11 +144,6 @@ class DatasetCapability:
         """Serialize the immutable descriptor into JSON-compatible values."""
         return {
             "argument": self.argument,
-            "formats": list(self.formats),
-            "encoding": list(self.encoding),
-            "delimiter": self.delimiter,
-            "requires_description": self.requires_description,
-            "compressed": self.compressed,
             "max_file_bytes": self.max_file_bytes,
             "max_files": self.max_files,
             "max_total_bytes": self.max_total_bytes,

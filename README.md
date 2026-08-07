@@ -145,9 +145,13 @@ document-only Agents receive managed references in `obs_file_list`, while
 dual-channel Agents receive dataset-class assets in `data_list` and the rest
 in `obs_file_list`. Managed projection has no pre-invocation filename suffix,
 CSV, MIME, purpose, or description gate; managed `data_list` values are exact
-empty strings. Legacy raw native inputs are separate: document references keep
-their documented purpose and extension checks, and legacy `data_list` entries
-remain CSV/purpose-validated with nonblank descriptions. The transfer limit is
+empty strings. Capability discovery describes only managed channel presence,
+the native argument name, and invocation limits; it does not advertise
+general managed support for extensions, formats, encoding, delimiters,
+compression, or descriptions. Legacy raw native inputs are separate:
+document references keep their documented purpose and extension checks, and
+legacy `data_list` entries remain CSV/purpose-validated with nonblank
+descriptions. The transfer limit is
 10 GiB by default. Agent invocation remains bounded to 10 attachments,
 26,214,400 bytes per attachment, and 52,428,800 bytes in total. Repeated
 asset ids, foreign owners, incomplete assets, unsupported channels, and

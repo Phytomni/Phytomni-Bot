@@ -66,6 +66,21 @@ _EXPECTED_ATTACHMENTS = {
     "network": (True, False, False),
 }
 
+_PUBLIC_CHANNEL_KEYS = {
+    "argument",
+    "max_file_bytes",
+    "max_files",
+    "max_total_bytes",
+}
+_OBSOLETE_PUBLIC_CHANNEL_FIELDS = {
+    "extensions",
+    "formats",
+    "encoding",
+    "delimiter",
+    "requires_description",
+    "compressed",
+}
+
 _ALL_PUBLIC_TOOLS = tuple(
     name.value for name, _description, _model in AGENT_TOOL_DEFINITIONS
 )
@@ -131,6 +146,20 @@ def test_attachment_matrix_is_exact() -> None:
             attachments.datasets is not None,
             attachments.expert_forwarding,
         ) == expected
+
+        public_attachments = serialize_agent_capability(slug)["attachments"]
+        for channel, argument, supported in (
+            ("document_context", "obs_file_list", expected[0]),
+            ("datasets", "data_list", expected[1]),
+        ):
+            descriptor = public_attachments[channel]
+            if not supported:
+                assert descriptor is None
+                continue
+            assert descriptor is not None
+            assert set(descriptor) == _PUBLIC_CHANNEL_KEYS
+            assert descriptor["argument"] == argument
+            assert not _OBSOLETE_PUBLIC_CHANNEL_FIELDS.intersection(descriptor)
 
 
 @pytest.mark.parametrize(
@@ -281,7 +310,7 @@ def test_capability_golden_is_byte_stable() -> None:
     assert json.loads(golden) == actual
     assert golden == json.dumps(actual, ensure_ascii=False, indent=2) + "\n"
     assert hashlib.sha256(golden.encode("utf-8")).hexdigest() == (
-        "66452e129e2c0746330fb8bb15b67713765d793aa7e7987737c2c435d255d2b8"
+        "df66c45577cba256d210945a637fb8eb805feb8550e7e3841b663b2364527a27"
     )
 
 
