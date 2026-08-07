@@ -28,6 +28,7 @@ __all__ = [
     "ExpertAttachmentRequirement",
     "agent_has_any_attachment_channel",
     "agent_supports_attachment_channels",
+    "agent_uses_user_query",
     "filter_tools_for_expert_attachments",
     "filter_tools_for_attachment_channels",
     "get_agent_slug_for_tool",
@@ -44,6 +45,10 @@ MAX_FILES = 10
 MAX_TOTAL_BYTES = 52_428_800
 DOCUMENT_EXTENSIONS = ("pdf", "docx", "pptx", "xls", "xlsx", "msg")
 MAX_PARALLEL_PARTS = 4
+
+_USER_QUERY_AGENT_SLUGS: Final[frozenset[str]] = frozenset(
+    {"chat", "knowledge", "data", "review", "brief_gene", "research"}
+)
 
 _UPLOAD_ROUTES: tuple[dict[str, str], ...] = (
     {
@@ -290,6 +295,11 @@ def get_agent_capability(slug: str) -> AgentCapability:
         return AGENT_CAPABILITIES[slug]
     except KeyError as exc:
         raise KeyError(f"unknown agent capability slug: {slug}") from exc
+
+
+def agent_uses_user_query(slug: str) -> bool:
+    """Return whether an Expert selection uses the ``user_query`` key."""
+    return slug in _USER_QUERY_AGENT_SLUGS
 
 
 def get_attachment_capability(slug: str) -> AttachmentCapability:

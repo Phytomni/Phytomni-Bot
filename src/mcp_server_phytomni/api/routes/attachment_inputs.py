@@ -15,6 +15,7 @@ from ...runtime.attachment_assets import ResolvedAttachmentBundle
 from ...runtime.locale import current_effective_locale
 from ..agent_capabilities import (
     ExpertAttachmentRequirement,
+    agent_uses_user_query,
     filter_tools_for_expert_attachments,
     get_agent_slug_for_tool,
     get_attachment_capability,
@@ -304,14 +305,7 @@ def prepare_selected_expert_arguments(
     if agent == "analyst":
         arguments["goal_description"] = payload.user_query
         arguments.pop("user_query", None)
-    elif agent in {
-        "chat",
-        "knowledge",
-        "data",
-        "review",
-        "brief_gene",
-        "research",
-    }:
+    elif agent_uses_user_query(agent):
         arguments["user_query"] = payload.user_query
         arguments.pop("goal_description", None)
     arguments["locale"] = current_effective_locale()

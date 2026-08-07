@@ -20,7 +20,10 @@ from ...runtime.conversation_context.service import (
     AsyncAgentAcceptance,
 )
 from ...runtime.locale import current_effective_locale
-from ..agent_capabilities import filter_tools_for_attachment_channels
+from ..agent_capabilities import (
+    agent_uses_user_query,
+    filter_tools_for_attachment_channels,
+)
 from ..attachments import redact_managed_attachment_values
 from ..schemas import ExpertQueryRequest
 from .agent_dependencies import AgentRouteDependencies
@@ -276,14 +279,7 @@ def _expert_context_arguments(
     if agent == "analyst":
         prepared["goal_description"] = payload.user_query
         prepared.pop("user_query", None)
-    elif agent in {
-        "chat",
-        "knowledge",
-        "data",
-        "review",
-        "brief_gene",
-        "research",
-    }:
+    elif agent_uses_user_query(agent):
         prepared["user_query"] = payload.user_query
         prepared.pop("goal_description", None)
     prepared["locale"] = current_effective_locale()
