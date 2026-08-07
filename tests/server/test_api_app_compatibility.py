@@ -57,10 +57,11 @@ _REAL_ASYNC_REQUEST = httpx.AsyncClient.request
 # Generated from ``_openapi_hash(create_app())`` after the intentional public
 # schema additions in 7321656 (locale), dd99f82 (dataset uploads), bcf20b6
 # (attachment capabilities), the strict Expert request boundary, the private
-# native conversation envelope, and resumable attachment references. The
-# ``_normalized_openapi`` helper removes only unstable version/server fields.
+# native conversation envelope, resumable attachment references, and the
+# purpose-constrained upload contract in fd19dcbb. The ``_normalized_openapi``
+# helper removes only unstable version/server fields.
 _OPENAPI_HASH = (
-    "1162d437308eed601bf7d75b1511f4d2a7887b0293c6e0f55b8d006b247dd24e"
+    "ab1938f530820317b8a397e997307cffbb72e2e0ef700635ab3e0996065ec8eb"
 )
 
 

@@ -116,6 +116,9 @@ async def execute_context_expert(
     )
     if replay is not None:
         return context_response(replay, envelope)
+    payload = payload.model_copy(
+        update={"user_query": envelope.current_message.content}
+    )
     payload, envelope, prepared_by_tool = _prepare_expert_context_inputs(
         payload, dependencies, attachment_owner, envelope
     )
@@ -281,10 +284,10 @@ def _expert_context_arguments(
     """Merge canonical selector fields without touching attachment state."""
     prepared = dict(arguments)
     if agent == "analyst":
-        prepared["goal_description"] = payload.user_query
+        prepared.setdefault("goal_description", payload.user_query)
         prepared.pop("user_query", None)
     elif agent_uses_user_query(agent):
-        prepared["user_query"] = payload.user_query
+        prepared.setdefault("user_query", payload.user_query)
         prepared.pop("goal_description", None)
     prepared["locale"] = current_effective_locale()
     return prepared

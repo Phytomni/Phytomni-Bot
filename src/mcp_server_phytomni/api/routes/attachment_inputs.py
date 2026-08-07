@@ -302,11 +302,15 @@ def prepare_selected_expert_arguments(
     arguments.pop("obs_file_list", None)
     arguments.pop("data_list", None)
     arguments.pop("attachments", None)
+    has_attachment_input = bool(
+        resolved_input.bundle.assets or payload.obs_file_list
+    )
     if agent == "analyst":
         arguments["goal_description"] = payload.user_query
         arguments.pop("user_query", None)
     elif agent_uses_user_query(agent):
-        arguments["user_query"] = payload.user_query
+        if has_attachment_input:
+            arguments["user_query"] = payload.user_query
         arguments.pop("goal_description", None)
     arguments["locale"] = current_effective_locale()
     if payload.obs_file_list:
