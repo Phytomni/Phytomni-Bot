@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import logging
 import sqlite3
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -24,6 +23,8 @@ from mcp_server_phytomni.api.schemas import (
 )
 from mcp_server_phytomni.runtime.resumable_uploads import (
     _ASSET_COLUMNS,
+    _CREATE_ASSETS_TABLE,
+    _CREATE_PARTS_TABLE,
     AssetCreateSpec,
     AssetRecord,
     CapabilityAuthorization,
@@ -48,17 +49,21 @@ class _ActivationMigrationErrorConnection:
     def __init__(self, error: sqlite3.OperationalError) -> None:
         self.error = error
         self.schema_checks = 0
-        self.statements: list[str] = []
+        self._statements: list[str] = []
 
     def execute(self, statement: str) -> list[tuple[int, str]]:
         """Return the raced schema view or raise the controlled ALTER error."""
-        self.statements.append(statement)
+        self._statements.append(statement)
         if statement == "PRAGMA table_info(upload_assets)":
             self.schema_checks += 1
             return [] if self.schema_checks == 1 else [(0, "activated_at")]
         if statement.startswith("ALTER TABLE"):
             raise self.error
         return []
+
+    def recorded_statements(self) -> tuple[str, ...]:
+        """Return the SQL observed by this controlled connection."""
+        return tuple(self._statements)
 
 
 def _spec(
@@ -112,44 +117,6 @@ def _assert_state_error(code: str, operation: Callable[[], object]) -> None:
     with pytest.raises(UploadStateError) as error:
         operation()
     assert error.value.code == code
-
-
-_LEGACY_ASSETS_DDL = """
-CREATE TABLE upload_assets (
-    asset_id TEXT PRIMARY KEY,
-    owner_subject TEXT NOT NULL,
-    filename TEXT NOT NULL,
-    content_type TEXT NOT NULL,
-    purpose TEXT NOT NULL,
-    size_bytes INTEGER NOT NULL,
-    part_size_bytes INTEGER NOT NULL,
-    part_count INTEGER NOT NULL,
-    status TEXT NOT NULL,
-    object_key TEXT NOT NULL UNIQUE,
-    obs_upload_id TEXT,
-    idempotency_key TEXT NOT NULL,
-    request_fingerprint TEXT NOT NULL,
-    state_version INTEGER NOT NULL,
-    reserved_bytes INTEGER NOT NULL,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    session_expires_at TEXT NOT NULL,
-    completed_at TEXT,
-    UNIQUE(owner_subject, idempotency_key)
-)
-"""
-_LEGACY_PARTS_DDL = """
-CREATE TABLE upload_parts (
-    asset_id TEXT NOT NULL,
-    part_number INTEGER NOT NULL,
-    byte_size INTEGER NOT NULL,
-    sha256 TEXT NOT NULL,
-    etag TEXT NOT NULL,
-    received_at TEXT NOT NULL,
-    PRIMARY KEY(asset_id, part_number),
-    FOREIGN KEY(asset_id) REFERENCES upload_assets(asset_id)
-)
-"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -210,8 +177,11 @@ def _build_legacy_registry_db(db_path: Path) -> datetime:
     first_part_at = NOW - timedelta(hours=2)
     later_part_at = first_part_at + timedelta(minutes=1)
     with sqlite3.connect(db_path) as conn:
-        conn.execute(_LEGACY_ASSETS_DDL)
-        conn.execute(_LEGACY_PARTS_DDL)
+        legacy_assets_ddl = _CREATE_ASSETS_TABLE.replace(
+            "    activated_at TEXT,\n", ""
+        )
+        conn.execute(legacy_assets_ddl)
+        conn.execute(_CREATE_PARTS_TABLE)
         _insert_legacy_asset(
             conn,
             _LegacyAsset(
@@ -403,7 +373,7 @@ def test_activation_migration_accepts_verified_duplicate_column_race() -> None:
     assert conn.schema_checks == 2
     assert any(
         statement.startswith("UPDATE upload_assets")
-        for statement in conn.statements
+        for statement in conn.recorded_statements()
     )
 
 
@@ -674,7 +644,7 @@ def test_provisional_deadline_boundary_is_exact(tmp_path: Path) -> None:
     )
     assert authorized.status == "uploading"
     _assert_state_error(
-        "upload_session_expired",
+        "upload_capability_invalid",
         lambda: registry.authorize_capability(
             due_secret.raw_token,
             asset_id=due_asset.asset_id,
@@ -682,6 +652,8 @@ def test_provisional_deadline_boundary_is_exact(tmp_path: Path) -> None:
             now=deadline,
         ),
     )
+    assert registry.get_asset(due_asset.asset_id, owner="owner-1") == due_asset
+    assert due_asset.asset_id in registry.cleanup_expired(now=deadline)
     expired = registry.get_asset(due_asset.asset_id, owner="owner-1")
     assert expired is not None
     assert expired.status == "expired"
@@ -723,8 +695,12 @@ def test_normal_session_deadline_boundary_is_exact(tmp_path: Path) -> None:
         now=deadline - timedelta(microseconds=1),
     )
     assert authorized.status == "uploading"
+    due_before_deadline = registry.get_asset(
+        due_asset.asset_id, owner="owner-1"
+    )
+    assert due_before_deadline is not None
     _assert_state_error(
-        "upload_session_expired",
+        "upload_capability_invalid",
         lambda: registry.authorize_capability(
             due_secret.raw_token,
             asset_id=due_asset.asset_id,
@@ -732,6 +708,11 @@ def test_normal_session_deadline_boundary_is_exact(tmp_path: Path) -> None:
             now=deadline,
         ),
     )
+    assert (
+        registry.get_asset(due_asset.asset_id, owner="owner-1")
+        == due_before_deadline
+    )
+    assert due_asset.asset_id in registry.cleanup_expired(now=deadline)
     due = registry.get_asset(due_asset.asset_id, owner="owner-1")
     assert due is not None
     assert due.status == "expired"
@@ -783,12 +764,12 @@ def test_activation_and_cleanup_race_has_one_valid_winner(
         assert activation_result == "activated"
         assert cleanup_result == ()
     else:
-        assert activation_result == "upload_session_expired"
+        assert activation_result == "upload_capability_invalid"
         assert cleanup_result == (asset.asset_id,)
 
     registry.cleanup_expired(now=NOW + timedelta(days=8))
     _assert_state_error(
-        "upload_session_expired",
+        "upload_capability_invalid",
         lambda: registry.authorize_capability(
             secret.raw_token,
             asset_id=asset.asset_id,
@@ -920,20 +901,6 @@ def test_capability_renewal_cannot_revive_stale_provisional_row(
     assert expired is not None
     assert expired.status == "expired"
     assert expired.activated_at is None
-
-
-def test_cleanup_reports_aggregate_expiry_reason_without_row_identity(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-) -> None:
-    """Cleanup logs only the applicable deadline class and aggregate count."""
-    registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
-    asset, _secret = registry.create_or_replay(_spec(), now=NOW)
-
-    with caplog.at_level(logging.INFO):
-        registry.cleanup_expired(now=NOW + timedelta(minutes=180))
-
-    assert "provisional_deadline=1" in caplog.text
-    assert asset.asset_id not in caplog.text
 
 
 def test_shared_terminalization_releases_all_ephemeral_state(

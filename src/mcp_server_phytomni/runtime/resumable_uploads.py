@@ -701,6 +701,9 @@ class ResumableUploadRegistry:
             asset = self._fetch_asset(conn, asset_id)
             if row[1] != asset.owner_subject:
                 raise UploadStateError("upload_capability_invalid")
+            expires_at = _parse_time(row[4])
+            if row[5] is not None or expires_at <= current:
+                raise UploadStateError("upload_capability_invalid")
             reason = self._deadline_reason(asset, current)
             if reason is not None:
                 self._terminalize_asset(
@@ -710,11 +713,6 @@ class ResumableUploadRegistry:
                 error_code = "upload_session_expired"
             else:
                 error_code = _terminal_error(asset)
-                expires_at = _parse_time(row[4])
-                if error_code is None and row[5] is not None:
-                    error_code = "upload_capability_invalid"
-                if error_code is None and expires_at <= current:
-                    error_code = "upload_capability_invalid"
                 if error_code is None:
                     if authorization.activate and asset.activated_at is None:
                         conn.execute(

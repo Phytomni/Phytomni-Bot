@@ -71,6 +71,9 @@ class UploadRuntime:
                     capability_ttl=timedelta(
                         seconds=config.API_UPLOAD_V2_CAPABILITY_TTL_SECONDS
                     ),
+                    provisional_ttl=timedelta(
+                        seconds=config.API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS
+                    ),
                 ),
             )
             self.upload_service = ResumableUploadService(

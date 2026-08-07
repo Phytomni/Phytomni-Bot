@@ -31,6 +31,7 @@ from mcp_server_phytomni.api.schemas import (
     UploadCreateRequest,
 )
 from mcp_server_phytomni.api.upload_runtime import UploadRuntime
+from mcp_server_phytomni.config.defaults import ApiConfig
 from mcp_server_phytomni.runtime.resumable_uploads import (
     ResumableUploadRegistry,
 )
@@ -170,6 +171,24 @@ def test_cleanup_hook_is_repeatable_and_preserves_completed_assets(
     assert completed_asset is not None
     assert expired_asset.status == "expired"
     assert completed_asset.status == "completed"
+
+
+def test_upload_runtime_applies_configured_provisional_ttl(
+    tmp_path: Path,
+) -> None:
+    """The production factory passes the bounded provisional TTL through."""
+    config = ApiConfig(
+        API_TASKS_DB_PATH=str(tmp_path / "uploads.sqlite"),
+        API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS=60,
+    )
+    runtime = UploadRuntime(
+        config_factory=lambda: config,
+        logger=logging.getLogger(__name__),
+    )
+
+    service = runtime.get_upload_service()
+
+    assert service.registry.provisional_ttl == timedelta(seconds=60)
 
 
 def _create_request(key: str) -> UploadCreateRequest:
