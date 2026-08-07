@@ -23,6 +23,7 @@ PUBLIC_DOCS = tuple(
         "docs/contracts/deep-genome/README.md",
         "docs/explanation/architecture.md",
         "docs/guides/deployment.md",
+        "docs/ops/citation-database-runbook.md",
         "docs/ops/http-api-runbook.md",
         "docs/ops/upgrading.md",
         "docs/reference/cli.md",

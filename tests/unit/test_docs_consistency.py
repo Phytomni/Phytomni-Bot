@@ -251,6 +251,33 @@ def test_async_report_docs_distinguish_ack_status_and_terminal_report() -> (
     assert "does not prove live backend acceptance" in e2e
 
 
+def test_citation_sqlite_docs_cover_public_contract() -> None:
+    """Keep citation storage and projection facts in durable docs."""
+    paths = (
+        ROOT / "docs/reference/configuration.md",
+        ROOT / "docs/reference/http-api.md",
+        ROOT / "docs/ops/citation-database-runbook.md",
+        ROOT / "e2e/README.md",
+    )
+    corpus = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+    for phrase in (
+        "CITATION_DB_PATH",
+        "PHYTOMNI_CITATION_DB_PATH",
+        "scripts/citation_db.py build",
+        "scripts/citation_db.py validate",
+        "mode=ro",
+        "formatted_citation",
+        "doi_missing",
+        "citation_metadata_degraded",
+        "<sup>",
+        "KnowledgeAgent",
+        "ReviewAgent",
+        "BriefGeneAgent",
+        "no GaussDB fallback",
+    ):
+        assert phrase in corpus
+
+
 def test_async_cli_docs_lock_transport_and_exit_codes() -> None:
     """Keep the HTTP CLI contract visible and key-safe."""
     cli = (ROOT / "docs/reference/cli.md").read_text(encoding="utf-8")

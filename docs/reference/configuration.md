@@ -82,6 +82,23 @@ Common variables:
 removed BI HTTP client; a legacy deployment must install the prior binary and
 restore the environment expected by that binary.
 
+### Citation SQLite artifact
+
+The cited-result metadata artifact is configured by either
+`CITATION_DB_PATH` or `PHYTOMNI_CITATION_DB_PATH`. The path is optional while
+the package is imported or `create_app()` is constructed, so auxiliary tools
+and route/schema tests remain usable. It is required before MCP stdio or the
+FastAPI HTTP lifespan starts successfully and must name a readable regular
+file on a local filesystem.
+
+There is no repository, wheel, or container-image default. Serving code never
+creates the database. Network filesystems are unsupported because the artifact
+is built offline, externally mounted, and opened with SQLite `mode=ro` plus
+`PRAGMA query_only=ON`. Build and validate the artifact with the operator
+commands in the [citation database runbook](../ops/citation-database-runbook.md);
+runtime citation lookup has no GaussDB fallback. `GAUSS_DSN` and relay BI
+remain configuration for unrelated database paths.
+
 Legacy `AccessKeyID` and `SecretAccessKey` aliases are still accepted for
 compatibility. New local configuration should use `ACCESS_KEY_ID` and
 `SECRET_ACCESS_KEY`.

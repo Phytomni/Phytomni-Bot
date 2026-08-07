@@ -1386,15 +1386,44 @@ block contains the final answer tail in `reasoning_content` or at the
 front of `content`; clients should treat both `choices[].message.content`
 and `raw.choices[].message.content` as the normalized answer field.
 Cited-agent answers (`KnowledgeAgent`, `ReviewAgent`,
-`BriefGeneAgent`) emit plain markdown with inline `[N]` citation markers
-as `message.content` and ship deduplicated citation documents through
-`formatted.references`. Each `references[]` entry always carries
-`file_id` and `title`. When a bibliographic record exists for a cited
-document, the entry additionally carries `au` (authors), `ti` (rich
-title), `so` (source/journal), `vl` (volume), `bp`/`ep` (begin/end
-page), `py` (year), `di` (DOI id), `dl` (DOI link), and `pm` (PubMed
-id). Fields are additive; clients must treat any of the bibliographic
-keys as optional and keep rendering from `title` when they are absent.
+`BriefGeneAgent`) ship deduplicated citation documents through
+`formatted.references`. The public answer uses HTML superscripts: a single
+marker is `claim<sup>1</sup>.`, and a multi-citation marker is
+`claim<sup>1,2</sup>.`. The source model prompt may still use
+`[document:N]`; that authoring marker is not the public wire format. Marker
+numbers retain their comma-separated order and punctuation position.
+
+Each `references[]` entry always carries `file_id`, `title`, and an
+always-present `formatted_citation`. When a bibliographic record exists for a
+cited document, the entry additionally carries `au` (authors), `ti` (rich
+title), `so` (source/journal), `vl` (volume), `bp`/`ep` (begin/end page), `ar`
+(article number), `py` (year), `di` (DOI id), `dl` (DOI link), and `pm` (PubMed
+id). `doi_missing: true` is included only when no valid DOI link can be
+formed; it is omitted when a valid link exists. Fields are additive; clients
+must treat bibliographic keys as optional and keep rendering from `title`
+when they are absent. A missing, quarantined, or failed citation lookup keeps
+the answer usable with a cleaned title-only `formatted_citation` and adds
+`metadata.citation_metadata_degraded: true` when the affected document was
+selected. A missing DOI alone does not set that degradation flag.
+
+`formatted_citation` is one escaped Markdown string assembled from the
+available metadata in Nature order:
+
+```text
+Authors. Title. *Source* **Volume,** pages-or-article (Year). [DOI label](DOI URL)
+```
+
+Absent fragments and their separators are omitted. Pages take precedence over
+`ar`; equal page endpoints render once. A valid `di` is preferred, and a
+valid DOI-host `dl` is used only when `di` is absent. Invalid or missing DOI
+values produce no link and set `doi_missing: true`. The display string never
+contains `file_id`; a missing or failed record uses exactly the cleaned
+retrieval title as its `formatted_citation`.
+
+The default OpenAI `choices[0].message.content` is projected from the
+normalized internal `formatted.answer`. In default mode the public
+`formatted` block omits that duplicate `answer` key as before; MCP envelopes
+and native agent runs retain `formatted.answer`.
 Every chat completion response also carries a top-level `run_id`: the
 Bot-side run identifier minted by the HTTP layer after the completion
 is produced. It equals the `run_id` returned by
@@ -1430,7 +1459,11 @@ JSON `chat.completion` envelope to an OpenAI-compatible
 while `phyto-knowledge` / `phyto-brief-gene` add one `StepStarted` per
 graph stage and `Custom` frames for `phyto.progress` /
 `phyto.references` / `phyto.metadata` / `phyto.follow_up` around a one-shot
-answer. `phyto.metadata` is emitted only when public terminal metadata is
+answer. The same cited formatter is used for KnowledgeAgent, ReviewAgent, and
+BriefGeneAgent terminal results across blocking, native-run, and stream
+projections. For a terminal cited stream, `phyto.references.doc_list` equals
+the blocking `formatted.references`; there is no stream-only citation
+formatter. `phyto.metadata` is emitted only when public terminal metadata is
 present; citation lookup degradation projects only
 `{"citation_metadata_degraded": true}` and never the private lookup status.
 Successful streams end with a terminating
@@ -2545,8 +2578,8 @@ null provider fields (`refusal`, `annotations`, `audio`,
 `function_call`), and `formatted.answer`.
 
 `choices[].message.content` is replaced with the normalized
-`formatted.answer` (using `[N]` citation format consistent with
-`formatted.references`).
+`formatted.answer` (using `<sup>N</sup>` / `<sup>N,M</sup>` citation markup
+consistent with `formatted.references`).
 
 Kept: `id`, `object`, `created`, `model`, `choices` (with `role`,
 `content`, `reasoning_content`, `tool_calls`, `finish_reason`,

@@ -69,6 +69,19 @@ envelope contract and
 [`../docs/reference/mcp-tools.md`](../docs/reference/mcp-tools.md)
 for the per-tool formatted view.
 
+### Citation database lifecycle
+
+The live suite preserves an explicit operator citation database when either
+`CITATION_DB_PATH` or `PHYTOMNI_CITATION_DB_PATH` is already configured. When
+neither alias is set, the session fixture builds one empty, valid schema-v1
+SQLite artifact in its temporary session directory only to satisfy real MCP
+and HTTP subprocess startup validation. It does not contain bibliographic
+records and does not prove citation enrichment.
+
+Use an operator-built artifact to exercise bibliographic enrichment. E2E runs
+without that artifact prove subprocess startup and the rest of the configured
+business workflow only; they do not prove bibliographic enrichment.
+
 ## Setup
 
 1. Configure the server environment by copying the example `.env` and

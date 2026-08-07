@@ -39,6 +39,9 @@ Start from the table below, or browse a category directly.
 - **I want to…:** Operate the HTTP service
   **Read:** [ops/http-api-runbook.md](ops/http-api-runbook.md)
 
+- **I want to…:** Build, validate, mount, or replace the citation database
+  **Read:** [ops/citation-database-runbook.md](ops/citation-database-runbook.md)
+
 - **I want to…:** Upgrade 0.1.2 → 0.1.3
   **Read:** [ops/upgrading.md](ops/upgrading.md)
 
