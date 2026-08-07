@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from copy import deepcopy
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
+from itertools import count
 from pathlib import Path
 from typing import Any
 
@@ -41,10 +42,31 @@ from mcp_server_phytomni.mcp import app as mcp_app
 
 pytestmark = pytest.mark.server
 
+
+@dataclass(frozen=True, slots=True)
+class _CitedSurfaceCase:
+    """One cited agent's tool, model, and native-run identifiers."""
+
+    tool_name: str
+    model: str
+    slug: str
+
+
+@dataclass(frozen=True, slots=True)
+class _SurfaceTestContext:
+    """HTTP and fixture dependencies shared by one surface assertion case."""
+
+    api_client: httpx.AsyncClient
+    issued_api_key: str
+    chat_completion: Callable[..., Any]
+    citation_db_path: Path
+    monkeypatch: pytest.MonkeyPatch
+
+
 CITED_SURFACES = (
-    ("KnowledgeAgent", "phyto-knowledge", "knowledge"),
-    ("ReviewAgent", "phyto-review", "review"),
-    ("BriefGeneAgent", "phyto-brief-gene", "brief_gene"),
+    _CitedSurfaceCase("KnowledgeAgent", "phyto-knowledge", "knowledge"),
+    _CitedSurfaceCase("ReviewAgent", "phyto-review", "review"),
+    _CitedSurfaceCase("BriefGeneAgent", "phyto-brief-gene", "brief_gene"),
 )
 
 _ARGUMENTS: dict[str, dict[str, Any]] = {
@@ -71,6 +93,24 @@ _EXPECTED_REFERENCE = {
         "(https://doi.org/10.1000/citation)"
     ),
 }
+
+
+@pytest.fixture(name="surface_context")
+def build_surface_context(
+    api_client: httpx.AsyncClient,
+    issued_api_key: str,
+    chat_completion: Callable[..., Any],
+    citation_db_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> _SurfaceTestContext:
+    """Group the complete-surface test's injected dependencies."""
+    return _SurfaceTestContext(
+        api_client=api_client,
+        issued_api_key=issued_api_key,
+        chat_completion=chat_completion,
+        citation_db_path=citation_db_path,
+        monkeypatch=monkeypatch,
+    )
 
 
 def _canned_result() -> dict[str, Any]:
@@ -162,17 +202,67 @@ def _install_handler(
     monkeypatch.setitem(server.TOOL_HANDLERS, tool_name, handler)
 
 
-async def _terminal_projection(
-    tool_name: str,
-) -> tuple[str, dict[str, Any], dict[str, Any]]:
-    """Collect public terminal answer, reference, and metadata projections."""
-    events = [
-        event
-        async for event in mcp_app._terminal_graph_events(
-            tool_name,
+class _TerminalStreamApp:
+    """Yield one terminal graph state through the public streaming seam."""
+
+    def __init__(self) -> None:
+        """Initialize stream configuration capture."""
+        self._config: Mapping[str, Any] | None = None
+
+    def thread_id(self) -> str | None:
+        """Return the public stream's configured graph thread identifier."""
+        if self._config is None:
+            return None
+        configurable = self._config.get("configurable") or {}
+        return configurable.get("thread_id")
+
+    async def astream(
+        self,
+        _state: Mapping[str, Any],
+        stream_mode: list[str],
+        config: Mapping[str, Any] | None = None,
+        *,
+        subgraphs: bool = False,
+    ) -> AsyncIterator[tuple[tuple[str, ...], str, dict[str, Any]]]:
+        """Yield the canned final response without external graph work."""
+        assert stream_mode == ["custom", "updates", "values"]
+        assert config and config["configurable"]["thread_id"]
+        assert subgraphs is True
+        self._config = config
+        yield (
+            (),
+            "values",
             {"final_response": _canned_result()},
         )
+
+
+async def _terminal_projection(
+    monkeypatch: pytest.MonkeyPatch,
+    case: _CitedSurfaceCase,
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    """Collect public terminal answer, reference, and metadata projections."""
+    app = _TerminalStreamApp()
+
+    def target(*_args: Any, **_kwargs: Any) -> tuple[Any, dict[str, Any]]:
+        return app, {}
+
+    target_name = {
+        "knowledge": "knowledge_stream_target",
+        "review": "review_stream_target",
+        "brief_gene": "brief_gene_stream_seed",
+    }[case.slug]
+    monkeypatch.setattr(mcp_app, target_name, target)
+    run_id = f"citation-stream-{case.slug}"
+    events = [
+        event
+        async for event in mcp_app.invoke_tool_streamed(
+            case.tool_name,
+            _ARGUMENTS[case.slug],
+            run_id=run_id,
+            dialogue_id=f"citation-dialogue-{case.slug}",
+        )
     ]
+    assert app.thread_id() == run_id
     answers = [
         event.data["delta"]
         for event in events
@@ -193,100 +283,135 @@ async def _terminal_projection(
     return answers[0], references[0][0], metadata[0] if metadata else {}
 
 
-@pytest.mark.parametrize(("tool_name", "model", "slug"), CITED_SURFACES)
-async def test_cited_surfaces_share_one_complete_nature_contract(
-    api_client: httpx.AsyncClient,
-    issued_api_key: str,
-    chat_completion: Callable[..., Any],
-    citation_db_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    tool_name: str,
-    model: str,
-    slug: str,
-) -> None:
-    """MCP, OpenAI, native, and graph projections are object-equivalent."""
-    _install_record(citation_db_path)
-    _install_bounded_lookup(monkeypatch, citation_db_path)
-    _forbid_non_sqlite_calls(monkeypatch)
-    _install_handler(monkeypatch, tool_name)
-    _install_bounded_lookup(monkeypatch, citation_db_path)
-    monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "0")
-
-    envelope = await mcp_app.invoke_tool_enveloped(tool_name, _ARGUMENTS[slug])
+async def _complete_blocking_projection(
+    context: _SurfaceTestContext,
+    case: _CitedSurfaceCase,
+) -> Any:
+    """Prepare fixtures and assert the canonical blocking projection."""
+    _install_record(context.citation_db_path)
+    _install_bounded_lookup(context.monkeypatch, context.citation_db_path)
+    _forbid_non_sqlite_calls(context.monkeypatch)
+    _install_handler(context.monkeypatch, case.tool_name)
+    context.monkeypatch.setenv("PHYTOMNI_A2UI_ENABLED", "0")
+    envelope = await mcp_app.invoke_tool_enveloped(
+        case.tool_name, _ARGUMENTS[case.slug]
+    )
     assert envelope.formatted.answer == "Claim<sup>1</sup>."
     assert dict(envelope.formatted.references[0]) == _EXPECTED_REFERENCE
+    return envelope
+
+
+def _install_review_projection(
+    context: _SurfaceTestContext,
+    case: _CitedSurfaceCase,
+    envelope: Any,
+) -> None:
+    """Install the Review-only HTTP execution projection when applicable."""
+    if case.slug != "review":
+        return
 
     review_result = {
         "formatted": asdict(envelope.formatted),
         "execution": asdict(envelope.execution),
         "raw": envelope.raw,
     }
-    review_calls = 0
+    review_calls = count(1)
 
     async def run_review(**_kwargs: Any) -> ReviewExecution:
-        nonlocal review_calls
-        review_calls += 1
         return ReviewExecution(
-            run_id=f"citation-review-{review_calls}",
+            run_id=f"citation-review-{next(review_calls)}",
             status="succeeded",
             result=deepcopy(review_result),
         )
 
-    if slug == "review":
-        monkeypatch.setattr(api_app, "_run_review_with_interrupt", run_review)
+    context.monkeypatch.setattr(
+        api_app, "_run_review_with_interrupt", run_review
+    )
 
-    chat_response = await asyncio.wait_for(
-        chat_completion(
-            api_client,
-            issued_api_key,
-            model=model,
-            content=_ARGUMENTS[slug]["user_query"],
+
+async def _assert_chat_projection(
+    context: _SurfaceTestContext,
+    case: _CitedSurfaceCase,
+    envelope: Any,
+) -> None:
+    """Assert the OpenAI-compatible HTTP cited projection."""
+    response = await asyncio.wait_for(
+        context.chat_completion(
+            context.api_client,
+            context.issued_api_key,
+            model=case.model,
+            content=_ARGUMENTS[case.slug]["user_query"],
         ),
         timeout=5,
     )
-    assert chat_response.status_code == 200
-    chat_body = chat_response.json()
-    assert chat_body["choices"][0]["message"]["content"] == (
+    assert response.status_code == 200
+    body = response.json()
+    assert body["choices"][0]["message"]["content"] == (
         envelope.formatted.answer
     )
-    assert "answer" not in chat_body["formatted"]
-    assert chat_body["formatted"]["references"] == [_EXPECTED_REFERENCE]
+    assert "answer" not in body["formatted"]
+    assert body["formatted"]["references"] == [_EXPECTED_REFERENCE]
 
-    native_response = await asyncio.wait_for(
+
+async def _assert_native_projection(
+    context: _SurfaceTestContext,
+    case: _CitedSurfaceCase,
+    envelope: Any,
+) -> None:
+    """Assert the canonical native-run cited projection."""
+    response = await asyncio.wait_for(
         post_native_run(
-            api_client,
-            issued_api_key,
-            slug,
-            _ARGUMENTS[slug],
+            context.api_client,
+            context.issued_api_key,
+            case.slug,
+            _ARGUMENTS[case.slug],
         ),
         timeout=5,
     )
-    assert native_response.status_code == 200
-    native_formatted = native_response.json()["result"]["formatted"]
-    assert native_formatted["answer"] == envelope.formatted.answer
-    assert native_formatted["references"] == [_EXPECTED_REFERENCE]
+    assert response.status_code == 200
+    formatted = response.json()["result"]["formatted"]
+    assert formatted["answer"] == envelope.formatted.answer
+    assert formatted["references"] == [_EXPECTED_REFERENCE]
 
-    stream_answer, stream_reference, stream_metadata = (
-        await _terminal_projection(tool_name)
+
+async def _assert_stream_projection(
+    monkeypatch: pytest.MonkeyPatch,
+    case: _CitedSurfaceCase,
+    envelope: Any,
+) -> None:
+    """Assert cited terminal fields through the public stream seam."""
+    answer, reference, metadata = await _terminal_projection(monkeypatch, case)
+    assert answer == envelope.formatted.answer
+    assert reference == _EXPECTED_REFERENCE
+    assert metadata == {}
+
+
+@pytest.mark.parametrize("case", CITED_SURFACES, ids=lambda case: case.slug)
+async def test_cited_surfaces_share_one_complete_nature_contract(
+    surface_context: _SurfaceTestContext,
+    case: _CitedSurfaceCase,
+) -> None:
+    """MCP, OpenAI, native, and graph projections are object-equivalent."""
+    envelope = await _complete_blocking_projection(surface_context, case)
+    _install_review_projection(surface_context, case, envelope)
+    await _assert_chat_projection(surface_context, case, envelope)
+    await _assert_native_projection(surface_context, case, envelope)
+    await _assert_stream_projection(
+        surface_context.monkeypatch, case, envelope
     )
-    assert stream_answer == envelope.formatted.answer
-    assert stream_reference == _EXPECTED_REFERENCE
-    assert stream_metadata == {}
 
 
-@pytest.mark.parametrize(("tool_name", "_model", "slug"), CITED_SURFACES)
+@pytest.mark.parametrize("case", CITED_SURFACES, ids=lambda case: case.slug)
 @pytest.mark.parametrize("failure_mode", ("missing", "quarantined", "failed"))
 async def test_cited_metadata_failures_degrade_blocking_and_stream(
     citation_db_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    tool_name: str,
-    _model: str,
-    slug: str,
+    case: _CitedSurfaceCase,
     failure_mode: str,
 ) -> None:
     """Every selected miss remains successful and title-only."""
     _forbid_non_sqlite_calls(monkeypatch)
-    _install_handler(monkeypatch, tool_name)
+    _install_handler(monkeypatch, case.tool_name)
     _install_bounded_lookup(monkeypatch, citation_db_path)
     if failure_mode == "quarantined":
         with sqlite3.connect(citation_db_path) as connection:
@@ -311,7 +436,9 @@ async def test_cited_metadata_failures_degrade_blocking_and_stream(
             citation_enrichment, "lookup_citation_records", fail_lookup
         )
 
-    envelope = await mcp_app.invoke_tool_enveloped(tool_name, _ARGUMENTS[slug])
+    envelope = await mcp_app.invoke_tool_enveloped(
+        case.tool_name, _ARGUMENTS[case.slug]
+    )
     expected_reference = {
         "file_id": "f1",
         "title": "Retrieval title",
@@ -323,7 +450,7 @@ async def test_cited_metadata_failures_degrade_blocking_and_stream(
     assert dict(envelope.formatted.references[0]) == expected_reference
 
     stream_answer, stream_reference, stream_metadata = (
-        await _terminal_projection(tool_name)
+        await _terminal_projection(monkeypatch, case)
     )
     assert stream_answer == envelope.formatted.answer
     assert stream_reference == expected_reference

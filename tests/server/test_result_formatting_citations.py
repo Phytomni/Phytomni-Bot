@@ -184,7 +184,7 @@ def test_normalize_citations_removes_invalid_only_marker() -> None:
     )
 
     assert text == "Unsupported  remains usable."
-    assert refs == ()
+    assert not refs
     assert "<sup></sup>" not in text
 
 
