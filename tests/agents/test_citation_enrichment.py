@@ -6,6 +6,7 @@
 import logging
 import sqlite3
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -130,11 +131,9 @@ async def test_enrich_preserves_non_mapping_elements(
 ) -> None:
     """Non-mapping items do not prevent an adjacent document from merging."""
     _insert_record(citation_db_path, file_id="f1", au="Smith J")
-    docs: list[object] = ["not-a-dict", {"file_id": "f1", "title": "T"}]
+    docs: Any = ["not-a-dict", {"file_id": "f1", "title": "T"}]
 
-    await citation_enrichment.enrich_cited_doc_list(
-        docs  # type: ignore[arg-type]
-    )
+    await citation_enrichment.enrich_cited_doc_list(docs)
 
     assert docs[0] == "not-a-dict"
     assert docs[1] == {
