@@ -249,10 +249,10 @@ def test_redact_managed_attachment_values_is_recursive_and_nonmutating() -> (
     assert projection_fixture.reference == dataset_reference
 
 
-def test_resolve_bundle_partitions_documents_and_datasets_in_request_order(
+def test_resolve_bundle_preserves_canonical_and_derived_request_order(
     tmp_path: Path,
 ) -> None:
-    """Bundle resolution preserves order inside each effective-purpose lane."""
+    """Bundle resolution preserves canonical and derived request order."""
     assets, db_path = _build_purpose_assets(tmp_path)
     resolver = assets["document"].resolver
     owner = assets["document"].owner
@@ -298,11 +298,17 @@ def test_resolve_bundle_partitions_documents_and_datasets_in_request_order(
         assets["document"].asset_id,
         assets["legacy"].asset_id,
     ]
-    assert [asset.asset_id for asset in mixed_bundle.all_assets] == [
-        assets["document"].asset_id,
-        assets["legacy"].asset_id,
+    assert [asset.asset_id for asset in mixed_bundle.assets] == [
         assets["dataset_a"].asset_id,
+        assets["document"].asset_id,
         assets["dataset_b"].asset_id,
+        assets["legacy"].asset_id,
+    ]
+    assert [asset.asset_id for asset in mixed_bundle.all_assets] == [
+        assets["dataset_a"].asset_id,
+        assets["document"].asset_id,
+        assets["dataset_b"].asset_id,
+        assets["legacy"].asset_id,
     ]
 
     expected = {

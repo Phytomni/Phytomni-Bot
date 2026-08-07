@@ -110,18 +110,7 @@ class AssetResolver:
         ):
             self._ensure_legacy_projection(asset, owner, reference, purpose)
 
-        return ResolvedAttachmentBundle(
-            documents=tuple(
-                asset
-                for asset in resolved_assets
-                if asset.purpose == "document"
-            ),
-            datasets=tuple(
-                asset
-                for asset in resolved_assets
-                if asset.purpose == "dataset"
-            ),
-        )
+        return ResolvedAttachmentBundle(assets=resolved_assets)
 
     def materialize(self, asset_id: str, owner: str, run_id: str) -> Path:
         """Stream one completed asset into a private generated run path."""

@@ -216,16 +216,17 @@ def test_required_attachment_channels_follow_bundle_partitions() -> None:
     )
 
     assert (
-        required_attachment_channels(ResolvedAttachmentBundle()) == frozenset()
+        required_attachment_channels(ResolvedAttachmentBundle(assets=()))
+        == frozenset()
     )
     assert required_attachment_channels(
-        ResolvedAttachmentBundle(documents=(document,))
+        ResolvedAttachmentBundle(assets=(document,))
     ) == frozenset({"documents"})
     assert required_attachment_channels(
-        ResolvedAttachmentBundle(datasets=(dataset,))
+        ResolvedAttachmentBundle(assets=(dataset,))
     ) == frozenset({"datasets"})
     assert required_attachment_channels(
-        ResolvedAttachmentBundle(documents=(document,), datasets=(dataset,))
+        ResolvedAttachmentBundle(assets=(document, dataset))
     ) == frozenset({"documents", "datasets"})
 
 

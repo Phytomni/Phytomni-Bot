@@ -375,7 +375,7 @@ async def _route_expert_query(
     )
     resolved = attachment_input or ResolvedAttachmentInput(
         attachment_owner=current_request_user() or "anonymous",
-        bundle=ResolvedAttachmentBundle(),
+        bundle=ResolvedAttachmentBundle(assets=()),
     )
     arguments, attachment_context = await prepare_selected_expert_arguments(
         agent=slug,

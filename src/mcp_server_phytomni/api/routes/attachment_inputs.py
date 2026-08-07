@@ -107,7 +107,7 @@ def resolve_attachment_input(
     if not attachments:
         return ResolvedAttachmentInput(
             attachment_owner=attachment_owner,
-            bundle=ResolvedAttachmentBundle(),
+            bundle=ResolvedAttachmentBundle(assets=()),
         )
     if callable(resolver):
         resolver = resolver()

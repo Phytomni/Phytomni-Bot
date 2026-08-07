@@ -32,12 +32,25 @@ class ResolvedAsset:
 
 @dataclass(frozen=True, slots=True)
 class ResolvedAttachmentBundle:
-    """Purpose-partitioned resolved attachment references."""
+    """Request-ordered owner-validated managed assets."""
 
-    documents: tuple[ResolvedAsset, ...] = ()
-    datasets: tuple[ResolvedAsset, ...] = ()
+    assets: tuple[ResolvedAsset, ...] = ()
+
+    @property
+    def documents(self) -> tuple[ResolvedAsset, ...]:
+        """Return document assets while retaining their request order."""
+        return tuple(
+            asset for asset in self.assets if asset.purpose == "document"
+        )
+
+    @property
+    def datasets(self) -> tuple[ResolvedAsset, ...]:
+        """Return dataset assets while retaining their request order."""
+        return tuple(
+            asset for asset in self.assets if asset.purpose == "dataset"
+        )
 
     @property
     def all_assets(self) -> tuple[ResolvedAsset, ...]:
-        """Return partition order for validation-only consumers."""
-        return (*self.documents, *self.datasets)
+        """Return the authoritative request order."""
+        return self.assets
