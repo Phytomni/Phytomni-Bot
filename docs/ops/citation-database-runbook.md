@@ -90,7 +90,7 @@ exact_duplicate_row_count  = 0
 conflict_id_count          = 6308
 quarantined_row_count      = 15130
 missing_doi_count          = 0
-invalid_doi_count          = 5
+invalid_doi_count          = 46
 missing_title_count        = 0
 ```
 
