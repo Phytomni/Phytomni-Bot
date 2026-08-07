@@ -23,6 +23,7 @@ from ..agent_capabilities import (
 from ..asset_resolver import AssetResolver, normalize_asset_attachments
 from ..attachment_projection import (
     AttachmentProjectionError,
+    ManagedAttachmentChannel,
     ManagedAttachmentProjection,
     project_managed_attachments,
 )
@@ -200,7 +201,7 @@ def _managed_attachment_evidence(
     bundle = resolved_input.bundle
     if not bundle.assets:
         return None
-    channel_by_asset_id = {
+    channel_by_asset_id: dict[str, ManagedAttachmentChannel] = {
         **{asset.asset_id: "obs_file_list" for asset in projection.obs_assets},
         **{asset.asset_id: "data_list" for asset in projection.data_assets},
     }

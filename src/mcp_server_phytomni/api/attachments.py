@@ -203,7 +203,7 @@ def validate_agent_attachments(
             datasets.append(evidence_item.asset)
             budget_sizes.append(evidence_item.asset.size_bytes)
             continue
-        metadata, is_legacy = _resolve_dataset_path(
+        dataset_metadata, is_legacy = _resolve_dataset_path(
             path,
             owner=owner,
             registry=registry,
@@ -212,14 +212,14 @@ def validate_agent_attachments(
         if is_legacy:
             legacy_paths.append(path)
             continue
-        if metadata is None:
+        if dataset_metadata is None:
             _raise(
                 "attachment_not_found",
                 "The uploaded dataset could not be verified.",
             )
-        _validate_metadata(metadata, channel="datasets")
-        datasets.append(metadata)
-        budget_sizes.append(metadata.byte_size)
+        _validate_metadata(dataset_metadata, channel="datasets")
+        datasets.append(dataset_metadata)
+        budget_sizes.append(dataset_metadata.byte_size)
 
     if managed_items:
         _raise(

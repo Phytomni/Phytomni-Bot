@@ -310,7 +310,9 @@ def test_managed_document_projection_bypasses_legacy_metadata_policy(
         ),
     )
 
-    assert selection.documents[0].reference == path
+    document = selection.documents[0]
+    assert isinstance(document, ResolvedAsset)
+    assert document.reference == path
 
 
 @pytest.mark.parametrize(
@@ -345,7 +347,9 @@ def test_managed_dataset_projection_bypasses_legacy_csv_policy(
         managed_evidence=managed_evidence("u1", (path, "data_list", 1_024)),
     )
 
-    assert selection.datasets[0].reference == path
+    dataset = selection.datasets[0]
+    assert isinstance(dataset, ResolvedAsset)
+    assert dataset.reference == path
 
 
 def test_blank_dataset_descriptions_require_exact_managed_evidence(
@@ -376,7 +380,9 @@ def test_blank_dataset_descriptions_require_exact_managed_evidence(
             "u1", (managed_path, "data_list", 1_024)
         ),
     )
-    assert selection.datasets[0].reference == managed_path
+    dataset = selection.datasets[0]
+    assert isinstance(dataset, ResolvedAsset)
+    assert dataset.reference == managed_path
 
     for evidence, code in (
         (
@@ -554,7 +560,9 @@ def test_nonblank_descriptions_retain_existing_acceptance(
         owner="u1",
         registry=registry,
     )
-    assert selection.datasets[0].obs_path == managed_path
+    dataset = selection.datasets[0]
+    assert isinstance(dataset, UploadMetadata)
+    assert dataset.obs_path == managed_path
     assert selection.legacy_dataset_paths == (
         "/obs/phytomni/prepared/input.fasta",
     )
