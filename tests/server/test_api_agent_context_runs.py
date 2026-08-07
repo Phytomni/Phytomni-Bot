@@ -21,12 +21,8 @@ from tests.support.http_fakes import (
 from tests.support.resumable_asset_fakes import (
     ResumableAssetSpec,
     build_resumable_asset,
-    patch_dataset_description_completion,
 )
 
-from mcp_server_phytomni.agents.shared.dataset_description import (
-    DatasetDescriptionResult,
-)
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
@@ -212,7 +208,6 @@ def _native_attachment_request(
 class _ContextAttachmentCallState:
     """Captured private preparation/invocation calls for context tests."""
 
-    completion_calls: list[dict[str, Any]]
     invoke_calls: list[dict[str, Any]]
 
 
@@ -220,12 +215,8 @@ def _patch_context_attachment_invocation(
     monkeypatch: pytest.MonkeyPatch,
     agent: str,
 ) -> _ContextAttachmentCallState:
-    """Patch dataset completion and native invoke for context replay tests."""
-    state = _ContextAttachmentCallState([], [])
-
-    async def fake_completion(**kwargs: Any) -> DatasetDescriptionResult:
-        state.completion_calls.append(kwargs)
-        return DatasetDescriptionResult(("context generated",), "generated")
+    """Patch native invocation for context replay tests."""
+    state = _ContextAttachmentCallState([])
 
     async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
         state.invoke_calls.append(kwargs)
@@ -237,7 +228,6 @@ def _patch_context_attachment_invocation(
             202,
         )
 
-    patch_dataset_description_completion(monkeypatch, fake_completion)
     monkeypatch.setattr(api_app_module, "_invoke_agent_run", fake_invoke)
     return state
 
@@ -272,6 +262,7 @@ def test_native_agent_request_keeps_legacy_serialization_without_context() -> (
     """The private context field is absent from legacy request JSON."""
     payload = AgentRunRequest(arguments={"user_query": "legacy"})
 
+    assert "dataset_description" not in AgentRunRequest.model_fields
     assert payload.model_dump(exclude_none=True) == {
         "arguments": {"user_query": "legacy"}
     }
@@ -633,10 +624,9 @@ async def test_native_context_dataset_attachments_prepare_once_and_replay(
     assert response.status_code == 202, response.text
     assert retry.status_code == 202
     assert retry.json()["run_id"] == response.json()["run_id"]
-    assert len(call_state.completion_calls) == 1
     assert len(call_state.invoke_calls) == 1
     arguments = call_state.invoke_calls[0]["arguments"]
-    assert list(arguments["data_list"].values()) == ["context generated"]
+    assert list(arguments["data_list"].values()) == [""]
     assert len(arguments["obs_file_list"]) == 1
     assert call_state.invoke_calls[0]["request_json"] is not None
     assert (
@@ -652,7 +642,6 @@ async def test_native_context_dataset_attachments_prepare_once_and_replay(
         dataset_id,
         document_id,
         "delegated-owner",
-        "context generated",
         "context-data.csv",
     ):
         assert sentinel not in rendered

@@ -244,7 +244,7 @@ async def _prepare_ordinary_chat_request(
     }
     if accepts_obs:
         arguments["obs_file_list"] = payload.obs_file_list or []
-    arguments, attachment_context = await prepare_chat_document_attachments(
+    arguments, attachment_context = prepare_chat_document_attachments(
         tool_name=tool_name,
         arguments=arguments,
         resolved_input=resolved_input,
@@ -357,13 +357,11 @@ async def _execute_context_chat(
             raise ValueError("instant context selected a non-chat agent")
         arguments = dict(dispatch.arguments)
         arguments["obs_file_list"] = list(payload.obs_file_list or [])
-        arguments, attachment_context = (
-            await prepare_chat_document_attachments(
-                tool_name="ChatAgent",
-                arguments=arguments,
-                resolved_input=resolved_input,
-                db_path=dependencies.tasks_db_path(),
-            )
+        arguments, attachment_context = prepare_chat_document_attachments(
+            tool_name="ChatAgent",
+            arguments=arguments,
+            resolved_input=resolved_input,
+            db_path=dependencies.tasks_db_path(),
         )
         evidence = attachment_context.evidence
         user_query, resolve_meta = (
@@ -595,14 +593,11 @@ def _register_native_routes(
                     dependencies=dependencies,
                 )
             )
-        arguments, attachment_context = (
-            await prepare_native_attachment_arguments(
-                agent=agent,
-                arguments=arguments,
-                resolved_input=resolved_input,
-                dataset_description=payload.dataset_description,
-                db_path=dependencies.tasks_db_path(),
-            )
+        arguments, attachment_context = prepare_native_attachment_arguments(
+            agent=agent,
+            arguments=arguments,
+            resolved_input=resolved_input,
+            db_path=dependencies.tasks_db_path(),
         )
         body, status_code = await dependencies.native.invoke_agent_run(
             agent=agent,
@@ -700,7 +695,6 @@ async def _execute_context_native(
         debug=dependencies.chat.projection.resolve_debug(payload.debug),
         obs_file_list=None,
         resolved_attachments=request.resolved_input,
-        dataset_description=payload.dataset_description,
     )
 
     async def invoke(
@@ -762,11 +756,10 @@ async def _prepare_context_native_invocation(
     if context_request.resolved_attachments is not None:
         attachment_context: Any
         prepared_arguments, attachment_context = (
-            await prepare_native_attachment_arguments(
+            prepare_native_attachment_arguments(
                 agent=request.agent,
                 arguments=prepared_arguments,
                 resolved_input=context_request.resolved_attachments,
-                dataset_description=context_request.dataset_description,
                 db_path=request.dependencies.tasks_db_path(),
             )
         )

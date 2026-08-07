@@ -31,14 +31,10 @@ from tests.support.resumable_asset_fakes import (
     execute_rejected_asset_run,
     install_attachment_capture,
     install_dataset_and_document_assets,
-    patch_dataset_description_completion,
     wait_for_attachment_submission,
 )
 
 from mcp_server_phytomni import server
-from mcp_server_phytomni.agents.shared.dataset_description import (
-    DatasetDescriptionResult,
-)
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.upload_runtime import UploadRuntime
@@ -269,7 +265,7 @@ async def test_direct_dataset_assets_project_to_data_list_before_202(
     slug: str,
     query_key: str,
 ) -> None:
-    """Managed datasets are described and submitted before 202 acceptance."""
+    """Managed datasets retain empty native values before 202 acceptance."""
     _resolver, dataset_id, document_id = _install_dataset_assets(
         asset_http_context
     )
@@ -291,18 +287,13 @@ async def test_direct_dataset_assets_project_to_data_list_before_202(
     )
     install_attachment_capture(asset_http_context.monkeypatch, case, captured)
 
-    async def fail_completion(**_kwargs: Any) -> DatasetDescriptionResult:
-        raise AssertionError("supplied description should skip provider")
-
-    patch_dataset_description_completion(
-        asset_http_context.monkeypatch, fail_completion
-    )
     response = await _post_asset_run(
         asset_http_context,
         slug=slug,
         arguments=case.arguments,
         attachments=[{"asset_id": dataset_id}, {"asset_id": document_id}],
         dataset_description="supplied batch description",
+        debug=True,
     )
 
     assert response.status_code == 202, response.text
@@ -315,60 +306,20 @@ async def test_direct_dataset_assets_project_to_data_list_before_202(
     dumped = arguments.model_dump()
     dataset_reference = next(iter(dumped["data_list"]))
     assert dumped[query_key] == f"{slug} query"
-    assert dumped["data_list"] == {
-        dataset_reference: "supplied batch description"
-    }
+    assert dumped["data_list"] == {dataset_reference: ""}
     assert len(dumped["obs_file_list"]) == 1
     assert "attachments" not in dumped
     assert "owner_subject" not in dumped
     assert "dataset_description" not in dumped
-
-
-async def test_direct_dataset_blank_description_uses_one_completion_result(
-    asset_http_context: AssetHttpTestContext,
-) -> None:
-    """A blank batch description is completed once for managed datasets."""
-    _resolver, dataset_id, _document_id = _install_dataset_assets(
-        asset_http_context
+    assert "dataset_description" not in response.text
+    record = RunRegistry(asset_http_context.db_path).get_run(
+        response.json()["run_id"], owner="u1"
     )
-    captured: dict[str, Any] = {}
-    case = _RemoteCase(
-        slug="analyst",
-        tool_name=server.PhytomniAgents.ANALYST_AGENT.value,
-        stub_return={"task_id": "T-generated", "output_dir": "/obs/out"},
-        arguments=_dataset_arguments("analyst", "complete this dataset"),
-        expected_task_ids={"T-generated"},
-    )
-    install_attachment_capture(asset_http_context.monkeypatch, case, captured)
-    calls: list[dict[str, Any]] = []
-
-    async def fake_completion(**kwargs: Any) -> DatasetDescriptionResult:
-        calls.append(kwargs)
-        return DatasetDescriptionResult(("generated role",), "generated")
-
-    patch_dataset_description_completion(
-        asset_http_context.monkeypatch, fake_completion
-    )
-    response = await _post_asset_run(
-        asset_http_context,
-        slug="analyst",
-        arguments=case.arguments,
-        attachments=[{"asset_id": dataset_id}],
-        dataset_description=" ",
-    )
-
-    assert response.status_code == 202
-    arguments = await wait_for_attachment_submission(
-        captured=captured,
-        db_path=asset_http_context.db_path,
-        run_id=response.json()["run_id"],
-        case=case,
-    )
-    assert calls[0]["query"] == "complete this dataset"
-    assert list(arguments.data_list.values()) == ["generated role"]
+    assert record is not None
+    assert "dataset_description" not in repr(record)
 
 
-async def test_dataset_assets_fail_before_completion_and_reservation(
+async def test_dataset_assets_fail_before_reservation(
     asset_http_context: AssetHttpTestContext,
 ) -> None:
     """Unsupported dataset assets do not complete, persist, or launch."""
@@ -384,12 +335,6 @@ async def test_dataset_assets_fail_before_completion_and_reservation(
         api_app_module, "launch_background_submission", background_launcher
     )
 
-    async def fail_completion(**_kwargs: Any) -> DatasetDescriptionResult:
-        raise AssertionError("unsupported agent should not complete")
-
-    patch_dataset_description_completion(
-        asset_http_context.monkeypatch, fail_completion
-    )
     response = await _post_asset_run(
         asset_http_context,
         slug="chat",
@@ -404,66 +349,14 @@ async def test_dataset_assets_fail_before_completion_and_reservation(
     assert not RunRegistry(asset_http_context.db_path).list_runs(owner="u1")
 
 
-async def test_dataset_completion_blocks_before_umbrella_reservation(
+async def test_managed_tsv_dataset_asset_keeps_legacy_format_validation(
     asset_http_context: AssetHttpTestContext,
 ) -> None:
-    """The POST cannot return 202 while dataset completion is pending."""
-    _resolver, dataset_id, _document_id = _install_dataset_assets(
-        asset_http_context
-    )
-    release = asyncio.Event()
-    started = asyncio.Event()
-
-    async def slow_completion(**_kwargs: Any) -> DatasetDescriptionResult:
-        started.set()
-        await release.wait()
-        return DatasetDescriptionResult(("ready",), "generated")
-
-    patch_dataset_description_completion(
-        asset_http_context.monkeypatch, slow_completion
-    )
-    captured: dict[str, Any] = {}
-    case = _RemoteCase(
-        slug="analyst",
-        tool_name=server.PhytomniAgents.ANALYST_AGENT.value,
-        stub_return={"task_id": "T-blocked", "output_dir": "/obs/out"},
-        arguments=_dataset_arguments("analyst", "wait for data"),
-        expected_task_ids={"T-blocked"},
-    )
-    install_attachment_capture(asset_http_context.monkeypatch, case, captured)
-    request_task = asyncio.create_task(
-        _post_asset_run(
-            asset_http_context,
-            slug="analyst",
-            arguments=case.arguments,
-            attachments=[{"asset_id": dataset_id}],
-        )
-    )
-
-    await asyncio.wait_for(started.wait(), timeout=1)
-    assert not RunRegistry(asset_http_context.db_path).list_runs(owner="u1")
-    with pytest.raises(TimeoutError):
-        await asyncio.wait_for(asyncio.shield(request_task), timeout=0.01)
-    release.set()
-    response = await request_task
-
-    assert response.status_code == 202
-
-
-async def test_managed_tsv_dataset_asset_fails_before_completion(
-    asset_http_context: AssetHttpTestContext,
-) -> None:
-    """Managed dataset format validation runs before description completion."""
+    """Managed dataset format validation remains enforced before dispatch."""
     _resolver, dataset_id, _document_id = _install_dataset_assets(
         asset_http_context, dataset_filename="input.tsv"
     )
 
-    async def fail_completion(**_kwargs: Any) -> DatasetDescriptionResult:
-        raise AssertionError("unsupported format should not complete")
-
-    patch_dataset_description_completion(
-        asset_http_context.monkeypatch, fail_completion
-    )
     response = await _post_asset_run(
         asset_http_context,
         slug="analyst",
@@ -476,10 +369,10 @@ async def test_managed_tsv_dataset_asset_fails_before_completion(
     assert not RunRegistry(asset_http_context.db_path).list_runs(owner="u1")
 
 
-async def test_empty_dataset_completion_still_submits_managed_blank(
+async def test_managed_dataset_empty_value_still_submits(
     asset_http_context: AssetHttpTestContext,
 ) -> None:
-    """Managed evidence permits an empty generated description to submit."""
+    """Managed evidence permits an empty native value to submit."""
     _resolver, dataset_id, _document_id = _install_dataset_assets(
         asset_http_context
     )
@@ -493,12 +386,6 @@ async def test_empty_dataset_completion_still_submits_managed_blank(
     )
     install_attachment_capture(asset_http_context.monkeypatch, case, captured)
 
-    async def empty_completion(**_kwargs: Any) -> DatasetDescriptionResult:
-        return DatasetDescriptionResult(("",), "empty")
-
-    patch_dataset_description_completion(
-        asset_http_context.monkeypatch, empty_completion
-    )
     response = await _post_asset_run(
         asset_http_context,
         slug="research",
@@ -550,7 +437,6 @@ async def test_delegated_asset_lookup_keeps_run_owner_as_principal(
                 "arguments": case.arguments,
                 "attachments": [{"asset_id": dataset_id}],
                 "owner_subject": "principal-owner",
-                "dataset_description": "delegated dataset",
             },
         )
 
@@ -571,7 +457,7 @@ async def test_delegated_asset_lookup_keeps_run_owner_as_principal(
         await asyncio.sleep(0)
     else:
         pytest.fail("delegated background submission did not settle")
-    assert list(arguments.data_list.values()) == ["delegated dataset"]
+    assert list(arguments.data_list.values()) == [""]
     assert registry.get_run(response.json()["run_id"], owner="web-service")
     assert (
         registry.get_run(response.json()["run_id"], owner="principal-owner")

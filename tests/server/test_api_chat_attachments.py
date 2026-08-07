@@ -147,7 +147,7 @@ async def test_chat_dataset_asset_returns_attachment_not_supported(
     asset_http_context: AssetHttpTestContext,
     chat_completion: Callable[..., Any],
 ) -> None:
-    """Dataset assets are rejected before Chat invocation or staging."""
+    """Dataset assets reject even with a stale batch-description field."""
     harness = _install_chat_asset(
         asset_http_context,
         purpose="dataset",
@@ -216,7 +216,7 @@ async def test_chat_context_dataset_asset_returns_attachment_not_supported(
     tmp_path: Path,
     chat_completion: Callable[..., Any],
 ) -> None:
-    """Instant Chat context rejects datasets before staging or Chat invoke."""
+    """Context Chat rejects datasets before mutation or stale-field use."""
     context, key = enable_conversation_context_v1(monkeypatch, tmp_path)
     harness = _install_chat_asset(
         context,

@@ -48,7 +48,6 @@ Owner mismatch or a missing completed asset collapses to a generic `404`.
   - MIME `application/pdf`
 
 Owner assertion in the fixture: `fixture-delegated-owner`.
-Batch description: `Synthetic CSV count matrix`.
 
 ## Native projection semantics
 
@@ -61,12 +60,8 @@ legacy argument channels before handler dispatch:
 - request order is preserved inside each purpose partition;
 - purpose is never re-supplied at submission time.
 
-When `dataset_description` is nonblank, every managed dataset entry receives
-that exact user text and no model-assisted completion runs. When it is
-omitted or blank, the Bot may perform one bounded completion call; timeout,
-invalid output, or provider failure falls back to managed empty strings so
-submission is not blocked. Arbitrary non-managed path maps still require
-nonblank descriptions.
+Managed dataset entries use exact empty-string values. Arbitrary non-managed
+path maps still require nonblank descriptions.
 
 ## Redaction guarantees
 
@@ -74,8 +69,8 @@ Public responses, conversation-context staging, and default debug projections
 must not echo:
 
 - internal managed references;
-- raw `attachments`, `data_list`, `obs_file_list`, `owner_subject`, or
-  `dataset_description` private request fields;
+- raw `attachments`, `data_list`, `obs_file_list`, or `owner_subject` private
+  request fields;
 - provider storage coordinates or short-lived upload secrets.
 
 Stable public failure codes for this contract include `403`, `404`, `409`,

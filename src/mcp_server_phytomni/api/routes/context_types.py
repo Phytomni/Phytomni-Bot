@@ -35,7 +35,6 @@ class ContextAgentRequest:
     debug: bool
     obs_file_list: list[str] | None
     resolved_attachments: ResolvedAttachmentInput | None = None
-    dataset_description: str | None = None
     attachment_evidence: ManagedAttachmentEvidence | None = None
 
 

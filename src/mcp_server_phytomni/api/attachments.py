@@ -61,7 +61,6 @@ _PRIVATE_ATTACHMENT_KEYS = frozenset(
     {
         "attachments",
         "data_list",
-        "dataset_description",
         "obs_file_list",
         "owner_subject",
     }

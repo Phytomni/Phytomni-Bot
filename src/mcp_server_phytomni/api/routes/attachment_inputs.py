@@ -11,10 +11,6 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from ...agents.shared.dataset_description import (
-    DatasetDescriptionResult,
-    complete_dataset_descriptions,
-)
 from ...runtime.attachment_assets import ResolvedAttachmentBundle
 from ...runtime.locale import current_effective_locale
 from ..agent_capabilities import (
@@ -61,18 +57,16 @@ class ResolvedAttachmentInput:
 
 @dataclass(frozen=True, slots=True)
 class PreparedAttachmentContext:
-    """Private request-local attachment evidence and description source."""
+    """Private request-local managed attachment evidence."""
 
     evidence: ManagedAttachmentEvidence | None
-    description_source: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class _PreparedProjection:
-    """Copied arguments plus ordered managed reference projections."""
+    """Copied arguments with managed attachment projections."""
 
     arguments: dict[str, Any]
-    dataset_references: list[str]
 
 
 def _attachment_payload_values(
@@ -121,17 +115,17 @@ def resolve_attachment_input(
     )
 
 
-async def prepare_native_attachment_arguments(
+def prepare_native_attachment_arguments(
     *,
     agent: str,
     arguments: Mapping[str, Any],
     resolved_input: ResolvedAttachmentInput,
-    dataset_description: str | None,
     db_path: str,
 ) -> tuple[dict[str, Any], PreparedAttachmentContext]:
     """Project resolved native attachments and private evidence once."""
-    bundle = resolved_input.bundle
-    projection = _project_attachment_arguments(arguments, bundle)
+    projection = _project_attachment_arguments(
+        arguments, resolved_input.bundle
+    )
     evidence = _managed_attachment_evidence(resolved_input)
     validate_owner = (
         evidence.attachment_owner
@@ -145,42 +139,8 @@ async def prepare_native_attachment_arguments(
         db_path=db_path,
         managed_evidence=evidence,
     )
-    description_source: str | None = None
-    if bundle.datasets:
-        if dataset_description and dataset_description.strip():
-            _apply_dataset_descriptions(
-                projection.arguments,
-                projection.dataset_references,
-                DatasetDescriptionResult(
-                    (dataset_description,)
-                    * len(projection.dataset_references),
-                    "user",
-                ),
-            )
-            description_source = "user"
-        else:
-            query = _canonical_dataset_query(agent, projection.arguments)
-            completion = await complete_dataset_descriptions(
-                query=query,
-                datasets=bundle.datasets,
-                supplied_description=dataset_description,
-            )
-            _apply_dataset_descriptions(
-                projection.arguments,
-                projection.dataset_references,
-                completion,
-            )
-            description_source = completion.source
-        validate_native_attachments(
-            agent,
-            projection.arguments,
-            owner=validate_owner,
-            db_path=db_path,
-            managed_evidence=evidence,
-        )
     return projection.arguments, PreparedAttachmentContext(
         evidence=evidence,
-        description_source=description_source,
     )
 
 
@@ -203,7 +163,7 @@ def _project_attachment_arguments(
         for reference in dataset_references:
             data_list[reference] = ""
         prepared["data_list"] = data_list
-    return _PreparedProjection(prepared, dataset_references)
+    return _PreparedProjection(prepared)
 
 
 def _document_argument_values(value: Any) -> list[Any]:
@@ -242,29 +202,6 @@ def _managed_attachment_evidence(
             asset.reference for asset in bundle.datasets
         ),
     )
-
-
-def _canonical_dataset_query(agent: str, arguments: Mapping[str, Any]) -> str:
-    """Return the native query used for managed dataset completion."""
-    key = "goal_description" if agent == "analyst" else "user_query"
-    value = arguments.get(key)
-    if isinstance(value, str) and value.strip():
-        return value
-    raise HTTPException(status_code=422, detail="dataset query is required")
-
-
-def _apply_dataset_descriptions(
-    arguments: dict[str, Any],
-    references: Sequence[str],
-    completion: DatasetDescriptionResult,
-) -> None:
-    """Replace only managed dataset placeholder descriptions."""
-    data_list = dict(arguments.get("data_list") or {})
-    for reference, description in zip(
-        references, completion.descriptions, strict=True
-    ):
-        data_list[reference] = description
-    arguments["data_list"] = data_list
 
 
 def normalize_payload_attachments(
@@ -328,7 +265,7 @@ def filter_expert_attachment_candidates(
     return payload.model_copy(update={"allowed_tools": list(filtered)})
 
 
-async def prepare_selected_expert_arguments(
+def prepare_selected_expert_arguments(
     *,
     agent: str,
     selected_arguments: Mapping[str, Any],
@@ -361,16 +298,15 @@ async def prepare_selected_expert_arguments(
         arguments.setdefault("obs_file_list", [])
     if capability.datasets is not None:
         arguments.setdefault("data_list", {})
-    return await prepare_native_attachment_arguments(
+    return prepare_native_attachment_arguments(
         agent=agent,
         arguments=arguments,
         resolved_input=resolved_input,
-        dataset_description=payload.dataset_description,
         db_path=db_path,
     )
 
 
-async def prepare_chat_document_attachments(
+def prepare_chat_document_attachments(
     *,
     tool_name: str,
     arguments: Mapping[str, Any],
@@ -387,11 +323,10 @@ async def prepare_chat_document_attachments(
     )
     if channels and not agent_supports_attachment_channels(slug, channels):
         raise attachment_not_supported_error()
-    return await prepare_native_attachment_arguments(
+    return prepare_native_attachment_arguments(
         agent=slug,
         arguments=arguments,
         resolved_input=resolved_input,
-        dataset_description=None,
         db_path=db_path,
     )
 

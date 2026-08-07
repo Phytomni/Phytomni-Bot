@@ -33,13 +33,10 @@ from tests.support.resumable_asset_fakes import (
     AssetHttpTestContext,
     enable_conversation_context_v1,
     install_dataset_and_document_assets,
-    patch_dataset_description_completion,
 )
 
 from mcp_server_phytomni.agents.expert import router as expert_router
-from mcp_server_phytomni.agents.shared.dataset_description import (
-    DatasetDescriptionResult,
-)
+from mcp_server_phytomni.api.schemas import ExpertQueryRequest
 
 pytestmark = pytest.mark.server
 
@@ -177,19 +174,6 @@ async def _post_expert_route(
         )
 
 
-def _patch_generated_completion(
-    monkeypatch: pytest.MonkeyPatch,
-    completion_calls: list[Any],
-) -> None:
-    """Install one generated dataset-description completion fake."""
-
-    async def fake_completion(**kwargs: Any) -> DatasetDescriptionResult:
-        completion_calls.append(kwargs)
-        return DatasetDescriptionResult(("generated desc",), "generated")
-
-    patch_dataset_description_completion(monkeypatch, fake_completion)
-
-
 def _forbid_router_and_agent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[list[Any], list[Any]]:
@@ -275,7 +259,7 @@ def _assert_research_attachment_call(
     assert call["agent"] == "research"
     assert call["arguments"]["user_query"] == "original expert query"
     assert call["arguments"]["obs_file_list"] == [document_ref]
-    assert call["arguments"]["data_list"] == {dataset_ref: "generated desc"}
+    assert call["arguments"]["data_list"] == {dataset_ref: ""}
     assert call["attachment_evidence"].attachment_owner == "u1"
 
 
@@ -372,10 +356,6 @@ async def test_expert_selected_arguments_discard_selector_paths(
     slug, tool_name = slug_tool
     assets = _install_expert_purpose_assets(asset_http_context)
     captured: dict[str, Any] = {}
-    completion_calls: list[Any] = []
-    _patch_generated_completion(
-        asset_http_context.monkeypatch, completion_calls
-    )
 
     async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
         captured.update(kwargs)
@@ -413,62 +393,28 @@ async def test_expert_selected_arguments_discard_selector_paths(
     else:
         assert arguments["user_query"] == "original expert query"
     assert arguments["obs_file_list"] == [assets.document_ref]
-    assert arguments["data_list"] == {assets.dataset_ref: "generated desc"}
+    assert arguments["data_list"] == {assets.dataset_ref: ""}
     assert "/obs/selector-private" not in str(arguments)
     assert "selector rewrite" not in str(arguments)
     assert "selector value" not in response.text
-    assert len(completion_calls) == 1
 
 
-async def test_expert_supplied_description_skips_completion(
+async def test_expert_rejects_stale_dataset_description_field(
     asset_http_context: AssetHttpTestContext,
 ) -> None:
-    """A supplied dataset description skips provider completion."""
-    assets = _install_expert_purpose_assets(asset_http_context)
-    completion_calls: list[Any] = []
-    captured: dict[str, Any] = {}
-
-    async def fail_completion(**_kwargs: Any) -> Any:
-        completion_calls.append(1)
-        raise AssertionError("supplied description skips completion")
-
-    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
-        captured.update(kwargs)
-        return running_agent_run_body("expert-supplied", "analyst"), 202
-
-    asset_http_context.monkeypatch.setattr(
-        api_app, "_invoke_agent_run", fake_invoke
-    )
-    patch_dataset_description_completion(
-        asset_http_context.monkeypatch, fail_completion
-    )
-    _patch_select(
-        asset_http_context.monkeypatch,
-        ToolSelection(
-            "AnalystAgent",
-            {
-                "goal_description": "selector rewrite",
-                "data_list": {},
-                "obs_file_list": [],
-            },
-        ),
-    )
+    """Expert keeps its strict extra-field rejection policy."""
+    assert "dataset_description" not in ExpertQueryRequest.model_fields
     response = await _post_expert_route(
         asset_http_context,
-        assets.app,
+        api_app.create_app(),
         payload={
             "user_query": "original expert query",
             "allowed_tools": ["AnalystAgent"],
-            "attachments": _attachments_for(assets, "mixed"),
             "dataset_description": "supplied batch description",
         },
         base_url="http://api.expert-desc.test",
     )
-    assert response.status_code == 202, response.text
-    assert not completion_calls
-    assert captured["arguments"]["data_list"][assets.dataset_ref] == (
-        "supplied batch description"
-    )
+    assert response.status_code == 422, response.text
 
 
 def _enable_expert_context_assets(
@@ -535,11 +481,9 @@ async def _run_expert_context_parity(
     assets: _ExpertAssets,
     *,
     api_key: str,
-) -> tuple[Any, Any, list[dict[str, Any]], list[Any]]:
+) -> tuple[Any, Any, list[dict[str, Any]]]:
     """Drive context + ordinary + replay Expert calls for parity asserts."""
     invoke_calls: list[dict[str, Any]] = []
-    completion_calls: list[Any] = []
-    _patch_generated_completion(monkeypatch, completion_calls)
 
     async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
         invoke_calls.append(kwargs)
@@ -607,7 +551,7 @@ async def _run_expert_context_parity(
     assert response.status_code == 202, response.text
     assert ordinary.status_code == 202, ordinary.text
     assert replay.status_code == 202, replay.text
-    return response, replay, invoke_calls, completion_calls
+    return response, replay, invoke_calls
 
 
 async def test_expert_context_preserves_payload_order_and_parity(
@@ -618,8 +562,8 @@ async def test_expert_context_preserves_payload_order_and_parity(
     _context, assets, key = _enable_expert_context_assets(
         monkeypatch, tmp_path
     )
-    response, replay, invoke_calls, completion_calls = (
-        await _run_expert_context_parity(monkeypatch, assets, api_key=key)
+    response, replay, invoke_calls = await _run_expert_context_parity(
+        monkeypatch, assets, api_key=key
     )
     assert len(invoke_calls) == 2
     for call in invoke_calls:
@@ -628,7 +572,6 @@ async def test_expert_context_preserves_payload_order_and_parity(
             document_ref=assets.document_ref,
             dataset_ref=assets.dataset_ref,
         )
-    assert len(completion_calls) == 2
     stage = response.json().get("conversation_context")
     assert stage is not None
     dumped = json.dumps(stage)
@@ -637,5 +580,4 @@ async def test_expert_context_preserves_payload_order_and_parity(
     assert assets.dataset_ref not in dumped
     assert "data_list" not in dumped
     assert "obs_file_list" not in dumped
-    assert "generated desc" not in dumped
     assert replay.json().get("conversation_context") == stage

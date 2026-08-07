@@ -142,7 +142,9 @@ parts with the returned capability, and complete it. Pass the completed
 owner-scoped before invoking the selected agent. `purpose=chat_attachment`
 accepts document context for Chat, Knowledge, Review, Analyst, and Research;
 dataset uploads remain a validated CSV channel for Analyst and Research and
-require a nonblank `data_list` description. The transfer limit is 10 GiB by
+use exact empty-string values for managed `data_list` entries; legacy raw
+`data_list` entries still require a nonblank description. The transfer limit
+is 10 GiB by
 default. Agent invocation remains bounded to 10 attachments, 26,214,400
 bytes per attachment, and 52,428,800 bytes in total. Repeated asset ids,
 foreign owners, incomplete assets, unsupported channels, and metadata

@@ -106,7 +106,6 @@ async def execute_context_expert(
         debug=dependencies.chat.projection.resolve_debug(None),
         obs_file_list=None,
         resolved_attachments=resolved_input,
-        dataset_description=payload.dataset_description,
     )
 
     async def invoke(
@@ -188,14 +187,12 @@ async def _delegate_context_expert_async(
 ) -> AsyncAgentAcceptance:
     """Prepare and accept one remote Expert agent through context V1."""
     slug = slug_for_tool(request.selected_agent_id, request.dependencies)
-    prepared_arguments, attachment_context = (
-        await prepare_selected_expert_arguments(
-            agent=slug,
-            selected_arguments=request.arguments,
-            payload=request.payload,
-            resolved_input=request.resolved_input,
-            db_path=request.dependencies.tasks_db_path(),
-        )
+    prepared_arguments, attachment_context = prepare_selected_expert_arguments(
+        agent=slug,
+        selected_arguments=request.arguments,
+        payload=request.payload,
+        resolved_input=request.resolved_input,
+        db_path=request.dependencies.tasks_db_path(),
     )
     body, status_code = await request.dependencies.native.invoke_agent_run(
         agent=slug,
@@ -227,14 +224,12 @@ async def _invoke_context_expert_agent(
             ),
             resolver=request.dependencies.upload.asset_resolver,
         )
-    prepared_arguments, attachment_context = (
-        await prepare_selected_expert_arguments(
-            agent=slug,
-            selected_arguments=request.dispatch.arguments,
-            payload=request.payload,
-            resolved_input=resolved,
-            db_path=request.dependencies.tasks_db_path(),
-        )
+    prepared_arguments, attachment_context = prepare_selected_expert_arguments(
+        agent=slug,
+        selected_arguments=request.dispatch.arguments,
+        payload=request.payload,
+        resolved_input=resolved,
+        db_path=request.dependencies.tasks_db_path(),
     )
     outcome = await request.helpers.invoke_context_agent(
         selected_agent_id=request.selected_agent_id,
@@ -245,7 +240,6 @@ async def _invoke_context_expert_agent(
             debug=request.context_request.debug,
             obs_file_list=None,
             resolved_attachments=None,
-            dataset_description=None,
             attachment_evidence=attachment_context.evidence,
         ),
         dependencies=request.dependencies,

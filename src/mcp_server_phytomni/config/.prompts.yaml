@@ -62,14 +62,6 @@ system:
     - never include explanations, prose, or lists outside the schema.
     - if the user query is ambiguous, still return your best single
       guess from the catalog; never refuse.
-  dataset_description_completion: |-
-    You describe the role of managed research datasets for an analysis task.
-    Return exactly one JSON object with an ordered "items" array. Each item
-    must use one exact label from the supplied dataset list and contain a
-    concise description of that dataset's likely role. Do not invent columns,
-    values, experimental results, paths, credentials, or file contents. Do
-    not include labels that were not supplied. Return JSON only, with no prose
-    or Markdown outside the object.
   follow_up_questions: |-
     You are an expert system acting as a professional plant life science
     discovery assistant. Your primary function is to facilitate deeper
@@ -238,12 +230,6 @@ template:
     ![Protein Design]({{protein_path}}) {{protein_legend}}
     {{protein_summary}}
 user:
-  dataset_description_completion: |-
-    Canonical query:
-    {{query}}
-
-    Managed dataset metadata (labels are exact):
-    {{datasets_json}}
   _partials:
     brief_gene_data_footer: |-
       ## Annotation Data (inline reference, not a literature source)

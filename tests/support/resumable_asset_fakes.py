@@ -22,9 +22,6 @@ from mcp_server_phytomni.api.resumable_uploads import (
     ResumableUploadService,
     UploadServiceConfig,
 )
-from mcp_server_phytomni.api.routes import (
-    attachment_inputs as attachment_inputs_module,
-)
 from mcp_server_phytomni.api.schemas import (
     UploadCompletionRequest,
     UploadCreateRequest,
@@ -316,21 +313,6 @@ async def execute_rejected_asset_run(
             json={"arguments": case.arguments, "attachments": attachments},
         )
     return response, private_values, marker["called"]
-
-
-def patch_dataset_description_completion(
-    monkeypatch: pytest.MonkeyPatch,
-    fake: Any,
-    *,
-    module: Any | None = None,
-) -> None:
-    """Replace the attachment-input dataset-description completion seam."""
-    monkeypatch.setattr(
-        module or attachment_inputs_module,
-        "complete_dataset_descriptions",
-        fake,
-        raising=False,
-    )
 
 
 def enable_conversation_context_v1(

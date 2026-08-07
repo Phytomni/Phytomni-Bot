@@ -348,7 +348,6 @@ class AgentRunRequest(BaseModel):
     owner_subject: str | None = Field(
         default=None, min_length=1, max_length=320
     )
-    dataset_description: str | None = Field(default=None, max_length=4_000)
     dialogue_id: str | None = None
     debug: bool | None = None
     locale: SupportedLocale | None = None
@@ -428,7 +427,6 @@ class ExpertQueryRequest(BaseModel):
     owner_subject: str | None = Field(
         default=None, min_length=1, max_length=320
     )
-    dataset_description: str | None = Field(default=None, max_length=4_000)
     dialogue_id: str | None = None
     allowed_tools: list[str] = Field(min_length=1, max_length=10)
     forced_tool: str | None = None

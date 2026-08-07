@@ -12,6 +12,5 @@
       "asset_id": "file_22222222222222222222222222222222"
     }
   ],
-  "owner_subject": "fixture-delegated-owner",
-  "dataset_description": "Synthetic CSV count matrix"
+  "owner_subject": "fixture-delegated-owner"
 }

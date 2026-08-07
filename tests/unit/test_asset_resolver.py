@@ -212,7 +212,7 @@ def test_redact_managed_attachment_values_is_recursive_and_nonmutating() -> (
         attachments="drop this field",
         nested=(
             {"owner_subject": "u1"},
-            {"dataset_description": "drop this too"},
+            {"attachments": "drop this too"},
         ),
     )
     value = {

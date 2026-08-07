@@ -15,12 +15,8 @@ import pytest
 from tests.support.resumable_asset_fakes import (
     ResumableAssetSpec,
     build_resumable_asset,
-    patch_dataset_description_completion,
 )
 
-from mcp_server_phytomni.agents.shared.dataset_description import (
-    DatasetDescriptionResult,
-)
 from mcp_server_phytomni.api.agent_capabilities import (
     serialize_file_upload_capability,
 )
@@ -74,7 +70,6 @@ _AGENT_ATTACHMENT_FILES = frozenset({"native_mixed_request.json"})
 _FIXTURE_DATASET_ID = "file_11111111111111111111111111111111"
 _FIXTURE_DOCUMENT_ID = "file_22222222222222222222222222222222"
 _FIXTURE_OWNER = "fixture-delegated-owner"
-_FIXTURE_DESCRIPTION = "Synthetic CSV count matrix"
 _FORBIDDEN_ATTACHMENT_MARKERS = (
     "object_key",
     "upload_id",
@@ -160,11 +155,6 @@ def _build_fixture_mixed_assets(
     return assets[0].resolver, db_path
 
 
-async def _fail_dataset_provider(**_kwargs: Any) -> DatasetDescriptionResult:
-    """Raise if user-supplied descriptions incorrectly call the provider."""
-    raise AssertionError("supplied description must skip the provider")
-
-
 def _assert_fixture_references_are_private(
     prepared_arguments: dict[str, Any],
     evidence: Any,
@@ -182,7 +172,6 @@ def _assert_fixture_references_are_private(
         "answer": f"used {dataset_reference} and {document_reference}",
         "arguments": prepared_arguments,
         "owner_subject": _FIXTURE_OWNER,
-        "dataset_description": _FIXTURE_DESCRIPTION,
     }
     redacted = redact_managed_attachment_values(debug_projection, evidence)
     dumped = json.dumps(redacted, sort_keys=True)
@@ -192,7 +181,6 @@ def _assert_fixture_references_are_private(
     assert "data_list" not in redacted
     assert "obs_file_list" not in redacted
     assert "owner_subject" not in redacted
-    assert "dataset_description" not in redacted
 
 
 def test_manifest_pins_every_fixture_byte() -> None:
@@ -298,7 +286,6 @@ def test_agent_attachment_request_matches_public_schema() -> None:
     )
 
     assert payload.owner_subject == _FIXTURE_OWNER
-    assert payload.dataset_description == _FIXTURE_DESCRIPTION
     assert payload.arguments["goal_description"] == (
         "Compare synthetic expression groups"
     )
@@ -322,7 +309,7 @@ def test_agent_attachment_fixtures_stay_provider_free() -> None:
         assert forbidden not in text, f"forbidden marker present: {forbidden}"
 
 
-async def test_agent_attachment_fixture_resolves_to_analyst_projection(
+def test_agent_attachment_fixture_resolves_to_analyst_projection(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -336,21 +323,16 @@ async def test_agent_attachment_fixture_resolves_to_analyst_projection(
         attachment_owner=_FIXTURE_OWNER,
         resolver=resolver,
     )
-    patch_dataset_description_completion(monkeypatch, _fail_dataset_provider)
-    prepared_arguments, context = await prepare_native_attachment_arguments(
+    prepared_arguments, context = prepare_native_attachment_arguments(
         agent="analyst",
         arguments=payload.arguments,
         resolved_input=resolved,
-        dataset_description=payload.dataset_description,
         db_path=db_path,
     )
 
-    assert list(prepared_arguments["data_list"].values()) == [
-        _FIXTURE_DESCRIPTION
-    ]
+    assert list(prepared_arguments["data_list"].values()) == [""]
     assert len(prepared_arguments["data_list"]) == 1
     assert len(prepared_arguments["obs_file_list"]) == 1
-    assert context.description_source == "user"
     assert context.evidence is not None
     assert context.evidence.attachment_owner == _FIXTURE_OWNER
     _assert_fixture_references_are_private(
