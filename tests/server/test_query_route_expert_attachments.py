@@ -403,7 +403,7 @@ async def test_expert_rejects_stale_dataset_description_field(
     asset_http_context: AssetHttpTestContext,
 ) -> None:
     """Expert keeps its strict extra-field rejection policy."""
-    assert "dataset_description" not in ExpertQueryRequest.model_fields
+    assert ExpertQueryRequest.model_fields.get("dataset_description") is None
     response = await _post_expert_route(
         asset_http_context,
         api_app.create_app(),

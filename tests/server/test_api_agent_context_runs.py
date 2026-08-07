@@ -262,7 +262,7 @@ def test_native_agent_request_keeps_legacy_serialization_without_context() -> (
     """The private context field is absent from legacy request JSON."""
     payload = AgentRunRequest(arguments={"user_query": "legacy"})
 
-    assert "dataset_description" not in AgentRunRequest.model_fields
+    assert AgentRunRequest.model_fields.get("dataset_description") is None
     assert payload.model_dump(exclude_none=True) == {
         "arguments": {"user_query": "legacy"}
     }
