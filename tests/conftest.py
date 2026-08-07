@@ -24,6 +24,9 @@ from typing import Any, Self
 import httpx
 import pytest
 
+from mcp_server_phytomni.agents.shared.citation_database import (
+    resolve_citation_database_path,
+)
 from mcp_server_phytomni.api.app import create_app
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.config.settings import (
@@ -36,6 +39,7 @@ from mcp_server_phytomni.runtime.request_context import (
 from mcp_server_phytomni.storage import (
     obs_relay_ops as obs_relay_ops_module,
 )
+from tests.support.citation_database import create_valid_citation_database
 from tests.support.http_fakes import open_asgi_client
 
 # The repo-root ``conftest.py`` installs the offline test env before
@@ -238,6 +242,21 @@ def demo_data_dir() -> Path:
         Absolute path to the repository's demo_data root.
     """
     return DEMO_DATA_DIR
+
+
+@pytest.fixture
+def citation_db_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[Path]:
+    """Provide one explicitly configured schema-v1 citation artifact."""
+    path = create_valid_citation_database(tmp_path / "citation.sqlite")
+    monkeypatch.setenv("CITATION_DB_PATH", str(path))
+    resolve_citation_database_path.cache_clear()
+    try:
+        yield path
+    finally:
+        resolve_citation_database_path.cache_clear()
 
 
 @pytest.fixture(scope="session")
