@@ -15,8 +15,8 @@ from unittest.mock import patch
 
 import pytest
 from tests.support.attachment_fakes import (
-    ManagedAttachmentEvidenceSpec,
-    managed_attachment_evidence_item,
+    managed_dataset_evidence_item,
+    managed_document_evidence_item,
 )
 from tests.support.resumable_asset_fakes import (
     ResumableAssetHarness,
@@ -238,27 +238,13 @@ def test_redact_managed_attachment_values_is_recursive_and_nonmutating() -> (
     evidence = ManagedAttachmentEvidence(
         attachment_owner="u1",
         items=(
-            managed_attachment_evidence_item(
-                ManagedAttachmentEvidenceSpec(
-                    asset_id="file_document",
-                    reference=document_reference,
-                    filename="document.pdf",
-                    content_type="application/pdf",
-                    size_bytes=1,
-                    purpose="document",
-                    projected_channel="obs_file_list",
-                )
+            managed_document_evidence_item(
+                asset_id="file_document",
+                reference=document_reference,
             ),
-            managed_attachment_evidence_item(
-                ManagedAttachmentEvidenceSpec(
-                    asset_id="file_dataset",
-                    reference=dataset_reference,
-                    filename="dataset.h5ad",
-                    content_type="application/octet-stream",
-                    size_bytes=1,
-                    purpose="dataset",
-                    projected_channel="data_list",
-                )
+            managed_dataset_evidence_item(
+                asset_id="file_dataset",
+                reference=dataset_reference,
             ),
         ),
     )

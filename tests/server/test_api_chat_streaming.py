@@ -25,8 +25,7 @@ import httpx
 import pytest
 from starlette.responses import StreamingResponse
 from tests.support.attachment_fakes import (
-    ManagedAttachmentEvidenceSpec,
-    managed_attachment_evidence_item,
+    managed_document_evidence_item,
 )
 from tests.support.http_fakes import (
     build_instant_chat_context_envelope,
@@ -896,16 +895,9 @@ async def test_streaming_attachment_redaction_spans_chunk_boundaries(
     evidence = ManagedAttachmentEvidence(
         attachment_owner="u1",
         items=(
-            managed_attachment_evidence_item(
-                ManagedAttachmentEvidenceSpec(
-                    asset_id="file_stream_document",
-                    reference=reference,
-                    filename="document.pdf",
-                    content_type="application/pdf",
-                    size_bytes=1,
-                    purpose="document",
-                    projected_channel="obs_file_list",
-                )
+            managed_document_evidence_item(
+                asset_id="file_stream_document",
+                reference=reference,
             ),
         ),
     )

@@ -10,8 +10,7 @@ from typing import Any
 
 import pytest
 from tests.support.attachment_fakes import (
-    ManagedAttachmentEvidenceSpec,
-    managed_attachment_evidence_item,
+    managed_dataset_evidence_item,
 )
 
 from mcp_server_phytomni.api import app as api_app_module
@@ -136,16 +135,9 @@ def test_native_run_preflight_keeps_attachment_owner_separate(
     evidence = ManagedAttachmentEvidence(
         attachment_owner="delegated-owner",
         items=(
-            managed_attachment_evidence_item(
-                ManagedAttachmentEvidenceSpec(
-                    asset_id="file_dataset",
-                    reference="obs://dataset",
-                    filename="dataset.h5ad",
-                    content_type="application/octet-stream",
-                    size_bytes=1,
-                    purpose="dataset",
-                    projected_channel="data_list",
-                )
+            managed_dataset_evidence_item(
+                asset_id="file_dataset",
+                reference="obs://dataset",
             ),
         ),
     )
