@@ -28,12 +28,32 @@ from mcp_server_phytomni.runtime.resumable_uploads import (
     UploadAssetPurpose,
     UploadStateError,
     _asset_from_row,
+    _initialize_activation_column,
 )
 
 pytestmark = pytest.mark.unit
 
 
 NOW = datetime(2026, 8, 1, tzinfo=UTC)
+
+
+class _ActivationMigrationErrorConnection:
+    """Model a schema check that observes a competing migration afterwards."""
+
+    def __init__(self, error: sqlite3.OperationalError) -> None:
+        self.error = error
+        self.schema_checks = 0
+        self.statements: list[str] = []
+
+    def execute(self, statement: str) -> list[tuple[int, str]]:
+        """Return the raced schema view or raise the controlled ALTER error."""
+        self.statements.append(statement)
+        if statement == "PRAGMA table_info(upload_assets)":
+            self.schema_checks += 1
+            return [] if self.schema_checks == 1 else [(0, "activated_at")]
+        if statement.startswith("ALTER TABLE"):
+            raise self.error
+        return []
 
 
 def _spec(
@@ -283,7 +303,7 @@ def test_legacy_initialization_backfills_only_part_bearing_uploads(
 def test_activation_migration_is_repeatable_and_concurrent(
     tmp_path: Path,
 ) -> None:
-    """Concurrent constructors converge on one marker without overwrites."""
+    """Concurrent constructors preserve one migrated marker."""
     db_path = tmp_path / "legacy.db"
     first_part_at = _build_legacy_registry_db(db_path)
 
@@ -322,6 +342,31 @@ def test_activation_migration_is_repeatable_and_concurrent(
     assert columns.count("activated_at") == 1
     assert first_part_at.isoformat() != activated_at
     assert activated_at == "2026-01-01T00:00:00+00:00"
+
+
+def test_activation_migration_accepts_verified_duplicate_column_race() -> None:
+    """A duplicate-column error is safe only when a competing migration won."""
+    conn = _ActivationMigrationErrorConnection(
+        sqlite3.OperationalError("duplicate column name: activated_at")
+    )
+
+    _initialize_activation_column(cast(sqlite3.Connection, conn))
+
+    assert conn.schema_checks == 2
+    assert any(
+        statement.startswith("UPDATE upload_assets")
+        for statement in conn.statements
+    )
+
+
+def test_activation_migration_propagates_unrelated_sqlite_error() -> None:
+    """A later visible column cannot mask an unrelated ALTER failure."""
+    conn = _ActivationMigrationErrorConnection(
+        sqlite3.OperationalError("database is locked")
+    )
+
+    with pytest.raises(sqlite3.OperationalError, match="database is locked"):
+        _initialize_activation_column(cast(sqlite3.Connection, conn))
 
 
 def test_explicit_asset_projection_reconstructs_every_record_field(

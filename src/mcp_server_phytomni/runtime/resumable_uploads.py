@@ -834,8 +834,10 @@ def _initialize_activation_column(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "ALTER TABLE upload_assets ADD COLUMN activated_at TEXT"
             )
-        except sqlite3.OperationalError:
-            if not _upload_assets_has_column(conn, "activated_at"):
+        except sqlite3.OperationalError as error:
+            if not _is_duplicate_activation_column_error(
+                error
+            ) or not _upload_assets_has_column(conn, "activated_at"):
                 raise
     conn.execute(
         "UPDATE upload_assets SET activated_at = ("
@@ -853,6 +855,13 @@ def _upload_assets_has_column(conn: sqlite3.Connection, column: str) -> bool:
         row[1] == column
         for row in conn.execute("PRAGMA table_info(upload_assets)")
     )
+
+
+def _is_duplicate_activation_column_error(
+    error: sqlite3.OperationalError,
+) -> bool:
+    """Recognize only SQLite's expected concurrent-column migration error."""
+    return str(error).strip().lower() == "duplicate column name: activated_at"
 
 
 def _asset_from_row(row: sqlite3.Row | tuple[object, ...]) -> AssetRecord:
