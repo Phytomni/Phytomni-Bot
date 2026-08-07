@@ -5,9 +5,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, fields
 from pathlib import Path
@@ -41,6 +42,21 @@ from mcp_server_phytomni.agents.shared.citation_database import (
 )
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _run_to_thread_inline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exercise the async lookup wrapper without a sandbox worker thread."""
+
+    async def call_inline(
+        function: Callable[..., Any],
+        /,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        return function(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", call_inline)
 
 
 def _record(file_id: str, **overrides: str | None) -> dict[str, str | None]:
