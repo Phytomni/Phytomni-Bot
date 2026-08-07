@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
@@ -126,15 +126,21 @@ CREATE TABLE upload_parts (
 """
 
 
+@dataclass(frozen=True, slots=True)
+class _LegacyAsset:
+    """One upload row shaped for the schema before activation persistence."""
+
+    asset_id: str
+    status: str
+    created_at: datetime
+    size_bytes: int = 3
+    part_count: int = 1
+    completed_at: datetime | None = None
+
+
 def _insert_legacy_asset(
     conn: sqlite3.Connection,
-    *,
-    asset_id: str,
-    status: str,
-    created_at: datetime,
-    size_bytes: int = 3,
-    part_count: int = 1,
-    completed_at: datetime | None = None,
+    asset: _LegacyAsset,
 ) -> None:
     """Insert a valid row from the upload schema before activation tracking."""
     conn.execute(
@@ -146,25 +152,29 @@ def _insert_legacy_asset(
         "completed_at"
         ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            asset_id,
+            asset.asset_id,
             "owner-1",
             "legacy.fa",
             "application/octet-stream",
             "chat_attachment",
-            size_bytes,
+            asset.size_bytes,
             3,
-            part_count,
-            status,
-            f"agent_data/uploads/owner-1/{asset_id}",
+            asset.part_count,
+            asset.status,
+            f"agent_data/uploads/owner-1/{asset.asset_id}",
             None,
-            f"key-{asset_id}",
-            f"fingerprint-{asset_id}",
+            f"key-{asset.asset_id}",
+            f"fingerprint-{asset.asset_id}",
             1,
-            size_bytes if status == "uploading" else 0,
-            created_at.isoformat(),
-            created_at.isoformat(),
-            (created_at + timedelta(days=7)).isoformat(),
-            None if completed_at is None else completed_at.isoformat(),
+            asset.size_bytes if asset.status == "uploading" else 0,
+            asset.created_at.isoformat(),
+            asset.created_at.isoformat(),
+            (asset.created_at + timedelta(days=7)).isoformat(),
+            (
+                None
+                if asset.completed_at is None
+                else asset.completed_at.isoformat()
+            ),
         ),
     )
 
@@ -178,36 +188,46 @@ def _build_legacy_registry_db(db_path: Path) -> datetime:
         conn.execute(_LEGACY_PARTS_DDL)
         _insert_legacy_asset(
             conn,
-            asset_id="uploading-with-part",
-            status="uploading",
-            created_at=NOW - timedelta(hours=3),
-            size_bytes=6,
-            part_count=2,
+            _LegacyAsset(
+                asset_id="uploading-with-part",
+                status="uploading",
+                created_at=NOW - timedelta(hours=3),
+                size_bytes=6,
+                part_count=2,
+            ),
         )
         _insert_legacy_asset(
             conn,
-            asset_id="recent-zero-part",
-            status="uploading",
-            created_at=NOW - timedelta(minutes=5),
+            _LegacyAsset(
+                asset_id="recent-zero-part",
+                status="uploading",
+                created_at=NOW - timedelta(minutes=5),
+            ),
         )
         _insert_legacy_asset(
             conn,
-            asset_id="old-zero-part",
-            status="uploading",
-            created_at=NOW - timedelta(days=8),
+            _LegacyAsset(
+                asset_id="old-zero-part",
+                status="uploading",
+                created_at=NOW - timedelta(days=8),
+            ),
         )
         _insert_legacy_asset(
             conn,
-            asset_id="completed-row",
-            status="completed",
-            created_at=NOW - timedelta(days=1),
-            completed_at=NOW - timedelta(hours=1),
+            _LegacyAsset(
+                asset_id="completed-row",
+                status="completed",
+                created_at=NOW - timedelta(days=1),
+                completed_at=NOW - timedelta(hours=1),
+            ),
         )
         _insert_legacy_asset(
             conn,
-            asset_id="aborted-row",
-            status="aborted",
-            created_at=NOW - timedelta(days=1),
+            _LegacyAsset(
+                asset_id="aborted-row",
+                status="aborted",
+                created_at=NOW - timedelta(days=1),
+            ),
         )
         conn.execute(
             "INSERT INTO upload_parts ("
@@ -270,8 +290,10 @@ def test_fresh_activation_column_is_internal_and_starts_null(
     assert "activated_at" in columns
     assert asset.activated_at is None
     assert activated_at is None
-    assert "activated_at" not in UploadStatusResponse.model_fields
-    assert "activated_at" not in AssetDescriptor.model_fields
+    status_fields: set[str] = set(UploadStatusResponse.model_fields.keys())
+    descriptor_fields: set[str] = set(AssetDescriptor.model_fields.keys())
+    assert "activated_at" not in status_fields
+    assert "activated_at" not in descriptor_fields
 
 
 def test_legacy_initialization_backfills_only_part_bearing_uploads(
