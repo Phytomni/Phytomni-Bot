@@ -11,7 +11,11 @@ from typing import Any
 import pytest
 
 from mcp_server_phytomni.api import app as api_app_module
-from mcp_server_phytomni.api.attachments import ManagedAttachmentEvidence
+from mcp_server_phytomni.api.attachments import (
+    ManagedAttachmentEvidence,
+    ManagedAttachmentEvidenceItem,
+)
+from mcp_server_phytomni.runtime.attachment_assets import ResolvedAsset
 
 pytestmark = pytest.mark.server
 
@@ -131,7 +135,19 @@ def test_native_run_preflight_keeps_attachment_owner_separate(
     captured: dict[str, Any] = {}
     evidence = ManagedAttachmentEvidence(
         attachment_owner="delegated-owner",
-        dataset_references=frozenset({"obs://dataset"}),
+        items=(
+            ManagedAttachmentEvidenceItem(
+                asset=ResolvedAsset(
+                    asset_id="file_dataset",
+                    reference="obs://dataset",
+                    filename="dataset.h5ad",
+                    content_type="application/octet-stream",
+                    size_bytes=1,
+                    purpose="dataset",
+                ),
+                projected_channel="data_list",
+            ),
+        ),
     )
     monkeypatch.setattr(
         api_app_module, "current_request_user", lambda: "run-owner"

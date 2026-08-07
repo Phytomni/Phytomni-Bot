@@ -24,12 +24,17 @@ from mcp_server_phytomni import server
 from mcp_server_phytomni.api.agent_capabilities import (
     serialize_agent_capability,
 )
+from mcp_server_phytomni.api.attachment_projection import (
+    ManagedAttachmentChannel,
+)
 from mcp_server_phytomni.api.attachments import (
     AttachmentContractError,
     ManagedAttachmentEvidence,
+    ManagedAttachmentEvidenceItem,
     validate_agent_attachments,
 )
 from mcp_server_phytomni.config.defaults import ApiConfig, ServerConfig
+from mcp_server_phytomni.runtime.attachment_assets import ResolvedAsset
 from mcp_server_phytomni.runtime.upload_registry import (
     UploadMetadata,
     UploadRegistry,
@@ -88,6 +93,30 @@ def assert_attachment_error(
         )
     assert raised.value.code == code
     assert all(path not in str(raised.value) for path in arguments)
+
+
+def managed_evidence(
+    owner: str,
+    *entries: tuple[str, ManagedAttachmentChannel, int],
+) -> ManagedAttachmentEvidence:
+    """Build private managed provenance without sharing legacy metadata."""
+    return ManagedAttachmentEvidence(
+        attachment_owner=owner,
+        items=tuple(
+            ManagedAttachmentEvidenceItem(
+                asset=ResolvedAsset(
+                    asset_id=f"managed-{index}-{uuid4().hex}",
+                    reference=reference,
+                    filename="managed.bin",
+                    content_type="application/octet-stream",
+                    size_bytes=size_bytes,
+                    purpose="dataset",
+                ),
+                projected_channel=channel,
+            )
+            for index, (reference, channel, size_bytes) in enumerate(entries)
+        ),
+    )
 
 
 @pytest.mark.parametrize(
@@ -245,6 +274,80 @@ def test_owner_purpose_format_and_description_fail_closed(
     )
 
 
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "reads.fastq.gz",
+        "variants.vcf.bgz",
+        "alignment.bam",
+        "annotations.gff3",
+        "matrix.h5ad",
+        "archive.zip",
+        "table.csv",
+        "reference.pdf",
+    ],
+)
+def test_managed_document_projection_bypasses_legacy_metadata_policy(
+    tasks_db_path: str,
+    filename: str,
+) -> None:
+    """Managed assets reach a document-only capability by final channel."""
+    registry = UploadRegistry(tasks_db_path)
+    path = register_fixture_upload(
+        registry,
+        owner="u1",
+        purpose="dataset",
+        filename=filename,
+    )
+
+    selection = validate_agent_attachments(
+        "chat",
+        {"obs_file_list": [path]},
+        owner="u1",
+        registry=registry,
+        managed_evidence=managed_evidence(
+            "u1", (path, "obs_file_list", 1_024)
+        ),
+    )
+
+    assert selection.documents[0].reference == path
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "reads.fastq.gz",
+        "variants.vcf.bgz",
+        "alignment.bam",
+        "annotations.gff3",
+        "matrix.h5ad",
+        "archive.zip",
+    ],
+)
+def test_managed_dataset_projection_bypasses_legacy_csv_policy(
+    tasks_db_path: str,
+    filename: str,
+) -> None:
+    """Managed dataset-class assets reach a dual-channel capability intact."""
+    registry = UploadRegistry(tasks_db_path)
+    path = register_fixture_upload(
+        registry,
+        owner="u1",
+        purpose="dataset",
+        filename=filename,
+    )
+
+    selection = validate_agent_attachments(
+        "analyst",
+        {"data_list": {path: ""}},
+        owner="u1",
+        registry=registry,
+        managed_evidence=managed_evidence("u1", (path, "data_list", 1_024)),
+    )
+
+    assert selection.datasets[0].reference == path
+
+
 def test_blank_dataset_descriptions_require_exact_managed_evidence(
     tasks_db_path: str,
 ) -> None:
@@ -269,25 +372,26 @@ def test_blank_dataset_descriptions_require_exact_managed_evidence(
         arguments,
         owner="u1",
         registry=registry,
-        managed_evidence=ManagedAttachmentEvidence(
-            attachment_owner="u1",
-            dataset_references=frozenset({managed_path}),
+        managed_evidence=managed_evidence(
+            "u1", (managed_path, "data_list", 1_024)
         ),
     )
-    assert selection.datasets[0].obs_path == managed_path
+    assert selection.datasets[0].reference == managed_path
 
-    for evidence in (
-        ManagedAttachmentEvidence(
-            attachment_owner="u2",
-            dataset_references=frozenset({managed_path}),
+    for evidence, code in (
+        (
+            managed_evidence("u2", (managed_path, "data_list", 1_024)),
+            "attachment_not_found",
         ),
-        ManagedAttachmentEvidence(
-            attachment_owner="u1",
-            document_references=frozenset({managed_path}),
+        (
+            managed_evidence("u1", (managed_path, "obs_file_list", 1_024)),
+            "attachment_not_supported",
         ),
-        ManagedAttachmentEvidence(
-            attachment_owner="u1",
-            dataset_references=frozenset({"obs://other-dataset"}),
+        (
+            managed_evidence(
+                "u1", ("obs://other-dataset", "data_list", 1_024)
+            ),
+            "attachment_description_required",
         ),
     ):
         with pytest.raises(AttachmentContractError) as raised:
@@ -298,10 +402,124 @@ def test_blank_dataset_descriptions_require_exact_managed_evidence(
                 registry=registry,
                 managed_evidence=evidence,
             )
-        assert raised.value.code == "attachment_description_required"
+        assert raised.value.code == code
 
 
-def test_forged_evidence_does_not_authorize_legacy_blank_description(
+def test_managed_evidence_requires_exact_single_channel_consumption(
+    tasks_db_path: str,
+) -> None:
+    """Managed provenance cannot add, duplicate, or straddle raw inputs."""
+    registry = UploadRegistry(tasks_db_path)
+    managed_path = register_fixture_upload(
+        registry,
+        owner="u1",
+        purpose="dataset",
+        filename="input.h5ad",
+    )
+    extra_path = register_fixture_upload(
+        registry,
+        owner="u1",
+        purpose="dataset",
+        filename="extra.bam",
+    )
+    cases = (
+        (
+            {
+                "data_list": {
+                    "/obs/phytomni/prepared/input.fasta": "legacy input"
+                }
+            },
+            managed_evidence(
+                "u1",
+                (managed_path, "data_list", 1_024),
+                (extra_path, "data_list", 1_024),
+            ),
+        ),
+        (
+            {"data_list": {managed_path: ""}},
+            managed_evidence(
+                "u1",
+                (managed_path, "data_list", 1_024),
+                (managed_path, "data_list", 1_024),
+            ),
+        ),
+        (
+            {
+                "obs_file_list": [managed_path],
+                "data_list": {managed_path: ""},
+            },
+            managed_evidence("u1", (managed_path, "data_list", 1_024)),
+        ),
+    )
+
+    for arguments, evidence in cases:
+        with pytest.raises(AttachmentContractError):
+            validate_agent_attachments(
+                "analyst",
+                arguments,
+                owner="u1",
+                registry=registry,
+                managed_evidence=evidence,
+            )
+
+
+@pytest.mark.parametrize("value", ["description", " ", None])
+def test_managed_dataset_value_must_be_exactly_empty(
+    tasks_db_path: str,
+    value: object,
+) -> None:
+    """Managed data projections reserve their value position as empty."""
+    registry = UploadRegistry(tasks_db_path)
+    path = register_fixture_upload(
+        registry,
+        owner="u1",
+        purpose="document",
+        filename="matrix.h5ad",
+    )
+
+    with pytest.raises(AttachmentContractError) as raised:
+        validate_agent_attachments(
+            "analyst",
+            {"data_list": {path: value}},
+            owner="u1",
+            registry=registry,
+            managed_evidence=managed_evidence(
+                "u1", (path, "data_list", 1_024)
+            ),
+        )
+
+    assert raised.value.code == "attachment_description_required"
+
+
+@pytest.mark.parametrize("size_bytes", [0, -1])
+def test_managed_evidence_requires_positive_bounded_size(
+    tasks_db_path: str,
+    size_bytes: int,
+) -> None:
+    """Managed budget accounting rejects nonpositive size metadata."""
+    registry = UploadRegistry(tasks_db_path)
+    path = register_fixture_upload(
+        registry,
+        owner="u1",
+        purpose="dataset",
+        filename="reads.fastq.gz",
+    )
+
+    with pytest.raises(AttachmentContractError) as raised:
+        validate_agent_attachments(
+            "analyst",
+            {"data_list": {path: ""}},
+            owner="u1",
+            registry=registry,
+            managed_evidence=managed_evidence(
+                "u1", (path, "data_list", size_bytes)
+            ),
+        )
+
+    assert raised.value.code == "attachment_not_found"
+
+
+def test_legacy_paths_retain_blank_description_requirement(
     tasks_db_path: str,
 ) -> None:
     """Legacy paths retain their strict nonblank-description requirement."""
@@ -312,18 +530,6 @@ def test_forged_evidence_does_not_authorize_legacy_blank_description(
         arguments={"data_list": {legacy_path: ""}},
         code="attachment_description_required",
     )
-    with pytest.raises(AttachmentContractError) as raised:
-        validate_agent_attachments(
-            "research",
-            {"data_list": {legacy_path: ""}},
-            owner="u1",
-            registry=UploadRegistry(tasks_db_path),
-            managed_evidence=ManagedAttachmentEvidence(
-                attachment_owner="u1",
-                dataset_references=frozenset({legacy_path}),
-            ),
-        )
-    assert raised.value.code == "attachment_description_required"
 
 
 def test_nonblank_descriptions_retain_existing_acceptance(
@@ -373,10 +579,7 @@ def test_managed_evidence_preserves_duplicate_and_budget_guards(
         filename="context.pdf",
         byte_size=26_214_400,
     )
-    evidence = ManagedAttachmentEvidence(
-        attachment_owner="u1",
-        dataset_references=frozenset({dataset_path}),
-    )
+    evidence = managed_evidence("u1", (dataset_path, "data_list", 26_214_400))
     legacy_path = "/obs/phytomni/prepared/input.fasta"
     with pytest.raises(AttachmentContractError) as raised:
         validate_agent_attachments(

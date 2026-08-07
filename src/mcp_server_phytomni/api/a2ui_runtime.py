@@ -234,7 +234,7 @@ def _redact_review_payload(
     payload: dict[str, Any],
     evidence: ManagedAttachmentEvidence | None,
 ) -> dict[str, Any]:
-    """Project managed attachment references out of one Review payload."""
+    """Project every ordered managed evidence reference out of one payload."""
     if evidence is None:
         return payload
     return redact_managed_attachment_values(payload, evidence)

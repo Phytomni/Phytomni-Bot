@@ -21,8 +21,14 @@ from ..agent_capabilities import (
     required_attachment_channels,
 )
 from ..asset_resolver import AssetResolver, normalize_asset_attachments
+from ..attachment_projection import (
+    AttachmentProjectionError,
+    ManagedAttachmentProjection,
+    project_managed_attachments,
+)
 from ..attachments import (
     ManagedAttachmentEvidence,
+    ManagedAttachmentEvidenceItem,
     validate_native_attachments,
 )
 from ..auth import ApiPrincipal
@@ -60,13 +66,6 @@ class PreparedAttachmentContext:
     """Private request-local managed attachment evidence."""
 
     evidence: ManagedAttachmentEvidence | None
-
-
-@dataclass(frozen=True, slots=True)
-class _PreparedProjection:
-    """Copied arguments with managed attachment projections."""
-
-    arguments: dict[str, Any]
 
 
 def _attachment_payload_values(
@@ -123,47 +122,54 @@ def prepare_native_attachment_arguments(
     db_path: str,
 ) -> tuple[dict[str, Any], PreparedAttachmentContext]:
     """Project resolved native attachments and private evidence once."""
-    projection = _project_attachment_arguments(
-        arguments, resolved_input.bundle
+    capability = get_attachment_capability(agent)
+    try:
+        projection = project_managed_attachments(
+            resolved_input.bundle,
+            capability,
+        )
+    except AttachmentProjectionError as exc:
+        raise attachment_not_supported_error() from exc
+    prepared = _project_attachment_arguments(
+        arguments,
+        projection,
+        capability_has_documents=capability.document_context is not None,
+        capability_has_datasets=capability.datasets is not None,
     )
-    evidence = _managed_attachment_evidence(resolved_input)
-    validate_owner = (
-        evidence.attachment_owner
-        if evidence is not None
-        else resolved_input.attachment_owner
-    )
+    evidence = _managed_attachment_evidence(resolved_input, projection)
     validate_native_attachments(
         agent,
-        projection.arguments,
-        owner=validate_owner,
+        prepared,
+        owner=resolved_input.attachment_owner,
         db_path=db_path,
         managed_evidence=evidence,
     )
-    return projection.arguments, PreparedAttachmentContext(
+    return prepared, PreparedAttachmentContext(
         evidence=evidence,
     )
 
 
 def _project_attachment_arguments(
     arguments: Mapping[str, Any],
-    bundle: ResolvedAttachmentBundle,
-) -> _PreparedProjection:
-    """Append managed attachment references to a copied argument map."""
+    projection: ManagedAttachmentProjection,
+    *,
+    capability_has_documents: bool,
+    capability_has_datasets: bool,
+) -> dict[str, Any]:
+    """Append projected managed references to copied native arguments."""
     prepared = dict(arguments)
-    existing_documents = _document_argument_values(
-        prepared.get("obs_file_list")
-    )
-    existing_datasets = _dataset_argument_values(prepared.get("data_list"))
-    document_references = [asset.reference for asset in bundle.documents]
-    dataset_references = [asset.reference for asset in bundle.datasets]
-    if existing_documents or document_references:
-        prepared["obs_file_list"] = [*existing_documents, *document_references]
-    if existing_datasets or dataset_references:
-        data_list = dict(existing_datasets)
-        for reference in dataset_references:
-            data_list[reference] = ""
+    obs_file_list = [
+        *_document_argument_values(prepared.get("obs_file_list")),
+        *(asset.reference for asset in projection.obs_assets),
+    ]
+    if obs_file_list or capability_has_documents:
+        prepared["obs_file_list"] = obs_file_list
+    data_list = _dataset_argument_values(prepared.get("data_list"))
+    for asset in projection.data_assets:
+        data_list[asset.reference] = ""
+    if data_list or capability_has_datasets:
         prepared["data_list"] = data_list
-    return _PreparedProjection(prepared)
+    return prepared
 
 
 def _document_argument_values(value: Any) -> list[Any]:
@@ -188,18 +194,24 @@ def _dataset_argument_values(value: Any) -> dict[Any, Any]:
 
 def _managed_attachment_evidence(
     resolved_input: ResolvedAttachmentInput,
+    projection: ManagedAttachmentProjection,
 ) -> ManagedAttachmentEvidence | None:
     """Build private evidence for managed assets when any exist."""
     bundle = resolved_input.bundle
-    if not bundle.documents and not bundle.datasets:
+    if not bundle.assets:
         return None
+    channel_by_asset_id = {
+        **{asset.asset_id: "obs_file_list" for asset in projection.obs_assets},
+        **{asset.asset_id: "data_list" for asset in projection.data_assets},
+    }
     return ManagedAttachmentEvidence(
         attachment_owner=resolved_input.attachment_owner,
-        document_references=frozenset(
-            asset.reference for asset in bundle.documents
-        ),
-        dataset_references=frozenset(
-            asset.reference for asset in bundle.datasets
+        items=tuple(
+            ManagedAttachmentEvidenceItem(
+                asset=asset,
+                projected_channel=channel_by_asset_id[asset.asset_id],
+            )
+            for asset in bundle.assets
         ),
     )
 
@@ -313,15 +325,16 @@ def prepare_chat_document_attachments(
     resolved_input: ResolvedAttachmentInput,
     db_path: str,
 ) -> tuple[dict[str, Any], PreparedAttachmentContext]:
-    """Prepare Chat document attachments and reject dataset partitions."""
-    if resolved_input.bundle.datasets:
-        raise attachment_not_supported_error()
+    """Prepare every managed class through Chat's document projection."""
     slug = get_agent_slug_for_tool(tool_name) or "chat"
-    channels = expert_attachment_channels(
-        resolved_input,
-        _document_argument_values(arguments.get("obs_file_list")),
+    has_documents = bool(
+        resolved_input.bundle.assets
+        or _document_argument_values(arguments.get("obs_file_list"))
     )
-    if channels and not agent_supports_attachment_channels(slug, channels):
+    if has_documents and not agent_supports_attachment_channels(
+        slug,
+        frozenset({"documents"}),
+    ):
         raise attachment_not_supported_error()
     return prepare_native_attachment_arguments(
         agent=slug,

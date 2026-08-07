@@ -166,6 +166,8 @@ def _preflight_agent_run(
             validation_arguments.setdefault("to_id", "TO:0000001")
         _app_attr("validate_tool_arguments")(tool_name, validation_arguments)
     owner = _app_attr("current_request_user")() or "anonymous"
+    # Attachment provenance is owner-scoped independently of the accepted
+    # run owner, which remains the authenticated principal below.
     validation_owner = (
         attachment_evidence.attachment_owner
         if attachment_evidence is not None

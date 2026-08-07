@@ -34,6 +34,7 @@ from mcp_server_phytomni.api import streaming as streaming_runtime
 from mcp_server_phytomni.api.app import _stream_chat_completion
 from mcp_server_phytomni.api.attachments import (
     ManagedAttachmentEvidence,
+    ManagedAttachmentEvidenceItem,
     redact_streaming_attachment_response,
 )
 from mcp_server_phytomni.api.schemas import ChatCompletionRequest, ChatMessage
@@ -42,6 +43,7 @@ from mcp_server_phytomni.mcp.result_formatting import (
     run_started,
     text_message_content,
 )
+from mcp_server_phytomni.runtime.attachment_assets import ResolvedAsset
 from mcp_server_phytomni.runtime.conversation_context.models import (
     ConversationEnvelopeV1,
 )
@@ -891,7 +893,19 @@ async def test_streaming_attachment_redaction_spans_chunk_boundaries(
     )
     evidence = ManagedAttachmentEvidence(
         attachment_owner="u1",
-        document_references=frozenset({reference}),
+        items=(
+            ManagedAttachmentEvidenceItem(
+                asset=ResolvedAsset(
+                    asset_id="file_stream_document",
+                    reference=reference,
+                    filename="document.pdf",
+                    content_type="application/pdf",
+                    size_bytes=1,
+                    purpose="document",
+                ),
+                projected_channel="obs_file_list",
+            ),
+        ),
     )
     response = redact_streaming_attachment_response(
         StreamingResponse(source, media_type="text/event-stream"),

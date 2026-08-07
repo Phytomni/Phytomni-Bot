@@ -496,11 +496,12 @@ The current attachment matrix is:
 | `design`      | no               | no           | no                |
 | `network`     | no               | no           | no                |
 
-`agent_context` and `document` / legacy `chat_attachment` uploads use the
-document channel. `dataset` uploads use the CSV channel, require UTF-8 or
-UTF-8-BOM comma-delimited CSV, and are advertised only for Analyst and
-Research. Managed dataset projections use exact empty-string `data_list`
-values; arbitrary non-managed path maps still require nonblank descriptions.
+`agent_context` and `document` / legacy `chat_attachment` uploads are
+document-class managed assets; `dataset` uploads are dataset-class managed
+assets. Their selected Agent capability determines the final native channel.
+Managed `data_list` projections use exact empty-string values; arbitrary
+non-managed path maps still require nonblank descriptions and retain their
+legacy CSV/purpose validation.
 The complete deterministic golden
 is
 [`docs/contracts/agents/capabilities.json`](../contracts/agents/capabilities.json)
@@ -1187,36 +1188,36 @@ or conflicting managed references return `409`. Callers cannot turn an
 arbitrary OBS path, object key, or incomplete asset into an authenticated
 attachment reference.
 
-Purpose is not repeated at submission time. Analyst and Research project
-resolved attachments into legacy channels before dispatch:
+Purpose is not repeated at submission time. Managed assets are projected only
+from their persisted class and the selected Agent's final channel shape before
+dispatch. A document-only Agent receives every managed class in ordered
+`obs_file_list` entries; a dual-channel Agent receives dataset-class assets in
+ordered `data_list` entries and the remaining assets in `obs_file_list`.
+Managed `data_list` values are exact empty strings. No managed asset faces a
+pre-invocation suffix, CSV, MIME, persisted-purpose, or description gate.
 
-- dataset assets become ordered `data_list` entries keyed by managed
-  internal references;
-- document assets append managed references to `obs_file_list`.
+Legacy raw native inputs retain the prior validation policy: document paths
+must resolve to permitted document-purpose metadata with a documented filename
+extension, and registered dataset paths must have `dataset` purpose and CSV
+metadata. Legacy `data_list` values must remain nonblank descriptions; legacy
+preconfigured OBS datasets keep their established path policy. These legacy
+rules do not relax because a managed asset appears in the same request.
 
-Managed dataset entries use exact empty-string values. Arbitrary non-managed
-path maps remain strict and still require nonblank descriptions.
+Chat (`/v1/chat/completions` and native `chat` runs), Knowledge, and Review
+remain document-channel-only; their managed assets therefore project into
+`obs_file_list`. Expert routing intersects the caller's authorized tool
+allowlist with agents that advertise the required attachment channels. An
+explicit unsupported forced-tool or selected agent returns
+`attachment_not_supported` without rerouting or dropping assets.
 
-Chat (`/v1/chat/completions` and native `chat` runs) remains document-only:
-a dataset asset is rejected for the selected Chat agent. Knowledge and
-Review stay on the document channel. Expert routing intersects the caller's
-authorized tool allowlist with agents that advertise the required attachment
-channels; when datasets are present, only authorized Analyst and Research
-candidates remain. An explicit unsupported forced-tool or selected agent
-returns `attachment_not_supported` without rerouting or dropping assets.
-
-The document channel accepts document/`chat_attachment` metadata with
-`pdf`, `docx`, `pptx`, `xls`, `xlsx`, or `msg` filenames for Chat,
-Knowledge, Review, Analyst, and Research. The dataset channel accepts
-`dataset` metadata only for Analyst and Research and is CSV-only at
-invocation validation.
-
-The registered-upload limits are inclusive at the boundary: at most 10
-attachments, at most 26,214,400 bytes per attachment, and at most 52,428,800
-bytes across one request. Exact repeated asset ids are rejected before
+The invocation limits are inclusive and separate from those metadata policies:
+at most 10 attachments, at most 26,214,400 bytes per attachment, and at most
+52,428,800 bytes across one request. Managed size metadata and registered
+legacy upload metadata both count; preconfigured legacy dataset paths retain
+their existing budget exclusion. Exact repeated asset ids are rejected before
 budget evaluation. Legacy preconfigured OBS dataset paths remain a separate
-`data_list` policy for Analyst and Research; they do not prove ownership of
-a new upload and are not converted into `user_uploads` metadata.
+`data_list` policy for Analyst and Research; they do not prove ownership of a
+new upload and are not converted into `user_uploads` metadata.
 
 Stable public failure codes for this contract include:
 
@@ -1260,10 +1261,10 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
 
 `/v1/chat/completions` keeps its existing model attachment gate: the
 `attachments` field is resolved only for Chat, Knowledge, and Review models,
-and datasets are rejected for Chat. The legacy `obs_file_list` field remains
+whose managed classes project through their document channel. The legacy `obs_file_list` field remains
 an internal-compatible input where the selected tool accepts it. Native runs
-and Expert routing apply the owner, metadata, duplicate, purpose, format,
-description, and budget checks above.
+and Expert routing apply the managed-provenance, duplicate, legacy metadata,
+legacy purpose/format/description, and invocation-budget checks above.
 
 `POST /v1/chat/completions` and `POST /v1/agents/{agent}/runs` accept
 an optional `dialogue_id` field that groups runs into one visible

@@ -28,10 +28,16 @@ from mcp_server_phytomni.api.asset_resolver import (
 from mcp_server_phytomni.api.attachments import (
     AttachmentContractError,
     ManagedAttachmentEvidence,
+    ManagedAttachmentEvidenceItem,
     redact_managed_attachment_values,
     validate_agent_attachments,
 )
 from mcp_server_phytomni.api.resumable_uploads import UploadContractError
+from mcp_server_phytomni.api.routes.attachment_inputs import (
+    ResolvedAttachmentInput,
+    prepare_native_attachment_arguments,
+)
+from mcp_server_phytomni.runtime.attachment_assets import ResolvedAsset
 from mcp_server_phytomni.runtime.upload_registry import (
     UploadMetadata,
     UploadRegistry,
@@ -217,6 +223,8 @@ def test_redact_managed_attachment_values_is_recursive_and_nonmutating() -> (
     )
     value = {
         "keep": "prefix obs://private/document suffix",
+        "attachment_evidence": "drop this private evidence",
+        "evidence": "drop this private evidence too",
         "obs_file_list": [document_reference],
         "data_list": {dataset_reference: "description"},
         "nested": [
@@ -227,8 +235,30 @@ def test_redact_managed_attachment_values_is_recursive_and_nonmutating() -> (
     }
     evidence = ManagedAttachmentEvidence(
         attachment_owner="u1",
-        document_references=frozenset({document_reference}),
-        dataset_references=frozenset({dataset_reference}),
+        items=(
+            ManagedAttachmentEvidenceItem(
+                asset=ResolvedAsset(
+                    asset_id="file_document",
+                    reference=document_reference,
+                    filename="document.pdf",
+                    content_type="application/pdf",
+                    size_bytes=1,
+                    purpose="document",
+                ),
+                projected_channel="obs_file_list",
+            ),
+            ManagedAttachmentEvidenceItem(
+                asset=ResolvedAsset(
+                    asset_id="file_dataset",
+                    reference=dataset_reference,
+                    filename="dataset.h5ad",
+                    content_type="application/octet-stream",
+                    size_bytes=1,
+                    purpose="dataset",
+                ),
+                projected_channel="data_list",
+            ),
+        ),
     )
 
     redacted = redact_managed_attachment_values(value, evidence)
@@ -247,6 +277,9 @@ def test_redact_managed_attachment_values_is_recursive_and_nonmutating() -> (
     assert value["obs_file_list"] == [document_reference]
     assert value["data_list"] == {dataset_reference: "description"}
     assert projection_fixture.reference == dataset_reference
+    assert document_reference not in repr(redacted)
+    assert dataset_reference not in repr(redacted)
+    assert "evidence" not in redacted
 
 
 def test_resolve_bundle_preserves_canonical_and_derived_request_order(
@@ -348,6 +381,60 @@ def test_resolve_bundle_preserves_canonical_and_derived_request_order(
         )
         assert projection is not None
         assert projection.purpose == purpose
+
+
+def test_native_preparation_keeps_source_order_in_private_evidence(
+    tmp_path: Path,
+) -> None:
+    """Final capability projection keeps legacy values before managed ones."""
+    assets, db_path = _build_purpose_assets(tmp_path)
+    resolver = assets["document"].resolver
+    owner = assets["document"].owner
+    bundle = resolver.resolve_bundle(
+        [
+            {"asset_id": assets["dataset_a"].asset_id},
+            {"asset_id": assets["document"].asset_id},
+            {"asset_id": assets["dataset_b"].asset_id},
+            {"asset_id": assets["legacy"].asset_id},
+        ],
+        owner,
+    )
+
+    prepared, context = prepare_native_attachment_arguments(
+        agent="analyst",
+        arguments={
+            "obs_file_list": [],
+            "data_list": {"/obs/phytomni/prepared/input.fasta": "legacy"},
+        },
+        resolved_input=ResolvedAttachmentInput(
+            attachment_owner=owner,
+            bundle=bundle,
+        ),
+        db_path=db_path,
+    )
+
+    assert prepared["obs_file_list"] == [
+        assets["document"].resolver.internal_reference(
+            assets["document"].asset_id, owner
+        ),
+        assets["legacy"].resolver.internal_reference(
+            assets["legacy"].asset_id, owner
+        ),
+    ]
+    assert list(prepared["data_list"].values()) == ["legacy", "", ""]
+    assert context.evidence is not None
+    assert [item.asset.asset_id for item in context.evidence.items] == [
+        assets["dataset_a"].asset_id,
+        assets["document"].asset_id,
+        assets["dataset_b"].asset_id,
+        assets["legacy"].asset_id,
+    ]
+    assert [item.projected_channel for item in context.evidence.items] == [
+        "data_list",
+        "obs_file_list",
+        "data_list",
+        "obs_file_list",
+    ]
 
 
 def test_resolve_bundle_keeps_historical_legacy_projection_unchanged(

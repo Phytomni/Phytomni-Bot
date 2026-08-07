@@ -19,6 +19,7 @@ from typing import Any, NoReturn, cast
 from fastapi.responses import Response, StreamingResponse
 
 from ..config.defaults import ApiConfig, ServerConfig
+from ..runtime.attachment_assets import ResolvedAsset
 from ..runtime.upload_registry import UploadMetadata, UploadRegistry
 from ..storage.obs_storage import ObsPathError, normalize_obs_object_key
 from .agent_capabilities import (
@@ -29,12 +30,14 @@ from .agent_capabilities import (
     get_attachment_capability,
 )
 from .asset_resolver import normalize_asset_attachments
+from .attachment_projection import ManagedAttachmentChannel
 from .lifecycle_contract import SafeApiError
 
 __all__ = [
     "AttachmentContractError",
     "AttachmentSelection",
     "ManagedAttachmentEvidence",
+    "ManagedAttachmentEvidenceItem",
     "is_managed_upload_path",
     "normalize_asset_attachments",
     "legacy_dataset_path_allowed",
@@ -61,6 +64,9 @@ _PRIVATE_ATTACHMENT_KEYS = frozenset(
     {
         "attachments",
         "data_list",
+        "evidence",
+        "attachment_evidence",
+        "managed_evidence",
         "obs_file_list",
         "owner_subject",
     }
@@ -73,9 +79,17 @@ _REDACTED_VALUE = "<redacted>"
 class AttachmentSelection:
     """Verified attachment references normalized for an agent invocation."""
 
-    documents: tuple[UploadMetadata, ...] = ()
-    datasets: tuple[UploadMetadata, ...] = ()
+    documents: tuple[UploadMetadata | ResolvedAsset, ...] = ()
+    datasets: tuple[UploadMetadata | ResolvedAsset, ...] = ()
     legacy_dataset_paths: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ManagedAttachmentEvidenceItem:
+    """One ordered managed asset and its final native channel."""
+
+    asset: ResolvedAsset
+    projected_channel: ManagedAttachmentChannel
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,18 +97,7 @@ class ManagedAttachmentEvidence:
     """Private request-local provenance for owner-validated attachments."""
 
     attachment_owner: str
-    document_references: frozenset[str] = frozenset()
-    dataset_references: frozenset[str] = frozenset()
-
-
-@dataclass(frozen=True, slots=True)
-class _ResolvedDataset:
-    """One resolved dataset entry retained through description validation."""
-
-    path: str
-    metadata: UploadMetadata | None
-    is_legacy: bool
-    description: Any
+    items: tuple[ManagedAttachmentEvidenceItem, ...] = ()
 
 
 class AttachmentContractError(ValueError):
@@ -159,73 +162,141 @@ def validate_agent_attachments(
             "This agent does not support dataset attachments.",
         )
 
-    documents = tuple(
-        _resolve_document_path(path, owner=owner, registry=registry)
-        for path in document_paths
-    )
-    resolved_datasets = _resolve_datasets(
-        dataset_items,
+    managed_items = _managed_evidence_by_reference(
+        managed_evidence,
         owner=owner,
-        registry=registry,
     )
-    datasets = tuple(
-        item.metadata
-        for item in resolved_datasets
-        if item.metadata is not None and not item.is_legacy
-    )
-    legacy_paths = tuple(
-        item.path for item in resolved_datasets if item.is_legacy
-    )
-    for metadata in documents:
-        _validate_metadata(metadata, channel="documents")
-    for metadata in datasets:
-        _validate_metadata(metadata, channel="datasets")
-    evidence = (
-        managed_evidence
-        if managed_evidence is not None
-        and managed_evidence.attachment_owner == owner
-        else None
-    )
-    for item in resolved_datasets:
-        _validate_dataset_description(
-            item.description,
-            blank_allowed=_managed_dataset_description_may_be_empty(
-                item,
-                owner=owner,
-                evidence=evidence,
-            ),
+    documents: list[UploadMetadata | ResolvedAsset] = []
+    datasets: list[UploadMetadata | ResolvedAsset] = []
+    legacy_paths: list[str] = []
+    budget_sizes: list[int] = []
+
+    for path in document_paths:
+        evidence_item = _consume_managed_evidence(
+            managed_items,
+            path=path,
+            channel="obs_file_list",
         )
-    _validate_budget((*documents, *datasets))
-    return AttachmentSelection(
-        documents=documents,
-        datasets=datasets,
-        legacy_dataset_paths=legacy_paths,
-    )
+        if evidence_item is not None:
+            _validate_managed_item(evidence_item)
+            documents.append(evidence_item.asset)
+            budget_sizes.append(evidence_item.asset.size_bytes)
+            continue
+        metadata = _resolve_document_path(path, owner=owner, registry=registry)
+        _validate_metadata(metadata, channel="documents")
+        documents.append(metadata)
+        budget_sizes.append(metadata.byte_size)
 
-
-def _resolve_datasets(
-    dataset_items: Sequence[tuple[str, Any]],
-    *,
-    owner: str,
-    registry: UploadRegistry,
-) -> tuple[_ResolvedDataset, ...]:
-    """Resolve user and legacy datasets while preserving descriptions."""
-    resolved: list[_ResolvedDataset] = []
     for path, description in dataset_items:
+        evidence_item = _consume_managed_evidence(
+            managed_items,
+            path=path,
+            channel="data_list",
+        )
+        if evidence_item is not None:
+            _validate_managed_item(evidence_item)
+            if description != "":
+                _raise(
+                    "attachment_description_required",
+                    "Managed dataset values must be empty.",
+                )
+            datasets.append(evidence_item.asset)
+            budget_sizes.append(evidence_item.asset.size_bytes)
+            continue
         metadata, is_legacy = _resolve_dataset_path(
             path,
             owner=owner,
             registry=registry,
         )
-        resolved.append(
-            _ResolvedDataset(
-                path=path,
-                metadata=metadata,
-                is_legacy=is_legacy,
-                description=description,
+        _validate_dataset_description(description)
+        if is_legacy:
+            legacy_paths.append(path)
+            continue
+        if metadata is None:
+            _raise(
+                "attachment_not_found",
+                "The uploaded dataset could not be verified.",
             )
+        _validate_metadata(metadata, channel="datasets")
+        datasets.append(metadata)
+        budget_sizes.append(metadata.byte_size)
+
+    if managed_items:
+        _raise(
+            "attachment_not_found",
+            "The attachment could not be verified.",
         )
-    return tuple(resolved)
+    _validate_budget_sizes(budget_sizes)
+    return AttachmentSelection(
+        documents=tuple(documents),
+        datasets=tuple(datasets),
+        legacy_dataset_paths=tuple(legacy_paths),
+    )
+
+
+def _managed_evidence_by_reference(
+    evidence: ManagedAttachmentEvidence | None,
+    *,
+    owner: str,
+) -> dict[str, ManagedAttachmentEvidenceItem]:
+    """Return one exact, single-consumption map for private evidence."""
+    if evidence is None:
+        return {}
+    if evidence.attachment_owner != owner:
+        _raise(
+            "attachment_not_found",
+            "The attachment could not be verified.",
+        )
+    items: dict[str, ManagedAttachmentEvidenceItem] = {}
+    asset_ids: set[str] = set()
+    for item in evidence.items:
+        reference = item.asset.reference
+        if not isinstance(reference, str) or not reference:
+            _raise(
+                "attachment_not_found",
+                "The attachment could not be verified.",
+            )
+        if reference in items or item.asset.asset_id in asset_ids:
+            _raise(
+                "attachment_duplicate",
+                "The same attachment was provided more than once.",
+            )
+        items[reference] = item
+        asset_ids.add(item.asset.asset_id)
+    return items
+
+
+def _consume_managed_evidence(
+    items: dict[str, ManagedAttachmentEvidenceItem],
+    *,
+    path: str,
+    channel: ManagedAttachmentChannel,
+) -> ManagedAttachmentEvidenceItem | None:
+    """Consume one exact managed reference in its declared native channel."""
+    item = items.get(path)
+    if item is None:
+        return None
+    if item.projected_channel != channel:
+        _raise(
+            "attachment_not_supported",
+            "The selected agent does not support these attachments.",
+        )
+    del items[path]
+    return item
+
+
+def _validate_managed_item(item: ManagedAttachmentEvidenceItem) -> None:
+    """Validate only trusted managed provenance and bounded size metadata."""
+    size_bytes = item.asset.size_bytes
+    if (
+        not isinstance(size_bytes, int)
+        or isinstance(size_bytes, bool)
+        or size_bytes <= 0
+    ):
+        _raise(
+            "attachment_not_found",
+            "The attachment metadata could not be verified.",
+        )
 
 
 def is_managed_upload_path(path: str) -> bool:
@@ -345,24 +416,6 @@ def _resolve_dataset_path(
     )
 
 
-def _managed_dataset_description_may_be_empty(
-    item: _ResolvedDataset,
-    *,
-    owner: str,
-    evidence: ManagedAttachmentEvidence | None,
-) -> bool:
-    """Allow a blank description only for exact current managed evidence."""
-    metadata = item.metadata
-    return (
-        evidence is not None
-        and not item.is_legacy
-        and metadata is not None
-        and metadata.user_id == owner
-        and metadata.purpose == _DATASET_PURPOSE
-        and item.path in evidence.dataset_references
-    )
-
-
 def _validate_dataset_description(
     description: Any,
     *,
@@ -415,12 +468,9 @@ def _managed_reference_tuple(
     return tuple(
         sorted(
             (
-                reference
-                for reference in (
-                    *evidence.document_references,
-                    *evidence.dataset_references,
-                )
-                if reference
+                item.asset.reference
+                for item in evidence.items
+                if item.asset.reference
             ),
             key=len,
             reverse=True,
@@ -560,19 +610,19 @@ def _validate_extension(
         )
 
 
-def _validate_budget(metadata: Sequence[UploadMetadata]) -> None:
-    """Enforce inclusive per-file, count, and aggregate upload limits."""
-    if len(metadata) > MAX_FILES:
+def _validate_budget_sizes(sizes: Sequence[int]) -> None:
+    """Enforce inclusive limits across managed and registered uploads."""
+    if len(sizes) > MAX_FILES:
         _raise(
             "attachment_limit_exceeded",
             "Uploaded attachments exceed the allowed limit.",
         )
-    if any(item.byte_size > MAX_FILE_BYTES for item in metadata):
+    if any(size > MAX_FILE_BYTES for size in sizes):
         _raise(
             "attachment_limit_exceeded",
             "Uploaded attachments exceed the allowed limit.",
         )
-    if sum(item.byte_size for item in metadata) > MAX_TOTAL_BYTES:
+    if sum(sizes) > MAX_TOTAL_BYTES:
         _raise(
             "attachment_limit_exceeded",
             "Uploaded attachments exceed the allowed limit.",

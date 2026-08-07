@@ -10,13 +10,11 @@ import asyncio
 import json
 from pathlib import Path
 from typing import Any
-from unittest.mock import Mock
 
 import httpx
 import pytest
 from tests.server.test_api_agent_runs import _BACKGROUND_CASES, _RemoteCase
 from tests.support.http_fakes import (
-    install_rejection_handler,
     install_tool_handler,
     open_asgi_client,
     running_agent_run_body,
@@ -334,17 +332,20 @@ async def test_direct_dataset_assets_project_to_data_list_before_202(
 async def test_dataset_assets_fail_before_reservation(
     asset_http_context: AssetHttpTestContext,
 ) -> None:
-    """Unsupported dataset assets do not complete, persist, or launch."""
+    """Chat projects every managed asset class through its document channel."""
     _resolver, dataset_id, _document_id = _install_dataset_assets(
-        asset_http_context
+        asset_http_context, dataset_filename="reads.fastq.gz"
     )
-    marker = install_rejection_handler(
+    captured: dict[str, Any] = {}
+
+    async def fake(args: Any) -> dict[str, Any]:
+        captured["arguments"] = args
+        return {"answer": "ok", "doc_list": []}
+
+    install_tool_handler(
         asset_http_context.monkeypatch,
         server.PhytomniAgents.CHAT_AGENT.value,
-    )
-    background_launcher = Mock(name="background_launcher")
-    asset_http_context.monkeypatch.setattr(
-        api_app_module, "launch_background_submission", background_launcher
+        fake,
     )
 
     response = await _post_asset_run(
@@ -354,31 +355,44 @@ async def test_dataset_assets_fail_before_reservation(
         attachments=[{"asset_id": dataset_id}],
     )
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "attachment_not_supported"
-    assert marker["called"] is False
-    assert background_launcher.call_count == 0
-    assert not RunRegistry(asset_http_context.db_path).list_runs(owner="u1")
+    assert response.status_code == 200, response.text
+    arguments = captured["arguments"]
+    assert len(arguments.obs_file_list) == 1
+    assert not hasattr(arguments, "attachments")
 
 
-async def test_managed_tsv_dataset_asset_keeps_legacy_format_validation(
+async def test_managed_tsv_dataset_asset_reaches_native_data_mapping(
     asset_http_context: AssetHttpTestContext,
 ) -> None:
-    """Managed dataset format validation remains enforced before dispatch."""
+    """Managed datasets bypass only legacy CSV validation before dispatch."""
     _resolver, dataset_id, _document_id = _install_dataset_assets(
         asset_http_context, dataset_filename="input.tsv"
     )
+    captured: dict[str, Any] = {}
+    case = _RemoteCase(
+        slug="analyst",
+        tool_name=server.PhytomniAgents.ANALYST_AGENT.value,
+        stub_return={"task_id": "T-tsv", "output_dir": "/obs/out"},
+        arguments=_dataset_arguments("analyst", "tsv dataset"),
+        expected_task_ids={"T-tsv"},
+    )
+    install_attachment_capture(asset_http_context.monkeypatch, case, captured)
 
     response = await _post_asset_run(
         asset_http_context,
         slug="analyst",
-        arguments=_dataset_arguments("analyst", "tsv dataset"),
+        arguments=case.arguments,
         attachments=[{"asset_id": dataset_id}],
     )
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "unsupported_asset_format"
-    assert not RunRegistry(asset_http_context.db_path).list_runs(owner="u1")
+    assert response.status_code == 202, response.text
+    arguments = await wait_for_attachment_submission(
+        captured=captured,
+        db_path=asset_http_context.db_path,
+        run_id=response.json()["run_id"],
+        case=case,
+    )
+    assert list(arguments.data_list.values()) == [""]
 
 
 async def test_managed_dataset_empty_value_still_submits(

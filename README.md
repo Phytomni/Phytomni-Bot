@@ -139,12 +139,15 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
 Use the resumable `POST /v1/files` control route to create an asset, upload
 parts with the returned capability, and complete it. Pass the completed
 `asset_id` in an HTTP agent request's `attachments` list; Bot resolves it
-owner-scoped before invoking the selected agent. `purpose=chat_attachment`
-accepts document context for Chat, Knowledge, Review, Analyst, and Research;
-dataset uploads remain a validated CSV channel for Analyst and Research and
-use exact empty-string values for managed `data_list` entries; legacy raw
-`data_list` entries still require a nonblank description. The transfer limit
-is 10 GiB by
+owner-scoped before invoking the selected agent. Managed assets are projected
+solely from their persisted class and the selected Agent's final channel shape:
+document-only Agents receive managed references in `obs_file_list`, while
+dual-channel Agents receive dataset-class assets in `data_list` and the rest
+in `obs_file_list`. Managed projection has no pre-invocation filename suffix,
+CSV, MIME, purpose, or description gate; managed `data_list` values are exact
+empty strings. Legacy raw native inputs are separate: document references keep
+their documented purpose and extension checks, and legacy `data_list` entries
+remain CSV/purpose-validated with nonblank descriptions. The transfer limit is 10 GiB by
 default. Agent invocation remains bounded to 10 attachments, 26,214,400
 bytes per attachment, and 52,428,800 bytes in total. Repeated asset ids,
 foreign owners, incomplete assets, unsupported channels, and metadata
