@@ -56,6 +56,7 @@ __all__ = [
 ]
 
 UPLOAD_PROTOCOL = "obs-multipart-v2"
+_CAPABILITY_OPERATIONS = ("head", "part", "complete", "abort")
 # Upload routes are v2-only; this mirrors Web's protocol version constant.
 UPLOAD_PROTOCOL_VERSION = 2
 PART_SIZE_BYTES = 128 * 1024**2
@@ -237,12 +238,7 @@ class ResumableUploadRegistry:
                                 conn,
                                 asset,
                                 now=created_at,
-                                operations=(
-                                    "head",
-                                    "part",
-                                    "complete",
-                                    "abort",
-                                ),
+                                operations=_CAPABILITY_OPERATIONS,
                             ),
                         )
             else:
@@ -285,12 +281,7 @@ class ResumableUploadRegistry:
                             conn,
                             asset,
                             now=created_at,
-                            operations=(
-                                "head",
-                                "part",
-                                "complete",
-                                "abort",
-                            ),
+                            operations=_CAPABILITY_OPERATIONS,
                         ),
                     )
         _report_expirations(expiry_counts)
@@ -563,6 +554,7 @@ class ResumableUploadRegistry:
         *,
         owner: str,
         now: datetime,
+        capability_token: str | None = None,
     ) -> AssetRecord:
         """Abort an unfinished asset idempotently."""
         aborted_at = _utc(now)
@@ -573,12 +565,17 @@ class ResumableUploadRegistry:
                 raise UploadStateError("upload_asset_not_found")
             if asset.status in {"completed", "aborted", "expired"}:
                 return asset
-            return self._terminalize_asset(
-                conn,
-                asset,
-                status="aborted",
-                now=aborted_at,
+            aborted = self._terminalize_asset(
+                conn, asset, status="aborted", now=aborted_at
             )
+            if capability_token is not None:
+                conn.execute(
+                    "UPDATE upload_capabilities SET operations = CASE "
+                    "WHEN token_hash = ? THEN '[\"abort\"]' ELSE '[]' END "
+                    "WHERE asset_id = ?",
+                    (_token_hash(capability_token), asset_id),
+                )
+            return aborted
 
     def cleanup_expired(
         self, *, now: datetime, report: _ExpiryReporter | None = None
@@ -704,12 +701,14 @@ class ResumableUploadRegistry:
                 and not (
                     authorization.operation == "abort"
                     and asset.status == "aborted"
+                    and operations == frozenset({"abort"})
                 )
             ):
                 raise UploadStateError("upload_capability_invalid")
             if (
                 authorization.operation == "abort"
                 and asset.status == "aborted"
+                and operations == frozenset({"abort"})
             ):
                 result = (
                     _build_capability_from_row(

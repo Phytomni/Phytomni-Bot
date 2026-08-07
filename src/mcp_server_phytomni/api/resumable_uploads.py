@@ -176,7 +176,7 @@ class ResumableUploadService:
                         obs_upload_id=session.upload_id,
                         now=now,
                     )
-                except UploadStateError:
+                except (UploadStateError, sqlite3.Error, OSError):
                     _abort_quietly(self.storage, session)
                     _discard_quietly(self.registry, asset)
                     raise
@@ -184,6 +184,10 @@ class ResumableUploadService:
             raise _contract_error(error) from error
         except MultipartStorageError as error:
             raise _contract_error(error) from error
+        except (sqlite3.Error, OSError) as error:
+            raise _contract_error(
+                MultipartStorageError("upload_storage_unavailable")
+            ) from error
         return UploadCreateResponse(
             protocol=UPLOAD_PROTOCOL,
             asset_id=asset.asset_id,
@@ -376,6 +380,7 @@ class ResumableUploadService:
                 asset_id,
                 owner=asset.owner_subject,
                 now=self._now(),
+                capability_token=capability,
             )
             return self._status(aborted)
         except UploadStateError as error:
@@ -480,11 +485,14 @@ def _contract_error(
         "upload_storage_unavailable": 503,
     }
     code = error.code
-    status_code = status_codes.get(code, 500)
+    public_code = (
+        code if code in status_codes else "upload_storage_unavailable"
+    )
+    status_code = status_codes[public_code]
     return UploadContractError(
-        code=code,
+        code=public_code,
         status_code=status_code,
-        retryable=code
+        retryable=public_code
         in {
             "upload_rate_limited",
             "obs_outcome_unknown",

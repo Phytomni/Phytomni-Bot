@@ -53,12 +53,14 @@ class _FailingMultipartStorage(FakeMultipartStorage):
         *,
         fail_begin_calls: int = 0,
         fail_abort_calls: int = 0,
+        begin_error_code: str = "upload_storage_unavailable",
     ) -> None:
         super().__init__()
         self.begin_calls = 0
         self.abort_calls = 0
         self.fail_begin_calls = fail_begin_calls
         self.fail_abort_calls = fail_abort_calls
+        self.begin_error_code = begin_error_code
         self.after_begin: Callable[[MultipartSession], None] | None = None
 
     def begin(self, *, bucket: str, object_key: str) -> MultipartSession:
@@ -66,7 +68,7 @@ class _FailingMultipartStorage(FakeMultipartStorage):
         self.begin_calls += 1
         if self.fail_begin_calls:
             self.fail_begin_calls -= 1
-            raise MultipartStorageError("upload_storage_unavailable")
+            raise MultipartStorageError(self.begin_error_code)
         session = super().begin(bucket=bucket, object_key=object_key)
         if self.after_begin is not None:
             self.after_begin(session)
@@ -491,6 +493,95 @@ def test_repeated_abort_accepts_only_the_same_live_aborted_capability(
     with pytest.raises(UploadContractError) as expired_token:
         service.abort(aborted.asset_id, aborted.capability)
     assert expired_token.value.code == "upload_capability_invalid"
+
+
+def test_repeated_abort_rejects_a_distinct_pre_abort_capability(
+    tmp_path: Path,
+) -> None:
+    """Only the token that performed DELETE may replay it."""
+    service, _storage = _service(tmp_path)
+    first = service.create(_request())
+    second = service.create(_request())
+
+    service.abort(first.asset_id, first.capability)
+
+    with pytest.raises(UploadContractError) as distinct:
+        service.abort(first.asset_id, second.capability)
+
+    assert distinct.value.code == "upload_capability_invalid"
+    assert service.abort(first.asset_id, first.capability).status == "aborted"
+
+
+def test_bind_database_failure_compensates_and_preserves_create_accounting(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed provider binding aborts the new session and frees its row."""
+    storage = _FailingMultipartStorage()
+    service, _storage = _service(tmp_path, storage=storage)
+    original_bind = service.registry.set_provider_session
+    bind_calls = 0
+
+    def fail_bind(
+        asset_id: str,
+        *,
+        owner: str,
+        obs_upload_id: str,
+        now: datetime,
+    ) -> object:
+        nonlocal bind_calls
+        bind_calls += 1
+        if bind_calls == 1:
+            raise sqlite3.OperationalError("database is unavailable")
+        return original_bind(
+            asset_id,
+            owner=owner,
+            obs_upload_id=obs_upload_id,
+            now=now,
+        )
+
+    monkeypatch.setattr(service.registry, "set_provider_session", fail_bind)
+
+    with pytest.raises(UploadContractError) as captured:
+        service.create(_request())
+
+    assert captured.value.code == "upload_storage_unavailable"
+    assert captured.value.status_code == 503
+    assert str(captured.value) == "upload storage unavailable"
+    assert storage.abort_calls == 1
+    recreated = service.create(_request())
+    assert recreated.status == "uploading"
+
+    with sqlite3.connect(service.registry.db_path) as conn:
+        active_count, accepted_bytes, event_count = conn.execute(
+            "SELECT (SELECT COUNT(*) FROM upload_assets "
+            "WHERE status = 'uploading'), "
+            "(SELECT COALESCE(SUM(byte_size), 0) FROM upload_quota_events "
+            "WHERE owner_subject = 'owner-1' AND event_kind = 'create'), "
+            "(SELECT COUNT(*) FROM upload_quota_events "
+            "WHERE owner_subject = 'owner-1' AND event_kind = 'create')"
+        ).fetchone()
+
+    assert (active_count, accepted_bytes, event_count) == (1, 6, 2)
+
+
+def test_unknown_provider_code_maps_to_generic_storage_contract(
+    tmp_path: Path,
+) -> None:
+    """Provider implementation codes never cross the public boundary."""
+    storage = _FailingMultipartStorage(
+        fail_begin_calls=1,
+        begin_error_code="provider-secret-internal-code",
+    )
+    service, _storage = _service(tmp_path, storage=storage)
+
+    with pytest.raises(UploadContractError) as captured:
+        service.create(_request())
+
+    assert captured.value.code == "upload_storage_unavailable"
+    assert captured.value.status_code == 503
+    assert str(captured.value) == "upload storage unavailable"
+    assert "provider-secret-internal-code" not in str(captured.value)
 
 
 def test_repeated_abort_rejects_completed_and_expired_rows(
