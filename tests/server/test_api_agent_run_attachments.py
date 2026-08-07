@@ -13,7 +13,11 @@ from typing import Any
 
 import httpx
 import pytest
-from tests.server.test_api_agent_runs import _BACKGROUND_CASES, _RemoteCase
+from tests.server.test_api_agent_runs import (
+    _BACKGROUND_CASES,
+    _DESIGN_CASE,
+    _RemoteCase,
+)
 from tests.support.http_fakes import (
     install_tool_handler,
     open_asgi_client,
@@ -356,23 +360,7 @@ async def test_direct_design_projects_mixed_assets_to_source_ordered_obs(
         ).assets
     ]
     captured: dict[str, Any] = {}
-    case = _RemoteCase(
-        slug="design",
-        tool_name=server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value,
-        stub_return={
-            "design_task_result": [
-                {"task_id": "T-D1", "output_dir": "/obs/d1"},
-                {"task_id": "T-D2", "output_dir": "/obs/d2"},
-            ]
-        },
-        arguments={
-            "species_code": "ath",
-            "gene_id": "AT1G01010",
-            "obs_file_list": [],
-            "resolve_gene_id": False,
-        },
-        expected_task_ids={"T-D1", "T-D2"},
-    )
+    case = _DESIGN_CASE
     install_attachment_capture(asset_http_context.monkeypatch, case, captured)
 
     response = await _post_asset_run(

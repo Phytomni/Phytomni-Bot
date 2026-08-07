@@ -520,6 +520,25 @@ _REMOTE_CASES = [
 ]
 
 
+_DESIGN_CASE = _RemoteCase(
+    slug="design",
+    tool_name=server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value,
+    stub_return={
+        "design_task_result": [
+            {"task_id": "T-D1", "output_dir": "/obs/d1"},
+            {"task_id": "T-D2", "output_dir": "/obs/d2"},
+        ]
+    },
+    arguments={
+        "species_code": "ath",
+        "gene_id": "AT1G01010",
+        "obs_file_list": [],
+        "resolve_gene_id": False,
+    },
+    expected_task_ids={"T-D1", "T-D2"},
+)
+
+
 _BACKGROUND_CASES = [
     pytest.param(
         _RemoteCase(
@@ -573,23 +592,7 @@ _BACKGROUND_CASES = [
         id="network",
     ),
     pytest.param(
-        _RemoteCase(
-            slug="design",
-            tool_name=server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value,
-            stub_return={
-                "design_task_result": [
-                    {"task_id": "T-D1", "output_dir": "/obs/d1"},
-                    {"task_id": "T-D2", "output_dir": "/obs/d2"},
-                ]
-            },
-            arguments={
-                "species_code": "ath",
-                "gene_id": "AT1G01010",
-                "obs_file_list": [],
-                "resolve_gene_id": False,
-            },
-            expected_task_ids={"T-D1", "T-D2"},
-        ),
+        _DESIGN_CASE,
         id="design",
     ),
 ]

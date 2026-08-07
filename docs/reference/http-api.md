@@ -1261,8 +1261,9 @@ curl -s -X POST http://127.0.0.1:8080/v1/agents/chat/runs \
 
 `/v1/chat/completions` keeps its existing model attachment gate: the
 `attachments` field is resolved only for Chat, Knowledge, and Review models,
-whose managed classes project through their document channel. The legacy `obs_file_list` field remains
-an internal-compatible input where the selected tool accepts it. Native runs
+whose managed classes project through their document channel. The legacy
+`obs_file_list` field remains an internal-compatible input where the selected
+tool accepts it. Native runs
 and Expert routing apply the managed-provenance, duplicate, legacy metadata,
 legacy purpose/format/description, and invocation-budget checks above.
 

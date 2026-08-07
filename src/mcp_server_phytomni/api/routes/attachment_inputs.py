@@ -301,17 +301,10 @@ def prepare_selected_expert_arguments(
     arguments.pop("obs_file_list", None)
     arguments.pop("data_list", None)
     arguments.pop("attachments", None)
-    if agent == "analyst":
+    if agent in {"analyst", "deep_genome", "design", "network"}:
         arguments["goal_description"] = payload.user_query
         arguments.pop("user_query", None)
-    elif agent in {
-        "chat",
-        "knowledge",
-        "data",
-        "review",
-        "brief_gene",
-        "research",
-    }:
+    else:
         arguments["user_query"] = payload.user_query
         arguments.pop("goal_description", None)
     arguments["locale"] = current_effective_locale()
