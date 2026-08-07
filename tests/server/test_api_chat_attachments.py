@@ -8,10 +8,16 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.server.test_api_agent_context_runs import (
+    _context_row_counts,
+    _count_context_mutations,
+    _preflight_attachment_ids,
+)
 from tests.support.chat_fakes import install_chat_handler
 from tests.support.handler_fakes import review_success_result
 from tests.support.http_fakes import (
@@ -26,9 +32,11 @@ from tests.support.resumable_asset_fakes import (
     enable_conversation_context_v1,
 )
 
+from mcp_server_phytomni import server
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.a2ui_runtime import ReviewExecution
 from mcp_server_phytomni.api.auth import ApiKeyStore
+from mcp_server_phytomni.api.routes import agents as agent_routes
 from mcp_server_phytomni.api.upload_runtime import UploadRuntime
 from mcp_server_phytomni.runtime.resumable_uploads import UploadAssetPurpose
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
@@ -72,6 +80,56 @@ def _document_reference(harness: Any, owner: str = "u1") -> str:
         .documents[0]
         .reference
     )
+
+
+@dataclass(slots=True)
+class _ChatReplayCallState:
+    """Captured calls that must stay one-shot across Chat replay."""
+
+    handler_calls: list[Any]
+    resolver_calls: list[Any]
+    preparation_calls: list[dict[str, Any]]
+
+
+def _patch_chat_replay_calls(
+    monkeypatch: pytest.MonkeyPatch,
+    captured: dict[str, Any],
+) -> _ChatReplayCallState:
+    """Count Chat handler, resolver, and projector calls for replay tests."""
+    state = _ChatReplayCallState([], [], [])
+    install_chat_handler(monkeypatch, captured, content="replay answer")
+    original_handler = server.TOOL_HANDLERS[
+        server.PhytomniAgents.CHAT_AGENT.value
+    ]
+
+    async def counted_handler(arguments: Any) -> dict[str, Any]:
+        state.handler_calls.append(arguments)
+        return await original_handler(arguments)
+
+    monkeypatch.setitem(
+        server.TOOL_HANDLERS,
+        server.PhytomniAgents.CHAT_AGENT.value,
+        counted_handler,
+    )
+    original_resolve_input = agent_routes.resolve_attachment_input
+
+    def counted_resolve_input(*args: Any, **kwargs: Any) -> Any:
+        state.resolver_calls.append((args, kwargs))
+        return original_resolve_input(*args, **kwargs)
+
+    monkeypatch.setattr(
+        agent_routes, "resolve_attachment_input", counted_resolve_input
+    )
+    original_prepare = agent_routes.prepare_chat_attachments
+
+    def counted_prepare(**kwargs: Any) -> Any:
+        state.preparation_calls.append(kwargs)
+        return original_prepare(**kwargs)
+
+    monkeypatch.setattr(
+        agent_routes, "prepare_chat_attachments", counted_prepare
+    )
+    return state
 
 
 @pytest.mark.parametrize(
@@ -390,6 +448,104 @@ async def test_chat_instant_context_document_assets_resolve_and_invoke(
     assert captured["obs_file_list"] == [reference]
     assert reference not in response.text
     assert "<redacted-attachment>" in response.text
+
+
+async def test_chat_context_exact_replay_skips_preparation_and_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    chat_completion: Callable[..., Any],
+) -> None:
+    """An exact Chat replay skips attachment and context lifecycle work."""
+    context, key = enable_conversation_context_v1(monkeypatch, tmp_path)
+    harness = _install_chat_asset(
+        context,
+        purpose="document",
+        filename="chat-replay.pdf",
+        content=b"%PDF-1.4 chat replay",
+    )
+    captured: dict[str, Any] = {}
+    replay_calls = _patch_chat_replay_calls(monkeypatch, captured)
+    mutation_calls = _count_context_mutations(monkeypatch)
+    conversation = build_instant_chat_context_envelope("14")
+    replay_attachments = [{"asset_id": "file_aaaaaaaaaaaaaaaa"}]
+    app = api_app_module.create_app()
+    async with open_asgi_client(
+        monkeypatch, app, base_url="http://api.chat-context-replay.test"
+    ) as client:
+        first = await chat_completion(
+            client,
+            key,
+            content="ignored",
+            conversation=conversation,
+            attachments=[{"asset_id": harness.asset_id}],
+        )
+        replay = await chat_completion(
+            client,
+            key,
+            content="ignored",
+            conversation=conversation,
+            attachments=replay_attachments,
+        )
+
+    assert first.status_code == 200, first.text
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == first.json()
+    assert len(replay_calls.resolver_calls) == 1
+    assert len(replay_calls.preparation_calls) == 1
+    assert len(replay_calls.handler_calls) == 1
+    assert mutation_calls == {
+        "begin_turn": 1,
+        "stage_turn": 1,
+        "mark_turn_failed": 0,
+    }
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    ("malformed", "missing", "cross_owner", "incomplete", "duplicate"),
+)
+async def test_chat_context_asset_failures_precede_context_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    chat_completion: Callable[..., Any],
+    scenario: str,
+) -> None:
+    """Unsafe Chat assets fail before a context turn row is created."""
+    context, key = enable_conversation_context_v1(monkeypatch, tmp_path)
+    harness = build_resumable_asset(
+        tmp_path,
+        db_path=context.db_path,
+        spec=ResumableAssetSpec(
+            owner="foreign-owner" if scenario == "cross_owner" else "u1",
+            filename="chat-preflight.pdf",
+            content=b"%PDF-1.4 chat preflight",
+            complete=scenario != "incomplete",
+            purpose="document",
+        ),
+    )
+    monkeypatch.setattr(
+        UploadRuntime,
+        "get_asset_resolver",
+        lambda _runtime: harness.resolver,
+    )
+    attachments = _preflight_attachment_ids(harness, scenario)
+    captured: dict[str, Any] = {}
+    install_chat_handler(monkeypatch, captured)
+    app = api_app_module.create_app()
+    async with open_asgi_client(
+        monkeypatch, app, base_url="http://api.chat-context-preflight.test"
+    ) as client:
+        response = await chat_completion(
+            client,
+            key,
+            content="ignored",
+            conversation=build_instant_chat_context_envelope("15"),
+            attachments=attachments,
+        )
+
+    assert response.status_code >= 400, response.text
+    assert not captured
+    assert _context_row_counts(context.db_path) == (0, 0)
 
 
 async def test_chat_delegated_owner_resolves_asset_under_owner_subject(

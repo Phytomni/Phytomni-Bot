@@ -709,7 +709,9 @@ async def _execute_context_native(
     assert envelope is not None
     tool_name = _native_context_tool(agent, envelope, dependencies)
     replay = await inspect_context_replay(
-        executor=dependencies.context.executor, envelope=envelope
+        executor=dependencies.context.executor,
+        envelope=envelope,
+        selection_failure_detail="invalid native context agent",
     )
     if replay is not None:
         return _context_response(replay, envelope)

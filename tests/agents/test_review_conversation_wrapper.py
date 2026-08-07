@@ -46,8 +46,70 @@ from tests.agents.test_review_conversation import (
     _projection,
     _stateful_review_agent,
 )
+from tests.unit.runtime.conversation_context.test_service import (
+    _envelope,
+    _service,
+)
 
 pytestmark = pytest.mark.agent
+
+
+@pytest.fixture(name="context_store")
+def isolated_context_store(tmp_path: Any) -> ConversationContextStore:
+    """Provide an isolated store for service replay probes."""
+    return ConversationContextStore(str(tmp_path / "context.sqlite"))
+
+
+@pytest.mark.asyncio
+async def test_context_service_inspect_replay_is_read_only(
+    context_store: ConversationContextStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Replay probes return durable state without callbacks or writes."""
+    service = _service(context_store)
+    envelope = _envelope()
+    await service.execute_turn(envelope)
+    staged = await service.inspect_replay(envelope)
+    assert staged is not None
+    assert staged.status is PrepareStatus.RETURN_STAGED
+    await service.acknowledge_settlement(envelope, "b" * 64)
+
+    def fail_if_called(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("replay probe must not mutate or invoke")
+
+    async def fail_callback(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("replay probe must not invoke callbacks")
+
+    for name in ("begin_turn", "stage_turn", "mark_turn_failed"):
+        monkeypatch.setattr(context_store, name, fail_if_called)
+    for name in ("router", "invoke", "delegate_async"):
+        monkeypatch.setattr(service, name, fail_callback)
+
+    committed = await service.inspect_replay(envelope)
+    assert committed is not None
+    assert committed.status is PrepareStatus.RETURN_COMMITTED
+    assert await service.inspect_replay(_envelope(turn_id="2")) is None
+
+
+@pytest.mark.parametrize(
+    "changed_fields",
+    [{"operation": "replace"}, {"base_business_context_version": 1}],
+)
+@pytest.mark.asyncio
+async def test_context_service_inspect_replay_rejects_changed_duplicate(
+    context_store: ConversationContextStore,
+    changed_fields: dict[str, Any],
+) -> None:
+    """Replay probes keep the bounded duplicate proposal mismatch."""
+    service = _service(context_store)
+    envelope = _envelope()
+    await service.execute_turn(envelope)
+    with pytest.raises(
+        ValueError, match="duplicate turn proposal does not match"
+    ):
+        await service.inspect_replay(
+            envelope.model_copy(update=changed_fields)
+        )
 
 
 def test_scope_change_stages_focus_until_successful_settlement() -> None:

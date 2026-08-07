@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from tests.server.test_api_agent_context_runs import (
+    _assert_selection_mismatch,
+    _context_row_counts,
+    _count_context_mutations,
+)
 from tests.server.test_query_route import (
     RunRegistry,
     ToolSelection,
@@ -36,6 +41,9 @@ from tests.support.resumable_asset_fakes import (
 )
 
 from mcp_server_phytomni.agents.expert import router as expert_router
+from mcp_server_phytomni.api.routes import (
+    expert_context as expert_context_routes,
+)
 from mcp_server_phytomni.api.schemas import ExpertQueryRequest
 
 pytestmark = pytest.mark.server
@@ -534,6 +542,194 @@ def _enable_expert_context_assets(
     return context, _install_expert_purpose_assets(context), key
 
 
+def _patch_expert_resolver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[Any]:
+    """Count Expert attachment resolver calls for replay assertions."""
+    calls: list[Any] = []
+    original = expert_context_routes.resolve_attachment_input
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        calls.append((args, kwargs))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(
+        expert_context_routes, "resolve_attachment_input", counted
+    )
+    return calls
+
+
+def _patch_expert_preparation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[dict[str, Any]]:
+    """Count Expert attachment preparation calls for replay assertions."""
+    calls: list[dict[str, Any]] = []
+    original = expert_context_routes.prepare_selected_expert_arguments
+
+    def counted(**kwargs: Any) -> Any:
+        calls.append(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(
+        expert_context_routes,
+        "prepare_selected_expert_arguments",
+        counted,
+    )
+    return calls
+
+
+def _patch_expert_invocation(
+    monkeypatch: pytest.MonkeyPatch,
+    run_id: str,
+) -> list[dict[str, Any]]:
+    """Count the downstream Expert Agent boundary for replay assertions."""
+    calls: list[dict[str, Any]] = []
+
+    async def fake_invoke(**kwargs: Any) -> tuple[dict[str, Any], int]:
+        calls.append(kwargs)
+        return running_agent_run_body(run_id, kwargs["agent"]), 202
+
+    monkeypatch.setattr(api_app, "_invoke_agent_run", fake_invoke)
+    return calls
+
+
+def _patch_expert_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[dict[str, Any]]:
+    """Count Expert router calls and return one permitted selection."""
+    calls: list[dict[str, Any]] = []
+
+    async def select_agent(
+        user_query: str,
+        history: Any = (),
+        *,
+        allowed_tools: Any = None,
+        forced_tool: Any = None,
+    ) -> ToolSelection:
+        calls.append(
+            {
+                "user_query": user_query,
+                "history": list(history),
+                "allowed_tools": list(allowed_tools or ()),
+                "forced_tool": forced_tool,
+            }
+        )
+        return ToolSelection(
+            "InSilicoResearchAgent",
+            _selection_args("InSilicoResearchAgent"),
+        )
+
+    monkeypatch.setattr(api_app, "select_agent_tool", select_agent)
+    return calls
+
+
+@pytest.mark.parametrize(
+    ("changed_field", "changed_value"),
+    [("operation", "replace"), ("base_business_context_version", 1)],
+)
+async def test_expert_context_replay_mismatch_keeps_502_and_skips_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    changed_field: str,
+    changed_value: Any,
+) -> None:
+    """Expert replay mismatches retain the old selection failure response."""
+    context, assets, key = _enable_expert_context_assets(monkeypatch, tmp_path)
+    resolver_calls = _patch_expert_resolver(monkeypatch)
+    invoke_calls = _patch_expert_invocation(monkeypatch, "expert-mismatch")
+    request = {
+        "user_query": "original expert query",
+        "allowed_tools": ["InSilicoResearchAgent"],
+        "attachments": _attachments_for(assets, "mixed"),
+        "conversation": _expert_context_envelope(
+            allowed=["InSilicoResearchAgent"],
+            requested="InSilicoResearchAgent",
+            request_id="expert-context-mismatch",
+            content="original expert query",
+        ),
+    }
+    mismatched = json.loads(json.dumps(request))
+    mismatched["conversation"][changed_field] = changed_value
+
+    async with open_asgi_client(
+        monkeypatch, assets.app, base_url="http://api.expert-mismatch.test"
+    ) as client:
+        first = await client.post(
+            "/v1/query/route",
+            headers=_auth(key),
+            json=request,
+        )
+        rows_after_first = _context_row_counts(context.db_path)
+        retry = await client.post(
+            "/v1/query/route",
+            headers=_auth(key),
+            json=mismatched,
+        )
+
+    _assert_selection_mismatch(first, retry)
+    assert len(resolver_calls) == 1
+    assert len(invoke_calls) == 1
+    assert _context_row_counts(context.db_path) == rows_after_first
+
+
+async def test_expert_context_exact_replay_skips_preparation_and_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An exact Expert replay skips resolver, projection, routing, and
+    writes.
+    """
+    _context, assets, key = _enable_expert_context_assets(
+        monkeypatch,
+        tmp_path,
+    )
+    resolver_calls = _patch_expert_resolver(monkeypatch)
+    preparation_calls = _patch_expert_preparation(monkeypatch)
+    selection_calls = _patch_expert_selection(monkeypatch)
+    invoke_calls = _patch_expert_invocation(monkeypatch, "expert-replay")
+    mutation_calls = _count_context_mutations(monkeypatch)
+    request = {
+        "user_query": "original expert query",
+        "allowed_tools": ["InSilicoResearchAgent"],
+        "attachments": _attachments_for(assets, "mixed"),
+        "conversation": _expert_context_envelope(
+            allowed=["InSilicoResearchAgent"],
+            requested=None,
+            request_id="expert-context-replay",
+            content="original expert query",
+        ),
+    }
+    replay_request = json.loads(json.dumps(request))
+    replay_request["attachments"] = [{"asset_id": "file_aaaaaaaaaaaaaaaa"}]
+
+    async with open_asgi_client(
+        monkeypatch, assets.app, base_url="http://api.expert-replay.test"
+    ) as client:
+        first = await client.post(
+            "/v1/query/route",
+            headers=_auth(key),
+            json=request,
+        )
+        replay = await client.post(
+            "/v1/query/route",
+            headers=_auth(key),
+            json=replay_request,
+        )
+
+    assert first.status_code == 202, first.text
+    assert replay.status_code == 202, replay.text
+    assert replay.json() == first.json()
+    assert len(resolver_calls) == 1
+    assert len(preparation_calls) == 1
+    assert len(selection_calls) == 1
+    assert len(invoke_calls) == 1
+    assert mutation_calls == {
+        "begin_turn": 1,
+        "stage_turn": 1,
+        "mark_turn_failed": 0,
+    }
+
+
 async def test_expert_context_dataset_authorization_failures(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -582,6 +778,7 @@ async def test_expert_context_dataset_authorization_failures(
     assert not router_calls
     assert not agent_calls
     assert not RunRegistry(context.db_path).list_runs(owner="u1")
+    assert _context_row_counts(context.db_path) == (0, 0)
 
 
 async def _run_expert_context_parity(

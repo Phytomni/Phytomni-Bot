@@ -24,8 +24,13 @@ from tests.support.resumable_asset_fakes import (
 )
 
 from mcp_server_phytomni.api import app as api_app_module
+from mcp_server_phytomni.api.agent_capabilities import (
+    MAX_FILE_BYTES,
+    MAX_FILES,
+)
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.lifecycle_contract import empty_agent_result
+from mcp_server_phytomni.api.routes import agents as agent_routes
 from mcp_server_phytomni.api.schemas import AgentRunRequest
 from mcp_server_phytomni.api.upload_runtime import UploadRuntime
 from mcp_server_phytomni.runtime.conversation_context.store import (
@@ -134,6 +139,179 @@ def _install_context_assets(
     return dataset.asset_id, document.asset_id
 
 
+def _install_counted_context_asset(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    owner: str = "delegated-owner",
+) -> tuple[Any, list[tuple[list[Any], str]]]:
+    """Install one context asset and count route resolver calls."""
+    harness = build_resumable_asset(
+        tmp_path,
+        db_path=str(tmp_path / "tasks.sqlite"),
+        spec=ResumableAssetSpec(
+            owner=owner,
+            filename="counted-context.pdf",
+            content=b"%PDF-1.4 counted context",
+            purpose="chat_attachment",
+        ),
+    )
+    resolver_calls: list[tuple[list[Any], str]] = []
+
+    original_resolve_input = agent_routes.resolve_attachment_input
+
+    def counted_resolve_input(
+        attachments: list[Any],
+        *,
+        attachment_owner: str,
+        resolver: Any,
+    ) -> Any:
+        resolver_calls.append((attachments, attachment_owner))
+        return original_resolve_input(
+            attachments,
+            attachment_owner=attachment_owner,
+            resolver=resolver,
+        )
+
+    monkeypatch.setattr(
+        agent_routes, "resolve_attachment_input", counted_resolve_input
+    )
+    monkeypatch.setattr(
+        UploadRuntime,
+        "get_asset_resolver",
+        lambda _runtime: harness.resolver,
+    )
+    return harness, resolver_calls
+
+
+def _count_context_mutations(
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, int]:
+    """Count context-store mutation calls for one route test."""
+    counts = {
+        name: 0 for name in ("begin_turn", "stage_turn", "mark_turn_failed")
+    }
+    for name in counts:
+        original = getattr(ConversationContextStore, name)
+
+        def counted(
+            self: ConversationContextStore,
+            *args: Any,
+            _name: str = name,
+            _original: Any = original,
+            **kwargs: Any,
+        ) -> Any:
+            counts[_name] += 1
+            return _original(self, *args, **kwargs)
+
+        monkeypatch.setattr(ConversationContextStore, name, counted)
+    return counts
+
+
+@pytest.mark.parametrize(
+    ("changed_field", "changed_value"),
+    [("operation", "replace"), ("base_business_context_version", 1)],
+)
+async def test_native_context_replay_mismatch_keeps_502_and_skips_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    changed_field: str,
+    changed_value: Any,
+) -> None:
+    """A duplicate proposal mismatch keeps native selection HTTP semantics."""
+    app, key = _native_context_delegated_setup(monkeypatch, tmp_path)
+    harness, resolver_calls = _install_counted_context_asset(
+        monkeypatch, tmp_path
+    )
+    call_state = _patch_context_attachment_invocation(monkeypatch, "analyst")
+    request = _native_attachment_request(
+        "analyst",
+        "AnalystAgent",
+        attachments=[{"asset_id": harness.asset_id}],
+    )
+    mismatched = json.loads(json.dumps(request))
+    mismatched["conversation"][changed_field] = changed_value
+
+    async with open_asgi_client(
+        monkeypatch, app, base_url="http://api.native-context.test"
+    ) as client:
+        first = await client.post(
+            "/v1/agents/analyst/runs",
+            headers={"Authorization": f"Bearer {key}"},
+            json=request,
+        )
+        retry = await client.post(
+            "/v1/agents/analyst/runs",
+            headers={"Authorization": f"Bearer {key}"},
+            json=mismatched,
+        )
+
+    _assert_selection_mismatch(first, retry)
+    assert len(resolver_calls) == 1
+    assert len(call_state.invoke_calls) == 1
+
+
+async def test_native_context_exact_replay_skips_preparation_and_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """An exact native replay returns before resolver, projector, or writes."""
+    app, key = _native_context_delegated_setup(monkeypatch, tmp_path)
+    harness, resolver_calls = _install_counted_context_asset(
+        monkeypatch, tmp_path
+    )
+    preparation_calls: list[dict[str, Any]] = []
+
+    def counted_prepare(
+        *,
+        _original: Any = agent_routes.prepare_native_attachment_arguments,
+        **kwargs: Any,
+    ) -> Any:
+        preparation_calls.append(kwargs)
+        return _original(**kwargs)
+
+    monkeypatch.setattr(
+        agent_routes, "prepare_native_attachment_arguments", counted_prepare
+    )
+    invocation_state = _patch_context_attachment_invocation(
+        monkeypatch, "chat", status_code=200, run_status="succeeded"
+    )
+    mutation_calls = _count_context_mutations(monkeypatch)
+    request = _native_attachment_request(
+        "chat",
+        "ChatAgent",
+        attachments=[{"asset_id": harness.asset_id}],
+    )
+    replay_request = json.loads(json.dumps(request))
+    replay_request["attachments"] = [{"asset_id": "file_aaaaaaaaaaaaaaaa"}]
+
+    async with open_asgi_client(
+        monkeypatch, app, base_url="http://api.native-context.test"
+    ) as client:
+        first = await client.post(
+            "/v1/agents/chat/runs",
+            headers={"Authorization": f"Bearer {key}"},
+            json=request,
+        )
+        replay = await client.post(
+            "/v1/agents/chat/runs",
+            headers={"Authorization": f"Bearer {key}"},
+            json=replay_request,
+        )
+
+    assert first.status_code == 200, first.text
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == first.json()
+    assert len(resolver_calls) == 1
+    assert len(preparation_calls) == 1
+    assert len(invocation_state.invoke_calls) == 1
+    assert mutation_calls == {
+        "begin_turn": 1,
+        "stage_turn": 1,
+        "mark_turn_failed": 0,
+    }
+
+
 def _context_store_text(db_path: Path) -> str:
     """Return bounded serialized context rows for redaction assertions."""
     with sqlite3.connect(str(db_path)) as connection:
@@ -145,6 +323,19 @@ def _context_store_text(db_path: Path) -> str:
         ).fetchall()
         rows = {"contexts": contexts, "turns": turns}
     return json.dumps(rows)
+
+
+def _context_row_counts(db_path: str | Path) -> tuple[int, int]:
+    """Return context and turn row counts without exposing stored values."""
+    with sqlite3.connect(str(db_path)) as connection:
+        return (
+            connection.execute(
+                "SELECT COUNT(*) FROM conversation_contexts"
+            ).fetchone()[0],
+            connection.execute(
+                "SELECT COUNT(*) FROM conversation_turns"
+            ).fetchone()[0],
+        )
 
 
 def _native_context_arguments(slug: str) -> dict[str, Any]:
@@ -204,6 +395,32 @@ def _native_attachment_request(
     return request
 
 
+def _preflight_attachment_ids(
+    harness: Any,
+    scenario: str,
+) -> list[dict[str, str]]:
+    """Build one malformed or duplicate attachment selection."""
+    if scenario == "malformed":
+        return [{"asset_id": "not-valid"}]
+    if scenario == "missing":
+        return [{"asset_id": "file_aaaaaaaaaaaaaaaa"}]
+    if scenario == "duplicate":
+        return [
+            {"asset_id": harness.asset_id},
+            {"asset_id": harness.asset_id},
+        ]
+    return [{"asset_id": harness.asset_id}]
+
+
+def _assert_selection_mismatch(first: Any, retry: Any) -> None:
+    """Assert the public selection-failure response for a replay mismatch."""
+    assert first.status_code == 202, first.text
+    assert retry.status_code == 502, retry.text
+    assert retry.json()["error"]["code"] == "upstream_failed"
+    assert retry.json()["error"]["message"] == "upstream service failed"
+    assert retry.json()["error"]["retryable"] is False
+
+
 @dataclass(slots=True)
 class _ContextAttachmentCallState:
     """Captured private preparation/invocation calls for context tests."""
@@ -214,6 +431,9 @@ class _ContextAttachmentCallState:
 def _patch_context_attachment_invocation(
     monkeypatch: pytest.MonkeyPatch,
     agent: str,
+    *,
+    status_code: int = 202,
+    run_status: str = "running",
 ) -> _ContextAttachmentCallState:
     """Patch native invocation for context replay tests."""
     state = _ContextAttachmentCallState([])
@@ -223,9 +443,11 @@ def _patch_context_attachment_invocation(
         run_id = f"context-{agent}"
         evidence = kwargs["attachment_evidence"]
         assert evidence.attachment_owner == "delegated-owner"
+        body = running_agent_run_body(run_id, agent)
+        body["status"] = run_status
         return (
-            running_agent_run_body(run_id, agent),
-            202,
+            body,
+            status_code,
         )
 
     monkeypatch.setattr(api_app_module, "_invoke_agent_run", fake_invoke)
@@ -254,6 +476,90 @@ async def _post_native_context_twice(
             json=request,
         )
     return response, retry
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    (
+        "malformed",
+        "missing",
+        "cross_owner",
+        "incomplete",
+        "duplicate",
+        "count",
+        "byte",
+    ),
+)
+async def test_native_context_asset_failures_precede_context_mutation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    scenario: str,
+) -> None:
+    """Unsafe native assets fail before a context turn row is created."""
+    app, key = _native_context_delegated_setup(monkeypatch, tmp_path)
+    attachments: list[dict[str, str]]
+    if scenario == "count":
+        harnesses = [
+            build_resumable_asset(
+                tmp_path,
+                db_path=str(tmp_path / "tasks.sqlite"),
+                spec=ResumableAssetSpec(
+                    owner="delegated-owner",
+                    filename=f"preflight-context-{index}.pdf",
+                    content=b"%PDF-1.4 count",
+                    purpose="chat_attachment",
+                ),
+            )
+            for index in range(MAX_FILES + 1)
+        ]
+        harness = harnesses[-1]
+        attachments = [
+            {"asset_id": candidate.asset_id} for candidate in harnesses
+        ]
+    else:
+        harness = build_resumable_asset(
+            tmp_path,
+            db_path=str(tmp_path / "tasks.sqlite"),
+            spec=ResumableAssetSpec(
+                owner=(
+                    "foreign-owner"
+                    if scenario == "cross_owner"
+                    else "delegated-owner"
+                ),
+                filename="preflight-context.pdf",
+                content=(
+                    b"x" * (MAX_FILE_BYTES + 1)
+                    if scenario == "byte"
+                    else b"%PDF-1.4 preflight context"
+                ),
+                complete=scenario != "incomplete",
+                purpose="chat_attachment",
+            ),
+        )
+        attachments = _preflight_attachment_ids(harness, scenario)
+    monkeypatch.setattr(
+        UploadRuntime,
+        "get_asset_resolver",
+        lambda _runtime: harness.resolver,
+    )
+
+    async def fail_invoke(**_kwargs: Any) -> tuple[dict[str, Any], int]:
+        raise AssertionError("unsafe attachment reached native Agent")
+
+    monkeypatch.setattr(api_app_module, "_invoke_agent_run", fail_invoke)
+    async with open_asgi_client(
+        monkeypatch, app, base_url="http://api.native-context-preflight.test"
+    ) as client:
+        response = await client.post(
+            "/v1/agents/analyst/runs",
+            headers={"Authorization": f"Bearer {key}"},
+            json=_native_attachment_request(
+                "analyst", "AnalystAgent", attachments=attachments
+            ),
+        )
+
+    assert response.status_code >= 400, response.text
+    assert _context_row_counts(tmp_path / "tasks.sqlite") == (0, 0)
 
 
 def test_native_agent_request_keeps_legacy_serialization_without_context() -> (
@@ -690,3 +996,4 @@ async def test_native_context_unsupported_dataset_returns_attachment_422(
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "attachment_not_supported"
     assert "unsupported attachment reached invoke" not in response.text
+    assert _context_row_counts(tmp_path / "tasks.sqlite") == (0, 0)

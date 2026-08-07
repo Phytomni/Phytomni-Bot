@@ -108,7 +108,11 @@ async def execute_context_expert(
             status_code=422, detail="expert context requires expert mode"
         )
     replay = await inspect_context_replay(
-        executor=dependencies.context.executor, envelope=envelope
+        executor=dependencies.context.executor,
+        envelope=envelope,
+        selection_failure_detail=(
+            "router did not resolve one permitted agent"
+        ),
     )
     if replay is not None:
         return context_response(replay, envelope)

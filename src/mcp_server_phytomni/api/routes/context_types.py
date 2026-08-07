@@ -73,12 +73,20 @@ async def inspect_context_replay(
     *,
     executor: ConversationContextExecutor,
     envelope: ConversationEnvelopeV1,
+    selection_failure_detail: str | None = None,
 ) -> PreparedTurn | None:
     """Inspect a durable replay while preserving store-failure mapping."""
     try:
         return await executor.inspect_replay(envelope=envelope)
     except ContextStoreUnavailableError as exc:
         raise conversation_context_unavailable_error() from exc
+    except (ToolSelectionError, ValueError) as exc:
+        if selection_failure_detail is None:
+            raise
+        raise HTTPException(
+            status_code=502,
+            detail=selection_failure_detail,
+        ) from exc
 
 
 async def execute_context_lifecycle_http(
