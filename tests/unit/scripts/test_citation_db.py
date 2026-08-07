@@ -267,6 +267,47 @@ def test_build_preserves_destination_when_replace_fails(
     _assert_unchanged(output, original)
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"id": "f1", "TI": 1},
+        {"id": " "},
+        {"id": 1},
+    ],
+)
+def test_build_rejects_invalid_record_and_preserves_destination(
+    payload: object,
+    tmp_path: Path,
+) -> None:
+    """Mapped-type and ID validation failures preserve a seeded artifact."""
+    source = tmp_path / "source.jsonl"
+    output = tmp_path / "citation.sqlite"
+    _write_jsonl(source, [payload])
+    original = b"prior artifact"
+    output.write_bytes(original)
+
+    with pytest.raises(citation_db.CitationBuildError):
+        build_citation_database(source, output)
+
+    _assert_unchanged(output, original)
+
+
+def test_build_rejects_nonfinite_json_constant_and_preserves_destination(
+    tmp_path: Path,
+) -> None:
+    """NaN in an ignored field is not accepted as strict JSONL."""
+    source = tmp_path / "source.jsonl"
+    output = tmp_path / "citation.sqlite"
+    source.write_bytes(b'{"id":"f1","ignored":NaN}\n')
+    original = b"prior artifact"
+    output.write_bytes(original)
+
+    with pytest.raises(citation_db.CitationBuildError):
+        build_citation_database(source, output)
+
+    _assert_unchanged(output, original)
+
+
 def test_build_does_not_remove_preexisting_temp_collision(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

@@ -17,6 +17,7 @@ from collections.abc import Sequence
 from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
+from typing import NoReturn
 
 from mcp_server_phytomni.agents.shared.citation_database import (
     CITATION_DATABASE_SCHEMA,
@@ -54,6 +55,11 @@ CREATE TABLE _citation_variants (
 
 class CitationBuildError(RuntimeError):
     """A bounded offline-build failure that never includes source content."""
+
+
+def _reject_json_constant(_value: str) -> NoReturn:
+    """Reject non-standard JSON constants without exposing their spelling."""
+    raise CitationBuildError()
 
 
 def normalize_source_record(
@@ -221,7 +227,10 @@ def _ingest_source(
             for line_number, raw_line in enumerate(source_file, start=1):
                 digest.update(raw_line)
                 try:
-                    payload = json.loads(raw_line.decode("utf-8"))
+                    payload = json.loads(
+                        raw_line.decode("utf-8"),
+                        parse_constant=_reject_json_constant,
+                    )
                 except (UnicodeDecodeError, json.JSONDecodeError):
                     raise CitationBuildError() from None
                 record = normalize_source_record(
