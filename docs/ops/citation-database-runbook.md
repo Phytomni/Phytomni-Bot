@@ -103,19 +103,22 @@ Conflicts are quality evidence, not an automatic build failure. The builder
 quarantines every row for an ID with more than one canonical variant; runtime
 lookup then treats that ID as a metadata miss and uses title-only formatting.
 
-Inspect selected conflict summaries explicitly, using an operator-supplied
-ID list, without placing the list in default CLI output:
+Inspect at most 100 selected conflict summaries explicitly, using an
+operator-supplied ID list, without placing the list in default CLI output:
 
 ```bash
 sqlite3 -readonly -json <citation.sqlite> \
-  'SELECT file_id, variant_count, source_lines, differing_fields
+  'SELECT file_id, conflict_json
      FROM citation_conflicts
     WHERE file_id IN (<quoted-id-list>)
-    ORDER BY file_id;'
+    ORDER BY file_id
+    LIMIT 100;'
 ```
 
-The conflict table stores compact source-line and differing-field evidence,
-not full source records. Protect any inspection output as operator evidence.
+The `conflict_json` value stores compact evidence for the variant count,
+source-line list, and differing-field list, not full source records. The
+explicit ID list and `LIMIT 100` keep inspection bounded; do not use an
+unfiltered bulk query. Protect any inspection output as operator evidence.
 
 ## Mount and environment
 
