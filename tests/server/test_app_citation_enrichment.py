@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mcp_server_phytomni.agents.shared import gauss as shared_gauss
 from mcp_server_phytomni.agents.shared import sql as shared_sql
 from mcp_server_phytomni.mcp import app as app_mod
 from mcp_server_phytomni.mcp.app import invoke_tool_enveloped
@@ -80,6 +79,7 @@ async def test_end_to_end_enriched_references_via_sqlite(
     citation_db_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """SQLite rows reach formatted.references without any BI seam."""
+    monkeypatch.setenv("PHYTOMNI_RELAY_MODE", "1")
     with sqlite3.connect(citation_db_path) as connection:
         connection.execute(
             "INSERT INTO citation_records (file_id, au, so) VALUES (?, ?, ?)",
@@ -92,7 +92,7 @@ async def test_end_to_end_enriched_references_via_sqlite(
         )
 
     monkeypatch.setattr(shared_sql, "bi_query", forbidden_database_call)
-    monkeypatch.setattr(shared_gauss, "gauss_query", forbidden_database_call)
+    monkeypatch.setattr(shared_sql, "gauss_query", forbidden_database_call)
     monkeypatch.setattr(shared_sql, "relay_bi_query", forbidden_database_call)
     with (
         patch.object(
