@@ -9,6 +9,9 @@ from typing import Any
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings
 
+MAX_RESEARCH_USER_QUERY_CHARS = 1_048_576
+MAX_RESEARCH_REFERENCES = 256
+
 
 def _api_bounded_int(
     default: int,
@@ -83,6 +86,30 @@ class ApiLimitsConfig(BaseSettings):
     A2UI_MAX_CHOICES: int = _api_bounded_int(
         100, ge=1, le=100, env_name="A2UI_MAX_CHOICES"
     )
+    API_MAX_USER_QUERY_CHARS: int = _api_bounded_int(
+        131_072,
+        ge=1,
+        le=MAX_RESEARCH_USER_QUERY_CHARS,
+        env_name="API_MAX_USER_QUERY_CHARS",
+    )
+    API_MAX_ATTACHMENTS_PER_REQUEST: int = _api_bounded_int(
+        64,
+        ge=1,
+        le=MAX_RESEARCH_REFERENCES,
+        env_name="API_MAX_ATTACHMENTS_PER_REQUEST",
+    )
+    API_MAX_RESEARCH_DATASET_PATHS: int = _api_bounded_int(
+        64,
+        ge=1,
+        le=MAX_RESEARCH_REFERENCES,
+        env_name="API_MAX_RESEARCH_DATASET_PATHS",
+    )
+    API_MAX_RESEARCH_INPUT_REFERENCES: int = _api_bounded_int(
+        128,
+        ge=1,
+        le=MAX_RESEARCH_REFERENCES,
+        env_name="API_MAX_RESEARCH_INPUT_REFERENCES",
+    )
 
     @model_validator(mode="after")
     def _validate_memory_bounds(self) -> "ApiLimitsConfig":
@@ -90,6 +117,17 @@ class ApiLimitsConfig(BaseSettings):
         if self.MEMORY_MAX_RETRIEVAL > self.MEMORY_MAX_ITEMS:
             raise ValueError(
                 "MEMORY_MAX_RETRIEVAL must not exceed MEMORY_MAX_ITEMS"
+            )
+        if (
+            max(
+                self.API_MAX_ATTACHMENTS_PER_REQUEST,
+                self.API_MAX_RESEARCH_DATASET_PATHS,
+            )
+            > self.API_MAX_RESEARCH_INPUT_REFERENCES
+        ):
+            raise ValueError(
+                "combined Research input limit must not be lower than "
+                "either input lane"
             )
         return self
 

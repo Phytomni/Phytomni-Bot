@@ -107,6 +107,43 @@ def test_ledger_entry_rejects_invalid_turn_id(turn_id: str) -> None:
         )
 
 
+def test_current_message_accepts_research_structural_hard_maximum() -> None:
+    """The current message accepts the one-million-code-point hard cap."""
+    payload = _valid_envelope()
+    payload["current_message"] = {
+        "content": "x" * 1_048_576,
+        "locale": "en-US",
+    }
+
+    assert ConversationEnvelopeV1.model_validate(payload).current_message
+
+
+def test_current_message_rejects_research_structural_hard_maximum_plus_one() -> (
+    None
+):
+    """The current message rejects content beyond the structural hard cap."""
+    payload = _valid_envelope()
+    payload["current_message"] = {
+        "content": "x" * 1_048_577,
+        "locale": "en-US",
+    }
+
+    with pytest.raises(ValidationError, match="current_message"):
+        ConversationEnvelopeV1.model_validate(payload)
+
+
+def test_ledger_entry_retains_history_content_limit() -> None:
+    """History entries remain bounded independently of current messages."""
+    with pytest.raises(ValidationError, match="content"):
+        LedgerEntryV1.model_validate(
+            {
+                "turn_id": "1",
+                "role": "user",
+                "content": "x" * 32_769,
+            }
+        )
+
+
 @pytest.mark.parametrize(
     "allowed_agent_ids",
     [

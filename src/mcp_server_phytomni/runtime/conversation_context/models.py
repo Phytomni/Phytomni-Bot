@@ -19,10 +19,12 @@ from pydantic import (
     model_validator,
 )
 
+from ...config.api_limits import MAX_RESEARCH_USER_QUERY_CHARS
 from ...mcp.schemas import AGENT_TOOL_DEFINITIONS
 from ..locale import SupportedLocale
 
-MAX_CURRENT_MESSAGE_CHARS = 32_768
+MAX_CURRENT_MESSAGE_CHARS = MAX_RESEARCH_USER_QUERY_CHARS
+MAX_LEDGER_ENTRY_CHARS = 32_768
 MAX_REQUEST_ID_CHARS = 128
 MAX_ALLOWED_AGENT_IDS = 10
 MAX_HISTORY_DELTA_ENTRIES = 200
@@ -81,7 +83,7 @@ class LedgerEntryV1(BaseModel):
     content: str | None = Field(
         default=None,
         min_length=1,
-        max_length=MAX_CURRENT_MESSAGE_CHARS,
+        max_length=MAX_LEDGER_ENTRY_CHARS,
     )
     summary: str | None = Field(
         default=None,
@@ -325,9 +327,7 @@ class ContextProjection(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    current_query: str = Field(
-        min_length=1, max_length=MAX_CURRENT_MESSAGE_CHARS
-    )
+    current_query: str = Field(min_length=1, max_length=MAX_LEDGER_ENTRY_CHARS)
     intent_kind: str = Field(default="follow_up", max_length=64)
     task_summary: str = Field(default="", max_length=MAX_CONTEXT_TEXT_CHARS)
     relevant_recent_turns: list[RoleTaggedTurn] = Field(
@@ -443,6 +443,7 @@ __all__ = [
     "MAX_CONTEXT_ITEM_TEXT_CHARS",
     "MAX_CONTEXT_TEXT_CHARS",
     "MAX_CURRENT_MESSAGE_CHARS",
+    "MAX_LEDGER_ENTRY_CHARS",
     "MAX_HISTORY_DELTA_ENTRIES",
     "MAX_LEDGER_SUMMARY_CHARS",
     "MAX_REQUEST_ID_CHARS",

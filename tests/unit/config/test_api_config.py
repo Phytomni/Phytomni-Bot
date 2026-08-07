@@ -15,11 +15,76 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from mcp_server_phytomni.config.api_limits import ApiLimitsConfig
 from mcp_server_phytomni.config.defaults import ApiConfig
 
 pytestmark = pytest.mark.unit
 
 _CACHE_DIR = Path(".cache") / "phytomni"
+
+
+def test_research_input_limit_defaults() -> None:
+    """Research input limits have bounded conservative defaults."""
+    config = ApiLimitsConfig()
+
+    assert config.API_MAX_USER_QUERY_CHARS == 131_072
+    assert config.API_MAX_ATTACHMENTS_PER_REQUEST == 64
+    assert config.API_MAX_RESEARCH_DATASET_PATHS == 64
+    assert config.API_MAX_RESEARCH_INPUT_REFERENCES == 128
+
+
+@pytest.mark.parametrize(
+    "env_name",
+    [
+        "API_MAX_USER_QUERY_CHARS",
+        "PHYTOMNI_API_MAX_USER_QUERY_CHARS",
+        "API_MAX_ATTACHMENTS_PER_REQUEST",
+        "PHYTOMNI_API_MAX_ATTACHMENTS_PER_REQUEST",
+        "API_MAX_RESEARCH_DATASET_PATHS",
+        "PHYTOMNI_API_MAX_RESEARCH_DATASET_PATHS",
+        "API_MAX_RESEARCH_INPUT_REFERENCES",
+        "PHYTOMNI_API_MAX_RESEARCH_INPUT_REFERENCES",
+    ],
+)
+def test_research_input_limit_aliases(
+    monkeypatch: pytest.MonkeyPatch, env_name: str
+) -> None:
+    """Research limits accept both deployment environment aliases."""
+    monkeypatch.setenv(env_name, "65")
+
+    config = ApiLimitsConfig()
+
+    assert getattr(config, env_name.removeprefix("PHYTOMNI_")) == 65
+
+
+@pytest.mark.parametrize(
+    ("env_name", "value"),
+    [
+        ("API_MAX_USER_QUERY_CHARS", "1048577"),
+        ("API_MAX_ATTACHMENTS_PER_REQUEST", "257"),
+        ("API_MAX_RESEARCH_DATASET_PATHS", "257"),
+        ("API_MAX_RESEARCH_INPUT_REFERENCES", "257"),
+    ],
+)
+def test_research_input_limits_reject_hard_maximums(
+    monkeypatch: pytest.MonkeyPatch, env_name: str, value: str
+) -> None:
+    """Operators cannot widen the structural Research input limits."""
+    monkeypatch.setenv(env_name, value)
+
+    with pytest.raises(ValidationError, match=env_name):
+        ApiLimitsConfig()
+
+
+def test_research_combined_limit_cannot_be_lower_than_a_lane(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The combined reference bound must cover every input lane."""
+    monkeypatch.setenv("API_MAX_ATTACHMENTS_PER_REQUEST", "65")
+    monkeypatch.setenv("API_MAX_RESEARCH_INPUT_REFERENCES", "64")
+
+    with pytest.raises(ValidationError, match="combined Research"):
+        ApiLimitsConfig()
 
 
 def test_api_config_defaults() -> None:
