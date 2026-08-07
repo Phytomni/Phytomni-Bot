@@ -33,7 +33,7 @@ def create_valid_citation_database(
         metadata = (
             1,
             "a" * 64,
-            record_count + conflict_count,
+            record_count,
             record_count + conflict_count,
             record_count,
             0,

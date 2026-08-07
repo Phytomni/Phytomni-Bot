@@ -241,6 +241,32 @@ def test_validate_accepts_exact_schema_and_metadata(tmp_path: Path) -> None:
         )
 
 
+def test_validate_accepts_factory_conflict_metadata(tmp_path: Path) -> None:
+    """A conflict-containing factory artifact needs no metadata repair."""
+    path = create_valid_citation_database(
+        tmp_path / "citation.sqlite",
+        records=(_record("record"),),
+        conflicts=({"file_id": "conflict"},),
+    )
+
+    metadata = validate_citation_database(path)
+
+    assert metadata.source_record_count == 1
+    assert metadata.unique_id_count == 2
+    assert metadata.imported_record_count == 1
+    assert metadata.exact_duplicate_row_count == 0
+    assert metadata.conflict_id_count == 1
+    assert metadata.quarantined_row_count == 0
+    assert metadata.source_record_count == (
+        metadata.imported_record_count
+        + metadata.exact_duplicate_row_count
+        + metadata.quarantined_row_count
+    )
+    assert metadata.unique_id_count == (
+        metadata.imported_record_count + metadata.conflict_id_count
+    )
+
+
 def test_validate_accepts_imported_duplicate_and_quarantined_conflict(
     tmp_path: Path,
 ) -> None:
