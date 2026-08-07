@@ -348,6 +348,17 @@ def test_reference_payload_encodes_doi_target_only() -> None:
     )
 
 
+def test_reference_payload_rejects_doi_visible_label_injection() -> None:
+    """A DOI cannot terminate its owned Markdown link label."""
+    payload = _reference_payload(
+        {"title": "T", "di": "10.1000/x](https://evil.test)"}
+    )
+
+    assert payload["formatted_citation"] == "T."
+    assert payload["doi_missing"] is True
+    assert "evil.test" not in payload["formatted_citation"]
+
+
 def test_reference_payload_uses_only_valid_doi_host_dl_fallback() -> None:
     """DL is eligible only when DI is absent and DL is a resolver URL."""
     valid = _reference_payload(
@@ -396,7 +407,7 @@ def test_reference_payload_projects_biblio_and_cleaned_title() -> None:
 
 
 def test_reference_payload_falls_back_to_title_only() -> None:
-    """Doc without bibliographic fields returns a display title and DOI flag."""
+    """A doc without bibliography returns a display title and DOI flag."""
     assert _reference_payload({"file_id": "f1", "title": "T"}) == {
         "file_id": "f1",
         "title": "T",
@@ -426,6 +437,44 @@ def test_reference_payload_escapes_untrusted_metadata() -> None:
     assert r"\[link\]\(https://evil.test\)" in citation
     assert r"\*Journal\*" in citation
     assert r"\*\*7\*\*" in citation
+
+
+def test_reference_payload_parses_authors_before_escaping_entities() -> None:
+    """Escaped entities cannot become author delimiters."""
+    payload = _reference_payload(
+        {
+            "title": "fallback",
+            "au": "Research & Development, AB; Smith, J",
+            "ti": "A title",
+        }
+    )
+
+    citation = payload["formatted_citation"]
+    assert citation.startswith(
+        "Research &amp; Development, A. B. & Smith, J. A title."
+    )
+    assert "amp &" not in citation
+
+
+def test_reference_payload_flattens_and_escapes_multiline_sources() -> None:
+    """Untrusted source metadata remains one escaped citation line."""
+    payload = _reference_payload(
+        {
+            "title": "fallback",
+            "au": "Smith, J\n# heading; Consortium *Name*",
+            "ti": "Title\n[link](https://evil.test)",
+            "so": "Journal\r\n# injected | table",
+            "vl": "7\n- list",
+        }
+    )
+
+    citation = payload["formatted_citation"]
+    assert "\n" not in citation
+    assert "\r" not in citation
+    assert r"\# heading" in citation
+    assert r"\[link\]\(https://evil.test\)" in citation
+    assert r"\# injected \| table" in citation
+    assert r"\*Name\*" in citation
 
 
 @pytest.mark.parametrize(

@@ -1436,8 +1436,11 @@ JSON `chat.completion` envelope to an OpenAI-compatible
 `phyto-chat` carries provider content deltas in `TextMessage*` frames,
 while `phyto-knowledge` / `phyto-brief-gene` add one `StepStarted` per
 graph stage and `Custom` frames for `phyto.progress` /
-`phyto.references` / `phyto.follow_up` around a one-shot answer. Successful
-streams end with a terminating
+`phyto.references` / `phyto.metadata` / `phyto.follow_up` around a one-shot
+answer. `phyto.metadata` is emitted only when public terminal metadata is
+present; citation lookup degradation projects only
+`{"citation_metadata_degraded": true}` and never the private lookup status.
+Successful streams end with a terminating
 `data: [DONE]\n\n` so the client closes its `EventSource` on the first
 match instead of waiting for the read timeout. Before the response headers
 are committed, the API eagerly validates/builds the tool stream and the

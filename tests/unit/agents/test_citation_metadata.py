@@ -87,6 +87,10 @@ def test_normalize_doi_accepts_approved_forms(
         "https://doi.org/10.1000/x#fragment",
         "https://user@doi.org/10.1000/x",
         "https://doi.org/10.1000/a%20b",
+        "10.1000/x](https://evil.test)",
+        "10.1000/x[evil",
+        "10.1000/x\\evil",
+        "10.1000/x\x7fhidden",
     ],
 )
 def test_normalize_doi_rejects_non_contract_values(raw: object) -> None:

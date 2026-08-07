@@ -29,6 +29,7 @@ from mcp_server_phytomni.api import run_lifecycle
 from mcp_server_phytomni.api.lifecycle_contract import (
     LifecycleInvariantError,
     build_agent_run_response,
+    canonicalize_agent_run_body,
     canonicalize_run_record,
     empty_agent_result,
 )
@@ -43,6 +44,43 @@ from mcp_server_phytomni.runtime.conversation_context.store import (
     StagedTurn,
 )
 from mcp_server_phytomni.runtime.langgraph_runner import build_runnable_config
+
+
+def test_native_run_preserves_public_citation_contract() -> None:
+    """Native canonicalization retains cited display and degradation data."""
+    projected = canonicalize_agent_run_body(
+        {
+            "id": "run-cited",
+            "agent": "knowledge",
+            "status": "succeeded",
+            "task_ids": [],
+            "result": {
+                "formatted": {
+                    "answer": "Claim<sup>1</sup>.",
+                    "metadata": {"citation_metadata_degraded": True},
+                    "references": [
+                        {
+                            "file_id": "f1",
+                            "title": "Title",
+                            "formatted_citation": "Title.",
+                            "doi_missing": True,
+                        }
+                    ],
+                }
+            },
+        }
+    )
+
+    formatted = projected["result"]["formatted"]
+    assert formatted["metadata"] == {"citation_metadata_degraded": True}
+    assert formatted["references"] == [
+        {
+            "file_id": "f1",
+            "title": "Title",
+            "formatted_citation": "Title.",
+            "doi_missing": True,
+        }
+    ]
 
 
 @pytest.mark.asyncio

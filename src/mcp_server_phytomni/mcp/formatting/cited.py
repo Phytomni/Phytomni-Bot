@@ -51,6 +51,7 @@ _RETRIEVAL_FILE_SUFFIXES = (
 )
 _AUTHOR_SUFFIXES = frozenset(("Jr", "Sr", "II", "III", "IV"))
 _MARKDOWN_CONTROL_PATTERN = re.compile(r"([\\`*_\[\]{}()#+!|])")
+_DISPLAY_LINE_BREAK_PATTERN = re.compile(r"[\t\n\r\f\v\u2028\u2029]+")
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,13 +226,23 @@ def clean_retrieval_title(value: object) -> str:
 
 def format_authors(value: object) -> str:
     """Conservatively format semicolon-delimited author metadata."""
+    authors = _formatted_author_tokens(value)
+    return _join_authors(authors)
+
+
+def _formatted_author_tokens(value: object) -> list[str]:
+    """Parse raw author separators before any display escaping."""
     if not isinstance(value, str) or not value.strip():
-        return ""
-    authors = [
+        return []
+    return [
         formatted
-        for token in value.split(";")
+        for token in _single_line_text(value).split(";")
         if (formatted := _format_author_token(token.strip()))
     ]
+
+
+def _join_authors(authors: list[str]) -> str:
+    """Join already formatted author tokens conservatively."""
     if not authors:
         return ""
     if len(authors) > 5:
@@ -243,12 +254,22 @@ def format_authors(value: object) -> str:
     return f"{', '.join(authors[:-1])} & {authors[-1]}"
 
 
+def _escaped_authors(value: object) -> str:
+    """Escape parsed author tokens without escaping owned separators."""
+    return _join_authors(
+        [
+            _markdown_escape(author)
+            for author in _formatted_author_tokens(value)
+        ]
+    )
+
+
 def format_nature_citation(doc: Mapping[str, Any], title: str) -> str:
     """Assemble one escaped Nature-style display citation."""
     if _is_title_only_status(doc):
         return _markdown_escape(title)
 
-    authors = format_authors(_markdown_escape_optional(doc.get("au")))
+    authors = _escaped_authors(doc.get("au"))
     citation_title = _markdown_escape(str(doc.get("ti") or title))
     source = _markdown_escape_optional(doc.get("so"))
     volume = _markdown_escape_optional(doc.get("vl"))
@@ -345,8 +366,13 @@ def _markdown_escape_optional(value: object) -> str:
 
 def _markdown_escape(value: str) -> str:
     """Escape HTML and Markdown controls before adding owned markup."""
-    escaped = html.escape(value, quote=False)
+    escaped = html.escape(_single_line_text(value), quote=False)
     return _MARKDOWN_CONTROL_PATTERN.sub(r"\\\1", escaped)
+
+
+def _single_line_text(value: str) -> str:
+    """Flatten source-controlled line breaks before display formatting."""
+    return _DISPLAY_LINE_BREAK_PATTERN.sub(" ", value)
 
 
 def _sentence(value: str) -> str:

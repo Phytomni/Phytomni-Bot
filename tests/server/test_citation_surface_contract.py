@@ -47,7 +47,7 @@ CITED_SURFACES = (
     ("BriefGeneAgent", "phyto-brief-gene", "brief_gene"),
 )
 
-_ARGUMENTS = {
+_ARGUMENTS: dict[str, dict[str, Any]] = {
     "knowledge": {"user_query": "claim", "obs_file_list": []},
     "review": {"user_query": "claim", "obs_file_list": []},
     "brief_gene": {"user_query": "AT1G01010"},
@@ -162,8 +162,10 @@ def _install_handler(
     monkeypatch.setitem(server.TOOL_HANDLERS, tool_name, handler)
 
 
-async def _terminal_projection(tool_name: str) -> tuple[str, dict[str, Any]]:
-    """Collect the terminal answer and reference from one graph state."""
+async def _terminal_projection(
+    tool_name: str,
+) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    """Collect public terminal answer, reference, and metadata projections."""
     events = [
         event
         async for event in mcp_app._terminal_graph_events(
@@ -181,8 +183,14 @@ async def _terminal_projection(tool_name: str) -> tuple[str, dict[str, Any]]:
         for event in events
         if event.type == "Custom" and event.data["name"] == "phyto.references"
     ]
+    metadata = [
+        event.data["value"]
+        for event in events
+        if event.type == "Custom" and event.data["name"] == "phyto.metadata"
+    ]
     assert len(answers) == len(references) == 1
-    return answers[0], references[0][0]
+    assert len(metadata) <= 1
+    return answers[0], references[0][0], metadata[0] if metadata else {}
 
 
 @pytest.mark.parametrize(("tool_name", "model", "slug"), CITED_SURFACES)
@@ -258,9 +266,12 @@ async def test_cited_surfaces_share_one_complete_nature_contract(
     assert native_formatted["answer"] == envelope.formatted.answer
     assert native_formatted["references"] == [_EXPECTED_REFERENCE]
 
-    stream_answer, stream_reference = await _terminal_projection(tool_name)
+    stream_answer, stream_reference, stream_metadata = (
+        await _terminal_projection(tool_name)
+    )
     assert stream_answer == envelope.formatted.answer
     assert stream_reference == _EXPECTED_REFERENCE
+    assert stream_metadata == {}
 
 
 @pytest.mark.parametrize(("tool_name", "_model", "slug"), CITED_SURFACES)
@@ -311,6 +322,9 @@ async def test_cited_metadata_failures_degrade_blocking_and_stream(
     assert envelope.formatted.metadata["citation_metadata_degraded"] is True
     assert dict(envelope.formatted.references[0]) == expected_reference
 
-    stream_answer, stream_reference = await _terminal_projection(tool_name)
+    stream_answer, stream_reference, stream_metadata = (
+        await _terminal_projection(tool_name)
+    )
     assert stream_answer == envelope.formatted.answer
     assert stream_reference == expected_reference
+    assert stream_metadata == {"citation_metadata_degraded": True}

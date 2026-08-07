@@ -529,7 +529,7 @@ async def _terminal_graph_events(
     bibliographic enrichment, then reuses ``build_tool_result_envelope``
     so the streamed terminal answer carries the same fields as the
     blocking response -- one one-shot TextMessage for the answer, plus
-    Custom frames for references and follow-up questions.
+    Custom frames for references, public metadata, and follow-up questions.
 
     Args:
         tool_name: Public MCP tool name driving envelope formatting.
@@ -539,7 +539,8 @@ async def _terminal_graph_events(
     Yields:
         ``TextMessageStart``/``TextMessageContent``/``TextMessageEnd``
         around the formatted answer (only when non-empty), then
-        ``Custom`` frames for references and follow-up questions
+        ``Custom`` frames for references, citation degradation metadata,
+        and follow-up questions
         (each only when non-empty).
     """
     if final_state is None:
@@ -558,6 +559,8 @@ async def _terminal_graph_events(
             "phyto.references",
             {"doc_list": [dict(ref) for ref in formatted.references]},
         )
+    if formatted.metadata.get("citation_metadata_degraded") is True:
+        yield custom("phyto.metadata", {"citation_metadata_degraded": True})
     if formatted.follow_up_questions:
         yield custom("phyto.follow_up", list(formatted.follow_up_questions))
 

@@ -758,6 +758,7 @@ _METADATA_SCALAR_KEYS = frozenset(
         "consumer",
         "degraded",
         "degraded_tracking",
+        "citation_metadata_degraded",
         "status",
     }
 )
@@ -765,6 +766,8 @@ _REFERENCE_KEYS = (
     "file_id",
     "title",
     *CITATION_BIBLIO_FIELDS,
+    "formatted_citation",
+    "doi_missing",
 )
 
 

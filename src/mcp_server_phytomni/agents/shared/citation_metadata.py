@@ -40,6 +40,7 @@ CITATION_STATUS_MISSING = "missing"
 CITATION_STATUS_LOOKUP_FAILED = "lookup_failed"
 
 _DOI_PATTERN = re.compile(r"^10\.\d{4,9}/\S+$")
+_DOI_UNSAFE_LABEL_CHARACTERS = frozenset("[]<>\\")
 _DOI_HOSTS = frozenset(("doi.org", "dx.doi.org"))
 _DOI_SCHEMES = frozenset(("http", "https"))
 
@@ -95,6 +96,13 @@ def _normalize_resolver_url(parsed) -> str | None:
 def _normalize_doi_body(value: str) -> str | None:
     """Decode and validate one DOI body while preserving its source case."""
     doi = unquote(value)
+    if any(
+        char in _DOI_UNSAFE_LABEL_CHARACTERS
+        or ord(char) < 32
+        or ord(char) == 127
+        for char in doi
+    ):
+        return None
     return doi if _DOI_PATTERN.fullmatch(doi) else None
 
 

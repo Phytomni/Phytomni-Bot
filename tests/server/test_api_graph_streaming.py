@@ -16,6 +16,10 @@ from tests.support.graph_streaming import (
     guard_network_escape,
 )
 
+from mcp_server_phytomni.agents.shared.citation_metadata import (
+    CITATION_STATUS_KEY,
+    CITATION_STATUS_MISSING,
+)
 from mcp_server_phytomni.mcp import app as mcp_app
 from mcp_server_phytomni.runtime import run_registry as run_registry_module
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
@@ -45,10 +49,13 @@ async def test_stream_phyto_knowledge_emits_agui_frames(
 
     monkeypatch.setattr(mcp_app, "knowledge_stream_target", _fake_target)
 
-    async def _no_enrich(_tool_name: str, _raw: Any) -> None:
-        """Skip bibliographic enrichment for this offline graph test."""
+    async def _mark_missing(_tool_name: str, raw: Any) -> None:
+        """Project a deterministic metadata miss without external lookup."""
+        raw["choices"][0]["message"]["doc_list"][0][
+            CITATION_STATUS_KEY
+        ] = CITATION_STATUS_MISSING
 
-    monkeypatch.setattr(mcp_app, "_maybe_enrich_cited", _no_enrich)
+    monkeypatch.setattr(mcp_app, "_maybe_enrich_cited", _mark_missing)
     response = await chat_completion(
         api_client, issued_api_key, model="phyto-knowledge", stream=True
     )
@@ -62,7 +69,9 @@ async def test_stream_phyto_knowledge_emits_agui_frames(
     assert "event: Custom\n" in body
     assert "event: RunFinished\n" in body
     assert "Rice photosynthesis <sup>1</sup>." in body
-    assert '"formatted_citation": "T1."' in body
+    assert '"formatted_citation": "T1"' in body
+    assert '"name": "phyto.metadata"' in body
+    assert '"citation_metadata_degraded": true' in body
     assert body.rstrip().endswith("data: [DONE]")
     assert fake_app.thread_id() == extract_run_started_id(body)
 
