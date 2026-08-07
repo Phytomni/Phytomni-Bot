@@ -451,6 +451,43 @@ def test_create_is_idempotent_without_double_charging(tmp_path: Path) -> None:
         registry.create_or_replay(_spec(size_bytes=4), now=NOW)
 
 
+def test_conditional_discard_removes_only_a_pristine_allocation(
+    tmp_path: Path,
+) -> None:
+    """Discard is atomic, condition-bound, and preserves accepted volume."""
+    registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
+    discarded, _secret = registry.create_or_replay(
+        _spec(key="discarded"), now=NOW
+    )
+    registry.acquire_part_lease(discarded.asset_id, owner="owner-1", now=NOW)
+
+    assert registry.discard_unbound_allocation(
+        discarded.asset_id, owner="owner-1"
+    )
+    assert registry.get_asset(discarded.asset_id, owner="owner-1") is None
+    with sqlite3.connect(registry.db_path) as conn:
+        deleted_counts = conn.execute(
+            "SELECT (SELECT COUNT(*) FROM upload_capabilities "
+            "WHERE asset_id = ?), (SELECT COUNT(*) FROM upload_idempotency "
+            "WHERE asset_id = ?), (SELECT COUNT(*) FROM upload_part_leases "
+            "WHERE asset_id = ?)",
+            (discarded.asset_id,) * 3,
+        ).fetchone()
+    assert deleted_counts == (0, 0, 0)
+
+    recreated, _secret = registry.create_or_replay(
+        _spec(key="discarded"), now=NOW
+    )
+    assert recreated.asset_id != discarded.asset_id
+    with sqlite3.connect(registry.db_path) as conn:
+        accepted_bytes, event_count = conn.execute(
+            "SELECT SUM(byte_size), COUNT(*) FROM upload_quota_events "
+            "WHERE owner_subject = ? AND event_kind = 'create'",
+            ("owner-1",),
+        ).fetchone()
+    assert (event_count, accepted_bytes) == (2, 6)
+
+
 def test_registry_rejects_invalid_purpose_outside_pydantic(
     tmp_path: Path,
 ) -> None:

@@ -15,7 +15,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from math import ceil
-from typing import Literal, NamedTuple, cast
+from typing import Literal, NamedTuple
 
 from ._resumable_upload_sqlite import (
     _ASSET_COLUMNS,
@@ -28,10 +28,16 @@ from ._resumable_upload_sqlite import (
     _CREATE_PARTS_TABLE,
     _CREATE_QUOTA_EVENTS_TABLE,
     _CREATE_QUOTA_INDEX,
+    _activate_asset,
     _asset_values_from_row,
+    _build_capability_from_row,
     _build_part_from_row,
+    _clear_provider_session,
+    _discard_unbound_allocation,
+    _fetch_capability_row,
     _initialize_activation_column,
     _parse_time,
+    _pending_provider_asset_ids,
 )
 from .sqlite import sqlite_connection, sqlite_transaction
 
@@ -393,12 +399,13 @@ class ResumableUploadRegistry:
     def clear_provider_session(self, asset_id: str, *, now: datetime) -> None:
         """Forget an OBS session only after its provider abort succeeds."""
         with sqlite_transaction(self.db_path) as conn:
-            conn.execute(
-                "UPDATE upload_assets SET obs_upload_id = NULL, "
-                "updated_at = ?, state_version = state_version + 1 "
-                "WHERE asset_id = ? AND status IN ('expired', 'aborted')",
-                (_iso(_utc(now)), asset_id),
-            )
+            _clear_provider_session(conn, asset_id, _iso(_utc(now)))
+
+    def discard_unbound_allocation(self, asset_id: str, *, owner: str) -> bool:
+        """Discard one pristine allocation without erasing accepted volume."""
+        with sqlite_transaction(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            return _discard_unbound_allocation(conn, asset_id, owner)
 
     def get_parts(
         self, asset_id: str, *, owner: str
@@ -574,7 +581,7 @@ class ResumableUploadRegistry:
             )
 
     def cleanup_expired(self, *, now: datetime) -> tuple[str, ...]:
-        """Expire unfinished sessions and release reservations safely."""
+        """Expire due rows and discover every pending terminal cleanup."""
         expired_at = _utc(now)
         expiry_counts: dict[ExpiryReason, int]
         with sqlite_transaction(self.db_path) as conn:
@@ -582,12 +589,7 @@ class ResumableUploadRegistry:
             newly_expired, expiry_counts = self._expire_due_assets(
                 conn, now=expired_at
             )
-            rows = conn.execute(
-                "SELECT asset_id FROM upload_assets "
-                "WHERE status = 'expired' AND obs_upload_id IS NOT NULL "
-                "ORDER BY created_at, asset_id"
-            ).fetchall()
-            pending_provider = tuple(row[0] for row in rows)
+            pending_provider = _pending_provider_asset_ids(conn)
             asset_ids = tuple(
                 dict.fromkeys((*newly_expired, *pending_provider))
             )
@@ -687,12 +689,7 @@ class ResumableUploadRegistry:
         expiry_counts: dict[ExpiryReason, int] = {}
         with sqlite_transaction(self.db_path) as conn:
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute(
-                "SELECT asset_id, owner_subject, operations, declared_bytes, "
-                "expires_at, revoked_at FROM upload_capabilities "
-                "WHERE token_hash = ? AND asset_id = ?",
-                (_token_hash(raw_token), asset_id),
-            ).fetchone()
+            row = _fetch_capability_row(conn, _token_hash(raw_token), asset_id)
             if row is None:
                 raise UploadStateError("upload_capability_invalid")
             operations = frozenset(json.loads(row[2]))
@@ -702,46 +699,52 @@ class ResumableUploadRegistry:
             if row[1] != asset.owner_subject:
                 raise UploadStateError("upload_capability_invalid")
             expires_at = _parse_time(row[4])
-            if row[5] is not None or expires_at <= current:
-                raise UploadStateError("upload_capability_invalid")
-            reason = self._deadline_reason(asset, current)
-            if reason is not None:
-                self._terminalize_asset(
-                    conn, asset, status="expired", now=current
+            if expires_at <= current or (
+                row[5] is not None
+                and not (
+                    authorization.operation == "abort"
+                    and asset.status == "aborted"
                 )
-                expiry_counts[reason] = 1
-                error_code = "upload_session_expired"
+            ):
+                raise UploadStateError("upload_capability_invalid")
+            if (
+                authorization.operation == "abort"
+                and asset.status == "aborted"
+            ):
+                result = (
+                    _build_capability_from_row(
+                        row, operations, CapabilityRecord
+                    ),
+                    asset,
+                )
             else:
-                error_code = _terminal_error(asset)
-                if error_code is None:
-                    if authorization.activate and asset.activated_at is None:
-                        conn.execute(
-                            "UPDATE upload_assets SET activated_at = ?, "
-                            "updated_at = ?, "
-                            "state_version = state_version + 1 "
-                            "WHERE asset_id = ? AND status = 'uploading' "
-                            "AND activated_at IS NULL "
-                            "AND session_expires_at > ? AND ? > ?",
-                            (
-                                _iso(current),
-                                _iso(current),
+                reason = self._deadline_reason(asset, current)
+                if reason is not None:
+                    self._terminalize_asset(
+                        conn, asset, status="expired", now=current
+                    )
+                    expiry_counts[reason] = 1
+                    error_code = "upload_session_expired"
+                else:
+                    error_code = _terminal_error(asset)
+                    if error_code is None:
+                        if (
+                            authorization.activate
+                            and asset.activated_at is None
+                        ):
+                            _activate_asset(
+                                conn,
                                 asset.asset_id,
                                 _iso(current),
                                 _iso(asset.created_at + self.provisional_ttl),
-                                _iso(current),
+                            )
+                            asset = self._fetch_asset(conn, asset_id)
+                        result = (
+                            _build_capability_from_row(
+                                row, operations, CapabilityRecord
                             ),
+                            asset,
                         )
-                        asset = self._fetch_asset(conn, asset_id)
-                    result = (
-                        CapabilityRecord(
-                            asset_id=cast(str, row[0]),
-                            owner_subject=cast(str, row[1]),
-                            operations=operations,
-                            declared_bytes=cast(int, row[3]),
-                            expires_at=expires_at,
-                        ),
-                        asset,
-                    )
         _report_expirations(expiry_counts)
         if error_code is not None:
             raise UploadStateError(error_code)
@@ -982,7 +985,6 @@ def _safe_owner(owner: str) -> str:
 
 
 def _asset_from_row(row: sqlite3.Row | tuple[object, ...]) -> AssetRecord:
-    """Map one positional SQLite row to its typed asset record."""
     return AssetRecord._make(_asset_values_from_row(row))
 
 

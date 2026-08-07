@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from io import BytesIO
@@ -23,12 +25,17 @@ from mcp_server_phytomni.api.schemas import (
     UploadCreateRequest,
 )
 from mcp_server_phytomni.runtime.resumable_uploads import (
+    AssetCreateSpec,
+    CapabilityAuthorization,
+    PartRecord,
     ResumableUploadRegistry,
     ResumableUploadRegistryConfig,
     UploadAssetPurpose,
 )
 from mcp_server_phytomni.storage.multipart import (
     FakeMultipartStorage,
+    MultipartSession,
+    MultipartStorageError,
     PartInput,
 )
 
@@ -36,6 +43,42 @@ pytestmark = pytest.mark.unit
 
 
 NOW = datetime(2026, 8, 1, tzinfo=UTC)
+
+
+class _FailingMultipartStorage(FakeMultipartStorage):
+    """Record safe call counts while injecting normalized provider failures."""
+
+    def __init__(
+        self,
+        *,
+        fail_begin_calls: int = 0,
+        fail_abort_calls: int = 0,
+    ) -> None:
+        super().__init__()
+        self.begin_calls = 0
+        self.abort_calls = 0
+        self.fail_begin_calls = fail_begin_calls
+        self.fail_abort_calls = fail_abort_calls
+        self.after_begin: Callable[[MultipartSession], None] | None = None
+
+    def begin(self, *, bucket: str, object_key: str) -> MultipartSession:
+        """Start a fake session or raise one stable storage error."""
+        self.begin_calls += 1
+        if self.fail_begin_calls:
+            self.fail_begin_calls -= 1
+            raise MultipartStorageError("upload_storage_unavailable")
+        session = super().begin(bucket=bucket, object_key=object_key)
+        if self.after_begin is not None:
+            self.after_begin(session)
+        return session
+
+    def abort(self, session: MultipartSession) -> None:
+        """Abort a fake session or raise one stable storage error."""
+        self.abort_calls += 1
+        if self.fail_abort_calls:
+            self.fail_abort_calls -= 1
+            raise MultipartStorageError("upload_storage_unavailable")
+        super().abort(session)
 
 
 def _request(
@@ -111,6 +154,140 @@ def test_create_is_idempotent_and_binds_one_provider_session(
     assert first.upload_url == f"https://bot.example/v1/files/{first.asset_id}"
     assert len(storage.sessions) == 1
     assert "upload_id" not in first.model_dump_json()
+
+
+def test_begin_failure_discards_only_unbound_allocation(
+    tmp_path: Path,
+) -> None:
+    """A failed provider begin frees local capacity but keeps create volume."""
+    storage = _FailingMultipartStorage(fail_begin_calls=1)
+    service, _storage = _service(tmp_path, storage=storage)
+
+    with pytest.raises(UploadContractError) as captured:
+        service.create(_request())
+
+    assert captured.value.code == "upload_storage_unavailable"
+    assert str(captured.value) == "upload storage unavailable"
+    recreated = service.create(_request())
+    service.create(_request(key="create-2"))
+    service.create(_request(key="create-3"))
+
+    assert recreated.status == "uploading"
+    assert storage.begin_calls == 4
+    with sqlite3.connect(service.registry.db_path) as conn:
+        active_count = conn.execute(
+            "SELECT COUNT(*) FROM upload_assets WHERE status = 'uploading'"
+        ).fetchone()[0]
+        accepted_bytes, event_count = conn.execute(
+            "SELECT SUM(byte_size), COUNT(event_kind) "
+            "FROM upload_quota_events "
+            "WHERE owner_subject = ? AND event_kind = 'create'",
+            ("owner-1",),
+        ).fetchone()
+    assert active_count == 3
+    assert (event_count, accepted_bytes) == (4, 12)
+
+
+def test_losing_bind_aborts_only_its_provider_session(
+    tmp_path: Path,
+) -> None:
+    """A concurrent winning bind survives compensation by the loser."""
+    registry = ResumableUploadRegistry(str(tmp_path / "uploads.db"))
+    allocated, _secret = registry.create_or_replay(
+        AssetCreateSpec(
+            owner_subject="owner-1",
+            filename="sample.fastq.gz",
+            content_type="application/octet-stream",
+            size_bytes=3,
+            purpose="chat_attachment",
+            idempotency_key="create-1",
+        ),
+        now=NOW,
+    )
+    storage = _FailingMultipartStorage()
+
+    def bind_winner(_losing_session: MultipartSession) -> None:
+        registry.set_provider_session(
+            allocated.asset_id,
+            owner=allocated.owner_subject,
+            obs_upload_id="winner-provider-session",
+            now=NOW,
+        )
+
+    storage.after_begin = bind_winner
+    service = ResumableUploadService(
+        registry,
+        storage,
+        UploadServiceConfig(
+            bucket_name="bot-bucket",
+            upload_origin="https://bot.example/",
+            now=lambda: NOW,
+        ),
+    )
+
+    with pytest.raises(UploadContractError) as captured:
+        service.create(_request())
+
+    assert captured.value.code == "upload_state_conflict"
+    assert str(captured.value) == "upload state conflict"
+    assert storage.abort_calls == 1
+    survivor = registry.get_asset(allocated.asset_id, owner="owner-1")
+    assert survivor is not None
+    assert survivor.status == "uploading"
+    assert survivor.obs_upload_id is not None
+    assert (
+        registry.discard_unbound_allocation(
+            allocated.asset_id,
+            owner="owner-1",
+        )
+        is False
+    )
+
+
+def test_discard_rejects_activated_and_part_bearing_allocations(
+    tmp_path: Path,
+) -> None:
+    """Conditional discard leaves non-pristine allocations untouched."""
+    registry = ResumableUploadRegistry(str(tmp_path / "uploads.db"))
+    activated, activated_secret = registry.create_or_replay(
+        AssetCreateSpec(
+            "owner-1",
+            "a.bin",
+            "application/octet-stream",
+            3,
+            "chat_attachment",
+            "activated",
+        ),
+        now=NOW,
+    )
+    registry.authorize_capability(
+        activated_secret.raw_token,
+        asset_id=activated.asset_id,
+        authorization=CapabilityAuthorization("head", True),
+        now=NOW,
+    )
+    part_bearing, _secret = registry.create_or_replay(
+        AssetCreateSpec(
+            "owner-2",
+            "b.bin",
+            "application/octet-stream",
+            3,
+            "chat_attachment",
+            "part-bearing",
+        ),
+        now=NOW,
+    )
+    registry.record_part(
+        PartRecord(part_bearing.asset_id, 1, 3, "a" * 64, "opaque", NOW),
+        now=NOW,
+    )
+
+    assert not registry.discard_unbound_allocation(
+        activated.asset_id, owner="owner-1"
+    )
+    assert not registry.discard_unbound_allocation(
+        part_bearing.asset_id, owner="owner-2"
+    )
 
 
 def test_create_conflicts_when_only_purpose_changes(
@@ -243,16 +420,171 @@ def test_complete_reconciles_unknown_provider_outcome(
     assert descriptor.status == "completed"
 
 
-def test_abort_releases_the_provider_session(tmp_path: Path) -> None:
-    """Abort is owner-scoped and leaves no active fake provider session."""
-    service, storage = _service(tmp_path)
+def test_abort_retains_the_provider_session_for_cleanup(
+    tmp_path: Path,
+) -> None:
+    """Abort is owner-scoped and defers provider work to cleanup."""
+    storage = _FailingMultipartStorage()
+    service, _storage = _service(tmp_path, storage=storage)
     created = service.create(_request())
 
     status = service.abort(created.asset_id, created.capability)
 
     assert status.status == "aborted"
-    state = next(iter(storage.sessions.values()))
-    assert state.aborted is True
+    assert storage.abort_calls == 0
+
+
+def test_abort_releases_local_quota_before_provider_cleanup(
+    tmp_path: Path,
+) -> None:
+    """DELETE terminalizes locally and admits another create immediately."""
+    storage = _FailingMultipartStorage(fail_abort_calls=1)
+    service, _storage = _service(tmp_path, storage=storage)
+    created = [
+        service.create(_request(key=f"create-{index}")) for index in range(3)
+    ]
+
+    status = service.abort(created[0].asset_id, created[0].capability)
+    admitted = service.create(_request(key="create-4"))
+
+    assert status.status == "aborted"
+    assert admitted.status == "uploading"
+    assert storage.abort_calls == 0
+    durable = service.registry.get_asset(created[0].asset_id, owner="owner-1")
+    assert durable is not None
+    assert durable.status == "aborted"
+    assert durable.reserved_bytes == 0
+    assert durable.obs_upload_id is not None
+
+
+def test_repeated_abort_accepts_only_the_same_live_aborted_capability(
+    tmp_path: Path,
+) -> None:
+    """Only an unexpired capability for its already-aborted row may replay."""
+    clock = [NOW]
+    registry = ResumableUploadRegistry(str(tmp_path / "uploads.db"))
+    service = ResumableUploadService(
+        registry,
+        FakeMultipartStorage(),
+        UploadServiceConfig(
+            bucket_name="bot-bucket",
+            upload_origin="https://bot.example/",
+            now=lambda: clock[0],
+        ),
+    )
+    aborted = service.create(_request())
+    other = service.create(_request(owner="owner-2", key="other"))
+
+    first = service.abort(aborted.asset_id, aborted.capability)
+    replay = service.abort(aborted.asset_id, aborted.capability)
+
+    assert first.status == "aborted"
+    assert replay.status == "aborted"
+    with pytest.raises(UploadContractError) as cross_asset:
+        service.abort(other.asset_id, aborted.capability)
+    assert cross_asset.value.code == "upload_capability_invalid"
+    with pytest.raises(UploadContractError) as invalid_token:
+        service.abort(aborted.asset_id, "not-a-capability")
+    assert invalid_token.value.code == "upload_capability_invalid"
+
+    clock[0] = NOW + timedelta(minutes=15)
+    with pytest.raises(UploadContractError) as expired_token:
+        service.abort(aborted.asset_id, aborted.capability)
+    assert expired_token.value.code == "upload_capability_invalid"
+
+
+def test_repeated_abort_rejects_completed_and_expired_rows(
+    tmp_path: Path,
+) -> None:
+    """Terminal rows other than aborted never accept DELETE replay."""
+    clock = [NOW]
+    registry = ResumableUploadRegistry(str(tmp_path / "uploads.db"))
+    service = ResumableUploadService(
+        registry,
+        FakeMultipartStorage(),
+        UploadServiceConfig(
+            bucket_name="bot-bucket",
+            upload_origin="https://bot.example/",
+            now=lambda: clock[0],
+        ),
+    )
+    completed = service.create(_request(key="completed"))
+    _put_one(service, completed.asset_id, completed.capability)
+    service.complete(
+        completed.asset_id,
+        completed.capability,
+        UploadCompletionRequest(),
+    )
+    expired = service.create(_request(key="expired"))
+    clock[0] = NOW + timedelta(minutes=180)
+    service.cleanup_expired()
+    expired_record = registry.get_asset(expired.asset_id, owner="owner-1")
+    assert expired_record is not None
+    assert expired_record.status == "expired"
+
+    for asset_id, capability in (
+        (completed.asset_id, completed.capability),
+        (expired.asset_id, expired.capability),
+    ):
+        with pytest.raises(UploadContractError) as captured:
+            service.abort(asset_id, capability)
+        assert captured.value.code == "upload_capability_invalid"
+
+
+def test_cleanup_retries_failed_provider_abort_without_reopening_local_state(
+    tmp_path: Path,
+) -> None:
+    """A normalized provider failure retains durable cleanup work for retry."""
+    storage = _FailingMultipartStorage(fail_abort_calls=1)
+    service, _storage = _service(tmp_path, storage=storage)
+    created = service.create(_request())
+    service.abort(created.asset_id, created.capability)
+
+    first_pass = service.cleanup_expired()
+    after_failure = service.registry.get_asset(
+        created.asset_id, owner="owner-1"
+    )
+    second_pass = service.cleanup_expired()
+    after_success = service.registry.get_asset(
+        created.asset_id, owner="owner-1"
+    )
+
+    assert first_pass == (created.asset_id,)
+    assert second_pass == (created.asset_id,)
+    assert storage.abort_calls == 2
+    assert after_failure is not None
+    assert after_failure.status == "aborted"
+    assert after_failure.reserved_bytes == 0
+    assert after_failure.obs_upload_id is not None
+    assert after_success is not None
+    assert after_success.status == "aborted"
+    assert after_success.obs_upload_id is None
+
+
+def test_cleanup_isolates_provider_abort_failures_between_rows(
+    tmp_path: Path,
+) -> None:
+    """One provider failure does not block a later terminal row."""
+    storage = _FailingMultipartStorage(fail_abort_calls=1)
+    service, _storage = _service(tmp_path, storage=storage)
+    created = [
+        service.create(_request(key=f"cleanup-{index}")) for index in range(2)
+    ]
+    for item in created:
+        service.abort(item.asset_id, item.capability)
+
+    pending = service.cleanup_expired()
+    durable = [
+        service.registry.get_asset(item.asset_id, owner="owner-1")
+        for item in created
+    ]
+
+    assert set(pending) == {item.asset_id for item in created}
+    assert storage.abort_calls == 2
+    assert all(item is not None for item in durable)
+    assert [
+        item.obs_upload_id is None for item in durable if item is not None
+    ].count(True) == 1
 
 
 def test_service_activation_and_stale_renewal_use_registry_policy(

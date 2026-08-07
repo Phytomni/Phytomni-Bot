@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -144,10 +145,14 @@ class ResumableUploadService:
         try:
             asset, capability = self.registry.create_or_replay(spec, now=now)
             if asset.obs_upload_id is None:
-                session = self.storage.begin(
-                    bucket=self.bucket_name,
-                    object_key=asset.object_key,
-                )
+                try:
+                    session = self.storage.begin(
+                        bucket=self.bucket_name,
+                        object_key=asset.object_key,
+                    )
+                except MultipartStorageError:
+                    _discard_quietly(self.registry, asset)
+                    raise
                 try:
                     asset = self.registry.set_provider_session(
                         asset.asset_id,
@@ -157,6 +162,7 @@ class ResumableUploadService:
                     )
                 except UploadStateError:
                     _abort_quietly(self.storage, session)
+                    _discard_quietly(self.registry, asset)
                     raise
         except UploadStateError as error:
             raise _contract_error(error) from error
@@ -345,30 +351,24 @@ class ResumableUploadService:
         return _descriptor(completed_asset)
 
     def abort(self, asset_id: str, capability: str) -> UploadStatusResponse:
-        """Abort an unfinished asset and release its provider session."""
+        """Abort locally while retaining provider cleanup work for retry."""
         try:
             _record, asset = self._authorized_asset(
                 asset_id, capability, operation="abort"
             )
-            if asset.obs_upload_id is not None:
-                self.storage.abort(_session_for(asset, self.bucket_name))
             aborted = self.registry.abort_asset(
                 asset_id,
                 owner=asset.owner_subject,
                 now=self._now(),
             )
-            if asset.obs_upload_id is not None:
-                self.registry.clear_provider_session(asset_id, now=self._now())
             return self._status(aborted)
         except UploadStateError as error:
             raise _contract_error(error) from error
-        except MultipartStorageError as error:
-            raise _contract_error(error) from error
 
     def cleanup_expired(self) -> tuple[str, ...]:
-        """Expire stale sessions and best-effort abort provider uploads."""
-        expired = self.registry.cleanup_expired(now=self._now())
-        for asset_id in expired:
+        """Expire stale sessions and retry every terminal provider cleanup."""
+        pending = self.registry.cleanup_expired(now=self._now())
+        for asset_id in pending:
             asset = self.registry.get_asset_by_id(asset_id)
             if (
                 asset is not None
@@ -378,7 +378,7 @@ class ResumableUploadService:
                 )
             ):
                 self.registry.clear_provider_session(asset_id, now=self._now())
-        return expired
+        return pending
 
     def _authorized_asset(
         self, asset_id: str, capability: str, *, operation: str
@@ -582,9 +582,25 @@ def _abort_quietly(
     """Best-effort cleanup after a provider session loses its DB binding."""
     try:
         storage.abort(session)
+    except MultipartStorageError:
+        return False
     except (ConnectionError, OSError, TimeoutError):
         return False
     return True
+
+
+def _discard_quietly(
+    registry: ResumableUploadRegistry,
+    asset: AssetRecord,
+) -> bool:
+    """Best-effort discard without replacing the original stable error."""
+    try:
+        return registry.discard_unbound_allocation(
+            asset.asset_id,
+            owner=asset.owner_subject,
+        )
+    except (sqlite3.Error, OSError):
+        return False
 
 
 def _utc_now() -> datetime:

@@ -9,7 +9,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 
 _CREATE_ASSETS_TABLE = """
 CREATE TABLE IF NOT EXISTS upload_assets (
@@ -187,6 +187,111 @@ def _build_part_from_row[PartRecordT](
         cast(str, row[4]),
         _parse_time(row[5]),
     )
+
+
+def _build_capability_from_row[CapabilityRecordT](
+    row: sqlite3.Row | tuple[object, ...],
+    operations: frozenset[str],
+    factory: Callable[
+        [str, str, frozenset[str], int, datetime], CapabilityRecordT
+    ],
+) -> CapabilityRecordT:
+    """Construct one capability record from its explicit projection."""
+    return factory(
+        cast(str, row[0]),
+        cast(str, row[1]),
+        operations,
+        cast(int, row[3]),
+        _parse_time(row[4]),
+    )
+
+
+def _discard_unbound_allocation(
+    conn: sqlite3.Connection,
+    asset_id: str,
+    owner: str,
+) -> bool:
+    """Delete every ephemeral row for one pristine upload allocation."""
+    eligible = conn.execute(
+        "SELECT 1 FROM upload_assets AS a WHERE a.asset_id = ? "
+        "AND a.owner_subject = ? AND a.status = 'uploading' "
+        "AND a.activated_at IS NULL AND a.obs_upload_id IS NULL "
+        "AND NOT EXISTS (SELECT 1 FROM upload_parts AS p "
+        "WHERE p.asset_id = a.asset_id)",
+        (asset_id, owner),
+    ).fetchone()
+    if eligible is None:
+        return False
+    for table in (
+        "upload_capabilities",
+        "upload_idempotency",
+        "upload_part_leases",
+        "upload_parts",
+    ):
+        conn.execute(f"DELETE FROM {table} WHERE asset_id = ?", (asset_id,))
+    return (
+        conn.execute(
+            "DELETE FROM upload_assets WHERE asset_id = ? "
+            "AND owner_subject = ? AND status = 'uploading' "
+            "AND activated_at IS NULL AND obs_upload_id IS NULL",
+            (asset_id, owner),
+        ).rowcount
+        == 1
+    )
+
+
+def _pending_provider_asset_ids(conn: sqlite3.Connection) -> tuple[str, ...]:
+    """Return every terminal row whose provider session needs cleanup."""
+    rows = conn.execute(
+        "SELECT asset_id FROM upload_assets "
+        "WHERE status IN ('expired', 'aborted') "
+        "AND obs_upload_id IS NOT NULL ORDER BY created_at, asset_id"
+    ).fetchall()
+    return tuple(cast(str, row[0]) for row in rows)
+
+
+def _activate_asset(
+    conn: sqlite3.Connection,
+    asset_id: str,
+    current: str,
+    provisional_deadline: str,
+) -> None:
+    """Persist the first data-plane takeover without refreshing it."""
+    conn.execute(
+        "UPDATE upload_assets SET activated_at = ?, updated_at = ?, "
+        "state_version = state_version + 1 "
+        "WHERE asset_id = ? AND status = 'uploading' "
+        "AND activated_at IS NULL AND session_expires_at > ? AND ? > ?",
+        (current, current, asset_id, current, provisional_deadline, current),
+    )
+
+
+def _clear_provider_session(
+    conn: sqlite3.Connection,
+    asset_id: str,
+    updated_at: str,
+) -> None:
+    """Clear a provider ID only on a cleanup-eligible terminal row."""
+    conn.execute(
+        "UPDATE upload_assets SET obs_upload_id = NULL, updated_at = ?, "
+        "state_version = state_version + 1 WHERE asset_id = ? "
+        "AND status IN ('expired', 'aborted')",
+        (updated_at, asset_id),
+    )
+
+
+def _fetch_capability_row(
+    conn: sqlite3.Connection,
+    token_hash: str,
+    asset_id: str,
+) -> sqlite3.Row | tuple[Any, ...] | None:
+    """Fetch one asset-bound capability projection by its token hash."""
+    return conn.execute(
+        "SELECT asset_id, owner_subject, operations, declared_bytes, "
+        "expires_at, revoked_at FROM upload_capabilities "
+        "WHERE token_hash = ? AND asset_id = ?",
+        (token_hash, asset_id),
+    ).fetchone()
 
 
 def _parse_time(value: object) -> datetime:
