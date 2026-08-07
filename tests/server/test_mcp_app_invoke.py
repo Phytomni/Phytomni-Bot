@@ -14,9 +14,9 @@ formatter or schema drift fails fast in CI.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 from mcp.shared.exceptions import McpError
@@ -327,15 +327,13 @@ async def test_invoke_chat_agent_formats_assistant_message(
 )
 async def test_invoke_cited_agent_normalizes_references(
     demo_data_dir: Path,
+    citation_db_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     tool: str,
     payload_name: str,
 ) -> None:
     """Cited agents rewrite ``[N]`` markers and dedupe doc references."""
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.shared.citation_enrichment.bi_query",
-        AsyncMock(return_value={"message": "ok", "data": []}),
-    )
+    assert os.environ["CITATION_DB_PATH"] == str(citation_db_path)
     raw = {
         "choices": [
             {

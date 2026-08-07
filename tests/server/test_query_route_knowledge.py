@@ -6,13 +6,14 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 from tests.server.test_query_route import (
     UUID,
     Any,
     ConversationContextStore,
-    Path,
     SimpleNamespace,
     ToolSelection,
     _context_follow_up_envelope,
@@ -38,25 +39,28 @@ from mcp_server_phytomni.runtime.conversation_context.projection import (
 
 pytestmark = pytest.mark.server
 
+_ANSWER_MARKER = "KNOWLEDGE_ROUTE_ANSWER_OUTPUT_SENTINEL"
+
 
 async def test_context_expert_knowledge_turn_separates_retrieval_context(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
+    citation_db_path: Path,
     tmp_path: Path,
 ) -> None:
     """Knowledge resolves retrieval privately and stages bounded context."""
+    assert os.environ["CITATION_DB_PATH"] == str(citation_db_path)
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
-    answer_marker = "KNOWLEDGE_ROUTE_ANSWER_OUTPUT_SENTINEL"
     calls: list[dict[str, Any]] = []
 
     async def fake_knowledge_arun(**kwargs: Any) -> dict[str, Any]:
         """Capture Knowledge arguments and return a bounded answer."""
         calls.append(kwargs)
         message = {
-            "content": answer_marker,
+            "content": _ANSWER_MARKER,
             "doc_list": [
                 {
                     "file_id": "doc-1",
@@ -73,10 +77,6 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
     _patch_knowledge_runtime(
         monkeypatch,
         SimpleNamespace(calls=calls, arun=fake_knowledge_arun),
-    )
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.shared.citation_enrichment.bi_query",
-        AsyncMock(return_value={"message": "ok", "data": []}),
     )
     envelope = _conversation_envelope(
         requested_agent_id="KnowledgeAgent",
@@ -119,7 +119,7 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
     assert response.json()["conversation_context"]["selected_agent_id"] == (
         "KnowledgeAgent"
     )
-    assert response.json()["result"]["formatted"]["answer"] == answer_marker
+    assert response.json()["result"]["formatted"]["answer"] == _ANSWER_MARKER
     assert calls == [
         {
             "user_query": "What evidence supports that?",
@@ -143,8 +143,8 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
     assert [item["label"] for item in staged.delta["active_entities"]] == [
         "OsDREB1"
     ]
-    assert answer_marker not in json.dumps(staged.delta, sort_keys=True)
-    assert answer_marker in json.dumps(staged.result, sort_keys=True)
+    assert _ANSWER_MARKER not in json.dumps(staged.delta, sort_keys=True)
+    assert _ANSWER_MARKER in json.dumps(staged.result, sort_keys=True)
     assert "full report body" not in json.dumps(staged.delta, sort_keys=True)
     assert staged.stage_metadata is not None
     assert staged.stage_metadata["selected_agent_id"] == "KnowledgeAgent"
@@ -163,7 +163,7 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
         str(UUID(envelope["conversation_key"]))
     )
     assert stored_context is not None
-    assert answer_marker not in json.dumps(
+    assert _ANSWER_MARKER not in json.dumps(
         stored_context.context, sort_keys=True
     )
     assert stored_context.context["active_entities"]
@@ -180,13 +180,13 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
     assert replay_response.status_code == 200
     assert (
         replay_response.json()["result"]["formatted"]["answer"]
-        == answer_marker
+        == _ANSWER_MARKER
     )
     replayed_context = store.load_context(
         str(UUID(envelope["conversation_key"]))
     )
     assert replayed_context is not None
-    assert answer_marker not in json.dumps(
+    assert _ANSWER_MARKER not in json.dumps(
         replayed_context.context, sort_keys=True
     )
 
@@ -253,9 +253,11 @@ async def test_context_expert_brief_gene_turn_stages_bounded_context_delta(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
     monkeypatch: pytest.MonkeyPatch,
+    citation_db_path: Path,
     tmp_path: Path,
 ) -> None:
     """The native Brief Gene route returns its bounded context projection."""
+    assert os.environ["CITATION_DB_PATH"] == str(citation_db_path)
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
@@ -317,10 +319,6 @@ async def test_context_expert_brief_gene_turn_stages_bounded_context_delta(
         mcp_handlers, "chat_kwargs", lambda *_args, **_kwargs: {}
     )
     monkeypatch.setattr(mcp_handlers, "retrieve_kwargs", lambda _config: {})
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.shared.citation_enrichment.bi_query",
-        AsyncMock(return_value={"message": "ok", "data": []}),
-    )
 
     envelope = _conversation_envelope(
         turn_id="6",

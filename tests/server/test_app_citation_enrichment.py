@@ -93,9 +93,7 @@ async def test_end_to_end_enriched_references_via_sqlite(
 
     monkeypatch.setattr(shared_sql, "bi_query", forbidden_database_call)
     monkeypatch.setattr(shared_gauss, "gauss_query", forbidden_database_call)
-    monkeypatch.setattr(
-        shared_sql, "relay_bi_query", forbidden_database_call
-    )
+    monkeypatch.setattr(shared_sql, "relay_bi_query", forbidden_database_call)
     with (
         patch.object(
             app_mod,

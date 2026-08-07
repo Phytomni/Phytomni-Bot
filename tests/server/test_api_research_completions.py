@@ -10,9 +10,10 @@ the BriefGene obs_file_list rejection.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -70,12 +71,10 @@ async def test_knowledge_preserves_doc_list(
     issued_api_key: str,
     chat_completion: Callable[..., Any],
     monkeypatch: pytest.MonkeyPatch,
+    citation_db_path: Path,
 ) -> None:
     """Verify knowledge model surfaces cited docs via the formatter."""
-    monkeypatch.setattr(
-        "mcp_server_phytomni.agents.shared.citation_enrichment.bi_query",
-        AsyncMock(return_value={"message": "ok", "data": []}),
-    )
+    assert os.environ["CITATION_DB_PATH"] == str(citation_db_path)
     _stub(
         monkeypatch,
         server.PhytomniAgents.KNOWLEDGE_AGENT.value,

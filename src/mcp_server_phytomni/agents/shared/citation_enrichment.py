@@ -2,52 +2,31 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Bibliographic citation enrichment for cited-agent doc lists.
-
-Batch-fetches full bibliographic records (au/ti/so/vl/bp/ep/py/di/dl/pm)
-from ``s_rag_reference_citation`` by ``file_id`` and merges them into
-each doc in place. Docs with no match are left unchanged; a BI failure
-degrades silently so a cited answer never fails on this lookup.
-"""
+"""Bibliographic citation enrichment for cited-agent document lists."""
 
 import logging
-from collections.abc import Mapping, MutableMapping, Sequence
+from collections.abc import MutableMapping, Sequence
 from typing import Any
 
-from mcp.shared.exceptions import McpError
-
-from ...common.http import JsonPostRetry
-from .sql import bi_query, sql_literal
+from ...runtime.request_context import current_request_id
+from .citation_database import (
+    CitationDatabaseLookupError,
+    lookup_citation_records,
+)
+from .citation_metadata import (
+    CITATION_RECORD_FIELDS,
+    CITATION_STATUS_KEY,
+    CITATION_STATUS_LOOKUP_FAILED,
+    CITATION_STATUS_MATCHED,
+    CITATION_STATUS_MISSING,
+)
 
 __all__ = ["CITATION_BIBLIO_FIELDS", "enrich_cited_doc_list"]
 
 logger = logging.getLogger(__name__)
 
-_CITATION_TABLE = "s_rag_reference_citation"
-#: Bibliographic fields fetched from s_rag_reference_citation and
-#: projected onto cited document references.  Exported so that the
-#: result-formatting layer can mirror the exact same set without a
-#: second definition.
-CITATION_BIBLIO_FIELDS: tuple[str, ...] = (
-    "au",
-    "ti",
-    "so",
-    "vl",
-    "bp",
-    "ep",
-    "py",
-    "di",
-    "dl",
-    "pm",
-)
-_CITATION_COLUMNS = CITATION_BIBLIO_FIELDS
-_RETRY = JsonPostRetry(
-    timeout=30.0,
-    max_retries=2,
-    retriable_codes=(500, 502, 503, 504),
-    message="Failed to query citation metadata",
-    network_message="Citation metadata network error",
-)
+# Import-compatible result-formatting alias.
+CITATION_BIBLIO_FIELDS = CITATION_RECORD_FIELDS
 
 
 async def enrich_cited_doc_list(
@@ -57,63 +36,50 @@ async def enrich_cited_doc_list(
 
     Args:
         doc_list: Cited agent retrieved documents; each is a mutable
-            mapping carrying at least ``file_id``. Matching docs gain
-            au/ti/so/vl/bp/ep/py/di/dl/pm; others are left untouched.
+        mapping carrying at least ``file_id``.
     """
-    file_ids = [
-        str(doc["file_id"])
-        for doc in doc_list
-        if isinstance(doc, MutableMapping) and doc.get("file_id")
-    ]
-    if not file_ids:
-        return
-    records = await _fetch_citation_records(file_ids)
-    if not records:
-        return
+    eligible_docs: list[MutableMapping[str, Any]] = []
+    file_ids: list[str] = []
+    docs_by_id: dict[str, list[MutableMapping[str, Any]]] = {}
     for doc in doc_list:
         if not isinstance(doc, MutableMapping):
             continue
-        record = records.get(str(doc.get("file_id")))
-        if record is None:
+        raw_id = doc.get("file_id")
+        file_id = str(raw_id).strip() if raw_id is not None else ""
+        if not file_id:
             continue
-        for column in _CITATION_COLUMNS:
-            value = record.get(column)
-            if value is not None:
-                doc[column] = value
-
-
-async def _fetch_citation_records(
-    file_ids: Sequence[str],
-) -> dict[str, Mapping[str, Any]]:
-    """Return a ``file_id`` -> bibliographic record map.
-
-    Returns an empty map on any BI failure so the caller degrades to
-    title-only references instead of raising.
-    """
+        eligible_docs.append(doc)
+        file_ids.append(file_id)
+        docs_by_id.setdefault(file_id, []).append(doc)
+    if not file_ids:
+        return
     unique_ids = list(dict.fromkeys(file_ids))
-    in_list = ", ".join(sql_literal(fid) for fid in unique_ids)
-    columns = ", ".join(("file_id", *_CITATION_COLUMNS))
-    sql = (
-        f"SELECT {columns} FROM {_CITATION_TABLE} "
-        f"WHERE file_id IN ({in_list})"
-    )
     try:
-        response = await bi_query(sql, retry=_RETRY)
-    except McpError:
+        result = await lookup_citation_records(unique_ids)
+    except CitationDatabaseLookupError:
+        _mark_status(docs_by_id, CITATION_STATUS_LOOKUP_FAILED)
         logger.warning(
-            "citation metadata lookup failed; using title-only refs"
+            "citation_metadata_lookup_failed request_id=%s",
+            current_request_id() or "unknown",
         )
-        return {}
-    return {
-        str(row["file_id"]): row
-        for row in _rows(response)
-        if isinstance(row, Mapping) and row.get("file_id")
-    }
+        return
+    for doc in eligible_docs:
+        file_id = str(doc["file_id"]).strip()
+        record = result.records.get(file_id)
+        if record is None:
+            doc[CITATION_STATUS_KEY] = CITATION_STATUS_MISSING
+            continue
+        for field in CITATION_RECORD_FIELDS:
+            value = record.get(field)
+            if value is not None:
+                doc[field] = value
+        doc[CITATION_STATUS_KEY] = CITATION_STATUS_MATCHED
 
 
-def _rows(response: Any) -> list[Mapping[str, Any]]:
-    """Return BI envelope data rows from a ``bi_query`` response."""
-    if not isinstance(response, Mapping) or response.get("message") != "ok":
-        return []
-    data = response.get("data", [])
-    return data if isinstance(data, list) else []
+def _mark_status(
+    docs_by_id: dict[str, list[MutableMapping[str, Any]]], status: str
+) -> None:
+    """Stamp one private lookup outcome on every eligible live document."""
+    for docs in docs_by_id.values():
+        for doc in docs:
+            doc[CITATION_STATUS_KEY] = status
