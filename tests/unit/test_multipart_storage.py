@@ -8,16 +8,37 @@ from __future__ import annotations
 
 import hashlib
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 
 from mcp_server_phytomni.storage.multipart import (
+    BoundedMultipartStorage,
     FakeMultipartStorage,
     MultipartStorageError,
     PartInput,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def test_bounded_begin_normalizes_raw_transport_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A raw SDK timeout becomes the stable storage-unavailable error."""
+
+    def fail_begin(**_kwargs: object) -> None:
+        raise TimeoutError
+
+    storage = BoundedMultipartStorage(obs_server="https://obs.example")
+    client = SimpleNamespace(initiateMultipartUpload=fail_begin)
+    monkeypatch.setattr(storage, "_client", lambda: client)
+
+    with pytest.raises(MultipartStorageError) as captured:
+        storage.begin(bucket="bucket", object_key="owner/file")
+
+    assert captured.value.code == "upload_storage_unavailable"
+    assert str(captured.value) == "upload_storage_unavailable"
 
 
 def test_fake_storage_reads_one_part_in_bounded_chunks() -> None:

@@ -139,11 +139,14 @@ class BoundedMultipartStorage:
     def begin(self, *, bucket: str, object_key: str) -> MultipartSession:
         """Initiate a provider multipart upload for a safe object key."""
         safe_key = normalize_obs_object_key(object_key, bucket)
-        response = self._client().initiateMultipartUpload(
-            bucketName=bucket,
-            objectKey=safe_key,
-            contentType="application/octet-stream",
-        )
+        try:
+            response = self._client().initiateMultipartUpload(
+                bucketName=bucket,
+                objectKey=safe_key,
+                contentType="application/octet-stream",
+            )
+        except (ConnectionError, OSError, TimeoutError) as exc:
+            raise MultipartStorageError("upload_storage_unavailable") from exc
         _require_ok(response)
         upload_id = getattr(getattr(response, "body", None), "uploadId", None)
         if not isinstance(upload_id, str) or not upload_id:
