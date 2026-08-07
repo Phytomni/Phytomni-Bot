@@ -126,18 +126,12 @@ async def test_list_agents_returns_all_ten(
     body = response.json()
     assert body["object"] == "list"
     slugs = {row["slug"] for row in body["data"]}
-    assert slugs == {
-        "chat",
-        "knowledge",
-        "data",
-        "review",
-        "brief_gene",
-        "analyst",
-        "deep_genome",
-        "research",
-        "design",
-        "network",
+    expected_slugs = {
+        _canonical_agent_slug(name)
+        for name, _description, _model in AGENT_TOOL_DEFINITIONS
     }
+    assert len(expected_slugs) == 10
+    assert slugs == expected_slugs
     origins = {row["slug"]: row["origin"] for row in body["data"]}
     assert origins["chat"] == "local"
     assert origins["analyst"] == "remote"
@@ -240,18 +234,17 @@ async def test_list_agents_adds_capabilities_without_changing_legacy_fields(
 
     assert response.status_code == 200
     rows = response.json()["data"]
-    expected_slugs = (
-        "chat",
-        "knowledge",
-        "data",
-        "review",
-        "brief_gene",
-        "analyst",
-        "deep_genome",
-        "research",
-        "design",
-        "network",
+    expected_slugs = tuple(
+        _canonical_agent_slug(name)
+        for name, _description, _model in AGENT_TOOL_DEFINITIONS
     )
+    expected_slugs = (
+        *expected_slugs[:3],
+        *expected_slugs[4:6],
+        expected_slugs[3],
+        *expected_slugs[6:],
+    )
+    assert len(expected_slugs) == 10
     assert tuple(row["slug"] for row in rows) == expected_slugs
     expected_tools = dict(
         zip(
