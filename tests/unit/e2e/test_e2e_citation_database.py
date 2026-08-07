@@ -11,10 +11,13 @@ from pathlib import Path
 
 import pytest
 from e2e.helpers import citation_database as helper
+from tests.support.citation_database import create_valid_citation_database
 
 from mcp_server_phytomni.agents.shared.citation_database import (
+    resolve_citation_database_path,
     validate_citation_database,
 )
+from mcp_server_phytomni.config import CitationConfig
 
 pytestmark = pytest.mark.unit
 
@@ -77,6 +80,38 @@ def test_explicit_operator_alias_is_untouched(
 
     assert operator_database.read_bytes() == b"operator-owned"
     assert os.environ[alias] == str(operator_database)
+
+
+def test_blank_plain_alias_preserves_prefixed_operator_database(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """E2E bypass and serving config agree on mixed alias precedence."""
+    operator_database = create_valid_citation_database(
+        tmp_path / "operator.sqlite"
+    )
+    monkeypatch.setenv("CITATION_DB_PATH", "   ")
+    monkeypatch.setenv(
+        "PHYTOMNI_CITATION_DB_PATH",
+        str(operator_database),
+    )
+
+    def unexpected_builder(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("builder reached prefixed operator path")
+
+    monkeypatch.setattr(helper, "build_citation_database", unexpected_builder)
+    resolve_citation_database_path.cache_clear()
+    try:
+        with helper.configured_e2e_citation_database(tmp_path) as database:
+            assert database is None
+            resolved_path = CitationConfig().CITATION_DB_PATH
+            assert resolved_path == str(operator_database)
+            assert validate_citation_database().schema_version == 1
+    finally:
+        resolve_citation_database_path.cache_clear()
+
+    assert os.environ["CITATION_DB_PATH"] == "   "
+    assert os.environ["PHYTOMNI_CITATION_DB_PATH"] == str(operator_database)
 
 
 def test_cleanup_restores_environment_and_removes_only_owned_files(

@@ -3,7 +3,9 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """Optional citation database configuration."""
 
-from pydantic import AliasChoices, Field, field_validator
+import os
+
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -24,6 +26,16 @@ class CitationConfig(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @model_validator(mode="after")
+    def _fallback_to_nonblank_prefixed_path(self) -> "CitationConfig":
+        """Use the prefixed alias when a present plain alias is blank."""
+        if self.CITATION_DB_PATH is not None:
+            return self
+        fallback = os.environ.get("PHYTOMNI_CITATION_DB_PATH")
+        if fallback is not None and fallback.strip():
+            object.__setattr__(self, "CITATION_DB_PATH", fallback)
+        return self
 
 
 __all__ = ["CitationConfig"]

@@ -155,23 +155,35 @@ def _prepare_invalid_artifact(
         return path, CitationDatabaseFormatError
 
     create_valid_citation_database(path)
-    if kind == "wrong_version":
+    statement: str | None = None
+    expected_error: type[CitationDatabaseError]
+    if kind == "unreadable_regular":
+        assert path.is_file()
+        monkeypatch.setattr(
+            citation_database.os,
+            "access",
+            lambda _path, _mode: False,
+        )
+        expected_error = CitationDatabaseArtifactError
+    elif kind == "wrong_version":
         statement = "PRAGMA user_version=2"
+        expected_error = CitationDatabaseSchemaError
     elif kind == "wrong_schema":
         statement = "DROP TABLE citation_conflicts"
+        expected_error = CitationDatabaseSchemaError
     elif kind == "wrong_counts":
         statement = "UPDATE citation_build_metadata SET source_record_count=1"
+        expected_error = CitationDatabaseMetadataError
     elif kind == "failed_integrity":
         _install_failed_integrity(monkeypatch)
-        return path, CitationDatabaseIntegrityError
+        expected_error = CitationDatabaseIntegrityError
     else:
         raise AssertionError(f"unknown artifact kind: {kind}")
 
-    with sqlite3.connect(path) as connection:
-        connection.execute(statement)
-    if kind == "wrong_counts":
-        return path, CitationDatabaseMetadataError
-    return path, CitationDatabaseSchemaError
+    if statement is not None:
+        with sqlite3.connect(path) as connection:
+            connection.execute(statement)
+    return path, expected_error
 
 
 def _install_failed_integrity(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -208,6 +220,7 @@ def _install_failed_integrity(monkeypatch: pytest.MonkeyPatch) -> None:
     (
         "missing_file",
         "non_regular",
+        "unreadable_regular",
         "non_sqlite",
         "wrong_version",
         "wrong_schema",

@@ -263,6 +263,19 @@ def test_citation_config_blank_path_normalizes_to_none(
     assert CitationConfig().CITATION_DB_PATH is None
 
 
+def test_citation_config_blank_plain_alias_falls_back_to_prefixed_alias(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A blank plain alias cannot mask a configured prefixed path."""
+    monkeypatch.setenv("CITATION_DB_PATH", "   ")
+    monkeypatch.setenv(
+        "PHYTOMNI_CITATION_DB_PATH",
+        "/tmp/prefixed.sqlite",
+    )
+
+    assert CitationConfig().CITATION_DB_PATH == "/tmp/prefixed.sqlite"
+
+
 def test_citation_config_preserves_leaf_facade_package_identity() -> None:
     """Citation configuration retains the established export identity."""
     assert CitationConfig is LeafCitationConfig is PackageCitationConfig
