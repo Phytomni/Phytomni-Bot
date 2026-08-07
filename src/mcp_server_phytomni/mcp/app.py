@@ -37,6 +37,7 @@ from ..agents.chat.service import stream_phyto_chat_chunks
 from ..agents.data.agent import data_stream_seed
 from ..agents.knowledge.agent import knowledge_stream_target
 from ..agents.review.agent import review_stream_target
+from ..agents.shared.citation_database import validate_citation_database
 from ..agents.shared.citation_enrichment import enrich_cited_doc_list
 from ..agents.shared.gauss import aclose_gauss_pool
 from ..agents.shared.intermediate_state import merge_intermediate_state
@@ -928,6 +929,7 @@ async def serve() -> None:
             only when a handler raises them; serve itself does not raise.
     """
     configure_logging()
+    validate_citation_database()
     server = Server("Phytomni-Server")
 
     @server.list_tools()

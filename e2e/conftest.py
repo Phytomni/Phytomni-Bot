@@ -19,7 +19,7 @@ Provides three pillars used by every test under ``e2e/``:
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -29,10 +29,21 @@ import pytest_asyncio
 from mcp_client_phytomni import PhytomniMcpClient
 from mcp_server_phytomni.storage.path_policy import IdFactory, RunIdentity
 
+from .helpers.citation_database import configured_e2e_citation_database
 from .helpers.client import make_client
 from .helpers.obs_publish import publish_demo_data
 
 DEMO_PLACEHOLDER_PREFIX = "/obs/phytomni/demo/"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def e2e_citation_database_fixture(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[Path | None]:
+    """Configure one valid citation artifact for every server subprocess."""
+    root = tmp_path_factory.mktemp("citation-database")
+    with configured_e2e_citation_database(root) as database:
+        yield database
 
 
 @pytest.fixture(scope="session", name="demo_data_dir")

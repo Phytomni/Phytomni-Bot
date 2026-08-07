@@ -30,6 +30,7 @@ from pydantic import ValidationError
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from ..agents.shared.citation_database import validate_citation_database
 from ..agents.shared.gauss import aclose_gauss_pool
 from ..common.httpx_client import aclose_shared_client, init_shared_client
 from ..config.defaults import ApiConfig
@@ -434,6 +435,7 @@ def stream_answer_max_bytes() -> int:
 @asynccontextmanager
 async def _http_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Own the process-wide shared HTTP and Gauss clients."""
+    validate_citation_database()
     init_shared_client()
     try:
         yield
