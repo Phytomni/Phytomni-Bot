@@ -23,7 +23,6 @@ from ...runtime.conversation_context.service import (
 )
 from ..attachments import ManagedAttachmentEvidence
 from ..lifecycle_contract import conversation_context_unavailable_error
-from .attachment_inputs import ResolvedAttachmentInput
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,7 +33,7 @@ class ContextAgentRequest:
     request_json: str
     debug: bool
     obs_file_list: list[str] | None
-    resolved_attachments: ResolvedAttachmentInput | None = None
+    attachment_arguments: Mapping[str, Any] | None = None
     attachment_evidence: ManagedAttachmentEvidence | None = None
 
 
@@ -70,6 +69,18 @@ async def execute_context_lifecycle(
         raise conversation_context_unavailable_error() from exc
 
 
+async def inspect_context_replay(
+    *,
+    executor: ConversationContextExecutor,
+    envelope: ConversationEnvelopeV1,
+) -> PreparedTurn | None:
+    """Inspect a durable replay while preserving store-failure mapping."""
+    try:
+        return await executor.inspect_replay(envelope=envelope)
+    except ContextStoreUnavailableError as exc:
+        raise conversation_context_unavailable_error() from exc
+
+
 async def execute_context_lifecycle_http(
     request: ContextLifecycleHttpRequest,
 ) -> PreparedTurn:
@@ -94,4 +105,5 @@ __all__ = [
     "ContextLifecycleHttpRequest",
     "execute_context_lifecycle",
     "execute_context_lifecycle_http",
+    "inspect_context_replay",
 ]

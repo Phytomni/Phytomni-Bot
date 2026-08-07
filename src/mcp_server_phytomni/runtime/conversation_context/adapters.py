@@ -744,6 +744,16 @@ class ConversationContextExecutor:
             self._bindings.async_invoker.reset(async_token)
             self._bindings.sync_invoker.reset(sync_token)
 
+    async def inspect_replay(
+        self, *, envelope: ConversationEnvelopeV1
+    ) -> PreparedTurn | None:
+        """Inspect one durable replay without binding transport callbacks."""
+        try:
+            service = self._service_for_request()
+            return await service.inspect_replay(envelope)
+        except (sqlite3.Error, OSError):
+            raise ContextStoreUnavailableError from None
+
     async def _route(
         self,
         user_query: str,

@@ -48,10 +48,8 @@ from . import agent_dependencies as _agent_dependencies
 from .agent_dependencies import (
     AgentRouteDependencies,
     ContextNativeExecutionRequest,
-    ContextNativePrepareRequest,
 )
 from .attachment_inputs import (
-    expert_attachment_channels,
     expert_attachment_requirement,
     filter_expert_attachment_candidates,
     prepare_chat_attachments,
@@ -73,6 +71,7 @@ from .context_types import (
     ContextLifecycleHttpRequest,
     execute_context_lifecycle,
     execute_context_lifecycle_http,
+    inspect_context_replay,
 )
 from .expert_context import ExpertContextHelpers, execute_context_expert
 from .uploads import AgentUploadDependencies, register_upload_routes
@@ -146,12 +145,8 @@ def _register_chat_route(
                 status_code=404,
                 detail=f"model not found: {payload.model}",
             )
-        resolved_input = resolve_attachment_input(
-            payload.attachments,
-            attachment_owner=resolve_attachment_owner(
-                principal, payload.owner_subject
-            ),
-            resolver=dependencies.upload.asset_resolver,
+        attachment_owner = resolve_attachment_owner(
+            principal, payload.owner_subject
         )
         if payload.conversation is not None:
             if not dependencies.context.enabled():
@@ -161,8 +156,13 @@ def _register_chat_route(
             return await _execute_context_chat(
                 payload,
                 dependencies,
-                resolved_input=resolved_input,
+                attachment_owner=attachment_owner,
             )
+        resolved_input = resolve_attachment_input(
+            payload.attachments,
+            attachment_owner=attachment_owner,
+            resolver=dependencies.upload.asset_resolver,
+        )
         prepared = await _prepare_ordinary_chat_request(
             payload,
             request,
@@ -313,7 +313,7 @@ async def _execute_context_chat(
     payload: ChatCompletionRequest,
     dependencies: AgentRouteDependencies,
     *,
-    resolved_input: Any,
+    attachment_owner: str,
 ) -> JSONResponse:
     """Execute an Instant V1 completion without flattening legacy messages."""
     envelope = payload.conversation
@@ -339,6 +339,38 @@ async def _execute_context_chat(
             status_code=400,
             detail=f"model {payload.model} does not accept obs_file_list",
         )
+    replay = await inspect_context_replay(
+        executor=dependencies.context.executor, envelope=envelope
+    )
+    if replay is not None:
+        return _context_response(replay, envelope)
+    resolved_input = resolve_attachment_input(
+        payload.attachments,
+        attachment_owner=attachment_owner,
+        resolver=dependencies.upload.asset_resolver,
+    )
+    prepared_attachments, attachment_context = prepare_chat_attachments(
+        tool_name="ChatAgent",
+        arguments={
+            "user_query": envelope.current_message.content,
+            "obs_file_list": list(payload.obs_file_list or []),
+        },
+        resolved_input=resolved_input,
+        db_path=dependencies.tasks_db_path(),
+    )
+    attachment_arguments = {
+        key: prepared_attachments[key]
+        for key in ("obs_file_list", "data_list")
+        if key in prepared_attachments
+    }
+    context_request = ContextAgentRequest(
+        dialogue_id=None,
+        request_json="{}",
+        debug=dependencies.chat.projection.resolve_debug(payload.debug),
+        obs_file_list=None,
+        attachment_arguments=attachment_arguments,
+        attachment_evidence=attachment_context.evidence,
+    )
 
     async def invoke(
         selected_agent_id: str,
@@ -347,15 +379,11 @@ async def _execute_context_chat(
     ) -> AgentOutcome:
         if selected_agent_id != "ChatAgent":
             raise ValueError("instant context selected a non-chat agent")
-        arguments = dict(dispatch.arguments)
-        arguments["obs_file_list"] = list(payload.obs_file_list or [])
-        arguments, attachment_context = prepare_chat_attachments(
-            tool_name="ChatAgent",
-            arguments=arguments,
-            resolved_input=resolved_input,
-            db_path=dependencies.tasks_db_path(),
-        )
-        evidence = attachment_context.evidence
+        arguments = {
+            **dispatch.arguments,
+            **(context_request.attachment_arguments or {}),
+        }
+        evidence = context_request.attachment_evidence
         user_query, resolve_meta = (
             await dependencies.chat.input.resolve_chat_query(
                 raw_query=arguments["user_query"],
@@ -560,11 +588,6 @@ def _register_native_routes(
         attachment_owner = resolve_attachment_owner(
             principal, payload.owner_subject
         )
-        resolved_input = resolve_attachment_input(
-            payload.attachments,
-            attachment_owner=attachment_owner,
-            resolver=dependencies.upload.asset_resolver,
-        )
         request_json = _safe_native_request_json(
             dialogue_id=payload.dialogue_id,
             locale=locale,
@@ -580,11 +603,16 @@ def _register_native_routes(
                     agent=agent,
                     payload=payload,
                     arguments=arguments,
-                    resolved_input=resolved_input,
+                    attachment_owner=attachment_owner,
                     request_json=request_json,
                     dependencies=dependencies,
                 )
             )
+        resolved_input = resolve_attachment_input(
+            payload.attachments,
+            attachment_owner=attachment_owner,
+            resolver=dependencies.upload.asset_resolver,
+        )
         arguments, attachment_context = prepare_native_attachment_arguments(
             agent=agent,
             arguments=arguments,
@@ -614,6 +642,16 @@ def _register_native_routes(
         attachment_owner = resolve_attachment_owner(
             principal, payload.owner_subject
         )
+        if payload.conversation is not None:
+            if not dependencies.context.enabled():
+                raise HTTPException(
+                    status_code=404, detail="conversation context disabled"
+                )
+            return await _execute_context_expert(
+                payload,
+                dependencies,
+                attachment_owner=attachment_owner,
+            )
         resolved_input = resolve_attachment_input(
             payload.attachments,
             attachment_owner=attachment_owner,
@@ -624,21 +662,6 @@ def _register_native_routes(
             payload.obs_file_list,
         )
         payload = filter_expert_attachment_candidates(payload, requirement)
-        channels = expert_attachment_channels(
-            resolved_input,
-            payload.obs_file_list,
-        )
-        if payload.conversation is not None:
-            if not dependencies.context.enabled():
-                raise HTTPException(
-                    status_code=404, detail="conversation context disabled"
-                )
-            return await _execute_context_expert(
-                payload,
-                dependencies,
-                resolved_input=resolved_input,
-                channels=channels,
-            )
         resolve_http_locale(
             explicit=payload.locale,
             accept_language=request.headers.get("accept-language"),
@@ -685,12 +708,36 @@ async def _execute_context_native(
     envelope = payload.conversation
     assert envelope is not None
     tool_name = _native_context_tool(agent, envelope, dependencies)
+    replay = await inspect_context_replay(
+        executor=dependencies.context.executor, envelope=envelope
+    )
+    if replay is not None:
+        return _context_response(replay, envelope)
+    resolved_input = resolve_attachment_input(
+        payload.attachments,
+        attachment_owner=request.attachment_owner,
+        resolver=dependencies.upload.asset_resolver,
+    )
+    prepared_arguments, attachment_context = (
+        prepare_native_attachment_arguments(
+            agent=agent,
+            arguments=request.arguments,
+            resolved_input=resolved_input,
+            db_path=dependencies.tasks_db_path(),
+        )
+    )
+    attachment_arguments = {
+        key: prepared_arguments[key]
+        for key in ("obs_file_list", "data_list")
+        if key in prepared_arguments
+    }
     context_request = ContextAgentRequest(
         dialogue_id=payload.dialogue_id,
         request_json=request.request_json,
         debug=dependencies.chat.projection.resolve_debug(payload.debug),
         obs_file_list=None,
-        resolved_attachments=request.resolved_input,
+        attachment_arguments=attachment_arguments,
+        attachment_evidence=attachment_context.evidence,
     )
 
     async def invoke(
@@ -714,15 +761,14 @@ async def _execute_context_native(
     ) -> AsyncAgentAcceptance:
         if selected_agent_id != tool_name:
             raise ValueError("native context selected a non-URL agent")
+        arguments = {
+            **selected_arguments,
+            **(context_request.attachment_arguments or {}),
+        }
         body, status_code = await dependencies.native.invoke_agent_run(
-            **await _prepare_context_native_invocation(
-                ContextNativePrepareRequest(
-                    agent,
-                    selected_arguments,
-                    context_request,
-                    dependencies,
-                )
-            ),
+            agent=agent,
+            arguments=arguments,
+            attachment_evidence=context_request.attachment_evidence,
             dialogue_id=payload.dialogue_id,
             request_json=context_request.request_json,
             debug=context_request.debug,
@@ -742,44 +788,17 @@ async def _execute_context_native(
     return _context_response(prepared, envelope)
 
 
-async def _prepare_context_native_invocation(
-    request: ContextNativePrepareRequest,
-) -> dict[str, Any]:
-    """Prepare native context attachments for a new turn callback."""
-    prepared_arguments = dict(request.arguments)
-    context_request = request.request
-    evidence = context_request.attachment_evidence
-    if context_request.resolved_attachments is not None:
-        attachment_context: Any
-        prepared_arguments, attachment_context = (
-            prepare_native_attachment_arguments(
-                agent=request.agent,
-                arguments=prepared_arguments,
-                resolved_input=context_request.resolved_attachments,
-                db_path=request.dependencies.tasks_db_path(),
-            )
-        )
-        evidence = attachment_context.evidence
-    return {
-        "agent": request.agent,
-        "arguments": prepared_arguments,
-        "attachment_evidence": evidence,
-    }
-
-
 async def _execute_context_expert(
     payload: ExpertQueryRequest,
     dependencies: AgentRouteDependencies,
     *,
-    resolved_input: Any,
-    channels: frozenset[str],
+    attachment_owner: str,
 ) -> JSONResponse:
     """Delegate Expert context execution to the extracted helper module."""
     return await execute_context_expert(
         payload,
         dependencies,
-        resolved_input=resolved_input,
-        channels=channels,
+        attachment_owner=attachment_owner,
         helpers=ExpertContextHelpers(
             invoke_context_agent=_invoke_context_agent,
         ),
@@ -897,10 +916,7 @@ async def _invoke_context_agent(
         dependencies.chat.input.tool_accepts_obs(selected_agent_id)
     ):
         arguments["obs_file_list"] = list(request.obs_file_list)
-    invocation = await _prepare_context_native_invocation(
-        ContextNativePrepareRequest(slug, arguments, request, dependencies)
-    )
-    arguments = invocation["arguments"]
+    arguments.update(request.attachment_arguments or {})
     private_agent_state = dict(dispatch.private_agent_state)
     adapter = _context_adapter(selected_agent_id, private_agent_state)
     body, status_code = await dependencies.native.invoke_agent_run(
@@ -914,7 +930,7 @@ async def _invoke_context_agent(
         dialogue_id=request.dialogue_id,
         request_json=request.request_json,
         debug=request.debug,
-        attachment_evidence=invocation["attachment_evidence"],
+        attachment_evidence=request.attachment_evidence,
     )
     if status_code != 200 or body.get("status") != "succeeded":
         return AgentOutcome(result=body, status="running")

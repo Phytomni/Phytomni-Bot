@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -26,6 +26,9 @@ from ..schemas import ExpertQueryRequest
 from .agent_dependencies import AgentRouteDependencies
 from .attachment_inputs import (
     attachment_not_supported_error,
+    expert_attachment_channels,
+    expert_attachment_requirement,
+    filter_expert_attachment_candidates,
     prepare_selected_expert_arguments,
     resolve_attachment_input,
 )
@@ -38,6 +41,7 @@ from .context_types import (
     ContextAgentRequest,
     ContextLifecycleHttpRequest,
     execute_context_lifecycle_http,
+    inspect_context_replay,
 )
 
 type InvokeContextAgent = Callable[..., Awaitable[AgentOutcome]]
@@ -51,6 +55,14 @@ class ExpertContextHelpers:
 
 
 @dataclass(frozen=True, slots=True)
+class PreparedExpertAttachments:
+    """Prevalidated attachment-only state for one eligible Expert tool."""
+
+    arguments: Mapping[str, Any]
+    evidence: Any
+
+
+@dataclass(frozen=True, slots=True)
 class _ExpertContextInvokeRequest:
     """Inputs for one sync Expert context agent invocation."""
 
@@ -58,6 +70,7 @@ class _ExpertContextInvokeRequest:
     dispatch: ContextAgentInvocation
     payload: ExpertQueryRequest
     dependencies: AgentRouteDependencies
+    attachments: PreparedExpertAttachments
     context_request: ContextAgentRequest
     helpers: ExpertContextHelpers
 
@@ -70,9 +83,8 @@ class _ExpertContextDelegateRequest:
     arguments: dict[str, Any]
     payload: ExpertQueryRequest
     dependencies: AgentRouteDependencies
-    resolved_input: Any
-    request_json: str
-    debug: bool
+    attachments: PreparedExpertAttachments
+    context_request: ContextAgentRequest
 
 
 __all__ = ["ExpertContextHelpers", "execute_context_expert"]
@@ -82,8 +94,7 @@ async def execute_context_expert(
     payload: ExpertQueryRequest,
     dependencies: AgentRouteDependencies,
     *,
-    resolved_input: Any,
-    channels: frozenset[str],
+    attachment_owner: str,
     helpers: ExpertContextHelpers,
 ) -> JSONResponse:
     """Run constrained Expert V1 selection through the shared lifecycle."""
@@ -93,8 +104,14 @@ async def execute_context_expert(
         raise HTTPException(
             status_code=422, detail="expert context requires expert mode"
         )
-    ordered_tools = _ordered_expert_tools(payload, envelope, channels)
-    envelope = envelope.model_copy(update={"allowed_agent_ids": ordered_tools})
+    replay = await inspect_context_replay(
+        executor=dependencies.context.executor, envelope=envelope
+    )
+    if replay is not None:
+        return context_response(replay, envelope)
+    payload, envelope, prepared_by_tool = _prepare_expert_context_inputs(
+        payload, dependencies, attachment_owner, envelope
+    )
     request_json = safe_native_request_json(
         dialogue_id=payload.dialogue_id,
         locale=current_effective_locale(),
@@ -105,7 +122,6 @@ async def execute_context_expert(
         request_json=request_json,
         debug=dependencies.chat.projection.resolve_debug(None),
         obs_file_list=None,
-        resolved_attachments=resolved_input,
     )
 
     async def invoke(
@@ -113,12 +129,16 @@ async def execute_context_expert(
         _envelope: ConversationEnvelopeV1,
         dispatch: ContextAgentInvocation,
     ) -> AgentOutcome:
+        attachments = prepared_by_tool.get(selected_agent_id)
+        if attachments is None:
+            raise ValueError("router selected an unprepared Expert tool")
         return await _invoke_context_expert_agent(
             _ExpertContextInvokeRequest(
                 selected_agent_id=selected_agent_id,
                 dispatch=dispatch,
                 payload=payload,
                 dependencies=dependencies,
+                attachments=attachments,
                 context_request=context_request,
                 helpers=helpers,
             )
@@ -129,15 +149,17 @@ async def execute_context_expert(
         _envelope: ConversationEnvelopeV1,
         arguments: dict[str, Any],
     ) -> AsyncAgentAcceptance:
+        attachments = prepared_by_tool.get(selected_agent_id)
+        if attachments is None:
+            raise ValueError("router selected an unprepared Expert tool")
         return await _delegate_context_expert_async(
             _ExpertContextDelegateRequest(
                 selected_agent_id=selected_agent_id,
                 arguments=arguments,
                 payload=payload,
                 dependencies=dependencies,
-                resolved_input=resolved_input,
-                request_json=request_json,
-                debug=context_request.debug,
+                attachments=attachments,
+                context_request=context_request,
             )
         )
 
@@ -153,6 +175,40 @@ async def execute_context_expert(
         )
     )
     return context_response(prepared, envelope)
+
+
+def _prepare_expert_context_inputs(
+    payload: ExpertQueryRequest,
+    dependencies: AgentRouteDependencies,
+    attachment_owner: str,
+    envelope: ConversationEnvelopeV1,
+) -> tuple[
+    ExpertQueryRequest,
+    ConversationEnvelopeV1,
+    dict[str, PreparedExpertAttachments],
+]:
+    """Resolve and validate every eligible Expert attachment projection."""
+    resolved_input = resolve_attachment_input(
+        payload.attachments,
+        attachment_owner=attachment_owner,
+        resolver=dependencies.upload.asset_resolver,
+    )
+    payload = filter_expert_attachment_candidates(
+        payload,
+        expert_attachment_requirement(resolved_input, payload.obs_file_list),
+    )
+    ordered_tools = _ordered_expert_tools(
+        payload,
+        envelope,
+        expert_attachment_channels(resolved_input, payload.obs_file_list),
+    )
+    return (
+        payload,
+        envelope.model_copy(update={"allowed_agent_ids": ordered_tools}),
+        _prepare_expert_attachments(
+            payload, dependencies, ordered_tools, resolved_input
+        ),
+    )
 
 
 def _ordered_expert_tools(
@@ -182,29 +238,78 @@ def _ordered_expert_tools(
     return ordered_tools
 
 
+def _prepare_expert_attachments(
+    payload: ExpertQueryRequest,
+    dependencies: AgentRouteDependencies,
+    ordered_tools: list[str],
+    resolved_input: Any,
+) -> dict[str, PreparedExpertAttachments]:
+    """Prepare trusted attachment maps in the eligible-tool order."""
+    prepared_by_tool: dict[str, PreparedExpertAttachments] = {}
+    for tool_name in ordered_tools:
+        slug = slug_for_tool(tool_name, dependencies)
+        arguments, context = prepare_selected_expert_arguments(
+            agent=slug,
+            selected_arguments={},
+            payload=payload,
+            resolved_input=resolved_input,
+            db_path=dependencies.tasks_db_path(),
+        )
+        prepared_by_tool[tool_name] = PreparedExpertAttachments(
+            arguments={
+                key: arguments[key]
+                for key in ("obs_file_list", "data_list")
+                if key in arguments
+            },
+            evidence=context.evidence,
+        )
+    return prepared_by_tool
+
+
+def _expert_context_arguments(
+    agent: str,
+    arguments: Mapping[str, Any],
+    payload: ExpertQueryRequest,
+) -> dict[str, Any]:
+    """Merge canonical selector fields without touching attachment state."""
+    prepared = dict(arguments)
+    if agent == "analyst":
+        prepared["goal_description"] = payload.user_query
+        prepared.pop("user_query", None)
+    elif agent in {
+        "chat",
+        "knowledge",
+        "data",
+        "review",
+        "brief_gene",
+        "research",
+    }:
+        prepared["user_query"] = payload.user_query
+        prepared.pop("goal_description", None)
+    prepared["locale"] = current_effective_locale()
+    return prepared
+
+
 async def _delegate_context_expert_async(
     request: _ExpertContextDelegateRequest,
 ) -> AsyncAgentAcceptance:
     """Prepare and accept one remote Expert agent through context V1."""
     slug = slug_for_tool(request.selected_agent_id, request.dependencies)
-    prepared_arguments, attachment_context = prepare_selected_expert_arguments(
-        agent=slug,
-        selected_arguments=request.arguments,
-        payload=request.payload,
-        resolved_input=request.resolved_input,
-        db_path=request.dependencies.tasks_db_path(),
-    )
+    prepared_arguments = {
+        **_expert_context_arguments(slug, request.arguments, request.payload),
+        **request.attachments.arguments,
+    }
     body, status_code = await request.dependencies.native.invoke_agent_run(
         agent=slug,
         arguments=prepared_arguments,
-        dialogue_id=request.payload.dialogue_id,
-        request_json=request.request_json,
-        debug=request.debug,
-        attachment_evidence=attachment_context.evidence,
+        dialogue_id=request.context_request.dialogue_id,
+        request_json=request.context_request.request_json,
+        debug=request.context_request.debug,
+        attachment_evidence=request.attachments.evidence,
     )
-    if attachment_context.evidence is not None:
+    if request.attachments.evidence is not None:
         body = redact_managed_attachment_values(
-            body, attachment_context.evidence
+            body, request.attachments.evidence
         )
     return AsyncAgentAcceptance(body, status_code)
 
@@ -214,40 +319,31 @@ async def _invoke_context_expert_agent(
 ) -> AgentOutcome:
     """Invoke one selected Expert agent through the shared context seam."""
     slug = slug_for_tool(request.selected_agent_id, request.dependencies)
-    resolved = request.context_request.resolved_attachments
-    if resolved is None:
-        resolved = resolve_attachment_input(
-            (),
-            attachment_owner=(
-                request.dependencies.chat.projection.current_user()
-                or "anonymous"
-            ),
-            resolver=request.dependencies.upload.asset_resolver,
-        )
-    prepared_arguments, attachment_context = prepare_selected_expert_arguments(
-        agent=slug,
-        selected_arguments=request.dispatch.arguments,
-        payload=request.payload,
-        resolved_input=resolved,
-        db_path=request.dependencies.tasks_db_path(),
-    )
     outcome = await request.helpers.invoke_context_agent(
         selected_agent_id=request.selected_agent_id,
-        dispatch=replace(request.dispatch, arguments=prepared_arguments),
+        dispatch=replace(
+            request.dispatch,
+            arguments={
+                **_expert_context_arguments(
+                    slug, request.dispatch.arguments, request.payload
+                ),
+                **request.attachments.arguments,
+            },
+        ),
         request=ContextAgentRequest(
             dialogue_id=request.context_request.dialogue_id,
             request_json=request.context_request.request_json,
             debug=request.context_request.debug,
             obs_file_list=None,
-            resolved_attachments=None,
-            attachment_evidence=attachment_context.evidence,
+            attachment_arguments=request.attachments.arguments,
+            attachment_evidence=request.attachments.evidence,
         ),
         dependencies=request.dependencies,
     )
-    if attachment_context.evidence is not None:
+    if request.attachments.evidence is not None:
         return AgentOutcome(
             result=redact_managed_attachment_values(
-                outcome.result, attachment_context.evidence
+                outcome.result, request.attachments.evidence
             ),
             assistant_summary=outcome.assistant_summary,
             context_delta=outcome.context_delta,

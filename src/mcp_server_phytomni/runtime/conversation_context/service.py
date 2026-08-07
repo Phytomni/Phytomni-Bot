@@ -481,6 +481,48 @@ class ConversationContextService:
             )
         return True
 
+    def _project_existing_turn(
+        self,
+        turn: StoredTurn,
+        envelope: ConversationEnvelopeV1,
+        *,
+        inspect_only: bool,
+    ) -> PreparedTurn:
+        """Return the durable replay state without creating a turn."""
+        if (
+            turn.operation != envelope.operation
+            or turn.base_context_version
+            != envelope.base_business_context_version
+        ):
+            raise ValueError("duplicate turn proposal does not match")
+        if turn.state == "staged":
+            if turn.ledger_version != envelope.ledger_version:
+                raise ValueError("duplicate turn proposal does not match")
+            return PreparedTurn(
+                PrepareStatus.RETURN_STAGED,
+                stored_turn=turn,
+                result=turn.result,
+                stage=self._stage_from_turn(turn),
+            )
+        if turn.state == "committed":
+            if not inspect_only and not self._matches_duplicate(
+                turn, envelope
+            ):
+                raise ValueError("duplicate turn proposal does not match")
+            return PreparedTurn(
+                PrepareStatus.RETURN_COMMITTED,
+                stored_turn=turn,
+                result=turn.result,
+                stage=self._stage_from_turn(turn),
+            )
+        if turn.state == "failed" and not inspect_only:
+            _context, _rebuilt, failure = self._context_for(
+                envelope, self.store.load_context(self._key(envelope))
+            )
+            if failure is not None:
+                return PreparedTurn(failure, stored_turn=turn)
+        return PreparedTurn(PrepareStatus.IN_PROGRESS, stored_turn=turn)
+
     async def _prepare_locked(
         self, envelope: ConversationEnvelopeV1
     ) -> PreparedTurn:
@@ -494,29 +536,9 @@ class ConversationContextService:
         )
         turn = begun.turn
         if not begun.created:
-            if not self._matches_duplicate(turn, envelope):
-                raise ValueError("duplicate turn proposal does not match")
-            if turn.state == "staged":
-                return PreparedTurn(
-                    PrepareStatus.RETURN_STAGED,
-                    stored_turn=turn,
-                    result=turn.result,
-                    stage=self._stage_from_turn(turn),
-                )
-            if turn.state == "committed":
-                return PreparedTurn(
-                    PrepareStatus.RETURN_COMMITTED,
-                    stored_turn=turn,
-                    result=turn.result,
-                    stage=self._stage_from_turn(turn),
-                )
-            if turn.state == "failed":
-                _context, _rebuilt, failure = self._context_for(
-                    envelope, self.store.load_context(key)
-                )
-                if failure is not None:
-                    return PreparedTurn(failure, stored_turn=turn)
-            return PreparedTurn(PrepareStatus.IN_PROGRESS, stored_turn=turn)
+            return self._project_existing_turn(
+                turn, envelope, inspect_only=False
+            )
         stored = self.store.load_context(key)
         context, _rebuilt, failure = self._context_for(envelope, stored)
         if failure is not None:
@@ -535,6 +557,21 @@ class ConversationContextService:
             raise TypeError("envelope must be ConversationEnvelopeV1")
         async with self._lock(self._key(envelope)):
             return await self._prepare_locked(envelope)
+
+    async def inspect_replay(
+        self, envelope: ConversationEnvelopeV1
+    ) -> PreparedTurn | None:
+        """Return a matching existing turn without beginning lifecycle work."""
+        if not isinstance(envelope, ConversationEnvelopeV1):
+            raise TypeError("envelope must be ConversationEnvelopeV1")
+        key = self._key(envelope)
+        async with self._lock(key):
+            turn = self.store.load_turn(key, envelope.turn_id)
+            if turn is None:
+                return None
+            return self._project_existing_turn(
+                turn, envelope, inspect_only=True
+            )
 
     @staticmethod
     def _stage_from_turn(turn: StoredTurn) -> ContextStageMetadata | None:

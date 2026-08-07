@@ -16,7 +16,6 @@ from ...runtime.conversation_context.adapters import (
     ConversationContextExecutor,
 )
 from ..schemas import AgentRunRequest
-from .context_types import ContextAgentRequest
 from .uploads import AgentUploadDependencies
 
 type AgentRun = Callable[..., Awaitable[tuple[dict[str, Any], int]]]
@@ -116,23 +115,13 @@ class AgentRouteDependencies:
 
 
 @dataclass(frozen=True, slots=True)
-class ContextNativePrepareRequest:
-    """Inputs for preparing one context native attachment invocation."""
-
-    agent: str
-    arguments: Mapping[str, Any]
-    request: ContextAgentRequest
-    dependencies: AgentRouteDependencies
-
-
-@dataclass(frozen=True, slots=True)
 class ContextNativeExecutionRequest:
     """Inputs for executing one URL-pinned native context route."""
 
     agent: str
     payload: AgentRunRequest
     arguments: dict[str, Any]
-    resolved_input: Any
+    attachment_owner: str
     request_json: str
     dependencies: AgentRouteDependencies
 
@@ -148,5 +137,4 @@ __all__ = [
     "AgentNativeDependencies",
     "AgentRouteDependencies",
     "ContextNativeExecutionRequest",
-    "ContextNativePrepareRequest",
 ]
