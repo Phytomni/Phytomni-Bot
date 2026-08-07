@@ -17,6 +17,7 @@ from typing import Any
 
 import httpx
 import pytest
+from tests.support.citation_database import install_inline_citation_lookup
 
 from mcp_server_phytomni import server
 
@@ -75,6 +76,7 @@ async def test_knowledge_preserves_doc_list(
 ) -> None:
     """Verify knowledge model surfaces cited docs via the formatter."""
     assert os.environ["CITATION_DB_PATH"] == str(citation_db_path)
+    install_inline_citation_lookup(monkeypatch)
     _stub(
         monkeypatch,
         server.PhytomniAgents.KNOWLEDGE_AGENT.value,

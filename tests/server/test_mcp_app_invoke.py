@@ -22,6 +22,7 @@ import pytest
 from mcp.shared.exceptions import McpError
 from mcp.types import INVALID_PARAMS
 from pydantic import BaseModel
+from tests.support.citation_database import install_inline_citation_lookup
 from tests.support.formatting_fakes import (
     design_task_payload,
     network_task_payload,
@@ -334,6 +335,7 @@ async def test_invoke_cited_agent_normalizes_references(
 ) -> None:
     """Cited agents rewrite markers and dedupe Nature references."""
     assert os.environ["CITATION_DB_PATH"] == str(citation_db_path)
+    install_inline_citation_lookup(monkeypatch)
     raw = {
         "choices": [
             {
@@ -359,7 +361,7 @@ async def test_invoke_cited_agent_normalizes_references(
         {
             "file_id": "doc-a",
             "title": "Paper A",
-            "formatted_citation": "Paper A",
+            "formatted_citation": "Paper A.",
             "doi_missing": True,
         },
     )

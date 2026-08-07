@@ -30,6 +30,7 @@ from tests.server.test_query_route import (
     server,
 )
 from tests.support.chat_fakes import recent_knowledge_context
+from tests.support.citation_database import install_inline_citation_lookup
 from tests.support.handler_fakes import patch_handler_runtime
 
 from mcp_server_phytomni.agents.brief_gene import agent as brief_gene_agent
@@ -51,6 +52,7 @@ async def test_context_expert_knowledge_turn_separates_retrieval_context(
 ) -> None:
     """Knowledge resolves retrieval privately and stages bounded context."""
     assert os.environ["CITATION_DB_PATH"] == str(citation_db_path)
+    install_inline_citation_lookup(monkeypatch)
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
@@ -258,6 +260,7 @@ async def test_context_expert_brief_gene_turn_stages_bounded_context_delta(
 ) -> None:
     """The native Brief Gene route returns its bounded context projection."""
     assert os.environ["CITATION_DB_PATH"] == str(citation_db_path)
+    install_inline_citation_lookup(monkeypatch)
     monkeypatch.setenv("PHYTOMNI_CONVERSATION_CONTEXT_V1_ENABLED", "1")
     db_path = tmp_path / "context.sqlite"
     monkeypatch.setenv("PHYTOMNI_TASKS_DB", str(db_path))
