@@ -202,7 +202,7 @@ Then run both of these cited checks against the same disposable deployment:
 
 1. Send one synchronous `phyto-knowledge` request and verify the normalized
    answer, `formatted.references`, and `formatted_citation`.
-2. Send one `phyto-knowledge` request with `stream: true` and verify the
+1. Send one `phyto-knowledge` request with `stream: true` and verify the
    terminal `TextMessageContent` plus `phyto.references` contain the same
    answer/reference contract as the synchronous response.
 
