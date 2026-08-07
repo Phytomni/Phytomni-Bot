@@ -264,9 +264,19 @@ async def test_direct_dataset_assets_project_to_data_list_before_202(
     query_key: str,
 ) -> None:
     """Managed datasets retain empty native values before 202 acceptance."""
-    _resolver, dataset_id, document_id = _install_dataset_assets(
+    resolver, dataset_id, document_id = _install_dataset_assets(
         asset_http_context
     )
+    references = [
+        asset.reference
+        for asset in resolver.resolve_bundle(
+            [
+                {"asset_id": document_id},
+                {"asset_id": dataset_id},
+            ],
+            "u1",
+        ).assets
+    ]
     captured: dict[str, Any] = {}
     case = _RemoteCase(
         slug=slug,
@@ -289,7 +299,7 @@ async def test_direct_dataset_assets_project_to_data_list_before_202(
         asset_http_context,
         slug=slug,
         arguments=case.arguments,
-        attachments=[{"asset_id": dataset_id}, {"asset_id": document_id}],
+        attachments=[{"asset_id": document_id}, {"asset_id": dataset_id}],
         dataset_description="stale dataset_description should be dropped",
         debug=True,
     )
@@ -302,10 +312,9 @@ async def test_direct_dataset_assets_project_to_data_list_before_202(
         case=case,
     )
     dumped = arguments.model_dump()
-    dataset_reference = next(iter(dumped["data_list"]))
     assert dumped[query_key] == f"{slug} query"
-    assert dumped["data_list"] == {dataset_reference: ""}
-    assert len(dumped["obs_file_list"]) == 1
+    assert dumped["obs_file_list"] == [references[0]]
+    assert dumped["data_list"] == {references[1]: ""}
     assert "attachments" not in dumped
     assert "owner_subject" not in dumped
     assert "dataset_description" not in dumped
@@ -326,6 +335,193 @@ async def test_direct_dataset_assets_project_to_data_list_before_202(
         response.text
         + json.dumps(response.json(), sort_keys=True)
         + json.dumps(record.result or {}, sort_keys=True)
+    )
+
+
+async def test_direct_design_projects_mixed_assets_to_source_ordered_obs(
+    asset_http_context: AssetHttpTestContext,
+) -> None:
+    """Design accepts every managed class through obs_file_list in order."""
+    resolver, dataset_id, document_id = _install_dataset_assets(
+        asset_http_context
+    )
+    references = [
+        asset.reference
+        for asset in resolver.resolve_bundle(
+            [
+                {"asset_id": dataset_id},
+                {"asset_id": document_id},
+            ],
+            "u1",
+        ).assets
+    ]
+    captured: dict[str, Any] = {}
+    case = _RemoteCase(
+        slug="design",
+        tool_name=server.PhytomniAgents.DIGITAL_DESIGN_AGENT.value,
+        stub_return={
+            "design_task_result": [
+                {"task_id": "T-D1", "output_dir": "/obs/d1"},
+                {"task_id": "T-D2", "output_dir": "/obs/d2"},
+            ]
+        },
+        arguments={
+            "species_code": "ath",
+            "gene_id": "AT1G01010",
+            "obs_file_list": [],
+            "resolve_gene_id": False,
+        },
+        expected_task_ids={"T-D1", "T-D2"},
+    )
+    install_attachment_capture(asset_http_context.monkeypatch, case, captured)
+
+    response = await _post_asset_run(
+        asset_http_context,
+        slug="design",
+        arguments=case.arguments,
+        attachments=[{"asset_id": dataset_id}, {"asset_id": document_id}],
+    )
+
+    assert response.status_code == 202, response.text
+    arguments = await wait_for_attachment_submission(
+        captured=captured,
+        db_path=asset_http_context.db_path,
+        run_id=response.json()["run_id"],
+        case=case,
+    )
+    assert arguments.obs_file_list == references
+
+
+async def test_direct_data_rejects_managed_assets_before_invocation(
+    asset_http_context: AssetHttpTestContext,
+) -> None:
+    """Data rejects a resolved bundle before a run or handler exists."""
+    _resolver, dataset_id, document_id = _install_dataset_assets(
+        asset_http_context
+    )
+    called = False
+
+    async def forbidden(_args: Any) -> dict[str, Any]:
+        nonlocal called
+        called = True
+        raise AssertionError("DataAgent must not be invoked")
+
+    install_tool_handler(
+        asset_http_context.monkeypatch,
+        server.PhytomniAgents.DATA_AGENT.value,
+        forbidden,
+    )
+    response = await _post_asset_run(
+        asset_http_context,
+        slug="data",
+        arguments={"user_query": "count genes"},
+        attachments=[{"asset_id": dataset_id}, {"asset_id": document_id}],
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "attachment_not_supported"
+    assert not called
+    assert not RunRegistry(asset_http_context.db_path).list_runs(owner="u1")
+
+
+@pytest.mark.parametrize("owner", ("u1", "another-owner"))
+async def test_direct_data_resolves_assets_before_capability_rejection(
+    asset_http_context: AssetHttpTestContext,
+    owner: str,
+) -> None:
+    """Data returns resolver failures before capability rejection."""
+    _resolver, _dataset_id, document_id = _install_dataset_assets(
+        asset_http_context,
+        owner="another-owner" if owner == "another-owner" else "u1",
+    )
+    asset_id = (
+        document_id
+        if owner == "another-owner"
+        else document_id[:-1] + ("0" if document_id[-1] != "0" else "1")
+    )
+    response = await _post_asset_run(
+        asset_http_context,
+        slug="data",
+        arguments={"user_query": "count genes"},
+        attachments=[{"asset_id": asset_id}],
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "upload_asset_not_found"
+    assert not RunRegistry(asset_http_context.db_path).list_runs(owner="u1")
+
+
+async def test_direct_legacy_documents_precede_managed_and_duplicates_fail(
+    asset_http_context: AssetHttpTestContext,
+) -> None:
+    """Legacy documents remain first while managed duplicates still fail."""
+    resolver, _dataset_id, document_id = _install_dataset_assets(
+        asset_http_context
+    )
+    legacy = build_resumable_asset(
+        asset_http_context.tmp_path,
+        db_path=asset_http_context.db_path,
+        spec=ResumableAssetSpec(
+            owner="u1",
+            filename="legacy.pdf",
+            content=b"%PDF-1.4 legacy\n",
+            purpose="document",
+        ),
+    )
+    legacy_reference = (
+        legacy.resolver.resolve_bundle([{"asset_id": legacy.asset_id}], "u1")
+        .documents[0]
+        .reference
+    )
+    managed_reference = (
+        resolver.resolve_bundle([{"asset_id": document_id}], "u1")
+        .documents[0]
+        .reference
+    )
+    captured: dict[str, Any] = {}
+    case = _RemoteCase(
+        slug="analyst",
+        tool_name=server.PhytomniAgents.ANALYST_AGENT.value,
+        stub_return={"task_id": "T-order", "output_dir": "/obs/out"},
+        arguments={
+            "goal_description": "preserve attachment order",
+            "data_list": {},
+            "obs_file_list": [legacy_reference],
+        },
+        expected_task_ids={"T-order"},
+    )
+    install_attachment_capture(asset_http_context.monkeypatch, case, captured)
+
+    success = await _post_asset_run(
+        asset_http_context,
+        slug="analyst",
+        arguments=case.arguments,
+        attachments=[{"asset_id": document_id}],
+    )
+
+    assert success.status_code == 202, success.text
+    arguments = await wait_for_attachment_submission(
+        captured=captured,
+        db_path=asset_http_context.db_path,
+        run_id=success.json()["run_id"],
+        case=case,
+    )
+    assert arguments.obs_file_list == [legacy_reference, managed_reference]
+    runs_before = RunRegistry(asset_http_context.db_path).list_runs(owner="u1")
+    duplicate = await _post_asset_run(
+        asset_http_context,
+        slug="analyst",
+        arguments={
+            **case.arguments,
+            "obs_file_list": [managed_reference],
+        },
+        attachments=[{"asset_id": document_id}],
+    )
+
+    assert duplicate.status_code == 422
+    assert duplicate.json()["error"]["code"] == "attachment_duplicate"
+    assert RunRegistry(asset_http_context.db_path).list_runs(owner="u1") == (
+        runs_before
     )
 
 

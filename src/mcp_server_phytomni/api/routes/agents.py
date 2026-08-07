@@ -51,14 +51,12 @@ from .agent_dependencies import (
     ContextNativePrepareRequest,
 )
 from .attachment_inputs import (
-    attachment_not_supported_error,
     expert_attachment_channels,
     filter_expert_attachment_candidates,
-    prepare_chat_document_attachments,
+    prepare_chat_attachments,
     prepare_native_attachment_arguments,
     resolve_attachment_input,
     resolve_attachment_owner,
-    validate_chat_attachment_capability,
 )
 from .context_helpers import (
     context_response as _context_response,
@@ -147,11 +145,6 @@ def _register_chat_route(
                 status_code=404,
                 detail=f"model not found: {payload.model}",
             )
-        validate_chat_attachment_capability(
-            payload,
-            tool_name,
-            dependencies.chat.input.tool_accepts_obs,
-        )
         resolved_input = resolve_attachment_input(
             payload.attachments,
             attachment_owner=resolve_attachment_owner(
@@ -159,8 +152,6 @@ def _register_chat_route(
             ),
             resolver=dependencies.upload.asset_resolver,
         )
-        if resolved_input.bundle.datasets:
-            raise attachment_not_supported_error()
         if payload.conversation is not None:
             if not dependencies.context.enabled():
                 raise HTTPException(
@@ -244,7 +235,7 @@ async def _prepare_ordinary_chat_request(
     }
     if accepts_obs:
         arguments["obs_file_list"] = payload.obs_file_list or []
-    arguments, attachment_context = prepare_chat_document_attachments(
+    arguments, attachment_context = prepare_chat_attachments(
         tool_name=tool_name,
         arguments=arguments,
         resolved_input=resolved_input,
@@ -357,7 +348,7 @@ async def _execute_context_chat(
             raise ValueError("instant context selected a non-chat agent")
         arguments = dict(dispatch.arguments)
         arguments["obs_file_list"] = list(payload.obs_file_list or [])
-        arguments, attachment_context = prepare_chat_document_attachments(
+        arguments, attachment_context = prepare_chat_attachments(
             tool_name="ChatAgent",
             arguments=arguments,
             resolved_input=resolved_input,

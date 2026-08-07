@@ -45,12 +45,11 @@ __all__ = [
     "normalize_chat_payload_attachments",
     "normalize_expert_payload_attachments",
     "normalize_payload_attachments",
-    "prepare_chat_document_attachments",
+    "prepare_chat_attachments",
     "prepare_native_attachment_arguments",
     "prepare_selected_expert_arguments",
     "resolve_attachment_input",
     "resolve_attachment_owner",
-    "validate_chat_attachment_capability",
 ]
 
 
@@ -236,19 +235,6 @@ def normalize_payload_attachments(
     )
 
 
-def validate_chat_attachment_capability(
-    payload: ChatCompletionRequest,
-    tool_name: str,
-    tool_accepts_obs: Callable[[str], bool],
-) -> None:
-    """Reject asset attachments before resolving unsupported tools."""
-    if payload.attachments and not tool_accepts_obs(tool_name):
-        raise HTTPException(
-            status_code=400,
-            detail=f"model {payload.model} does not accept attachments",
-        )
-
-
 def expert_attachment_channels(
     resolved_input: ResolvedAttachmentInput,
     obs_file_list: Sequence[str],
@@ -319,24 +305,15 @@ def prepare_selected_expert_arguments(
     )
 
 
-def prepare_chat_document_attachments(
+def prepare_chat_attachments(
     *,
     tool_name: str,
     arguments: Mapping[str, Any],
     resolved_input: ResolvedAttachmentInput,
     db_path: str,
 ) -> tuple[dict[str, Any], PreparedAttachmentContext]:
-    """Prepare every managed class through Chat's document projection."""
+    """Project managed Chat-route assets through the selected capability."""
     slug = get_agent_slug_for_tool(tool_name) or "chat"
-    has_documents = bool(
-        resolved_input.bundle.assets
-        or _document_argument_values(arguments.get("obs_file_list"))
-    )
-    if has_documents and not agent_supports_attachment_channels(
-        slug,
-        frozenset({"documents"}),
-    ):
-        raise attachment_not_supported_error()
     return prepare_native_attachment_arguments(
         agent=slug,
         arguments=arguments,

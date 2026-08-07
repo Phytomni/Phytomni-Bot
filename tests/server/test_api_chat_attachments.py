@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -17,6 +16,7 @@ from tests.support.chat_fakes import install_chat_handler
 from tests.support.handler_fakes import review_success_result
 from tests.support.http_fakes import (
     build_instant_chat_context_envelope,
+    install_tool_handler,
     open_asgi_client,
 )
 from tests.support.resumable_asset_fakes import (
@@ -26,38 +26,14 @@ from tests.support.resumable_asset_fakes import (
     enable_conversation_context_v1,
 )
 
-import mcp_server_phytomni.agents.chat.service as chat_service
 from mcp_server_phytomni.api import app as api_app_module
 from mcp_server_phytomni.api.a2ui_runtime import ReviewExecution
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.upload_runtime import UploadRuntime
-from mcp_server_phytomni.runtime.conversation_context.store import (
-    ConversationContextStore,
-)
 from mcp_server_phytomni.runtime.resumable_uploads import UploadAssetPurpose
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
-
-
-def _context_turn_counts(db_path: Path) -> tuple[int, int]:
-    """Return conversation context and turn row counts for one task DB."""
-    with sqlite3.connect(str(db_path)) as connection:
-        tables = {
-            row[0]
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
-        if "conversation_contexts" not in tables:
-            return 0, 0
-        contexts = connection.execute(
-            "SELECT COUNT(*) FROM conversation_contexts"
-        ).fetchone()[0]
-        turns = connection.execute(
-            "SELECT COUNT(*) FROM conversation_turns"
-        ).fetchone()[0]
-    return int(contexts), int(turns)
 
 
 def _install_chat_asset(
@@ -117,7 +93,11 @@ async def test_chat_document_assets_resolve_and_invoke(
         filename="chat.pdf",
         content=b"%PDF-1.4\nchat\n",
     )
-    reference = _document_reference(harness)
+    reference = (
+        harness.resolver.resolve_bundle([{"asset_id": harness.asset_id}], "u1")
+        .assets[0]
+        .reference
+    )
     captured: dict[str, Any] = {}
     install_chat_handler(
         asset_http_context.monkeypatch,
@@ -143,42 +123,159 @@ async def test_chat_document_assets_resolve_and_invoke(
     assert "<redacted-attachment>" in response.text
 
 
-async def test_chat_dataset_asset_returns_attachment_not_supported(
+@pytest.mark.parametrize(
+    ("model", "tool_name"),
+    (
+        ("phyto-chat", "ChatAgent"),
+        ("phyto-knowledge", "KnowledgeAgent"),
+    ),
+)
+async def test_chat_compatible_models_project_mixed_assets(
     asset_http_context: AssetHttpTestContext,
     chat_completion: Callable[..., Any],
+    model: str,
+    tool_name: str,
 ) -> None:
-    """Dataset assets reject even with a stale batch-description field."""
-    harness = _install_chat_asset(
+    """Chat-compatible models receive every managed class in source order."""
+    dataset = _install_chat_asset(
         asset_http_context,
         purpose="dataset",
         filename="chat.csv",
         content=b"a,b\n1,2\n",
     )
-    called = {"chat": 0}
+    document = _install_chat_asset(
+        asset_http_context,
+        purpose="document",
+        filename="chat.pdf",
+        content=b"%PDF-1.4\nchat\n",
+    )
+    references = [
+        asset.reference
+        for asset in dataset.resolver.resolve_bundle(
+            [
+                {"asset_id": dataset.asset_id},
+                {"asset_id": document.asset_id},
+            ],
+            "u1",
+        ).assets
+    ]
+    captured: dict[str, Any] = {}
 
-    async def forbid_chat(**_kwargs: Any) -> dict[str, Any]:
-        called["chat"] += 1
-        raise AssertionError("phyto_chat must not run")
+    async def capture(args: Any) -> dict[str, Any]:
+        captured["obs_file_list"] = args.obs_file_list
+        return {"answer": "ok", "doc_list": []}
+
+    install_tool_handler(asset_http_context.monkeypatch, tool_name, capture)
+    app = api_app_module.create_app()
+    async with open_asgi_client(
+        asset_http_context.monkeypatch,
+        app,
+        base_url="http://api.chat-compatible.test",
+    ) as client:
+        response = await chat_completion(
+            client,
+            asset_http_context.api_key,
+            model=model,
+            content="analyze this csv",
+            attachments=[
+                {"asset_id": dataset.asset_id},
+                {"asset_id": document.asset_id},
+            ],
+        )
+    assert response.status_code == 200, response.text
+    assert captured["obs_file_list"] == references
+
+
+async def test_review_projects_mixed_managed_assets_as_documents(
+    asset_http_context: AssetHttpTestContext,
+    chat_completion: Callable[..., Any],
+) -> None:
+    """Review receives dataset and document assets through obs_file_list."""
+    dataset = _install_chat_asset(
+        asset_http_context,
+        purpose="dataset",
+        filename="review.csv",
+        content=b"a,b\n1,2\n",
+    )
+    document = _install_chat_asset(
+        asset_http_context,
+        purpose="document",
+        filename="review.pdf",
+        content=b"%PDF-1.4\nreview\n",
+    )
+    references = [
+        asset.reference
+        for asset in dataset.resolver.resolve_bundle(
+            [
+                {"asset_id": dataset.asset_id},
+                {"asset_id": document.asset_id},
+            ],
+            "u1",
+        ).assets
+    ]
+    captured: dict[str, Any] = {}
+
+    async def fake_run_review(**kwargs: Any) -> ReviewExecution:
+        captured["arguments"] = dict(kwargs["arguments"])
+        return ReviewExecution(
+            run_id="review-mixed-assets",
+            status="succeeded",
+            result=review_success_result(),
+        )
 
     asset_http_context.monkeypatch.setattr(
-        chat_service, "phyto_chat", forbid_chat
+        api_app_module, "_run_review_with_interrupt", fake_run_review
     )
     app = api_app_module.create_app()
     async with open_asgi_client(
         asset_http_context.monkeypatch,
         app,
-        base_url="http://api.chat-dataset.test",
+        base_url="http://api.review-mixed-assets.test",
     ) as client:
         response = await chat_completion(
             client,
             asset_http_context.api_key,
-            content="analyze this csv",
+            model="phyto-review",
+            content="review mixed assets",
+            attachments=[
+                {"asset_id": dataset.asset_id},
+                {"asset_id": document.asset_id},
+            ],
+        )
+    assert response.status_code == 200, response.text
+    assert captured["arguments"]["obs_file_list"] == references
+
+
+@pytest.mark.parametrize("model", ("phyto-brief-gene",))
+async def test_zero_channel_chat_models_fail_before_stream_or_sync_run(
+    asset_http_context: AssetHttpTestContext,
+    chat_completion: Callable[..., Any],
+    model: str,
+) -> None:
+    """Zero-channel models reject assets before a stream or run exists."""
+    harness = _install_chat_asset(
+        asset_http_context,
+        purpose="dataset",
+        filename="unsupported.csv",
+        content=b"a,b\n1,2\n",
+    )
+    app = api_app_module.create_app()
+    async with open_asgi_client(
+        asset_http_context.monkeypatch,
+        app,
+        base_url="http://api.chat-zero-channel.test",
+    ) as client:
+        response = await chat_completion(
+            client,
+            asset_http_context.api_key,
+            model=model,
+            content="do not run",
+            stream=True,
             attachments=[{"asset_id": harness.asset_id}],
-            dataset_description="should not bypass purpose",
         )
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "attachment_not_supported"
-    assert called["chat"] == 0
+    assert response.headers["content-type"].startswith("application/json")
     assert not RunRegistry(asset_http_context.db_path).list_runs(owner="u1")
 
 
@@ -211,12 +308,12 @@ async def test_chat_owner_subject_requires_delegate_scope(
     assert "files:delegate" not in response.text
 
 
-async def test_chat_context_dataset_asset_returns_attachment_not_supported(
+async def test_chat_context_dataset_asset_projects_as_document_context(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     chat_completion: Callable[..., Any],
 ) -> None:
-    """Context Chat rejects datasets before mutation or stale-field use."""
+    """Context Chat projects dataset assets through its document channel."""
     context, key = enable_conversation_context_v1(monkeypatch, tmp_path)
     harness = _install_chat_asset(
         context,
@@ -224,24 +321,16 @@ async def test_chat_context_dataset_asset_returns_attachment_not_supported(
         filename="ctx.csv",
         content=b"a,b\n1,2\n",
     )
-    called = {"chat": 0, "begin_turn": 0}
-    original_begin = ConversationContextStore.begin_turn
-
-    async def forbid_chat(**_kwargs: Any) -> dict[str, Any]:
-        called["chat"] += 1
-        raise AssertionError("phyto_chat must not run")
-
-    def forbid_begin_turn(
-        self: ConversationContextStore,
-        *args: Any,
-        **kwargs: Any,
-    ) -> Any:
-        called["begin_turn"] += 1
-        return original_begin(self, *args, **kwargs)
-
-    monkeypatch.setattr(chat_service, "phyto_chat", forbid_chat)
-    monkeypatch.setattr(
-        ConversationContextStore, "begin_turn", forbid_begin_turn
+    reference = (
+        harness.resolver.resolve_bundle([{"asset_id": harness.asset_id}], "u1")
+        .assets[0]
+        .reference
+    )
+    captured: dict[str, Any] = {}
+    install_chat_handler(
+        monkeypatch,
+        captured,
+        content=f"context saw {reference}",
     )
     app = api_app_module.create_app()
     async with open_asgi_client(
@@ -253,15 +342,9 @@ async def test_chat_context_dataset_asset_returns_attachment_not_supported(
             content="ignored",
             conversation=build_instant_chat_context_envelope("12"),
             attachments=[{"asset_id": harness.asset_id}],
-            dataset_description="should not bypass purpose",
         )
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "attachment_not_supported"
-    assert called["chat"] == 0
-    assert called["begin_turn"] == 0
-    tasks_db = tmp_path / "tasks.sqlite"
-    assert _context_turn_counts(tasks_db) == (0, 0)
-    assert not RunRegistry(str(tasks_db)).list_runs(owner="u1")
+    assert response.status_code == 200, response.text
+    assert captured["obs_file_list"] == [reference]
 
 
 @pytest.mark.parametrize(
