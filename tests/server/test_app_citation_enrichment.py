@@ -3,11 +3,14 @@
 # Author: xieshang (xieshang0608@gmail.com)
 """The cited-tool enrichment hook in invoke_tool_enveloped."""
 
+import sqlite3
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mcp_server_phytomni.agents.shared import citation_enrichment
+from mcp_server_phytomni.agents.shared import gauss as shared_gauss
+from mcp_server_phytomni.agents.shared import sql as shared_sql
 from mcp_server_phytomni.mcp import app as app_mod
 from mcp_server_phytomni.mcp.app import invoke_tool_enveloped
 
@@ -18,7 +21,13 @@ def _cited_payload():
             {
                 "message": {
                     "content": "Body [1].",
-                    "doc_list": [{"file_id": "f1", "title": "T"}],
+                    "doc_list": [
+                        {
+                            "file_id": "f1",
+                            "title": "T",
+                            "content": "retrieval content sentinel",
+                        }
+                    ],
                 }
             }
         ]
@@ -67,20 +76,31 @@ async def test_non_cited_tool_skips_enrichment():
 
 
 @pytest.mark.asyncio
-async def test_end_to_end_enriched_references_via_bi_query():
-    """bi_query rows reach formatted.references through the real seam."""
-    bi_ok = {
-        "message": "ok",
-        "data": [{"file_id": "f1", "au": "Smith J", "so": "Nature"}],
-    }
+async def test_end_to_end_enriched_references_via_sqlite(
+    citation_db_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SQLite rows reach formatted.references without any BI seam."""
+    with sqlite3.connect(citation_db_path) as connection:
+        connection.execute(
+            "INSERT INTO citation_records (file_id, au, so) VALUES (?, ?, ?)",
+            ("f1", "Smith J", "Nature"),
+        )
+
+    async def forbidden_database_call(*_args, **_kwargs):
+        raise AssertionError(
+            "citation enrichment called a non-SQLite database"
+        )
+
+    monkeypatch.setattr(shared_sql, "bi_query", forbidden_database_call)
+    monkeypatch.setattr(shared_gauss, "gauss_query", forbidden_database_call)
+    monkeypatch.setattr(
+        shared_sql, "relay_bi_query", forbidden_database_call
+    )
     with (
         patch.object(
             app_mod,
             "invoke_tool_raw",
             AsyncMock(return_value=_cited_payload()),
-        ),
-        patch.object(
-            citation_enrichment, "bi_query", AsyncMock(return_value=bi_ok)
         ),
     ):
         env = await invoke_tool_enveloped("KnowledgeAgent", {})
@@ -88,3 +108,6 @@ async def test_end_to_end_enriched_references_via_bi_query():
     assert ref["file_id"] == "f1"
     assert ref["au"] == "Smith J"
     assert ref["so"] == "Nature"
+    raw_doc = env.raw["choices"][0]["message"]["doc_list"][0]
+    assert raw_doc["title"] == "T"
+    assert raw_doc["content"] == "retrieval content sentinel"
