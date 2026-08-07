@@ -6,10 +6,8 @@
 
 from __future__ import annotations
 
-from typing import cast
-
 from ..runtime.resumable_uploads import AssetRecord
-from .schemas import AssetDescriptor, UploadAssetPurpose
+from .schemas import AssetDescriptor
 
 __all__ = ["build_asset_descriptor"]
 
@@ -21,7 +19,6 @@ def build_asset_descriptor(asset: AssetRecord) -> AssetDescriptor:
         filename=asset.filename,
         content_type=asset.content_type,
         size_bytes=asset.size_bytes,
-        purpose=cast(UploadAssetPurpose, asset.purpose),
         status="completed",
         completed_at=asset.completed_at or asset.updated_at,
     )

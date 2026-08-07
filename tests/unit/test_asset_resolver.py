@@ -134,6 +134,33 @@ def test_resolve_requires_owner_and_completion(tmp_path: Path) -> None:
     assert harness.capability not in str(foreign.value)
 
 
+def test_historical_chat_attachment_reads_as_document_without_row_update(
+    tmp_path: Path,
+) -> None:
+    """Historical chat rows remain stored while resolving as documents."""
+    harness = build_resumable_asset(
+        tmp_path,
+        spec=ResumableAssetSpec(purpose="chat_attachment"),
+    )
+    with sqlite3.connect(harness.service.registry.db_path) as connection:
+        before = connection.execute(
+            "SELECT purpose FROM upload_assets WHERE asset_id = ?",
+            (harness.asset_id,),
+        ).fetchone()[0]
+
+    bundle = harness.resolver.resolve_bundle(
+        [{"asset_id": harness.asset_id}], harness.owner
+    )
+
+    with sqlite3.connect(harness.service.registry.db_path) as connection:
+        after = connection.execute(
+            "SELECT purpose FROM upload_assets WHERE asset_id = ?",
+            (harness.asset_id,),
+        ).fetchone()[0]
+    assert before == after == "chat_attachment"
+    assert bundle.documents[0].purpose == "document"
+
+
 @pytest.mark.parametrize(
     ("filename", "content"),
     [

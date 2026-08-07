@@ -211,7 +211,7 @@ class UploadCreateRequest(BaseModel):
     )
     last_modified_ms: int = Field(default=0, ge=0)
     size_bytes: int = Field(gt=0, le=10 * 1024**3)
-    purpose: UploadAssetPurpose = "chat_attachment"
+    purpose: UploadAssetPurpose
     idempotency_key: str = Field(min_length=1, max_length=256)
 
     @model_validator(mode="after")
@@ -315,7 +315,6 @@ class AssetDescriptor(BaseModel):
     filename: str
     content_type: str
     size_bytes: int
-    purpose: UploadAssetPurpose
     status: Literal["completed"]
     completed_at: datetime
 

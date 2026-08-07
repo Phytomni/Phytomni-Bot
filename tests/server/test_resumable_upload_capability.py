@@ -421,7 +421,7 @@ def _create_request(key: str) -> UploadCreateRequest:
         filename=f"{key}.fa",
         content_type="application/octet-stream",
         size_bytes=3,
-        purpose="chat_attachment",
+        purpose="document",
         idempotency_key=key,
     )
 

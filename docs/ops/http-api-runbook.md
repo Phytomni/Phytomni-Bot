@@ -1122,16 +1122,21 @@ Create an asset with JSON metadata:
   "filename": "report.pdf",
   "content_type_hint": "application/pdf",
   "size_bytes": 524288,
-  "purpose": "chat_attachment",
+  "purpose": "document",
   "idempotency_key": "web-upload-123"
 }
 ```
 
-The `201` result returns `asset_id`, `upload_url`, an opaque capability,
-part sizing/count, concurrency, and expiry timestamps. Upload each part with
-an exact `Content-Length` and `X-Phytomni-Part-SHA256`; the Bot bounds the
-temporary spool to one part. Complete only after all authoritative parts are
-registered. A completed asset is passed to an agent as
+New writes require `purpose` to be `dataset` or `document`. Historical
+`chat_attachment` rows remain read-only compatibility data and resolve as
+documents without a database backfill. The `201` result returns `asset_id`,
+`upload_url`, an opaque capability, part sizing/count, concurrency, and expiry
+timestamps. Upload each part with an exact `Content-Length` and
+`X-Phytomni-Part-SHA256`; the Bot bounds the temporary spool to one part.
+Complete only after all authoritative parts are registered. Completion returns
+only `asset_id`, `filename`, `content_type`, `size_bytes`, `status`, and
+`completed_at`; it does not expose purpose or provider coordinates. A
+completed asset is passed to an agent as
 `"attachments":[{"asset_id":"file_..."}]`; the resolver checks owner and
 completion before creating an internal legacy attachment projection.
 

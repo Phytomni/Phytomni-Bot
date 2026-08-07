@@ -48,9 +48,11 @@ __all__ = [
     "CapabilityRecord",
     "CapabilitySecret",
     "PartRecord",
+    "PersistedUploadAssetPurpose",
+    "READABLE_UPLOAD_ASSET_PURPOSES",
     "ResumableUploadRegistry",
     "ResumableUploadRegistryConfig",
-    "UPLOAD_ASSET_PURPOSES",
+    "WRITABLE_UPLOAD_ASSET_PURPOSES",
     "UploadAssetPurpose",
     "UploadStateError",
 ]
@@ -70,8 +72,12 @@ CAPABILITY_TTL = timedelta(minutes=15)
 PROVISIONAL_TTL = timedelta(minutes=180)
 
 AssetStatus = Literal["uploading", "completed", "aborted", "expired"]
-UploadAssetPurpose = Literal["chat_attachment", "dataset", "document"]
-UPLOAD_ASSET_PURPOSES = frozenset({"chat_attachment", "dataset", "document"})
+UploadAssetPurpose = Literal["dataset", "document"]
+PersistedUploadAssetPurpose = Literal["chat_attachment", "dataset", "document"]
+WRITABLE_UPLOAD_ASSET_PURPOSES = frozenset({"dataset", "document"})
+READABLE_UPLOAD_ASSET_PURPOSES = WRITABLE_UPLOAD_ASSET_PURPOSES | {
+    "chat_attachment"
+}
 ExpiryReason = Literal["normal_deadline", "provisional_deadline"]
 type _ExpiryReporter = Callable[[dict[ExpiryReason, int]], None]
 _LOGGER = logging.getLogger(__name__)
@@ -924,13 +930,11 @@ class ResumableUploadRegistry:
 
 def _validate_spec(spec: AssetCreateSpec, *, max_upload_bytes: int) -> None:
     """Validate registry-level limits for callers outside Pydantic."""
-    if not spec.owner_subject or not spec.filename:
+    if not spec.owner_subject or not spec.filename or not spec.idempotency_key:
         raise UploadStateError("invalid_upload_metadata")
     if not 0 < spec.size_bytes <= max_upload_bytes:
         raise UploadStateError("upload_limit_exceeded")
-    if not spec.idempotency_key:
-        raise UploadStateError("invalid_upload_metadata")
-    if spec.purpose not in UPLOAD_ASSET_PURPOSES:
+    if spec.purpose not in WRITABLE_UPLOAD_ASSET_PURPOSES:
         raise UploadStateError("attachment_purpose_invalid")
 
 
@@ -957,7 +961,6 @@ def _fingerprint(spec: AssetCreateSpec) -> str:
 
 
 def _token_hash(raw_token: str) -> str:
-    """Hash a capability with a one-way digest before persistence."""
     return hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
 
@@ -979,7 +982,6 @@ def _report_expirations(counts: dict[ExpiryReason, int]) -> None:
 
 
 def _safe_owner(owner: str) -> str:
-    """Generate a non-path owner component for internal object keys."""
     return hashlib.sha256(owner.encode("utf-8")).hexdigest()[:32]
 
 
@@ -995,5 +997,4 @@ def _utc(value: datetime) -> datetime:
 
 
 def _iso(value: datetime) -> str:
-    """Serialize one UTC timestamp."""
     return _utc(value).isoformat()

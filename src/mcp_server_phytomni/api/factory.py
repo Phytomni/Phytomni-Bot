@@ -127,10 +127,8 @@ def _is_invalid_upload_purpose_error(error: Mapping[str, Any]) -> bool:
     location = error.get("loc", ())
     return bool(
         isinstance(location, (list, tuple))
-        and location
-        and location[0] == "body"
-        and location[-1] == "purpose"
-        and error.get("type") == "literal_error"
+        and tuple(location) == ("body", "purpose")
+        and error.get("type") in {"missing", "literal_error"}
     )
 
 

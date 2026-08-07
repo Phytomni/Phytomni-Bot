@@ -7,8 +7,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import secrets
+import sqlite3
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
+from math import ceil
 from pathlib import Path
 from typing import Any
 
@@ -28,8 +32,8 @@ from mcp_server_phytomni.api.schemas import (
 )
 from mcp_server_phytomni.api.upload_runtime import UploadRuntime
 from mcp_server_phytomni.runtime.resumable_uploads import (
+    PersistedUploadAssetPurpose,
     ResumableUploadRegistry,
-    UploadAssetPurpose,
 )
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 from mcp_server_phytomni.runtime.submit_recorder import records_submission
@@ -65,7 +69,71 @@ class ResumableAssetSpec:
     filename: str = "context.pdf"
     content: bytes = b"synthetic attachment"
     complete: bool = True
-    purpose: UploadAssetPurpose = "chat_attachment"
+    purpose: PersistedUploadAssetPurpose = "document"
+
+
+def _seed_historical_completed_chat_attachment(
+    registry: ResumableUploadRegistry,
+    storage: FakeMultipartStorage,
+    spec: ResumableAssetSpec,
+) -> tuple[str, str]:
+    """Insert one historical chat row without using the public create path."""
+    if not spec.complete or len(spec.content) > registry.part_size_bytes:
+        raise ValueError("historical fixture must be one completed part")
+
+    now = datetime(2026, 8, 1, tzinfo=UTC)
+    asset_id = f"file_{secrets.token_hex(16)}"
+    object_key = f"agent_data/uploads/historical/{asset_id}"
+    session = storage.begin(bucket="resolver-bucket", object_key=object_key)
+    digest = hashlib.sha256(spec.content).hexdigest()
+    stored = storage.put_part(
+        session,
+        PartInput(1, BytesIO(spec.content), len(spec.content), digest),
+    )
+    storage.complete(session, (stored,))
+    part_count = ceil(len(spec.content) / registry.part_size_bytes)
+    with sqlite3.connect(registry.db_path) as connection:
+        connection.execute(
+            "INSERT INTO upload_assets VALUES ("
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
+            ")",
+            (
+                asset_id,
+                spec.owner,
+                spec.filename,
+                "application/octet-stream",
+                "chat_attachment",
+                len(spec.content),
+                registry.part_size_bytes,
+                part_count,
+                "completed",
+                object_key,
+                session.upload_id,
+                f"historical-{asset_id}",
+                f"historical-fingerprint-{asset_id}",
+                3,
+                0,
+                now.isoformat(),
+                now.isoformat(),
+                (now + timedelta(days=7)).isoformat(),
+                now.isoformat(),
+                now.isoformat(),
+            ),
+        )
+        connection.execute(
+            "INSERT INTO upload_parts ("
+            "asset_id, part_number, byte_size, sha256, etag, received_at"
+            ") VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                asset_id,
+                stored.part_number,
+                stored.byte_size,
+                stored.sha256,
+                stored.etag,
+                now.isoformat(),
+            ),
+        )
+    return asset_id, f"historical-{asset_id}"
 
 
 def build_resumable_asset(
@@ -104,27 +172,34 @@ def build_resumable_asset(
         + b"\0"
         + spec.purpose.encode("utf-8")
     ).hexdigest()
-    created = service.create(
-        UploadCreateRequest(
-            owner_subject=spec.owner,
-            filename=spec.filename,
-            content_type="application/octet-stream",
-            size_bytes=len(spec.content),
-            purpose=spec.purpose,
-            idempotency_key=f"resolver-{identity}",
+    if spec.purpose == "chat_attachment":
+        asset_id, capability = _seed_historical_completed_chat_attachment(
+            registry, storage, spec
         )
-    )
-    if spec.complete:
-        service.put_part(
-            created.asset_id,
-            created.capability,
-            PartInput(1, BytesIO(spec.content), len(spec.content), digest),
+    else:
+        created = service.create(
+            UploadCreateRequest(
+                owner_subject=spec.owner,
+                filename=spec.filename,
+                content_type="application/octet-stream",
+                size_bytes=len(spec.content),
+                purpose=spec.purpose,
+                idempotency_key=f"resolver-{identity}",
+            )
         )
-        service.complete(
-            created.asset_id,
-            created.capability,
-            UploadCompletionRequest(),
-        )
+        if spec.complete:
+            service.put_part(
+                created.asset_id,
+                created.capability,
+                PartInput(1, BytesIO(spec.content), len(spec.content), digest),
+            )
+            service.complete(
+                created.asset_id,
+                created.capability,
+                UploadCompletionRequest(),
+            )
+        asset_id = created.asset_id
+        capability = created.capability
     resolver = AssetResolver(
         registry,
         storage.download_to_path,
@@ -134,10 +209,10 @@ def build_resumable_asset(
     return ResumableAssetHarness(
         resolver=resolver,
         service=service,
-        asset_id=created.asset_id,
+        asset_id=asset_id,
         owner=spec.owner,
         content=spec.content,
-        capability=created.capability,
+        capability=capability,
     )
 
 
@@ -345,7 +420,7 @@ def install_dataset_and_document_assets(
     owner: str = "u1",
     dataset_filename: str = "input.csv",
     document_filename: str = "context.pdf",
-    document_purpose: UploadAssetPurpose = "document",
+    document_purpose: PersistedUploadAssetPurpose = "document",
 ) -> tuple[Any, str, str]:
     """Install one dataset and one document under the shared resolver."""
     dataset = build_resumable_asset(

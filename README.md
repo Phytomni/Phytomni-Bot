@@ -232,6 +232,10 @@ To attach a document through HTTP, create and complete a resumable asset with
 [`demo_data/`](demo_data/). Details:
 [MCP Tool Reference — Uploading
 documents](docs/reference/mcp-tools.md#uploading-documents-for-obs_file_list).
+New upload creates require the explicit server-classified `purpose` value
+`dataset` or `document`; historical `chat_attachment` rows remain readable as
+documents but are not writable through this route. Completion responses expose
+only the safe asset descriptor and never return `purpose` or provider data.
 
 - **Tool:** `ChatAgent`
   **Kind:** sync

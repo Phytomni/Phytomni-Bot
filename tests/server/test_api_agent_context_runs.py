@@ -533,7 +533,6 @@ async def test_native_context_asset_failures_precede_context_mutation(
                     else b"%PDF-1.4 preflight context"
                 ),
                 complete=scenario != "incomplete",
-                purpose="chat_attachment",
             ),
         )
         attachments = _preflight_attachment_ids(harness, scenario)

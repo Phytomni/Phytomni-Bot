@@ -33,7 +33,7 @@ def _spec() -> AssetCreateSpec:
         filename="sample.fa",
         content_type="application/octet-stream",
         size_bytes=3,
-        purpose="chat_attachment",
+        purpose="document",
         idempotency_key="key-1",
     )
 

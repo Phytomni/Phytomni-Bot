@@ -19,6 +19,7 @@ from mcp_server_phytomni.api.resumable_uploads import (
     ResumableUploadService,
     UploadServiceConfig,
 )
+from mcp_server_phytomni.api.schemas import AssetDescriptor
 from mcp_server_phytomni.api.upload_runtime import UploadRuntime
 from mcp_server_phytomni.runtime.resumable_uploads import (
     ResumableUploadRegistry,
@@ -104,21 +105,23 @@ async def _create(
     *,
     owner: str = "alice@example.com",
     idempotency_key: str = "upload-route-1",
-    purpose: str = "chat_attachment",
+    purpose: str | None = "document",
 ) -> httpx.Response:
     """Create one small synthetic asset through the Web control shape."""
+    payload: dict[str, object] = {
+        "owner_subject": owner,
+        "filename": "sample.fastq.gz",
+        "size_bytes": 3,
+        "content_type_hint": "application/gzip",
+        "last_modified_ms": 1722470400000,
+        "idempotency_key": idempotency_key,
+    }
+    if purpose is not None:
+        payload["purpose"] = purpose
     return await client.post(
         "/v1/files",
         headers=_control_headers(control_key),
-        json={
-            "owner_subject": owner,
-            "filename": "sample.fastq.gz",
-            "size_bytes": 3,
-            "content_type_hint": "application/gzip",
-            "last_modified_ms": 1722470400000,
-            "purpose": purpose,
-            "idempotency_key": idempotency_key,
-        },
+        json=payload,
     )
 
 
@@ -131,34 +134,43 @@ async def test_invalid_purpose_has_stable_validation_error(
     client, control_key, _ordinary_key, storage, _cleanup = (
         resumable_upload_client
     )
-    valid = await _create(
-        client,
-        control_key,
-        owner="owner-with-purpose",
-        idempotency_key="object-key-fixture",
-    )
-    assert valid.status_code == 201
+    for purpose in ("dataset", "document"):
+        valid = await _create(
+            client,
+            control_key,
+            owner="owner-with-purpose",
+            idempotency_key=f"valid-{purpose}",
+            purpose=purpose,
+        )
+        assert valid.status_code == 201
     expected_object_key = next(
         iter(storage.sessions.values())
     ).session.object_key
     session_count = len(storage.sessions)
-    response = await _create(
-        client,
-        control_key,
-        owner="owner-with-purpose",
-        idempotency_key="invalid-purpose",
-        purpose="Dataset",
-    )
+    for index, value in enumerate(
+        (None, "chat_attachment", "unknown", "Document"), start=1
+    ):
+        response = await _create(
+            client,
+            control_key,
+            owner="owner-with-purpose",
+            idempotency_key=f"invalid-purpose-{index}",
+            purpose=value,
+        )
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "attachment_purpose_invalid"
-    assert response.json()["error"]["stage"] == "request_validation"
-    assert response.json()["error"]["retryable"] is False
-    assert len(storage.sessions) == session_count
-    for value in ("Dataset", "owner-with-purpose", "test-bucket"):
-        assert value not in response.text
-    assert expected_object_key not in response.text
-    assert "object_key" not in response.text
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == (
+            "attachment_purpose_invalid"
+        )
+        assert response.json()["error"]["stage"] == "request_validation"
+        assert response.json()["error"]["retryable"] is False
+        assert len(storage.sessions) == session_count
+        for marker in ("owner-with-purpose", "test-bucket"):
+            assert marker not in response.text
+        if value is not None:
+            assert value not in response.text
+        assert expected_object_key not in response.text
+        assert "object_key" not in response.text
 
 
 async def test_multipart_route_is_rejected_and_control_scope_is_explicit(
@@ -235,6 +247,7 @@ async def test_resumable_data_plane_streams_parts_and_completes(
         headers=_data_headers(capability),
     )
     assert complete.status_code == 200
+    assert set(complete.json()) == set(AssetDescriptor.model_fields)
     assert complete.json()["status"] == "completed"
     assert complete.json()["completed_at"]
     assert complete.headers["cache-control"] == "no-store"

@@ -1071,17 +1071,17 @@ provider upload id, or cloud credential is not accepted there.
   "filename": "report.pdf",
   "content_type_hint": "application/pdf",
   "size_bytes": 524288,
-  "purpose": "chat_attachment",
+  "purpose": "document",
   "idempotency_key": "web-upload-123"
 }
 ```
 
-`purpose` is chosen at create time and is immutable for the asset lifecycle.
-Accepted values are `dataset`, `document`, and legacy `chat_attachment`
-(effective document partition). The default is `chat_attachment`. Submission
-bodies never restate purpose; the owner-scoped resolver recovers it from the
-completed registry row. A purpose conflict against an existing idempotent row
-returns `409`.
+`purpose` is required at create time, immutable for the asset lifecycle, and
+new writes accept only `dataset` or `document`. Historical rows may retain
+`chat_attachment`; the resolver reads those rows as effective `document`
+without updating them. Submission bodies never restate purpose; the
+owner-scoped resolver recovers it from the completed registry row. A purpose
+conflict against an existing idempotent row returns `409`.
 
 The `201` response contains only `protocol`, `asset_id`, `status`,
 `part_size_bytes`, `part_count`, `max_parallel_parts`, `upload_url`, an
@@ -1098,7 +1098,9 @@ The browser data plane uses the capability in `Authorization: Bearer`:
    `Content-Length` and `X-Phytomni-Part-SHA256`; the body is spooled to a
    bounded temporary file and never buffered as a complete upload.
 1. `POST /v1/files/{asset_id}/complete` verifies the authoritative part
-   registry and returns the completed `asset_id` descriptor.
+   registry and returns the completed safe descriptor with exactly
+   `asset_id`, `filename`, `content_type`, `size_bytes`, `status`, and
+   `completed_at`.
 1. `DELETE /v1/files/{asset_id}` aborts an unfinished asset.
 
 The default resumable limit is 10 GiB (`API_UPLOAD_V2_MAX_BYTES`) with
@@ -1156,7 +1158,7 @@ curl -s -X POST http://127.0.0.1:8080/v1/files \
   -H 'Content-Type: application/json' \
   -d '{"owner_subject":"alice","filename":"report.pdf",'\
       '"content_type_hint":"application/pdf","size_bytes":524288,'\
-      '"purpose":"chat_attachment","idempotency_key":"web-upload-123"}'
+      '"purpose":"document","idempotency_key":"web-upload-123"}'
 ```
 
 Agent requests use the completed asset id, not an OBS path:

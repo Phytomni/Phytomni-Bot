@@ -79,7 +79,7 @@ def _spec(
         filename=filename,
         content_type="application/octet-stream",
         size_bytes=size_bytes,
-        purpose="chat_attachment",
+        purpose="document",
         idempotency_key=key,
     )
 
@@ -488,20 +488,19 @@ def test_conditional_discard_removes_only_a_pristine_allocation(
     assert (event_count, accepted_bytes) == (2, 6)
 
 
-def test_registry_rejects_invalid_purpose_outside_pydantic(
-    tmp_path: Path,
-) -> None:
+def test_registry_rejects_nonwritable_purpose(tmp_path: Path) -> None:
     """Reject invalid purposes from callers that bypass request schemas."""
-    registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
-    with pytest.raises(UploadStateError) as error:
-        registry.create_or_replay(
-            replace(
-                _spec(),
-                purpose=cast(UploadAssetPurpose, "not-supported"),
-            ),
-            now=NOW,
-        )
-    assert error.value.code == "attachment_purpose_invalid"
+    for purpose in ["chat_attachment", "not-supported", "Document"]:
+        registry = ResumableUploadRegistry(str(tmp_path / "tasks.db"))
+        with pytest.raises(UploadStateError) as error:
+            registry.create_or_replay(
+                replace(
+                    _spec(),
+                    purpose=cast(UploadAssetPurpose, purpose),
+                ),
+                now=NOW,
+            )
+        assert error.value.code == "attachment_purpose_invalid"
 
 
 def test_owner_and_quota_limits_fail_closed(tmp_path: Path) -> None:

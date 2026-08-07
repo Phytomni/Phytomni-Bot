@@ -31,7 +31,7 @@ def _request(**overrides: object) -> dict[str, object]:
         "filename": "sample.fastq.gz",
         "content_type": "application/octet-stream",
         "size_bytes": 1,
-        "purpose": "chat_attachment",
+        "purpose": "document",
         "idempotency_key": "create-1",
     }
     payload.update(overrides)
@@ -58,20 +58,19 @@ def test_create_accepts_one_byte_and_ten_gib_boundaries() -> None:
         UploadCreateRequest.model_validate(_request(size_bytes=0))
 
 
-@pytest.mark.parametrize("purpose", ["chat_attachment", "dataset", "document"])
+@pytest.mark.parametrize("purpose", ["dataset", "document"])
 def test_create_accepts_exact_attachment_purposes(purpose: str) -> None:
-    """Accept exactly the three public upload-purpose values."""
+    """Accept only the two writable upload-purpose values."""
     request = UploadCreateRequest.model_validate(_request(purpose=purpose))
     assert request.purpose == purpose
 
 
-def test_create_omitted_purpose_keeps_legacy_default() -> None:
-    """Keep chat attachments as the compatibility default."""
+def test_create_requires_purpose() -> None:
+    """Require an explicit server-classified upload purpose."""
     payload = _request()
     payload.pop("purpose")
-    assert UploadCreateRequest.model_validate(payload).purpose == (
-        "chat_attachment"
-    )
+    with pytest.raises(ValidationError):
+        UploadCreateRequest.model_validate(payload)
 
 
 @pytest.mark.parametrize("purpose", ["", "Dataset", "agent_context", "csv"])

@@ -38,7 +38,9 @@ from mcp_server_phytomni.api.a2ui_runtime import ReviewExecution
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.routes import agents as agent_routes
 from mcp_server_phytomni.api.upload_runtime import UploadRuntime
-from mcp_server_phytomni.runtime.resumable_uploads import UploadAssetPurpose
+from mcp_server_phytomni.runtime.resumable_uploads import (
+    PersistedUploadAssetPurpose,
+)
 from mcp_server_phytomni.runtime.run_registry import RunRegistry
 
 pytestmark = pytest.mark.server
@@ -47,7 +49,7 @@ pytestmark = pytest.mark.server
 def _install_chat_asset(
     context: AssetHttpTestContext,
     *,
-    purpose: UploadAssetPurpose,
+    purpose: PersistedUploadAssetPurpose,
     filename: str,
     content: bytes,
     owner: str = "u1",
@@ -142,7 +144,7 @@ def _patch_chat_replay_calls(
 async def test_chat_document_assets_resolve_and_invoke(
     asset_http_context: AssetHttpTestContext,
     chat_completion: Callable[..., Any],
-    purpose: UploadAssetPurpose,
+    purpose: PersistedUploadAssetPurpose,
 ) -> None:
     """Completed document-purpose assets resolve into Chat document context."""
     harness = _install_chat_asset(
@@ -416,7 +418,7 @@ async def test_chat_instant_context_document_assets_resolve_and_invoke(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     chat_completion: Callable[..., Any],
-    purpose: UploadAssetPurpose,
+    purpose: PersistedUploadAssetPurpose,
 ) -> None:
     """Instant context Chat document assets resolve before staging succeeds."""
     context, key = enable_conversation_context_v1(monkeypatch, tmp_path)

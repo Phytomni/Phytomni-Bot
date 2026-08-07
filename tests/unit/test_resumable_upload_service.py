@@ -92,7 +92,7 @@ def _request(
     owner: str = "owner-1",
     key: str = "create-1",
     size_bytes: int = 3,
-    purpose: UploadAssetPurpose = "chat_attachment",
+    purpose: UploadAssetPurpose = "document",
 ) -> UploadCreateRequest:
     """Build one trusted upload request for service tests."""
     return UploadCreateRequest(
@@ -143,6 +143,30 @@ def _put_one(
 ) -> None:
     """Upload the only part of a small test asset."""
     service.put_part(response_asset_id, capability, _part(body))
+
+
+@pytest.mark.parametrize("purpose", ["chat_attachment", "unknown", "Document"])
+def test_service_rejects_nonwritable_purpose_before_provider_session(
+    tmp_path: Path,
+    purpose: str,
+) -> None:
+    """Service callers cannot bypass the writable-purpose registry guard."""
+    service, storage = _service(tmp_path)
+    request = UploadCreateRequest.model_construct(
+        owner_subject="owner-1",
+        filename="sample.fastq.gz",
+        content_type="application/octet-stream",
+        size_bytes=3,
+        purpose=purpose,
+        idempotency_key="invalid-purpose",
+    )
+
+    with pytest.raises(UploadContractError) as error:
+        service.create(request)
+
+    assert error.value.code == "attachment_purpose_invalid"
+    assert error.value.status_code == 422
+    assert not storage.sessions
 
 
 def test_create_is_idempotent_and_binds_one_provider_session(
@@ -242,7 +266,7 @@ def test_losing_bind_aborts_only_its_provider_session(
             filename="sample.fastq.gz",
             content_type="application/octet-stream",
             size_bytes=3,
-            purpose="chat_attachment",
+            purpose="document",
             idempotency_key="create-1",
         ),
         now=NOW,
@@ -298,7 +322,7 @@ def test_discard_rejects_activated_and_part_bearing_allocations(
             "a.bin",
             "application/octet-stream",
             3,
-            "chat_attachment",
+            "document",
             "activated",
         ),
         now=NOW,
@@ -315,7 +339,7 @@ def test_discard_rejects_activated_and_part_bearing_allocations(
             "b.bin",
             "application/octet-stream",
             3,
-            "chat_attachment",
+            "document",
             "part-bearing",
         ),
         now=NOW,
@@ -373,24 +397,71 @@ def test_purpose_survives_reconstruction_and_completion(
     assert asset is not None
     assert asset.purpose == purpose
     assert status.asset_id == created.asset_id
-    assert descriptor.purpose == purpose
+    assert set(descriptor.model_dump()) == {
+        "asset_id",
+        "filename",
+        "content_type",
+        "size_bytes",
+        "status",
+        "completed_at",
+    }
+    assert asset.purpose == purpose
 
 
-def test_legacy_default_purpose_is_preserved_in_descriptor(
+def test_purpose_survives_replay_activation_retry_renewal_and_completion(
     tmp_path: Path,
 ) -> None:
-    """Keep the legacy chat purpose in completed descriptors."""
+    """Keep the writable purpose internal across every lifecycle seam."""
     service, _storage = _service(tmp_path)
-    created = service.create(_request())
+    created = service.create(_request(purpose="dataset"))
+    replay = service.create(_request(purpose="dataset"))
+    assert replay.asset_id == created.asset_id
+    replayed = service.registry.get_asset(created.asset_id, owner="owner-1")
+    assert replayed is not None
+    assert replayed.purpose == "dataset"
+
+    service.head(created.asset_id, created.capability)
+    activated = service.registry.get_asset(created.asset_id, owner="owner-1")
+    assert activated is not None
+    assert activated.activated_at is not None
+    assert activated.purpose == "dataset"
+
     _put_one(service, created.asset_id, created.capability)
+    service.put_part(
+        created.asset_id,
+        created.capability,
+        _part(b"abc"),
+    )
+    retried = service.registry.get_asset(created.asset_id, owner="owner-1")
+    assert retried is not None
+    assert retried.purpose == "dataset"
+
+    renewed = service.renew(created.asset_id, "owner-1")
+    renewed_asset = service.registry.get_asset(
+        created.asset_id, owner="owner-1"
+    )
+    assert renewed_asset is not None
+    assert renewed_asset.purpose == "dataset"
 
     descriptor = service.complete(
         created.asset_id,
-        created.capability,
+        renewed.capability,
         UploadCompletionRequest(),
     )
 
-    assert descriptor.purpose == "chat_attachment"
+    completed_asset = service.registry.get_asset(
+        created.asset_id, owner="owner-1"
+    )
+    assert completed_asset is not None
+    assert completed_asset.purpose == "dataset"
+    assert set(descriptor.model_dump()) == {
+        "asset_id",
+        "filename",
+        "content_type",
+        "size_bytes",
+        "status",
+        "completed_at",
+    }
 
 
 def test_part_retry_and_cross_asset_capability_are_safe(

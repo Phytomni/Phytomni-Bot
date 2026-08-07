@@ -3,7 +3,6 @@
   "filename": "sample.fastq.gz",
   "content_type": "application/octet-stream",
   "size_bytes": 3,
-  "purpose": "chat_attachment",
   "status": "completed",
   "completed_at": "2026-08-01T00:01:00Z"
 }
