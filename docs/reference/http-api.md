@@ -1108,6 +1108,46 @@ provider abort failure and never exposes provider diagnostics in the public
 error body. The old multipart body sent to `POST /v1/files` is not a second
 upload protocol and is rejected by request validation before storage.
 
+### Upload-session reclamation lifecycle
+
+`provisional` and `activated` are internal lifecycle terms only; they do not
+add a public upload `status` value. A newly allocated `uploading` session is
+provisional until its first browser control/data-plane use (`HEAD`, part
+upload, or completion) records activation. The provisional deadline defaults
+to `API_UPLOAD_V2_PROVISIONAL_TTL_SECONDS=10800` seconds and is configurable
+only from 60 through 604800 seconds. The normal unfinished-session deadline
+is still `API_UPLOAD_V2_SESSION_TTL_SECONDS` (at most seven days).
+
+The effective deadline is the earlier of the normal session deadline and,
+while the row is not activated, `created_at + provisional_ttl`. Activation
+removes only the provisional deadline; it never extends, renews, or moves the
+seven-day session deadline. A capability is likewise capped by that effective
+deadline.
+
+The migration backfills the internal activation marker selectively: an
+existing `uploading` row with recorded parts receives the earliest part
+receipt time, while an existing zero-part row remains unactivated. On the
+first cleanup after deployment, a historical zero-part row created at or
+beyond the provisional threshold is expired irreversibly. Operators must use
+the count-only preflight and backup procedure in the [HTTP API Operations
+Runbook](../ops/http-api-runbook.md#upload-session-reclamation-rollout)
+before allowing that cleanup to run.
+
+`DELETE /v1/files/{asset_id}` is local-first: it terminalizes and releases the
+unfinished local allocation before provider cleanup. Provider multipart abort
+is asynchronous best effort; each bounded cleanup pass retries terminal
+aborted or expired provider sessions until an abort succeeds. A repeated
+`DELETE` is intentionally bounded: only the same still-live abort capability
+can replay an already-aborted session; it neither reopens the allocation nor
+retries the provider inline.
+
+The stable relevant errors remain: `409 upload_state_conflict` means the
+requested state transition or part shape conflicts with the persisted asset;
+`410 upload_session_expired` means the effective deadline has passed and the
+session cannot resume; and `413 upload_limit_exceeded` means the requested
+upload exceeds the configured size limit. Provider retry details are never
+placed in these public error bodies.
+
 Example metadata create:
 
 ```bash

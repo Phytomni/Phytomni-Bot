@@ -122,6 +122,82 @@ paths through the environment.
    curl -fsS http://127.0.0.1:8080/readyz
    ```
 
+## Upload-session reclamation rollout
+
+This is a Bot-first, local SQLite rollout for reclaiming abandoned resumable
+upload allocations. It has local implementation and test evidence only; it
+does not establish Web, staging, provider, or production acceptance. The
+internal terms `provisional` and `activated` are not public upload statuses.
+
+Before deploying the code that adds the nullable `upload_assets.activated_at`
+column, take a recoverable SQLite backup of the configured `API_TASKS_DB_PATH`
+while the service is stopped or otherwise protected from writes. For example,
+use SQLite's backup command to a separate persistent volume, then verify that
+the backup opens before proceeding. Do not use a filesystem copy of a live
+SQLite database as the recovery artifact.
+
+Run this read-only count-only preflight against the stopped/protected source
+database. Do not replace it with a row query and do not print asset ids,
+owners, object keys, or provider upload ids in terminal output or tickets.
+
+```sql
+WITH part_counts AS (
+    SELECT asset_id, COUNT(*) AS part_count
+    FROM upload_parts
+    GROUP BY asset_id
+)
+SELECT
+    COUNT(*) AS uploading_total,
+    SUM(CASE WHEN COALESCE(p.part_count, 0) = 0 THEN 1 ELSE 0 END)
+        AS zero_part_total,
+    SUM(
+        CASE
+            WHEN COALESCE(p.part_count, 0) = 0
+             AND datetime(a.created_at) <= datetime('now', '-180 minutes')
+            THEN 1 ELSE 0
+        END
+    ) AS zero_part_at_or_beyond_ttl
+FROM upload_assets AS a
+LEFT JOIN part_counts AS p ON p.asset_id = a.asset_id
+WHERE a.status = 'uploading';
+```
+
+Record only the three aggregate counts in the change record. Stop the rollout
+and investigate from the backup if the old zero-part count is unexpected; do
+not start the new Bot or allow its cleanup worker to run. The first cleanup is
+an irreversible boundary for historical zero-part rows at or beyond the
+10,800-second default threshold: they become expired and cannot be activated
+or resumed later.
+
+Deploy the Bot first, retaining the additive nullable `activated_at` column.
+On startup the migration selectively backfills `uploading` rows that already
+have parts with their earliest part receipt time; it deliberately leaves
+zero-part rows unactivated. The effective deadline is the earlier of the
+normal session deadline and `created_at + provisional_ttl` while unactivated.
+The default provisional TTL is 10,800 seconds and its allowed range is
+60..604800 seconds. First browser `HEAD`, part, or completion activation only
+removes the provisional deadline; it does not extend the normal seven-day
+session deadline. Monitor aggregate cleanup summaries after restart, without
+adding identities to logs.
+
+For DELETE and provider failure triage, preserve the local-first boundary:
+`DELETE /v1/files/{asset_id}` records the local aborted state and releases its
+allocation before any provider abort is attempted. Provider abort happens in
+the asynchronous cleanup pass and is retried on later bounded passes until it
+succeeds. A repeated DELETE is bounded to the same live abort capability and
+only replays the already-aborted local state; it must not resurrect the upload
+or perform inline provider retries. Treat `409 upload_state_conflict` as a
+persisted state/part conflict, `410 upload_session_expired` as a passed
+effective deadline, and `413 upload_limit_exceeded` as the configured-size
+limit; do not infer provider state from them.
+
+If code rollback is necessary, roll back the Bot binary/configuration but
+retain the nullable `activated_at` column and its existing values. Do not
+attempt a destructive schema rollback. Expired rows and provider aborts that
+have already been issued cannot be resurrected by rollback; restore the
+verified SQLite backup only under the incident-recovery authority and with
+the service stopped.
+
 ## systemd Example
 
 `/etc/systemd/system/phytomni-api.service`:
