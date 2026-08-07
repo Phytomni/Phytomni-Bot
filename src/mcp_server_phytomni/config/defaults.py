@@ -33,6 +33,7 @@ from .models.base import (
     TEMP_PATH,
     ServerConfig,
 )
+from .models.citation import CitationConfig
 from .models.reference import (
     PromptLeaf,
     PromptTemplates,
@@ -53,6 +54,7 @@ __all__ = [
     "ApiConfig",
     "ApiLimitsConfig",
     "BriefGeneConfig",
+    "CitationConfig",
     "ChatConfig",
     "DATA_REQUIRED_ENDPOINT_FIELDS",
     "DataConfig",

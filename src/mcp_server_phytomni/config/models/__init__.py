@@ -19,6 +19,7 @@ from .agents import (
 )
 from .api import ApiConfig
 from .base import ServerConfig
+from .citation import CitationConfig
 from .reference import (
     PromptLeaf,
     PromptTemplates,
@@ -31,6 +32,7 @@ __all__ = [
     "AnalystConfig",
     "ApiConfig",
     "BriefGeneConfig",
+    "CitationConfig",
     "PromptLeaf",
     "ChatConfig",
     "DataConfig",

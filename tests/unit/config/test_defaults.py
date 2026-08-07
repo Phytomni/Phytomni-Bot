@@ -30,6 +30,9 @@ from mcp_server_phytomni.config import (
     ChatConfig as PackageChatConfig,
 )
 from mcp_server_phytomni.config import (
+    CitationConfig as PackageCitationConfig,
+)
+from mcp_server_phytomni.config import (
     DataConfig as PackageDataConfig,
 )
 from mcp_server_phytomni.config import (
@@ -71,6 +74,7 @@ from mcp_server_phytomni.config.defaults import (
     ApiConfig,
     BriefGeneConfig,
     ChatConfig,
+    CitationConfig,
     DataConfig,
     DeepGenomeConfig,
     DigitalDesignConfig,
@@ -117,6 +121,9 @@ from mcp_server_phytomni.config.models.agents import (
 from mcp_server_phytomni.config.models.api import ApiConfig as LeafApiConfig
 from mcp_server_phytomni.config.models.base import (
     ServerConfig as LeafServerConfig,
+)
+from mcp_server_phytomni.config.models.citation import (
+    CitationConfig as LeafCitationConfig,
 )
 from mcp_server_phytomni.config.models.reference import (
     PromptTemplates as LeafPromptTemplates,
@@ -230,6 +237,36 @@ def test_memory_config_defaults_disabled_and_supports_prefixed_aliases(
     configured = ApiConfig()
     assert configured.MEMORY_ENABLED is True
     assert configured.MEMORY_DB_PATH == "/tmp/memory.sqlite"
+
+
+def test_citation_config_is_lazy_and_supports_both_aliases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Citation path settings remain optional until serving startup."""
+    monkeypatch.delenv("CITATION_DB_PATH", raising=False)
+    monkeypatch.delenv("PHYTOMNI_CITATION_DB_PATH", raising=False)
+    assert CitationConfig().CITATION_DB_PATH is None
+
+    monkeypatch.setenv("PHYTOMNI_CITATION_DB_PATH", "/tmp/prefixed.sqlite")
+    assert CitationConfig().CITATION_DB_PATH == "/tmp/prefixed.sqlite"
+
+    monkeypatch.setenv("CITATION_DB_PATH", "/tmp/plain.sqlite")
+    assert CitationConfig().CITATION_DB_PATH == "/tmp/plain.sqlite"
+
+
+def test_citation_config_blank_path_normalizes_to_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Whitespace does not configure a citation database path."""
+    monkeypatch.setenv("CITATION_DB_PATH", "   ")
+
+    assert CitationConfig().CITATION_DB_PATH is None
+
+
+def test_citation_config_preserves_leaf_facade_package_identity() -> None:
+    """Citation configuration retains the established export identity."""
+    assert CitationConfig is LeafCitationConfig is PackageCitationConfig
+    assert "CitationConfig" in config_package.__all__
 
 
 def test_server_config_has_expected_core_defaults():
