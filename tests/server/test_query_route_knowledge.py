@@ -357,8 +357,16 @@ async def test_context_expert_brief_gene_turn_stages_bounded_context_delta(
     )
     assert response.json()["conversation_context"]["context_degraded"] is False
     assert response.json()["result"]["formatted"]["answer"] == (
-        "# Brief Gene Analysis\n\nRice gene summary [1]."
+        "# Brief Gene Analysis\n\nRice gene summary <sup>1</sup>."
     )
+    assert response.json()["result"]["formatted"]["references"] == [
+        {
+            "file_id": "paper-1",
+            "title": "Paper 1",
+            "formatted_citation": "Paper 1",
+            "doi_missing": True,
+        }
+    ]
     assert calls == [
         {
             "user_query": "Os01g0177400",

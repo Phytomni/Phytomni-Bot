@@ -61,6 +61,8 @@ async def test_stream_phyto_knowledge_emits_agui_frames(
     assert "event: TextMessageContent\n" in body
     assert "event: Custom\n" in body
     assert "event: RunFinished\n" in body
+    assert "Rice photosynthesis <sup>1</sup>." in body
+    assert '"formatted_citation": "T1."' in body
     assert body.rstrip().endswith("data: [DONE]")
     assert fake_app.thread_id() == extract_run_started_id(body)
 
@@ -113,6 +115,14 @@ async def test_stream_phyto_review_emits_agui_frames(
         if event.type == "Custom"
     }
     assert "phyto.references" in customs
+    assert customs["phyto.references"]["doc_list"] == [
+        {
+            "file_id": "f1",
+            "title": "T1",
+            "formatted_citation": "T1.",
+            "doi_missing": True,
+        }
+    ]
     assert customs["phyto.follow_up"] == ["next?"]
 
 

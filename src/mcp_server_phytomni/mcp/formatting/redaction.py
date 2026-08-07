@@ -11,6 +11,8 @@ from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
 from typing import Any
 
+from ...agents.shared.citation_metadata import CITATION_STATUS_KEY
+
 _SECRET_KEY_PATTERNS: frozenset[str] = frozenset(
     {
         "api_key",
@@ -62,13 +64,14 @@ def sanitize_raw(payload: Any) -> Any:
         return {
             item.name: sanitize_raw(getattr(payload, item.name))
             for item in fields(payload)
-            if not _is_sensitive_key(item.name)
+            if item.name != CITATION_STATUS_KEY
+            and not _is_sensitive_key(item.name)
         }
     if isinstance(payload, Mapping):
         return {
             key: sanitize_raw(value)
             for key, value in payload.items()
-            if not _is_sensitive_key(key)
+            if key != CITATION_STATUS_KEY and not _is_sensitive_key(key)
         }
     if isinstance(payload, list):
         return [sanitize_raw(item) for item in payload]

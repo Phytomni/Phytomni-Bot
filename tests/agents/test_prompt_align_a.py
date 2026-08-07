@@ -59,9 +59,10 @@ def test_section_or_intro_prompt_uses_align_a(name: str) -> None:
     assert "## Literature" in body, f"{name} missing `## Literature` header"
     assert "[document:N]" in body, (
         f"{name} no longer instructs the [document:N] citation form the "
-        f"repo uses internally (the post-processor renders [N] to the "
-        f"client)"
+        f"repo uses internally"
     )
+    assert "<sup>N</sup>" in body
+    assert "to [N] for the client" not in body
     assert "[document:X]" not in body, (
         f"{name} carries the placeholder [document:X] form — N must be a "
         f"real document number"
@@ -81,8 +82,8 @@ def test_literature_only_prompt_uses_align_a(name: str) -> None:
     receive a retrieve_results blob in ``[document N begin] ... [document
     N end]`` shape and instruct the LLM to cite as ``[document:N]`` (the
     repo-internal form that aligns with that input); the post-processor
-    deduplicates, sorts, and renumbers every marker to ``[N]`` for the
-    client. The placeholder ``[document:X]`` form must never appear — N
+    deduplicates, sorts, and renumbers each marker for the client. The
+    placeholder ``[document:X]`` form must never appear — N
     must always be a real document number.
     """
     body = load_template(PROMPT_FILE, f"user/{name}")
@@ -101,10 +102,11 @@ def test_literature_only_prompt_uses_align_a(name: str) -> None:
 
 
 def test_assert_no_citation_residue_passes_on_clean_markdown() -> None:
-    """A clean answer with only `[N]` markers passes."""
+    """Current superscripts and tolerated raw numeric markers pass."""
 
     answer = (
-        "This is supported by [1] and [2]. Markdown link [text](url) "
+        "This is supported by <sup>1,2</sup>, [1], and [2]. "
+        "Markdown link [text](url) "
         "is fine. Image ![alt](path) is fine. Reference link [label]: "
         "footer is fine."
     )

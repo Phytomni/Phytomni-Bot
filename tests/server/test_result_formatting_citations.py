@@ -6,9 +6,20 @@
 
 import pytest
 
+from mcp_server_phytomni.agents.shared.citation_metadata import (
+    CITATION_STATUS_KEY,
+    CITATION_STATUS_LOOKUP_FAILED,
+    CITATION_STATUS_MISSING,
+)
+from mcp_server_phytomni.mcp.formatting.cited import (
+    clean_retrieval_title,
+    format_authors,
+    format_nature_citation,
+)
 from mcp_server_phytomni.mcp.result_formatting import (
     _normalize_citations,
     _reference_payload,
+    build_tool_result_envelope,
     format_tool_result,
     is_cited_tool,
 )
@@ -32,7 +43,7 @@ def test_normalize_citations_captures_colon_space_digit() -> None:
     assert len(refs) == 1
     assert refs[0]["file_id"] == "id32"
     assert refs[0]["title"] == "Paper 32"
-    assert text == "Evidence supports this hypothesis [1]."
+    assert text == "Evidence supports this hypothesis <sup>1</sup>."
 
 
 def test_normalize_citations_captures_multi_index_with_prefix() -> None:
@@ -45,7 +56,7 @@ def test_normalize_citations_captures_multi_index_with_prefix() -> None:
     text, refs = _normalize_citations(answer, doc_list)
 
     assert [ref["file_id"] for ref in refs] == ["id1", "id25"]
-    assert text == "Both findings agree [1,2]."
+    assert text == "Both findings agree <sup>1,2</sup>."
 
 
 def test_normalize_citations_dedups_distinct_indices_to_distinct_refs() -> (
@@ -54,7 +65,7 @@ def test_normalize_citations_dedups_distinct_indices_to_distinct_refs() -> (
     """Two indices mapping to two distinct file_ids produce two refs.
 
     Pinning the minimum-correct dedup path: indices that map to
-    distinct file_ids preserve as distinct ``[N]`` references in
+    distinct file_ids preserve as distinct superscript references in
     first-appearance order.
     """
 
@@ -65,7 +76,7 @@ def test_normalize_citations_dedups_distinct_indices_to_distinct_refs() -> (
     text, refs = _normalize_citations(answer, doc_list)
 
     assert [ref["file_id"] for ref in refs] == ["paper-b", "paper-a"]
-    assert text == "First [1] then [2]."
+    assert text == "First <sup>1</sup> then <sup>2</sup>."
 
 
 def test_normalize_citations_skips_named_pseudo_citations() -> None:
@@ -118,7 +129,7 @@ def test_normalize_citations_dedup_repoints_to_existing_ref() -> None:
     text, refs = _normalize_citations(answer, doc_list)
 
     assert [ref["file_id"] for ref in refs] == ["paper-a", "paper-b"]
-    assert text == "First [1] then [2] then [1]."
+    assert text == ("First <sup>1</sup> then <sup>2</sup> then <sup>1</sup>.")
 
 
 def test_normalize_citations_dedup_inside_multi_index_keeps_ref() -> None:
@@ -131,7 +142,7 @@ def test_normalize_citations_dedup_inside_multi_index_keeps_ref() -> None:
     text, refs = _normalize_citations(answer, doc_list)
 
     assert [ref["file_id"] for ref in refs] == ["paper-a", "paper-b"]
-    assert text == "Multiple findings agree [1,2,1]."
+    assert text == "Multiple findings agree <sup>1,2,1</sup>."
 
 
 def test_normalize_citations_multi_chunk_same_paper_pattern() -> None:
@@ -147,33 +158,387 @@ def test_normalize_citations_multi_chunk_same_paper_pattern() -> None:
 
     assert [ref["file_id"] for ref in refs] == ["paper-a", "paper-b"]
     assert text == (
-        "Claim [1] also [2] supported [1] cf [2] echoed [1] confirmed [2]."
+        "Claim <sup>1</sup> also <sup>2</sup> supported <sup>1</sup> "
+        "cf <sup>2</sup> echoed <sup>1</sup> confirmed <sup>2</sup>."
     )
 
 
-def test_reference_payload_projects_biblio_when_present() -> None:
-    """Biblio fields present on doc are forwarded and .pdf is stripped."""
+def test_normalize_citations_keeps_marker_position_and_commas() -> None:
+    """Superscripts stay where authored and never collapse into ranges."""
+    docs = [{"file_id": str(index), "title": str(index)} for index in range(5)]
+
+    no_move, _ = _normalize_citations("claim[1].", docs)
+    no_range, _ = _normalize_citations(
+        "seed [1][2][3][4][5]\nclaim [1,2,3,5]", docs
+    )
+
+    assert no_move == "claim<sup>1</sup>."
+    assert no_range.splitlines()[-1] == "claim <sup>1,2,3,5</sup>"
+
+
+def test_normalize_citations_removes_invalid_only_marker() -> None:
+    """An invalid-only marker disappears without an empty superscript."""
+    text, refs = _normalize_citations(
+        "Unsupported [document:9] remains usable.",
+        [{"file_id": "f1", "title": "Paper"}],
+    )
+
+    assert text == "Unsupported  remains usable."
+    assert refs == ()
+    assert "<sup></sup>" not in text
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    (
+        ".pdf",
+        ".doc",
+        ".docx",
+        ".ppt",
+        ".pptx",
+        ".xls",
+        ".xlsx",
+        ".rtf",
+        ".txt",
+        ".md",
+        ".html",
+        ".htm",
+        ".msg",
+        ".eml",
+    ),
+)
+def test_clean_retrieval_title_strips_approved_suffixes(suffix: str) -> None:
+    """Approved retrieval file suffixes are removed case-insensitively."""
+    assert (
+        clean_retrieval_title(f"Publication{suffix.upper()}") == "Publication"
+    )
+
+
+@pytest.mark.parametrize(
+    "title",
+    (
+        "Magnaporthe.oryzae",
+        "Escherichia.coli",
+        "release v1.2",
+        "doi 10.1000/article.pdfx",
+        "Publication.unknown",
+        ".PDF",
+    ),
+)
+def test_clean_retrieval_title_preserves_non_file_endings(title: str) -> None:
+    """Unknown, scientific, decimal, DOI-like, and suffix-only titles stay."""
+    assert clean_retrieval_title(title) == title
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    (
+        ("Taylor, NL", "Taylor, N. L."),
+        ("Taylor, NL; Millar, AH", "Taylor, N. L. & Millar, A. H."),
+        (
+            "de la Cruz, JY; O'Neil, A-B; Wang, Q; Li, X; Kim, S",
+            "de la Cruz, J. Y., O'Neil, A.-B., Wang, Q., Li, X. & Kim, S.",
+        ),
+        ("A, A; B, B; C, C; D, D; E, E; F, F", "A, A. et al."),
+        ("Smith, J, Jr", "Smith, J. Jr"),
+        ("Smith, J, Sr", "Smith, J. Sr"),
+        ("Smith, J, II", "Smith, J. II"),
+        ("Smith, J, III", "Smith, J. III"),
+        ("Smith, J, IV", "Smith, J. IV"),
+        ("Consortium Name", "Consortium Name"),
+        ("van der Waals, JW", "van der Waals, J. W."),
+        ("Dvořák, JY", "Dvořák, J. Y."),
+        ("Taylor, J-Y", "Taylor, J.-Y."),
+        ("Taylor, NL;; Millar, AH", "Taylor, N. L. & Millar, A. H."),
+        ("Taylor, john", "Taylor, john"),
+        ("Taylor, John", "Taylor, John"),
+        ("Smith, J, PhD", "Smith, J, PhD"),
+        ("Smith, J, Jr, Extra", "Smith, J, Jr, Extra"),
+    ),
+)
+def test_format_authors_is_conservative(raw: str, expected: str) -> None:
+    """Only the approved semicolon/surname/initial grammar is reformatted."""
+    assert format_authors(raw) == expected
+
+
+def test_format_nature_citation_complete_record() -> None:
+    """A complete record has one deterministic Nature-style line."""
+    expected = (
+        "Taylor, N. L. & Millar, A. H. "
+        "Plant Mitochondrial Proteomics. "
+        "*PLANT MITOCHONDRIA: METHODS AND PROTOCOLS* "
+        "**1305,** 83–106 (2015). "
+        "[https://doi.org/10.1007/978-1-4939-2639-8_6]"
+        "(https://doi.org/10.1007/978-1-4939-2639-8_6)"
+    )
+    doc = {
+        "au": "Taylor, NL; Millar, AH",
+        "ti": "Plant Mitochondrial Proteomics",
+        "so": "PLANT MITOCHONDRIA: METHODS AND PROTOCOLS",
+        "vl": "1305",
+        "bp": "83",
+        "ep": "106",
+        "py": "2015",
+        "di": "10.1007/978-1-4939-2639-8_6",
+    }
+
+    assert format_nature_citation(doc, "retrieval title") == expected
+
+
+@pytest.mark.parametrize(
+    ("doc", "expected_fragment"),
+    (
+        ({"vl": "7", "bp": "12", "ep": "19"}, "**7,** 12–19."),
+        ({"vl": "7", "bp": "12", "ep": "12"}, "**7,** 12."),
+        ({"vl": "7", "bp": "12"}, "**7,** 12."),
+        ({"vl": "7", "ep": "19"}, "**7,** 19."),
+        ({"vl": "7", "ar": "e123"}, "**7,** e123."),
+        ({"vl": "7"}, "**7**."),
+        ({"py": "2026"}, "(2026)."),
+    ),
+)
+def test_format_nature_citation_partial_locators(
+    doc: dict[str, str], expected_fragment: str
+) -> None:
+    """Partial records omit empty separators and choose pages before ar."""
+    assert expected_fragment in format_nature_citation(doc, "Title")
+
+
+def test_format_nature_citation_avoids_duplicate_terminal_punctuation() -> (
+    None
+):
+    """Author/title punctuation is not duplicated and no empty year appears."""
+    citation = format_nature_citation(
+        {"au": "Consortium.", "ti": "Question?", "so": "Journal!"},
+        "fallback",
+    )
+
+    assert citation.startswith(r"Consortium. Question? *Journal\!*.")
+    assert ".." not in citation
+    assert "()" not in citation
+    assert ",." not in citation
+
+
+@pytest.mark.parametrize(
+    "doi",
+    (
+        "10.1000/x",
+        "doi: 10.1000/x",
+        "https://doi.org/10.1000/x",
+        "http://dx.doi.org/10.1000/x",
+    ),
+)
+def test_reference_payload_accepts_approved_doi_forms(doi: str) -> None:
+    """Every approved DI form projects one canonical DOI link."""
+    payload = _reference_payload({"file_id": "f1", "title": "T", "di": doi})
+
+    assert payload["formatted_citation"].endswith(
+        "[https://doi.org/10.1000/x](https://doi.org/10.1000/x)"
+    )
+    assert "doi_missing" not in payload
+
+
+def test_reference_payload_encodes_doi_target_only() -> None:
+    """Visible canonical DOI remains readable while the target is encoded."""
+    payload = _reference_payload({"title": "T", "di": "10.1000/a(b)?c"})
+
+    assert payload["formatted_citation"].endswith(
+        "[https://doi.org/10.1000/a(b)?c]"
+        "(https://doi.org/10.1000/a%28b%29%3Fc)"
+    )
+
+
+def test_reference_payload_uses_only_valid_doi_host_dl_fallback() -> None:
+    """DL is eligible only when DI is absent and DL is a resolver URL."""
+    valid = _reference_payload(
+        {"title": "T", "dl": "https://doi.org/10.1000/from-dl"}
+    )
+    invalid_di = _reference_payload(
+        {
+            "title": "T",
+            "di": "invalid",
+            "dl": "https://doi.org/10.1000/not-used",
+        }
+    )
+    invalid_links = [
+        _reference_payload({"title": "T", "dl": value})
+        for value in (
+            "10.1000/bare",
+            "https://example.com/10.1000/x",
+            "ftp://doi.org/10.1000/x",
+        )
+    ]
+
+    assert "10.1000/from-dl" in valid["formatted_citation"]
+    assert invalid_di["doi_missing"] is True
+    assert "not-used" not in invalid_di["formatted_citation"]
+    assert all(payload["doi_missing"] is True for payload in invalid_links)
+
+
+def test_reference_payload_projects_biblio_and_cleaned_title() -> None:
+    """Structured fields remain while the display excludes file_id."""
     doc = {
         "file_id": "f1",
-        "title": "T.pdf",
-        "au": "Smith J",
+        "title": "T.PDF",
+        "au": "Smith, J",
         "so": "Nature",
         "pm": "999",
     }
     payload = _reference_payload(doc)
     assert payload["file_id"] == "f1"
     assert payload["title"] == "T"
-    assert payload["au"] == "Smith J"
+    assert payload["au"] == "Smith, J"
     assert payload["so"] == "Nature"
     assert payload["pm"] == "999"
+    assert "formatted_citation" in payload
+    assert "f1" not in payload["formatted_citation"]
+    assert payload["doi_missing"] is True
 
 
 def test_reference_payload_falls_back_to_title_only() -> None:
-    """Doc without biblio fields returns only file_id and title."""
+    """Doc without bibliographic fields returns a display title and DOI flag."""
     assert _reference_payload({"file_id": "f1", "title": "T"}) == {
         "file_id": "f1",
         "title": "T",
+        "formatted_citation": "T.",
+        "doi_missing": True,
     }
+
+
+def test_reference_payload_escapes_untrusted_metadata() -> None:
+    """Source fields cannot create Markdown or HTML beyond owned markup."""
+    payload = _reference_payload(
+        {
+            "title": "fallback<script>.pdf",
+            "au": "<b>Smith</b>, J",
+            "ti": "Title [link](https://evil.test) <img>",
+            "so": "*Journal* <script>",
+            "vl": "**7**",
+            "bp": "[1]",
+            "py": "<2026>",
+        }
+    )
+    citation = payload["formatted_citation"]
+
+    assert "<script>" not in citation
+    assert "<img>" not in citation
+    assert "https://evil.test" in citation
+    assert r"\[link\]\(https://evil.test\)" in citation
+    assert r"\*Journal\*" in citation
+    assert r"\*\*7\*\*" in citation
+
+
+@pytest.mark.parametrize(
+    "status", (CITATION_STATUS_MISSING, CITATION_STATUS_LOOKUP_FAILED)
+)
+def test_missing_status_forces_clean_title_only(status: str) -> None:
+    """Metadata misses ignore stale bibliography and expose no private key."""
+    payload = _reference_payload(
+        {
+            "file_id": "f1",
+            "title": "retrieval [title].PDF",
+            "au": "Stale, S",
+            "ti": "Stale publication",
+            "di": "10.1000/stale",
+            CITATION_STATUS_KEY: status,
+        }
+    )
+
+    assert payload["formatted_citation"] == r"retrieval \[title\]"
+    assert payload["doi_missing"] is True
+    assert CITATION_STATUS_KEY not in payload
+    assert payload["ti"] == "Stale publication"
+
+
+def test_selected_metadata_miss_sets_degradation_and_sanitizes_raw() -> None:
+    """Only selected miss status projects degradation and never debug raw."""
+    payload = {
+        "choices": [
+            {
+                "message": {
+                    "content": "Selected [1].",
+                    "doc_list": [
+                        {
+                            "file_id": "f1",
+                            "title": "Selected.pdf",
+                            CITATION_STATUS_KEY: CITATION_STATUS_MISSING,
+                        },
+                        {
+                            "file_id": "f2",
+                            "title": "Uncited.pdf",
+                            CITATION_STATUS_KEY: CITATION_STATUS_MISSING,
+                        },
+                    ],
+                }
+            }
+        ]
+    }
+
+    envelope = build_tool_result_envelope("KnowledgeAgent", payload)
+
+    assert envelope.formatted.metadata["citation_metadata_degraded"] is True
+    assert envelope.formatted.answer == "Selected <sup>1</sup>."
+    assert envelope.formatted.references[0]["formatted_citation"] == "Selected"
+    assert CITATION_STATUS_KEY not in str(envelope.raw)
+
+
+def test_uncited_miss_and_no_id_fallback_do_not_degrade() -> None:
+    """Only selected keyed misses establish database degradation."""
+    uncited = format_tool_result(
+        "KnowledgeAgent",
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "No references selected.",
+                        "doc_list": [
+                            {
+                                "file_id": "f1",
+                                "title": "Uncited",
+                                CITATION_STATUS_KEY: CITATION_STATUS_MISSING,
+                            }
+                        ],
+                    }
+                }
+            ]
+        },
+    )
+    no_id = format_tool_result(
+        "KnowledgeAgent",
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "Fallback [1].",
+                        "doc_list": [{"title": "No ID"}],
+                    }
+                }
+            ]
+        },
+    )
+
+    assert "citation_metadata_degraded" not in uncited.metadata
+    assert "citation_metadata_degraded" not in no_id.metadata
+
+
+def test_missing_doi_does_not_imply_database_degradation() -> None:
+    """DOI quality is separate from citation database availability."""
+    result = format_tool_result(
+        "KnowledgeAgent",
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "Evidence [1].",
+                        "doc_list": [{"file_id": "f1", "title": "T"}],
+                    }
+                }
+            ]
+        },
+    )
+
+    assert result.references[0]["doi_missing"] is True
+    assert "citation_metadata_degraded" not in result.metadata
 
 
 def test_normalize_citations_carries_biblio_in_order() -> None:
@@ -184,7 +549,7 @@ def test_normalize_citations_carries_biblio_in_order() -> None:
         {"file_id": "b", "title": "B", "au": "AU-B"},
     ]
     new_answer, refs = _normalize_citations(answer, doc_list)
-    assert new_answer == "First [1] then [2]."
+    assert new_answer == "First <sup>1</sup> then <sup>2</sup>."
     assert refs[0]["file_id"] == "b" and refs[0]["au"] == "AU-B"
     assert refs[1]["file_id"] == "a" and refs[1]["au"] == "AU-A"
 

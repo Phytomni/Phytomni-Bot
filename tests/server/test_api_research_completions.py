@@ -103,9 +103,16 @@ async def test_knowledge_preserves_doc_list(
     body = response.json()
     assert body["model"] == "phyto-knowledge"
     assert body["formatted"]["references"] == [
-        {"file_id": "doc-a", "title": "Paper A"},
+        {
+            "file_id": "doc-a",
+            "title": "Paper A",
+            "formatted_citation": "Paper A",
+            "doi_missing": True,
+        },
     ]
-    assert body["choices"][0]["message"]["content"] == "Evidence in [1]."
+    assert body["choices"][0]["message"]["content"] == (
+        "Evidence in <sup>1</sup>."
+    )
 
 
 async def test_brief_gene_rejects_obs_file_list(

@@ -367,8 +367,8 @@ async def test_brief_gene_stream_seam_emits_envelope(
     return a fake compiled app whose ``astream`` yields a canned
     BriefGene-phase sequence. The knowledge subgraph's ``.ainvoke`` is
     never reached because the fake short-circuits at the ``astream``
-    boundary. ``_maybe_enrich_cited`` is stubbed to skip the live BI
-    bibliographic lookup. ``install_network_escape_guard`` patches the
+    boundary. ``_maybe_enrich_cited`` is stubbed to skip local bibliographic
+    lookup. ``install_network_escape_guard`` patches the
     three async paths ``block_external_http`` leaves open so any
     un-mocked socket escape surfaces as a fast RuntimeError.
     """
@@ -474,10 +474,22 @@ async def test_brief_gene_stream_seam_emits_envelope(
     assert "TextMessageStart" in types
     assert "TextMessageContent" in types
     assert "TextMessageEnd" in types
+    deltas = [
+        e.data["delta"] for e in events if e.type == "TextMessageContent"
+    ]
+    assert deltas == ["Gene AT1G01010 encodes <sup>1</sup>."]
     customs = {
         e.data["name"]: e.data["value"] for e in events if e.type == "Custom"
     }
     assert "phyto.references" in customs
+    assert customs["phyto.references"]["doc_list"] == [
+        {
+            "file_id": "bg1",
+            "title": "BG doc",
+            "formatted_citation": "BG doc.",
+            "doi_missing": True,
+        }
+    ]
     assert customs["phyto.follow_up"] == ["What about orthologs?"]
     # RunStarted/RunFinished carry the caller's ids
     assert events[0].data["run_id"] == "run-bg"

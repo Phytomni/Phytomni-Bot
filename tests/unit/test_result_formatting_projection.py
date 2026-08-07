@@ -428,7 +428,7 @@ def _build_full_completion() -> dict:
         "phytomni_state": {"gene_id": "Os01g0177400"},
         "raw": {"choices": [{"message": {"content": "raw"}}]},
         "formatted": {
-            "answer": "Gene report [1] text.",
+            "answer": "Gene report <sup>1</sup> text.",
             "references": [
                 {"file_id": "doc-1", "title": "Paper 1"},
             ],
@@ -482,11 +482,11 @@ def test_strip_chat_completion_cleans_message_keeps_reasoning() -> None:
 def test_strip_chat_completion_replaces_content_with_normalized_answer() -> (
     None
 ):
-    """choices[].message.content gets the normalized [N] answer."""
+    """choices[].message.content gets the normalized superscript answer."""
     completion = _build_full_completion()
     stripped = strip_chat_completion(completion)
     msg = stripped["choices"][0]["message"]
-    assert msg["content"] == "Gene report [1] text."
+    assert msg["content"] == "Gene report <sup>1</sup> text."
 
 
 def test_strip_chat_completion_removes_answer_from_formatted() -> None:

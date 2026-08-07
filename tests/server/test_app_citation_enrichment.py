@@ -10,6 +10,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from mcp_server_phytomni.agents.shared import sql as shared_sql
+from mcp_server_phytomni.agents.shared.citation_metadata import (
+    CITATION_STATUS_KEY,
+)
 from mcp_server_phytomni.mcp import app as app_mod
 from mcp_server_phytomni.mcp.app import invoke_tool_enveloped
 
@@ -54,6 +57,7 @@ async def test_cited_tool_doc_list_is_enriched():
     ):
         env = await invoke_tool_enveloped("KnowledgeAgent", {})
     assert env.formatted.references[0]["au"] == "Smith J"
+    assert env.formatted.references[0]["formatted_citation"] == ("Smith J. T.")
 
 
 @pytest.mark.asyncio
@@ -106,6 +110,10 @@ async def test_end_to_end_enriched_references_via_sqlite(
     assert ref["file_id"] == "f1"
     assert ref["au"] == "Smith J"
     assert ref["so"] == "Nature"
+    assert ref["formatted_citation"] == "Smith J. T. *Nature*."
+    assert ref["doi_missing"] is True
+    assert CITATION_STATUS_KEY not in ref
     raw_doc = env.raw["choices"][0]["message"]["doc_list"][0]
     assert raw_doc["title"] == "T"
     assert raw_doc["content"] == "retrieval content sentinel"
+    assert CITATION_STATUS_KEY not in raw_doc

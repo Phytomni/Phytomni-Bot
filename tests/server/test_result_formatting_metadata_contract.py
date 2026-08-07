@@ -349,7 +349,7 @@ def test_cited_agents_metadata_all_success(agent: str) -> None:
 
     All-success runs MUST have empty metadata (back-compat invariant).
     KnowledgeAgent / ReviewAgent / BriefGeneAgent emit plain markdown
-    with inline ``[N]`` citation markers as ``answer`` and ship
+    with inline HTML superscript citation markers as ``answer`` and ship
     deduplicated citation documents through ``references``. With no
     ``failures`` recorded on ``phytomni_state`` the formatter returns
     ``metadata == {}`` so clients do not depend on unstable
@@ -371,7 +371,7 @@ def test_cited_agents_metadata_all_success(agent: str) -> None:
     result = format_tool_result(agent, payload)
     assert result.metadata == {}
     assert "report" not in result.metadata
-    assert result.answer == "Evidence [1]."
+    assert result.answer == "Evidence <sup>1</sup>."
 
 
 def test_cited_agents_metadata_degraded_exposes_failures() -> None:
@@ -433,7 +433,7 @@ def test_cited_agents_metadata_degraded_exposes_failures() -> None:
         ("draft:", "review_results:", "revised:", "retrieve:", "add_query:")
     )
     assert "traceback_digest" not in metadata["failures"][0]
-    assert result.answer == "Evidence [1]."
+    assert result.answer == "Evidence <sup>1</sup>."
 
 
 def test_brief_gene_metadata_literature_degraded_exposes_degraded_key() -> (

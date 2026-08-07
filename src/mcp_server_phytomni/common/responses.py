@@ -15,7 +15,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 # Matches any `[<content>]` bracket where the content is NOT just
-# digits (those are valid `[N]` citations) and the bracket is NOT
+# digits (legacy/raw `[N]` citations are tolerated) and the bracket is NOT
 # immediately followed by `(` (markdown link / image) or `:`
 # (markdown reference-style link footer).
 _CITATION_RESIDUE_PATTERN = re.compile(
@@ -26,9 +26,10 @@ _CITATION_RESIDUE_PATTERN = re.compile(
 def assert_no_citation_residue(answer: str) -> None:
     """Assert the markdown body carries zero leaked citation markers.
 
-    Cited-agent answers must contain only ``[N]`` numeric citation
-    markers and markdown image / link / reference-style syntax in
-    bracket form. Any other ``[...]`` shape indicates the LLM
+    Current cited-agent client answers use ``<sup>N</sup>`` markers. This
+    defensive scanner also tolerates raw/legacy ``[N]`` numeric markers and
+    markdown image / link / reference-style syntax in bracket form. Any other
+    ``[...]`` shape indicates the LLM
     drifted away from the Align-A contract — most commonly
     ``[document: InterPro]`` style named pseudo-citations or
     ``[document: 32]`` style numeric-with-prefix drift that the

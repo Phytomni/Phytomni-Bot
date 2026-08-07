@@ -57,7 +57,7 @@ ATX_SECTION = re.compile(r"^\s{0,3}#{2,6}\s+\S")
 def markdown_body(answer: str) -> str:
     """Return the markdown body from an answer string.
 
-    Cited agents now emit plain markdown with inline ``[N]`` citation
+    Cited agents now emit markdown with inline ``<sup>N</sup>`` citation
     markers in ``message.content`` (citation documents live on the
     top-level ``references`` field). Earlier server builds wrapped the
     answer as a ``{"content": "<markdown>", "doc_list": [...]}`` JSON

@@ -204,7 +204,7 @@ async def test_terminal_events_carry_answer_and_custom(
 
     ``tool_name="KnowledgeAgent"`` is a cited tool, so the real
     enrichment path (``_maybe_enrich_cited`` -> ``enrich_cited_doc_list``
-    -> ``bi_query``) would otherwise fire a live BI call; stub it so the
+    -> local citation lookup) would otherwise require an artifact; stub it so
     test stays offline while still exercising the envelope projection.
     """
 
@@ -256,11 +256,19 @@ async def test_terminal_events_carry_answer_and_custom(
     assert "TextMessageStart" in types
     tmc = [e for e in events if e.type == "TextMessageContent"]
     assert len(tmc) == 1  # one-shot, not sliced (spec D4)
-    assert "Rice" in tmc[0].data["delta"]
+    assert tmc[0].data["delta"] == "Rice <sup>1</sup>."
     customs = {
         e.data["name"]: e.data["value"] for e in events if e.type == "Custom"
     }
     assert "phyto.references" in customs
+    assert customs["phyto.references"]["doc_list"] == [
+        {
+            "file_id": "f1",
+            "title": "T1",
+            "formatted_citation": "T1.",
+            "doi_missing": True,
+        }
+    ]
     assert customs["phyto.follow_up"] == ["next?"]
     # ordering: RunFinished is last
     assert types[-1] == "RunFinished"

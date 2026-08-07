@@ -29,7 +29,7 @@ pytestmark = pytest.mark.server
 def test_knowledge_result_rewrites_citations_and_deduplicates_docs() -> None:
     """Verify cited documents are deduplicated in first-citation order.
 
-    The answer text stays as plain markdown with inline ``[N]`` citation
+    The answer text stays as markdown with inline HTML superscript citation
     markers; deduplicated documents move to the structured ``references``
     field rather than being wrapped into a JSON envelope string.
     """
@@ -50,10 +50,22 @@ def test_knowledge_result_rewrites_citations_and_deduplicates_docs() -> None:
 
     result = format_tool_result("KnowledgeAgent", payload)
 
-    assert result.answer == "Evidence appears in [1] and [2,1]."
+    assert result.answer == (
+        "Evidence appears in <sup>1</sup> and <sup>2,1</sup>."
+    )
     assert result.references == (
-        {"file_id": "doc-b", "title": "Paper B"},
-        {"file_id": "doc-a", "title": "Paper A"},
+        {
+            "file_id": "doc-b",
+            "title": "Paper B",
+            "formatted_citation": "Paper B.",
+            "doi_missing": True,
+        },
+        {
+            "file_id": "doc-a",
+            "title": "Paper A",
+            "formatted_citation": "Paper A.",
+            "doi_missing": True,
+        },
     )
     assert result.follow_up_questions == ("Next question?",)
 

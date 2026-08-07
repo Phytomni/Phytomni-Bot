@@ -332,7 +332,7 @@ async def test_invoke_cited_agent_normalizes_references(
     tool: str,
     payload_name: str,
 ) -> None:
-    """Cited agents rewrite ``[N]`` markers and dedupe doc references."""
+    """Cited agents rewrite markers and dedupe Nature references."""
     assert os.environ["CITATION_DB_PATH"] == str(citation_db_path)
     raw = {
         "choices": [
@@ -352,8 +352,17 @@ async def test_invoke_cited_agent_normalizes_references(
         tool, _payload(demo_data_dir, payload_name)
     )
 
-    assert result.answer == "Background [1]. Conclusion [1]."
-    assert result.references == ({"file_id": "doc-a", "title": "Paper A"},)
+    assert result.answer == (
+        "Background <sup>1</sup>. Conclusion <sup>1</sup>."
+    )
+    assert result.references == (
+        {
+            "file_id": "doc-a",
+            "title": "Paper A",
+            "formatted_citation": "Paper A",
+            "doi_missing": True,
+        },
+    )
 
 
 async def test_invoke_data_agent_serializes_table(

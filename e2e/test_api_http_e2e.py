@@ -112,7 +112,7 @@ def _read_user_query(demo_data_dir: Path, name: str) -> str:
 def _completion_text(body: dict[str, Any]) -> str:
     """Return assistant content as plain markdown.
 
-    Cited agents now emit plain markdown with inline ``[N]`` markers in
+    Cited agents now emit markdown with inline ``<sup>N</sup>`` markers in
     ``message.content``; the ``markdown_body`` helper also tolerates the
     legacy ``{"content","doc_list"}`` JSON envelope for archived logs
     and pre-unwrap servers.
