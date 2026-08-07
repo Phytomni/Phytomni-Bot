@@ -25,7 +25,10 @@ __all__ = [
     "AgentCapability",
     "DatasetCapability",
     "DocumentContextCapability",
+    "ExpertAttachmentRequirement",
+    "agent_has_any_attachment_channel",
     "agent_supports_attachment_channels",
+    "filter_tools_for_expert_attachments",
     "filter_tools_for_attachment_channels",
     "get_agent_slug_for_tool",
     "get_attachment_capability",
@@ -179,6 +182,14 @@ class AttachmentCapability:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class ExpertAttachmentRequirement:
+    """Attachment facts used to constrain one Expert selection."""
+
+    managed_assets: bool = False
+    legacy_documents: bool = False
+
+
 @dataclass(frozen=True)
 class AgentCapability:
     """Consumer-facing facts for one canonical agent slug."""
@@ -317,6 +328,43 @@ def agent_supports_attachment_channels(
         (channel == "documents" and attachments.document_context is not None)
         or (channel == "datasets" and attachments.datasets is not None)
         for channel in channels
+    )
+
+
+def agent_has_any_attachment_channel(agent: str) -> bool:
+    """Return whether one canonical tool or slug accepts managed assets."""
+    slug = get_agent_slug_for_tool(agent) or agent
+    try:
+        attachments = get_attachment_capability(slug)
+    except KeyError:
+        return False
+    return (
+        attachments.document_context is not None
+        or attachments.datasets is not None
+    )
+
+
+def filter_tools_for_expert_attachments(
+    *,
+    allowed_tools: Sequence[str],
+    requirement: ExpertAttachmentRequirement,
+) -> tuple[str, ...]:
+    """Retain ordered, known Expert tools that satisfy attachment facts."""
+    return tuple(
+        tool
+        for tool in allowed_tools
+        if get_agent_slug_for_tool(tool) is not None
+        and (
+            not requirement.managed_assets
+            or agent_has_any_attachment_channel(tool)
+        )
+        and (
+            not requirement.legacy_documents
+            or agent_supports_attachment_channels(
+                tool,
+                frozenset({"documents"}),
+            )
+        )
     )
 
 

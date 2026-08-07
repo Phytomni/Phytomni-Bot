@@ -224,7 +224,12 @@ _PRESELECTOR_CASES = (
             "InSilicoResearchAgent",
             "KnowledgeAgent",
         ),
-        ("AnalystAgent", "InSilicoResearchAgent"),
+        (
+            "ChatAgent",
+            "AnalystAgent",
+            "InSilicoResearchAgent",
+            "KnowledgeAgent",
+        ),
     ),
     _PreselectorCase(
         "dataset",
@@ -234,7 +239,11 @@ _PRESELECTOR_CASES = (
     _PreselectorCase(
         "mixed",
         ("AnalystAgent", "InSilicoResearchAgent", "DigitalDesignAgent"),
-        ("AnalystAgent", "InSilicoResearchAgent"),
+        (
+            "AnalystAgent",
+            "InSilicoResearchAgent",
+            "DigitalDesignAgent",
+        ),
     ),
     _PreselectorCase(
         "document",
@@ -264,11 +273,11 @@ def _assert_research_attachment_call(
 
 
 _AUTHZ_CASES = (
-    _AuthzCase(("ChatAgent", "KnowledgeAgent"), None, "dataset"),
-    _AuthzCase(("ChatAgent", "AnalystAgent"), "ChatAgent", "dataset"),
+    _AuthzCase(("DataAgent", "BriefGeneAgent"), None, "dataset"),
+    _AuthzCase(("DataAgent", "AnalystAgent"), "DataAgent", "dataset"),
     _AuthzCase(
-        ("AnalystAgent", "InSilicoResearchAgent", "DigitalDesignAgent"),
-        "DigitalDesignAgent",
+        ("AnalystAgent", "DigitalDesignAgent", "BriefGeneAgent"),
+        "BriefGeneAgent",
         "mixed",
     ),
 )
@@ -399,6 +408,72 @@ async def test_expert_selected_arguments_discard_selector_paths(
     assert "selector value" not in response.text
 
 
+async def test_expert_rejects_unfiltered_router_selection(
+    asset_http_context: AssetHttpTestContext,
+) -> None:
+    """A router cannot dispatch a zero-channel tool outside its allowlist."""
+    assets = _install_expert_purpose_assets(asset_http_context)
+    _patch_select(
+        asset_http_context.monkeypatch,
+        ToolSelection("DataAgent", {"user_query": "selector rewrite"}),
+    )
+    agent_calls: list[Any] = []
+
+    async def forbid_invoke(**_kwargs: Any) -> tuple[dict[str, Any], int]:
+        agent_calls.append(1)
+        raise AssertionError("agent must not run")
+
+    asset_http_context.monkeypatch.setattr(
+        api_app, "_invoke_agent_run", forbid_invoke
+    )
+    response = await _post_expert_route(
+        asset_http_context,
+        assets.app,
+        payload={
+            "user_query": "original expert query",
+            "allowed_tools": ["AnalystAgent"],
+            "attachments": _attachments_for(assets, "dataset"),
+        },
+        base_url="http://api.expert-final-check.test",
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["error"]["code"] == "attachment_not_supported"
+    assert not agent_calls
+
+
+async def test_expert_supported_forced_tool_stays_forced(
+    asset_http_context: AssetHttpTestContext,
+) -> None:
+    """A supported forced tool reaches the strict router without fallback."""
+    assets = _install_expert_purpose_assets(asset_http_context)
+    captured: dict[str, Any] = {}
+    patch_expert_router(
+        asset_http_context.monkeypatch,
+        expert_router,
+        _router_completion(
+            ("AnalystAgent", json.dumps(_selection_args("AnalystAgent")))
+        ),
+        captured=captured,
+    )
+    _install_selected_handler(asset_http_context.monkeypatch, "AnalystAgent")
+    response = await _post_expert_route(
+        asset_http_context,
+        assets.app,
+        payload={
+            "user_query": "forced expert query",
+            "allowed_tools": ["AnalystAgent"],
+            "attachments": _attachments_for(assets, "dataset"),
+            "forced_tool": "AnalystAgent",
+        },
+        base_url="http://api.expert-forced.test",
+    )
+    assert response.status_code == 202, response.text
+    assert captured["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "AnalystAgent"},
+    }
+
+
 async def test_expert_rejects_stale_dataset_description_field(
     asset_http_context: AssetHttpTestContext,
 ) -> None:
@@ -435,9 +510,9 @@ async def test_expert_context_dataset_authorization_failures(
     router_calls, agent_calls = _forbid_router_and_agent(monkeypatch)
     cases = (
         {
-            "allowed_tools": ["DataAgent", "ChatAgent"],
+            "allowed_tools": ["DataAgent", "BriefGeneAgent"],
             "conversation": _expert_context_envelope(
-                allowed=["DataAgent", "ChatAgent"],
+                allowed=["DataAgent", "BriefGeneAgent"],
                 requested="DataAgent",
                 request_id="expert-context-authz",
                 content="blocked expert context",
@@ -446,8 +521,8 @@ async def test_expert_context_dataset_authorization_failures(
         {
             "allowed_tools": ["AnalystAgent", "ChatAgent"],
             "conversation": _expert_context_envelope(
-                allowed=["ChatAgent"],
-                requested=None,
+                allowed=["DataAgent"],
+                requested="DataAgent",
                 request_id="expert-context-authz",
                 content="blocked expert context",
             ),

@@ -52,6 +52,7 @@ from .agent_dependencies import (
 )
 from .attachment_inputs import (
     expert_attachment_channels,
+    expert_attachment_requirement,
     filter_expert_attachment_candidates,
     prepare_chat_attachments,
     prepare_native_attachment_arguments,
@@ -618,11 +619,15 @@ def _register_native_routes(
             attachment_owner=attachment_owner,
             resolver=dependencies.upload.asset_resolver,
         )
+        requirement = expert_attachment_requirement(
+            resolved_input,
+            payload.obs_file_list,
+        )
+        payload = filter_expert_attachment_candidates(payload, requirement)
         channels = expert_attachment_channels(
             resolved_input,
             payload.obs_file_list,
         )
-        payload = filter_expert_attachment_candidates(payload, channels)
         if payload.conversation is not None:
             if not dependencies.context.enabled():
                 raise HTTPException(

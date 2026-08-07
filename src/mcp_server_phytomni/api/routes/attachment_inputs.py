@@ -14,11 +14,10 @@ from fastapi import HTTPException
 from ...runtime.attachment_assets import ResolvedAttachmentBundle
 from ...runtime.locale import current_effective_locale
 from ..agent_capabilities import (
-    agent_supports_attachment_channels,
-    filter_tools_for_attachment_channels,
+    ExpertAttachmentRequirement,
+    filter_tools_for_expert_attachments,
     get_agent_slug_for_tool,
     get_attachment_capability,
-    required_attachment_channels,
 )
 from ..asset_resolver import AssetResolver, normalize_asset_attachments
 from ..attachment_projection import (
@@ -41,6 +40,7 @@ __all__ = [
     "ResolvedAttachmentInput",
     "attachment_not_supported_error",
     "expert_attachment_channels",
+    "expert_attachment_requirement",
     "filter_expert_attachment_candidates",
     "normalize_chat_payload_attachments",
     "normalize_expert_payload_attachments",
@@ -239,23 +239,35 @@ def expert_attachment_channels(
     resolved_input: ResolvedAttachmentInput,
     obs_file_list: Sequence[str],
 ) -> frozenset[str]:
-    """Union resolved bundle channels with trusted document paths."""
-    channels = set(required_attachment_channels(resolved_input.bundle))
+    """Return only legacy channels needed by the context boundary."""
+    del resolved_input
+    channels: set[str] = set()
     if any(str(item).strip() for item in obs_file_list):
         channels.add("documents")
     return frozenset(channels)
 
 
+def expert_attachment_requirement(
+    resolved_input: ResolvedAttachmentInput,
+    obs_file_list: Sequence[str],
+) -> ExpertAttachmentRequirement:
+    """Summarize managed and legacy Expert attachment constraints."""
+    return ExpertAttachmentRequirement(
+        managed_assets=bool(resolved_input.bundle.assets),
+        legacy_documents=any(str(item).strip() for item in obs_file_list),
+    )
+
+
 def filter_expert_attachment_candidates(
     payload: ExpertQueryRequest,
-    channels: frozenset[str],
+    requirement: ExpertAttachmentRequirement,
 ) -> ExpertQueryRequest:
-    """Filter ordered Expert tools by required attachment channels."""
-    if not channels:
+    """Filter ordered Expert tools by attachment authorization facts."""
+    if not (requirement.managed_assets or requirement.legacy_documents):
         return payload
-    filtered = filter_tools_for_attachment_channels(
+    filtered = filter_tools_for_expert_attachments(
         allowed_tools=payload.allowed_tools,
-        channels=channels,
+        requirement=requirement,
     )
     if not filtered or (
         payload.forced_tool is not None and payload.forced_tool not in filtered
@@ -273,11 +285,17 @@ def prepare_selected_expert_arguments(
     db_path: str,
 ) -> tuple[dict[str, Any], PreparedAttachmentContext]:
     """Discard selector path maps and prepare managed Expert arguments."""
-    channels = expert_attachment_channels(
+    requirement = expert_attachment_requirement(
         resolved_input,
         payload.obs_file_list,
     )
-    if channels and not agent_supports_attachment_channels(agent, channels):
+    allowed_tools = filter_tools_for_expert_attachments(
+        allowed_tools=payload.allowed_tools,
+        requirement=requirement,
+    )
+    if not any(
+        get_agent_slug_for_tool(tool) == agent for tool in allowed_tools
+    ):
         raise attachment_not_supported_error()
     arguments = dict(selected_arguments)
     arguments.pop("obs_file_list", None)
@@ -286,7 +304,14 @@ def prepare_selected_expert_arguments(
     if agent == "analyst":
         arguments["goal_description"] = payload.user_query
         arguments.pop("user_query", None)
-    elif agent == "research":
+    elif agent in {
+        "chat",
+        "knowledge",
+        "data",
+        "review",
+        "brief_gene",
+        "research",
+    }:
         arguments["user_query"] = payload.user_query
         arguments.pop("goal_description", None)
     arguments["locale"] = current_effective_locale()

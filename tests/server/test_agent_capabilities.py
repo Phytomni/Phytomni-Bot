@@ -18,8 +18,10 @@ from mcp_server_phytomni.api.advertised_protocols import (
 )
 from mcp_server_phytomni.api.agent_capabilities import (
     AGENT_CAPABILITIES,
+    ExpertAttachmentRequirement,
     agent_supports_attachment_channels,
     filter_tools_for_attachment_channels,
+    filter_tools_for_expert_attachments,
     get_agent_capability,
     get_agent_slug_for_tool,
     get_attachment_capability,
@@ -194,6 +196,29 @@ def test_attachment_channel_filter_discards_unknown_without_synthesis() -> (
         allowed_tools=("unknown-tool", "AnalystAgent"),
         channels=frozenset({"datasets"}),
     ) == ("AnalystAgent",)
+
+
+def test_expert_attachment_filter_intersects_capability() -> None:
+    """Managed and legacy Expert requirements remain independent facts."""
+    allowed = (
+        "DataAgent",
+        "DigitalDesignAgent",
+        "AnalystAgent",
+        "BriefGeneAgent",
+        "ChatAgent",
+    )
+
+    assert filter_tools_for_expert_attachments(
+        allowed_tools=allowed,
+        requirement=ExpertAttachmentRequirement(managed_assets=True),
+    ) == ("DigitalDesignAgent", "AnalystAgent", "ChatAgent")
+    assert filter_tools_for_expert_attachments(
+        allowed_tools=("unknown-tool", *allowed),
+        requirement=ExpertAttachmentRequirement(
+            managed_assets=True,
+            legacy_documents=True,
+        ),
+    ) == ("DigitalDesignAgent", "AnalystAgent", "ChatAgent")
 
 
 def test_required_attachment_channels_follow_bundle_partitions() -> None:
