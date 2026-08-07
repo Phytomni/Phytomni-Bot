@@ -166,7 +166,7 @@ class ResumableUploadService:
                         bucket=self.bucket_name,
                         object_key=asset.object_key,
                     )
-                except MultipartStorageError:
+                except OSError:
                     _discard_quietly(self.registry, asset)
                     raise
                 try:

@@ -46,7 +46,7 @@ NOW = datetime(2026, 8, 1, tzinfo=UTC)
 
 
 class _FailingMultipartStorage(FakeMultipartStorage):
-    """Record safe call counts while injecting normalized provider failures."""
+    """Record safe call counts while injecting provider failures."""
 
     def __init__(
         self,
@@ -54,6 +54,7 @@ class _FailingMultipartStorage(FakeMultipartStorage):
         fail_begin_calls: int = 0,
         fail_abort_calls: int = 0,
         begin_error_code: str = "upload_storage_unavailable",
+        begin_error: OSError | None = None,
     ) -> None:
         super().__init__()
         self.begin_calls = 0
@@ -61,6 +62,7 @@ class _FailingMultipartStorage(FakeMultipartStorage):
         self.fail_begin_calls = fail_begin_calls
         self.fail_abort_calls = fail_abort_calls
         self.begin_error_code = begin_error_code
+        self.begin_error = begin_error
         self.after_begin: Callable[[MultipartSession], None] | None = None
 
     def begin(self, *, bucket: str, object_key: str) -> MultipartSession:
@@ -68,6 +70,8 @@ class _FailingMultipartStorage(FakeMultipartStorage):
         self.begin_calls += 1
         if self.fail_begin_calls:
             self.fail_begin_calls -= 1
+            if self.begin_error is not None:
+                raise self.begin_error
             raise MultipartStorageError(self.begin_error_code)
         session = super().begin(bucket=bucket, object_key=object_key)
         if self.after_begin is not None:
@@ -188,6 +192,43 @@ def test_begin_failure_discards_only_unbound_allocation(
         ).fetchone()
     assert active_count == 3
     assert (event_count, accepted_bytes) == (4, 12)
+
+
+def test_raw_begin_failure_discards_only_unbound_allocation(
+    tmp_path: Path,
+) -> None:
+    """Raw provider begin errors discard the row before stable projection."""
+    storage = _FailingMultipartStorage(
+        fail_begin_calls=1,
+        begin_error=OSError("provider transport detail"),
+    )
+    service, _storage = _service(tmp_path, storage=storage)
+
+    with pytest.raises(UploadContractError) as captured:
+        service.create(_request())
+
+    assert captured.value.code == "upload_storage_unavailable"
+    assert captured.value.status_code == 503
+    assert str(captured.value) == "upload storage unavailable"
+    assert "provider transport detail" not in str(captured.value)
+    with sqlite3.connect(service.registry.db_path) as conn:
+        assert (
+            conn.execute("SELECT COUNT(*) FROM upload_assets").fetchone()[0]
+            == 0
+        )
+
+    recreated = service.create(_request())
+    assert recreated.status == "uploading"
+    with sqlite3.connect(service.registry.db_path) as conn:
+        active_count, accepted_bytes, event_count = conn.execute(
+            "SELECT (SELECT COUNT(*) FROM upload_assets "
+            "WHERE status = 'uploading'), "
+            "(SELECT COALESCE(SUM(byte_size), 0) FROM upload_quota_events "
+            "WHERE owner_subject = 'owner-1' AND event_kind = 'create'), "
+            "(SELECT COUNT(*) FROM upload_quota_events "
+            "WHERE owner_subject = 'owner-1' AND event_kind = 'create')"
+        ).fetchone()
+    assert (active_count, accepted_bytes, event_count) == (1, 6, 2)
 
 
 def test_losing_bind_aborts_only_its_provider_session(
