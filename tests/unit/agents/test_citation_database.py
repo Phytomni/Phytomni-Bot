@@ -9,6 +9,7 @@ import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import asdict, fields
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,7 @@ from mcp_server_phytomni.agents.shared.citation_database import (
     CITATION_LOOKUP_BATCH_SIZE,
     CITATION_RECORD_FIELDS,
     CITATION_SCHEMA_VERSION,
+    CitationBuildMetadata,
     CitationDatabaseArtifactError,
     CitationDatabaseConfigurationError,
     CitationDatabaseFormatError,
@@ -64,6 +66,77 @@ def _assert_stable_error(
     """Verify the public failure retains neither inputs nor driver details."""
     assert str(error) == f"{code}: verify CITATION_DB_PATH"
     assert all(marker not in str(error) for marker in forbidden)
+
+
+def test_build_metadata_has_declared_dataclass_fields() -> None:
+    """Metadata fields remain visible to dataclass reflection and export."""
+    metadata = CitationBuildMetadata(
+        1,
+        "a" * 64,
+        4,
+        3,
+        2,
+        1,
+        1,
+        0,
+        1,
+        0,
+        1,
+    )
+    expected_fields = (
+        "schema_version",
+        "source_sha256",
+        "source_record_count",
+        "unique_id_count",
+        "imported_record_count",
+        "exact_duplicate_row_count",
+        "conflict_id_count",
+        "quarantined_row_count",
+        "missing_doi_count",
+        "invalid_doi_count",
+        "missing_title_count",
+    )
+
+    assert tuple(field.name for field in fields(metadata)) == expected_fields
+    assert tuple(asdict(metadata)) == expected_fields
+    assert asdict(metadata)["conflict_id_count"] == 1
+
+
+def test_readonly_connection_closes_on_query_only_initialization_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed query-only setup closes its connection before raising."""
+
+    class _FailingConnection:
+        """Connection fake that fails while query-only mode is enabled."""
+
+        row_factory: object | None = None
+
+        def __init__(self) -> None:
+            """Track whether serving code closes this connection."""
+            self.closed = False
+
+        def execute(self, _query: str) -> None:
+            """Raise the bounded SQLite initialization failure."""
+            raise sqlite3.OperationalError("query_only setup failed")
+
+        def close(self) -> None:
+            """Record the required cleanup call."""
+            self.closed = True
+
+    connection = _FailingConnection()
+    monkeypatch.setattr(
+        citation_database.sqlite3,
+        "connect",
+        lambda *_args, **_kwargs: connection,
+    )
+    connect_read_only = getattr(citation_database, "_connect_read_only")
+
+    with pytest.raises(sqlite3.OperationalError):
+        connect_read_only(tmp_path / "citation.sqlite")
+
+    assert connection.closed
 
 
 def test_resolver_requires_config_without_creating_a_file(

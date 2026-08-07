@@ -10,10 +10,11 @@ import os
 import re
 import sqlite3
 from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
 from ...config import CitationConfig
 from .citation_metadata import CITATION_RECORD_FIELDS
@@ -47,19 +48,6 @@ _METADATA_COLUMNS = (
 )
 _METADATA_FIELD_NAMES = tuple(column[0] for column in _METADATA_COLUMNS)
 _SOURCE_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
-type _CitationMetadataValues = tuple[
-    int,
-    str,
-    int,
-    int,
-    int,
-    int,
-    int,
-    int,
-    int,
-    int,
-    int,
-]
 CITATION_BUILD_METADATA_FIELDS = _METADATA_FIELD_NAMES
 
 CITATION_DATABASE_SCHEMA = """
@@ -97,90 +85,27 @@ CREATE TABLE citation_build_metadata (
 """
 
 
-@dataclass(frozen=True, slots=True, init=False)
-class CitationBuildMetadata:
+@dataclass(frozen=True, slots=True)
+class _CitationBuildMetadataSource:
+    """Schema-v1 source accounting fields shared by citation metadata."""
+
+    schema_version: int
+    source_sha256: str
+    source_record_count: int
+    unique_id_count: int
+    imported_record_count: int
+    exact_duplicate_row_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class CitationBuildMetadata(_CitationBuildMetadataSource):
     """Validated singleton metadata attached to a citation artifact."""
 
-    _values: _CitationMetadataValues
-
-    def __init__(
-        self,
-        *args: int | str,
-        **kwargs: int | str,
-    ) -> None:
-        """Store the immutable schema-v1 metadata tuple."""
-        if args:
-            if kwargs:
-                raise TypeError("use positional or keyword metadata values")
-            raw_values = args
-        else:
-            if set(kwargs) != set(CITATION_BUILD_METADATA_FIELDS):
-                raise TypeError("metadata fields do not match schema v1")
-            raw_values = tuple(
-                kwargs[field] for field in CITATION_BUILD_METADATA_FIELDS
-            )
-        if len(raw_values) != len(CITATION_BUILD_METADATA_FIELDS):
-            raise TypeError("metadata field count does not match schema v1")
-        object.__setattr__(
-            self,
-            "_values",
-            cast(_CitationMetadataValues, raw_values),
-        )
-
-    @property
-    def schema_version(self) -> int:
-        """Return the artifact schema version."""
-        return self._values[0]
-
-    @property
-    def source_sha256(self) -> str:
-        """Return the lowercase source SHA-256 digest."""
-        return self._values[1]
-
-    @property
-    def source_record_count(self) -> int:
-        """Return the raw source record count."""
-        return self._values[2]
-
-    @property
-    def unique_id_count(self) -> int:
-        """Return the count of unique valid source IDs."""
-        return self._values[3]
-
-    @property
-    def imported_record_count(self) -> int:
-        """Return the count of records imported for serving."""
-        return self._values[4]
-
-    @property
-    def exact_duplicate_row_count(self) -> int:
-        """Return the count of exact duplicate source rows."""
-        return self._values[5]
-
-    @property
-    def conflict_id_count(self) -> int:
-        """Return the count of IDs quarantined as conflicts."""
-        return self._values[6]
-
-    @property
-    def quarantined_row_count(self) -> int:
-        """Return the count of quarantined source rows."""
-        return self._values[7]
-
-    @property
-    def missing_doi_count(self) -> int:
-        """Return the count of rows without a DOI."""
-        return self._values[8]
-
-    @property
-    def invalid_doi_count(self) -> int:
-        """Return the count of rows with an invalid DOI."""
-        return self._values[9]
-
-    @property
-    def missing_title_count(self) -> int:
-        """Return the count of rows without a title."""
-        return self._values[10]
+    conflict_id_count: int
+    quarantined_row_count: int
+    missing_doi_count: int
+    invalid_doi_count: int
+    missing_title_count: int
 
 
 class CitationDatabaseError(RuntimeError):
@@ -311,8 +236,13 @@ def _connect_read_only(path: Path) -> sqlite3.Connection:
         uri=True,
         check_same_thread=True,
     )
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA query_only=ON")
+    try:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA query_only=ON")
+    except (sqlite3.Error, OSError):
+        with suppress(sqlite3.Error, OSError):
+            connection.close()
+        raise
     return connection
 
 
