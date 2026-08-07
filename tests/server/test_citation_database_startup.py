@@ -16,7 +16,10 @@ from typing import Any
 
 import pytest
 from fastapi import FastAPI
-from tests.support.citation_database import create_valid_citation_database
+from tests.support.citation_database import (
+    create_valid_citation_database,
+    install_failed_integrity,
+)
 
 from mcp_server_phytomni.agents.shared import citation_database
 from mcp_server_phytomni.agents.shared.citation_database import (
@@ -175,7 +178,7 @@ def _prepare_invalid_artifact(
         statement = "UPDATE citation_build_metadata SET source_record_count=1"
         expected_error = CitationDatabaseMetadataError
     elif kind == "failed_integrity":
-        _install_failed_integrity(monkeypatch)
+        install_failed_integrity(citation_database, monkeypatch)
         expected_error = CitationDatabaseIntegrityError
     else:
         raise AssertionError(f"unknown artifact kind: {kind}")
@@ -184,34 +187,6 @@ def _prepare_invalid_artifact(
         with sqlite3.connect(path) as connection:
             connection.execute(statement)
     return path, expected_error
-
-
-def _install_failed_integrity(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Substitute only the final SQLite integrity result."""
-    real_connect = getattr(citation_database, "_connect_read_only")
-
-    class _IntegrityConnection:
-        """Delegate all connection work except the integrity pragma."""
-
-        def __init__(self, connection: sqlite3.Connection) -> None:
-            """Store the real read-only connection."""
-            self._connection = connection
-
-        def execute(self, query: str, *args: Any) -> Any:
-            """Replace only the final integrity result."""
-            if query == "PRAGMA integrity_check":
-                return self._connection.execute("SELECT 'not ok'")
-            return self._connection.execute(query, *args)
-
-        def close(self) -> None:
-            """Close the real read-only connection."""
-            self._connection.close()
-
-    monkeypatch.setattr(
-        citation_database,
-        "_connect_read_only",
-        lambda path: _IntegrityConnection(real_connect(path)),
-    )
 
 
 @pytest.mark.asyncio

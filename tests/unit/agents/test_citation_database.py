@@ -19,6 +19,7 @@ from tests.support.citation_database import (
     CITATION_SOURCE_ACCOUNTING_COUNTS,
     assert_citation_metadata_counts,
     create_valid_citation_database,
+    install_failed_integrity,
 )
 
 from mcp_server_phytomni.agents.shared import citation_database
@@ -411,30 +412,7 @@ def test_validate_rejects_non_ok_integrity_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failing integrity check maps to its dedicated public error."""
-    real_connect = getattr(citation_database, "_connect_read_only")
-
-    class _IntegrityConnection:
-        """Wrap one connection while substituting the integrity result."""
-
-        def __init__(self, connection: sqlite3.Connection) -> None:
-            """Store the underlying read-only connection."""
-            self._connection = connection
-
-        def execute(self, query: str, *args: Any) -> Any:
-            """Return a failing result for the integrity pragma only."""
-            if query == "PRAGMA integrity_check":
-                return self._connection.execute("SELECT 'not ok'")
-            return self._connection.execute(query, *args)
-
-        def close(self) -> None:
-            """Close the underlying connection."""
-            self._connection.close()
-
-    monkeypatch.setattr(
-        citation_database,
-        "_connect_read_only",
-        lambda path: _IntegrityConnection(real_connect(path)),
-    )
+    install_failed_integrity(citation_database, monkeypatch)
 
     with pytest.raises(CitationDatabaseIntegrityError) as exc:
         validate_citation_database(citation_db_path)

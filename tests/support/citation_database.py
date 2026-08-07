@@ -8,6 +8,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -47,6 +48,37 @@ def install_inline_citation_lookup(
         citation_enrichment,
         "lookup_citation_records",
         lookup,
+    )
+
+
+def install_failed_integrity(
+    citation_database_module: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Substitute only the final SQLite integrity result."""
+    real_connect = getattr(citation_database_module, "_connect_read_only")
+
+    class _IntegrityConnection:
+        """Delegate all connection work except the integrity pragma."""
+
+        def __init__(self, connection: sqlite3.Connection) -> None:
+            """Store the real read-only connection."""
+            self._connection = connection
+
+        def execute(self, query: str, *args: Any) -> Any:
+            """Replace only the final integrity result."""
+            if query == "PRAGMA integrity_check":
+                return self._connection.execute("SELECT 'not ok'")
+            return self._connection.execute(query, *args)
+
+        def close(self) -> None:
+            """Close the real read-only connection."""
+            self._connection.close()
+
+    monkeypatch.setattr(
+        citation_database_module,
+        "_connect_read_only",
+        lambda path: _IntegrityConnection(real_connect(path)),
     )
 
 
