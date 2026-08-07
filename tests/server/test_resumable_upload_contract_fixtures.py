@@ -2,7 +2,7 @@
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
-"""Shape-lock tests for resumable-upload and agent-attachment fixtures."""
+"""Shape-lock tests for resumable-upload fixtures."""
 
 from __future__ import annotations
 
@@ -12,24 +12,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from tests.support.resumable_asset_fakes import (
-    ResumableAssetSpec,
-    build_resumable_asset,
-)
 
 from mcp_server_phytomni.api.agent_capabilities import (
     serialize_file_upload_capability,
 )
-from mcp_server_phytomni.api.attachments import (
-    redact_managed_attachment_values,
-)
-from mcp_server_phytomni.api.routes.attachment_inputs import (
-    prepare_native_attachment_arguments,
-    resolve_attachment_input,
-)
 from mcp_server_phytomni.api.routes.uploads import _upload_status_headers
 from mcp_server_phytomni.api.schemas import (
-    AgentRunRequest,
     AssetDescriptor,
     UploadCapabilityRenewRequest,
     UploadCapabilityResponse,
@@ -39,17 +27,11 @@ from mcp_server_phytomni.api.schemas import (
     UploadPartResponse,
     UploadStatusResponse,
 )
-from mcp_server_phytomni.runtime import (
-    resumable_uploads as resumable_uploads_mod,
-)
 
 pytestmark = pytest.mark.server
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _FIXTURE_ROOT = _REPO_ROOT / "docs" / "contracts" / "resumable-upload"
-_AGENT_ATTACHMENT_FIXTURE_ROOT = (
-    _REPO_ROOT / "docs" / "contracts" / "agent-attachments"
-)
 
 _EXPECTED_FILES = frozenset(
     {
@@ -66,121 +48,11 @@ _EXPECTED_FILES = frozenset(
         "abort_response.json",
     }
 )
-_AGENT_ATTACHMENT_FILES = frozenset({"native_mixed_request.json"})
-_FIXTURE_DATASET_ID = "file_11111111111111111111111111111111"
-_FIXTURE_DOCUMENT_ID = "file_22222222222222222222222222222222"
-_FIXTURE_OWNER = "fixture-delegated-owner"
-_FORBIDDEN_ATTACHMENT_MARKERS = (
-    "object_key",
-    "upload_id",
-    "capability",
-    "Bearer",
-    "/home/",
-    "/obs/",
-    "http://",
-    "https://",
-    "ptm_",
-    "AT1G",
-    ">gene",
-    "FASTA",
-)
 
 
 def _load(name: str) -> Any:
     """Load one JSON fixture from the pinned contract directory."""
     return json.loads((_FIXTURE_ROOT / name).read_text(encoding="utf-8"))
-
-
-def _load_agent_attachment(name: str) -> Any:
-    """Load one JSON fixture from the agent-attachment contract directory."""
-    return json.loads(
-        (_AGENT_ATTACHMENT_FIXTURE_ROOT / name).read_text(encoding="utf-8")
-    )
-
-
-def _pin_fixture_asset_ids(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Pin create-time asset ids to 32 ones, then 32 twos.
-
-    ``create`` emits ``token_hex(16)`` before the storage session's
-    ``token_hex(8)``; part leases emit another ``token_hex(16)`` after that
-    eight-byte draw. Consume the pinned values only on create-time draws.
-    """
-    pinned = iter(("1" * 32, "2" * 32))
-    previous_nbytes: int | None = None
-    original = resumable_uploads_mod.secrets.token_hex
-
-    def _token_hex(nbytes: int) -> str:
-        nonlocal previous_nbytes
-        prior = previous_nbytes
-        previous_nbytes = nbytes
-        if nbytes == 16 and prior != 8:
-            try:
-                return next(pinned)
-            except StopIteration:
-                pass
-        return original(nbytes)
-
-    monkeypatch.setattr(resumable_uploads_mod.secrets, "token_hex", _token_hex)
-
-
-def _build_fixture_mixed_assets(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> tuple[Any, str]:
-    """Complete the pinned dataset and document under one shared registry."""
-    _pin_fixture_asset_ids(monkeypatch)
-    db_path = str(tmp_path / "fixture-attachments.sqlite")
-    specs = (
-        ResumableAssetSpec(
-            owner=_FIXTURE_OWNER,
-            filename="synthetic-counts.csv",
-            content=b"column,count\nsynthetic,1\n",
-            purpose="dataset",
-        ),
-        ResumableAssetSpec(
-            owner=_FIXTURE_OWNER,
-            filename="synthetic-protocol.pdf",
-            content=b"%PDF-1.4\nsynthetic-protocol\n",
-            purpose="document",
-        ),
-    )
-    assets = [
-        build_resumable_asset(tmp_path, db_path=db_path, spec=spec)
-        for spec in specs
-    ]
-    assert [asset.asset_id for asset in assets] == [
-        _FIXTURE_DATASET_ID,
-        _FIXTURE_DOCUMENT_ID,
-    ]
-    return assets[0].resolver, db_path
-
-
-def _assert_fixture_references_are_private(
-    prepared_arguments: dict[str, Any],
-    evidence: Any,
-) -> None:
-    """Require managed references stay out of fixture bytes and redaction."""
-    dataset_reference = next(iter(prepared_arguments["data_list"]))
-    document_reference = prepared_arguments["obs_file_list"][0]
-    assert dataset_reference != document_reference
-    fixture_bytes = (
-        _AGENT_ATTACHMENT_FIXTURE_ROOT / "native_mixed_request.json"
-    ).read_bytes()
-    assert dataset_reference.encode("utf-8") not in fixture_bytes
-    assert document_reference.encode("utf-8") not in fixture_bytes
-    debug_projection = {
-        "answer": f"used {dataset_reference} and {document_reference}",
-        "arguments": prepared_arguments,
-        "owner_subject": _FIXTURE_OWNER,
-    }
-    redacted = redact_managed_attachment_values(debug_projection, evidence)
-    dumped = json.dumps(redacted, sort_keys=True)
-    assert dataset_reference not in dumped
-    assert document_reference not in dumped
-    assert "attachments" not in redacted
-    assert "data_list" not in redacted
-    assert "obs_file_list" not in redacted
-    assert "owner_subject" not in redacted
 
 
 def test_manifest_pins_every_fixture_byte() -> None:
@@ -263,78 +135,3 @@ def test_fixtures_do_not_expose_provider_coordinates() -> None:
         "Bearer ",
     ):
         assert forbidden not in text
-
-
-def test_agent_attachment_manifest_pins_mixed_request_bytes() -> None:
-    """The paired agent-attachment packet pins one mixed native request."""
-    manifest = _load_agent_attachment("manifest.json")
-    files = manifest["files"]
-
-    assert manifest["protocol"] == "phytomni-agent-attachments-v1"
-    assert set(files) == _AGENT_ATTACHMENT_FILES
-    for name, expected_digest in files.items():
-        path = _AGENT_ATTACHMENT_FIXTURE_ROOT / name
-        assert path.is_file(), f"missing agent-attachment fixture: {path}"
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == expected_digest
-        assert path.read_bytes().endswith(b"\n")
-
-
-def test_agent_attachment_request_matches_public_schema() -> None:
-    """Mixed request parses as AgentRunRequest with exact fixture values."""
-    payload = AgentRunRequest.model_validate(
-        _load_agent_attachment("native_mixed_request.json")
-    )
-
-    assert payload.owner_subject == _FIXTURE_OWNER
-    assert payload.arguments["goal_description"] == (
-        "Compare synthetic expression groups"
-    )
-    assert payload.arguments["data_list"] == {}
-    assert payload.arguments["obs_file_list"] == []
-    assert [item.asset_id for item in payload.attachments] == [
-        _FIXTURE_DATASET_ID,
-        _FIXTURE_DOCUMENT_ID,
-    ]
-
-
-def test_agent_attachment_fixtures_stay_provider_free() -> None:
-    """Fixture and README text stay free of provider material."""
-    paths = [
-        _AGENT_ATTACHMENT_FIXTURE_ROOT / "native_mixed_request.json",
-        _AGENT_ATTACHMENT_FIXTURE_ROOT / "manifest.json",
-        _AGENT_ATTACHMENT_FIXTURE_ROOT / "README.md",
-    ]
-    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
-    for forbidden in _FORBIDDEN_ATTACHMENT_MARKERS:
-        assert forbidden not in text, f"forbidden marker present: {forbidden}"
-
-
-def test_agent_attachment_fixture_resolves_to_analyst_projection(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Pinned asset ids project to one Analyst dataset and one document."""
-    resolver, db_path = _build_fixture_mixed_assets(monkeypatch, tmp_path)
-    payload = AgentRunRequest.model_validate(
-        _load_agent_attachment("native_mixed_request.json")
-    )
-    resolved = resolve_attachment_input(
-        payload.attachments,
-        attachment_owner=_FIXTURE_OWNER,
-        resolver=resolver,
-    )
-    prepared_arguments, context = prepare_native_attachment_arguments(
-        agent="analyst",
-        arguments=payload.arguments,
-        resolved_input=resolved,
-        db_path=db_path,
-    )
-
-    assert list(prepared_arguments["data_list"].values()) == [""]
-    assert len(prepared_arguments["data_list"]) == 1
-    assert len(prepared_arguments["obs_file_list"]) == 1
-    assert context.evidence is not None
-    assert context.evidence.attachment_owner == _FIXTURE_OWNER
-    _assert_fixture_references_are_private(
-        prepared_arguments, context.evidence
-    )

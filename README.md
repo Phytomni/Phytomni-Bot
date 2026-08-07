@@ -113,6 +113,12 @@ acceptance runbook](docs/ops/bot-contract-acceptance-runbook.md). The
 [compatibility register](docs/ops/bot-compatibility-register.md) record
 dispositions; local Bot evidence does not claim Web/Go or staging acceptance.
 
+The sanitized unified managed-attachment contract is pinned by five scenarios
+in [the attachment fixture packet](docs/contracts/unified-attachments/).
+Its JSON, channel projections, and ordered Expert eligibility are shape
+evidence only; they do not establish browser, backend, staging, or production
+acceptance.
+
 ### Locale And File Attachments
 
 HTTP agent requests accept `locale` at the top level. The precedence is

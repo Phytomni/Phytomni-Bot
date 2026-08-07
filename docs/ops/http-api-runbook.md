@@ -1179,6 +1179,13 @@ Responses do not echo submitted OBS paths. Design and Network keep their
 legacy attachment fields only for schema compatibility; nonempty values are
 fail-closed during migration.
 
+The sanitized unified attachment contract at
+[`docs/contracts/unified-attachments/`](../contracts/unified-attachments/)
+contains five deterministic request and channel-projection scenarios,
+including the ordered Expert capability intersection. Use it for local shape
+checks and digest comparison only; it does not replace owner, browser,
+backend, staging, or production acceptance evidence.
+
 When investigating a stale upload or registry/object mismatch, use a
 read-only owner/operator connection to the database selected by
 `API_TASKS_DB_PATH` and bind the cutoff timestamp to the `?` parameter. Keep

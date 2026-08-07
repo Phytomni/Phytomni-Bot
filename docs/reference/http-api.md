@@ -1240,13 +1240,14 @@ and exact managed references. Design and Network retain their legacy
 attachment fields for schema compatibility, but any nonempty value is
 rejected during migration.
 
-Shape/resolver fixture evidence for the delegated mixed Analyst request
-lives under
-[`docs/contracts/agent-attachments/`](../contracts/agent-attachments/).
-That packet is Bot Ready proof for JSON shape and owner-scoped projection
-only. Web browser evidence, development object-storage/model/remote-
-platform runs, staging, and production activation remain separate
-`Needs Verification` evidence and are not closed by this Bot packet.
+Shape/projection fixture evidence for the unified managed-attachment request
+and ordered Expert eligibility cases lives under
+[`docs/contracts/unified-attachments/`](../contracts/unified-attachments/).
+That packet pins five sanitized scenarios and is Bot Ready proof for JSON
+shape, real channel projection, and capability intersection only. Web browser
+evidence, development object-storage/model/remote-platform runs, staging, and
+production activation remain separate `Needs Verification` evidence and are
+not closed by this Bot packet.
 
 Native example using a completed asset:
 
