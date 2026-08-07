@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
@@ -15,7 +15,7 @@ from threading import Lock, Thread
 from time import monotonic
 from typing import Any
 
-from fastapi import BackgroundTasks, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -33,6 +33,7 @@ from .app_support import _ErrorResponseOptions
 from .asset_resolver import AssetResolver
 from .resumable_uploads import (
     ResumableUploadService,
+    UploadCleanupResult,
     UploadContractError,
     UploadServiceConfig,
 )
@@ -53,7 +54,8 @@ class UploadRuntime:
     upload_service: ResumableUploadService | None = None
     asset_resolver: AssetResolver | None = None
     _cleanup_lock: Lock = field(default_factory=Lock, init=False, repr=False)
-    _last_cleanup: float = field(default=0.0, init=False, repr=False)
+    _last_cleanup: float | None = field(default=None, init=False, repr=False)
+    _cleanup_running: bool = field(default=False, init=False, repr=False)
 
     def get_upload_service(self) -> ResumableUploadService:
         """Build the upload service at the Bot storage boundary once."""
@@ -124,48 +126,123 @@ class UploadRuntime:
             }
         )
 
-    async def schedule_cleanup(self, background: BackgroundTasks) -> None:
-        """Schedule one rate-limited cleanup pass after a request."""
-        background.add_task(self._start_cleanup_worker)
+    async def schedule_cleanup(self) -> AsyncIterator[None]:
+        """Trigger non-blocking cleanup after a dependent request settles."""
+        try:
+            yield
+        finally:
+            self.trigger_cleanup()
 
-    async def _start_cleanup_worker(self) -> None:
-        """Start cleanup without making the response await provider I/O."""
-        Thread(target=self._cleanup_expired_best_effort, daemon=True).start()
+    def trigger_cleanup(self) -> bool:
+        """Start at most one process-local cleanup worker per interval."""
+        try:
+            claimed = self._claim_cleanup_slot()
+        except BACKGROUND_RUNTIME_ERRORS as error:
+            self._log_cleanup_failure(error)
+            return False
+        if not claimed:
+            return False
+        try:
+            Thread(
+                target=self._cleanup_expired_best_effort,
+                daemon=True,
+            ).start()
+        except BACKGROUND_RUNTIME_ERRORS as error:
+            self._release_cleanup_slot(reset_interval=True)
+            self._log_cleanup_failure(error)
+            return False
+        return True
 
     def _cleanup_expired_best_effort(self) -> None:
         """Run cleanup in a daemon worker and contain unexpected failures."""
         try:
-            self.cleanup_expired()
+            self._cleanup_expired()
         except BACKGROUND_RUNTIME_ERRORS as error:
-            self.logger.warning(
-                "resumable upload cleanup failed: %s",
-                error.__class__.__name__,
-            )
+            self._log_cleanup_failure(error)
+        finally:
+            self._release_cleanup_slot()
 
     def cleanup_expired(
         self,
         service_factory: Callable[[], ResumableUploadService] | None = None,
     ) -> tuple[str, ...]:
         """Run a rate-limited, repeatable upload-session cleanup pass."""
+        if not self._claim_cleanup_slot():
+            return ()
+        try:
+            return self._cleanup_expired(service_factory)
+        except (OSError, RuntimeError, sqlite3.Error) as error:
+            self._log_cleanup_failure(error)
+            return ()
+        finally:
+            self._release_cleanup_slot()
+
+    def _cleanup_expired(
+        self,
+        service_factory: Callable[[], ResumableUploadService] | None = None,
+    ) -> tuple[str, ...]:
+        """Run one claimed pass and project its sanitized aggregate summary."""
+        service = (
+            self.get_upload_service()
+            if service_factory is None
+            else service_factory()
+        )
+        outcome = service.cleanup_expired_outcome()
+        if _cleanup_work_occurred(outcome):
+            self.logger.info(
+                "Upload cleanup summary: provisional_expired=%d "
+                "normal_expired=%d provider_attempts=%d "
+                "provider_succeeded=%d provider_pending_retries=%d",
+                outcome.provisional_expired,
+                outcome.normal_expired,
+                outcome.provider_attempts,
+                outcome.provider_succeeded,
+                outcome.provider_pending_retries,
+            )
+        return outcome.asset_ids
+
+    def _claim_cleanup_slot(self) -> bool:
+        """Atomically enforce both worker exclusion and the start interval."""
         interval = self.config_factory().API_UPLOAD_V2_CLEANUP_INTERVAL_SECONDS
         current = monotonic()
         with self._cleanup_lock:
-            if self._last_cleanup and current - self._last_cleanup < interval:
-                return ()
+            if self._cleanup_running:
+                return False
+            if (
+                self._last_cleanup is not None
+                and current - self._last_cleanup < interval
+            ):
+                return False
+            self._cleanup_running = True
             self._last_cleanup = current
-        try:
-            service = (
-                self.get_upload_service()
-                if service_factory is None
-                else service_factory()
-            )
-            return service.cleanup_expired()
-        except (OSError, RuntimeError, sqlite3.Error) as error:
-            self.logger.warning(
-                "resumable upload cleanup failed: %s",
-                error.__class__.__name__,
-            )
-            return ()
+            return True
+
+    def _release_cleanup_slot(self, *, reset_interval: bool = False) -> None:
+        """Release the process-local worker claim after every exit path."""
+        with self._cleanup_lock:
+            self._cleanup_running = False
+            if reset_interval:
+                self._last_cleanup = None
+
+    def _log_cleanup_failure(self, error: Exception) -> None:
+        """Log only an exception class, never provider or upload values."""
+        self.logger.warning(
+            "resumable upload cleanup failed: %s",
+            error.__class__.__name__,
+        )
+
+
+def _cleanup_work_occurred(outcome: UploadCleanupResult) -> bool:
+    """Return whether an aggregate summary carries observable cleanup work."""
+    return any(
+        (
+            outcome.provisional_expired,
+            outcome.normal_expired,
+            outcome.provider_attempts,
+            outcome.provider_succeeded,
+            outcome.provider_pending_retries,
+        )
+    )
 
 
 def install_upload_cors(app: FastAPI, allowed_origins: list[str]) -> None:

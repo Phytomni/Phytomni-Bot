@@ -53,6 +53,7 @@ def register_upload_routes(
         "/v1/files",
         status_code=201,
         response_model=UploadCreateResponse,
+        dependencies=[Depends(dependencies.schedule_cleanup)],
     )
     async def create_upload(
         payload: UploadCreateRequest,
@@ -67,6 +68,7 @@ def register_upload_routes(
     @app.post(
         "/v1/files/{asset_id}/capability",
         response_model=UploadCapabilityResponse,
+        dependencies=[Depends(dependencies.schedule_cleanup)],
     )
     async def renew_upload_capability(
         asset_id: str,
@@ -81,7 +83,10 @@ def register_upload_routes(
             )
         )
 
-    @app.head("/v1/files/{asset_id}")
+    @app.head(
+        "/v1/files/{asset_id}",
+        dependencies=[Depends(dependencies.schedule_cleanup)],
+    )
     async def head_upload(asset_id: str, request: Request) -> Response:
         """Return resumable state through capability-only response headers."""
         status = dependencies.resumable_service().head(
@@ -92,6 +97,7 @@ def register_upload_routes(
     @app.put(
         "/v1/files/{asset_id}/parts/{part_number}",
         response_model=UploadPartResponse,
+        dependencies=[Depends(dependencies.schedule_cleanup)],
     )
     async def put_upload_part(
         asset_id: str,
@@ -126,6 +132,7 @@ def register_upload_routes(
     @app.post(
         "/v1/files/{asset_id}/complete",
         response_model=AssetDescriptor,
+        dependencies=[Depends(dependencies.schedule_cleanup)],
     )
     async def complete_upload(
         asset_id: str,
@@ -143,6 +150,7 @@ def register_upload_routes(
     @app.delete(
         "/v1/files/{asset_id}",
         response_model=UploadStatusResponse,
+        dependencies=[Depends(dependencies.schedule_cleanup)],
     )
     async def abort_upload(
         asset_id: str,

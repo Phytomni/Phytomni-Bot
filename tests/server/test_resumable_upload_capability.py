@@ -7,16 +7,20 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from tests.support.http_fakes import open_asgi_client
 
 from mcp_server_phytomni.api import factory as factory_module
+from mcp_server_phytomni.api import upload_runtime as upload_runtime_module
 from mcp_server_phytomni.api.agent_capabilities import (
     serialize_file_upload_capability,
 )
@@ -34,15 +38,44 @@ from mcp_server_phytomni.api.upload_runtime import UploadRuntime
 from mcp_server_phytomni.config.defaults import ApiConfig
 from mcp_server_phytomni.runtime.resumable_uploads import (
     ResumableUploadRegistry,
+    ResumableUploadRegistryConfig,
 )
 from mcp_server_phytomni.storage.multipart import (
     FakeMultipartStorage,
+    MultipartSession,
+    MultipartStorageError,
     PartInput,
 )
 
 pytestmark = pytest.mark.server
 
 _NOW = datetime(2026, 8, 1, tzinfo=UTC)
+
+
+def _controlled_thread(
+    target: Callable[[], None],
+    *,
+    daemon: bool,
+    starts: list[Callable[[], None]],
+) -> Mock:
+    """Hold a cleanup target until the test releases it deterministically."""
+    assert daemon is True
+    return Mock(start=lambda: starts.append(target))
+
+
+class _OneAbortFailureStorage(FakeMultipartStorage):
+    """Fail one provider cleanup with a deliberately sensitive message."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.failures = 1
+
+    def abort(self, session: MultipartSession) -> None:
+        """Fail the first abort and delegate every later attempt."""
+        if self.failures:
+            self.failures -= 1
+            raise MultipartStorageError("private-provider-exception")
+        super().abort(session)
 
 
 def _nested_keys(value: Any) -> set[str]:
@@ -121,6 +154,30 @@ async def test_agents_catalog_advertises_upload_protocol(
     assert body["protocols"]["obs-multipart-v2"] == [2]
 
 
+async def test_native_agent_run_retains_cleanup_finalization(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The pre-existing native Agent-run trigger remains a yield dependency."""
+    keys_path = str(tmp_path / "keys.sqlite")
+    monkeypatch.setenv("PHYTOMNI_API_KEYS_DB", keys_path)
+    key = ApiKeyStore(keys_path).create(user_id="agent-user").api_key
+    trigger_cleanup = Mock(return_value=True)
+    monkeypatch.setattr(UploadRuntime, "trigger_cleanup", trigger_cleanup)
+
+    async with open_asgi_client(
+        monkeypatch, create_app(), base_url="https://api.test"
+    ) as client:
+        response = await client.post(
+            "/v1/agents/missing/runs",
+            headers={"Authorization": f"Bearer {key}"},
+            json={"arguments": {}},
+        )
+
+    assert response.status_code == 404
+    trigger_cleanup.assert_called_once_with()
+
+
 def test_cleanup_hook_is_repeatable_and_preserves_completed_assets(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -189,6 +246,172 @@ def test_upload_runtime_applies_configured_provisional_ttl(
     service = runtime.get_upload_service()
 
     assert service.registry.provisional_ttl == timedelta(seconds=60)
+
+
+def test_cleanup_trigger_starts_at_most_one_worker_per_interval(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A request burst claims one worker without creating waiting threads."""
+    clock = [100.0]
+    starts: list[Callable[[], None]] = []
+    config = ApiConfig(
+        API_TASKS_DB_PATH=str(tmp_path / "uploads.sqlite"),
+        API_UPLOAD_V2_CLEANUP_INTERVAL_SECONDS=30,
+    )
+    runtime = UploadRuntime(
+        config_factory=lambda: config,
+        logger=logging.getLogger(__name__),
+    )
+    monkeypatch.setattr(upload_runtime_module, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        upload_runtime_module,
+        "Thread",
+        lambda target, *, daemon: _controlled_thread(
+            target, daemon=daemon, starts=starts
+        ),
+    )
+
+    with ThreadPoolExecutor(max_workers=12) as executor:
+        claimed = list(
+            executor.map(lambda _index: runtime.trigger_cleanup(), range(48))
+        )
+
+    assert claimed.count(True) == 1
+    assert len(starts) == 1
+    starts.pop()()
+
+    clock[0] = 129.0
+    assert runtime.trigger_cleanup() is False
+    assert not starts
+    clock[0] = 130.0
+    assert runtime.trigger_cleanup() is True
+    assert len(starts) == 1
+
+
+def test_cleanup_worker_exception_clears_running_claim(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An unexpected worker failure stays contained and releases its slot."""
+    clock = [100.0]
+    starts: list[Callable[[], None]] = []
+    logger = logging.getLogger("tests.upload.cleanup.worker")
+    config = ApiConfig(
+        API_TASKS_DB_PATH=str(tmp_path / "uploads.sqlite"),
+        API_UPLOAD_V2_CLEANUP_INTERVAL_SECONDS=30,
+    )
+    runtime = UploadRuntime(config_factory=lambda: config, logger=logger)
+    monkeypatch.setattr(upload_runtime_module, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(
+        upload_runtime_module,
+        "Thread",
+        lambda target, *, daemon: _controlled_thread(
+            target, daemon=daemon, starts=starts
+        ),
+    )
+    monkeypatch.setattr(
+        runtime,
+        "get_upload_service",
+        lambda: (_ for _ in ()).throw(
+            RuntimeError("private-worker-exception")
+        ),
+    )
+
+    with caplog.at_level(logging.WARNING, logger=logger.name):
+        assert runtime.trigger_cleanup() is True
+        starts.pop()()
+
+    assert "private-worker-exception" not in caplog.text
+    clock[0] = 130.0
+    assert runtime.trigger_cleanup() is True
+    assert len(starts) == 1
+
+
+def test_cleanup_logs_one_redacted_summary_per_working_pass(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Cleanup reports counts without upload or provider identities."""
+    clock = [_NOW]
+    storage = _OneAbortFailureStorage()
+    registry = ResumableUploadRegistry(
+        str(tmp_path / "uploads.sqlite"),
+        ResumableUploadRegistryConfig(provisional_ttl=timedelta(minutes=1)),
+    )
+    service = ResumableUploadService(
+        registry,
+        storage,
+        UploadServiceConfig(
+            bucket_name="private-bucket",
+            upload_origin="https://private-upload.example",
+            now=lambda: clock[0],
+        ),
+    )
+    assets = {
+        name: service.create(_create_request(f"private-{name}"))
+        for name in ("provisional", "normal", "aborted")
+    }
+    service.head(assets["normal"].asset_id, assets["normal"].capability)
+    service.abort(assets["aborted"].asset_id, assets["aborted"].capability)
+    clock[0] = _NOW + timedelta(days=8)
+    logger = logging.getLogger("tests.upload.cleanup.summary")
+    runtime = UploadRuntime(
+        config_factory=getattr(factory_module, "_api_config"),
+        logger=logger,
+        upload_service=service,
+    )
+    monotonic_clock = [100.0]
+    monkeypatch.setattr(
+        upload_runtime_module, "monotonic", lambda: monotonic_clock[0]
+    )
+
+    with caplog.at_level(logging.INFO, logger=logger.name):
+        assert set(runtime.cleanup_expired()) == {
+            item.asset_id for item in assets.values()
+        }
+        assert runtime.cleanup_expired() == ()
+        monotonic_clock[0] = 400.0
+        retried = runtime.cleanup_expired()
+        monotonic_clock[0] = 700.0
+        assert runtime.cleanup_expired() == ()
+
+    assert len(retried) == 1
+    assert retried[0] in {item.asset_id for item in assets.values()}
+    summaries = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == logger.name and record.levelno == logging.INFO
+    ]
+    assert summaries == [
+        "Upload cleanup summary: provisional_expired=1 "
+        "normal_expired=1 provider_attempts=3 provider_succeeded=2 "
+        "provider_pending_retries=1",
+        "Upload cleanup summary: provisional_expired=0 "
+        "normal_expired=0 provider_attempts=1 provider_succeeded=1 "
+        "provider_pending_retries=0",
+    ]
+    forbidden_values = {
+        "owner-1",
+        "private-provisional.fa",
+        "private-normal.fa",
+        "private-aborted.fa",
+        "private-bucket",
+        "https://private-upload.example",
+        "private-provider-exception",
+        *(item.asset_id for item in assets.values()),
+        *(item.capability for item in assets.values()),
+    }
+    for state in storage.sessions.values():
+        forbidden_values.update(
+            {
+                state.session.object_key,
+                state.session.upload_id,
+            }
+        )
+    assert not any(value in caplog.text for value in forbidden_values)
 
 
 def _create_request(key: str) -> UploadCreateRequest:

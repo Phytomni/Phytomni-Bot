@@ -32,7 +32,9 @@ pytestmark = pytest.mark.server
 async def _resumable_upload_client(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-) -> AsyncIterator[tuple[httpx.AsyncClient, str, str, FakeMultipartStorage]]:
+) -> AsyncIterator[
+    tuple[httpx.AsyncClient, str, str, FakeMultipartStorage, list[None]]
+]:
     """Build an API client with an injectable local upload service."""
     keys_path = str(tmp_path / "keys.sqlite")
     uploads_path = str(tmp_path / "uploads.sqlite")
@@ -61,10 +63,17 @@ async def _resumable_upload_client(
         "get_upload_service",
         lambda _runtime: service,
     )
+    cleanup_triggers: list[None] = []
+    monkeypatch.setattr(
+        UploadRuntime,
+        "trigger_cleanup",
+        lambda _runtime: cleanup_triggers.append(None),
+        raising=False,
+    )
     async with open_asgi_client(
         monkeypatch, create_app(), base_url="https://api.test"
     ) as client:
-        yield client, control_key, ordinary_key, storage
+        yield client, control_key, ordinary_key, storage, cleanup_triggers
 
 
 def _control_headers(key: str) -> dict[str, str]:
@@ -75,6 +84,18 @@ def _control_headers(key: str) -> dict[str, str]:
 def _data_headers(capability: str) -> dict[str, str]:
     """Return the browser capability header only."""
     return {"Authorization": f"Bearer {capability}"}
+
+
+def _assert_cleanup_triggered(
+    response: httpx.Response,
+    expected_status: int,
+    cleanup: list[None],
+    previous_count: int,
+) -> int:
+    """Assert one request finalized exactly one cleanup dependency."""
+    assert response.status_code == expected_status
+    assert len(cleanup) == previous_count + 1
+    return len(cleanup)
 
 
 async def _create(
@@ -103,11 +124,13 @@ async def _create(
 
 async def test_invalid_purpose_has_stable_validation_error(
     resumable_upload_client: tuple[
-        httpx.AsyncClient, str, str, FakeMultipartStorage
+        httpx.AsyncClient, str, str, FakeMultipartStorage, list[None]
     ],
 ) -> None:
     """Reject unsupported purposes before opening a provider session."""
-    client, control_key, _ordinary_key, storage = resumable_upload_client
+    client, control_key, _ordinary_key, storage, _cleanup = (
+        resumable_upload_client
+    )
     valid = await _create(
         client,
         control_key,
@@ -140,11 +163,13 @@ async def test_invalid_purpose_has_stable_validation_error(
 
 async def test_multipart_route_is_rejected_and_control_scope_is_explicit(
     resumable_upload_client: tuple[
-        httpx.AsyncClient, str, str, FakeMultipartStorage
+        httpx.AsyncClient, str, str, FakeMultipartStorage, list[None]
     ],
 ) -> None:
     """Old multipart input cannot reach storage and scope-less keys fail."""
-    client, control_key, ordinary_key, storage = resumable_upload_client
+    client, control_key, ordinary_key, storage, _cleanup = (
+        resumable_upload_client
+    )
     rejected = await client.post(
         "/v1/files",
         headers=_control_headers(control_key),
@@ -160,11 +185,13 @@ async def test_multipart_route_is_rejected_and_control_scope_is_explicit(
 
 async def test_resumable_data_plane_streams_parts_and_completes(
     resumable_upload_client: tuple[
-        httpx.AsyncClient, str, str, FakeMultipartStorage
+        httpx.AsyncClient, str, str, FakeMultipartStorage, list[None]
     ],
 ) -> None:
     """Create, HEAD, PUT, complete, and abort use the split resource API."""
-    client, control_key, _ordinary_key, storage = resumable_upload_client
+    client, control_key, _ordinary_key, storage, _cleanup = (
+        resumable_upload_client
+    )
     created = await _create(client, control_key)
     assert created.status_code == 201
     assert created.headers["cache-control"] == "no-store"
@@ -222,11 +249,13 @@ async def test_resumable_data_plane_streams_parts_and_completes(
 
 async def test_capabilities_are_asset_scoped_and_checksum_errors_are_stable(
     resumable_upload_client: tuple[
-        httpx.AsyncClient, str, str, FakeMultipartStorage
+        httpx.AsyncClient, str, str, FakeMultipartStorage, list[None]
     ],
 ) -> None:
     """A bearer for one asset cannot inspect or write another asset."""
-    client, control_key, _ordinary_key, _storage = resumable_upload_client
+    client, control_key, _ordinary_key, _storage, _cleanup = (
+        resumable_upload_client
+    )
     first = await _create(
         client, control_key, idempotency_key="upload-route-a"
     )
@@ -263,11 +292,13 @@ async def test_capabilities_are_asset_scoped_and_checksum_errors_are_stable(
 
 async def test_cors_allows_configured_origin_without_credentials(
     resumable_upload_client: tuple[
-        httpx.AsyncClient, str, str, FakeMultipartStorage
+        httpx.AsyncClient, str, str, FakeMultipartStorage, list[None]
     ],
 ) -> None:
     """The direct browser data plane exposes only the configured origin."""
-    client, _control_key, _ordinary_key, _storage = resumable_upload_client
+    client, _control_key, _ordinary_key, _storage, _cleanup = (
+        resumable_upload_client
+    )
     response = await client.options(
         "/v1/files/file_missing",
         headers={
@@ -290,3 +321,124 @@ async def test_cors_allows_configured_origin_without_credentials(
         },
     )
     assert "access-control-allow-origin" not in denied.headers
+
+
+async def test_every_upload_route_finalizes_cleanup_after_success_or_error(
+    resumable_upload_client: tuple[
+        httpx.AsyncClient,
+        str,
+        str,
+        FakeMultipartStorage,
+        list[None],
+    ],
+) -> None:
+    """Every upload route triggers cleanup after success and stable errors."""
+    client, control_key, _ordinary_key, _storage, cleanup = (
+        resumable_upload_client
+    )
+
+    cleanup_count = 0
+
+    created = await _create(client, control_key, idempotency_key="route-final")
+    cleanup_count = _assert_cleanup_triggered(
+        created, 201, cleanup, cleanup_count
+    )
+    body = created.json()
+    asset_id = body["asset_id"]
+    capability = body["capability"]
+
+    cleanup_count = _assert_cleanup_triggered(
+        await client.post(
+            f"/v1/files/{asset_id}/capability",
+            headers=_control_headers(control_key),
+            json={"owner_subject": "alice@example.com"},
+        ),
+        200,
+        cleanup,
+        cleanup_count,
+    )
+    cleanup_count = _assert_cleanup_triggered(
+        await client.head(f"/v1/files/{asset_id}"),
+        401,
+        cleanup,
+        cleanup_count,
+    )
+    cleanup_count = _assert_cleanup_triggered(
+        await client.put(
+            f"/v1/files/{asset_id}/parts/1",
+            headers=_data_headers(capability),
+            content=b"abc",
+        ),
+        400,
+        cleanup,
+        cleanup_count,
+    )
+    cleanup_count = _assert_cleanup_triggered(
+        await client.put(
+            f"/v1/files/{asset_id}/parts/1",
+            headers={
+                **_data_headers(capability),
+                "X-Phytomni-Part-SHA256": "0" * 64,
+            },
+            content=b"abc",
+        ),
+        422,
+        cleanup,
+        cleanup_count,
+    )
+    cleanup_count = _assert_cleanup_triggered(
+        await client.post(
+            f"/v1/files/{asset_id}/complete",
+            headers=_data_headers(capability),
+        ),
+        409,
+        cleanup,
+        cleanup_count,
+    )
+    _assert_cleanup_triggered(
+        await client.delete(
+            f"/v1/files/{asset_id}",
+            headers=_data_headers(capability),
+        ),
+        200,
+        cleanup,
+        cleanup_count,
+    )
+
+
+async def test_activation_metadata_is_absent_from_upload_http_surfaces(
+    resumable_upload_client: tuple[
+        httpx.AsyncClient,
+        str,
+        str,
+        FakeMultipartStorage,
+        list[None],
+    ],
+) -> None:
+    """Internal activation state is absent from JSON and HEAD projections."""
+    client, control_key, _ordinary_key, _storage, _cleanup = (
+        resumable_upload_client
+    )
+    created = await _create(
+        client, control_key, idempotency_key="activation-redaction"
+    )
+    session = created.json()
+    head = await client.head(
+        f"/v1/files/{session['asset_id']}",
+        headers=_data_headers(session["capability"]),
+    )
+    content = b"abc"
+    part = await client.put(
+        f"/v1/files/{session['asset_id']}/parts/1",
+        headers={
+            **_data_headers(session["capability"]),
+            "X-Phytomni-Part-SHA256": sha256(content).hexdigest(),
+        },
+        content=content,
+    )
+
+    assert head.status_code == 200
+    assert part.status_code == 200
+    assert "activated" not in created.text.lower()
+    assert "activated" not in part.text.lower()
+    assert not any("activated" in key.lower() for key in head.headers)

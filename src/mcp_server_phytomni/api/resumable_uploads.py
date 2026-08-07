@@ -47,6 +47,7 @@ __all__ = [
     "MAX_PARALLEL_PARTS",
     "PART_SIZE_BYTES",
     "ResumableUploadService",
+    "UploadCleanupResult",
     "UploadServiceConfig",
     "UPLOAD_PROTOCOL",
     "UploadContractError",
@@ -57,6 +58,9 @@ PART_SIZE_BYTES = 128 * 1024**2
 MAX_UPLOAD_BYTES = 10 * 1024**3
 MAX_PARALLEL_PARTS = 4
 _ACTIVATION_OPERATIONS = frozenset({"head", "part", "complete"})
+type _ExpiryReason = Literal["normal_deadline", "provisional_deadline"]
+type _ExpiryCounts = dict[_ExpiryReason, int]
+type _ExpiryReporter = Callable[[_ExpiryCounts], None]
 
 
 class UploadContractError(ValueError):
@@ -101,6 +105,18 @@ class UploadServiceConfig:
     part_size_bytes: int = PART_SIZE_BYTES
     max_parallel_parts: int = MAX_PARALLEL_PARTS
     now: Callable[[], datetime] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class UploadCleanupResult:
+    """Internal counts plus legacy pending IDs for one cleanup pass."""
+
+    asset_ids: tuple[str, ...]
+    provisional_expired: int
+    normal_expired: int
+    provider_attempts: int
+    provider_succeeded: int
+    provider_pending_retries: int
 
 
 class ResumableUploadService:
@@ -367,18 +383,36 @@ class ResumableUploadService:
 
     def cleanup_expired(self) -> tuple[str, ...]:
         """Expire stale sessions and retry every terminal provider cleanup."""
-        pending = self.registry.cleanup_expired(now=self._now())
+        return self.cleanup_expired_outcome().asset_ids
+
+    def cleanup_expired_outcome(self) -> UploadCleanupResult:
+        """Expire sessions and return exact counts for sanitized logging."""
+        expiry_counts: _ExpiryCounts = {}
+        pending = self.registry.cleanup_expired(
+            now=self._now(),
+            report=cast(_ExpiryReporter, expiry_counts.update),
+        )
+        attempts = 0
+        succeeded = 0
         for asset_id in pending:
             asset = self.registry.get_asset_by_id(asset_id)
-            if (
-                asset is not None
-                and asset.obs_upload_id is not None
-                and _abort_quietly(
+            if asset is not None and asset.obs_upload_id is not None:
+                attempts += 1
+                if _abort_quietly(
                     self.storage, _session_for(asset, self.bucket_name)
-                )
-            ):
-                self.registry.clear_provider_session(asset_id, now=self._now())
-        return pending
+                ):
+                    self.registry.clear_provider_session(
+                        asset_id, now=self._now()
+                    )
+                    succeeded += 1
+        return UploadCleanupResult(
+            asset_ids=pending,
+            provisional_expired=expiry_counts.get("provisional_deadline", 0),
+            normal_expired=expiry_counts.get("normal_deadline", 0),
+            provider_attempts=attempts,
+            provider_succeeded=succeeded,
+            provider_pending_retries=attempts - succeeded,
+        )
 
     def _authorized_asset(
         self, asset_id: str, capability: str, *, operation: str

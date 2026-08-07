@@ -11,7 +11,7 @@ import json
 import logging
 import secrets
 import sqlite3
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from math import ceil
@@ -72,7 +72,7 @@ AssetStatus = Literal["uploading", "completed", "aborted", "expired"]
 UploadAssetPurpose = Literal["chat_attachment", "dataset", "document"]
 UPLOAD_ASSET_PURPOSES = frozenset({"chat_attachment", "dataset", "document"})
 ExpiryReason = Literal["normal_deadline", "provisional_deadline"]
-
+type _ExpiryReporter = Callable[[dict[ExpiryReason, int]], None]
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -580,20 +580,20 @@ class ResumableUploadRegistry:
                 now=aborted_at,
             )
 
-    def cleanup_expired(self, *, now: datetime) -> tuple[str, ...]:
+    def cleanup_expired(
+        self, *, now: datetime, report: _ExpiryReporter | None = None
+    ) -> tuple[str, ...]:
         """Expire due rows and discover every pending terminal cleanup."""
-        expired_at = _utc(now)
+        current = _utc(now)
         expiry_counts: dict[ExpiryReason, int]
         with sqlite_transaction(self.db_path) as conn:
             conn.execute("BEGIN IMMEDIATE")
             newly_expired, expiry_counts = self._expire_due_assets(
-                conn, now=expired_at
+                conn, now=current
             )
             pending_provider = _pending_provider_asset_ids(conn)
-            asset_ids = tuple(
-                dict.fromkeys((*newly_expired, *pending_provider))
-            )
-        _report_expirations(expiry_counts)
+            asset_ids = tuple(dict.fromkeys(newly_expired + pending_provider))
+        (report or _report_expirations)(expiry_counts)
         return asset_ids
 
     def acquire_part_lease(
