@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Generator
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -28,6 +29,7 @@ from mcp_server_phytomni.agents.review.conversation import _candidate_thread_id
 from mcp_server_phytomni.api import run_lifecycle
 from mcp_server_phytomni.api.lifecycle_contract import (
     LifecycleInvariantError,
+    SafeApiError,
     build_agent_run_response,
     canonicalize_agent_run_body,
     canonicalize_run_record,
@@ -44,6 +46,36 @@ from mcp_server_phytomni.runtime.conversation_context.store import (
     StagedTurn,
 )
 from mcp_server_phytomni.runtime.langgraph_runner import build_runnable_config
+
+
+def test_safe_api_error_allows_exception_traceback_assignment() -> None:
+    """Safe API errors remain usable during context-manager unwinding."""
+
+    @contextmanager
+    def rethrow_safe_error() -> Generator[None, None, None]:
+        try:
+            yield
+        except SafeApiError as exc:
+            raise exc
+
+    error = SafeApiError(
+        status_code=503,
+        code="upstream_unavailable",
+        message="upstream unavailable",
+        stage="upstream",
+        retryable=True,
+    )
+
+    with pytest.raises(SafeApiError) as raised, rethrow_safe_error():
+        raise error
+
+    assert raised.value is error
+    assert error.__traceback__ is not None
+    assert error.status_code == 503
+    assert error.code == "upstream_unavailable"
+    assert error.message == "upstream unavailable"
+    assert error.stage == "upstream"
+    assert error.retryable is True
 
 
 def test_native_run_preserves_public_citation_contract() -> None:

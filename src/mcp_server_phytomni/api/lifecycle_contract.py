@@ -67,7 +67,7 @@ class LifecycleInvariantError(RuntimeError):
         self.code = code
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class SafeApiError(RuntimeError):
     """One public-safe API failure routed through the factory handlers."""
 
