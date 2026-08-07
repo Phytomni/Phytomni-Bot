@@ -14,7 +14,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from tests.support.citation_database import create_valid_citation_database
+from tests.support.citation_database import (
+    CITATION_SOURCE_ACCOUNTING_COUNTS,
+    assert_citation_metadata_counts,
+    create_valid_citation_database,
+)
 
 from mcp_server_phytomni.agents.shared import citation_database
 from mcp_server_phytomni.agents.shared.citation_database import (
@@ -187,22 +191,19 @@ def test_validate_accepts_exact_schema_and_metadata(tmp_path: Path) -> None:
 
     assert metadata.schema_version == CITATION_SCHEMA_VERSION
     assert metadata.source_sha256 == "a" * 64
-    assert metadata.source_record_count == 2
-    assert metadata.unique_id_count == 2
-    assert metadata.imported_record_count == 2
-    assert metadata.exact_duplicate_row_count == 0
-    assert metadata.conflict_id_count == 0
-    assert metadata.quarantined_row_count == 0
-    assert metadata.missing_doi_count == 0
-    assert metadata.invalid_doi_count == 0
-    assert metadata.missing_title_count == 0
-    assert metadata.unique_id_count == (
-        metadata.imported_record_count + metadata.conflict_id_count
-    )
-    assert metadata.source_record_count == (
-        metadata.imported_record_count
-        + metadata.exact_duplicate_row_count
-        + metadata.quarantined_row_count
+    assert_citation_metadata_counts(
+        metadata,
+        {
+            "source_record_count": 2,
+            "unique_id_count": 2,
+            "imported_record_count": 2,
+            "exact_duplicate_row_count": 0,
+            "conflict_id_count": 0,
+            "quarantined_row_count": 0,
+            "missing_doi_count": 0,
+            "invalid_doi_count": 0,
+            "missing_title_count": 0,
+        },
     )
 
     with _connection(path) as connection:
@@ -251,19 +252,16 @@ def test_validate_accepts_factory_conflict_metadata(tmp_path: Path) -> None:
 
     metadata = validate_citation_database(path)
 
-    assert metadata.source_record_count == 1
-    assert metadata.unique_id_count == 2
-    assert metadata.imported_record_count == 1
-    assert metadata.exact_duplicate_row_count == 0
-    assert metadata.conflict_id_count == 1
-    assert metadata.quarantined_row_count == 0
-    assert metadata.source_record_count == (
-        metadata.imported_record_count
-        + metadata.exact_duplicate_row_count
-        + metadata.quarantined_row_count
-    )
-    assert metadata.unique_id_count == (
-        metadata.imported_record_count + metadata.conflict_id_count
+    assert_citation_metadata_counts(
+        metadata,
+        {
+            "source_record_count": 1,
+            "unique_id_count": 2,
+            "imported_record_count": 1,
+            "exact_duplicate_row_count": 0,
+            "conflict_id_count": 1,
+            "quarantined_row_count": 0,
+        },
     )
 
 
@@ -287,12 +285,9 @@ def test_validate_accepts_imported_duplicate_and_quarantined_conflict(
 
     metadata = validate_citation_database(path)
 
-    assert metadata.source_record_count == 7
-    assert metadata.unique_id_count == 4
-    assert metadata.imported_record_count == 3
-    assert metadata.exact_duplicate_row_count == 1
-    assert metadata.conflict_id_count == 1
-    assert metadata.quarantined_row_count == 3
+    assert_citation_metadata_counts(
+        metadata, CITATION_SOURCE_ACCOUNTING_COUNTS
+    )
 
 
 def _column_names(

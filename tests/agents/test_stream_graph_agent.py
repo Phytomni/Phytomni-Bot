@@ -24,6 +24,7 @@ from mcp_server_phytomni.mcp.stream_lifecycle import (
     StreamLifecycleState,
     project_stream_failures,
 )
+from tests.support.graph_streaming import assert_default_cited_customs
 from tests.support.security_markers import FORBIDDEN_STREAM_CONTENT
 
 from ._network_escape import install_network_escape_guard
@@ -260,16 +261,7 @@ async def test_terminal_events_carry_answer_and_custom(
     customs = {
         e.data["name"]: e.data["value"] for e in events if e.type == "Custom"
     }
-    assert "phyto.references" in customs
-    assert customs["phyto.references"]["doc_list"] == [
-        {
-            "file_id": "f1",
-            "title": "T1",
-            "formatted_citation": "T1.",
-            "doi_missing": True,
-        }
-    ]
-    assert customs["phyto.follow_up"] == ["next?"]
+    assert_default_cited_customs(customs)
     # ordering: RunFinished is last
     assert types[-1] == "RunFinished"
 

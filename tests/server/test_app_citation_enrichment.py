@@ -8,11 +8,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from tests.support.citation_database import install_inline_citation_lookup
 
-from mcp_server_phytomni.agents.shared import (
-    citation_database,
-    citation_enrichment,
-)
 from mcp_server_phytomni.agents.shared import sql as shared_sql
 from mcp_server_phytomni.agents.shared.citation_metadata import (
     CITATION_STATUS_KEY,
@@ -24,17 +21,7 @@ from mcp_server_phytomni.mcp.app import invoke_tool_enveloped
 @pytest.fixture(autouse=True)
 def _run_lookup_in_test_thread(monkeypatch: pytest.MonkeyPatch) -> None:
     """Use the real synchronous SQLite lookup without an executor thread."""
-    sync_lookup = getattr(citation_database, "_lookup_citation_records")
-
-    async def lookup(file_ids: list[str]):
-        unique_ids = tuple(dict.fromkeys(file_ids))
-        return sync_lookup(unique_ids)
-
-    monkeypatch.setattr(
-        citation_enrichment,
-        "lookup_citation_records",
-        lookup,
-    )
+    install_inline_citation_lookup(monkeypatch)
 
 
 def _cited_payload():

@@ -10,10 +10,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from mcp_server_phytomni.agents.shared import (
-    citation_database,
-    citation_enrichment,
-)
+from mcp_server_phytomni.agents.shared import citation_enrichment
 from mcp_server_phytomni.agents.shared.citation_database import (
     CitationDatabaseLookupError,
 )
@@ -25,22 +22,13 @@ from mcp_server_phytomni.runtime.request_context import (
     bind_request_id,
     reset_request_var,
 )
+from tests.support.citation_database import install_inline_citation_lookup
 
 
 @pytest.fixture(autouse=True)
 def _run_lookup_in_test_thread(monkeypatch: pytest.MonkeyPatch) -> None:
     """Use the real synchronous SQLite lookup without an executor thread."""
-    sync_lookup = getattr(citation_database, "_lookup_citation_records")
-
-    async def lookup(file_ids: list[str]):
-        unique_ids = tuple(dict.fromkeys(file_ids))
-        return sync_lookup(unique_ids)
-
-    monkeypatch.setattr(
-        citation_enrichment,
-        "lookup_citation_records",
-        lookup,
-    )
+    install_inline_citation_lookup(monkeypatch)
 
 
 def _insert_record(path: Path, **record: str | None) -> None:

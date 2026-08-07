@@ -9,11 +9,63 @@ import sqlite3
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+import pytest
+
+from mcp_server_phytomni.agents.shared import (
+    citation_database,
+    citation_enrichment,
+)
 from mcp_server_phytomni.agents.shared.citation_database import (
     CITATION_BUILD_METADATA_FIELDS,
     CITATION_DATABASE_SCHEMA,
     CITATION_RECORD_FIELDS,
+    CitationBuildMetadata,
+    CitationLookupResult,
 )
+
+CITATION_SOURCE_ACCOUNTING_COUNTS: Mapping[str, int] = {
+    "source_record_count": 7,
+    "unique_id_count": 4,
+    "imported_record_count": 3,
+    "exact_duplicate_row_count": 1,
+    "conflict_id_count": 1,
+    "quarantined_row_count": 3,
+}
+
+
+def install_inline_citation_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Run production SQLite lookup synchronously behind its async seam."""
+    sync_lookup = getattr(citation_database, "_lookup_citation_records")
+
+    async def lookup(file_ids: list[str]) -> CitationLookupResult:
+        unique_ids = tuple(dict.fromkeys(file_ids))
+        return sync_lookup(unique_ids)
+
+    monkeypatch.setattr(
+        citation_enrichment,
+        "lookup_citation_records",
+        lookup,
+    )
+
+
+def assert_citation_metadata_counts(
+    metadata: CitationBuildMetadata,
+    expected: Mapping[str, int],
+) -> None:
+    """Assert selected counts plus both schema-v1 accounting equations."""
+    assert {field: getattr(metadata, field) for field in expected} == dict(
+        expected
+    )
+    assert metadata.unique_id_count == (
+        metadata.imported_record_count + metadata.conflict_id_count
+    )
+    assert metadata.source_record_count == (
+        metadata.imported_record_count
+        + metadata.exact_duplicate_row_count
+        + metadata.quarantined_row_count
+    )
 
 
 def create_valid_citation_database(

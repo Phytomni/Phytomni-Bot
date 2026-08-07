@@ -13,6 +13,7 @@ import httpx
 import pytest
 from tests.support.graph_streaming import (
     FakeCitedStreamApp,
+    assert_default_cited_customs,
     guard_network_escape,
 )
 
@@ -123,16 +124,7 @@ async def test_stream_phyto_review_emits_agui_frames(
         for event in events
         if event.type == "Custom"
     }
-    assert "phyto.references" in customs
-    assert customs["phyto.references"]["doc_list"] == [
-        {
-            "file_id": "f1",
-            "title": "T1",
-            "formatted_citation": "T1.",
-            "doi_missing": True,
-        }
-    ]
-    assert customs["phyto.follow_up"] == ["next?"]
+    assert_default_cited_customs(customs)
 
 
 async def test_streamed_knowledge_run_reconcile_short_circuits(

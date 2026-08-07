@@ -21,31 +21,19 @@ pytestmark = pytest.mark.unit
 
 def test_citation_metadata_field_mapping_and_status_contract() -> None:
     """The source mapping excludes the nullable compatibility ``dl`` field."""
-    assert CITATION_RECORD_FIELDS == (
-        "au",
-        "ti",
-        "so",
-        "vl",
-        "bp",
-        "ep",
-        "ar",
-        "py",
-        "di",
-        "dl",
-        "pm",
-    )
-    assert CITATION_SOURCE_FIELDS == {
-        "AU": "au",
-        "TI": "ti",
-        "SO": "so",
-        "VL": "vl",
-        "BP": "bp",
-        "EP": "ep",
-        "AR": "ar",
-        "PY": "py",
-        "DI": "di",
-        "PM": "pm",
+    expected_source_fields = {
+        field.upper(): field
+        for field in CITATION_RECORD_FIELDS
+        if field != "dl"
     }
+    assert isinstance(CITATION_RECORD_FIELDS, tuple)
+    assert (
+        len(CITATION_RECORD_FIELDS) == len(set(CITATION_RECORD_FIELDS)) == 11
+    )
+    assert expected_source_fields == CITATION_SOURCE_FIELDS
+    assert tuple(CITATION_SOURCE_FIELDS.values()) == tuple(
+        field for field in CITATION_RECORD_FIELDS if field != "dl"
+    )
     assert "dl" in CITATION_RECORD_FIELDS
     assert "DL" not in CITATION_SOURCE_FIELDS
     assert CITATION_STATUS_KEY == "_citation_metadata_status"

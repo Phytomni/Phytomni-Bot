@@ -12,6 +12,22 @@ from typing import Any
 
 import pytest
 
+DEFAULT_CITED_STREAM_REFERENCE = {
+    "file_id": "f1",
+    "title": "T1",
+    "formatted_citation": "T1.",
+    "doi_missing": True,
+}
+
+
+def assert_default_cited_customs(customs: Mapping[str, Any]) -> None:
+    """Assert the shared terminal reference and follow-up projection."""
+    assert "phyto.references" in customs
+    assert customs["phyto.references"]["doc_list"] == [
+        DEFAULT_CITED_STREAM_REFERENCE
+    ]
+    assert customs["phyto.follow_up"] == ["next?"]
+
 
 def guard_network_escape(monkeypatch: pytest.MonkeyPatch) -> None:
     """Make unexpected async socket and DNS calls fail immediately."""
