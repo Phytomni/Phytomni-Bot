@@ -292,7 +292,7 @@ async def test_direct_dataset_assets_project_to_data_list_before_202(
         slug=slug,
         arguments=case.arguments,
         attachments=[{"asset_id": dataset_id}, {"asset_id": document_id}],
-        dataset_description="supplied batch description",
+        dataset_description="stale dataset_description should be dropped",
         debug=True,
     )
 
@@ -311,12 +311,24 @@ async def test_direct_dataset_assets_project_to_data_list_before_202(
     assert "attachments" not in dumped
     assert "owner_subject" not in dumped
     assert "dataset_description" not in dumped
-    assert "dataset_description" not in response.text
     record = RunRegistry(asset_http_context.db_path).get_run(
         response.json()["run_id"], owner="u1"
     )
     assert record is not None
-    assert "dataset_description" not in repr(record)
+    assert record.request_info.request_json is None
+    assert "dataset_description" not in (
+        record.request_info.request_json or ""
+    )
+    assert "stale dataset_description should be dropped" not in (
+        response.text
+        + json.dumps(response.json(), sort_keys=True)
+        + json.dumps(record.result or {}, sort_keys=True)
+    )
+    assert '"dataset_description"' not in (
+        response.text
+        + json.dumps(response.json(), sort_keys=True)
+        + json.dumps(record.result or {}, sort_keys=True)
+    )
 
 
 async def test_dataset_assets_fail_before_reservation(

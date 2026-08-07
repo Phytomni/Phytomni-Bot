@@ -617,6 +617,9 @@ async def test_native_context_dataset_attachments_prepare_once_and_replay(
         tool_name,
         attachments=[{"asset_id": dataset_id}, {"asset_id": document_id}],
     )
+    request["dataset_description"] = (
+        "stale context dataset_description should be dropped"
+    )
     response, retry = await _post_native_context_twice(
         monkeypatch, app, key, agent, request
     )
@@ -628,7 +631,14 @@ async def test_native_context_dataset_attachments_prepare_once_and_replay(
     arguments = call_state.invoke_calls[0]["arguments"]
     assert list(arguments["data_list"].values()) == [""]
     assert len(arguments["obs_file_list"]) == 1
-    assert call_state.invoke_calls[0]["request_json"] is not None
+    assert json.loads(call_state.invoke_calls[0]["request_json"] or "") == {
+        "dialogue_id": None,
+        "locale": "en-US",
+        "route": agent,
+    }
+    assert "dataset_description" not in (
+        call_state.invoke_calls[0]["request_json"] or ""
+    )
     assert (
         call_state.invoke_calls[0]["attachment_evidence"].attachment_owner
         == "delegated-owner"
@@ -638,13 +648,17 @@ async def test_native_context_dataset_attachments_prepare_once_and_replay(
         + retry.text
         + _context_store_text(tmp_path / "tasks.sqlite")
     )
+    rendered += json.dumps(response.json(), sort_keys=True)
+    rendered += json.dumps(retry.json(), sort_keys=True)
     for sentinel in (
         dataset_id,
         document_id,
         "delegated-owner",
         "context-data.csv",
+        "stale context dataset_description should be dropped",
     ):
         assert sentinel not in rendered
+    assert '"dataset_description"' not in rendered
 
 
 async def test_native_context_unsupported_dataset_returns_attachment_422(
