@@ -2541,8 +2541,10 @@ Known limitations (v1): the four structured-input agents (`analyst`,
 `deep_genome`, `design`, `network`) receive best-effort arguments
 extracted by the routing model — `data_list` may be incomplete and a
 gene / species / Trait-Ontology id may be guessed — and obs attachments
-reach only `chat` / `knowledge` / `review`. Invalid extraction surfaces a
-`400` rather than a silent wrong answer.
+reach `chat` / `knowledge` / `review` plus document-capable
+`analyst` / `research` / `design` / `network` targets. `data`, `brief_gene`,
+and `deep_genome` do not expose an attachment channel. Invalid extraction
+surfaces a `400` rather than a silent wrong answer.
 
 ```bash
 curl -s -X POST http://127.0.0.1:8080/v1/query/route \
