@@ -26,11 +26,13 @@ from ...storage.obs_relay_ops import operator_obs_client
 from ...storage.research_objects import (
     DirectResearchObjectMetadataPort,
     RelayResearchObjectMetadataPort,
+    ResearchObjectAuthority,
     ResearchObjectCandidate,
     ResearchObjectMetadataError,
     ResearchObjectMetadataPort,
     ResearchObjectResolveRequest,
     ResearchObjectSnapshot,
+    ResearchObjectVerifyRequest,
 )
 from .dispatch_outbox import (
     ResearchDispatchOutbox,
@@ -96,7 +98,10 @@ class _RuntimeBindings:
         )
 
     async def query(self, row: ResearchDispatchRecord) -> object | None:
-        """Query the original Analyst task identity without submitting again."""
+        """Query the original Analyst task identity.
+
+        A recovery query must never submit a replacement task.
+        """
         if not row.remote_task_id:
             return None
         config = self.analyst_config
@@ -129,21 +134,34 @@ class _RuntimeBindings:
     async def verify(
         self, row: ResearchDispatchRecord
     ) -> ResearchDispatchRecord:
-        """Resolve exact references, compare snapshots, and rotate grants."""
+        """Verify persisted grants and rotate only private authority IDs."""
         raw_grants = row.payload.get("research_grants", ())
         if not raw_grants:
-            await self.metadata_port.resolve(
-                ResearchObjectResolveRequest(
-                    row.run_id, row.dispatch_fingerprint, ()
-                )
-            )
             return row
         candidates, expected = _grant_bindings(raw_grants)
-        fresh = await self.metadata_port.resolve(
-            ResearchObjectResolveRequest(
-                row.run_id, row.dispatch_fingerprint, candidates
-            )
+        persisted = tuple(
+            ResearchObjectAuthority(dataset_id, grant_id, snapshot)
+            for dataset_id, _reference, _suffix, grant_id, snapshot in expected
         )
+        request = ResearchObjectVerifyRequest(
+            row.run_id, row.dispatch_fingerprint, persisted
+        )
+        try:
+            fresh = await self.metadata_port.verify(request)
+        except ResearchObjectMetadataError:
+            if not isinstance(
+                self.metadata_port, DirectResearchObjectMetadataPort
+            ):
+                raise
+            # Direct ports intentionally keep authority state in memory.  A
+            # restart may lose that state, so exact references provide the
+            # documented local-only recovery path; snapshots still gate the
+            # resulting private-ID rotation below.
+            fresh = await self.metadata_port.resolve(
+                ResearchObjectResolveRequest(
+                    row.run_id, row.dispatch_fingerprint, candidates
+                )
+            )
         if len(fresh) != len(expected):
             raise ResearchObjectMetadataError()
         by_dataset = {authority.dataset_id: authority for authority in fresh}
@@ -186,13 +204,13 @@ def build_research_dispatch_runtime(
 
 
 def _rotate_grants(
-    expected: Sequence[tuple[str, str, str, ResearchObjectSnapshot]],
+    expected: Sequence[tuple[str, str, str, str, ResearchObjectSnapshot]],
     by_dataset: Mapping[str, Any],
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Replace private grant ids after the immutable snapshots match."""
     rotated: list[dict[str, Any]] = []
     grant_ids: list[str] = []
-    for dataset_id, reference, suffix, snapshot in expected:
+    for dataset_id, reference, suffix, _grant_id, snapshot in expected:
         authority = by_dataset[dataset_id]
         if authority.snapshot != snapshot:
             raise ResearchObjectMetadataError()
@@ -253,29 +271,36 @@ def _grant_bindings(
     value: object,
 ) -> tuple[
     tuple[ResearchObjectCandidate, ...],
-    tuple[tuple[str, str, str, ResearchObjectSnapshot], ...],
+    tuple[tuple[str, str, str, str, ResearchObjectSnapshot], ...],
 ]:
     """Decode persisted candidate references and expected snapshots."""
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise ResearchObjectMetadataError()
     candidates: list[ResearchObjectCandidate] = []
-    expected: list[tuple[str, str, str, ResearchObjectSnapshot]] = []
+    expected: list[tuple[str, str, str, str, ResearchObjectSnapshot]] = []
     for item in value:
         if not isinstance(item, Mapping):
             raise ResearchObjectMetadataError()
         dataset_id = item.get("dataset_id")
         reference = item.get("exact_reference")
         suffix = item.get("compound_suffix")
+        grant_id = item.get("grant_id")
         snapshot = _snapshot_from_payload(item.get("snapshot"))
         if not all(
             isinstance(text, str) and text
-            for text in (dataset_id, reference, suffix)
+            for text in (dataset_id, reference, suffix, grant_id)
         ):
             raise ResearchObjectMetadataError()
+        dataset_text = cast(str, dataset_id)
+        reference_text = cast(str, reference)
+        suffix_text = cast(str, suffix)
+        grant_text = cast(str, grant_id)
         candidates.append(
-            ResearchObjectCandidate(dataset_id, reference, suffix)
+            ResearchObjectCandidate(dataset_text, reference_text, suffix_text)
         )
-        expected.append((dataset_id, reference, suffix, snapshot))
+        expected.append(
+            (dataset_text, reference_text, suffix_text, grant_text, snapshot)
+        )
     return tuple(candidates), tuple(expected)
 
 

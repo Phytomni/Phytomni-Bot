@@ -8,16 +8,23 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
+from ..agents.analyst.agent import AnalystAgent
+from ..agents.analyst.defaults import ANALYST_CONFIG
 from ..agents.research.input_contracts import (
     ParsedResearchInput,
     ResearchInteropMode,
     research_input_failure,
 )
+from ..agents.research.input_coordinator import ResearchInputCoordinator
 from ..agents.research.input_inventory import ManagedResearchAssetSnapshot
+from ..agents.research.recovery import ResearchPreAcceptanceRejected
+from ..agents.research.recovery_support import register_recovery_service
 from ..config.api_limits import ApiLimitsConfig
+from ..config.defaults import ApiConfig
+from ..config.settings import get_sensitive_config
 from ..runtime.conversation_context.models import ConversationEnvelopeV1
 from ..runtime.locale import SUPPORTED_LOCALES, SupportedLocale
 from ..runtime.research_input_store import (
@@ -30,6 +37,8 @@ __all__ = [
     "ResearchAdmissionRequest",
     "ResearchClientFingerprintInput",
     "ResearchInputStore",
+    "build_research_input_coordinator",
+    "ensure_research_input_runtime",
     "ResearchRequestIdentity",
     "admit_research_request",
     "compute_research_client_fingerprint",
@@ -40,6 +49,80 @@ __all__ = [
 _IDENTITY_VERSION = b"research-idempotency/v1\x00"
 _FINGERPRINT_VERSION = "research-client-fingerprint/v1"
 _DIGEST_LENGTH = 64
+
+
+@dataclass(frozen=True, slots=True)
+class _ResearchInputRuntime:
+    """Process-local production coordinator and its recovery service."""
+
+    coordinator: Any
+    recovery: Any
+
+
+_RUNTIME_STATE: dict[str, _ResearchInputRuntime | None] = {"current": None}
+
+
+class _UnavailableResearchWorkProvider:
+    """Safe resolver fallback; child dispatch uses the real Analyst port."""
+
+    async def invoke(self, work_input: object, policy: object) -> object:
+        """Never replace an unbound resolver request during recovery."""
+        del work_input, policy
+        raise ResearchPreAcceptanceRejected()
+
+    async def query(self, request_identity: str) -> object | None:
+        """Decline unsupported resolver lookup without making a new call."""
+        del request_identity
+        return None
+
+
+def build_research_input_coordinator(
+    request: Any | None = None,
+    **ports: Any,
+) -> Any:
+    """Build and register the production Research admission worker.
+
+    The API admission owner supplies the store, real Analyst configuration,
+    metadata port, and resolver provider.  Keeping construction here gives
+    HTTP admission and lifespan recovery the same coordinator instance while
+    leaving MCP dispatch independent of this HTTP-only path.
+    """
+    coordinator = ResearchInputCoordinator.from_production(
+        request,
+        **ports,
+    )
+    recovery = coordinator.recovery
+    if recovery is None:
+        raise RuntimeError("Research production runtime has no recovery")
+    _RUNTIME_STATE["current"] = _ResearchInputRuntime(coordinator, recovery)
+    register_recovery_service(recovery)
+    return coordinator
+
+
+def ensure_research_input_runtime(
+    db_path: str | None = None,
+) -> Any:
+    """Construct the HTTP Research worker before lifespan recovery."""
+    runtime = _RUNTIME_STATE["current"]
+    if runtime is not None:
+        return runtime.coordinator
+    sensitive_config = get_sensitive_config()
+    analyst_agent = AnalystAgent(
+        analyst_config=ANALYST_CONFIG,
+        sensitive_config=sensitive_config,
+    )
+    return build_research_input_coordinator(
+        store=ResearchInputStore(db_path or _default_tasks_db_path()),
+        provider=_UnavailableResearchWorkProvider(),
+        analyst_agent=analyst_agent,
+        analyst_config=ANALYST_CONFIG,
+        sensitive_config=sensitive_config,
+    )
+
+
+def _default_tasks_db_path() -> str:
+    """Read the API task database without importing the application facade."""
+    return ApiConfig().API_TASKS_DB_PATH
 
 
 @dataclass(frozen=True, slots=True)

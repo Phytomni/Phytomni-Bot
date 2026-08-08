@@ -65,6 +65,7 @@ from ..runtime.stage_trace import bind_stage_trace
 from ..storage.path_policy import IdFactory
 from . import run_lifecycle
 from .lifecycle_contract import SafeApiError
+from .research_input import ensure_research_input_runtime
 from .schemas import (
     ApiErrorDetail,
     ApiErrorResponse,
@@ -438,6 +439,7 @@ async def _http_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Own the process-wide shared HTTP and Gauss clients."""
     validate_citation_database()
     init_shared_client()
+    ensure_research_input_runtime()
     await recover_registered_startup()
     try:
         yield

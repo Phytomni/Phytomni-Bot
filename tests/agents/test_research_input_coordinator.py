@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from types import MappingProxyType, SimpleNamespace
 from typing import Any
@@ -131,6 +131,7 @@ class _RuntimeMetadataPort:
 
     def __init__(self) -> None:
         self.resolve_calls: list[ResearchObjectResolveRequest] = []
+        self.verify_calls: list[ResearchObjectVerifyRequest] = []
         self.generation = 0
 
     async def resolve(
@@ -160,7 +161,15 @@ class _RuntimeMetadataPort:
         self, request: ResearchObjectVerifyRequest
     ) -> tuple[ResearchObjectAuthority, ...]:
         """Preserve the verifier protocol for the typed fake port."""
-        return request.authorities
+        self.verify_calls.append(request)
+        return tuple(
+            ResearchObjectAuthority(
+                authority.dataset_id,
+                "grant-001",
+                authority.snapshot,
+            )
+            for authority in request.authorities
+        )
 
     async def revoke(self, request: Any) -> None:
         """Accept revocation calls without retaining private state."""
@@ -778,6 +787,11 @@ async def test_production_runtime_wires_analyst_and_rotation(
     assert accepted.state == "accepted"
     assert replay.state == "accepted"
     assert len(submitted) == 1
+    assert not metadata.resolve_calls
+    assert len(metadata.verify_calls) == 1
+    assert metadata.verify_calls[0].parent_run_id == "run-runtime"
+    assert metadata.verify_calls[0].execution_fingerprint == fingerprint
+    assert metadata.verify_calls[0].authorities[0].authority_id == "grant-000"
     assert (
         submitted[0][0]["research_grant_sidecar"]["objects"][0]["grant_id"]
         == "grant-001"
@@ -788,6 +802,29 @@ async def test_production_runtime_wires_analyst_and_rotation(
             "WHERE task_id='analyst-task-001'"
         ).fetchone()
     assert task == ("run-runtime", fingerprint, "submitted")
+
+
+@pytest.mark.asyncio
+async def test_empty_authority_binding_is_a_metadata_noop(
+    tmp_path: Any,
+) -> None:
+    """Query-only children must not send an invalid empty metadata request."""
+    store = _runtime_store(tmp_path, "no-authority")
+    metadata = _RuntimeMetadataPort()
+    submitted: list[Any] = []
+    runtime = _runtime(store, metadata, submitted, "runtime-worker")
+    prepared = replace(_runtime_prepared(), authorities=(), authority_ids=())
+    record = persist_plan_and_outbox(
+        store, "run-runtime", 0, prepared, _runtime_plan()
+    )[0]
+
+    disposition = await runtime.outbox.dispatch_once(
+        record.dispatch_id, "worker"
+    )
+
+    assert disposition.state == "accepted"
+    assert not metadata.resolve_calls
+    assert not metadata.verify_calls
 
 
 @pytest.mark.asyncio

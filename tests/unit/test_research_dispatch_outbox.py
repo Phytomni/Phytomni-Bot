@@ -11,15 +11,20 @@ import sqlite3
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import MappingProxyType
-from typing import Any
+from types import MappingProxyType, SimpleNamespace
+from typing import Any, cast
 
 import pytest
+from tests.agents import (
+    test_research_input_coordinator as coordinator_fixtures,
+)
 
 from mcp_server_phytomni.agents.research import (
     dispatch_outbox,
     dispatch_outbox_storage,
+    dispatch_runtime,
 )
+from mcp_server_phytomni.agents.research import recovery as recovery_module
 from mcp_server_phytomni.agents.research.dispatch_outbox import (
     ResearchDispatchOutbox,
     ResearchDispatchRecord,
@@ -36,14 +41,27 @@ from mcp_server_phytomni.agents.research.planning import (
 from mcp_server_phytomni.agents.research.recovery import (
     ResearchRecoveryService,
 )
+from mcp_server_phytomni.api import research_input as research_input_api
 from mcp_server_phytomni.runtime.research_input_store import ResearchInputStore
 from mcp_server_phytomni.runtime.run_registry import RunRegistry, RunSpec
 from mcp_server_phytomni.storage.research_objects import (
+    DirectResearchObjectMetadataPort,
+    RelayResearchObjectMetadataPort,
     ResearchObjectAuthority,
+    ResearchObjectCandidate,
+    ResearchObjectResolveRequest,
     ResearchObjectSnapshot,
+    ResearchObjectVerifyRequest,
 )
 
 pytestmark = pytest.mark.unit
+
+coordinator_store = getattr(coordinator_fixtures, "_runtime_store")
+MetadataPortType = getattr(coordinator_fixtures, "_RuntimeMetadataPort")
+ProviderType = getattr(coordinator_fixtures, "_RuntimeProvider")
+analyst_factory = getattr(coordinator_fixtures, "_runtime_analyst")
+prepared_factory = getattr(coordinator_fixtures, "_runtime_prepared")
+plan_factory = getattr(coordinator_fixtures, "_runtime_plan")
 
 
 def _digest(value: object) -> str:
@@ -165,7 +183,7 @@ def test_atomic_plan_projection_and_outbox_commit(tmp_path: Path) -> None:
 def test_plan_persists_exact_private_authority_bindings(
     tmp_path: Path,
 ) -> None:
-    """Outbox payloads retain exact references and immutable snapshots privately."""
+    """Outbox payloads retain exact references and snapshots privately."""
     store = _store(tmp_path)
     authority = ResearchObjectAuthority(
         dataset_id="dataset-001",
@@ -656,3 +674,194 @@ async def test_recovery_processes_pending_outbox_without_resolver_provider(
     assert calls == ["submit"]
     assert recovery.outbox is not None
     assert recovery.outbox.load(record.dispatch_id).state == "accepted"
+
+
+def test_api_lifespan_runtime_constructs_and_registers_worker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The HTTP production entrypoint builds the real coordinator seam."""
+    store = coordinator_store(tmp_path, "api-runtime")
+    sensitive = object()
+    analyst_instances: list[Any] = []
+    registered: list[Any] = []
+
+    def fake_analyst_agent(**kwargs: Any) -> object:
+        """Capture the production Analyst constructor arguments."""
+        analyst_instances.append(kwargs)
+        return object()
+
+    monkeypatch.setitem(
+        getattr(research_input_api, "_RUNTIME_STATE"), "current", None
+    )
+    monkeypatch.setattr(research_input_api, "AnalystAgent", fake_analyst_agent)
+    monkeypatch.setattr(
+        research_input_api, "get_sensitive_config", lambda: sensitive
+    )
+    monkeypatch.setattr(
+        research_input_api,
+        "ResearchInputStore",
+        lambda _path: store,
+    )
+    monkeypatch.setattr(
+        research_input_api,
+        "register_recovery_service",
+        registered.append,
+    )
+    monkeypatch.setattr(
+        recovery_module,
+        "register_recovery_service",
+        lambda _service: None,
+    )
+    monkeypatch.setattr(
+        dispatch_runtime,
+        "_metadata_port",
+        MetadataPortType,
+    )
+
+    coordinator = research_input_api.ensure_research_input_runtime(
+        str(tmp_path / "api-runtime.db")
+    )
+
+    assert coordinator.outbox is not None
+    assert coordinator.recovery is not None
+    assert registered == [coordinator.recovery]
+    assert analyst_instances == [
+        {
+            "analyst_config": research_input_api.ANALYST_CONFIG,
+            "sensitive_config": sensitive,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_relay_runtime_verifies_and_rotates_before_submit(
+    tmp_path: Path,
+) -> None:
+    """The relay port receives the persisted grant and returns its rotation."""
+    store = coordinator_store(tmp_path, "relay-runtime")
+    requests: list[ResearchObjectVerifyRequest] = []
+
+    async def verify(
+        request: ResearchObjectVerifyRequest,
+    ) -> tuple[ResearchObjectAuthority, ...]:
+        """Return one operator-approved replacement for each grant."""
+        requests.append(request)
+        return tuple(
+            ResearchObjectAuthority(
+                authority.dataset_id,
+                "relay-grant-001",
+                authority.snapshot,
+            )
+            for authority in request.authorities
+        )
+
+    relay_port = RelayResearchObjectMetadataPort(
+        cast(Any, SimpleNamespace(verify_research_objects=verify))
+    )
+    submitted: list[Any] = []
+    runtime = dispatch_runtime.build_research_dispatch_runtime(
+        store,
+        ProviderType(),
+        analyst_agent=analyst_factory(submitted),
+        analyst_config=type("Config", (), {"USER_ID": "owner"})(),
+        sensitive_config=object(),
+        metadata_port=relay_port,
+        lease_owner="relay-worker",
+    )
+    record = persist_plan_and_outbox(
+        store,
+        "run-runtime",
+        0,
+        prepared_factory(),
+        plan_factory(hashlib.sha256(str(tmp_path).encode()).hexdigest()),
+    )[0]
+
+    disposition = await runtime.outbox.dispatch_once(
+        record.dispatch_id, "relay-worker"
+    )
+
+    assert disposition.state == "accepted"
+    assert len(requests) == 1
+    assert requests[0].parent_run_id == "run-runtime"
+    assert requests[0].execution_fingerprint == record.dispatch_fingerprint
+    assert requests[0].authorities[0].authority_id == "grant-000"
+    assert (
+        submitted[0][0]["research_grant_sidecar"]["objects"][0]["grant_id"]
+        == "relay-grant-001"
+    )
+
+
+@pytest.mark.asyncio
+async def test_direct_runtime_re_resolves_only_after_authority_restart(
+    tmp_path: Path,
+) -> None:
+    """A direct-port restart re-resolves exact metadata before submission."""
+    store = coordinator_store(tmp_path, "direct-runtime")
+    head_calls: list[tuple[str, str]] = []
+
+    def get_object_metadata(**kwargs: str) -> SimpleNamespace:
+        """Return stable HEAD metadata for the exact child object."""
+        head_calls.append((kwargs["bucketName"], kwargs["objectKey"]))
+        return SimpleNamespace(
+            status=200,
+            body=SimpleNamespace(
+                contentLength=17,
+                etag="etag-001",
+                versionId="version-001",
+                lastModified="2026-08-08T00:00:00+00:00",
+            ),
+        )
+
+    client = SimpleNamespace(getObjectMetadata=get_object_metadata)
+    initial_port = DirectResearchObjectMetadataPort(
+        "dev-bucket", lambda: client
+    )
+    fingerprint = hashlib.sha256(str(tmp_path).encode()).hexdigest()
+    candidate = ResearchObjectCandidate(
+        "dataset-001", "obs://dev-bucket/data.tsv", ".tsv"
+    )
+    authority = (
+        await initial_port.resolve(
+            ResearchObjectResolveRequest(
+                "run-runtime", fingerprint, (candidate,)
+            )
+        )
+    )[0]
+    prepared = prepared_factory()
+    prepared = replace(
+        prepared,
+        authority_ids=(authority.authority_id,),
+        authorities=(replace(prepared.authorities[0], authority=authority),),
+    )
+    submitted: list[Any] = []
+    restarted_port = DirectResearchObjectMetadataPort(
+        "dev-bucket", lambda: client
+    )
+    runtime = dispatch_runtime.build_research_dispatch_runtime(
+        store,
+        ProviderType(),
+        analyst_agent=analyst_factory(submitted),
+        analyst_config=type("Config", (), {"USER_ID": "owner"})(),
+        sensitive_config=object(),
+        metadata_port=restarted_port,
+        lease_owner="direct-worker",
+    )
+    record = persist_plan_and_outbox(
+        store,
+        "run-runtime",
+        0,
+        prepared,
+        plan_factory(fingerprint),
+    )[0]
+
+    disposition = await runtime.outbox.dispatch_once(
+        record.dispatch_id, "direct-worker"
+    )
+
+    assert disposition.state == "accepted"
+    assert head_calls == [("dev-bucket", "data.tsv")] * 2
+    assert (
+        submitted[0][0]["research_grant_sidecar"]["objects"][0]["grant_id"]
+        != authority.authority_id
+    )
