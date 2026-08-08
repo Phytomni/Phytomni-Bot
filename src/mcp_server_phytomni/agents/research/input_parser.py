@@ -99,9 +99,7 @@ def has_explicit_research_data_syntax(query: str, bucket: str) -> bool:
     """
     for label in _DATA_LABEL.finditer(query):
         after_label = _skip_whitespace(query, label.end())
-        if after_label < len(query) and (
-            query[after_label] == "{" or query.startswith("```", after_label)
-        ):
+        if _is_explicit_data_attempt(query, after_label):
             return True
     try:
         return bool(parse_research_input(query, bucket).candidates)
@@ -127,6 +125,8 @@ def _parse_data_blocks(
             span, block_candidates = _parse_trailing_json(
                 query, label.start(), after_label, bucket
             )
+        elif _is_explicit_data_attempt(query, after_label):
+            raise _data_block_invalid()
         else:
             continue
         if any(_overlaps(span, existing) for existing in spans):
@@ -308,6 +308,8 @@ def _candidate(
     bucket: str,
 ) -> _RawCandidate:
     """Validate one exact reference and derive its comparison-only key."""
+    if hint is not None and _contains_forbidden_control(hint):
+        raise _path_invalid()
     comparison_key = _comparison_key(reference, bucket)
     if comparison_key is None:
         raise _path_invalid()
@@ -320,9 +322,7 @@ def _candidate(
 
 def _comparison_key(reference: str, bucket: str) -> str | None:
     """Validate OBS authority and return a normalized comparison identity."""
-    if any(
-        ord(character) < 32 or ord(character) == 127 for character in reference
-    ):
+    if _contains_forbidden_control(reference):
         return None
     match = re.fullmatch(r"obs://([^/]+)/(.+)", reference, flags=re.IGNORECASE)
     if match is None:
@@ -338,6 +338,33 @@ def _comparison_key(reference: str, bucket: str) -> str | None:
         return None
     normalized_key = unicodedata.normalize("NFC", key)
     return f"obs://{bucket.lower()}/{normalized_key}"
+
+
+def _is_explicit_data_attempt(query: str, offset: int) -> bool:
+    """Return whether a ``data:`` label is followed by JSON-like syntax."""
+    if offset >= len(query):
+        return False
+    if query[offset] in '[{"-0123456789' or query.startswith("```", offset):
+        return True
+    return any(
+        query.startswith(token, offset)
+        and _json_token_boundary(query, offset + len(token))
+        for token in ("true", "false", "null")
+    )
+
+
+def _json_token_boundary(query: str, offset: int) -> bool:
+    """Return whether a JSON scalar token ends without becoming prose text."""
+    return offset == len(query) or not query[offset].isalpha()
+
+
+def _contains_forbidden_control(value: str) -> bool:
+    """Reject control text except syntax-boundary tabs and line endings."""
+    return any(
+        unicodedata.category(character) == "Cc"
+        and character not in ("\t", "\r", "\n")
+        for character in value
+    )
 
 
 def _is_complete_reference(reference: str) -> bool:

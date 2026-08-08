@@ -144,6 +144,18 @@ def test_standalone_lines_accept_lf_crlf_and_one_ascii_tab() -> None:
             "research_data_block_invalid",
         ),
         (
+            "data: []",
+            "research_data_block_invalid",
+        ),
+        (
+            "data: 42",
+            "research_data_block_invalid",
+        ),
+        (
+            'data: "not an object"',
+            "research_data_block_invalid",
+        ),
+        (
             'data: {"obs://other-bucket/a.tsv": "hint"}',
             "research_dataset_path_invalid",
         ),
@@ -177,6 +189,14 @@ def test_standalone_lines_accept_lf_crlf_and_one_ascii_tab() -> None:
         ),
         (
             "obs://dev-bucket/a\x00.tsv",
+            "research_dataset_path_invalid",
+        ),
+        (
+            'data: {"obs://dev-bucket/a.tsv": "bad\\u0000hint"}',
+            "research_dataset_path_invalid",
+        ),
+        (
+            "obs://dev-bucket/a.tsv\tbad\x1fhint",
             "research_dataset_path_invalid",
         ),
         (
