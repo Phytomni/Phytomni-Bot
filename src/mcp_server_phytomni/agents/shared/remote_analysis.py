@@ -23,6 +23,7 @@ from ...runtime.submission_outcome import (
 __all__ = [
     "RemoteAnalysisPrompt",
     "RemoteAnalysisRequest",
+    "ResearchGrantUse",
     "RemoteAnalysisSubmissionError",
     "REMOTE_FANOUT_ERRORS",
     "REMOTE_SUBMISSION_ERRORS",
@@ -42,7 +43,41 @@ class RemoteAnalysisPrompt:
 
 
 @dataclass(frozen=True, slots=True)
-class RemoteAnalysisRequest:
+class ResearchGrantUse:
+    """One opaque Research object grant used by a relay submission.
+
+    The exact reference is carried only inside the private relay sidecar.  It
+    is never copied into the Analyst job YAML or a public result projection.
+    ``snapshot_digest`` binds the use to the snapshot that was validated
+    before the child dispatch.
+    """
+
+    dataset_id: str
+    exact_reference: str
+    grant_id: str
+    snapshot_digest: str
+
+    def to_payload(self) -> dict[str, str]:
+        """Return the bounded sidecar object shape."""
+        return {
+            "dataset_id": self.dataset_id,
+            "exact_reference": self.exact_reference,
+            "grant_id": self.grant_id,
+            "snapshot_digest": self.snapshot_digest,
+        }
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class _RemoteAnalysisOptions:
+    """Optional identity and private grant data for one request."""
+
+    dispatch_fingerprint: str | None = None
+    research_grants: tuple[ResearchGrantUse, ...] = ()
+    parent_run_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class RemoteAnalysisRequest(_RemoteAnalysisOptions):
     """Immutable input required for one remote Analyst submission."""
 
     analysis_type: str
@@ -66,6 +101,26 @@ class RemoteAnalysisRequest:
     def data_list(self) -> dict[str, Any]:
         """Return prompt datasets through the historical read surface."""
         return self.prompt.data_list
+
+    def research_grant_sidecar(self) -> dict[str, Any] | None:
+        """Build the private relay-only grant envelope when one is present.
+
+        ``target_id`` is the compatibility fallback for callers created
+        before the durable parent run was threaded into this seam.  New
+        Research outbox callers pass ``parent_run_id`` explicitly.
+        """
+        if not self.research_grants:
+            return None
+        if not self.dispatch_fingerprint:
+            raise RemoteAnalysisSubmissionError(
+                "research grant sidecar requires dispatch fingerprint"
+            )
+        return {
+            "schema_version": 1,
+            "parent_run_id": self.parent_run_id or self.target_id,
+            "execution_fingerprint": self.dispatch_fingerprint,
+            "objects": [grant.to_payload() for grant in self.research_grants],
+        }
 
 
 REMOTE_SUBMISSION_ERRORS: tuple[type[Exception], ...] = (
@@ -135,7 +190,7 @@ async def submit_remote_analysis(
     """
     if request.output_dir_is_result_child:
         result_run_root_from_child(str(request.output_dir or ""))
-    payload = {
+    payload: dict[str, Any] = {
         "analysis_type": request.analysis_type,
         "target_id": request.target_id,
         "output_dir": request.output_dir,
@@ -147,6 +202,13 @@ async def submit_remote_analysis(
         "compute_resource": request.compute_resource,
         "output_dir_is_result_child": request.output_dir_is_result_child,
     }
+    if request.dispatch_fingerprint is not None:
+        payload["dispatch_fingerprint"] = request.dispatch_fingerprint
+    sidecar = request.research_grant_sidecar()
+    if sidecar is not None:
+        # This name is deliberately private and is consumed only by the
+        # Analyst relay wrapper.  It is not part of any MCP request schema.
+        payload["research_grant_sidecar"] = sidecar
     result = await submit_analyst_via_subgraph(
         analyst_agent,
         config,

@@ -19,10 +19,12 @@ from unittest.mock import Mock
 import httpx
 import pytest
 from fastapi import FastAPI
+from starlette.responses import Response
 from tests.support.http_fakes import open_asgi_client
 
 from mcp_server_phytomni.api.auth import ApiKeyStore
 from mcp_server_phytomni.api.relay import research_grants, research_input
+from mcp_server_phytomni.api.relay import routes as relay_routes
 from mcp_server_phytomni.api.relay.audit import RelayAuditStore
 from mcp_server_phytomni.api.relay.research_grants import (
     ResearchGrantStore,
@@ -700,3 +702,156 @@ async def test_audit_write_failure_never_leaks_request_or_grant(
 
     assert response.status_code == 200
     assert sentinel not in response.text
+
+
+async def test_analysis_relay_verifies_and_strips_research_sidecar(
+    client: httpx.AsyncClient,
+    relay_key: Callable[..., str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the bound analysis request reaches the operator upstream."""
+    combined_key = relay_key("relay:analysis", "relay:research-input")
+    grant_headers = {"Authorization": f"Bearer {combined_key}"}
+    resolved = await client.post(
+        "/v1/relay/research-input/object-grants",
+        headers=grant_headers,
+        json=_request_payload(),
+    )
+    grant = resolved.json()["grants"][0]
+    captured: list[bytes] = []
+
+    async def _forward(**kwargs: Any) -> Response:
+        captured.append(kwargs["body"])
+        return Response(
+            status_code=200,
+            content=b'{"id":"analysis-task-001"}',
+            media_type="application/json",
+        )
+
+    monkeypatch.setattr(relay_routes, "forward_relay_request", _forward)
+    response = await client.post(
+        "/v1/relay/analysis/tasks",
+        headers={"Authorization": f"Bearer {combined_key}"},
+        json={
+            "analysis_request": {"name": "analysis-task", "tasks": []},
+            "research_input_grants": {
+                "schema_version": 1,
+                "parent_run_id": _PARENT_RUN_ID,
+                "execution_fingerprint": _EXECUTION_FINGERPRINT,
+                "objects": [
+                    {
+                        "dataset_id": grant["dataset_id"],
+                        "exact_reference": _REFERENCE,
+                        "grant_id": grant["grant_id"],
+                        "snapshot_digest": grant["snapshot"][
+                            "snapshot_digest"
+                        ],
+                    }
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured == [b'{"name":"analysis-task","tasks":[]}']
+    assert grant["grant_id"].encode() not in captured[0]
+    assert _REFERENCE.encode() not in captured[0]
+
+
+async def test_analysis_relay_preserves_ordinary_body_without_sidecar(
+    client: httpx.AsyncClient,
+    relay_key: Callable[..., str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ordinary analysis relay requests retain their exact body bytes."""
+    raw_body = b'{"name":"ordinary","tasks":[]}'
+    captured: list[bytes] = []
+
+    async def _forward(**kwargs: Any) -> Response:
+        captured.append(kwargs["body"])
+        return Response(status_code=200, content=b"{}")
+
+    monkeypatch.setattr(relay_routes, "forward_relay_request", _forward)
+    response = await client.post(
+        "/v1/relay/analysis/tasks",
+        headers={"Authorization": f"Bearer {relay_key('relay:analysis')}"},
+        content=raw_body,
+    )
+
+    assert response.status_code == 200
+    assert captured == [raw_body]
+
+
+@pytest.mark.parametrize("mutation", ["snapshot", "duplicate"])
+async def test_analysis_relay_rejects_unbound_or_extra_grants(
+    client: httpx.AsyncClient,
+    relay_key: Callable[..., str],
+    monkeypatch: pytest.MonkeyPatch,
+    mutation: str,
+) -> None:
+    """A mismatched snapshot or extra object never reaches upstream."""
+    combined_key = relay_key("relay:analysis", "relay:research-input")
+    grant_headers = {"Authorization": f"Bearer {combined_key}"}
+    resolved = await client.post(
+        "/v1/relay/research-input/object-grants",
+        headers=grant_headers,
+        json=_request_payload(),
+    )
+    grant = resolved.json()["grants"][0]
+    sidecar_object = {
+        "dataset_id": grant["dataset_id"],
+        "exact_reference": _REFERENCE,
+        "grant_id": grant["grant_id"],
+        "snapshot_digest": grant["snapshot"]["snapshot_digest"],
+    }
+    if mutation == "snapshot":
+        sidecar_object["snapshot_digest"] = "wrong-snapshot"
+    objects = [sidecar_object]
+    if mutation == "duplicate":
+        objects.append(dict(sidecar_object))
+    captured: list[bytes] = []
+
+    async def _forward(**kwargs: Any) -> Response:
+        captured.append(kwargs["body"])
+        return Response(status_code=200, content=b"{}")
+
+    monkeypatch.setattr(relay_routes, "forward_relay_request", _forward)
+    response = await client.post(
+        "/v1/relay/analysis/tasks",
+        headers={"Authorization": f"Bearer {combined_key}"},
+        json={
+            "analysis_request": {"name": "analysis-task", "tasks": []},
+            "research_input_grants": {
+                "schema_version": 1,
+                "parent_run_id": _PARENT_RUN_ID,
+                "execution_fingerprint": _EXECUTION_FINGERPRINT,
+                "objects": objects,
+            },
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "invalid research grant sidecar"}
+    assert not captured
+
+
+async def test_analysis_relay_requires_research_input_scope(
+    client: httpx.AsyncClient,
+    relay_key: Callable[..., str],
+) -> None:
+    """Analysis scope alone cannot submit a private grant sidecar."""
+    response = await client.post(
+        "/v1/relay/analysis/tasks",
+        headers={"Authorization": f"Bearer {relay_key('relay:analysis')}"},
+        json={
+            "analysis_request": {},
+            "research_input_grants": {
+                "schema_version": 1,
+                "parent_run_id": _PARENT_RUN_ID,
+                "execution_fingerprint": _EXECUTION_FINGERPRINT,
+                "objects": [],
+            },
+        },
+    )
+
+    assert response.status_code == 403

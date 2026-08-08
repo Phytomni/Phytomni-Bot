@@ -18,7 +18,7 @@ import datetime
 import logging
 from collections.abc import Mapping
 from contextlib import suppress
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import yaml
 from httpx import Timeout
@@ -166,6 +166,7 @@ class AnalystGraphMixin:
             job_data,
             job_name,
             output_dir,
+            research_grant_sidecar=state.get("research_grant_sidecar"),
         )
 
     def _submit_run_identity(self: Any) -> RunIdentity:
@@ -381,12 +382,21 @@ class AnalystGraphMixin:
         job_data: dict[str, Any],
         job_name: str,
         output_dir: str,
+        **options: Any,
     ) -> dict[str, Any]:
-        """Submit the job payload to the analysis platform with retries."""
+        """Submit the job payload to the analysis platform with retries.
+
+        A Research grant sidecar is an operator-relay concern only.  It is
+        wrapped around the established analysis request after the job YAML
+        has been built; direct platform requests and ordinary relay requests
+        therefore retain their historical request bytes.
+        """
+        research_grant_sidecar = options.get("research_grant_sidecar")
         if relay_mode_enabled():
+            relay_body = _relay_analysis_body(job_data, research_grant_sidecar)
             payload = await current_relay_client().post_json(
                 "analysis/tasks",
-                json_body=job_data,
+                json_body=relay_body,
                 message="Failed to submit task",
             )
             logger.info(
@@ -443,3 +453,79 @@ class AnalystGraphMixin:
                 code=INTERNAL_ERROR, message="Submission failed after retries"
             )
         )
+
+
+def _relay_analysis_body(
+    job_data: dict[str, Any], sidecar: Any
+) -> dict[str, Any]:
+    """Return the raw Analyst body or a validated private grant envelope."""
+    if sidecar is None:
+        return job_data
+    if not isinstance(sidecar, Mapping):
+        raise McpError(
+            ErrorData(code=INTERNAL_ERROR, message="invalid research grant")
+        )
+    schema_version = sidecar.get("schema_version")
+    parent_run_id = sidecar.get("parent_run_id")
+    execution_fingerprint = sidecar.get("execution_fingerprint")
+    objects = sidecar.get("objects")
+    if not _valid_sidecar_header(
+        schema_version, parent_run_id, execution_fingerprint, objects
+    ):
+        raise McpError(
+            ErrorData(code=INTERNAL_ERROR, message="invalid research grant")
+        )
+    safe_objects: list[dict[str, str]] = []
+    sidecar_objects = cast(tuple[Any, ...] | list[Any], objects)
+    for item in sidecar_objects:
+        if not isinstance(item, Mapping):
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR, message="invalid research grant"
+                )
+            )
+        values = {
+            key: item.get(key)
+            for key in (
+                "dataset_id",
+                "exact_reference",
+                "grant_id",
+                "snapshot_digest",
+            )
+        }
+        if not all(
+            isinstance(value, str) and value for value in values.values()
+        ):
+            raise McpError(
+                ErrorData(
+                    code=INTERNAL_ERROR, message="invalid research grant"
+                )
+            )
+        safe_objects.append({key: cast(str, values[key]) for key in values})
+    return {
+        "analysis_request": job_data,
+        "research_input_grants": {
+            "schema_version": 1,
+            "parent_run_id": parent_run_id,
+            "execution_fingerprint": execution_fingerprint,
+            "objects": safe_objects,
+        },
+    }
+
+
+def _valid_sidecar_header(
+    schema_version: Any,
+    parent_run_id: Any,
+    execution_fingerprint: Any,
+    objects: Any,
+) -> bool:
+    """Check the envelope fields before inspecting private object values."""
+    return (
+        schema_version == 1
+        and isinstance(parent_run_id, str)
+        and bool(parent_run_id)
+        and isinstance(execution_fingerprint, str)
+        and bool(execution_fingerprint)
+        and isinstance(objects, (tuple, list))
+        and bool(objects)
+    )

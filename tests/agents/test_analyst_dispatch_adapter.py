@@ -63,7 +63,12 @@ def test_map_send_payload_returns_analyst_input_field_set() -> None:
     payload = _sample_payload()
     result = dict(map_send_payload_to_analyst_input(payload))
     optional_keys = set(getattr(AnalystInput, "__optional_keys__", set()))
-    expected_optionals = optional_keys - {"obs_file_list"}
+    expected_optionals = optional_keys - {
+        "obs_file_list",
+        "dispatch_fingerprint",
+        "input_fingerprint",
+        "research_grant_sidecar",
+    }
     assert set(result.keys()) == expected_optionals | {"query"}
 
 

@@ -544,7 +544,10 @@ class AnalystAgent(
         obs_file_list = kwargs.get("obs_file_list")
         obs_file_list = [] if obs_file_list is None else list(obs_file_list)
 
-        input_fingerprint = kwargs.get("input_fingerprint") or ""
+        dispatch_fingerprint = kwargs.get("dispatch_fingerprint")
+        input_fingerprint = (
+            kwargs.get("input_fingerprint") or dispatch_fingerprint or ""
+        )
         initial_state = {
             "query": query,
             "locale": resolve_agent_locale(kwargs.get("locale")),
@@ -570,6 +573,8 @@ class AnalystAgent(
             "is_auto_select": kwargs.get("is_auto_select", True),
             "is_preset_plan": kwargs.get("is_preset_plan", False),
             "input_fingerprint": input_fingerprint,
+            "dispatch_fingerprint": dispatch_fingerprint,
+            "research_grant_sidecar": kwargs.get("research_grant_sidecar"),
         }
 
         async def run_graph() -> dict[str, Any]:
@@ -581,6 +586,10 @@ class AnalystAgent(
             )
             return merge_intermediate_state(
                 final_state,
+                extra_excluded_keys=(
+                    "dispatch_fingerprint",
+                    "research_grant_sidecar",
+                ),
                 surface_keys=(
                     "task_id",
                     "output_dir",

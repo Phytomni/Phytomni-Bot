@@ -108,7 +108,7 @@ def map_send_payload_to_analyst_input(
             either omission as a programming error.
     """
     goal_description, preset_plan_meta, data_list = payload["prompt_parts"]
-    return AnalystInput(
+    analyst_input = AnalystInput(
         query="",
         goal_description=goal_description,
         preset_plan=preset_plan_meta,
@@ -123,6 +123,14 @@ def map_send_payload_to_analyst_input(
         is_auto_select=False,
         is_preset_plan=True,
     )
+    explicit_fingerprint = payload.get("dispatch_fingerprint")
+    if explicit_fingerprint is not None:
+        analyst_input["dispatch_fingerprint"] = explicit_fingerprint
+        analyst_input["input_fingerprint"] = explicit_fingerprint
+    sidecar = payload.get("research_grant_sidecar")
+    if sidecar is not None:
+        analyst_input["research_grant_sidecar"] = sidecar
+    return analyst_input
 
 
 def map_analyst_output_to_dispatch_state(
@@ -208,14 +216,7 @@ async def submit_analyst_via_subgraph(
         carries the prior tenant's remote id; the seam persists a
         caller-owned task row so the reuse caller polls a row they own.
     """
-    output_dir_is_result_child = (
-        request.get("output_dir_is_result_child") is True
-    )
-    if output_dir_is_result_child:
-        result_run_root_from_child(str(request.get("output_dir") or ""))
-    fingerprint = (
-        None if output_dir_is_result_child else _dispatch_fingerprint(request)
-    )
+    output_dir_is_result_child, fingerprint = _dispatch_identity(request)
     context = prepare_analyst_dispatch_context(
         config, sensitive_config, request, fingerprint
     )
@@ -293,6 +294,28 @@ def _dispatch_fingerprint(request: Mapping[str, Any]) -> str:
         data_list=data_list,
         obs_file_list=None,
     )
+
+
+def _dispatch_identity(
+    request: Mapping[str, Any],
+) -> tuple[bool, str | None]:
+    """Return the child-layout flag and any explicit dispatch identity."""
+    output_dir_is_result_child = (
+        request.get("output_dir_is_result_child") is True
+    )
+    if output_dir_is_result_child:
+        result_run_root_from_child(str(request.get("output_dir") or ""))
+    explicit_fingerprint = request.get("dispatch_fingerprint")
+    if explicit_fingerprint is not None and (
+        not isinstance(explicit_fingerprint, str)
+        or not explicit_fingerprint.strip()
+    ):
+        raise ValueError("dispatch_fingerprint must be a non-blank string")
+    if explicit_fingerprint is not None:
+        return output_dir_is_result_child, explicit_fingerprint
+    if output_dir_is_result_child:
+        return output_dir_is_result_child, None
+    return output_dir_is_result_child, _dispatch_fingerprint(request)
 
 
 def _normalize_reused_submission(

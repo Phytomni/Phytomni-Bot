@@ -37,6 +37,18 @@ _NON_SECRET_OVERRIDES: frozenset[str] = frozenset(
         "n_tokens",
     }
 )
+_PRIVATE_RESEARCH_KEYS: frozenset[str] = frozenset(
+    (
+        "research_grant_sidecar",
+        "research_input_grants",
+        "research_grants",
+        "exact_reference",
+        "grant_id",
+        "snapshot_digest",
+        "parent_run_id",
+        "execution_fingerprint",
+    )
+)
 
 
 def _is_sensitive_key(key: Any) -> bool:
@@ -65,13 +77,16 @@ def sanitize_raw(payload: Any) -> Any:
             item.name: sanitize_raw(getattr(payload, item.name))
             for item in fields(payload)
             if item.name != CITATION_STATUS_KEY
+            and item.name not in _PRIVATE_RESEARCH_KEYS
             and not _is_sensitive_key(item.name)
         }
     if isinstance(payload, Mapping):
         return {
             key: sanitize_raw(value)
             for key, value in payload.items()
-            if key != CITATION_STATUS_KEY and not _is_sensitive_key(key)
+            if key != CITATION_STATUS_KEY
+            and key not in _PRIVATE_RESEARCH_KEYS
+            and not _is_sensitive_key(key)
         }
     if isinstance(payload, list):
         return [sanitize_raw(item) for item in payload]
@@ -100,7 +115,13 @@ def _strip_private_result_fields(value: Any) -> Any:
         return {
             key: _strip_private_result_fields(item)
             for key, item in value.items()
-            if key not in {"raw", "delivery_internal", "inventory_ref"}
+            if key
+            not in {
+                "raw",
+                "delivery_internal",
+                "inventory_ref",
+                *_PRIVATE_RESEARCH_KEYS,
+            }
         }
     if isinstance(value, list):
         return [_strip_private_result_fields(item) for item in value]

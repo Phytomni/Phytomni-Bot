@@ -43,6 +43,9 @@ class AnalystInput(TypedDict, total=False):
     is_polling: bool
     is_auto_select: bool
     is_preset_plan: bool
+    dispatch_fingerprint: str
+    input_fingerprint: str
+    research_grant_sidecar: Any
 
 
 class AnalystOutput(TypedDict):
@@ -124,6 +127,8 @@ class AnalystState(TypedDict):
     knowledge_payload: dict[str, Any] | None
     knowledge_response: dict[str, Any] | None
     input_fingerprint: NotRequired[str]
+    dispatch_fingerprint: NotRequired[str]
+    research_grant_sidecar: NotRequired[Any]
 
 
 AnalystAgentsState = AnalystState

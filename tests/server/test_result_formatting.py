@@ -408,6 +408,36 @@ def test_sanitize_raw_preserves_token_count_overrides() -> None:
     assert "bearer_token" not in envelope.raw["usage"]
 
 
+def test_sanitize_raw_drops_research_grant_sidecar_fields() -> None:
+    """Private grant identity never reaches default or debug raw output."""
+    payload = {
+        "choices": [{"message": {"content": "ok"}}],
+        "phytomni_state": {
+            "research_grant_sidecar": {
+                "parent_run_id": "run_fixture_01",
+                "execution_fingerprint": "sha256-fixture",
+                "objects": [
+                    {
+                        "dataset_id": "dataset_001",
+                        "exact_reference": "obs://fixture-bucket/a.tsv",
+                        "grant_id": "grant_fixture_01",
+                        "snapshot_digest": "sha256-snapshot",
+                    }
+                ],
+            },
+            "safe": "kept",
+        },
+    }
+
+    envelope = build_tool_result_envelope("AnalystAgent", payload)
+    serialized = str(envelope.raw)
+
+    assert "research_grant_sidecar" not in serialized
+    assert "grant_fixture_01" not in serialized
+    assert "obs://fixture-bucket/a.tsv" not in serialized
+    assert envelope.raw["phytomni_state"] == {"safe": "kept"}
+
+
 def test_envelope_returns_fresh_structure_for_safe_mutation() -> None:
     """Verify the raw block is a fresh structure independent of input."""
     payload = {"choices": [{"message": {"content": "x"}}], "items": [1, 2]}

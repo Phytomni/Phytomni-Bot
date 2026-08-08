@@ -14,8 +14,11 @@ relay routes, each scope-gated and forwarding through the core.
 from __future__ import annotations
 
 import json
+import sqlite3
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response
@@ -27,7 +30,7 @@ from ...auth.iam import get_token
 from ...config.defaults import ApiConfig, DeepGenomeConfig
 from ...config.settings import get_sensitive_config
 from ...runtime.request_context import current_request_id
-from ..auth import ApiPrincipal
+from ..auth import ApiPrincipal, relay_scope_satisfied
 from .audit import RelayAuditRecord, get_audit_store
 from .deps import (
     read_relay_body,
@@ -43,7 +46,11 @@ from .forward import (
     validate_relay_path_segment,
 )
 from .obs import add_obs_routes
-from .research_input import add_research_input_routes
+from .research_grants import ResearchGrantStore
+from .research_input import (
+    add_research_input_routes,
+    get_research_grant_store,
+)
 
 __all__ = [
     "create_relay_router",
@@ -72,6 +79,31 @@ _PLATFORM_RELAYS = (
     ("database", "nl2sql", "DATABASE_URL", "iam", None),
     ("analysis", "tasks", "ANALYSIS_URL", "iam", "ANALYSIS_REGION"),
 )
+
+_PRIVATE_RESEARCH_KEYS = frozenset(
+    ("research_grant_sidecar", "research_input_grants", "research_grants")
+    + ("exact_reference", "grant_id", "snapshot_digest")
+    + ("parent_run_id", "execution_fingerprint")
+)
+
+
+@dataclass(frozen=True, slots=True)
+class _PlatformRelaySpec:
+    """Configuration for one platform-family relay route."""
+
+    name: str
+    url_attr: str
+    inject_kind: str
+    region_attr: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _ResearchSidecarBinding:
+    """Parsed operator-private binding carried by a Research sidecar."""
+
+    parent_run_id: str
+    execution_fingerprint: str
+    expected: Mapping[str, tuple[str, str, str]]
 
 
 async def _relay_no_inject() -> dict[str, str]:
@@ -139,7 +171,7 @@ def _openai_relay_handler(
 
 
 def _platform_relay_handler(
-    name: str, url_attr: str, inject_kind: str, region_attr: str | None
+    spec: _PlatformRelaySpec,
 ) -> Callable[..., Awaitable[Response]]:
     """Build an ENVELOPE relay handler for one platform-family service.
 
@@ -150,27 +182,279 @@ def _platform_relay_handler(
 
     async def _handler(
         request: Request,
-        principal: ApiPrincipal = Depends(require_relay_access(name)),
+        principal: ApiPrincipal = Depends(require_relay_access(spec.name)),
     ) -> Response:
         config = ApiConfig()
         body = await read_relay_body(request, config.RELAY_REQUEST_MAX_BYTES)
-        platform = DeepGenomeConfig()
-        region = getattr(platform, region_attr) if region_attr else None
-        upstream = RelayUpstream(
-            url=getattr(platform, url_attr),
-            error_mode=RelayErrorMode.ENVELOPE,
-            service=name,
-            inject_headers=_build_platform_inject(inject_kind, region),
-        )
-        return await forward_relay_request(
+        return await _forward_platform_body(
             request=request,
             body=body,
-            upstream=upstream,
             principal=principal,
-            audit_store=get_audit_store(config.RELAY_AUDIT_DB_PATH),
+            spec=spec,
         )
 
     return _handler
+
+
+def _research_analysis_relay_handler(
+    spec: _PlatformRelaySpec,
+) -> Callable[..., Awaitable[Response]]:
+    """Build the analysis submit handler with grant-store injection."""
+
+    async def _handler(
+        request: Request,
+        principal: ApiPrincipal = Depends(require_relay_access("analysis")),
+        grant_store: ResearchGrantStore = Depends(get_research_grant_store),
+    ) -> Response:
+        config = ApiConfig()
+        body = await read_relay_body(request, config.RELAY_REQUEST_MAX_BYTES)
+        body = _unwrap_research_analysis_body(body, principal, grant_store)
+        return await _forward_platform_body(
+            request=request,
+            body=body,
+            principal=principal,
+            spec=spec,
+        )
+
+    return _handler
+
+
+async def _forward_platform_body(
+    request: Request,
+    body: bytes,
+    principal: ApiPrincipal,
+    spec: _PlatformRelaySpec,
+) -> Response:
+    """Forward one already-read platform body through the relay core."""
+    config = ApiConfig()
+    platform = DeepGenomeConfig()
+    region = getattr(platform, spec.region_attr) if spec.region_attr else None
+    upstream = RelayUpstream(
+        url=getattr(platform, spec.url_attr),
+        error_mode=RelayErrorMode.ENVELOPE,
+        service=spec.name,
+        inject_headers=_build_platform_inject(spec.inject_kind, region),
+    )
+    return await forward_relay_request(
+        request=request,
+        body=body,
+        upstream=upstream,
+        principal=principal,
+        audit_store=get_audit_store(config.RELAY_AUDIT_DB_PATH),
+    )
+
+
+def _unwrap_research_analysis_body(
+    body: bytes,
+    principal: ApiPrincipal,
+    grant_store: ResearchGrantStore,
+) -> bytes:
+    """Verify a private sidecar and return only its Analyst request bytes."""
+    try:
+        payload = json.loads(body)
+    except (UnicodeDecodeError, ValueError):
+        return body
+    if not isinstance(payload, dict) or "research_input_grants" not in payload:
+        return body
+    if set(payload) != {"analysis_request", "research_input_grants"}:
+        raise _invalid_research_sidecar()
+    if not relay_scope_satisfied(principal.scopes, "research-input"):
+        raise HTTPException(status_code=403, detail="insufficient scope")
+    analysis_request = payload.get("analysis_request")
+    sidecar = payload.get("research_input_grants")
+    _verify_research_sidecar(principal, sidecar, grant_store)
+    if not isinstance(analysis_request, dict):
+        raise _invalid_research_sidecar()
+    if _contains_private_grant_key(analysis_request):
+        raise _invalid_research_sidecar()
+    return json.dumps(
+        analysis_request, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+
+
+def _verify_research_sidecar(
+    principal: ApiPrincipal,
+    sidecar: object,
+    grant_store: ResearchGrantStore,
+) -> None:
+    """Require exactly one active grant row per sidecar object."""
+    binding = _parse_research_sidecar(sidecar)
+    rows = _read_research_grant_rows(grant_store, tuple(binding.expected))
+    now = datetime.now(UTC).isoformat()
+    if len(rows) != len(binding.expected):
+        raise _invalid_research_sidecar()
+    for row in rows:
+        if not _grant_row_matches(row, principal, binding, now):
+            raise _invalid_research_sidecar()
+
+
+def _parse_research_sidecar(
+    sidecar: object,
+) -> _ResearchSidecarBinding:
+    """Parse strict sidecar bindings without exposing their values."""
+    if not isinstance(sidecar, dict) or set(sidecar) != {
+        "schema_version",
+        "parent_run_id",
+        "execution_fingerprint",
+        "objects",
+    }:
+        raise _invalid_research_sidecar()
+    parent_run_id = sidecar["parent_run_id"]
+    execution_fingerprint = sidecar["execution_fingerprint"]
+    objects = sidecar["objects"]
+    if (
+        sidecar["schema_version"] != 1
+        or not _safe_sidecar_text(parent_run_id)
+        or not _safe_sidecar_text(execution_fingerprint)
+        or not isinstance(objects, list)
+        or not objects
+    ):
+        raise _invalid_research_sidecar()
+    expected: dict[str, tuple[str, str, str]] = {}
+    dataset_ids: set[str] = set()
+    references: set[str] = set()
+    for item in objects:
+        grant_id, binding = _parse_research_sidecar_object(item)
+        dataset_id, exact_reference, _ = binding
+        if (
+            dataset_id in dataset_ids
+            or exact_reference in references
+            or grant_id in expected
+        ):
+            raise _invalid_research_sidecar()
+        dataset_ids.add(dataset_id)
+        references.add(exact_reference)
+        expected[grant_id] = binding
+    return _ResearchSidecarBinding(
+        parent_run_id=parent_run_id,
+        execution_fingerprint=execution_fingerprint,
+        expected=expected,
+    )
+
+
+def _parse_research_sidecar_object(
+    item: object,
+) -> tuple[str, tuple[str, str, str]]:
+    """Parse one exact grant object from a private sidecar."""
+    if not isinstance(item, dict) or set(item) != {
+        "dataset_id",
+        "exact_reference",
+        "grant_id",
+        "snapshot_digest",
+    }:
+        raise _invalid_research_sidecar()
+    values = tuple(
+        item[field]
+        for field in (
+            "dataset_id",
+            "exact_reference",
+            "grant_id",
+            "snapshot_digest",
+        )
+    )
+    if not all(_safe_sidecar_text(value) for value in values):
+        raise _invalid_research_sidecar()
+    dataset_id, exact_reference, grant_id, snapshot_digest = values
+    return grant_id, (dataset_id, exact_reference, snapshot_digest)
+
+
+def _grant_row_matches(
+    row: sqlite3.Row,
+    principal: ApiPrincipal,
+    binding: _ResearchSidecarBinding,
+    now: str,
+) -> bool:
+    """Compare one private row against its exact sidecar binding."""
+    grant_id = row["grant_id"]
+    expected_values = binding.expected.get(grant_id)
+    if expected_values is None:
+        return False
+    return _grant_context_matches(row, principal, binding) and (
+        _grant_is_unexpired(row["expires_at"], now)
+        and tuple(
+            row[field]
+            for field in ("dataset_id", "exact_reference", "snapshot_digest")
+        )
+        == expected_values
+    )
+
+
+def _grant_context_matches(
+    row: sqlite3.Row,
+    principal: ApiPrincipal,
+    binding: _ResearchSidecarBinding,
+) -> bool:
+    """Compare principal/run/execution/schema/state binding fields."""
+    return (
+        row["principal_key_prefix"] == principal.key_prefix
+        and row["parent_run_id"] == binding.parent_run_id
+        and row["execution_fingerprint"] == binding.execution_fingerprint
+        and row["grant_schema_version"] == 3
+        and row["state"] == "active"
+    )
+
+
+def _read_research_grant_rows(
+    grant_store: ResearchGrantStore,
+    grant_ids: tuple[str, ...],
+) -> list[sqlite3.Row]:
+    """Read only binding columns from the operator-private grant table."""
+    placeholders = ",".join("?" for _ in grant_ids)
+    query = (
+        "SELECT grant_id, principal_key_prefix, parent_run_id, "
+        "execution_fingerprint, dataset_id, exact_reference, "
+        "snapshot_digest, state, expires_at, grant_schema_version "
+        "FROM research_object_grants "
+        f"WHERE grant_id IN ({placeholders})"
+    )
+    try:
+        with sqlite3.connect(grant_store.db_path) as connection:
+            connection.row_factory = sqlite3.Row
+            return list(connection.execute(query, grant_ids))
+    except (OSError, sqlite3.Error):
+        raise _invalid_research_sidecar() from None
+
+
+def _safe_sidecar_text(value: object) -> bool:
+    """Return whether one opaque sidecar text value is bounded and safe."""
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and len(value) <= 4096
+        and all(
+            ord(character) >= 32 and ord(character) != 127
+            for character in value
+        )
+    )
+
+
+def _grant_is_unexpired(expires_at: object, now: str) -> bool:
+    """Compare store timestamps without accepting malformed expiry data."""
+    if not isinstance(expires_at, str):
+        return False
+    try:
+        return datetime.fromisoformat(expires_at) > datetime.fromisoformat(now)
+    except ValueError:
+        return False
+
+
+def _contains_private_grant_key(value: object) -> bool:
+    """Reject a nested private sidecar instead of forwarding it upstream."""
+    if isinstance(value, Mapping):
+        return any(
+            key in _PRIVATE_RESEARCH_KEYS or _contains_private_grant_key(child)
+            for key, child in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_private_grant_key(child) for child in value)
+    return False
+
+
+def _invalid_research_sidecar() -> HTTPException:
+    """Build one non-disclosing sidecar rejection."""
+    return HTTPException(
+        status_code=400, detail="invalid research grant sidecar"
+    )
 
 
 # Analysis-platform lifecycle ops. The client task id is validated and
@@ -346,9 +630,15 @@ def create_relay_router() -> APIRouter:
         )
 
     for name, path, url_attr, inject_kind, region_attr in _PLATFORM_RELAYS:
+        spec = _PlatformRelaySpec(name, url_attr, inject_kind, region_attr)
+        handler = (
+            _research_analysis_relay_handler(spec)
+            if name == "analysis" and path == "tasks"
+            else _platform_relay_handler(spec)
+        )
         router.add_api_route(
             f"/{name}/{path}",
-            _platform_relay_handler(name, url_attr, inject_kind, region_attr),
+            handler,
             methods=["POST"],
         )
 
