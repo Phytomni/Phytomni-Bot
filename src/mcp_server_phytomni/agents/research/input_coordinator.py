@@ -5,11 +5,13 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
 from ...api.agent_capabilities import agent_supports_attachment_channels
 from ...mcp.schemas import InSilicoResearchAgent
+from .dispatch_outbox import persist_plan_and_outbox
 from .input_contracts import (
     ResearchCoordinatorDependencies,
     ResearchCoordinatorRequest,
@@ -57,11 +59,27 @@ class ResearchInputCoordinator:
         storage or service implementation while the public routes converge.
         """
         self.request = request
+        self.plan = ports.pop("plan", None)
+        self.plan_builder = ports.pop("plan_builder", None)
+        self.outbox = ports.pop("outbox", None)
+        self.expected_revision = ports.pop("expected_revision", 0)
+        self._validate_optional_ports()
         self.dependencies = dependencies or (
             request.dependencies
             if isinstance(request, ResearchCoordinatorRequest)
             else _dependencies_from_ports(ports)
         )
+
+    def _validate_optional_ports(self) -> None:
+        """Validate constructor-only planning/outbox controls."""
+        if (
+            not isinstance(self.expected_revision, int)
+            or isinstance(self.expected_revision, bool)
+            or self.expected_revision < 0
+        ):
+            raise ValueError("expected_revision must be non-negative")
+        if self.plan_builder is not None and not callable(self.plan_builder):
+            raise TypeError("plan_builder must be callable")
 
     async def run(self, run_id: str, lease_owner: str) -> None:
         """Prepare, validate, and durably hand off one Research input.
@@ -236,22 +254,63 @@ class ResearchInputCoordinator:
         prepared: PreparedResearchInput,
         request: ResearchCoordinatorRequest,
     ) -> None:
+        plan = await self._build_plan(prepared, request)
         callback = dependencies.persist_planning
-        if callback is None:
-            raise _failure("planning")
         try:
-            result = callback(
-                run_id,
-                prepared=prepared,
-                inventory=request.inventory_request,
-                evidence=_persistence_metadata(request.evidence),
-                resolution=_persistence_metadata(request.resolution),
-                outbox_rows=(),
-            )
-            if hasattr(result, "__await__"):
-                await result
+            if self.outbox is not None and plan is not None:
+                records = persist_plan_and_outbox(
+                    self.outbox.store,
+                    run_id,
+                    self.expected_revision,
+                    prepared,
+                    plan,
+                )
+                if callback is not None:
+                    result = callback(
+                        run_id,
+                        prepared=prepared,
+                        inventory=request.inventory_request,
+                        evidence=_persistence_metadata(request.evidence),
+                        resolution=_persistence_metadata(request.resolution),
+                        plan=plan,
+                        outbox_rows=records,
+                    )
+                    if inspect.isawaitable(result):
+                        await result
+            else:
+                if callback is None:
+                    raise _failure("planning")
+                result = callback(
+                    run_id,
+                    prepared=prepared,
+                    inventory=request.inventory_request,
+                    evidence=_persistence_metadata(request.evidence),
+                    resolution=_persistence_metadata(request.resolution),
+                    plan=plan,
+                    outbox_rows=(),
+                )
+                if inspect.isawaitable(result):
+                    await result
         except ResearchInputFailure as error:
             raise _restate(error, "planning") from None
+        except Exception as error:
+            raise _stage_failure("planning", error) from None
+
+    async def _build_plan(
+        self,
+        prepared: PreparedResearchInput,
+        request: ResearchCoordinatorRequest,
+    ) -> Any | None:
+        """Build one injected pure plan after native validation."""
+        if self.plan is not None:
+            return self.plan
+        if self.plan_builder is None:
+            return None
+        try:
+            result = self.plan_builder(prepared, request)
+            return await result if inspect.isawaitable(result) else result
+        except ResearchInputFailure:
+            raise
         except Exception as error:
             raise _stage_failure("planning", error) from None
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import sys
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from sqlite3 import Connection, Cursor, Row
@@ -148,6 +149,16 @@ class ResearchInputStore(_ResearchInputStoreBindings):
                 (*values[1:19], values[20], run_id, expected_revision),
             )
             return cursor.rowcount == 1
+
+    def persist_plan_and_outbox(
+        self, run_id: str, expected_revision: int, **values: Any
+    ) -> tuple[dict[str, Any], ...] | None:
+        """Atomically enqueue a validated Research child plan."""
+        module = sys.modules[
+            "mcp_server_phytomni.agents.research.dispatch_outbox"
+        ]
+        persist = getattr(module, "_persist_plan_in_store")
+        return persist(self, run_id, expected_revision, **values)
 
     def load_resolution(self, run_id: str) -> dict[str, Any] | None:
         """Load structured resolution state."""

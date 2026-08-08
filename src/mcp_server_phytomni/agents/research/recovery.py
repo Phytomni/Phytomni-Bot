@@ -32,6 +32,7 @@ from ...runtime.research_input_store import (
 )
 from ...runtime.sqlite import sqlite_transaction
 from . import recovery_support as _recovery_support
+from .dispatch_outbox import recover_dispatch_outbox
 from .input_contracts import ResearchErrorCode
 from .recovery_support import (
     ContextSubdivider,
@@ -146,9 +147,10 @@ def _list_recovery_candidates(
         return []
     now_iso = now.astimezone(UTC).isoformat()
     query = (
-        "SELECT * FROM research_work_units WHERE state IN "
-        "('pending', 'retryable_failed') OR (state IN ('leased', 'sent') "
-        "AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?) "
+        "SELECT * FROM research_work_units WHERE kind <> 'dispatch' AND ("
+        "state IN ('pending', 'retryable_failed') OR (state IN "
+        "('leased', 'sent') AND lease_expires_at IS NOT NULL AND "
+        "lease_expires_at <= ?)) "
         "ORDER BY updated_at, unit_id LIMIT ?"
     )
     with sqlite_transaction(store.db_path) as connection:
@@ -818,6 +820,7 @@ class ResearchRecoveryService:
         provider: ResearchWorkProvider,
         *,
         options: _RecoveryOptions | None = None,
+        outbox: Any | None = None,
         **option_kwargs: object,
     ) -> None:
         if options is not None and option_kwargs:
@@ -831,6 +834,7 @@ class ResearchRecoveryService:
         self.lease_owner = (
             resolved.lease_owner or f"research-recovery-{uuid.uuid4().hex}"
         )
+        self.outbox = outbox
         register_recovery_service(self)
 
     @property
@@ -845,11 +849,7 @@ class ResearchRecoveryService:
     async def recover_request(
         self, now: datetime | None = None
     ) -> ResearchRecoverySummary:
-        """Run one bounded request-triggered recovery scan.
-        API callers may invoke this after store initialization.  It is
-        intentionally the same bounded/idempotent operation as the startup
-        hook; it never drains the entire coordinator from an ordinary request.
-        """
+        """Run one bounded request-triggered recovery scan."""
         return await self.recover_once(now or self.now())
 
     async def recover_once(self, now: datetime) -> ResearchRecoverySummary:
@@ -871,12 +871,23 @@ class ResearchRecoveryService:
             try:
                 outcome = await self._recover_candidate(candidate, now)
             except _RECOVERY_FAILURES:
-                # Recovery is a bounded maintenance pass.  A corrupt row or
-                # transient store failure must not abort later candidates or
-                # expose provider/storage details in its summary.
                 outcome = self._candidate_error_outcome(candidate)
             if outcome is not None:
                 counts[outcome] += 1
+        if self.outbox is not None:
+            try:
+                outcomes = await recover_dispatch_outbox(
+                    self.outbox,
+                    now,
+                    self.recovery_limit,
+                    self.lease_owner,
+                )
+            except _RECOVERY_FAILURES:
+                outcomes = ()
+            counts["reconciled"] += outcomes.count("accepted")
+            counts["reconciled"] += outcomes.count("reconciled")
+            counts["ambiguous"] += outcomes.count("ambiguous")
+            counts["terminal_failed"] += outcomes.count("cancelled")
         return ResearchRecoverySummary(**counts)
 
     async def _recover_candidate(

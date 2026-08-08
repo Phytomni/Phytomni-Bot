@@ -58,6 +58,11 @@ class _Harness:
         return self._state["outbox_rows"]
 
     @property
+    def planning_plan(self) -> Any:
+        """Return the pure plan passed to planning persistence."""
+        return self._state.get("planning_plan")
+
+    @property
     def child_submissions(self) -> list[Any]:
         """Return accidental child submissions."""
         return self._state["child_submissions"]
@@ -144,6 +149,7 @@ class _Harness:
         """Record the planning persistence callback without child work."""
         del run_id
         self.calls.append("persist_planning")
+        self._state["planning_plan"] = values.get("plan")
         self.outbox_rows.extend(values.get("outbox_rows", ()))
 
     async def submit_children(self, rows: Any) -> None:
@@ -218,6 +224,18 @@ async def test_coordinator_persists_only_after_native_validation() -> None:
         "persist_planning",
     ]
     assert not harness.child_submissions
+
+
+async def test_coordinator_passes_pure_plan_to_persistence_seam() -> None:
+    """Planning persistence receives the validated plan after native checks."""
+    harness = _Harness()
+    plan = object()
+    coordinator = ResearchInputCoordinator(_request(harness), plan=plan)
+
+    await coordinator.run("run-001", "lease-001")
+
+    assert harness.planning_plan is plan
+    assert harness.calls[-1] == "persist_planning"
 
 
 async def test_coordinator_runs_bounded_request_recovery_first(
