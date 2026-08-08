@@ -30,6 +30,7 @@ from .input_contracts import (
     research_input_failure,
 )
 from .input_inventory import ResearchInputInventory
+from .recovery import _execute_resolver_work
 from .resolver_policy import (
     ResearchResolverObservationUnit,
     ResearchResolverPolicy,
@@ -235,20 +236,29 @@ class ResearchDescriptionResolver:
         self,
         provider: ResearchResolverProvider,
         repository: ResearchWorkRepository,
+        *,
+        executor: Any = None,
+        recovery_hook: Any = None,
     ) -> None:
         self.provider = provider
         self.repository = repository
+        self.executor = executor
+        self.recovery_hook = recovery_hook
 
-    @property
-    def contract_name(self) -> str:
-        """Identify the strict description-resolution domain seam."""
-        return "research_description_resolver"
+    def durable_execution_enabled(self) -> bool:
+        """Report whether the lease-owning executor seam is enabled."""
+        return self.executor is not None
 
     async def resolve(
         self, request: ResearchResolutionRequest, lease_owner: str
     ) -> ResearchResolutionResponse:
         """Return one grounded dataset result in immutable inventory order."""
         try:
+            if self.recovery_hook is not None:
+                try:
+                    await self.recovery_hook.recover_request()
+                except _EXTERNAL_FAILURES:
+                    raise _unavailable() from None
             context = _validate_request(request, lease_owner)
             observations: list[ResearchObservation] = []
             completed: set[str] = set()
@@ -280,6 +290,10 @@ class ResearchDescriptionResolver:
         """Load, send, validate, and persist exactly one work unit."""
         input_digest = _request_input_digest(request, unit)
         policy_digest = context.policy_digest
+        if self.executor is not None:
+            return await self._resolve_with_executor(
+                unit, context, input_digest, lease_owner
+            )
         try:
             cached = self.repository.load_validated_output(
                 unit.unit_id, input_digest, policy_digest
@@ -316,6 +330,25 @@ class ResearchDescriptionResolver:
         if settled is not True:
             raise _unavailable()
         return response
+
+    async def _resolve_with_executor(
+        self,
+        unit: ResearchResolverObservationUnit,
+        context: _ResolutionContext,
+        input_digest: str,
+        lease_owner: str,
+    ) -> ResearchObservationResponse:
+        """Project one already-settled durable unit without re-invocation."""
+        executor = self.executor
+        status, cached = await _execute_resolver_work(
+            executor,
+            self.repository,
+            (unit.unit_id, input_digest, context.policy_digest),
+            lease_owner,
+        )
+        if status != "ok" or cached is None:
+            raise _failure() if status == "failed" else _unavailable()
+        return _validated_response(cached, unit, context)
 
     async def _query_after_exception(
         self,

@@ -292,6 +292,43 @@ class _RecordingRepository:
         return True
 
 
+class _RecoveryHook:
+    """Bounded request-recovery fixture used by the resolver seam."""
+
+    def __init__(self, failure: Exception | None = None) -> None:
+        self.calls = 0
+        self.failure = failure
+
+    async def recover_request(self) -> object:
+        """Return a bounded recovery result for the resolver request."""
+        self.calls += 1
+        if self.failure is not None:
+            raise self.failure
+        return {"reclaimed": 0}
+
+    @property
+    def contract_name(self) -> str:
+        """Identify the request-recovery fixture contract."""
+        return "request-recovery-fixture"
+
+
+class _ReusingExecutor:
+    """Durable-executor adapter fixture that never invokes the provider."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    async def execute(self, unit_id: str, lease_owner: str) -> object:
+        """Return a reusable disposition without provider I/O."""
+        self.calls.append((unit_id, lease_owner))
+        return type("Disposition", (), {"state": "reused"})()
+
+    @property
+    def contract_name(self) -> str:
+        """Identify the durable-executor fixture contract."""
+        return "reusing-executor-fixture"
+
+
 def _resolver(
     provider: _RecordingProvider, repository: _RecordingRepository
 ) -> ResearchDescriptionResolver:
@@ -560,6 +597,69 @@ async def test_mark_before_send_and_validated_output_reuse() -> None:
 
     assert provider.requests == [first_request.work_plan.observation_units[0]]
     assert repository.events == [("mark", "unit_001"), ("settle", "unit_001")]
+
+
+@pytest.mark.asyncio
+async def test_durable_executor_projects_reused_output_without_provider() -> (
+    None
+):
+    """The durable adapter owns execution while the resolver only projects."""
+    request = _valid_request()
+    output = {
+        "observations": [
+            {
+                "dataset_id": "dataset_001",
+                "claim": "Expression measurements are available.",
+                "confidence": "high",
+                "evidence_ids": ["evidence_001"],
+            }
+        ]
+    }
+    second_output = {
+        "observations": [
+            {
+                "dataset_id": "dataset_002",
+                "claim": "Sample metadata are available.",
+                "confidence": "medium",
+                "evidence_ids": ["evidence_002"],
+            }
+        ]
+    }
+    repository = _RecordingRepository()
+    await _resolver(
+        _RecordingProvider((output, second_output)), repository
+    ).resolve(request, "owner")
+    executor = _ReusingExecutor()
+    provider = _RecordingProvider(())
+    result = await ResearchDescriptionResolver(
+        provider, repository, executor=executor
+    ).resolve(request, "owner")
+
+    assert len(result.datasets) == 2
+    assert [unit_id for unit_id, _owner in executor.calls] == [
+        "unit_001",
+        "unit_002",
+    ]
+    assert not provider.requests
+
+
+@pytest.mark.asyncio
+async def test_request_recovery_hook_is_bounded_and_sanitized() -> None:
+    """Request recovery runs once and never leaks hook exception text."""
+    provider = _RecordingProvider(())
+    hook = _RecoveryHook(RuntimeError("private recovery details"))
+    resolver = ResearchDescriptionResolver(
+        provider, _RecordingRepository(), recovery_hook=hook
+    )
+
+    with pytest.raises(Exception) as caught:
+        await resolver.resolve(_valid_request(), "owner")
+
+    assert hook.calls == 1
+    assert getattr(caught.value, "code", None) == (
+        "research_input_resolution_unavailable"
+    )
+    assert "private recovery details" not in str(caught.value)
 
 
 @pytest.mark.asyncio

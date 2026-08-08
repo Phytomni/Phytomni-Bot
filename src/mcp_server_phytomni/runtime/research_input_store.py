@@ -1,12 +1,7 @@
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
-"""Private, durable SQLite state for bounded Research coordination.
-
-This module intentionally persists identifiers and integrity digests only.  It
-does not provide a storage path for uploaded bodies, converted text, or a
-second copy of the caller's original query.
-"""
+"""Private, durable SQLite state for bounded Research coordination."""
 
 from __future__ import annotations
 
@@ -14,11 +9,20 @@ import hashlib
 import json
 import sqlite3
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from sqlite3 import Connection, Cursor, Row
+from typing import Any, cast
 
+from .research_input_types import (
+    ResearchAdmissionReservation,
+    ResearchWorkUnitRecord,
+)
 from .sqlite import sqlite_transaction
+
+
+def _split_words(value: str, separator: str | None = None) -> tuple[str, ...]:
+    return tuple(value.split(separator))
+
 
 RESEARCH_WORK_LEASE = timedelta(seconds=60)
 RESEARCH_HEARTBEAT_INTERVAL = timedelta(seconds=20)
@@ -27,67 +31,27 @@ RESEARCH_SCHEMA_VERSION = 1
 RESEARCH_SCHEMA_VERSION_TABLE = "research_input_schema_version"
 RESEARCH_OPERATION = "research_input_resolution_v1"
 PUBLIC_RESEARCH_STAGES = frozenset(
-    {"input_resolution", "planning", "execution", "report_assembly"}
+    _split_words("input_resolution planning execution report_assembly")
 )
 TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
-
 _WORK_STATES = frozenset(
-    [
-        "pending",
-        "leased",
-        "sent",
-        "succeeded",
-        "retryable_failed",
-        "terminal_failed",
-        "ambiguous",
-        "cancelled",
-    ]
+    _split_words(
+        "pending leased sent succeeded retryable_failed terminal_failed "
+        "ambiguous cancelled"
+    )
 )
-_ACTIVE_WORK_STATES = frozenset({"leased", "sent"})
-
-
-@dataclass(frozen=True, slots=True)
-class _ResearchWorkUnitIdentity:
-    """Identity portion of a private coordinator work record."""
-
-    unit_id: str
-    run_id: str
-    kind: str
-
-
-@dataclass(frozen=True, slots=True)
-class ResearchWorkUnitRecord(_ResearchWorkUnitIdentity):
-    """The lease-safe projection of one private coordinator work unit."""
-
-    state: str
-    input_digest: str
-    policy_digest: str
-    lease_owner: str | None
-    lease_expires_at: datetime | None
-    attempt: int
-    revision: int
-
-
-@dataclass(frozen=True, slots=True)
-class ResearchAdmissionReservation:
-    """Atomic admission result before a post-commit worker launch."""
-
-    run_id: str
-    replay: bool
-    status: str
 
 
 class ResearchInputStore:
-    """Own versioned Research coordinator rows colocated with run state."""
+    """Store durable private Research coordination state."""
 
     def __init__(self, db_path: str) -> None:
         self.db_path = db_path
         self.initialize()
 
     def initialize(self) -> None:
-        """Create additive private tables without rebuilding an existing DB."""
-        connection = sqlite3.connect(self.db_path, timeout=10)
-        try:
+        """Initialize additive private schema."""
+        with sqlite_transaction(self.db_path, timeout=10) as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("BEGIN IMMEDIATE")
@@ -96,93 +60,48 @@ class ResearchInputStore:
             _ensure_private_tables(connection)
             _ensure_indexes(connection)
             _set_schema_version(connection)
-            connection.commit()
-        except BaseException:
-            if connection.in_transaction:
-                connection.rollback()
-            raise
-        finally:
-            connection.close()
 
     def add_work_unit(self, record: ResearchWorkUnitRecord) -> None:
-        """Add a digest-addressed work item exactly once."""
+        """Add a work unit exactly once."""
         now = _utc_iso(datetime.now(UTC))
         with sqlite_transaction(self.db_path) as connection:
-            connection.execute(
-                "INSERT INTO research_work_units ("
-                "unit_id, run_id, kind, state, input_digest, policy_digest, "
-                "lease_owner, lease_expires_at, attempt, revision, "
-                "schema_version, created_at, updated_at) "
-                "SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? "
-                "WHERE EXISTS (SELECT 1 FROM runs WHERE runs.run_id = ? "
-                "AND runs.status NOT IN ('succeeded', 'failed', 'cancelled'))",
-                (
-                    record.unit_id,
-                    record.run_id,
-                    record.kind,
-                    record.state,
-                    record.input_digest,
-                    record.policy_digest,
-                    record.lease_owner,
-                    (
-                        _utc_iso(record.lease_expires_at)
-                        if record.lease_expires_at is not None
-                        else None
-                    ),
-                    record.attempt,
-                    record.revision,
-                    RESEARCH_SCHEMA_VERSION,
-                    now,
-                    now,
-                    record.run_id,
-                ),
-            )
+            values = _work_insert_values(record, now)
+            connection.execute(_WORK_INSERT_SQL, values)
 
     def reserve_admission(
         self, **request: Any
     ) -> ResearchAdmissionReservation | None:
-        """Reserve the binding, parent, snapshot, and root unit atomically."""
-        connection = sqlite3.connect(
-            self.db_path, isolation_level=None, timeout=30.0
-        )
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA busy_timeout=30000")
-        now = _utc_iso(datetime.now(UTC))
-        try:
-            connection.execute("BEGIN IMMEDIATE")
-            found, replay = _read_existing_admission(connection, request)
-            if found:
-                if replay is None:
-                    connection.rollback()
-                    return None
-                connection.commit()
-                return replay
-            if request.get(
-                "header_alias_digest"
-            ) is not None and _alias_is_bound(
-                connection, request["owner"], request["header_alias_digest"]
-            ):
-                connection.rollback()
-                return None
-            _insert_admission(connection, request, now)
-            connection.commit()
-            return ResearchAdmissionReservation(
-                request["run_id"], False, "running"
-            )
-        except sqlite3.IntegrityError:
-            if connection.in_transaction:
-                connection.rollback()
+        """Reserve one admission atomically."""
+        with sqlite_transaction(self.db_path, timeout=30.0) as connection:
+            connection.row_factory = Row
+            now = _utc_iso(datetime.now(UTC))
             try:
                 connection.execute("BEGIN IMMEDIATE")
-                _found, replay = _read_existing_admission(connection, request)
-                connection.commit()
-                return replay
+                found, replay = _read_existing_admission(connection, request)
+                if found:
+                    return replay
+                alias_digest = request.get("header_alias_digest")
+                if alias_digest is not None and _alias_is_bound(
+                    connection, request["owner"], alias_digest
+                ):
+                    return None
+                _insert_admission(connection, request, now)
+                return ResearchAdmissionReservation(
+                    request["run_id"], False, "running"
+                )
             except sqlite3.IntegrityError:
                 if connection.in_transaction:
                     connection.rollback()
-                return None
-        finally:
-            connection.close()
+                try:
+                    connection.execute("BEGIN IMMEDIATE")
+                    _found, replay = _read_existing_admission(
+                        connection, request
+                    )
+                    return replay
+                except sqlite3.IntegrityError:
+                    if connection.in_transaction:
+                        connection.rollback()
+                    return None
 
     def lookup_admission(
         self,
@@ -192,15 +111,15 @@ class ResearchInputStore:
         header_alias_digest: str | None,
         client_fingerprint: str,
     ) -> tuple[bool, ResearchAdmissionReservation | None]:
-        """Return an exact replay without requiring resolved input state."""
-        connection = _admission_connection(self.db_path)
+        """Look up an exact admission replay."""
         request = {
             "owner": owner,
             "identity_digest": identity_digest,
             "header_alias_digest": header_alias_digest,
             "client_fingerprint": client_fingerprint,
         }
-        try:
+        with sqlite_transaction(self.db_path, timeout=30.0) as connection:
+            connection.row_factory = Row
             connection.execute("BEGIN IMMEDIATE")
             found, replay = _read_existing_admission(connection, request)
             alias_bound = header_alias_digest is not None and _alias_is_bound(
@@ -208,18 +127,10 @@ class ResearchInputStore:
             )
             if not found and alias_bound:
                 found = True
-            connection.commit()
             return found, replay
-        finally:
-            connection.close()
 
     def persist_resolution(self, run_id: str, **fields: Any) -> bool:
-        """Persist structured private resolution state, never public plaintext.
-
-        Keyword fields are deliberately collected at this boundary so later
-        coordinator phases can add optional private projections without
-        changing the stable storage method's call shape.
-        """
+        """Persist structured resolution state."""
         expected_revision = fields.pop("expected_revision", None)
         status = fields.pop("status", "pending")
         if not isinstance(status, str) or status in TERMINAL_RUN_STATUSES:
@@ -228,57 +139,19 @@ class ResearchInputStore:
         with sqlite_transaction(self.db_path) as connection:
             if expected_revision is None:
                 cursor = connection.execute(
-                    "INSERT OR IGNORE INTO research_input_resolutions ("
-                    "run_id, schema_version, status, revision, "
-                    "original_query_digest, original_query_length, "
-                    "effective_query, source_map_json, candidates_json, "
-                    "managed_snapshot_json, effective_query_digest, "
-                    "source_map_digest, candidate_digest, snapshot_digest, "
-                    "evidence_digest, work_digest, client_fingerprint, "
-                    "execution_fingerprint, policy_digest, plan_digest, "
-                    "created_at, updated_at) "
-                    "SELECT ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-                    "?, ?, ?, ?, ?, ?, ? "
-                    "WHERE EXISTS (SELECT 1 FROM runs WHERE runs.run_id = ? "
-                    "AND runs.status NOT IN "
-                    "('succeeded', 'failed', 'cancelled'))",
-                    (*values, run_id),
+                    _RESOLUTION_INSERT_SQL, (*values, run_id)
                 )
                 return cursor.rowcount == 1
             cursor = connection.execute(
-                """
-                UPDATE research_input_resolutions
-                SET schema_version = ?, status = ?, revision = revision + 1,
-                    original_query_digest = ?, original_query_length = ?,
-                    effective_query = ?, source_map_json = ?,
-                    candidates_json = ?, managed_snapshot_json = ?,
-                    effective_query_digest = ?, source_map_digest = ?,
-                    candidate_digest = ?, snapshot_digest = ?,
-                    evidence_digest = ?, work_digest = ?,
-                    client_fingerprint = ?, execution_fingerprint = ?,
-                    policy_digest = ?, plan_digest = ?, updated_at = ?
-                WHERE run_id = ? AND revision = ?
-                  AND EXISTS (
-                      SELECT 1 FROM runs
-                      WHERE runs.run_id = research_input_resolutions.run_id
-                        AND runs.status NOT IN (
-                            'succeeded', 'failed', 'cancelled'
-                        )
-                  )
-                """,
-                (
-                    *values[1:19],
-                    values[19],
-                    run_id,
-                    expected_revision,
-                ),
+                _RESOLUTION_UPDATE_SQL,
+                (*values[1:19], values[20], run_id, expected_revision),
             )
             return cursor.rowcount == 1
 
     def load_resolution(self, run_id: str) -> dict[str, Any] | None:
-        """Read private resolution metadata with structured JSON decoded."""
+        """Load structured resolution state."""
         with sqlite_transaction(self.db_path) as connection:
-            connection.row_factory = sqlite3.Row
+            connection.row_factory = Row
             row = connection.execute(
                 "SELECT * FROM research_input_resolutions WHERE run_id = ?",
                 (run_id,),
@@ -286,12 +159,9 @@ class ResearchInputStore:
         if row is None:
             return None
         result = dict(row)
-        for name in (
-            "source_map_json",
-            "candidates_json",
-            "managed_snapshot_json",
-            "inventory_json",
-            "final_projection_json",
+        for name in _split_words(
+            "source_map_json candidates_json managed_snapshot_json "
+            "inventory_json final_projection_json"
         ):
             if result.get(name) is not None:
                 result[name] = json.loads(result[name])
@@ -304,26 +174,20 @@ class ResearchInputStore:
         now: datetime,
         ttl: timedelta = RESEARCH_WORK_LEASE,
     ) -> ResearchWorkUnitRecord | None:
-        """CAS-claim a pending or expired retryable item for a live run."""
-        now_iso = _utc_iso(now)
-        expires_at = _utc_iso(now + ttl)
-        connection = sqlite3.connect(self.db_path, isolation_level=None)
-        connection.row_factory = sqlite3.Row
-        try:
+        """Claim eligible work with CAS."""
+        now_iso, expires_at = _utc_iso(now), _utc_iso(now + ttl)
+        with sqlite_transaction(self.db_path) as connection:
+            connection.row_factory = Row
             connection.execute("BEGIN IMMEDIATE")
-            record = _work_row(connection, unit_id)
+            record = connection.execute(_WORK_SELECT, (unit_id,)).fetchone()
             if record is None or not _claimable(record, now_iso):
-                connection.rollback()
                 return None
-            cursor = connection.execute(
-                "UPDATE research_work_units SET state = 'leased', "
-                "lease_owner = ?, lease_expires_at = ?, "
-                "attempt = attempt + 1, "
-                "updated_at = ?, revision = revision + 1 "
-                "WHERE unit_id = ? AND revision = ? AND state = ? "
-                "AND EXISTS (SELECT 1 FROM runs WHERE "
-                "runs.run_id = research_work_units.run_id AND runs.status "
-                "NOT IN ('succeeded', 'failed', 'cancelled'))",
+            cursor = _work_update(
+                connection,
+                "state = 'leased', lease_owner = ?, lease_expires_at = ?, "
+                "attempt = attempt + 1, updated_at = ?, "
+                "revision = revision + 1",
+                "unit_id = ? AND revision = ? AND state = ?",
                 (
                     lease_owner,
                     expires_at,
@@ -334,13 +198,9 @@ class ResearchInputStore:
                 ),
             )
             if cursor.rowcount != 1:
-                connection.rollback()
                 return None
-            claimed = _work_row(connection, unit_id)
-            connection.commit()
+            claimed = connection.execute(_WORK_SELECT, (unit_id,)).fetchone()
             return _to_record(claimed) if claimed is not None else None
-        finally:
-            connection.close()
 
     def heartbeat_work(
         self,
@@ -349,70 +209,140 @@ class ResearchInputStore:
         revision: int,
         now: datetime,
     ) -> ResearchWorkUnitRecord | None:
-        """Renew only the matching active lease of a nonterminal parent."""
-        now_iso = _utc_iso(now)
-        expiry = _utc_iso(now + RESEARCH_WORK_LEASE)
+        """Renew an active work lease."""
+        now_iso, expiry = _utc_iso(now), _utc_iso(now + RESEARCH_WORK_LEASE)
         with sqlite_transaction(self.db_path) as connection:
-            connection.row_factory = sqlite3.Row
-            cursor = connection.execute(
-                "UPDATE research_work_units SET lease_expires_at = ?, "
-                "updated_at = ?, revision = revision + 1 "
-                "WHERE unit_id = ? AND lease_owner = ? AND revision = ? "
-                "AND state IN ('leased', 'sent') AND EXISTS (SELECT 1 FROM "
-                "runs WHERE runs.run_id = research_work_units.run_id AND "
-                "runs.status NOT IN ('succeeded', 'failed', 'cancelled'))",
+            connection.row_factory = Row
+            cursor = _work_update(
+                connection,
+                "lease_expires_at = ?, updated_at = ?, "
+                "revision = revision + 1",
+                "unit_id = ? AND lease_owner = ? AND revision = ? "
+                "AND state IN ('leased', 'sent')",
                 (expiry, now_iso, unit_id, lease_owner, revision),
             )
             if cursor.rowcount != 1:
                 return None
-            row = _work_row(connection, unit_id)
+            row = connection.execute(_WORK_SELECT, (unit_id,)).fetchone()
         return _to_record(row) if row is not None else None
+
+    def mark_sent(
+        self,
+        unit_id: str,
+        lease_owner: str,
+        expected_revision: int,
+        **options: object,
+    ) -> int | None:
+        """Commit sent state and provider identity."""
+        values = tuple(
+            cast(str | None, options.get(name))
+            for name in _PROVIDER_DIGEST_NAMES
+        )
+        timestamp = _utc_iso(
+            cast(datetime | None, options.get("now")) or datetime.now(UTC)
+        )
+        parameters: tuple[object, ...] = (
+            *values,
+            timestamp,
+            timestamp,
+            unit_id,
+            lease_owner,
+            expected_revision,
+        )
+        changed = _execute_work_update(
+            self.db_path,
+            _MARK_SENT_ASSIGNMENTS,
+            _MARK_SENT_PREDICATE,
+            parameters,
+        )
+        return expected_revision + 1 if changed == 1 else None
+
+    def settle_validated(
+        self,
+        unit_id: str,
+        lease_owner: str,
+        *args: object,
+        **options: object,
+    ) -> bool:
+        """Settle a validated provider output."""
+        expected_revision, output, now = (
+            args[0] if args else options["expected_revision"],
+            args[1] if len(args) > 1 else options["output"],
+            args[2] if len(args) > 2 else options.get("now"),
+        )
+        timestamp = _utc_iso(cast(datetime | None, now) or datetime.now(UTC))
+        parameters: tuple[object, ...] = (
+            _canonical_json(output),
+            timestamp,
+            timestamp,
+            unit_id,
+            lease_owner,
+            expected_revision,
+        )
+        changed = _execute_work_update(
+            self.db_path,
+            _SETTLE_ASSIGNMENTS,
+            _SETTLE_PREDICATE,
+            parameters,
+        )
+        return changed == 1
 
     def complete_work(
         self,
         record: ResearchWorkUnitRecord,
         state: str,
-        now: datetime,
+        *args: object,
+        **options: object,
     ) -> bool:
-        """Set a terminal outcome, rejecting late or superseded completion."""
+        """Complete leased or sent work with CAS."""
+        now = args[0] if args else options["now"]
+        names = ("output", "failure_code", "failure_retryable")
+        output, failure_code, failure_retryable = (
+            args[index] if len(args) > index else options.get(name)
+            for index, name in enumerate(names, 1)
+        )
         if state not in _WORK_STATES - {"pending", "leased", "sent"}:
             raise ValueError(f"unsupported completion state: {state}")
-        now_iso = _utc_iso(now)
-        with sqlite_transaction(self.db_path) as connection:
-            cursor = connection.execute(
-                "UPDATE research_work_units SET state = ?, "
-                "lease_owner = NULL, lease_expires_at = CASE "
-                "WHEN ? = 'retryable_failed' THEN lease_expires_at "
-                "ELSE NULL END, updated_at = ?, completed_at = ?, "
-                "revision = revision + 1 WHERE unit_id = ? "
-                "AND lease_owner = ? AND revision = ? "
-                "AND state IN ('leased', 'sent') AND EXISTS (SELECT 1 FROM "
-                "runs WHERE runs.run_id = research_work_units.run_id "
-                "AND runs.status NOT IN ('succeeded', 'failed', 'cancelled'))",
-                (
-                    state,
-                    state,
-                    now_iso,
-                    now_iso,
-                    record.unit_id,
-                    record.lease_owner,
-                    record.revision,
-                ),
-            )
-            return cursor.rowcount == 1
+        now_iso = _utc_iso(cast(datetime, now))
+        expiry = record.lease_expires_at
+        retryable = (
+            None
+            if failure_retryable is None
+            else int(cast(bool | int, failure_retryable))
+        )
+        parameters: tuple[object, ...] = (
+            state,
+            state,
+            expiry and _utc_iso(expiry),
+            _canonical_json(output) if output is not None else None,
+            failure_code,
+            retryable,
+            now_iso,
+            now_iso,
+            record.unit_id,
+            record.lease_owner,
+            record.revision,
+        )
+        changed = _execute_work_update(
+            self.db_path,
+            _COMPLETE_ASSIGNMENTS,
+            _COMPLETE_PREDICATE,
+            parameters,
+        )
+        return changed == 1
 
     def purge_run(self, run_id: str) -> None:
-        """Delete private children in dependency order, then the parent."""
+        """Purge private and public run rows."""
         with sqlite_transaction(self.db_path) as connection:
             purge_research_children(connection, (run_id,))
             connection.execute("DELETE FROM tasks WHERE run_id = ?", (run_id,))
             connection.execute("DELETE FROM runs WHERE run_id = ?", (run_id,))
 
 
-def _add_public_run_columns(connection: sqlite3.Connection) -> None:
-    if not _table_exists(connection, "runs"):
-        return
+def _add_public_run_columns(connection: Connection) -> None:
     existing = _table_columns(connection, "runs")
+    if not existing:
+        return
     for name, definition in (
         ("stage", "TEXT"),
         ("failure_json", "TEXT"),
@@ -424,20 +354,11 @@ def _add_public_run_columns(connection: sqlite3.Connection) -> None:
             )
 
 
-def _admission_connection(db_path: str) -> sqlite3.Connection:
-    connection = sqlite3.connect(db_path, isolation_level=None, timeout=30)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA busy_timeout=30000")
-    return connection
-
-
-def _ensure_schema_version(connection: sqlite3.Connection) -> None:
+def _ensure_schema_version(connection: Connection) -> None:
     connection.execute(_CREATE_SCHEMA_VERSION_DDL)
     columns = _table_columns(connection, RESEARCH_SCHEMA_VERSION_TABLE)
     if columns != {"id", "version"}:
-        raise sqlite3.DatabaseError(
-            "research schema version table is malformed"
-        )
+        raise sqlite3.DatabaseError("malformed research schema version table")
     row = connection.execute(
         f"SELECT version FROM {RESEARCH_SCHEMA_VERSION_TABLE} WHERE id = 1"
     ).fetchone()
@@ -447,19 +368,19 @@ def _ensure_schema_version(connection: sqlite3.Connection) -> None:
         )
 
 
-def _ensure_private_tables(connection: sqlite3.Connection) -> None:
-    for table, ddl, columns in _PRIVATE_TABLES:
-        connection.execute(ddl)
+def _ensure_private_tables(connection: Connection) -> None:
+    for table, columns, constraints in _PRIVATE_TABLES:
+        connection.execute(_create_table_ddl(table, columns, constraints))
         _add_missing_columns(connection, table, columns)
-    connection.execute("""
-        UPDATE research_work_units
-        SET created_at = COALESCE(created_at, CURRENT_TIMESTAMP),
-            updated_at = COALESCE(updated_at, created_at)
-        """)
+    connection.execute(
+        "UPDATE research_work_units SET created_at = COALESCE("
+        "created_at, CURRENT_TIMESTAMP), "
+        "updated_at = COALESCE(updated_at, created_at)"
+    )
 
 
 def _add_missing_columns(
-    connection: sqlite3.Connection,
+    connection: Connection,
     table: str,
     definitions: Sequence[tuple[str, str]],
 ) -> None:
@@ -471,87 +392,222 @@ def _add_missing_columns(
             )
 
 
-def _ensure_indexes(connection: sqlite3.Connection) -> None:
-    connection.execute(
-        "DROP INDEX IF EXISTS uq_research_binding_owner_identity"
-    )
-    connection.execute("DROP INDEX IF EXISTS uq_research_binding_owner_alias")
-    connection.execute("DROP INDEX IF EXISTS uq_research_success_input_policy")
+def _ensure_indexes(connection: Connection) -> None:
+    for name in (
+        "uq_research_binding_owner_identity",
+        "uq_research_binding_owner_alias",
+        "uq_research_success_input_policy",
+    ):
+        connection.execute(f"DROP INDEX IF EXISTS {name}")
     for statement in _INDEX_DDLS:
         connection.execute(statement)
 
 
-def _set_schema_version(connection: sqlite3.Connection) -> None:
+def _set_schema_version(connection: Connection) -> None:
     connection.execute(
-        f"INSERT INTO {RESEARCH_SCHEMA_VERSION_TABLE}(id, version) "
-        "VALUES (1, ?) ON CONFLICT(id) DO UPDATE "
-        "SET version = excluded.version",
+        f"INSERT INTO {RESEARCH_SCHEMA_VERSION_TABLE}(id, version) VALUES "
+        "(1, ?) ON CONFLICT(id) DO UPDATE SET version = excluded.version",
         (RESEARCH_SCHEMA_VERSION,),
     )
 
 
 def purge_research_children(
-    connection: sqlite3.Connection, run_ids: Sequence[str]
+    connection: Connection, run_ids: Sequence[str]
 ) -> None:
-    """Purge private children before deleting their public run owner."""
+    """Purge private children before their run owner."""
     ids = tuple(run_ids)
     if not ids:
         return
     placeholders = ",".join("?" for _ in ids)
-    for table, column in (
-        ("research_object_grants", "parent_run_id"),
-        ("research_dispatch_outbox", "run_id"),
-        ("research_work_units", "run_id"),
-        ("research_input_resolutions", "run_id"),
-        ("research_idempotency_bindings", "run_id"),
-    ):
-        if _table_exists(connection, table) and column in _table_columns(
-            connection, table
-        ):
+    tables = dict.fromkeys(
+        _split_words(
+            "research_dispatch_outbox research_work_units "
+            "research_input_resolutions research_idempotency_bindings"
+        ),
+        "run_id",
+    )
+    tables["research_object_grants"] = "parent_run_id"
+    for table, column in tables.items():
+        if column in _table_columns(connection, table):
             connection.execute(
-                f"DELETE FROM {table} WHERE {column} IN ({placeholders})",
-                ids,
+                f"DELETE FROM {table} WHERE {column} IN ({placeholders})", ids
             )
 
 
-def _claimable(row: sqlite3.Row, now_iso: str) -> bool:
-    if row["state"] == "pending":
+def _claimable(row: Row, now_iso: str) -> bool:
+    state, expiry = row["state"], row["lease_expires_at"]
+    if state == "pending":
         return True
-    return row["state"] == "retryable_failed" and (
-        row["lease_expires_at"] is not None
-        and row["lease_expires_at"] <= now_iso
+    if expiry is None or expiry > now_iso:
+        return False
+    return state == "retryable_failed" or (
+        state == "leased"
+        and row["sent_at"] is None
+        and row["provider_request_digest"] is None
     )
 
 
-def _work_row(
-    connection: sqlite3.Connection, unit_id: str
-) -> sqlite3.Row | None:
+_WORK_SELECT = "SELECT * FROM research_work_units WHERE unit_id = ?"
+_PROVIDER_DIGEST_NAMES = _split_words(
+    "provider_request_digest provider_idempotency_digest "
+    "execution_fingerprint evidence_digest"
+)
+_MARK_SENT_ASSIGNMENTS = (
+    "state='sent',provider_request_digest=COALESCE(?,provider_request_digest),"
+    "provider_idempotency_digest=COALESCE(?,provider_idempotency_digest),"
+    "execution_fingerprint=COALESCE(?,execution_fingerprint),"
+    "evidence_digest=COALESCE(?,evidence_digest),sent_at=?,updated_at=?,"
+    "revision=revision+1"
+)
+_MARK_SENT_PREDICATE = (
+    "unit_id = ? AND lease_owner = ? AND revision = ? AND state = 'leased'"
+)
+_SETTLE_ASSIGNMENTS = (
+    "state = 'succeeded', output_json = ?, failure_code = NULL, "
+    "failure_retryable = NULL, lease_owner = NULL, lease_expires_at = NULL, "
+    "updated_at = ?, completed_at = ?, revision = revision + 1"
+)
+_SETTLE_PREDICATE = (
+    "unit_id = ? AND lease_owner = ? AND revision = ? AND state = 'sent'"
+)
+_COMPLETE_ASSIGNMENTS = (
+    "state = ?, lease_owner = NULL, lease_expires_at = CASE WHEN ? = "
+    "'retryable_failed' THEN ? ELSE NULL END, output_json = COALESCE(?, "
+    "output_json), failure_code = ?, failure_retryable = ?, updated_at = ?, "
+    "completed_at = ?, revision = revision + 1"
+)
+_COMPLETE_PREDICATE = (
+    "unit_id = ? AND lease_owner = ? AND revision = ? "
+    "AND state IN ('leased', 'sent')"
+)
+_PARENT_LIVE = (
+    "EXISTS (SELECT 1 FROM runs WHERE runs.run_id=research_work_units.run_id "
+    "AND runs.status NOT IN ('succeeded','failed','cancelled')) AND COALESCE("
+    "(SELECT cancel_requested FROM research_input_resolutions WHERE run_id="
+    "research_work_units.run_id),0)=0"
+)
+_WORK_INSERT_FIELDS = _split_words(
+    "unit_id run_id kind state input_digest policy_digest lease_owner "
+    "lease_expires_at attempt revision schema_version provider_request_digest "
+    "provider_idempotency_digest execution_fingerprint evidence_digest "
+    "output_json "
+    "failure_code failure_retryable sent_at completed_at created_at updated_at"
+)
+_WORK_INSERT_SQL = (
+    "INSERT INTO research_work_units ("
+    + ",".join(_WORK_INSERT_FIELDS)
+    + ") SELECT "
+    + ",".join("?" for _ in _WORK_INSERT_FIELDS)
+    + " WHERE EXISTS (SELECT 1 FROM runs WHERE runs.run_id=? AND runs.status "
+    + "NOT IN ('succeeded','failed','cancelled')) AND NOT EXISTS (SELECT 1 "
+    + "FROM research_input_resolutions WHERE run_id=? AND COALESCE("
+    + "cancel_requested,0)<>0)"
+)
+_RESOLUTION_FIELDS = _split_words(
+    "run_id schema_version status revision original_query_digest "
+    "original_query_length effective_query source_map_json candidates_json "
+    "managed_snapshot_json effective_query_digest source_map_digest "
+    "candidate_digest snapshot_digest evidence_digest work_digest "
+    "client_fingerprint execution_fingerprint policy_digest plan_digest "
+    "created_at updated_at"
+)
+_RESOLUTION_UPDATE_FIELDS = (
+    _RESOLUTION_FIELDS[1:3]
+    + _RESOLUTION_FIELDS[4:-2]
+    + _RESOLUTION_FIELDS[-1:]
+)
+_RESOLUTION_INSERT_SQL = (
+    "INSERT OR IGNORE INTO research_input_resolutions("
+    + ",".join(_RESOLUTION_FIELDS)
+    + ")SELECT ?,?,?,0,"
+    + ",".join("?" for _ in _RESOLUTION_FIELDS[4:])
+    + " WHERE EXISTS (SELECT 1 FROM runs WHERE runs.run_id=? AND runs.status "
+    + "NOT IN ('succeeded','failed','cancelled'))"
+)
+_RESOLUTION_UPDATE_SQL = (
+    "UPDATE research_input_resolutions SET revision=revision+1,"
+    + ",".join(f"{name}=?" for name in _RESOLUTION_UPDATE_FIELDS)
+    + " WHERE run_id=? AND revision=? AND EXISTS (SELECT 1 FROM runs WHERE "
+    + "runs.run_id=research_input_resolutions.run_id AND runs.status NOT IN "
+    + "('succeeded','failed','cancelled')) AND COALESCE(cancel_requested,0)=0"
+)
+
+
+def _work_insert_values(
+    record: ResearchWorkUnitRecord, now: str
+) -> tuple[object, ...]:
+    identity = tuple(
+        getattr(record, name)
+        for name in _split_words(
+            "unit_id run_id kind state input_digest policy_digest lease_owner"
+        )
+    )
+    output = None if record.output is None else _canonical_json(record.output)
+    retryable = record.failure_retryable
+    return identity + (
+        _utc_iso(record.lease_expires_at) if record.lease_expires_at else None,
+        record.attempt,
+        record.revision,
+        RESEARCH_SCHEMA_VERSION,
+        *(getattr(record, name) for name in _PROVIDER_DIGEST_NAMES),
+        output,
+        record.failure_code,
+        None if retryable is None else int(retryable),
+        _utc_iso(record.sent_at) if record.sent_at else None,
+        _utc_iso(record.completed_at) if record.completed_at else None,
+        now,
+        now,
+        record.run_id,
+        record.run_id,
+    )
+
+
+def _work_update(
+    connection: Connection,
+    assignments: str,
+    predicate: str,
+    parameters: tuple[object, ...],
+) -> Cursor:
     return connection.execute(
-        "SELECT unit_id, run_id, kind, state, input_digest, policy_digest, "
-        "lease_owner, lease_expires_at, attempt, revision FROM "
-        "research_work_units WHERE unit_id = ?",
-        (unit_id,),
-    ).fetchone()
+        f"UPDATE research_work_units SET {assignments} WHERE {predicate} "
+        f"AND {_PARENT_LIVE}",
+        parameters,
+    )
 
 
-def _to_record(row: sqlite3.Row) -> ResearchWorkUnitRecord:
+def _execute_work_update(
+    db_path: str,
+    assignments: str,
+    predicate: str,
+    parameters: tuple[object, ...],
+) -> int:
+    with sqlite_transaction(db_path) as connection:
+        return _work_update(
+            connection, assignments, predicate, parameters
+        ).rowcount
+
+
+_WORK_RECORD_FIELDS = _split_words(
+    "unit_id run_id kind state input_digest policy_digest lease_owner "
+    "attempt revision provider_request_digest provider_idempotency_digest "
+    "execution_fingerprint evidence_digest failure_code"
+)
+
+
+def _to_record(row: Row) -> ResearchWorkUnitRecord:
+    retryable = row["failure_retryable"]
     return ResearchWorkUnitRecord(
-        unit_id=row["unit_id"],
-        run_id=row["run_id"],
-        kind=row["kind"],
-        state=row["state"],
-        input_digest=row["input_digest"],
-        policy_digest=row["policy_digest"],
-        lease_owner=row["lease_owner"],
+        **{name: row[name] for name in _WORK_RECORD_FIELDS},
         lease_expires_at=_parse_iso(row["lease_expires_at"]),
-        attempt=row["attempt"],
-        revision=row["revision"],
+        output=_json_object(row["output_json"]),
+        failure_retryable=None if retryable is None else bool(retryable),
+        sent_at=_parse_iso(row["sent_at"]),
+        completed_at=_parse_iso(row["completed_at"]),
     )
 
 
 def _utc_iso(value: datetime) -> str:
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=UTC)
+    value = value.replace(tzinfo=UTC) if value.tzinfo is None else value
     return value.astimezone(UTC).isoformat()
 
 
@@ -559,11 +615,17 @@ def _parse_iso(value: str | None) -> datetime | None:
     if value is None:
         return None
     parsed = datetime.fromisoformat(value)
-    return (
-        parsed.replace(tzinfo=UTC)
-        if parsed.tzinfo is None
-        else parsed.astimezone(UTC)
-    )
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _json_object(value: object) -> dict[str, Any] | None:
+    try:
+        decoded = json.loads(value) if isinstance(value, str) else None
+    except (TypeError, ValueError):
+        return None
+    return decoded if isinstance(decoded, dict) else None
 
 
 def _canonical_json(value: object) -> str:
@@ -573,7 +635,7 @@ def _canonical_json(value: object) -> str:
 
 
 def _read_existing_admission(
-    connection: sqlite3.Connection, request: Mapping[str, Any]
+    connection: Connection, request: Mapping[str, Any]
 ) -> tuple[bool, ResearchAdmissionReservation | None]:
     row = connection.execute(
         "SELECT run_id, client_fingerprint "
@@ -605,27 +667,14 @@ def _read_existing_admission(
 
 
 def _insert_admission(
-    connection: sqlite3.Connection, request: Mapping[str, Any], now: str
+    connection: Connection, request: Mapping[str, Any], now: str
 ) -> None:
     connection.execute(
-        "INSERT INTO runs (run_id, user_id, agent, origin, status, "
-        "result_json, error, created_at, updated_at, expires_at, locale) "
-        "VALUES (?, ?, 'research', 'api', 'running', NULL, NULL, ?, ?, "
-        "NULL, ?)",
-        (
-            request["run_id"],
-            request["owner"],
-            now,
-            now,
-            request["locale"],
-        ),
+        _RUN_INSERT_SQL,
+        (request["run_id"], request["owner"], now, now, request["locale"]),
     )
     connection.execute(
-        "INSERT INTO research_idempotency_bindings ("
-        "run_id, idempotency_digest, "
-        "request_digest, schema_version, owner, operation, identity_kind, "
-        "alias_digest, client_fingerprint, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        _BINDING_INSERT_SQL,
         (
             request["run_id"],
             request["identity_digest"],
@@ -642,10 +691,7 @@ def _insert_admission(
     )
     _insert_resolution(connection, request, now)
     connection.execute(
-        "INSERT INTO research_work_units (unit_id, run_id, kind, state, "
-        "input_digest, policy_digest, attempt, revision, schema_version, "
-        "created_at, updated_at) VALUES (?, ?, 'resolve_root', 'pending', "
-        "?, ?, 0, 0, ?, ?, ?)",
+        _ROOT_WORK_INSERT_SQL,
         (
             f"{request['run_id']}:resolve_root",
             request["run_id"],
@@ -658,8 +704,27 @@ def _insert_admission(
     )
 
 
+_RUN_INSERT_SQL = (
+    "INSERT INTO runs (run_id, user_id, agent, origin, status, result_json, "
+    "error, created_at, updated_at, expires_at, locale) VALUES (?, ?, "
+    "'research', 'api', 'running', NULL, NULL, ?, ?, NULL, ?)"
+)
+_BINDING_INSERT_SQL = (
+    "INSERT INTO research_idempotency_bindings (run_id, idempotency_digest, "
+    "request_digest, schema_version, owner, operation, identity_kind, "
+    "alias_digest, client_fingerprint, created_at, updated_at) VALUES "
+    "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+_ROOT_WORK_INSERT_SQL = (
+    "INSERT INTO research_work_units (unit_id, run_id, kind, state, "
+    "input_digest, policy_digest, attempt, revision, schema_version, "
+    "created_at, updated_at) "
+    "VALUES (?, ?, 'resolve_root', 'pending', ?, ?, 0, 0, ?, ?, ?)"
+)
+
+
 def _insert_resolution(
-    connection: sqlite3.Connection, request: Mapping[str, Any], now: str
+    connection: Connection, request: Mapping[str, Any], now: str
 ) -> None:
     serialized = (
         request["effective_query"],
@@ -673,13 +738,7 @@ def _insert_resolution(
         for value in serialized
     )
     connection.execute(
-        "INSERT INTO research_input_resolutions (run_id, schema_version, "
-        "status, revision, original_query_digest, original_query_length, "
-        "effective_query, source_map_json, candidates_json, "
-        "managed_snapshot_json, effective_query_digest, source_map_digest, "
-        "candidate_digest, snapshot_digest, evidence_digest, work_digest, "
-        "client_fingerprint, created_at, updated_at) VALUES (?, ?, 'pending', "
-        "0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?, ?)",
+        _ROOT_RESOLUTION_INSERT_SQL,
         (
             request["run_id"],
             RESEARCH_SCHEMA_VERSION,
@@ -694,8 +753,19 @@ def _insert_resolution(
     )
 
 
+_ROOT_RESOLUTION_INSERT_SQL = (
+    "INSERT INTO research_input_resolutions (run_id, schema_version, status, "
+    "revision, original_query_digest, original_query_length, effective_query, "
+    "source_map_json, candidates_json, managed_snapshot_json, "
+    "effective_query_digest, source_map_digest, candidate_digest, "
+    "snapshot_digest, evidence_digest, work_digest, client_fingerprint, "
+    "created_at, updated_at) VALUES (?, ?, 'pending', 0, ?, ?, ?, ?, ?, ?, "
+    "?, ?, ?, ?, '', '', ?, ?, ?)"
+)
+
+
 def _alias_is_bound(
-    connection: sqlite3.Connection, owner: str, alias_digest: str
+    connection: Connection, owner: str, alias_digest: str
 ) -> bool:
     return (
         connection.execute(
@@ -708,7 +778,7 @@ def _alias_is_bound(
 
 
 def _attach_alias(
-    connection: sqlite3.Connection,
+    connection: Connection,
     owner: str,
     run_id: str,
     alias_digest: str | None,
@@ -751,13 +821,18 @@ def _resolution_values(
     run_id: str, status: str, fields: dict[str, Any]
 ) -> tuple[Any, ...]:
     required = _validated_resolution_fields(fields)
-    serialized = tuple(_canonical_json(required[index]) for index in (3, 4, 5))
+    serialized = tuple(_canonical_json(required[i]) for i in (3, 4, 5))
     digests = tuple(
         hashlib.sha256(value.encode("utf-8")).hexdigest()
         for value in (required[2], *serialized)
     )
     now = _utc_iso(datetime.now(UTC))
-    optional = _optional_resolution_fields(fields)
+    optional_names = _split_words(
+        "client_fingerprint execution_fingerprint policy_digest plan_digest"
+    )
+    optional = tuple(fields.pop(name, None) for name in optional_names)
+    if fields:
+        raise TypeError(f"unexpected resolution fields: {sorted(fields)}")
     return (
         run_id,
         RESEARCH_SCHEMA_VERSION,
@@ -773,227 +848,140 @@ def _resolution_values(
 
 
 def _validated_resolution_fields(fields: dict[str, Any]) -> tuple[Any, ...]:
-    values = tuple(
-        _required_field(fields, name)
-        for name in (
-            "original_query_digest",
-            "original_query_length",
-            "effective_query",
-            "source_map",
-            "parsed_candidates",
-            "managed_snapshot",
-            "evidence_digest",
-            "work_digest",
-        )
+    names = _split_words(
+        "original_query_digest original_query_length effective_query "
+        "source_map "
+        "parsed_candidates managed_snapshot evidence_digest work_digest"
     )
+    try:
+        values = tuple(fields.pop(name) for name in names)
+    except KeyError as error:
+        raise TypeError(
+            f"missing required resolution field: {error.args[0]}"
+        ) from error
     if not isinstance(values[0], str):
         raise TypeError("original_query_digest must be text")
-    if not isinstance(values[1], int) or isinstance(values[1], bool):
-        raise ValueError("original_query_length must be non-negative")
-    if values[1] < 0:
+    if (
+        not isinstance(values[1], int)
+        or isinstance(values[1], bool)
+        or values[1] < 0
+    ):
         raise ValueError("original_query_length must be non-negative")
     if not isinstance(values[2], str):
         raise TypeError("effective_query must be text")
     if not isinstance(values[3], Mapping):
         raise TypeError("source_map must be a mapping")
-    if not isinstance(values[4], Sequence) or isinstance(
-        values[4], (str, bytes)
-    ):
-        raise TypeError("parsed_candidates must be a sequence")
-    if not isinstance(values[5], Sequence) or isinstance(
-        values[5], (str, bytes)
-    ):
-        raise TypeError("managed_snapshot must be a sequence")
+    for index, name in ((4, "parsed_candidates"), (5, "managed_snapshot")):
+        if not isinstance(values[index], Sequence) or isinstance(
+            values[index], (str, bytes)
+        ):
+            raise TypeError(f"{name} must be a sequence")
     if not isinstance(values[6], str) or not isinstance(values[7], str):
         raise TypeError("evidence and work digests must be text")
     return values
 
 
-def _optional_resolution_fields(fields: dict[str, Any]) -> tuple[Any, ...]:
-    values = tuple(
-        fields.pop(name, None)
-        for name in (
-            "client_fingerprint",
-            "execution_fingerprint",
-            "policy_digest",
-            "plan_digest",
-        )
-    )
-    if fields:
-        raise TypeError(f"unexpected resolution fields: {sorted(fields)}")
-    return values
+def _table_columns(connection: Connection, table: str) -> set[str]:
+    return {
+        str(row[1])
+        for row in connection.execute(f"PRAGMA table_info({table})")
+    }
 
 
-def _required_field(fields: dict[str, Any], name: str) -> Any:
-    if name not in fields:
-        raise TypeError(f"missing required resolution field: {name}")
-    return fields.pop(name)
+def _create_table_ddl(
+    table: str, columns: Sequence[tuple[str, str]], constraints: str
+) -> str:
+    fields = ", ".join(f"{name} {definition}" for name, definition in columns)
+    return f"CREATE TABLE IF NOT EXISTS {table} ({fields}{constraints})"
 
 
-def _table_columns(connection: sqlite3.Connection, table: str) -> set[str]:
-    rows = connection.execute(f"PRAGMA table_info({table})")
-    return {str(row[1]) for row in rows}
-
-
-def _table_exists(connection: sqlite3.Connection, name: str) -> bool:
-    query = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?"
-    return connection.execute(query, (name,)).fetchone() is not None
-
-
-_CREATE_IDEMPOTENCY_BINDINGS_DDL = (
-    "CREATE TABLE IF NOT EXISTS research_idempotency_bindings ("
-    "run_id TEXT NOT NULL, idempotency_digest TEXT NOT NULL, "
-    "request_digest TEXT NOT NULL, schema_version INTEGER NOT NULL DEFAULT 1, "
-    "owner TEXT NOT NULL DEFAULT '', "
-    "operation TEXT NOT NULL DEFAULT 'research_input_resolution_v1', "
-    "identity_kind TEXT NOT NULL DEFAULT 'header', alias_digest TEXT, "
-    "client_fingerprint TEXT, conversation_key_digest TEXT, "
-    "created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT, "
-    "expires_at TEXT, PRIMARY KEY (run_id, idempotency_digest), "
-    "FOREIGN KEY (run_id) REFERENCES runs(run_id))"
-)
-_CREATE_INPUT_RESOLUTIONS_DDL = (
-    "CREATE TABLE IF NOT EXISTS research_input_resolutions ("
-    "run_id TEXT PRIMARY KEY, schema_version INTEGER NOT NULL DEFAULT 1, "
-    "status TEXT NOT NULL DEFAULT 'pending', "
-    "revision INTEGER NOT NULL DEFAULT 0, "
-    "cancel_requested INTEGER NOT NULL DEFAULT 0, "
-    "original_query_digest TEXT, "
-    "original_query_length INTEGER NOT NULL DEFAULT 0, "
-    "effective_query TEXT, source_map_json TEXT, candidates_json TEXT, "
-    "managed_snapshot_json TEXT, inventory_json TEXT, "
-    "client_fingerprint TEXT, "
-    "execution_fingerprint TEXT, policy_digest TEXT, model_id TEXT, "
-    "effective_query_digest TEXT NOT NULL, source_map_digest TEXT NOT NULL, "
-    "candidate_digest TEXT NOT NULL, snapshot_digest TEXT NOT NULL, "
-    "evidence_digest TEXT NOT NULL, work_digest TEXT NOT NULL, "
-    "coverage_total INTEGER NOT NULL DEFAULT 0, coverage_digest TEXT, "
-    "final_projection_json TEXT, plan_digest TEXT, last_stage TEXT, "
-    "failure_code TEXT, failure_retryable INTEGER, status_hint TEXT, "
-    "created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT, "
-    "expires_at TEXT, FOREIGN KEY (run_id) REFERENCES runs(run_id))"
-)
-_CREATE_WORK_UNITS_DDL = (
-    "CREATE TABLE IF NOT EXISTS research_work_units ("
-    "unit_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, kind TEXT NOT NULL, "
-    "state TEXT NOT NULL, input_digest TEXT NOT NULL, "
-    "policy_digest TEXT NOT NULL, lease_owner TEXT, lease_expires_at TEXT, "
-    "attempt INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 0, "
-    "schema_version INTEGER NOT NULL DEFAULT 1, evidence_ids_json TEXT, "
-    "provider_request_digest TEXT, provider_idempotency_digest TEXT, "
-    "output_json TEXT, failure_code TEXT, failure_retryable INTEGER, "
-    "created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT, "
-    "sent_at TEXT, completed_at TEXT, "
-    "FOREIGN KEY (run_id) REFERENCES runs(run_id))"
-)
-_CREATE_OUTBOX_DDL = (
-    "CREATE TABLE IF NOT EXISTS research_dispatch_outbox ("
-    "outbox_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, unit_id TEXT NOT NULL, "
-    "payload_digest TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', "
-    "attempt INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 0, "
-    "schema_version INTEGER NOT NULL DEFAULT 1, child_ordinal INTEGER, "
-    "dispatch_fingerprint TEXT, payload_json TEXT, output_dir TEXT, "
-    "grant_ids_json TEXT, snapshot_digest TEXT, lease_owner TEXT, "
-    "lease_expires_at TEXT, remote_task_id TEXT, failure_code TEXT, "
-    "failure_retryable INTEGER, updated_at TEXT, sent_at TEXT, "
-    "completed_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, "
-    "FOREIGN KEY (run_id) REFERENCES runs(run_id), "
-    "FOREIGN KEY (unit_id) REFERENCES research_work_units(unit_id))"
-)
 _CREATE_SCHEMA_VERSION_DDL = (
     f"CREATE TABLE IF NOT EXISTS {RESEARCH_SCHEMA_VERSION_TABLE} ("
     "id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)"
 )
 
 
-def _column_definitions(*specs: str) -> tuple[tuple[str, str], ...]:
-    return tuple(
-        (name, definition)
-        for name, definition in (
-            part.split(":", 1) for part in "".join(specs).split("|")
+def _column_definitions(spec: str) -> tuple[tuple[str, str], ...]:
+    columns: list[tuple[str, str]] = []
+    for token in spec.split():
+        name, kind = token.split(":", 1)
+        base, default = ("TEXT" if kind[0] == "T" else "INTEGER", kind[1:])
+        columns.append(
+            (name, f"{base} NOT NULL DEFAULT {default}" if default else base)
         )
-    )
+    return tuple(columns)
 
 
 _BINDING_COLUMNS = _column_definitions(
-    "run_id:TEXT|idempotency_digest:TEXT|request_digest:TEXT|"
-    "schema_version:INTEGER NOT NULL DEFAULT 1|owner:TEXT NOT NULL "
-    "DEFAULT ''|operation:TEXT NOT NULL DEFAULT "
-    "'research_input_resolution_v1'|identity_kind:TEXT NOT NULL "
-    "DEFAULT 'header'|alias_digest:TEXT|client_fingerprint:TEXT|"
-    "conversation_key_digest:TEXT|created_at:TEXT NOT NULL DEFAULT "
-    "''|updated_at:TEXT|expires_at:TEXT"
+    """run_id:T idempotency_digest:T request_digest:T schema_version:I1
+owner:T'' operation:T'research_input_resolution_v1' identity_kind:T'header'
+alias_digest:T client_fingerprint:T conversation_key_digest:T created_at:T''
+updated_at:T expires_at:T"""
 )
 _RESOLUTION_COLUMNS = _column_definitions(
-    "run_id:TEXT|schema_version:INTEGER NOT NULL DEFAULT 1|"
-    "status:TEXT NOT NULL DEFAULT 'pending'|revision:INTEGER NOT NULL "
-    "DEFAULT 0|cancel_requested:INTEGER NOT NULL DEFAULT 0|"
-    "original_query_digest:TEXT|original_query_length:INTEGER NOT NULL "
-    "DEFAULT 0|effective_query:TEXT|source_map_json:TEXT|"
-    "candidates_json:TEXT|managed_snapshot_json:TEXT|inventory_json:TEXT|"
-    "client_fingerprint:TEXT|execution_fingerprint:TEXT|"
-    "policy_digest:TEXT|model_id:TEXT|effective_query_digest:TEXT NOT NULL "
-    "DEFAULT ''|source_map_digest:TEXT NOT NULL DEFAULT ''|"
-    "candidate_digest:TEXT NOT NULL DEFAULT ''|snapshot_digest:TEXT NOT NULL "
-    "DEFAULT ''|evidence_digest:TEXT NOT NULL DEFAULT ''|"
-    "work_digest:TEXT NOT NULL DEFAULT ''|coverage_total:INTEGER NOT NULL "
-    "DEFAULT 0|coverage_digest:TEXT|final_projection_json:TEXT|"
-    "plan_digest:TEXT|last_stage:TEXT|failure_code:TEXT|"
-    "failure_retryable:INTEGER|status_hint:TEXT|created_at:TEXT NOT NULL "
-    "DEFAULT ''|updated_at:TEXT|expires_at:TEXT"
+    """run_id:T schema_version:I1 status:T'pending' revision:I0
+cancel_requested:I0 original_query_digest:T original_query_length:I0
+effective_query:T source_map_json:T candidates_json:T managed_snapshot_json:T
+inventory_json:T client_fingerprint:T execution_fingerprint:T policy_digest:T
+model_id:T effective_query_digest:T'' source_map_digest:T''
+candidate_digest:T'' snapshot_digest:T'' evidence_digest:T'' work_digest:T''
+coverage_total:I0 coverage_digest:T final_projection_json:T plan_digest:T
+last_stage:T failure_code:T failure_retryable:I status_hint:T created_at:T''
+updated_at:T expires_at:T"""
 )
 _WORK_COLUMNS = _column_definitions(
-    "unit_id:TEXT|run_id:TEXT|kind:TEXT NOT NULL DEFAULT ''|"
-    "state:TEXT NOT NULL DEFAULT 'pending'|input_digest:TEXT NOT NULL "
-    "DEFAULT ''|policy_digest:TEXT NOT NULL DEFAULT ''|lease_owner:TEXT|"
-    "lease_expires_at:TEXT|attempt:INTEGER NOT NULL DEFAULT 0|"
-    "revision:INTEGER NOT NULL DEFAULT 0|"
-    "schema_version:INTEGER NOT NULL DEFAULT 1|evidence_ids_json:TEXT|"
-    "provider_request_digest:TEXT|provider_idempotency_digest:TEXT|"
-    "output_json:TEXT|failure_code:TEXT|failure_retryable:INTEGER|"
-    "created_at:TEXT|updated_at:TEXT|sent_at:TEXT|completed_at:TEXT"
+    """unit_id:T run_id:T kind:T'' state:T'pending' input_digest:T''
+policy_digest:T'' lease_owner:T lease_expires_at:T attempt:I0 revision:I0
+schema_version:I1 evidence_ids_json:T provider_request_digest:T
+provider_idempotency_digest:T execution_fingerprint:T evidence_digest:T
+output_json:T failure_code:T failure_retryable:I created_at:T updated_at:T
+sent_at:T completed_at:T"""
 )
 _OUTBOX_COLUMNS = _column_definitions(
-    "outbox_id:TEXT|run_id:TEXT|unit_id:TEXT|"
-    "payload_digest:TEXT NOT NULL DEFAULT ''|state:TEXT NOT NULL DEFAULT "
-    "'pending'|attempt:INTEGER NOT NULL DEFAULT 0|revision:INTEGER NOT "
-    "NULL DEFAULT 0|schema_version:INTEGER NOT NULL DEFAULT 1|"
-    "child_ordinal:INTEGER|dispatch_fingerprint:TEXT|payload_json:TEXT|"
-    "output_dir:TEXT|grant_ids_json:TEXT|snapshot_digest:TEXT|"
-    "lease_owner:TEXT|lease_expires_at:TEXT|remote_task_id:TEXT|"
-    "failure_code:TEXT|failure_retryable:INTEGER|updated_at:TEXT|"
-    "sent_at:TEXT|completed_at:TEXT|created_at:TEXT NOT NULL DEFAULT ''"
+    """outbox_id:T run_id:T unit_id:T payload_digest:T'' state:T'pending'
+attempt:I0 revision:I0 schema_version:I1 child_ordinal:I dispatch_fingerprint:T
+payload_json:T output_dir:T grant_ids_json:T snapshot_digest:T lease_owner:T
+lease_expires_at:T remote_task_id:T failure_code:T failure_retryable:I
+updated_at:T sent_at:T completed_at:T created_at:T''"""
 )
 _PRIVATE_TABLES = (
     (
         "research_idempotency_bindings",
-        _CREATE_IDEMPOTENCY_BINDINGS_DDL,
         _BINDING_COLUMNS,
+        ",PRIMARY KEY(run_id,idempotency_digest),FOREIGN KEY(run_id)"
+        " REFERENCES runs(run_id)",
     ),
     (
         "research_input_resolutions",
-        _CREATE_INPUT_RESOLUTIONS_DDL,
         _RESOLUTION_COLUMNS,
+        ",PRIMARY KEY(run_id),FOREIGN KEY(run_id)REFERENCES runs(run_id)",
     ),
-    ("research_work_units", _CREATE_WORK_UNITS_DDL, _WORK_COLUMNS),
-    ("research_dispatch_outbox", _CREATE_OUTBOX_DDL, _OUTBOX_COLUMNS),
+    (
+        "research_work_units",
+        _WORK_COLUMNS,
+        ",PRIMARY KEY(unit_id),FOREIGN KEY(run_id)REFERENCES runs(run_id)",
+    ),
+    (
+        "research_dispatch_outbox",
+        _OUTBOX_COLUMNS,
+        ",PRIMARY KEY(outbox_id),FOREIGN KEY(run_id)REFERENCES runs(run_id),"
+        "FOREIGN KEY(unit_id)REFERENCES research_work_units(unit_id)",
+    ),
 )
-_INDEX_DDLS = (
-    "CREATE UNIQUE INDEX IF NOT EXISTS uq_research_binding_owner_identity "
-    "ON research_idempotency_bindings(owner, operation, idempotency_digest) "
-    "WHERE owner <> ''",
-    "CREATE UNIQUE INDEX IF NOT EXISTS uq_research_binding_owner_alias "
-    "ON research_idempotency_bindings(owner, operation, alias_digest) "
-    "WHERE owner <> '' AND alias_digest IS NOT NULL",
-    "CREATE INDEX IF NOT EXISTS idx_research_binding_digest "
-    "ON research_idempotency_bindings(idempotency_digest)",
-    "CREATE INDEX IF NOT EXISTS idx_research_work_claim "
-    "ON research_work_units(state, lease_expires_at)",
-    "CREATE INDEX IF NOT EXISTS idx_research_work_run "
-    "ON research_work_units(run_id)",
-    "CREATE INDEX IF NOT EXISTS idx_research_outbox_pending "
-    "ON research_dispatch_outbox(state, created_at)",
-    "CREATE UNIQUE INDEX IF NOT EXISTS uq_research_success_input_policy "
-    "ON research_work_units(run_id, kind, input_digest, policy_digest) "
-    "WHERE state = 'succeeded'",
+_INDEX_DDLS = _split_words(
+    """CREATE UNIQUE INDEX IF NOT EXISTS
+uq_research_binding_owner_identity ON research_idempotency_bindings
+(owner,operation,idempotency_digest) WHERE owner<>''|CREATE UNIQUE INDEX IF NOT
+EXISTS uq_research_binding_owner_alias ON research_idempotency_bindings
+(owner,operation,alias_digest) WHERE owner<>'' AND alias_digest IS NOT NULL|
+CREATE INDEX IF NOT EXISTS idx_research_binding_digest ON
+research_idempotency_bindings(idempotency_digest)|CREATE INDEX IF NOT EXISTS
+idx_research_work_claim ON research_work_units(state,lease_expires_at)|
+CREATE INDEX IF NOT EXISTS idx_research_work_run
+ON research_work_units(run_id)|CREATE INDEX IF NOT EXISTS
+idx_research_outbox_pending ON research_dispatch_outbox(state,created_at)|
+CREATE UNIQUE INDEX IF NOT EXISTS
+uq_research_success_input_policy ON research_work_units
+(run_id,kind,input_digest,policy_digest) WHERE state='succeeded'""",
+    "|",
 )
