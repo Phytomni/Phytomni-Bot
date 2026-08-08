@@ -29,10 +29,17 @@ from .input_preparation import (
 )
 from .recovery import recover_registered_request
 
-__all__ = ["ResearchInputCoordinator", "ResearchInputResumeLoader"]
+__all__ = [
+    "ResearchInputCoordinator",
+    "ResearchInputResumeLoader",
+    "build_sqlite_resume_loader",
+]
 
 ResearchInputResumeLoader = Callable[
     [str], Awaitable[ResearchCoordinatorRequest | None]
+]
+ResearchInputResumeFactory = Callable[
+    [Mapping[str, Any]], ResearchCoordinatorRequest
 ]
 
 _FAILURE_MESSAGE = "Research input resolution failed."
@@ -408,6 +415,39 @@ class ResearchInputCoordinator:
             raise
         except Exception as error:
             raise _stage_failure("planning", error) from None
+
+
+def build_sqlite_resume_loader(
+    store: Any,
+    request_factory: ResearchInputResumeFactory,
+) -> ResearchInputResumeLoader:
+    """Build a restart loader over the durable digest-only store boundary."""
+    if not callable(getattr(store, "load_resolution", None)):
+        raise TypeError("resume store must load resolution metadata")
+    if not callable(request_factory):
+        raise TypeError("request factory must be callable")
+
+    async def load(run_id: str) -> ResearchCoordinatorRequest | None:
+        """Load one row, leaving document bodies outside SQLite state."""
+        row = store.load_resolution(run_id)
+        if row is None:
+            return None
+        if not isinstance(row, Mapping):
+            raise TypeError("resume store returned invalid metadata")
+        metadata = dict(row)
+        for persisted_name, request_name in (
+            ("source_map_json", "source_map"),
+            ("candidates_json", "parsed_candidates"),
+            ("managed_snapshot_json", "managed_snapshot"),
+        ):
+            if request_name not in metadata and persisted_name in metadata:
+                metadata[request_name] = metadata[persisted_name]
+        request = request_factory(metadata)
+        if not isinstance(request, ResearchCoordinatorRequest):
+            raise TypeError("resume factory returned invalid request")
+        return request
+
+    return load
 
 
 def _dependencies_from_ports(

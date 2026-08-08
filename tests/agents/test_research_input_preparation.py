@@ -5,19 +5,46 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+import json
+import sqlite3
+from dataclasses import asdict, dataclass, replace
+from typing import Any
 
 import pytest
 
-from mcp_server_phytomni.agents.research import input_preparation
+from mcp_server_phytomni.agents.research import (
+    input_coordinator,
+    input_preparation,
+)
 from mcp_server_phytomni.agents.research.description_resolver import (
     ResearchResolutionResponse,
     ResolvedResearchDataset,
 )
+from mcp_server_phytomni.agents.research.document_evidence import (
+    ConvertedResearchSection,
+    ManagedDocumentObservation,
+    ResearchEvidenceRequest,
+    extract_research_evidence,
+)
+from mcp_server_phytomni.agents.research.input_contracts import (
+    ParsedResearchInput,
+    PastedDatasetCandidate,
+    ResearchCoordinatorDependencies,
+    ResearchCoordinatorRequest,
+    SourceSpan,
+)
+from mcp_server_phytomni.agents.research.input_coordinator import (
+    ResearchInputCoordinator,
+    build_sqlite_resume_loader,
+)
 from mcp_server_phytomni.agents.research.input_inventory import (
+    ManagedResearchAssetSnapshot,
     ResearchInputInventory,
     ResearchInputSnapshot,
     ResearchInventoryEntry,
+    ResearchInventoryRequest,
+    build_research_inventory,
+    revalidate_research_inventory,
 )
 from mcp_server_phytomni.agents.research.input_preparation import (
     PreparedResearchAuthority,
@@ -25,6 +52,8 @@ from mcp_server_phytomni.agents.research.input_preparation import (
     join_prepared_research_input,
     with_execution_fingerprint,
 )
+from mcp_server_phytomni.runtime.research_input_store import ResearchInputStore
+from mcp_server_phytomni.runtime.run_registry import RunRegistry, RunSpec
 from mcp_server_phytomni.storage.research_objects import (
     ResearchObjectAuthority,
     ResearchObjectSnapshot,
@@ -289,4 +318,443 @@ def test_execution_fingerprint_changes_for_every_reuse_binding(
             policy_fingerprint="policy-1",
         ).execution_fingerprint
         != bound.execution_fingerprint
+    )
+
+
+_RESTART_SENTINEL = "RESEARCH_RESTART_DOCUMENT_PLAINTEXT_SENTINEL"
+
+
+def _restart_managed() -> tuple[ManagedResearchAssetSnapshot, ...]:
+    """Build two owner-bound managed documents with fixed body sizes."""
+
+    def asset(
+        asset_id: str, reference: str, size: int
+    ) -> ManagedResearchAssetSnapshot:
+        return ManagedResearchAssetSnapshot(
+            asset_id=asset_id,
+            exact_reference=reference,
+            size_bytes=size,
+            purpose="document",
+            completed=True,
+            state_version=1,
+            completed_at="2026-08-09T00:00:00+00:00",
+            etag=f"{asset_id}-etag",
+            version_id=f"{asset_id}-v1",
+            last_modified="2026-08-09T00:00:00+00:00",
+            snapshot_digest=f"{asset_id}-snapshot",
+        )
+
+    return (
+        asset("managed-paper", "obs://dev-bucket/paper.pdf", 8),
+        asset("managed-table", "obs://dev-bucket/table.xlsx", 7),
+    )
+
+
+def _restart_parsed() -> ParsedResearchInput:
+    """Build one effective query and one pasted exact-key candidate."""
+    query = "restart query"
+    reference = "obs://dev-bucket/pasted.tsv"
+    start = len(query) + 1
+    return ParsedResearchInput(
+        original_query_digest="r" * 64,
+        original_query_length=start + len(reference),
+        effective_query=query,
+        effective_to_original=tuple(range(len(query))),
+        removed_spans=(
+            SourceSpan(start, start + len(reference), "standalone_tab"),
+        ),
+        candidates=(
+            PastedDatasetCandidate(
+                exact_reference=reference,
+                comparison_key=reference.casefold(),
+                user_hint="pasted hint",
+                source_start=start,
+                source_end=start + len(reference),
+                ordinal=0,
+            ),
+        ),
+    )
+
+
+def _restart_request(
+    parsed: ParsedResearchInput,
+    managed: tuple[ManagedResearchAssetSnapshot, ...],
+) -> ResearchInventoryRequest:
+    """Build the trusted request that is serialized into SQLite metadata."""
+    return ResearchInventoryRequest(
+        parsed_input=parsed,
+        managed_assets=managed,
+        configured_bucket="dev-bucket",
+        max_managed_references=64,
+        max_pasted_references=128,
+        max_combined_references=256,
+    )
+
+
+class _RestartHeadPort:
+    """Concrete exact-key metadata port used by both inventory passes."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, ...]] = []
+
+    async def resolve(
+        self, request: Any
+    ) -> tuple[ResearchObjectAuthority, ...]:
+        """Record exact references and return stable current HEAD metadata."""
+        self.calls.append(
+            tuple(item.exact_reference for item in request.objects)
+        )
+        return tuple(
+            ResearchObjectAuthority(
+                item.dataset_id,
+                f"grant-{item.dataset_id}",
+                ResearchObjectSnapshot(
+                    item.dataset_id,
+                    17,
+                    "pasted-etag",
+                    "pasted-v1",
+                    "2026-08-09T00:00:00+00:00",
+                    False,
+                    f"pasted-{item.dataset_id}",
+                ),
+            )
+            for item in request.objects
+        )
+
+    async def verify(self, request: Any) -> tuple[Any, ...]:
+        """Retain the metadata-port verify shape for this local port."""
+        return request.authorities
+
+    async def revoke(self, request: Any) -> None:
+        """Release no local authority after the test."""
+        del request
+
+
+class _RestartManagedResolver:
+    """Owner-qualified managed snapshot resolver with an audit ledger."""
+
+    def __init__(
+        self, assets: tuple[ManagedResearchAssetSnapshot, ...]
+    ) -> None:
+        self.assets = assets
+        self.calls: list[tuple[str, ...]] = []
+
+    @property
+    def call_count(self) -> int:
+        """Expose the number of owner-resolution calls."""
+        return len(self.calls)
+
+    def __call__(
+        self, asset_ids: tuple[str, ...]
+    ) -> tuple[ManagedResearchAssetSnapshot, ...]:
+        """Return only the current snapshots for the requested owner IDs."""
+        self.calls.append(asset_ids)
+        expected = tuple(asset.asset_id for asset in self.assets)
+        if asset_ids != expected:
+            raise AssertionError("managed asset owner resolution drifted")
+        return self.assets
+
+
+class _RestartDocumentPort:
+    """Downloader and converter that record every page/section pass."""
+
+    def __init__(self) -> None:
+        self.payloads = {"dataset_001": b"paper123", "dataset_002": b"table12"}
+        self.pages = {
+            "dataset_001": (
+                ConvertedResearchSection(0, "page 1", _RESTART_SENTINEL),
+                ConvertedResearchSection(1, "page 2", _RESTART_SENTINEL),
+            ),
+            "dataset_002": (
+                ConvertedResearchSection(0, "sheet 1", _RESTART_SENTINEL),
+                ConvertedResearchSection(1, "sheet 2", _RESTART_SENTINEL),
+            ),
+        }
+        self.observed: list[str] = []
+        self.downloaded: list[str] = []
+        self.converted: list[str] = []
+
+    def observe(
+        self, entry: ResearchInventoryEntry
+    ) -> ManagedDocumentObservation:
+        """Verify the current owner snapshot before body download."""
+        self.observed.append(entry.dataset_id)
+        return ManagedDocumentObservation(
+            entry.exact_reference, entry.snapshot
+        )
+
+    async def download(self, entry: ResearchInventoryEntry) -> bytes:
+        """Return the complete body for one immutable document."""
+        self.downloaded.append(entry.dataset_id)
+        return self.payloads[entry.dataset_id]
+
+    def convert(
+        self, entry: ResearchInventoryEntry, payload: bytes
+    ) -> tuple[ConvertedResearchSection, ...]:
+        """Re-extract all deterministic pages or sections."""
+        self.converted.append(entry.dataset_id)
+        assert payload == self.payloads[entry.dataset_id]
+        return self.pages[entry.dataset_id]
+
+    def clear(self) -> None:
+        """Start a fresh process-pass ledger."""
+        self.observed.clear()
+        self.downloaded.clear()
+        self.converted.clear()
+
+
+def _restart_resolution(
+    request: ResearchCoordinatorRequest,
+) -> ResearchResolutionResponse:
+    """Produce a strict typed response for the current inventory."""
+    inventory = request.inventory_request
+    assert isinstance(inventory, ResearchInputInventory)
+    return ResearchResolutionResponse(
+        effective_query=request.effective_query,
+        datasets=[
+            ResolvedResearchDataset(
+                id=entry.dataset_id,
+                description=f"Grounded description for {entry.dataset_id}.",
+                confidence="high",
+                evidence_ids=[f"{entry.dataset_id}_meta_001"],
+            )
+            for entry in inventory.datasets
+        ],
+    )
+
+
+@dataclass
+class _RestartPersistence:
+    """Persist only safe evidence metadata through the real SQLite store."""
+
+    store: ResearchInputStore
+    parsed: ParsedResearchInput
+    managed: tuple[ManagedResearchAssetSnapshot, ...]
+    calls: list[dict[str, Any]]
+
+    @property
+    def call_count(self) -> int:
+        """Expose planning persistence calls."""
+        return len(self.calls)
+
+    async def persist(self, run_id: str, **values: Any) -> None:
+        """Write a single real resolution row; replay only records the call."""
+        self.calls.append(values)
+        if len(self.calls) != 1:
+            return
+        prepared = values["prepared"]
+        self.store.persist_resolution(
+            run_id,
+            original_query_digest=self.parsed.original_query_digest,
+            original_query_length=self.parsed.original_query_length,
+            effective_query=prepared.effective_query,
+            source_map={
+                "parsed_input": asdict(self.parsed),
+                "evidence_identity": values["evidence"],
+            },
+            parsed_candidates=[
+                asdict(candidate) for candidate in self.parsed.candidates
+            ],
+            managed_snapshot=[asdict(asset) for asset in self.managed],
+            evidence_digest=prepared.evidence_digest,
+            work_digest="w" * 64,
+            policy_digest="p" * 64,
+            execution_fingerprint=prepared.execution_fingerprint,
+        )
+
+
+@dataclass
+class _RestartPorts:
+    """Concrete inventory, extraction, and owner revalidation ports."""
+
+    request: ResearchInventoryRequest
+    head: _RestartHeadPort
+    managed: _RestartManagedResolver
+    documents: _RestartDocumentPort
+    evidence: list[Any]
+
+    async def metadata(self, request: ResearchCoordinatorRequest) -> Any:
+        """Resolve current inventory through the exact-key metadata port."""
+        return await build_research_inventory(
+            request.inventory_request, self.head
+        )
+
+    async def extract(self, request: ResearchCoordinatorRequest) -> Any:
+        """Run real document download and page/section extraction."""
+        result = await extract_research_evidence(
+            ResearchEvidenceRequest(
+                inventory=request.inventory_request,
+                effective_query=request.effective_query,
+                effective_to_original=(
+                    self.request.parsed_input.effective_to_original
+                ),
+            ),
+            self.documents,
+            self.documents,
+        )
+        self.evidence.append(result)
+        return result
+
+    async def resolve(
+        self, request: ResearchCoordinatorRequest
+    ) -> ResearchResolutionResponse:
+        """Resolve current opaque IDs through the typed local resolver."""
+        return _restart_resolution(request)
+
+    async def revalidate(
+        self, request: ResearchCoordinatorRequest
+    ) -> ResearchInputInventory:
+        """Rebuild inventory, re-HEAD pasted objects, and re-resolve IDs."""
+        return await revalidate_research_inventory(
+            self.request,
+            request.inventory_request,
+            self.head,
+            managed_asset_resolver=self.managed,
+        )
+
+
+def _restart_dependencies(
+    ports: _RestartPorts, persistence: _RestartPersistence
+) -> ResearchCoordinatorDependencies:
+    """Bind concrete restart ports to the coordinator contract."""
+    return ResearchCoordinatorDependencies(
+        build_inventory=ports.metadata,
+        extract_evidence=ports.extract,
+        resolve_descriptions=ports.resolve,
+        revalidate_inventory=ports.revalidate,
+        persist_planning=persistence.persist,
+    )
+
+
+def _restart_persisted_request(
+    row: dict[str, Any],
+    dependencies: ResearchCoordinatorDependencies,
+) -> ResearchCoordinatorRequest:
+    """Rebuild a request from safe SQLite metadata and no document text."""
+    source_map = row["source_map"]
+    parsed_data = source_map["parsed_input"]
+    parsed = ParsedResearchInput(
+        original_query_digest=parsed_data["original_query_digest"],
+        original_query_length=parsed_data["original_query_length"],
+        effective_query=parsed_data["effective_query"],
+        effective_to_original=tuple(parsed_data["effective_to_original"]),
+        removed_spans=tuple(
+            SourceSpan(**span) for span in parsed_data["removed_spans"]
+        ),
+        candidates=tuple(
+            PastedDatasetCandidate(**candidate)
+            for candidate in parsed_data["candidates"]
+        ),
+    )
+    managed = tuple(
+        ManagedResearchAssetSnapshot(**asset)
+        for asset in row["managed_snapshot"]
+    )
+    return ResearchCoordinatorRequest(
+        run_id=row["run_id"],
+        inventory_request=_restart_request(parsed, managed),
+        evidence=source_map["evidence_identity"],
+        dependencies=dependencies,
+        effective_query=row["effective_query"],
+        evidence_digest=row["evidence_digest"],
+        work_digest=row["work_digest"],
+        policy_fingerprint=row["policy_digest"] or "",
+    )
+
+
+def _assert_restart_safe(loaded: dict[str, Any], database: str) -> None:
+    """Prove decoded and raw SQLite state contain no document plaintext."""
+    serialized = json.dumps(loaded, sort_keys=True)
+    assert _RESTART_SENTINEL not in serialized
+    with sqlite3.connect(database) as connection:
+        raw = connection.execute(
+            "SELECT source_map_json, candidates_json, managed_snapshot_json "
+            "FROM research_input_resolutions WHERE run_id = ?",
+            ("run-restart",),
+        ).fetchone()
+    assert raw is not None
+    assert _RESTART_SENTINEL not in json.dumps(raw)
+
+
+@pytest.mark.asyncio
+async def test_restart_rebuilds_from_sqlite_without_reusing_document_plaintext(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Restart reloads safe metadata and re-runs every owner-bound I/O seam."""
+    database = str(tmp_path / "restart.db")
+    RunRegistry(database).create_run(
+        RunSpec(
+            run_id="run-restart",
+            user_id="owner",
+            agent="research",
+            origin="api",
+        )
+    )
+    store = ResearchInputStore(database)
+    parsed = _restart_parsed()
+    managed = _restart_managed()
+    request = _restart_request(parsed, managed)
+    ports = _RestartPorts(
+        request,
+        _RestartHeadPort(),
+        _RestartManagedResolver(managed),
+        _RestartDocumentPort(),
+        [],
+    )
+    persistence = _RestartPersistence(store, parsed, managed, [])
+    dependencies = _restart_dependencies(ports, persistence)
+    initial = ResearchCoordinatorRequest(
+        run_id="run-restart",
+        inventory_request=request,
+        dependencies=dependencies,
+        effective_query=parsed.effective_query,
+    )
+
+    async def recover() -> None:
+        """Keep unrelated process recovery outside this boundary test."""
+
+    monkeypatch.setattr(
+        input_coordinator, "recover_registered_request", recover
+    )
+    await ResearchInputCoordinator(initial).run("run-restart", "worker-1")
+    ports.managed.calls.clear()
+    ports.head.calls.clear()
+    ports.documents.clear()
+    loaded = store.load_resolution("run-restart")
+    assert loaded is not None
+    _assert_restart_safe(loaded, database)
+    persisted_identity = loaded["source_map_json"]["evidence_identity"]
+
+    def factory(row: Any) -> ResearchCoordinatorRequest:
+        """Reject any plaintext if it appears in the store response."""
+        serialized = json.dumps(row, sort_keys=True)
+        assert _RESTART_SENTINEL not in serialized
+        return _restart_persisted_request(row, dependencies)
+
+    await ResearchInputCoordinator().resume_after_restart(
+        "run-restart", "worker-2", build_sqlite_resume_loader(store, factory)
+    )
+
+    assert len(ports.evidence) == 2
+    assert persisted_identity["coverage_digest"] == (
+        ports.evidence[1].coverage_digest
+    )
+    assert json.dumps(persisted_identity, sort_keys=True) == json.dumps(
+        ports.evidence[1].persistence_metadata(), sort_keys=True
+    )
+    assert ports.evidence[0].document_digests == (
+        ports.evidence[1].document_digests
+    )
+    assert ports.documents.observed == ["dataset_001", "dataset_002"]
+    assert ports.documents.downloaded == ["dataset_001", "dataset_002"]
+    assert ports.documents.converted == ["dataset_001", "dataset_002"]
+    assert ports.managed.calls == [("managed-paper", "managed-table")]
+    assert ports.head.calls == [
+        ("obs://dev-bucket/pasted.tsv",),
+        ("obs://dev-bucket/pasted.tsv",),
+    ]
+    assert persistence.call_count == 2
+    assert _RESTART_SENTINEL not in json.dumps(
+        persistence.calls[1]["evidence"], sort_keys=True
     )
