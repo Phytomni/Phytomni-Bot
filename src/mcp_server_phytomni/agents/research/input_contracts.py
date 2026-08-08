@@ -79,7 +79,7 @@ class SourceSpan:
     grammar: Literal["trailing_json", "fenced_json", "standalone_tab"]
 
 
-class ResearchInputFailure(Exception):  # noqa: N818 - required protocol name
+class ResearchInputFailureError(Exception):
     """Stable, transport-independent failure for Research input resolution."""
 
     def __init__(
@@ -96,15 +96,24 @@ class ResearchInputFailure(Exception):  # noqa: N818 - required protocol name
         self.retryable = arguments["retryable"]
 
 
+ResearchInputFailure = ResearchInputFailureError
+
+
 @dataclass(frozen=True, slots=True)
-class PastedDatasetCandidate:
-    """Exact user reference, comparison identity, and source span."""
+class _PastedDatasetReference:
+    """Shared reference identity and source span for parsed candidates."""
 
     exact_reference: str
     comparison_key: str
     user_hint: str | None
     source_start: int
     source_end: int
+
+
+@dataclass(frozen=True, slots=True)
+class PastedDatasetCandidate(_PastedDatasetReference):
+    """Exact user reference, comparison identity, and source span."""
+
     ordinal: int
 
 

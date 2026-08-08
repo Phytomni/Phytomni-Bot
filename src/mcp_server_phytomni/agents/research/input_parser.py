@@ -18,6 +18,7 @@ from .input_contracts import (
     PastedDatasetCandidate,
     ResearchInputFailure,
     SourceSpan,
+    _PastedDatasetReference,
 )
 from .scientific_formats import classify_scientific_reference
 
@@ -31,14 +32,8 @@ _KEY_SEGMENT = re.compile(r"^[\w.-]+$", re.UNICODE)
 
 
 @dataclass(frozen=True, slots=True)
-class _RawCandidate:
+class _RawCandidate(_PastedDatasetReference):
     """Validated parser-local candidate before ordinal assignment."""
-
-    exact_reference: str
-    comparison_key: str
-    user_hint: str | None
-    source_start: int
-    source_end: int
 
 
 class _DuplicateJsonKeyError(ValueError):
