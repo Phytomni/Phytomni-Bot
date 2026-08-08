@@ -31,6 +31,7 @@ from ..runtime.locale import SupportedLocale, message_for
 from ..runtime.run_registry_models import (
     RESEARCH_FAILURE_CODES,
     RESEARCH_FAILURE_MESSAGES,
+    ResearchFailureCode,
 )
 
 __all__ = [
@@ -72,7 +73,7 @@ class ResearchFailureDetail(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    code: str = Field(min_length=1, max_length=128)
+    code: ResearchFailureCode
     message: str = Field(min_length=1, max_length=512)
     stage: Literal[
         "input_resolution", "planning", "execution", "report_assembly"

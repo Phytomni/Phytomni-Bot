@@ -278,15 +278,24 @@ async def settle_report_terminal(request: _ReportSettlementRequest) -> Any:
         manifest_loader=request.sources.manifest_loader,
     )
     artifact_set = merge_report_artifact_groups(groups)
+    current: Any = request.current
+    transition = getattr(request.registry, "transition_research_stage", None)
+    if callable(transition) and current.spec.agent == "research":
+        transitioned: Any = transition(current, "report_assembly")
+        if transitioned is None:
+            return request.registry.get_run(
+                current.spec.run_id, owner=current.spec.user_id
+            )
+        current = transitioned
     report = await _assemble_report(
-        request.current,
+        current,
         request.status,
         request.live,
         artifact_set,
         request.assembler,
     )
-    warnings = stored_submission_warnings(request.current.result)
-    marker = result_delivery_from_result(request.current.result)
+    warnings = stored_submission_warnings(current.result)
+    marker = result_delivery_from_result(current.result)
     state = ReportTerminalState(
         status=request.status,
         live=request.live,
@@ -297,7 +306,7 @@ async def settle_report_terminal(request: _ReportSettlementRequest) -> Any:
     )
     if not marker or request.status != "succeeded":
         return _settle_report_without_delivery(
-            request.registry, request.current, state
+            request.registry, current, state
         )
     try:
         inventory = build_result_archive_inventory(groups)
@@ -317,13 +326,13 @@ async def settle_report_terminal(request: _ReportSettlementRequest) -> Any:
             ),
         )
         return _settle_report_inventory_failure(
-            request.registry, request.current, state
+            request.registry, current, state
         )
     delivery = initial_pending_delivery(inventory.digest)
     state = replace(state, delivery=delivery)
     return _store_pending_report_delivery(
         request.registry,
-        request.current,
+        current,
         state,
         inventory_ref,
         delivery,

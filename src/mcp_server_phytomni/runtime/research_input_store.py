@@ -718,8 +718,8 @@ def _insert_admission(
 
 _RUN_INSERT_SQL = (
     "INSERT INTO runs (run_id, user_id, agent, origin, status, result_json, "
-    "error, created_at, updated_at, expires_at, locale) VALUES (?, ?, "
-    "'research', 'api', 'running', NULL, NULL, ?, ?, NULL, ?)"
+    "error, created_at, updated_at, expires_at, locale, stage) VALUES (?, ?, "
+    "'research','api','running',NULL,NULL,?,?,NULL,?,'input_resolution')"
 )
 _BINDING_INSERT_SQL = (
     "INSERT INTO research_idempotency_bindings (run_id, idempotency_digest, "

@@ -88,8 +88,10 @@ from .run_registry_views import RunRegistryViewsMixin
 from .sqlite import sqlite_transaction
 from .task_manager import (
     TaskManager,
-    _expires_at_for,
     resolve_tasks_db_path,
+)
+from .task_manager import (
+    _expires_at_for as _task_expires_at_for,
 )
 from .task_reconcile import reconcile_task
 from .terminal_answer import TerminalAnswerContext, synthesize_terminal_answer
@@ -103,6 +105,14 @@ _ZERO_OWNED_CHILD_SQL = (
     " AND NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.run_id = runs.run_id "
     "AND tasks.user_id = runs.user_id AND tasks.agent = runs.agent)"
 )
+
+
+def _expires_at_for(status: str, now_iso: str) -> str | None:
+    """Apply the shared terminal TTL policy, including cancellation."""
+    if status == "cancelled":
+        return _task_expires_at_for("failed", now_iso)
+    return _task_expires_at_for(status, now_iso)
+
 
 __all__ = [
     "A2ACorrelation",
@@ -475,6 +485,35 @@ class RunRegistry(RunRegistryViewsMixin):
             )
             return cursor.rowcount == 1
 
+    def transition_research_stage(
+        self, current: RunRecord, stage: str
+    ) -> RunRecord | None:
+        """Advance a Research stage with owner and revision CAS."""
+        if current.spec.agent != "research" or stage not in {
+            "input_resolution",
+            "planning",
+            "execution",
+            "report_assembly",
+        }:
+            raise ValueError("unsupported Research lifecycle stage")
+        now = _now_iso()
+        with sqlite_transaction(self.db_path) as conn:
+            cursor = conn.execute(
+                "UPDATE runs SET stage = ?, revision = revision + 1, "
+                "updated_at = ? WHERE run_id = ? AND user_id = ? "
+                "AND status = 'running' AND revision = ?",
+                (
+                    stage,
+                    now,
+                    current.spec.run_id,
+                    current.spec.user_id,
+                    current.revision,
+                ),
+            )
+            if cursor.rowcount != 1:
+                return None
+        return self.get_run(current.spec.run_id, owner=current.spec.user_id)
+
     def fail_running_run(
         self,
         run_id: str,
@@ -488,7 +527,7 @@ class RunRegistry(RunRegistryViewsMixin):
         with sqlite_transaction(self.db_path) as conn:
             cursor = conn.execute(
                 "UPDATE runs SET status = 'failed', result_json = ?, "
-                "error = ?, updated_at = ?, expires_at = ? "
+                "error = ?, stage = NULL, updated_at = ?, expires_at = ? "
                 "WHERE run_id = ? AND user_id = ? AND status = 'running'",
                 (
                     json.dumps(result),
@@ -587,7 +626,7 @@ class RunRegistry(RunRegistryViewsMixin):
         with sqlite_transaction(self.db_path) as conn:
             cursor = conn.execute(
                 "UPDATE runs SET status = ?, result_json = ?, error = ?, "
-                "updated_at = ?, expires_at = ? "
+                "stage = NULL, updated_at = ?, expires_at = ? "
                 "WHERE run_id = ? AND user_id = ?",
                 (
                     status,
@@ -832,7 +871,7 @@ class RunRegistry(RunRegistryViewsMixin):
         expires_at = _expires_at_for(outcome.status, now)
         query = (
             "UPDATE runs SET status = ?, result_json = ?, error = ?, "
-            "updated_at = ?, expires_at = ? "
+            "stage = NULL, updated_at = ?, expires_at = ? "
             "WHERE run_id = ? AND user_id = ? AND status = 'running'"
             + (_ZERO_OWNED_CHILD_SQL if require_zero_child else "")
         )
