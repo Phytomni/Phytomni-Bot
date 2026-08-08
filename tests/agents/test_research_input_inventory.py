@@ -389,10 +389,7 @@ async def test_revalidation_rejects_current_managed_asset_drift() -> None:
         assert caught.value.code == "research_input_resolution_failed"
 
 
-@pytest.mark.parametrize("missing_kind", ("reclaimed", "foreign_owner"))
-async def test_revalidation_rejects_missing_current_managed_asset(
-    missing_kind: str,
-) -> None:
+async def test_revalidation_rejects_missing_current_managed_asset() -> None:
     """Reclaimed and foreign owner resolution never reuse request snapshots."""
     managed = _managed("file_bound", "obs://dev-bucket/managed.tsv")
     request = _request(parsed_input=_parsed(), managed_assets=(managed,))

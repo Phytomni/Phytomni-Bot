@@ -46,6 +46,9 @@ _Lane = Literal["managed", "pasted"]
 
 
 # Immutable DTO attributes mirror the declared Research inventory contract.
+# Splitting these protocol fields would make construction and snapshot identity
+# indirect without reducing the data carried across the inventory boundary.
+# pylint: disable=too-many-instance-attributes
 @dataclass(frozen=True, slots=True)
 class ManagedResearchAssetSnapshot:
     """One immutable server-owned managed attachment state snapshot."""
@@ -444,13 +447,8 @@ async def _resolve_drafts(
     requested_ids = {candidate.dataset_id for candidate in candidates}
     authorities_by_dataset: dict[str, ResearchObjectAuthority] = {}
     for authority in authorities:
-        if (
-            not isinstance(authority.authority_id, str)
-            or not authority.authority_id.strip()
-            or authority.dataset_id not in requested_ids
-            or authority.snapshot.dataset_id != authority.dataset_id
-            or authority.snapshot.placeholder
-            or authority.dataset_id in authorities_by_dataset
+        if _invalid_authority(
+            authority, requested_ids, authorities_by_dataset
         ):
             raise research_input_failure(
                 "research_input_resolution_failed",
@@ -468,6 +466,24 @@ async def _resolve_drafts(
             "Research dataset metadata could not be verified.",
         )
     return authorities_by_dataset
+
+
+def _invalid_authority(
+    authority: ResearchObjectAuthority,
+    requested_ids: set[str],
+    resolved: dict[str, ResearchObjectAuthority],
+) -> bool:
+    """Return whether one authority violates its exact-key contract."""
+    return any(
+        (
+            not isinstance(authority.authority_id, str),
+            not authority.authority_id.strip(),
+            authority.dataset_id not in requested_ids,
+            authority.snapshot.dataset_id != authority.dataset_id,
+            authority.snapshot.placeholder,
+            authority.dataset_id in resolved,
+        )
+    )
 
 
 def _entries_from_drafts(
