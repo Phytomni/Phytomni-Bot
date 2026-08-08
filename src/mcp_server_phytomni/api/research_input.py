@@ -17,8 +17,9 @@ from ..agents.research.input_contracts import (
     research_input_failure,
 )
 from ..agents.research.input_inventory import ManagedResearchAssetSnapshot
+from ..config.api_limits import ApiLimitsConfig
 from ..runtime.conversation_context.models import ConversationEnvelopeV1
-from ..runtime.locale import SupportedLocale
+from ..runtime.locale import SUPPORTED_LOCALES, SupportedLocale
 from ..runtime.research_input_store import (
     ResearchAdmissionReservation,
     ResearchInputStore,
@@ -38,6 +39,7 @@ __all__ = [
 
 _IDENTITY_VERSION = b"research-idempotency/v1\x00"
 _FINGERPRINT_VERSION = "research-client-fingerprint/v1"
+_DIGEST_LENGTH = 64
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +200,7 @@ def admit_research_request(
     request: ResearchAdmissionRequest, store: ResearchInputStore
 ) -> ResearchAdmissionOutcome:
     """Atomically reserve a safe root run or return an exact replay."""
+    query_digest, query_length = _validate_caller_preflight(request)
     replay = lookup_research_admission(
         owner=request.owner,
         identity=request.identity,
@@ -206,7 +209,9 @@ def admit_research_request(
     )
     if replay is not None:
         return replay
-    _validate_admission_request(request)
+    _validate_admission_request(
+        request, query_digest=query_digest, query_length=query_length
+    )
     parsed = request.parsed_input
     reservation = store.reserve_admission(
         run_id=str(uuid4()),
@@ -248,9 +253,23 @@ def _admission_outcome(
     )
 
 
-def _validate_admission_request(request: ResearchAdmissionRequest) -> None:
-    """Reject malformed caller-owned data before any durable mutation."""
+def _validate_caller_preflight(
+    request: ResearchAdmissionRequest,
+) -> tuple[str, int]:
+    """Validate caller fields before binding lookup or parsed-input access."""
+    if not isinstance(request, ResearchAdmissionRequest):
+        raise research_input_failure(
+            "research_input_resolution_failed", "Research request is invalid."
+        )
     if not isinstance(request.owner, str) or not request.owner.strip():
+        raise research_input_failure(
+            "research_input_resolution_failed", "Research request is invalid."
+        )
+    if not _valid_identity(request.identity):
+        raise research_input_failure(
+            "research_input_resolution_failed", "Research request is invalid."
+        )
+    if not _valid_digest(request.client_fingerprint):
         raise research_input_failure(
             "research_input_resolution_failed", "Research request is invalid."
         )
@@ -261,25 +280,20 @@ def _validate_admission_request(request: ResearchAdmissionRequest) -> None:
     query_digest = hashlib.sha256(
         request.original_query.encode("utf-8")
     ).hexdigest()
-    if (
-        request.parsed_input.original_query_digest != query_digest
-        or request.parsed_input.original_query_length
-        != len(request.original_query)
-    ):
+    query_length = len(request.original_query)
+    if query_length > _max_query_chars():
         raise research_input_failure(
-            "research_input_resolution_failed", "Research query is invalid."
+            "research_input_limit_exceeded",
+            "Research query exceeds the allowed limit.",
         )
-    if (
-        not isinstance(request.client_fingerprint, str)
-        or not request.client_fingerprint
-    ):
+    if not _valid_caller_semantics(request):
         raise research_input_failure(
             "research_input_resolution_failed", "Research request is invalid."
         )
     expected_fingerprint = compute_research_client_fingerprint(
         ResearchClientFingerprintInput(
             original_query_digest=query_digest,
-            original_query_length=len(request.original_query),
+            original_query_length=query_length,
             managed_asset_ids=request.managed_asset_ids,
             locale=request.locale,
             interop_mode=request.interop_mode,
@@ -295,6 +309,23 @@ def _validate_admission_request(request: ResearchAdmissionRequest) -> None:
         raise research_input_failure(
             "research_input_resolution_failed", "Research request is invalid."
         )
+    return query_digest, query_length
+
+
+def _validate_admission_request(
+    request: ResearchAdmissionRequest,
+    *,
+    query_digest: str,
+    query_length: int,
+) -> None:
+    """Reject parser and managed-snapshot data before durable mutation."""
+    if (
+        request.parsed_input.original_query_digest != query_digest
+        or request.parsed_input.original_query_length != query_length
+    ):
+        raise research_input_failure(
+            "research_input_resolution_failed", "Research query is invalid."
+        )
     if request.identity.kind not in {"header", "conversation"}:
         raise research_input_failure(
             "research_input_resolution_failed", "Research request is invalid."
@@ -307,6 +338,54 @@ def _validate_admission_request(request: ResearchAdmissionRequest) -> None:
             "research_dataset_duplicate",
             "Research managed assets are invalid.",
         )
+
+
+def _valid_identity(identity: object) -> bool:
+    """Return whether the parsed identity has the digest-only schema."""
+    if not isinstance(identity, ResearchRequestIdentity):
+        return False
+    if identity.kind not in {"header", "conversation"}:
+        return False
+    if not _valid_digest(identity.canonical_digest):
+        return False
+    return identity.header_alias_digest is None or _valid_digest(
+        identity.header_alias_digest
+    )
+
+
+def _valid_digest(value: object) -> bool:
+    """Return whether a persisted identity digest is a SHA-256 hex value."""
+    return (
+        isinstance(value, str)
+        and len(value) == _DIGEST_LENGTH
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _valid_caller_semantics(request: ResearchAdmissionRequest) -> bool:
+    """Validate typed semantic fields used by the caller fingerprint."""
+    if request.locale not in SUPPORTED_LOCALES:
+        return False
+    if request.interop_mode not in {"off", "auto", "required"}:
+        return False
+    if not isinstance(request.managed_asset_ids, tuple) or any(
+        not isinstance(asset_id, str) or not asset_id
+        for asset_id in request.managed_asset_ids
+    ):
+        return False
+    if not isinstance(request.interop_targets, tuple) or any(
+        not isinstance(target, str) or not target
+        for target in request.interop_targets
+    ):
+        return False
+    return tuple(dict.fromkeys(request.managed_asset_ids)) == (
+        request.managed_asset_ids
+    )
+
+
+def _max_query_chars() -> int:
+    """Read the effective API query limit without touching request data."""
+    return ApiLimitsConfig().API_MAX_USER_QUERY_CHARS
 
 
 def _header_digest(value: str) -> str:

@@ -288,6 +288,20 @@ def test_conversation_replay_can_attach_one_alias_but_alias_cannot_cross_turn(
     assert replay.run_id == first.run_id
     assert replay.replay is True
 
+    conflicting_alias = replace(
+        first_request,
+        identity=parse_idempotency_identity("Alias-2", _conversation()),
+    )
+    with pytest.raises(ResearchInputFailure) as alias_caught:
+        admit_research_request(conflicting_alias, store)
+    assert alias_caught.value.code == "research_idempotency_conflict"
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT alias_digest FROM research_idempotency_bindings "
+            "WHERE run_id = ?",
+            (first.run_id,),
+        ).fetchone() == (alias_request.identity.header_alias_digest,)
+
     next_identity = parse_idempotency_identity(
         "Alias-1", _conversation(turn_id="2")
     )
@@ -351,12 +365,12 @@ def test_admission_validates_query_digest_and_hides_public_query(
     """Query integrity is checked and public rows stay query-free."""
     store, database = _store(tmp_path)
     request = _request("integrity-key")
+    admitted = admit_research_request(request, store)
     forged = replace(request, original_query="forged public query")
     with pytest.raises(ResearchInputFailure) as caught:
         admit_research_request(forged, store)
     assert caught.value.code == "research_input_resolution_failed"
 
-    admitted = admit_research_request(request, store)
     with sqlite3.connect(database) as connection:
         public = connection.execute(
             "SELECT query, request_json FROM runs WHERE run_id = ?",
@@ -374,6 +388,30 @@ def test_admission_validates_query_digest_and_hides_public_query(
         request.parsed_input.original_query_digest,
     )
     assert "integrity-key" not in str(private)
+
+
+def test_forged_query_with_old_fingerprint_does_not_replay(
+    tmp_path: Path,
+) -> None:
+    """The raw query is verified before an existing binding is inspected."""
+    store, database = _store(tmp_path)
+    request = _request("preflight-key")
+    first = admit_research_request(request, store)
+
+    forged = replace(request, original_query="different caller query")
+    with pytest.raises(ResearchInputFailure) as caught:
+        admit_research_request(forged, store)
+
+    assert caught.value.code == "research_input_resolution_failed"
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM runs").fetchone() == (
+            2,
+        )
+        assert connection.execute(
+            "SELECT COUNT(*) FROM research_idempotency_bindings "
+            "WHERE run_id = ?",
+            (first.run_id,),
+        ).fetchone() == (1,)
 
 
 def test_legacy_duplicate_blank_owner_digests_migrate_without_rewriting_rows(
@@ -481,7 +519,9 @@ def test_exact_replay_lookup_precedes_parsed_input_and_asset_resolution() -> (
 ):
     """Identity-only replay never dereferences parser or asset fields."""
     identity = parse_idempotency_identity("lookup-only", None)
-    request_identity = identity
+    template = _request("lookup-only")
+    request_identity = template.identity
+    fingerprint = template.client_fingerprint
 
     class RecordingStore:
         """Record identity lookup and reject any reserve fallback."""
@@ -494,39 +534,51 @@ def test_exact_replay_lookup_precedes_parsed_input_and_asset_resolution() -> (
         def lookup_admission(
             self, **request: object
         ) -> tuple[bool, ResearchAdmissionReservation | None]:
+            """Return the preconfigured identity lookup result."""
             assert request == {
                 "owner": "owner-1",
                 "identity_digest": identity.canonical_digest,
                 "header_alias_digest": identity.header_alias_digest,
-                "client_fingerprint": "fingerprint",
+                "client_fingerprint": fingerprint,
             }
             return self.result
 
         def reserve_admission(self, **request: object) -> NoReturn:
+            """Fail if a replay attempts a second durable reservation."""
             raise AssertionError("replay must not reserve or resolve inputs")
 
-    class IdentityOnlyRequest:
-        """Expose identity fields; parser fields must stay untouched."""
+    class IdentityOnlyRequest(ResearchAdmissionRequest):
+        """Expose caller fields while hiding parser fields on replay."""
 
         owner = "owner-1"
         identity = request_identity
-        client_fingerprint = "fingerprint"
+        client_fingerprint = fingerprint
+        original_query = template.original_query
+        managed_asset_ids = template.managed_asset_ids
+        locale = template.locale
+        interop_mode = template.interop_mode
+        interop_targets = template.interop_targets
+        route_source = template.route_source
 
         def __getattribute__(self, name: str) -> object:
             """Fail if admission dereferences any post-identity field."""
             if name in {
-                "original_query",
                 "parsed_input",
-                "managed_asset_ids",
                 "managed_snapshot",
-                "locale",
-                "interop_mode",
-                "interop_targets",
             }:
                 raise AssertionError(
                     f"replay touched parser/asset field: {name}"
                 )
             return object.__getattribute__(self, name)
+
+        def public_fields(self) -> tuple[object, ...]:
+            """Expose the caller fields used by the preflight contract."""
+            return (
+                self.owner,
+                self.identity,
+                self.client_fingerprint,
+                self.original_query,
+            )
 
     reservation = ResearchAdmissionReservation("existing-run", True, "running")
     store = cast(
@@ -536,10 +588,12 @@ def test_exact_replay_lookup_precedes_parsed_input_and_asset_resolution() -> (
     lookup = lookup_research_admission(
         owner="owner-1",
         identity=identity,
-        client_fingerprint="fingerprint",
+        client_fingerprint=fingerprint,
         store=store,
     )
-    request = cast(ResearchAdmissionRequest, IdentityOnlyRequest())
+    request = cast(
+        ResearchAdmissionRequest, object.__new__(IdentityOnlyRequest)
+    )
     outcome = admit_research_request(request, store)
 
     assert lookup == ResearchAdmissionOutcome(
@@ -554,6 +608,7 @@ def test_exact_replay_lookup_precedes_parsed_input_and_asset_resolution() -> (
         worker_owner=False,
         status_code=202,
     )
+    assert cast(IdentityOnlyRequest, request).public_fields()[0] == "owner-1"
 
     with pytest.raises(ResearchInputFailure) as caught:
         admit_research_request(

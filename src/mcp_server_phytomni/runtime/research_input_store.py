@@ -715,25 +715,35 @@ def _attach_alias(
 ) -> bool:
     if alias_digest is None:
         return True
-    row = connection.execute(
+    alias_row = connection.execute(
         "SELECT run_id FROM research_idempotency_bindings "
         "WHERE owner = ? AND operation = ? AND alias_digest = ?",
         (owner, RESEARCH_OPERATION, alias_digest),
     ).fetchone()
-    if row is not None and row["run_id"] != run_id:
+    if alias_row is not None and alias_row["run_id"] != run_id:
         return False
-    if row is None:
-        connection.execute(
-            "UPDATE research_idempotency_bindings SET alias_digest = ?, "
-            "updated_at = ? WHERE run_id = ? AND owner = ? AND operation = ?",
-            (
-                alias_digest,
-                _utc_iso(datetime.now(UTC)),
-                run_id,
-                owner,
-                RESEARCH_OPERATION,
-            ),
-        )
+    binding = connection.execute(
+        "SELECT alias_digest FROM research_idempotency_bindings "
+        "WHERE run_id = ? AND owner = ? AND operation = ?",
+        (run_id, owner, RESEARCH_OPERATION),
+    ).fetchone()
+    if binding is None:
+        return False
+    current_alias = binding["alias_digest"]
+    if current_alias is not None:
+        return current_alias == alias_digest
+    connection.execute(
+        "UPDATE research_idempotency_bindings SET alias_digest = ?, "
+        "updated_at = ? WHERE run_id = ? AND owner = ? AND operation = ? "
+        "AND alias_digest IS NULL",
+        (
+            alias_digest,
+            _utc_iso(datetime.now(UTC)),
+            run_id,
+            owner,
+            RESEARCH_OPERATION,
+        ),
+    )
     return True
 
 
