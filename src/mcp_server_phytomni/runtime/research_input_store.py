@@ -32,7 +32,7 @@ PUBLIC_RESEARCH_STAGES = frozenset(
 TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
 
 _WORK_STATES = frozenset(
-    {
+    [
         "pending",
         "leased",
         "sent",
@@ -41,7 +41,7 @@ _WORK_STATES = frozenset(
         "terminal_failed",
         "ambiguous",
         "cancelled",
-    }
+    ]
 )
 _ACTIVE_WORK_STATES = frozenset({"leased", "sent"})
 
@@ -181,6 +181,35 @@ class ResearchInputStore:
                 if connection.in_transaction:
                     connection.rollback()
                 return None
+        finally:
+            connection.close()
+
+    def lookup_admission(
+        self,
+        *,
+        owner: str,
+        identity_digest: str,
+        header_alias_digest: str | None,
+        client_fingerprint: str,
+    ) -> tuple[bool, ResearchAdmissionReservation | None]:
+        """Return an exact replay without requiring resolved input state."""
+        connection = _admission_connection(self.db_path)
+        request = {
+            "owner": owner,
+            "identity_digest": identity_digest,
+            "header_alias_digest": header_alias_digest,
+            "client_fingerprint": client_fingerprint,
+        }
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            found, replay = _read_existing_admission(connection, request)
+            alias_bound = header_alias_digest is not None and _alias_is_bound(
+                connection, owner, header_alias_digest
+            )
+            if not found and alias_bound:
+                found = True
+            connection.commit()
+            return found, replay
         finally:
             connection.close()
 
@@ -381,7 +410,6 @@ class ResearchInputStore:
 
 
 def _add_public_run_columns(connection: sqlite3.Connection) -> None:
-    """Extend a legacy ``runs`` table without copying or rewriting its rows."""
     if not _table_exists(connection, "runs"):
         return
     existing = _table_columns(connection, "runs")
@@ -396,8 +424,14 @@ def _add_public_run_columns(connection: sqlite3.Connection) -> None:
             )
 
 
+def _admission_connection(db_path: str) -> sqlite3.Connection:
+    connection = sqlite3.connect(db_path, isolation_level=None, timeout=30)
+    connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA busy_timeout=30000")
+    return connection
+
+
 def _ensure_schema_version(connection: sqlite3.Connection) -> None:
-    """Create and validate the singleton private-schema version row."""
     connection.execute(_CREATE_SCHEMA_VERSION_DDL)
     columns = _table_columns(connection, RESEARCH_SCHEMA_VERSION_TABLE)
     if columns != {"id", "version"}:
@@ -414,7 +448,6 @@ def _ensure_schema_version(connection: sqlite3.Connection) -> None:
 
 
 def _ensure_private_tables(connection: sqlite3.Connection) -> None:
-    """Create current tables and add only missing safe columns."""
     for table, ddl, columns in _PRIVATE_TABLES:
         connection.execute(ddl)
         _add_missing_columns(connection, table, columns)
@@ -430,7 +463,6 @@ def _add_missing_columns(
     table: str,
     definitions: Sequence[tuple[str, str]],
 ) -> None:
-    """Apply additive columns from introspection inside the migration tx."""
     existing = _table_columns(connection, table)
     for name, definition in definitions:
         if name not in existing:
@@ -440,14 +472,16 @@ def _add_missing_columns(
 
 
 def _ensure_indexes(connection: sqlite3.Connection) -> None:
-    """Create indexes after all table columns have been migrated."""
+    connection.execute(
+        "DROP INDEX IF EXISTS uq_research_binding_owner_identity"
+    )
+    connection.execute("DROP INDEX IF EXISTS uq_research_binding_owner_alias")
     connection.execute("DROP INDEX IF EXISTS uq_research_success_input_policy")
     for statement in _INDEX_DDLS:
         connection.execute(statement)
 
 
 def _set_schema_version(connection: sqlite3.Connection) -> None:
-    """Commit the schema version only after every DDL/index step succeeds."""
     connection.execute(
         f"INSERT INTO {RESEARCH_SCHEMA_VERSION_TABLE}(id, version) "
         "VALUES (1, ?) ON CONFLICT(id) DO UPDATE "
@@ -459,7 +493,7 @@ def _set_schema_version(connection: sqlite3.Connection) -> None:
 def purge_research_children(
     connection: sqlite3.Connection, run_ids: Sequence[str]
 ) -> None:
-    """Purge grants/outbox/work/resolution/binding before their run owner."""
+    """Purge private children before deleting their public run owner."""
     ids = tuple(run_ids)
     if not ids:
         return
@@ -481,12 +515,10 @@ def purge_research_children(
 
 
 def _claimable(row: sqlite3.Row, now_iso: str) -> bool:
-    """Return whether the row can be claimed without stealing a live lease."""
     if row["state"] == "pending":
         return True
-    return (
-        row["state"] == "retryable_failed"
-        and row["lease_expires_at"] is not None
+    return row["state"] == "retryable_failed" and (
+        row["lease_expires_at"] is not None
         and row["lease_expires_at"] <= now_iso
     )
 
@@ -494,17 +526,15 @@ def _claimable(row: sqlite3.Row, now_iso: str) -> bool:
 def _work_row(
     connection: sqlite3.Connection, unit_id: str
 ) -> sqlite3.Row | None:
-    """Read the small lease projection needed by one compare-and-set."""
     return connection.execute(
         "SELECT unit_id, run_id, kind, state, input_digest, policy_digest, "
-        "lease_owner, lease_expires_at, attempt, revision "
-        "FROM research_work_units WHERE unit_id = ?",
+        "lease_owner, lease_expires_at, attempt, revision FROM "
+        "research_work_units WHERE unit_id = ?",
         (unit_id,),
     ).fetchone()
 
 
 def _to_record(row: sqlite3.Row) -> ResearchWorkUnitRecord:
-    """Build an immutable record from a SQLite row."""
     return ResearchWorkUnitRecord(
         unit_id=row["unit_id"],
         run_id=row["run_id"],
@@ -520,24 +550,23 @@ def _to_record(row: sqlite3.Row) -> ResearchWorkUnitRecord:
 
 
 def _utc_iso(value: datetime) -> str:
-    """Canonicalize coordinator timestamps to UTC before lexical comparison."""
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return value.astimezone(UTC).isoformat()
 
 
 def _parse_iso(value: str | None) -> datetime | None:
-    """Convert a storage timestamp back to an aware UTC datetime."""
     if value is None:
         return None
     parsed = datetime.fromisoformat(value)
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.astimezone(UTC)
+    return (
+        parsed.replace(tzinfo=UTC)
+        if parsed.tzinfo is None
+        else parsed.astimezone(UTC)
+    )
 
 
 def _canonical_json(value: object) -> str:
-    """Encode private structured state deterministically and compactly."""
     return json.dumps(
         value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     )
@@ -546,7 +575,6 @@ def _canonical_json(value: object) -> str:
 def _read_existing_admission(
     connection: sqlite3.Connection, request: Mapping[str, Any]
 ) -> tuple[bool, ResearchAdmissionReservation | None]:
-    """Read an exact replay, distinguishing it from an absent binding."""
     row = connection.execute(
         "SELECT run_id, client_fingerprint "
         "FROM research_idempotency_bindings "
@@ -579,7 +607,6 @@ def _read_existing_admission(
 def _insert_admission(
     connection: sqlite3.Connection, request: Mapping[str, Any], now: str
 ) -> None:
-    """Insert the public parent and all private admission rows."""
     connection.execute(
         "INSERT INTO runs (run_id, user_id, agent, origin, status, "
         "result_json, error, created_at, updated_at, expires_at, locale) "
@@ -634,7 +661,6 @@ def _insert_admission(
 def _insert_resolution(
     connection: sqlite3.Connection, request: Mapping[str, Any], now: str
 ) -> None:
-    """Insert private resolution state without copying the raw query."""
     serialized = (
         request["effective_query"],
         *(
@@ -671,7 +697,6 @@ def _insert_resolution(
 def _alias_is_bound(
     connection: sqlite3.Connection, owner: str, alias_digest: str
 ) -> bool:
-    """Return whether an optional header alias belongs to another turn."""
     return (
         connection.execute(
             "SELECT 1 FROM research_idempotency_bindings "
@@ -688,7 +713,6 @@ def _attach_alias(
     run_id: str,
     alias_digest: str | None,
 ) -> bool:
-    """Attach an optional replay alias only if unbound or identical."""
     if alias_digest is None:
         return True
     row = connection.execute(
@@ -716,7 +740,6 @@ def _attach_alias(
 def _resolution_values(
     run_id: str, status: str, fields: dict[str, Any]
 ) -> tuple[Any, ...]:
-    """Validate and serialize one private resolution mutation."""
     required = _validated_resolution_fields(fields)
     serialized = tuple(_canonical_json(required[index]) for index in (3, 4, 5))
     digests = tuple(
@@ -740,7 +763,6 @@ def _resolution_values(
 
 
 def _validated_resolution_fields(fields: dict[str, Any]) -> tuple[Any, ...]:
-    """Pop and validate the required private resolution values."""
     values = tuple(
         _required_field(fields, name)
         for name in (
@@ -778,7 +800,6 @@ def _validated_resolution_fields(fields: dict[str, Any]) -> tuple[Any, ...]:
 
 
 def _optional_resolution_fields(fields: dict[str, Any]) -> tuple[Any, ...]:
-    """Pop supported optional fields and reject unknown private state."""
     values = tuple(
         fields.pop(name, None)
         for name in (
@@ -794,29 +815,19 @@ def _optional_resolution_fields(fields: dict[str, Any]) -> tuple[Any, ...]:
 
 
 def _required_field(fields: dict[str, Any], name: str) -> Any:
-    """Pop one required keyword and produce a stable caller error."""
     if name not in fields:
         raise TypeError(f"missing required resolution field: {name}")
     return fields.pop(name)
 
 
 def _table_columns(connection: sqlite3.Connection, table: str) -> set[str]:
-    """Return columns for a known local SQLite table."""
-    return {
-        str(row[1])
-        for row in connection.execute(f"PRAGMA table_info({table})")
-    }
+    rows = connection.execute(f"PRAGMA table_info({table})")
+    return {str(row[1]) for row in rows}
 
 
 def _table_exists(connection: sqlite3.Connection, name: str) -> bool:
-    """Return whether the optional table is present in this database."""
-    return (
-        connection.execute(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-            (name,),
-        ).fetchone()
-        is not None
-    )
+    query = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?"
+    return connection.execute(query, (name,)).fetchone() is not None
 
 
 _CREATE_IDEMPOTENCY_BINDINGS_DDL = (
@@ -885,99 +896,85 @@ _CREATE_SCHEMA_VERSION_DDL = (
 )
 
 
-def _column_definitions(spec: str) -> tuple[tuple[str, str], ...]:
-    """Decode compact additive-column definitions used by migrations."""
+def _column_definitions(*specs: str) -> tuple[tuple[str, str], ...]:
     return tuple(
         (name, definition)
         for name, definition in (
-            part.split(":", 1) for part in spec.split("|")
+            part.split(":", 1) for part in "".join(specs).split("|")
         )
     )
 
 
+_BINDING_COLUMNS = _column_definitions(
+    "run_id:TEXT|idempotency_digest:TEXT|request_digest:TEXT|"
+    "schema_version:INTEGER NOT NULL DEFAULT 1|owner:TEXT NOT NULL "
+    "DEFAULT ''|operation:TEXT NOT NULL DEFAULT "
+    "'research_input_resolution_v1'|identity_kind:TEXT NOT NULL "
+    "DEFAULT 'header'|alias_digest:TEXT|client_fingerprint:TEXT|"
+    "conversation_key_digest:TEXT|created_at:TEXT NOT NULL DEFAULT "
+    "''|updated_at:TEXT|expires_at:TEXT"
+)
+_RESOLUTION_COLUMNS = _column_definitions(
+    "run_id:TEXT|schema_version:INTEGER NOT NULL DEFAULT 1|"
+    "status:TEXT NOT NULL DEFAULT 'pending'|revision:INTEGER NOT NULL "
+    "DEFAULT 0|cancel_requested:INTEGER NOT NULL DEFAULT 0|"
+    "original_query_digest:TEXT|original_query_length:INTEGER NOT NULL "
+    "DEFAULT 0|effective_query:TEXT|source_map_json:TEXT|"
+    "candidates_json:TEXT|managed_snapshot_json:TEXT|inventory_json:TEXT|"
+    "client_fingerprint:TEXT|execution_fingerprint:TEXT|"
+    "policy_digest:TEXT|model_id:TEXT|effective_query_digest:TEXT NOT NULL "
+    "DEFAULT ''|source_map_digest:TEXT NOT NULL DEFAULT ''|"
+    "candidate_digest:TEXT NOT NULL DEFAULT ''|snapshot_digest:TEXT NOT NULL "
+    "DEFAULT ''|evidence_digest:TEXT NOT NULL DEFAULT ''|"
+    "work_digest:TEXT NOT NULL DEFAULT ''|coverage_total:INTEGER NOT NULL "
+    "DEFAULT 0|coverage_digest:TEXT|final_projection_json:TEXT|"
+    "plan_digest:TEXT|last_stage:TEXT|failure_code:TEXT|"
+    "failure_retryable:INTEGER|status_hint:TEXT|created_at:TEXT NOT NULL "
+    "DEFAULT ''|updated_at:TEXT|expires_at:TEXT"
+)
+_WORK_COLUMNS = _column_definitions(
+    "unit_id:TEXT|run_id:TEXT|kind:TEXT NOT NULL DEFAULT ''|"
+    "state:TEXT NOT NULL DEFAULT 'pending'|input_digest:TEXT NOT NULL "
+    "DEFAULT ''|policy_digest:TEXT NOT NULL DEFAULT ''|lease_owner:TEXT|"
+    "lease_expires_at:TEXT|attempt:INTEGER NOT NULL DEFAULT 0|"
+    "revision:INTEGER NOT NULL DEFAULT 0|"
+    "schema_version:INTEGER NOT NULL DEFAULT 1|evidence_ids_json:TEXT|"
+    "provider_request_digest:TEXT|provider_idempotency_digest:TEXT|"
+    "output_json:TEXT|failure_code:TEXT|failure_retryable:INTEGER|"
+    "created_at:TEXT|updated_at:TEXT|sent_at:TEXT|completed_at:TEXT"
+)
+_OUTBOX_COLUMNS = _column_definitions(
+    "outbox_id:TEXT|run_id:TEXT|unit_id:TEXT|"
+    "payload_digest:TEXT NOT NULL DEFAULT ''|state:TEXT NOT NULL DEFAULT "
+    "'pending'|attempt:INTEGER NOT NULL DEFAULT 0|revision:INTEGER NOT "
+    "NULL DEFAULT 0|schema_version:INTEGER NOT NULL DEFAULT 1|"
+    "child_ordinal:INTEGER|dispatch_fingerprint:TEXT|payload_json:TEXT|"
+    "output_dir:TEXT|grant_ids_json:TEXT|snapshot_digest:TEXT|"
+    "lease_owner:TEXT|lease_expires_at:TEXT|remote_task_id:TEXT|"
+    "failure_code:TEXT|failure_retryable:INTEGER|updated_at:TEXT|"
+    "sent_at:TEXT|completed_at:TEXT|created_at:TEXT NOT NULL DEFAULT ''"
+)
 _PRIVATE_TABLES = (
     (
         "research_idempotency_bindings",
         _CREATE_IDEMPOTENCY_BINDINGS_DDL,
-        _column_definitions(
-            "run_id:TEXT|idempotency_digest:TEXT|request_digest:TEXT|"
-            "schema_version:INTEGER NOT NULL DEFAULT 1|"
-            "owner:TEXT NOT NULL DEFAULT ''|"
-            "operation:TEXT NOT NULL DEFAULT 'research_input_resolution_v1'|"
-            "identity_kind:TEXT NOT NULL DEFAULT 'header'|alias_digest:TEXT|"
-            "client_fingerprint:TEXT|conversation_key_digest:TEXT|"
-            "created_at:TEXT NOT NULL DEFAULT ''|updated_at:TEXT|"
-            "expires_at:TEXT"
-        ),
+        _BINDING_COLUMNS,
     ),
     (
         "research_input_resolutions",
         _CREATE_INPUT_RESOLUTIONS_DDL,
-        _column_definitions(
-            "run_id:TEXT|schema_version:INTEGER NOT NULL DEFAULT 1|"
-            "status:TEXT NOT NULL DEFAULT 'pending'|"
-            "revision:INTEGER NOT NULL DEFAULT 0|"
-            "cancel_requested:INTEGER NOT NULL DEFAULT 0|"
-            "original_query_digest:TEXT|"
-            "original_query_length:INTEGER NOT NULL DEFAULT 0|"
-            "effective_query:TEXT|source_map_json:TEXT|candidates_json:TEXT|"
-            "managed_snapshot_json:TEXT|inventory_json:TEXT|"
-            "client_fingerprint:TEXT|execution_fingerprint:TEXT|"
-            "policy_digest:TEXT|model_id:TEXT|"
-            "effective_query_digest:TEXT NOT NULL DEFAULT ''|"
-            "source_map_digest:TEXT NOT NULL DEFAULT ''|"
-            "candidate_digest:TEXT NOT NULL DEFAULT ''|"
-            "snapshot_digest:TEXT NOT NULL DEFAULT ''|"
-            "evidence_digest:TEXT NOT NULL DEFAULT ''|"
-            "work_digest:TEXT NOT NULL DEFAULT ''|"
-            "coverage_total:INTEGER NOT NULL DEFAULT 0|coverage_digest:TEXT|"
-            "final_projection_json:TEXT|plan_digest:TEXT|last_stage:TEXT|"
-            "failure_code:TEXT|failure_retryable:INTEGER|status_hint:TEXT|"
-            "created_at:TEXT NOT NULL DEFAULT ''|updated_at:TEXT|"
-            "expires_at:TEXT"
-        ),
+        _RESOLUTION_COLUMNS,
     ),
-    (
-        "research_work_units",
-        _CREATE_WORK_UNITS_DDL,
-        _column_definitions(
-            "unit_id:TEXT|run_id:TEXT|kind:TEXT NOT NULL DEFAULT ''|"
-            "state:TEXT NOT NULL DEFAULT 'pending'|"
-            "input_digest:TEXT NOT NULL DEFAULT ''|"
-            "policy_digest:TEXT NOT NULL DEFAULT ''|lease_owner:TEXT|"
-            "lease_expires_at:TEXT|attempt:INTEGER NOT NULL DEFAULT 0|"
-            "revision:INTEGER NOT NULL DEFAULT 0|"
-            "schema_version:INTEGER NOT NULL DEFAULT 1|"
-            "evidence_ids_json:TEXT|provider_request_digest:TEXT|"
-            "provider_idempotency_digest:TEXT|output_json:TEXT|"
-            "failure_code:TEXT|failure_retryable:INTEGER|created_at:TEXT|"
-            "updated_at:TEXT|sent_at:TEXT|completed_at:TEXT"
-        ),
-    ),
-    (
-        "research_dispatch_outbox",
-        _CREATE_OUTBOX_DDL,
-        _column_definitions(
-            "outbox_id:TEXT|run_id:TEXT|unit_id:TEXT|"
-            "payload_digest:TEXT NOT NULL DEFAULT ''|"
-            "state:TEXT NOT NULL DEFAULT 'pending'|"
-            "attempt:INTEGER NOT NULL DEFAULT 0|"
-            "revision:INTEGER NOT NULL DEFAULT 0|"
-            "schema_version:INTEGER NOT NULL DEFAULT 1|child_ordinal:INTEGER|"
-            "dispatch_fingerprint:TEXT|payload_json:TEXT|output_dir:TEXT|"
-            "grant_ids_json:TEXT|snapshot_digest:TEXT|lease_owner:TEXT|"
-            "lease_expires_at:TEXT|remote_task_id:TEXT|failure_code:TEXT|"
-            "failure_retryable:INTEGER|updated_at:TEXT|sent_at:TEXT|"
-            "completed_at:TEXT|created_at:TEXT NOT NULL DEFAULT ''"
-        ),
-    ),
+    ("research_work_units", _CREATE_WORK_UNITS_DDL, _WORK_COLUMNS),
+    ("research_dispatch_outbox", _CREATE_OUTBOX_DDL, _OUTBOX_COLUMNS),
 )
 _INDEX_DDLS = (
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_research_binding_owner_identity "
-    "ON research_idempotency_bindings(owner, idempotency_digest)",
+    "ON research_idempotency_bindings(owner, operation, idempotency_digest) "
+    "WHERE owner <> ''",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_research_binding_owner_alias "
-    "ON research_idempotency_bindings(owner, alias_digest) "
-    "WHERE alias_digest IS NOT NULL",
+    "ON research_idempotency_bindings(owner, operation, alias_digest) "
+    "WHERE owner <> '' AND alias_digest IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_research_binding_digest "
     "ON research_idempotency_bindings(idempotency_digest)",
     "CREATE INDEX IF NOT EXISTS idx_research_work_claim "

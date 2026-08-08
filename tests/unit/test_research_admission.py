@@ -10,6 +10,7 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
+from typing import NoReturn, cast
 
 import pytest
 
@@ -18,16 +19,21 @@ from mcp_server_phytomni.agents.research.input_contracts import (
     ResearchInputFailure,
 )
 from mcp_server_phytomni.api.research_input import (
+    ResearchAdmissionOutcome,
     ResearchAdmissionRequest,
     ResearchClientFingerprintInput,
     ResearchInputStore,
     ResearchRequestIdentity,
     admit_research_request,
     compute_research_client_fingerprint,
+    lookup_research_admission,
     parse_idempotency_identity,
 )
 from mcp_server_phytomni.runtime.conversation_context.models import (
     ConversationEnvelopeV1,
+)
+from mcp_server_phytomni.runtime.research_input_store import (
+    ResearchAdmissionReservation,
 )
 from mcp_server_phytomni.runtime.run_registry import RunRegistry, RunSpec
 
@@ -286,6 +292,15 @@ def test_conversation_replay_can_attach_one_alias_but_alias_cannot_cross_turn(
         "Alias-1", _conversation(turn_id="2")
     )
     next_turn_request = _conversation_request(first_request, next_identity)
+    with pytest.raises(ResearchInputFailure) as lookup_caught:
+        lookup_research_admission(
+            owner=next_turn_request.owner,
+            identity=next_turn_request.identity,
+            client_fingerprint=next_turn_request.client_fingerprint,
+            store=store,
+        )
+    assert lookup_caught.value.code == "research_idempotency_conflict"
+    assert lookup_caught.value.http_status_hint == 409
     with pytest.raises(ResearchInputFailure) as caught:
         admit_research_request(next_turn_request, store)
     assert caught.value.code == "research_idempotency_conflict"
@@ -359,3 +374,194 @@ def test_admission_validates_query_digest_and_hides_public_query(
         request.parsed_input.original_query_digest,
     )
     assert "integrity-key" not in str(private)
+
+
+def test_legacy_duplicate_blank_owner_digests_migrate_without_rewriting_rows(
+    tmp_path: Path,
+) -> None:
+    """Legacy blank-owner duplicates survive additive migration."""
+    database = str(tmp_path / "legacy-research-admission.db")
+    with sqlite3.connect(database) as connection:
+        connection.executescript("""
+            CREATE TABLE runs (
+                run_id TEXT PRIMARY KEY,
+                user_id TEXT,
+                agent TEXT,
+                origin TEXT,
+                status TEXT,
+                result_json TEXT,
+                error TEXT,
+                created_at TEXT,
+                updated_at TEXT,
+                expires_at TEXT,
+                locale TEXT,
+                query TEXT,
+                request_json TEXT
+            );
+            CREATE TABLE research_idempotency_bindings (
+                run_id TEXT NOT NULL,
+                idempotency_digest TEXT NOT NULL,
+                request_digest TEXT NOT NULL,
+                PRIMARY KEY (run_id, idempotency_digest)
+            );
+            """)
+        connection.executemany(
+            "INSERT INTO runs(run_id, status) VALUES (?, 'running')",
+            (("legacy-run-1",), ("legacy-run-2",)),
+        )
+        connection.executemany(
+            "INSERT INTO research_idempotency_bindings"
+            "(run_id, idempotency_digest, request_digest) VALUES (?, ?, ?)",
+            (
+                ("legacy-run-1", "same-digest", "request-a"),
+                ("legacy-run-2", "same-digest", "request-b"),
+            ),
+        )
+        before = connection.execute(
+            "SELECT run_id, idempotency_digest, request_digest "
+            "FROM research_idempotency_bindings ORDER BY run_id"
+        ).fetchall()
+
+    ResearchInputStore(database)
+
+    with sqlite3.connect(database) as connection:
+        after = connection.execute(
+            "SELECT run_id, idempotency_digest, request_digest "
+            "FROM research_idempotency_bindings ORDER BY run_id"
+        ).fetchall()
+    assert after == before
+
+
+def test_binding_identity_uniqueness_is_scoped_by_operation(
+    tmp_path: Path,
+) -> None:
+    """One owner may reuse a digest in independent operation namespaces."""
+    store, database = _store(tmp_path)
+    del store
+    RunRegistry(database).create_run(
+        RunSpec(
+            run_id="operation-run-1",
+            user_id="owner-1",
+            agent="research",
+            origin="api",
+        )
+    )
+    RunRegistry(database).create_run(
+        RunSpec(
+            run_id="operation-run-2",
+            user_id="owner-1",
+            agent="research",
+            origin="api",
+        )
+    )
+    with sqlite3.connect(database) as connection:
+        values = (
+            ("operation-run-1", "same-digest", "operation-a"),
+            ("operation-run-2", "same-digest", "operation-b"),
+        )
+        for run_id, digest, operation in values:
+            connection.execute(
+                "INSERT INTO research_idempotency_bindings "
+                "(run_id, idempotency_digest, request_digest, owner, "
+                "operation, identity_kind, client_fingerprint, created_at) "
+                "VALUES (?, ?, ?, ?, ?, 'header', ?, CURRENT_TIMESTAMP)",
+                (
+                    run_id,
+                    digest,
+                    "request-digest",
+                    "owner-1",
+                    operation,
+                    "fingerprint-" + operation,
+                ),
+            )
+
+
+def test_exact_replay_lookup_precedes_parsed_input_and_asset_resolution() -> (
+    None
+):
+    """Identity-only replay never dereferences parser or asset fields."""
+    identity = parse_idempotency_identity("lookup-only", None)
+    request_identity = identity
+
+    class RecordingStore:
+        """Record identity lookup and reject any reserve fallback."""
+
+        def __init__(
+            self, result: tuple[bool, ResearchAdmissionReservation | None]
+        ) -> None:
+            self.result = result
+
+        def lookup_admission(
+            self, **request: object
+        ) -> tuple[bool, ResearchAdmissionReservation | None]:
+            assert request == {
+                "owner": "owner-1",
+                "identity_digest": identity.canonical_digest,
+                "header_alias_digest": identity.header_alias_digest,
+                "client_fingerprint": "fingerprint",
+            }
+            return self.result
+
+        def reserve_admission(self, **request: object) -> NoReturn:
+            raise AssertionError("replay must not reserve or resolve inputs")
+
+    class IdentityOnlyRequest:
+        """Expose identity fields; parser fields must stay untouched."""
+
+        owner = "owner-1"
+        identity = request_identity
+        client_fingerprint = "fingerprint"
+
+        def __getattribute__(self, name: str) -> object:
+            """Fail if admission dereferences any post-identity field."""
+            if name in {
+                "original_query",
+                "parsed_input",
+                "managed_asset_ids",
+                "managed_snapshot",
+                "locale",
+                "interop_mode",
+                "interop_targets",
+            }:
+                raise AssertionError(
+                    f"replay touched parser/asset field: {name}"
+                )
+            return object.__getattribute__(self, name)
+
+    reservation = ResearchAdmissionReservation("existing-run", True, "running")
+    store = cast(
+        ResearchInputStore,
+        RecordingStore((True, reservation)),
+    )
+    lookup = lookup_research_admission(
+        owner="owner-1",
+        identity=identity,
+        client_fingerprint="fingerprint",
+        store=store,
+    )
+    request = cast(ResearchAdmissionRequest, IdentityOnlyRequest())
+    outcome = admit_research_request(request, store)
+
+    assert lookup == ResearchAdmissionOutcome(
+        run_id="existing-run",
+        replay=True,
+        worker_owner=False,
+        status_code=202,
+    )
+    assert outcome == ResearchAdmissionOutcome(
+        run_id="existing-run",
+        replay=True,
+        worker_owner=False,
+        status_code=202,
+    )
+
+    with pytest.raises(ResearchInputFailure) as caught:
+        admit_research_request(
+            request,
+            cast(
+                ResearchInputStore,
+                RecordingStore((True, None)),
+            ),
+        )
+    assert caught.value.code == "research_idempotency_conflict"
+    assert caught.value.http_status_hint == 409

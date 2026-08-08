@@ -19,7 +19,10 @@ from ..agents.research.input_contracts import (
 from ..agents.research.input_inventory import ManagedResearchAssetSnapshot
 from ..runtime.conversation_context.models import ConversationEnvelopeV1
 from ..runtime.locale import SupportedLocale
-from ..runtime.research_input_store import ResearchInputStore
+from ..runtime.research_input_store import (
+    ResearchAdmissionReservation,
+    ResearchInputStore,
+)
 
 __all__ = [
     "ResearchAdmissionOutcome",
@@ -29,6 +32,7 @@ __all__ = [
     "ResearchRequestIdentity",
     "admit_research_request",
     "compute_research_client_fingerprint",
+    "lookup_research_admission",
     "parse_idempotency_identity",
 ]
 
@@ -151,10 +155,57 @@ def compute_research_client_fingerprint(
     )
 
 
+def lookup_research_admission(
+    *,
+    owner: str,
+    identity: ResearchRequestIdentity,
+    client_fingerprint: str,
+    store: ResearchInputStore,
+) -> ResearchAdmissionOutcome | None:
+    """Look up an exact replay using identity fields only.
+
+    The lookup intentionally does not require the original query, parser
+    output, managed-asset snapshots, or any other post-identity input.  A
+    caller can therefore finish a replay without reopening external I/O
+    boundaries.
+    """
+    if (
+        not isinstance(owner, str)
+        or not owner.strip()
+        or not isinstance(identity, ResearchRequestIdentity)
+        or not isinstance(client_fingerprint, str)
+        or not client_fingerprint
+    ):
+        return None
+    found, reservation = store.lookup_admission(
+        owner=owner,
+        identity_digest=identity.canonical_digest,
+        header_alias_digest=identity.header_alias_digest,
+        client_fingerprint=client_fingerprint,
+    )
+    if not found:
+        return None
+    if reservation is None:
+        raise research_input_failure(
+            "research_idempotency_conflict",
+            "Research idempotency key conflicts with this request.",
+            http_status_hint=409,
+        )
+    return _admission_outcome(reservation)
+
+
 def admit_research_request(
     request: ResearchAdmissionRequest, store: ResearchInputStore
 ) -> ResearchAdmissionOutcome:
     """Atomically reserve a safe root run or return an exact replay."""
+    replay = lookup_research_admission(
+        owner=request.owner,
+        identity=request.identity,
+        client_fingerprint=request.client_fingerprint,
+        store=store,
+    )
+    if replay is not None:
+        return replay
     _validate_admission_request(request)
     parsed = request.parsed_input
     reservation = store.reserve_admission(
@@ -181,6 +232,13 @@ def admit_research_request(
             "Research idempotency key conflicts with this request.",
             http_status_hint=409,
         )
+    return _admission_outcome(reservation)
+
+
+def _admission_outcome(
+    reservation: ResearchAdmissionReservation,
+) -> ResearchAdmissionOutcome:
+    """Project one store reservation into the public status contract."""
     is_running = reservation.status not in {"succeeded", "failed", "cancelled"}
     return ResearchAdmissionOutcome(
         run_id=reservation.run_id,
