@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 from sqlite3 import Connection, Cursor, Row
 from typing import Any, cast
 
+from .research_input_store_support import _ResearchInputStoreBindings
 from .research_input_types import (
     ResearchAdmissionReservation,
     ResearchWorkUnitRecord,
@@ -42,7 +43,7 @@ _WORK_STATES = frozenset(
 )
 
 
-class ResearchInputStore:
+class ResearchInputStore(_ResearchInputStoreBindings):
     """Store durable private Research coordination state."""
 
     def __init__(self, db_path: str) -> None:

@@ -3,7 +3,6 @@
 # Author: xieshang (xieshang0608@gmail.com)
 #         guxiaofeng (guxiaofeng@caas.cn)
 """Lease-safe execution and bounded recovery for Research work units.
-
 The store is deliberately used as a short transaction boundary.  In
 particular, provider preparation, invocation, and status queries happen
 after the claim or state transition has committed; a provider call is never
@@ -20,32 +19,42 @@ import json
 import sqlite3
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, Protocol, cast
 
 from ...runtime.research_input_store import (
-    _WORK_RECORD_FIELDS,
     RESEARCH_HEARTBEAT_INTERVAL,
     RESEARCH_RECOVERY_BATCH_SIZE,
     ResearchInputStore,
     ResearchWorkUnitRecord,
-    _parse_iso,
+    _to_record,
 )
 from ...runtime.sqlite import sqlite_transaction
 from .input_contracts import ResearchErrorCode
+from .recovery_support import (
+    ContextSubdivider,
+    ResearchContextLengthRejected,
+    ResearchContextLengthRejectedError,
+    build_context_subdivider,
+    recover_registered_request,
+    recover_registered_startup,
+    register_recovery_service,
+)
 
 __all__ = [
     "ResearchRecoveryService",
+    "ResearchContextLengthRejected",
     "ResearchPreAcceptanceRejected",
     "ResearchPreAcceptanceRejectedError",
     "ResearchWorkExecutor",
     "ResearchWorkProvider",
     "ResearchRecoverySummary",
     "WorkDisposition",
+    "build_context_subdivider",
+    "recover_registered_request",
+    "recover_registered_startup",
 ]
-
-
 WorkDispositionState = Literal[
     "reclaimed", "reconciled", "reused", "ambiguous", "terminal_failed"
 ]
@@ -96,26 +105,21 @@ class ResearchPreAcceptanceRejectedError(RuntimeError):
 
 
 ResearchPreAcceptanceRejected = ResearchPreAcceptanceRejectedError
-
-
 WorkInputFactory = Callable[[ResearchWorkUnitRecord], object]
 PolicyFactory = Callable[[ResearchWorkUnitRecord], object]
 ResultValidator = Callable[[object, ResearchWorkUnitRecord], object]
 Clock = Callable[[], datetime]
-
 _RESEARCH_FAILED: ResearchErrorCode = "research_input_resolution_failed"
 _RESEARCH_UNAVAILABLE: ResearchErrorCode = (
-    "research_input_resolution_unavailable"
+    "research_input_resolution_" "unavailable"
 )
 _RESEARCH_CANCEL_CONFLICT: ResearchErrorCode = "research_cancel_conflict"
 _TERMINAL_PARENT_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
-_SUCCESS_QUERY_STATUSES = frozenset(
-    {"complete", "completed", "success", "succeeded"}
-)
+_SUCCESS_QUERY_STATUSES = {"complete", "completed", "success", "succeeded"}
 _RECOVERY_FAILURES: tuple[type[Exception], ...] = (Exception,)
 
+
 _WORK_SELECT = "SELECT * FROM research_work_units WHERE unit_id = ?"
-_WORK_FIELDS = _WORK_RECORD_FIELDS
 _PARENT_LIVE = (
     "EXISTS (SELECT 1 FROM runs WHERE runs.run_id = "
     "research_work_units.run_id AND runs.status NOT IN "
@@ -125,32 +129,6 @@ _PARENT_LIVE = (
 )
 
 
-def _record_from_row(row: sqlite3.Row) -> ResearchWorkUnitRecord:
-    """Project one recovery read row without widening the runtime store API."""
-    values = {name: row[name] for name in _WORK_FIELDS}
-    output: dict[str, Any] | None = None
-    raw_output = row["output_json"]
-    if isinstance(raw_output, str):
-        try:
-            decoded = json.loads(raw_output)
-        except (TypeError, ValueError):
-            decoded = None
-        if isinstance(decoded, dict):
-            output = decoded
-    values.update(
-        lease_expires_at=_parse_iso(row["lease_expires_at"]),
-        output=output,
-        failure_retryable=(
-            bool(row["failure_retryable"])
-            if row["failure_retryable"] is not None
-            else None
-        ),
-        sent_at=_parse_iso(row["sent_at"]),
-        completed_at=_parse_iso(row["completed_at"]),
-    )
-    return ResearchWorkUnitRecord(**values)
-
-
 def _get_work_unit(
     store: ResearchInputStore, unit_id: str
 ) -> ResearchWorkUnitRecord | None:
@@ -158,7 +136,7 @@ def _get_work_unit(
     with sqlite_transaction(store.db_path) as connection:
         connection.row_factory = sqlite3.Row
         row = connection.execute(_WORK_SELECT, (unit_id,)).fetchone()
-    return None if row is None else _record_from_row(row)
+    return None if row is None else _to_record(row)
 
 
 def _list_recovery_candidates(
@@ -177,7 +155,7 @@ def _list_recovery_candidates(
     with sqlite_transaction(store.db_path) as connection:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(query, (now_iso, limit)).fetchall()
-    return [_record_from_row(row) for row in rows]
+    return [_to_record(row) for row in rows]
 
 
 def _claim_sent_for_recovery(
@@ -209,7 +187,7 @@ def _claim_sent_for_recovery(
         if cursor.rowcount != 1:
             return None
         claimed = connection.execute(_WORK_SELECT, (unit_id,)).fetchone()
-    return None if claimed is None else _record_from_row(claimed)
+    return None if claimed is None else _to_record(claimed)
 
 
 def _parent_status(store: ResearchInputStore, run_id: str) -> str | None:
@@ -236,38 +214,30 @@ def _load_validated_output(
     if isinstance(binding_or_input, _OutputBinding):
         binding = binding_or_input
     else:
-        execution_fingerprint = options.get("execution_fingerprint")
-        evidence_digest = options.get("evidence_digest")
+        policy_value = args[0] if args else options.get("policy_digest")
+        execution_fingerprint = options.get(
+            "execution_fingerprint", args[1] if len(args) > 1 else None
+        )
+        evidence_digest = options.get(
+            "evidence_digest", args[2] if len(args) > 2 else None
+        )
         if not isinstance(execution_fingerprint, str) or not isinstance(
             evidence_digest, str
         ):
             return None
         binding = _OutputBinding(
             binding_or_input,
-            cast(str, args[0] if args else options["policy_digest"]),
+            cast(str, policy_value),
             execution_fingerprint,
             evidence_digest,
         )
-    query = (
-        "SELECT output_json FROM research_work_units WHERE unit_id = ? AND "
-        "state = 'succeeded' AND input_digest = ? AND policy_digest = ?"
-    )
-    parameters: list[object] = [
+    return store.load_validated_output(
         unit_id,
         binding.input_digest,
         binding.policy_digest,
-    ]
-    query += " AND execution_fingerprint = ? AND evidence_digest = ?"
-    parameters.extend((binding.execution_fingerprint, binding.evidence_digest))
-    with sqlite_transaction(store.db_path) as connection:
-        row = connection.execute(query, tuple(parameters)).fetchone()
-    if row is None or not isinstance(row[0], str):
-        return None
-    try:
-        output = json.loads(row[0])
-    except (TypeError, ValueError):
-        return None
-    return output if isinstance(output, dict) else None
+        binding.execution_fingerprint,
+        binding.evidence_digest,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -279,6 +249,7 @@ class _ExecutorOptions:
     work_input: WorkInputFactory | None = None
     policy: PolicyFactory | None = None
     heartbeat_interval: timedelta = RESEARCH_HEARTBEAT_INTERVAL
+    context_subdivider: ContextSubdivider | None = None
 
     @classmethod
     def from_kwargs(cls, values: Mapping[str, object]) -> _ExecutorOptions:
@@ -289,6 +260,7 @@ class _ExecutorOptions:
             "work_input",
             "policy",
             "heartbeat_interval",
+            "context_subdivider",
         }
         unknown = set(values).difference(allowed)
         if unknown:
@@ -306,6 +278,9 @@ class _ExecutorOptions:
             heartbeat_interval=cast(
                 timedelta,
                 values.get("heartbeat_interval", RESEARCH_HEARTBEAT_INTERVAL),
+            ),
+            context_subdivider=cast(
+                ContextSubdivider | None, values.get("context_subdivider")
             ),
         )
 
@@ -415,7 +390,6 @@ def _is_terminal(status: str | None) -> bool:
 
 def _query_payload(value: object) -> dict[str, Any] | None:
     """Project a provider status response to a bounded result mapping.
-
     Providers may return the result directly or wrap it in a successful
     status envelope.  Non-success statuses remain unresolved and therefore
     must be classified as ambiguous by the caller.
@@ -457,9 +431,13 @@ async def _execute_resolver_work(
             )
         if state not in {"reconciled", "reused"}:
             return "unavailable", None
-        cached = repository.load_validated_output(
-            unit_id, input_digest, policy_digest
-        )
+        loader = getattr(executor, "load_validated_output", None)
+        if callable(loader):
+            cached = await _maybe_await(loader(unit_id))
+        else:
+            cached = repository.load_validated_output(
+                unit_id, input_digest, policy_digest
+            )
     except _RECOVERY_FAILURES:
         return "unavailable", None
     return (
@@ -483,16 +461,29 @@ class ResearchWorkExecutor:
         resolved = options or _ExecutorOptions.from_kwargs(option_kwargs)
         self.store = store
         self.provider = provider
-        self.now = resolved.now
-        self.result_validator = resolved.result_validator
-        self.work_input = resolved.work_input
-        self.policy = resolved.policy
-        self.heartbeat_interval = resolved.heartbeat_interval
+        self.options = resolved
 
     @property
     def heartbeat_enabled(self) -> bool:
         """Return whether this executor will renew its lease."""
-        return self.heartbeat_interval.total_seconds() > 0
+        return self.options.heartbeat_interval.total_seconds() > 0
+
+    def load_validated_output(self, unit_id: str) -> dict[str, Any] | None:
+        """Read one output through the executor's complete durable binding."""
+        record = _get_work_unit(self.store, unit_id)
+        if (
+            record is None
+            or not record.execution_fingerprint
+            or not record.evidence_digest
+        ):
+            return None
+        return self.store.load_validated_output(
+            unit_id,
+            record.input_digest,
+            record.policy_digest,
+            record.execution_fingerprint,
+            record.evidence_digest,
+        )
 
     async def execute(self, unit_id: str, lease_owner: str) -> WorkDisposition:
         """Claim, mark sent, invoke, validate, and CAS-settle one unit."""
@@ -509,21 +500,20 @@ class ResearchWorkExecutor:
             return WorkDisposition(
                 unit_id, "terminal_failed", _RESEARCH_FAILED
             )
-
         record = _get_work_unit(self.store, unit_id)
         if record is None:
             return WorkDisposition(
                 unit_id, "terminal_failed", _RESEARCH_FAILED
             )
-
         if self._has_reusable_output(record):
             return WorkDisposition(unit_id, "reused", None)
         if _is_terminal(_parent_status(self.store, record.run_id)):
             return WorkDisposition(
                 unit_id, "terminal_failed", _RESEARCH_CANCEL_CONFLICT
             )
-
-        claimed = self.store.claim_work(unit_id, lease_owner, self.now())
+        claimed = self.store.claim_work(
+            unit_id, lease_owner, self.options.now()
+        )
         if claimed is not None:
             return claimed
         return self._after_claim_failure(unit_id)
@@ -579,13 +569,13 @@ class ResearchWorkExecutor:
         """Build provider inputs and durably mark the request as sent."""
         try:
             work_input = (
-                await _maybe_await(self.work_input(claimed))
-                if self.work_input is not None
+                await _maybe_await(self.options.work_input(claimed))
+                if self.options.work_input is not None
                 else claimed
             )
             policy = (
-                await _maybe_await(self.policy(claimed))
-                if self.policy is not None
+                await _maybe_await(self.options.policy(claimed))
+                if self.options.policy is not None
                 else claimed
             )
         except _RECOVERY_FAILURES:
@@ -594,13 +584,12 @@ class ResearchWorkExecutor:
                 _CompletionOptions(
                     state="terminal_failed",
                     failure_code=_RESEARCH_FAILED,
-                    now=self.now(),
+                    now=self.options.now(),
                 ),
             )
             return WorkDisposition(
                 claimed.unit_id, "terminal_failed", _RESEARCH_FAILED
             )
-
         request_identity = _request_identity(claimed)
         sent_revision = self.store.mark_sent(
             claimed.unit_id,
@@ -608,7 +597,7 @@ class ResearchWorkExecutor:
             int(lease["revision"]),
             provider_request_digest=request_identity,
             provider_idempotency_digest=request_identity,
-            now=self.now(),
+            now=self.options.now(),
         )
         if not isinstance(sent_revision, int) or isinstance(
             sent_revision, bool
@@ -632,6 +621,10 @@ class ResearchWorkExecutor:
         # provider.invoke.  Every preceding store call has committed.
         try:
             raw = await _maybe_await(self.provider.invoke(work_input, policy))
+        except ResearchContextLengthRejected as error:
+            return self._settle_context_rejection(
+                claimed, lease_owner, int(lease["revision"]), error
+            )
         except ResearchPreAcceptanceRejected:
             return self._settle_provider_rejection(
                 claimed, lease_owner, int(lease["revision"])
@@ -642,11 +635,10 @@ class ResearchWorkExecutor:
             return WorkDisposition(
                 claimed.unit_id, "ambiguous", _RESEARCH_UNAVAILABLE
             )
-
         try:
             validated = (
-                await _maybe_await(self.result_validator(raw, claimed))
-                if self.result_validator is not None
+                await _maybe_await(self.options.result_validator(raw, claimed))
+                if self.options.result_validator is not None
                 else raw
             )
             output = _normalise_output(validated)
@@ -654,17 +646,43 @@ class ResearchWorkExecutor:
             return self._settle_invalid_result(
                 claimed, lease_owner, int(lease["revision"])
             )
-
         settled = self.store.settle_validated(
             claimed.unit_id,
             lease_owner,
             int(lease["revision"]),
             output,
-            now=self.now(),
+            now=self.options.now(),
         )
         if settled:
             return WorkDisposition(claimed.unit_id, "reconciled", None)
         return self._lost_lease_disposition(claimed.unit_id, claimed.run_id)
+
+    def _settle_context_rejection(
+        self,
+        record: ResearchWorkUnitRecord,
+        owner: str,
+        revision: int,
+        rejection: ResearchContextLengthRejectedError,
+    ) -> WorkDisposition:
+        """Replace a verified context rejection with children atomically."""
+        if not rejection.verified or self.options.context_subdivider is None:
+            return WorkDisposition(
+                record.unit_id, "ambiguous", _RESEARCH_UNAVAILABLE
+            )
+        try:
+            children = tuple(self.options.context_subdivider(record))
+            replaced = self.store.replace_work_unit_with_children(
+                replace(record, lease_owner=owner, revision=revision),
+                children,
+                self.options.now(),
+            )
+        except _RECOVERY_FAILURES:
+            replaced = False
+        if replaced:
+            return WorkDisposition(
+                record.unit_id, "reclaimed", _RESEARCH_UNAVAILABLE
+            )
+        return self._lost_lease_disposition(record.unit_id, record.run_id)
 
     def _settle_provider_rejection(
         self, record: ResearchWorkUnitRecord, owner: str, revision: int
@@ -675,7 +693,7 @@ class ResearchWorkExecutor:
             _CompletionOptions(
                 state="retryable_failed",
                 failure_code=_RESEARCH_UNAVAILABLE,
-                now=self.now(),
+                now=self.options.now(),
                 failure_retryable=True,
                 lease_owner=owner,
                 revision=revision,
@@ -696,7 +714,7 @@ class ResearchWorkExecutor:
             _CompletionOptions(
                 state="terminal_failed",
                 failure_code=_RESEARCH_FAILED,
-                now=self.now(),
+                now=self.options.now(),
                 lease_owner=owner,
                 revision=revision,
             ),
@@ -734,30 +752,18 @@ class ResearchWorkExecutor:
         """Best-effort CAS completion that never leaks storage details."""
         current = record
         if options.lease_owner is not None or options.revision is not None:
-            current = ResearchWorkUnitRecord(
-                unit_id=record.unit_id,
-                run_id=record.run_id,
-                kind=record.kind,
-                state=record.state,
-                input_digest=record.input_digest,
-                policy_digest=record.policy_digest,
-                lease_owner=options.lease_owner,
-                lease_expires_at=record.lease_expires_at,
-                attempt=record.attempt,
+            current = replace(
+                record,
+                lease_owner=(
+                    record.lease_owner
+                    if options.lease_owner is None
+                    else options.lease_owner
+                ),
                 revision=(
                     record.revision
                     if options.revision is None
                     else options.revision
                 ),
-                provider_request_digest=record.provider_request_digest,
-                provider_idempotency_digest=record.provider_idempotency_digest,
-                execution_fingerprint=record.execution_fingerprint,
-                evidence_digest=record.evidence_digest,
-                output=record.output,
-                failure_code=record.failure_code,
-                failure_retryable=record.failure_retryable,
-                sent_at=record.sent_at,
-                completed_at=record.completed_at,
             )
         try:
             return self.store.complete_work(
@@ -788,7 +794,7 @@ class ResearchWorkExecutor:
         stop: asyncio.Event,
     ) -> None:
         """Renew a lease independently of provider/extraction I/O."""
-        interval = self.heartbeat_interval.total_seconds()
+        interval = self.options.heartbeat_interval.total_seconds()
         if not self.heartbeat_enabled:
             return
         while not stop.is_set():
@@ -804,7 +810,7 @@ class ResearchWorkExecutor:
                     unit_id,
                     lease_owner,
                     int(lease["revision"]),
-                    self.now(),
+                    self.options.now(),
                 )
             except _RECOVERY_FAILURES:
                 lease["lost"] = True
@@ -837,6 +843,7 @@ class ResearchRecoveryService:
         self.lease_owner = (
             resolved.lease_owner or f"research-recovery-{uuid.uuid4().hex}"
         )
+        register_recovery_service(self)
 
     @property
     def recovery_limit(self) -> int:
@@ -851,7 +858,6 @@ class ResearchRecoveryService:
         self, now: datetime | None = None
     ) -> ResearchRecoverySummary:
         """Run one bounded request-triggered recovery scan.
-
         API callers may invoke this after store initialization.  It is
         intentionally the same bounded/idempotent operation as the startup
         hook; it never drains the entire coordinator from an ordinary request.
@@ -873,7 +879,6 @@ class ResearchRecoveryService:
             )
         except _RECOVERY_FAILURES:
             return ResearchRecoverySummary(**counts)
-
         for candidate in candidates:
             try:
                 outcome = await self._recover_candidate(candidate, now)
@@ -884,7 +889,6 @@ class ResearchRecoveryService:
                 outcome = self._candidate_error_outcome(candidate)
             if outcome is not None:
                 counts[outcome] += 1
-
         return ResearchRecoverySummary(**counts)
 
     async def _recover_candidate(
@@ -930,7 +934,6 @@ class ResearchRecoveryService:
         )
         if claimed is None:
             return self._terminal_outcome(candidate.run_id)
-
         result = await self._query_and_validate(claimed)
         if result is not None:
             settled = self.store.settle_validated(
@@ -945,7 +948,6 @@ class ResearchRecoveryService:
             terminal = self._terminal_outcome(candidate.run_id)
             if terminal is not None:
                 return terminal
-
         ambiguous = self._mark_ambiguous(claimed, now)
         if ambiguous:
             return "ambiguous"

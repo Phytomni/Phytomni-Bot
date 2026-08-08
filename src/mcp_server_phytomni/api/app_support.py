@@ -30,6 +30,7 @@ from pydantic import ValidationError
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from ..agents.research.recovery import recover_registered_startup
 from ..agents.shared.citation_database import validate_citation_database
 from ..agents.shared.gauss import aclose_gauss_pool
 from ..common.httpx_client import aclose_shared_client, init_shared_client
@@ -437,6 +438,7 @@ async def _http_lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Own the process-wide shared HTTP and Gauss clients."""
     validate_citation_database()
     init_shared_client()
+    await recover_registered_startup()
     try:
         yield
     finally:
