@@ -104,7 +104,15 @@ class ResearchInputStore:
                     unit_id, run_id, kind, state, input_digest, policy_digest,
                     lease_owner, lease_expires_at, attempt, revision,
                     schema_version, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                )
+                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                WHERE EXISTS (
+                    SELECT 1 FROM runs
+                    WHERE runs.run_id = ?
+                      AND runs.status NOT IN (
+                          'succeeded', 'failed', 'cancelled'
+                      )
+                )
                 """,
                 (
                     record.unit_id,
@@ -124,6 +132,7 @@ class ResearchInputStore:
                     RESEARCH_SCHEMA_VERSION,
                     now,
                     now,
+                    record.run_id,
                 ),
             )
 
@@ -143,7 +152,7 @@ class ResearchInputStore:
             if expected_revision is None:
                 cursor = connection.execute(
                     """
-                    INSERT INTO research_input_resolutions (
+                    INSERT OR IGNORE INTO research_input_resolutions (
                         run_id, schema_version, status, revision,
                         original_query_digest, original_query_length,
                         effective_query, source_map_json, candidates_json,
@@ -152,11 +161,17 @@ class ResearchInputStore:
                         evidence_digest, work_digest, client_fingerprint,
                         execution_fingerprint, policy_digest, plan_digest,
                         created_at, updated_at
-                    ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                              ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(run_id) DO NOTHING
+                    ) SELECT ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                              ?, ?, ?, ?, ?, ?, ?
+                    WHERE EXISTS (
+                        SELECT 1 FROM runs
+                        WHERE runs.run_id = ?
+                          AND runs.status NOT IN (
+                              'succeeded', 'failed', 'cancelled'
+                          )
+                    )
                     """,
-                    values,
+                    (*values, run_id),
                 )
                 return cursor.rowcount == 1
             cursor = connection.execute(
@@ -172,6 +187,13 @@ class ResearchInputStore:
                     client_fingerprint = ?, execution_fingerprint = ?,
                     policy_digest = ?, plan_digest = ?, updated_at = ?
                 WHERE run_id = ? AND revision = ?
+                  AND EXISTS (
+                      SELECT 1 FROM runs
+                      WHERE runs.run_id = research_input_resolutions.run_id
+                        AND runs.status NOT IN (
+                            'succeeded', 'failed', 'cancelled'
+                        )
+                  )
                 """,
                 (
                     *values[1:19],

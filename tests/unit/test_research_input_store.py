@@ -187,6 +187,55 @@ def test_resolution_persistence_keeps_private_state_out_of_public_json(
     assert public == (None, None, None)
 
 
+@pytest.mark.parametrize("status", ("succeeded", "failed", "cancelled"))
+def test_terminal_parent_rejects_work_and_resolution_mutations(
+    tmp_path: Path, status: str
+) -> None:
+    """Terminal runs cannot receive new or CAS-updated private state."""
+    store, database = _store(tmp_path)
+    assert store.persist_resolution(
+        "run-1",
+        original_query_digest="q" * 64,
+        original_query_length=1,
+        effective_query="before-terminal",
+        source_map={"version": 1},
+        parsed_candidates=[],
+        managed_snapshot=[],
+        evidence_digest="e" * 64,
+        work_digest="w" * 64,
+    )
+    registry = RunRegistry(database)
+    assert registry.settle_run(
+        "run-1", owner="owner", status=status, result={}
+    )
+
+    store.add_work_unit(_work_unit())
+    assert not store.persist_resolution(
+        "run-1",
+        expected_revision=0,
+        original_query_digest="q" * 64,
+        original_query_length=2,
+        effective_query="after-terminal",
+        source_map={"version": 2},
+        parsed_candidates=[],
+        managed_snapshot=[],
+        evidence_digest="e" * 64,
+        work_digest="w" * 64,
+    )
+
+    with sqlite3.connect(database) as connection:
+        work_count = connection.execute(
+            "SELECT COUNT(*) FROM research_work_units WHERE run_id = 'run-1'"
+        ).fetchone()
+        effective_query = connection.execute(
+            "SELECT effective_query FROM research_input_resolutions "
+            "WHERE run_id = 'run-1'"
+        ).fetchone()
+
+    assert work_count == (0,)
+    assert effective_query == ("before-terminal",)
+
+
 def test_successful_work_identity_includes_kind(tmp_path: Path) -> None:
     """Different deterministic work kinds may reuse an input digest safely."""
     store, _database = _store(tmp_path)
