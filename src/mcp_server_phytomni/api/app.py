@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sqlite3
 from collections.abc import Mapping
 from typing import Any
 
@@ -777,6 +778,16 @@ def _settle_stream_run(
     expected_revision: int | None = None,
 ) -> bool:
     """Compatibility seam for streaming run settlement."""
+    if expected_revision is None:
+        try:
+            current = RunRegistry(resolve_tasks_db_path()).get_run(
+                run_id, owner=owner
+            )
+        except (sqlite3.Error, OSError):
+            return False
+        if current is None:
+            return False
+        expected_revision = current.revision
     return run_lifecycle.settle_stream_run(
         run_id,
         owner,

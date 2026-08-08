@@ -297,13 +297,17 @@ def _settle_interrupt(
             interrupt=interrupt_dict,
         )
     result["generation"] = next_generation
-    context.registry.settle_run(
-        context.record.spec.run_id,
-        owner=context.owner,
-        status="input_required",
-        result=result,
-        expected_revision=context.record.revision,
-    )
+    if (
+        context.registry.settle_run(
+            context.record.spec.run_id,
+            owner=context.owner,
+            status="input_required",
+            result=result,
+            expected_revision=context.record.revision,
+        )
+        is not True
+    ):
+        raise ValueError("A2A resume persistence conflict")
     body["generation"] = next_generation
     return body, 200
 
@@ -378,13 +382,17 @@ async def resume_task(
         final_state,
         dependencies=dependencies,
     )
-    context.registry.settle_run(
-        context.record.spec.run_id,
-        owner=context.owner,
-        status="succeeded",
-        result=result,
-        expected_revision=context.record.revision,
-    )
+    if (
+        context.registry.settle_run(
+            context.record.spec.run_id,
+            owner=context.owner,
+            status="succeeded",
+            result=result,
+            expected_revision=context.record.revision,
+        )
+        is not True
+    ):
+        raise ValueError("A2A resume persistence conflict")
     return (
         run_lifecycle.agent_run_response(
             run_id=context.record.spec.run_id,

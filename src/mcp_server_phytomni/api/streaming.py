@@ -13,6 +13,7 @@ bind application-specific registry, graph, and request-context seams through
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -119,6 +120,32 @@ class _PreparedStream:
     expected_revision: int
     accumulator: StreamAnswerAccumulator
     lifecycle_state: StreamLifecycleState
+
+
+def _settle_stream_run_compat(
+    settle: Callable[..., bool | None],
+    *args: Any,
+    expected_revision: int,
+) -> bool | None:
+    """Preserve four-argument settlement injection seams."""
+    try:
+        parameters = inspect.signature(settle).parameters
+    except (TypeError, ValueError):
+        revision_parameter = None
+        accepts_var_keyword = True
+    else:
+        revision_parameter = parameters.get("expected_revision")
+        accepts_var_keyword = any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        )
+    accepts_revision = (
+        revision_parameter is not None
+        and revision_parameter.kind is not inspect.Parameter.POSITIONAL_ONLY
+    ) or accepts_var_keyword
+    if not accepts_revision:
+        return settle(*args)
+    return settle(*args, expected_revision=expected_revision)
 
 
 @dataclass(frozen=True)
@@ -303,7 +330,8 @@ async def _prepare_stream(
         primed = await prime_agui_stream(raw_events)
     except Exception as exc:
         if agent_slug is not None:
-            request.dependencies.persistence.settle_stream_run(
+            _settle_stream_run_compat(
+                request.dependencies.persistence.settle_stream_run,
                 run_id,
                 owner,
                 "failed",
@@ -688,7 +716,8 @@ async def stream_chat_completion(
     def _settle_terminal_success() -> bool:
         snapshot = prepared.accumulator.snapshot
         return (
-            dependencies.persistence.settle_stream_run(
+            _settle_stream_run_compat(
+                dependencies.persistence.settle_stream_run,
                 prepared.run_id,
                 prepared.owner,
                 "succeeded",
@@ -708,7 +737,8 @@ async def stream_chat_completion(
     def _settle_terminal_failure() -> bool:
         snapshot = prepared.accumulator.snapshot
         return (
-            dependencies.persistence.settle_stream_run(
+            _settle_stream_run_compat(
+                dependencies.persistence.settle_stream_run,
                 prepared.run_id,
                 prepared.owner,
                 "failed",

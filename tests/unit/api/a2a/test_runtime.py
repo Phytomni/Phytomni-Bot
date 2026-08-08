@@ -149,6 +149,46 @@ def _dependencies(
     return dependencies, calls
 
 
+def _competing_dependencies(
+    db_path: str,
+    *,
+    status: str,
+    result: dict[str, Any],
+    resume_result: dict[str, Any],
+) -> runtime.A2AResumeDependencies:
+    """Build dependencies whose first settlement loses a concurrent CAS."""
+    dependencies, _calls = _dependencies(
+        db_path,
+        resume_result=resume_result,
+    )
+
+    def registry_factory(path: str) -> RunRegistry:
+        class CompetingRegistry(RunRegistry):
+            """Commit a competing result before the resumed callback."""
+
+            def settle_run(self, *args: Any, **kwargs: Any) -> bool:
+                run_id = args[0] if args else kwargs["run_id"]
+                expected_revision = kwargs["expected_revision"]
+                RunRegistry(self.db_path).settle_run(
+                    run_id,
+                    owner=kwargs["owner"],
+                    status=status,
+                    result=result,
+                    expected_revision=expected_revision,
+                )
+                return super().settle_run(*args, **kwargs)
+
+        return CompetingRegistry(path)
+
+    return replace(
+        dependencies,
+        registry=replace(
+            dependencies.registry,
+            registry_factory=registry_factory,
+        ),
+    )
+
+
 def test_registration_updates_existing_row_and_creates_stream_row(
     tmp_path: Path,
 ) -> None:
@@ -428,6 +468,90 @@ async def test_resume_reinterrupt_increments_generation(
     record = RunRegistry(db_path).get_run("run-review-task", owner="alice")
     assert record is not None and record.status == "input_required"
     assert record.result is not None and record.result["generation"] == 3
+
+
+@pytest.mark.asyncio
+async def test_resume_reinterrupt_rejects_lost_revision_cas(
+    tmp_path: Path,
+) -> None:
+    """A competing re-interrupt cannot be reported as a successful pause."""
+    db_path = str(tmp_path / "a2a-reinterrupt-conflict.sqlite")
+    _create_run(
+        db_path,
+        options=_RunOptions(
+            agent="review",
+            result={
+                "interrupt": {"draft": {"summary": "first"}},
+                "generation": 0,
+            },
+            task_id="review-conflict",
+            context_id="review-conflict-ctx",
+        ),
+    )
+    winner = {
+        "interrupt": {"draft": {"summary": "winner"}},
+        "generation": 8,
+    }
+    dependencies = _competing_dependencies(
+        db_path,
+        status="input_required",
+        result=winner,
+        resume_result={
+            "__interrupt__": [SimpleNamespace(value={"summary": "loser"})]
+        },
+    )
+
+    with pytest.raises(ValueError, match="persistence conflict"):
+        await runtime.resume_task(
+            "review-conflict",
+            "review-conflict-ctx",
+            {"generation": 0, "approved": True},
+            dependencies=dependencies,
+        )
+
+    record = RunRegistry(db_path).get_run("run-review-conflict", owner="alice")
+    assert record is not None and record.status == "input_required"
+    assert record.result == winner
+
+
+@pytest.mark.asyncio
+async def test_resume_terminal_rejects_lost_revision_cas(
+    tmp_path: Path,
+) -> None:
+    """A competing terminal result cannot be overwritten or reported twice."""
+    db_path = str(tmp_path / "a2a-terminal-conflict.sqlite")
+    _create_run(
+        db_path,
+        options=_RunOptions(
+            result={
+                "interrupt": {"draft": {"a2ui": {"surface_id": "s"}}},
+                "generation": 0,
+            },
+            task_id="terminal-conflict",
+            context_id="terminal-conflict-ctx",
+        ),
+    )
+    winner = {"formatted": {"answer": "winner"}}
+    dependencies = _competing_dependencies(
+        db_path,
+        status="succeeded",
+        result=winner,
+        resume_result={"response": "loser"},
+    )
+
+    with pytest.raises(ValueError, match="persistence conflict"):
+        await runtime.resume_task(
+            "terminal-conflict",
+            "terminal-conflict-ctx",
+            {"generation": 0, "accepted": True},
+            dependencies=dependencies,
+        )
+
+    record = RunRegistry(db_path).get_run(
+        "run-terminal-conflict", owner="alice"
+    )
+    assert record is not None and record.status == "succeeded"
+    assert record.result == winner
 
 
 @pytest.mark.asyncio
