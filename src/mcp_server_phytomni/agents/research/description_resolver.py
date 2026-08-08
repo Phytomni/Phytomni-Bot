@@ -6,11 +6,19 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictStr,
+    ValidationError,
+    field_validator,
+)
 
 from .document_evidence import (
     ExtractedResearchEvidence,
@@ -42,6 +50,14 @@ __all__ = [
 
 _SAFE_FAILURE_MESSAGE = "Research input resolution failed."
 _SAFE_UNAVAILABLE_MESSAGE = "Research input resolution is unavailable."
+_MAX_ID_CHARS = 256
+_MAX_CLAIM_CHARS = 4096
+_MAX_EVIDENCE_IDS = 256
+_MAX_OBSERVATIONS = 256
+_SUCCESS_STATUSES = frozenset(
+    {"complete", "completed", "success", "succeeded"}
+)
+_EXTERNAL_FAILURES: tuple[type[Exception], ...] = (Exception,)
 _GENERIC_CLAIMS = frozenset(
     {
         "unknown",
@@ -97,39 +113,63 @@ _CONFIDENCE_RANK: dict[ResearchConfidence, int] = {
 class ResearchObservation(BaseModel):
     """One bounded provider observation grounded in one work unit."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
-    dataset_id: str = Field(min_length=1)
-    claim: str = Field(min_length=1)
+    dataset_id: StrictStr = Field(min_length=1, max_length=_MAX_ID_CHARS)
+    claim: StrictStr = Field(min_length=1, max_length=_MAX_CLAIM_CHARS)
     confidence: ResearchConfidence
-    evidence_ids: list[str] = Field(min_length=1)
+    evidence_ids: list[StrictStr] = Field(
+        min_length=1, max_length=_MAX_EVIDENCE_IDS
+    )
+
+    @field_validator("evidence_ids")
+    @classmethod
+    def _unique_evidence_ids(cls, value: list[str]) -> list[str]:
+        """Reject duplicate evidence references at the DTO boundary."""
+        if len(value) != len(set(value)):
+            raise ValueError("evidence IDs must be unique")
+        return value
 
 
 class ResearchObservationResponse(BaseModel):
     """Strict response envelope returned by one resolver work unit."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
-    observations: list[ResearchObservation]
+    observations: list[ResearchObservation] = Field(
+        max_length=_MAX_OBSERVATIONS
+    )
 
 
 class ResolvedResearchDataset(BaseModel):
     """One final grounded description before the native join removes IDs."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
-    id: str = Field(min_length=1)
-    description: str = Field(min_length=1)
+    id: StrictStr = Field(min_length=1, max_length=_MAX_ID_CHARS)
+    description: StrictStr = Field(min_length=1, max_length=_MAX_CLAIM_CHARS)
     confidence: ResearchConfidence
-    evidence_ids: list[str] = Field(min_length=1)
+    evidence_ids: list[StrictStr] = Field(
+        min_length=1, max_length=_MAX_EVIDENCE_IDS
+    )
+
+    @field_validator("evidence_ids")
+    @classmethod
+    def _unique_evidence_ids(cls, value: list[str]) -> list[str]:
+        """Keep the final evidence projection deterministic."""
+        if len(value) != len(set(value)):
+            raise ValueError("evidence IDs must be unique")
+        return value
 
 
 class ResearchResolutionResponse(BaseModel):
     """Strict ordered final output for every inventory dataset."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
-    datasets: list[ResolvedResearchDataset]
+    datasets: list[ResolvedResearchDataset] = Field(
+        max_length=_MAX_OBSERVATIONS
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,29 +278,30 @@ class ResearchDescriptionResolver:
         context: _ResolutionContext,
     ) -> ResearchObservationResponse:
         """Load, send, validate, and persist exactly one work unit."""
-        input_digest = _digest_bytes(unit.serialized_request)
+        input_digest = _request_input_digest(request, unit)
         policy_digest = context.policy_digest
         try:
             cached = self.repository.load_validated_output(
                 unit.unit_id, input_digest, policy_digest
             )
-        except (RuntimeError, ValueError, TypeError, OSError):
+        except _EXTERNAL_FAILURES:
             raise _unavailable() from None
         if cached is not None:
             return _validated_response(cached, unit, context)
 
         try:
             revision = self.repository.mark_sent(unit.unit_id, lease_owner, 0)
-        except (RuntimeError, ValueError, TypeError, OSError):
+        except _EXTERNAL_FAILURES:
             raise _unavailable() from None
         if isinstance(revision, bool) or not isinstance(revision, int):
             raise _unavailable()
 
+        request_identity = _request_identity(unit, input_digest, policy_digest)
         try:
             raw = await self.provider.invoke(unit, request.policy)
-        except (RuntimeError, ValueError, TypeError, OSError):
+        except _EXTERNAL_FAILURES:
             raw = await self._query_after_exception(
-                unit, request.policy, input_digest
+                unit, request.policy, request_identity
             )
         response = _validated_response(raw, unit, context)
         try:
@@ -270,7 +311,7 @@ class ResearchDescriptionResolver:
                 revision,
                 response.model_dump(mode="json"),
             )
-        except (RuntimeError, ValueError, TypeError, OSError):
+        except _EXTERNAL_FAILURES:
             raise _unavailable() from None
         if settled is not True:
             raise _unavailable()
@@ -282,19 +323,24 @@ class ResearchDescriptionResolver:
         policy: ResearchResolverPolicy,
         request_identity: str,
     ) -> dict[str, Any]:
-        """Use explicit status reconciliation or fail an ambiguous call."""
-        del unit
-        if not policy.provider_status_query_supported:
-            raise _unavailable()
-        try:
-            queried = await self.provider.query(request_identity)
-        except (RuntimeError, ValueError, TypeError, OSError):
-            raise _unavailable() from None
-        if queried is None:
-            raise _unavailable()
-        if not isinstance(queried, dict):
-            raise _unavailable()
-        return queried
+        """Use declared status/idempotency support without a new identity."""
+        if policy.provider_status_query_supported:
+            try:
+                queried = await self.provider.query(request_identity)
+            except _EXTERNAL_FAILURES:
+                raise _unavailable() from None
+            payload = _status_payload(queried)
+            if payload is None:
+                raise _unavailable()
+            return payload
+        if policy.provider_idempotency_supported:
+            try:
+                # The exact unit carries the same provider identity.  A retry
+                # is safe because policy explicitly declares it idempotent.
+                return await self.provider.invoke(unit, policy)
+            except _EXTERNAL_FAILURES:
+                raise _unavailable() from None
+        raise _unavailable()
 
 
 @dataclass(frozen=True, slots=True)
@@ -329,7 +375,13 @@ def _validate_request(
         raise _ResolutionContractError
     if plan.digest != _expected_plan_digest(plan):
         raise _ResolutionContractError
-    _validate_units(plan, evidence_by_id, inventory_ids, request.policy)
+    _validate_units(
+        plan,
+        evidence_by_id,
+        inventory_ids,
+        request.inventory,
+        request.policy,
+    )
     return _ResolutionContext(
         policy_digest=policy_digest,
         evidence_by_id=evidence_by_id,
@@ -377,6 +429,7 @@ def _validate_units(
     plan: ResearchResolverWorkPlan,
     evidence_by_id: dict[str, ResearchEvidenceUnit],
     inventory_ids: tuple[str, ...],
+    inventory: ResearchInputInventory,
     policy: ResearchResolverPolicy,
 ) -> None:
     """Ensure every planned unit is bounded and covers known evidence only."""
@@ -385,8 +438,11 @@ def _validate_units(
     seen_units: set[str] = set()
     covered: set[str] = set()
     valid_inventory = set(inventory_ids)
+    private_values = _private_inventory_values(inventory)
     for unit in plan.observation_units:
-        if _invalid_unit(unit, seen_units, valid_inventory, policy):
+        if _invalid_unit(
+            unit, seen_units, valid_inventory, private_values, policy
+        ):
             raise _ResolutionContractError
         seen_units.add(unit.unit_id)
         for evidence_id in unit.evidence_ids:
@@ -404,6 +460,7 @@ def _invalid_unit(
     unit: ResearchResolverObservationUnit,
     seen_units: set[str],
     valid_inventory: set[str],
+    private_values: frozenset[str],
     policy: ResearchResolverPolicy,
 ) -> bool:
     """Return whether one unit violates identity, membership, or budgets."""
@@ -428,8 +485,166 @@ def _invalid_unit(
         or unit.serialized_bytes > policy.max_serialized_request_bytes
         or unit.estimated_tokens < 0
         or unit.estimated_tokens > token_budget
+        or not _opaque_serialized_request(
+            unit.serialized_request,
+            private_values,
+            set(unit.evidence_ids),
+            valid_inventory,
+        )
     )
     return invalid_identity or invalid_membership or invalid_budget
+
+
+def _private_inventory_values(
+    inventory: ResearchInputInventory,
+) -> frozenset[str]:
+    """Return private inventory values that must not reach a provider."""
+    values: set[str] = set()
+    for entry in inventory.entries:
+        values.update(
+            value
+            for value in (
+                entry.exact_reference,
+                entry.comparison_digest,
+                entry.safe_basename,
+                entry.authority_id,
+                entry.snapshot.snapshot_digest,
+                entry.snapshot.etag,
+                entry.snapshot.version_id,
+            )
+            if value
+        )
+    return frozenset(values)
+
+
+def _opaque_serialized_request(
+    serialized: bytes,
+    private_values: frozenset[str],
+    allowed_evidence: set[str],
+    valid_inventory: set[str],
+) -> bool:
+    """Accept only canonical JSON without private coordinates or fields."""
+    try:
+        decoded = serialized.decode("utf-8")
+        payload = json.loads(decoded)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    if canonical_json_bytes(payload) != serialized:
+        return False
+    return not _contains_private_payload(
+        payload, private_values
+    ) and _valid_payload_membership(payload, allowed_evidence, valid_inventory)
+
+
+def _contains_private_payload(
+    value: object, private_values: frozenset[str]
+) -> bool:
+    """Find private fields, coordinates, and inventory values recursively."""
+    allowed_keys = frozenset(
+        {
+            "dataset_ids",
+            "end",
+            "evidence",
+            "evidence_id",
+            "evidence_ids",
+            "grammar",
+            "group_members",
+            "inventory_digest",
+            "model_id",
+            "overlap_chars",
+            "policy_fingerprint",
+            "schema_version",
+            "source_kind",
+            "source_ordinal",
+            "source_span",
+            "start",
+            "text",
+        }
+    )
+    forbidden_keys = frozenset(
+        {
+            "asset_id",
+            "authority_id",
+            "bucket",
+            "comparison_digest",
+            "data_list",
+            "exact_reference",
+            "file_path",
+            "object_key",
+            "obs_file_list",
+            "path",
+            "safe_basename",
+            "url",
+        }
+    )
+    private = False
+    if isinstance(value, dict):
+        private = any(
+            str(key).casefold() not in allowed_keys for key in value
+        ) or any(str(key).casefold() in forbidden_keys for key in value)
+        if not private:
+            private = any(
+                _contains_private_payload(item, private_values)
+                for item in value.values()
+            )
+    elif isinstance(value, list):
+        private = any(
+            _contains_private_payload(item, private_values) for item in value
+        )
+    elif isinstance(value, str):
+        if value in private_values:
+            private = True
+        else:
+            private = (
+                re.search(
+                    r"(?:obs|s3|gs|file)://|(?:^|[\s=:])/(?:[A-Za-z0-9._-]+/)+"
+                    r"|\b[A-Za-z]:[\\/]",
+                    value,
+                    re.IGNORECASE,
+                )
+                is not None
+            )
+    return private
+
+
+def _valid_payload_membership(
+    value: object,
+    allowed_evidence: set[str],
+    valid_inventory: set[str],
+) -> bool:
+    """Ensure serialized opaque IDs stay within this plan's memberships."""
+    valid = True
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            if key in {"dataset_ids", "group_members"} and (
+                not isinstance(nested, list)
+                or any(
+                    not isinstance(item, str) or item not in valid_inventory
+                    for item in nested
+                )
+            ):
+                valid = False
+            if key in {"evidence_ids", "evidence_id"}:
+                candidates = nested if isinstance(nested, list) else [nested]
+                if valid and any(
+                    not isinstance(item, str) or item not in allowed_evidence
+                    for item in candidates
+                ):
+                    valid = False
+            if valid and not _valid_payload_membership(
+                nested, allowed_evidence, valid_inventory
+            ):
+                valid = False
+            if not valid:
+                break
+    elif isinstance(value, list):
+        valid = all(
+            _valid_payload_membership(item, allowed_evidence, valid_inventory)
+            for item in value
+        )
+    return valid
 
 
 def _expected_plan_digest(plan: ResearchResolverWorkPlan) -> str:
@@ -447,6 +662,111 @@ def _expected_plan_digest(plan: ResearchResolverWorkPlan) -> str:
         ],
     }
     return _digest_bytes(canonical_json_bytes(value))
+
+
+def _request_input_digest(
+    request: ResearchResolutionRequest,
+    unit: ResearchResolverObservationUnit,
+) -> str:
+    """Bind cache identity to the complete immutable request context."""
+    inventory = request.inventory
+    inventory_identity = [
+        {
+            "authority_digest": _optional_digest(entry.authority_id),
+            "comparison_digest": entry.comparison_digest,
+            "dataset_id": entry.dataset_id,
+            "exact_reference_digest": _digest_bytes(
+                entry.exact_reference.encode("utf-8")
+            ),
+            "lane": entry.lane,
+            "lane_ordinal": entry.lane_ordinal,
+            "purpose": entry.purpose,
+            "safe_basename_digest": _digest_bytes(
+                entry.safe_basename.encode("utf-8")
+            ),
+            "size_bytes": entry.size_bytes,
+            "snapshot": {
+                "etag": _optional_digest(entry.snapshot.etag),
+                "last_modified": _optional_digest(
+                    entry.snapshot.last_modified
+                ),
+                "snapshot_digest": entry.snapshot.snapshot_digest,
+                "state_version": entry.snapshot.state_version,
+                "version_id": _optional_digest(entry.snapshot.version_id),
+            },
+        }
+        for entry in inventory.entries
+    ]
+    evidence_identity = [
+        {
+            "content_digest": item.content_digest,
+            "dataset_ids": item.dataset_ids,
+            "evidence_id": item.evidence_id,
+            "source_kind": item.source_kind,
+            "source_ordinal": item.source_ordinal,
+        }
+        for item in request.evidence.units
+    ]
+    value = {
+        "coverage_digest": request.evidence.coverage_digest,
+        "evidence": evidence_identity,
+        "inventory_digest": inventory.digest,
+        "inventory_entries": inventory_identity,
+        "plan_digest": request.work_plan.digest,
+        "unit": {
+            "dataset_ids": unit.dataset_ids,
+            "evidence_ids": unit.evidence_ids,
+            "request_digest": _digest_bytes(unit.serialized_request),
+            "unit_id": unit.unit_id,
+        },
+    }
+    return _digest_bytes(canonical_json_bytes(value))
+
+
+def _optional_digest(value: str | None) -> str | None:
+    """Hash optional metadata before it enters a persistent identity."""
+    if value is None:
+        return None
+    return _digest_bytes(value.encode("utf-8"))
+
+
+def _request_identity(
+    unit: ResearchResolverObservationUnit,
+    input_digest: str,
+    policy_digest: str,
+) -> str:
+    """Build one opaque provider idempotency/status identity."""
+    return _digest_bytes(
+        canonical_json_bytes(
+            {
+                "input_digest": input_digest,
+                "policy_digest": policy_digest,
+                "request_digest": _digest_bytes(unit.serialized_request),
+                "unit_id": unit.unit_id,
+            }
+        )
+    )
+
+
+def _status_payload(raw: object) -> dict[str, Any] | None:
+    """Project a successful status response to the strict DTO envelope."""
+    if not isinstance(raw, dict):
+        return None
+    status = raw.get("status")
+    if status is None:
+        return raw
+    if (
+        not isinstance(status, str)
+        or status.casefold() not in _SUCCESS_STATUSES
+    ):
+        return None
+    if isinstance(raw.get("observations"), list):
+        return {"observations": raw["observations"]}
+    for key in ("result", "response", "output", "payload"):
+        candidate = raw.get(key)
+        if isinstance(candidate, dict):
+            return candidate
+    return None
 
 
 def _validated_response(

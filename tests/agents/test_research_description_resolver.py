@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import pytest
@@ -15,9 +15,11 @@ from pydantic import ValidationError
 
 from mcp_server_phytomni.agents.research.description_resolver import (
     ResearchDescriptionResolver,
+    ResearchObservation,
     ResearchObservationResponse,
     ResearchResolutionRequest,
     ResearchResolutionResponse,
+    ResolvedResearchDataset,
 )
 from mcp_server_phytomni.agents.research.document_evidence import (
     ExtractedResearchEvidence,
@@ -124,14 +126,13 @@ def _unit(
     unit_id: str, evidence_ids: tuple[str, ...], dataset_ids: tuple[str, ...]
 ) -> ResearchResolverObservationUnit:
     """Build one planned resolver unit with an opaque serialized payload."""
-    serialized = json.dumps(
+    serialized = canonical_json_bytes(
         {
             "evidence_ids": evidence_ids,
             "dataset_ids": dataset_ids,
             "text": "facts",
-        },
-        sort_keys=True,
-    ).encode()
+        }
+    )
     return ResearchResolverObservationUnit(
         unit_id=unit_id,
         evidence_ids=evidence_ids,
@@ -183,18 +184,30 @@ def _request(
     return ResearchResolutionRequest(inventory, evidence, plan, policy)
 
 
+@dataclass
+class _ProviderState:
+    """Mutable behavior options held outside the recording provider."""
+
+    outputs: list[dict[str, Any]]
+    query_result: dict[str, Any] | None = None
+    failure: Exception | None = None
+    failures_remaining: int = 0
+    query_failure: Exception | None = None
+
+
 class _RecordingProvider:
     """Record opaque work units and return deterministic model payloads."""
 
     def __init__(
-        self,
-        outputs: tuple[dict[str, Any], ...],
-        query_result: dict[str, Any] | None = None,
-        failure: Exception | None = None,
+        self, outputs: tuple[dict[str, Any], ...], **options: Any
     ) -> None:
-        self.outputs = list(outputs)
-        self.query_result = query_result
-        self.failure = failure
+        self.state = _ProviderState(
+            outputs=list(outputs),
+            query_result=options.get("query_result"),
+            failure=options.get("failure"),
+            failures_remaining=options.get("failures_remaining", 0),
+            query_failure=options.get("query_failure"),
+        )
         self.requests: list[ResearchResolverObservationUnit] = []
         self.query_calls: list[str] = []
         self.repository: _RecordingRepository | None = None
@@ -211,14 +224,19 @@ class _RecordingProvider:
             unit.unit_id,
         )
         self.requests.append(unit)
-        if self.failure is not None:
-            raise self.failure
-        return self.outputs.pop(0)
+        if self.state.failures_remaining:
+            self.state.failures_remaining -= 1
+            raise RuntimeError("transient provider failure")
+        if self.state.failure is not None:
+            raise self.state.failure
+        return self.state.outputs.pop(0)
 
     async def query(self, request_identity: str) -> dict[str, Any] | None:
         """Return the explicitly configured provider status result."""
         self.query_calls.append(request_identity)
-        return self.query_result
+        if self.state.query_failure is not None:
+            raise self.state.query_failure
+        return self.state.query_result
 
 
 @dataclass
@@ -226,6 +244,7 @@ class _RecordingRepository:
     """Record mark-before-send and validated-output persistence calls."""
 
     cached: dict[tuple[str, str, str], dict[str, Any]] | None = None
+    failure: Exception | None = None
 
     def __post_init__(self) -> None:
         """Initialize operation and lookup ledgers."""
@@ -237,6 +256,8 @@ class _RecordingRepository:
         self, unit_id: str, input_digest: str, policy_digest: str
     ) -> dict[str, Any] | None:
         """Return only an exact input/policy-bound cached payload."""
+        if self.failure is not None:
+            raise self.failure
         self.lookups.append((unit_id, input_digest, policy_digest))
         self._latest[unit_id] = (input_digest, policy_digest)
         if self.cached is None:
@@ -247,6 +268,8 @@ class _RecordingRepository:
         self, unit_id: str, lease_owner: str, expected_revision: int
     ) -> int:
         """Record the durable sent transition before provider invocation."""
+        if self.failure is not None:
+            raise self.failure
         del lease_owner, expected_revision
         self.events.append(("mark", unit_id))
         return 1
@@ -259,6 +282,8 @@ class _RecordingRepository:
         output: dict[str, Any],
     ) -> bool:
         """Persist a validated payload under its exact lookup binding."""
+        if self.failure is not None:
+            raise self.failure
         del lease_owner, expected_revision
         self.events.append(("settle", unit_id))
         if self.cached is None:
@@ -553,3 +578,228 @@ async def test_provider_exception_without_query_fails_closed() -> None:
     )
     assert "secret body" not in str(caught.value)
     assert not provider.query_calls
+
+
+def test_public_dtos_are_strict_and_bounded() -> None:
+    """Provider DTOs reject coercion and every unbounded collection/text."""
+    observation = {
+        "dataset_id": "dataset_001",
+        "claim": "supported fact",
+        "confidence": "high",
+        "evidence_ids": ["evidence_001"],
+    }
+    with pytest.raises(ValidationError):
+        ResearchObservation.model_validate(
+            {**observation, "evidence_ids": ("evidence_001",)}
+        )
+    with pytest.raises(ValidationError):
+        ResearchObservation.model_validate(
+            {**observation, "claim": "x" * 4097}
+        )
+    with pytest.raises(ValidationError):
+        ResearchObservationResponse.model_validate(
+            {"observations": [observation] * 257}
+        )
+    with pytest.raises(ValidationError):
+        ResolvedResearchDataset.model_validate(
+            {
+                "id": "dataset_001",
+                "description": "x" * 4097,
+                "confidence": "high",
+                "evidence_ids": ["evidence_001"],
+            }
+        )
+    with pytest.raises(ValidationError):
+        ResearchResolutionResponse.model_validate(
+            {
+                "datasets": [
+                    {
+                        "id": "dataset_001",
+                        "description": "supported fact",
+                        "confidence": "high",
+                        "evidence_ids": ["evidence_001"],
+                    }
+                ]
+                * 257
+            }
+        )
+
+
+@pytest.mark.asyncio
+async def test_rejects_private_coordinates_in_provider_payload() -> None:
+    """A forged serialized unit cannot carry an OBS reference externally."""
+    request = _valid_request()
+    first = request.work_plan.observation_units[0]
+    private_payload = canonical_json_bytes(
+        {
+            "dataset_ids": first.dataset_ids,
+            "evidence_ids": first.evidence_ids,
+            "exact_reference": "obs://secret/private/dataset.csv",
+        }
+    )
+    forged = replace(
+        first,
+        serialized_request=private_payload,
+        serialized_bytes=len(private_payload),
+    )
+    forged_request = _request(
+        request.inventory,
+        request.evidence.units,
+        (forged, request.work_plan.observation_units[1]),
+        request.policy,
+    )
+    provider = _RecordingProvider(())
+
+    with pytest.raises(Exception) as caught:
+        await _resolver(provider, _RecordingRepository()).resolve(
+            forged_request, "owner"
+        )
+
+    assert getattr(caught.value, "code", None) == (
+        "research_input_resolution_failed"
+    )
+    assert not provider.requests
+
+
+@pytest.mark.asyncio
+async def test_generic_provider_exception_is_sanitized() -> None:
+    """Unexpected provider exceptions never cross the safe error boundary."""
+    provider = _RecordingProvider(
+        ({},), failure=Exception("SECRET_PROVIDER_BODY")
+    )
+
+    with pytest.raises(Exception) as caught:
+        await _resolver(provider, _RecordingRepository()).resolve(
+            _valid_request(), "owner"
+        )
+
+    assert getattr(caught.value, "code", None) == (
+        "research_input_resolution_unavailable"
+    )
+    assert "SECRET_PROVIDER_BODY" not in str(caught.value)
+
+
+@pytest.mark.asyncio
+async def test_status_and_idempotency_recovery_use_same_identity() -> None:
+    """Capabilities reconcile without a new logical charge."""
+    policy = _policy(
+        provider_idempotency_supported=True,
+        provider_status_query_supported=True,
+    )
+    request = _valid_request(policy)
+    status_output = {
+        "status": "succeeded",
+        "result": {
+            "observations": [
+                {
+                    "dataset_id": "dataset_001",
+                    "claim": "Expression measurements are available.",
+                    "confidence": "high",
+                    "evidence_ids": ["evidence_001"],
+                }
+            ]
+        },
+    }
+    provider = _RecordingProvider(
+        (
+            {
+                "observations": [
+                    {
+                        "dataset_id": "dataset_002",
+                        "claim": "Sample metadata are available.",
+                        "confidence": "medium",
+                        "evidence_ids": ["evidence_002"],
+                    }
+                ]
+            },
+        ),
+        query_result=status_output,
+        failures_remaining=1,
+    )
+
+    result = await _resolver(provider, _RecordingRepository()).resolve(
+        request, "owner"
+    )
+
+    assert [item.id for item in result.datasets] == [
+        "dataset_002",
+        "dataset_001",
+    ]
+    assert len(provider.query_calls) == 1
+    assert len(provider.query_calls[0]) == 64
+
+
+@pytest.mark.asyncio
+async def test_idempotency_capability_allows_same_unit_retry_only() -> None:
+    """A declared idempotency key permits retrying the exact unit identity."""
+    policy = _policy(provider_idempotency_supported=True)
+    request = _valid_request(policy)
+    provider = _RecordingProvider(
+        (
+            {
+                "observations": [
+                    {
+                        "dataset_id": "dataset_001",
+                        "claim": "Expression measurements are available.",
+                        "confidence": "high",
+                        "evidence_ids": ["evidence_001"],
+                    }
+                ]
+            },
+            {
+                "observations": [
+                    {
+                        "dataset_id": "dataset_002",
+                        "claim": "Sample metadata are available.",
+                        "confidence": "medium",
+                        "evidence_ids": ["evidence_002"],
+                    }
+                ]
+            },
+        ),
+        failures_remaining=1,
+    )
+
+    result = await _resolver(provider, _RecordingRepository()).resolve(
+        request, "owner"
+    )
+
+    assert len(result.datasets) == 2
+    assert [unit.unit_id for unit in provider.requests] == [
+        "unit_001",
+        "unit_001",
+        "unit_002",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cache_binding_includes_inventory_context() -> None:
+    """A changed immutable inventory cannot reuse an old unit output."""
+    request = _request(
+        _inventory("dataset_001"),
+        (_evidence("evidence_001", ("dataset_001",)),),
+        (_unit("unit_001", ("evidence_001",), ("dataset_001",)),),
+        _policy(),
+    )
+    output = {
+        "observations": [
+            {
+                "dataset_id": "dataset_001",
+                "claim": "Expression measurements are available.",
+                "confidence": "high",
+                "evidence_ids": ["evidence_001"],
+            }
+        ]
+    }
+    repository = _RecordingRepository()
+    first_provider = _RecordingProvider((output,))
+    await _resolver(first_provider, repository).resolve(request, "owner")
+
+    changed_inventory = replace(request.inventory, digest="changed-inventory")
+    changed_request = replace(request, inventory=changed_inventory)
+    second_provider = _RecordingProvider((output,))
+    await _resolver(second_provider, repository).resolve(
+        changed_request, "owner"
+    )
+
+    assert len(second_provider.requests) == 1
