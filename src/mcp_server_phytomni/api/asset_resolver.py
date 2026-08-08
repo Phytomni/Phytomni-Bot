@@ -15,6 +15,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from ..agents.research.input_inventory import (
+    ManagedResearchAssetSnapshot,
+    managed_research_assets_from_bundle,
+)
 from ..runtime.attachment_assets import (
     EffectiveAssetPurpose,
     ResolvedAsset,
@@ -34,6 +38,7 @@ from .schemas import AssetDescriptor, AttachmentAsset
 __all__ = [
     "AssetResolver",
     "normalize_asset_attachments",
+    "resolve_managed_research_assets",
 ]
 
 
@@ -94,6 +99,8 @@ class AssetResolver:
                 content_type=asset.content_type,
                 size_bytes=asset.size_bytes,
                 purpose=purpose,
+                state_version=asset.state_version,
+                completed_at=_iso(asset.completed_at),
             )
             for asset, purpose, reference in zip(
                 assets,
@@ -230,6 +237,18 @@ class AssetResolver:
                 raise _asset_error(
                     "upload_state_conflict", status_code=409
                 ) from None
+
+
+def resolve_managed_research_assets(
+    attachments: Sequence[Any],
+    *,
+    owner: str,
+    resolver: AssetResolver,
+) -> tuple[ManagedResearchAssetSnapshot, ...]:
+    """Resolve owner-owned assets into immutable Research snapshots only."""
+    return managed_research_assets_from_bundle(
+        resolver.resolve_bundle(attachments, owner)
+    )
 
 
 def normalize_asset_attachments(

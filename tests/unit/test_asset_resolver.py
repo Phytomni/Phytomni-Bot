@@ -159,6 +159,8 @@ def test_historical_chat_attachment_reads_as_document_without_row_update(
         ).fetchone()[0]
     assert before == after == "chat_attachment"
     assert bundle.documents[0].purpose == "document"
+    assert bundle.documents[0].state_version >= 1
+    assert bundle.documents[0].completed_at
 
 
 @pytest.mark.parametrize(

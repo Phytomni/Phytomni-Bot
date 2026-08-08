@@ -18,8 +18,13 @@ from typing import Any, NoReturn, cast
 
 from fastapi.responses import Response, StreamingResponse
 
+from ..agents.research.input_inventory import (
+    ManagedResearchAssetSnapshot,
+    managed_research_assets_from_bundle,
+)
+from ..config.api_limits import ApiLimitsConfig
 from ..config.defaults import ApiConfig, ServerConfig
-from ..runtime.attachment_assets import ResolvedAsset
+from ..runtime.attachment_assets import ResolvedAsset, ResolvedAttachmentBundle
 from ..runtime.upload_registry import UploadMetadata, UploadRegistry
 from ..storage.obs_storage import ObsPathError, normalize_obs_object_key
 from .agent_capabilities import (
@@ -45,6 +50,7 @@ __all__ = [
     "redact_streaming_attachment_response",
     "validate_agent_attachments",
     "validate_native_attachments",
+    "validate_research_attachment_bundle",
 ]
 
 
@@ -106,6 +112,26 @@ class AttachmentContractError(ValueError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+def validate_research_attachment_bundle(
+    bundle: ResolvedAttachmentBundle,
+    config: ApiLimitsConfig,
+) -> tuple[ManagedResearchAssetSnapshot, ...]:
+    """Project trusted managed assets under Research-only count limits."""
+    assets = bundle.all_assets
+    if (
+        len(assets) > config.API_MAX_ATTACHMENTS_PER_REQUEST
+        or len(assets) > config.API_MAX_RESEARCH_INPUT_REFERENCES
+    ):
+        _raise(
+            "attachment_limit_exceeded",
+            "Uploaded attachments exceed the allowed limit.",
+        )
+    _validate_budget_sizes(
+        tuple(asset.size_bytes for asset in bundle.documents)
+    )
+    return managed_research_assets_from_bundle(bundle)
 
 
 def validate_native_attachments(

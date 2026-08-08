@@ -15,6 +15,7 @@ __all__ = [
     "ResearchFailureStage",
     "ResearchInputFailure",
     "SourceSpan",
+    "research_input_failure",
 ]
 
 ResearchErrorCode = Literal[
@@ -97,6 +98,23 @@ class ResearchInputFailureError(Exception):
 
 
 ResearchInputFailure = ResearchInputFailureError
+
+
+def research_input_failure(
+    code: ResearchErrorCode,
+    safe_message: str,
+    *,
+    http_status_hint: int = 400,
+    retryable: bool = False,
+) -> ResearchInputFailure:
+    """Create one stable non-disclosing Research input failure."""
+    return ResearchInputFailure(
+        code=code,
+        safe_message=safe_message,
+        http_status_hint=http_status_hint,
+        stage="input_resolution",
+        retryable=retryable,
+    )
 
 
 @dataclass(frozen=True, slots=True)

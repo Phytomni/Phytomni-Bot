@@ -7,6 +7,9 @@ from __future__ import annotations
 
 import pytest
 
+from mcp_server_phytomni.agents.research.input_contracts import (
+    ResearchInputFailure,
+)
 from mcp_server_phytomni.api.agent_capabilities import (
     AttachmentCapability,
     DatasetCapability,
@@ -16,6 +19,10 @@ from mcp_server_phytomni.api.attachment_projection import (
     AttachmentProjectionError,
     project_managed_attachments,
 )
+from mcp_server_phytomni.api.attachments import (
+    validate_research_attachment_bundle,
+)
+from mcp_server_phytomni.config.api_limits import ApiLimitsConfig
 from mcp_server_phytomni.runtime.attachment_assets import (
     EffectiveAssetPurpose,
     ResolvedAsset,
@@ -161,3 +168,13 @@ def test_zero_channel_projection_rejects_nonempty_bundle(
         )
 
     assert error.value.code == "attachment_not_supported"
+
+
+def test_research_bundle_requires_real_completed_asset_state() -> None:
+    """Research rejects compatibility fakes missing immutable state fields."""
+    bundle = ResolvedAttachmentBundle(assets=(_asset("dataset", "dataset"),))
+
+    with pytest.raises(ResearchInputFailure) as error:
+        validate_research_attachment_bundle(bundle, ApiLimitsConfig())
+
+    assert error.value.code == "research_input_resolution_failed"
