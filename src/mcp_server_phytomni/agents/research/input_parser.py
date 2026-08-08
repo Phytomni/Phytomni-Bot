@@ -359,12 +359,8 @@ def _json_token_boundary(query: str, offset: int) -> bool:
 
 
 def _contains_forbidden_control(value: str) -> bool:
-    """Reject control text except syntax-boundary tabs and line endings."""
-    return any(
-        unicodedata.category(character) == "Cc"
-        and character not in ("\t", "\r", "\n")
-        for character in value
-    )
+    """Reject every Unicode control character in parsed values."""
+    return any(unicodedata.category(character) == "Cc" for character in value)
 
 
 def _is_complete_reference(reference: str) -> bool:

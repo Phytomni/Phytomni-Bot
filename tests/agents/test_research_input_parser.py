@@ -234,6 +234,21 @@ def test_rejects_duplicate_references_across_approved_grammars() -> None:
     assert caught.value.code == "research_dataset_duplicate"
 
 
+@pytest.mark.parametrize("escaped_control", ("0009", "000a", "000d"))
+def test_rejects_escaped_control_characters_in_json_hints(
+    escaped_control: str,
+) -> None:
+    """Decoded JSON hints never inherit grammar-delimiter exceptions."""
+    query = (
+        f'data: {{"obs://dev-bucket/a.tsv": "bad\\u{escaped_control}hint"}}'
+    )
+
+    with pytest.raises(ResearchInputFailure) as caught:
+        parse_research_input(query, "dev-bucket")
+
+    assert caught.value.code == "research_dataset_path_invalid"
+
+
 def test_malformed_explicit_data_block_does_not_fall_back_to_prose() -> None:
     """An associated data label selects the strict parser even when invalid."""
     query = "目标\ndata: {not valid json}"
