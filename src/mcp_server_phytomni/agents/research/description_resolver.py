@@ -1,14 +1,14 @@
 # Copyright (c) Biotechnology Research Institute,
 # Chinese Academy of Agricultural Sciences. 2024-2026. All rights reserved.
 # Author: xieshang (xieshang0608@gmail.com)
-"""Validate opaque Research observations and reconcile grounded descriptions."""
+"""Validate opaque observations and reconcile grounded descriptions."""
 
 from __future__ import annotations
 
 import hashlib
 import re
 from dataclasses import dataclass
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -189,7 +189,7 @@ class _ResolutionContractError(ValueError):
 
 
 class ResearchDescriptionResolver:
-    """Resolve complete evidence into ordered, grounded dataset descriptions."""
+    """Resolve evidence into ordered, grounded dataset descriptions."""
 
     def __init__(
         self,
@@ -521,7 +521,7 @@ def _honest_ambiguity(claim: str) -> bool:
 def _ensure_complete_coverage(
     completed: set[str], required: tuple[str, ...]
 ) -> None:
-    """Reject reconciliation when any planned evidence unit did not complete."""
+    """Reject reconciliation when a planned evidence unit did not complete."""
     if completed != set(required):
         raise _failure()
 
@@ -576,22 +576,38 @@ def _reduce_claims(
             normalized.add(key)
             unique.append(observation.claim.strip())
     if len(unique) == 1:
-        confidence = min(
-            (
-                cast(ResearchConfidence, item.confidence)
-                for item in observations
-            ),
-            key=lambda item: _CONFIDENCE_RANK[item],
+        confidences: list[ResearchConfidence] = [
+            _as_confidence(item.confidence) for item in observations
+        ]
+        reduced_confidence: ResearchConfidence = min(
+            confidences, key=_confidence_rank
         )
-        _validate_claim(unique[0], confidence, max_description_chars)
-        return unique[0], confidence
+        _validate_claim(unique[0], reduced_confidence, max_description_chars)
+        return unique[0], reduced_confidence
     description = (
         "Supported facts: "
         + "; ".join(unique)
         + ". Missing or conflicting facts: observations disagree."
     )
-    _validate_claim(description, "low", max_description_chars)
-    return description, "low"
+    confidence: ResearchConfidence = "low"
+    _validate_claim(description, confidence, max_description_chars)
+    return description, confidence
+
+
+def _as_confidence(value: str) -> ResearchConfidence:
+    """Narrow a Pydantic confidence value for static type checkers."""
+    if value == "high":
+        return "high"
+    if value == "medium":
+        return "medium"
+    if value == "low":
+        return "low"
+    raise _ResolutionContractError
+
+
+def _confidence_rank(value: ResearchConfidence) -> int:
+    """Return the deterministic conservative confidence rank."""
+    return _CONFIDENCE_RANK[value]
 
 
 def _ordered_evidence_ids(

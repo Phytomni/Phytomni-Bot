@@ -293,9 +293,7 @@ def _valid_request(
 
 
 @pytest.mark.asyncio
-async def test_resolves_inventory_order_and_never_exposes_private_coordinates() -> (
-    None
-):
+async def test_resolves_order_without_private_coordinates() -> None:
     """Reconcile all units and return exactly the immutable inventory order."""
     provider = _RecordingProvider(
         (
@@ -345,7 +343,7 @@ async def test_resolves_inventory_order_and_never_exposes_private_coordinates() 
 async def test_rejects_unknown_and_cross_unit_evidence_without_recharge() -> (
     None
 ):
-    """Invalid model content is terminal and never invokes the provider twice."""
+    """Invalid content is terminal and never invokes the provider twice."""
     request = _valid_request()
     provider = _RecordingProvider(
         (
@@ -442,14 +440,16 @@ def test_schemas_forbid_extra_keys_and_bound_final_descriptions() -> None:
 async def test_accepts_honest_ambiguity_and_reduces_conflicting_claims() -> (
     None
 ):
-    """Conflicting supported observations become explicit low-confidence text."""
+    """Conflicts become explicit low-confidence text."""
     provider = _RecordingProvider(
         (
             {
                 "observations": [
                     {
                         "dataset_id": "dataset_001",
-                        "claim": "Supported facts: expression values are present.",
+                        "claim": (
+                            "Supported facts: expression values are present."
+                        ),
                         "confidence": "medium",
                         "evidence_ids": ["evidence_001"],
                     }
@@ -459,7 +459,9 @@ async def test_accepts_honest_ambiguity_and_reduces_conflicting_claims() -> (
                 "observations": [
                     {
                         "dataset_id": "dataset_001",
-                        "claim": "Supported facts: expression values are absent.",
+                        "claim": (
+                            "Supported facts: expression values are absent."
+                        ),
                         "confidence": "medium",
                         "evidence_ids": ["evidence_002"],
                     },
