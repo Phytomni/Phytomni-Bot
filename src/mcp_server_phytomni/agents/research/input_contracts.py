@@ -16,6 +16,7 @@ __all__ = [
     "ResearchErrorCode",
     "ResearchFailureStage",
     "ResearchInputFailure",
+    "ResearchInteropMode",
     "SourceSpan",
     "TokenEstimator",
     "research_input_failure",
@@ -24,6 +25,7 @@ __all__ = [
 EvidenceSourceKind = Literal[
     "query", "pdf_page", "document_section", "user_hint", "dataset_meta"
 ]
+ResearchInteropMode = Literal["off", "auto", "required"]
 ResearchConfidence = Literal["high", "medium", "low"]
 
 
@@ -102,7 +104,7 @@ class SourceSpan:
     grammar: Literal["trailing_json", "fenced_json", "standalone_tab", "query"]
 
 
-class ResearchInputFailureError(Exception):
+class ResearchInputFailureError(ValueError):
     """Stable, transport-independent failure for Research input resolution."""
 
     def __init__(

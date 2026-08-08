@@ -25,6 +25,7 @@ RESEARCH_HEARTBEAT_INTERVAL = timedelta(seconds=20)
 RESEARCH_RECOVERY_BATCH_SIZE = 32
 RESEARCH_SCHEMA_VERSION = 1
 RESEARCH_SCHEMA_VERSION_TABLE = "research_input_schema_version"
+RESEARCH_OPERATION = "research_input_resolution_v1"
 PUBLIC_RESEARCH_STAGES = frozenset(
     {"input_resolution", "planning", "execution", "report_assembly"}
 )
@@ -67,6 +68,15 @@ class ResearchWorkUnitRecord(_ResearchWorkUnitIdentity):
     revision: int
 
 
+@dataclass(frozen=True, slots=True)
+class ResearchAdmissionReservation:
+    """Atomic admission result before a post-commit worker launch."""
+
+    run_id: str
+    replay: bool
+    status: str
+
+
 class ResearchInputStore:
     """Own versioned Research coordinator rows colocated with run state."""
 
@@ -99,21 +109,13 @@ class ResearchInputStore:
         now = _utc_iso(datetime.now(UTC))
         with sqlite_transaction(self.db_path) as connection:
             connection.execute(
-                """
-                INSERT INTO research_work_units (
-                    unit_id, run_id, kind, state, input_digest, policy_digest,
-                    lease_owner, lease_expires_at, attempt, revision,
-                    schema_version, created_at, updated_at
-                )
-                SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-                WHERE EXISTS (
-                    SELECT 1 FROM runs
-                    WHERE runs.run_id = ?
-                      AND runs.status NOT IN (
-                          'succeeded', 'failed', 'cancelled'
-                      )
-                )
-                """,
+                "INSERT INTO research_work_units ("
+                "unit_id, run_id, kind, state, input_digest, policy_digest, "
+                "lease_owner, lease_expires_at, attempt, revision, "
+                "schema_version, created_at, updated_at) "
+                "SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? "
+                "WHERE EXISTS (SELECT 1 FROM runs WHERE runs.run_id = ? "
+                "AND runs.status NOT IN ('succeeded', 'failed', 'cancelled'))",
                 (
                     record.unit_id,
                     record.run_id,
@@ -136,6 +138,52 @@ class ResearchInputStore:
                 ),
             )
 
+    def reserve_admission(
+        self, **request: Any
+    ) -> ResearchAdmissionReservation | None:
+        """Reserve the binding, parent, snapshot, and root unit atomically."""
+        connection = sqlite3.connect(
+            self.db_path, isolation_level=None, timeout=30.0
+        )
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA busy_timeout=30000")
+        now = _utc_iso(datetime.now(UTC))
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            found, replay = _read_existing_admission(connection, request)
+            if found:
+                if replay is None:
+                    connection.rollback()
+                    return None
+                connection.commit()
+                return replay
+            if request.get(
+                "header_alias_digest"
+            ) is not None and _alias_is_bound(
+                connection, request["owner"], request["header_alias_digest"]
+            ):
+                connection.rollback()
+                return None
+            _insert_admission(connection, request, now)
+            connection.commit()
+            return ResearchAdmissionReservation(
+                request["run_id"], False, "running"
+            )
+        except sqlite3.IntegrityError:
+            if connection.in_transaction:
+                connection.rollback()
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                _found, replay = _read_existing_admission(connection, request)
+                connection.commit()
+                return replay
+            except sqlite3.IntegrityError:
+                if connection.in_transaction:
+                    connection.rollback()
+                return None
+        finally:
+            connection.close()
+
     def persist_resolution(self, run_id: str, **fields: Any) -> bool:
         """Persist structured private resolution state, never public plaintext.
 
@@ -151,26 +199,20 @@ class ResearchInputStore:
         with sqlite_transaction(self.db_path) as connection:
             if expected_revision is None:
                 cursor = connection.execute(
-                    """
-                    INSERT OR IGNORE INTO research_input_resolutions (
-                        run_id, schema_version, status, revision,
-                        original_query_digest, original_query_length,
-                        effective_query, source_map_json, candidates_json,
-                        managed_snapshot_json, effective_query_digest,
-                        source_map_digest, candidate_digest, snapshot_digest,
-                        evidence_digest, work_digest, client_fingerprint,
-                        execution_fingerprint, policy_digest, plan_digest,
-                        created_at, updated_at
-                    ) SELECT ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                              ?, ?, ?, ?, ?, ?, ?
-                    WHERE EXISTS (
-                        SELECT 1 FROM runs
-                        WHERE runs.run_id = ?
-                          AND runs.status NOT IN (
-                              'succeeded', 'failed', 'cancelled'
-                          )
-                    )
-                    """,
+                    "INSERT OR IGNORE INTO research_input_resolutions ("
+                    "run_id, schema_version, status, revision, "
+                    "original_query_digest, original_query_length, "
+                    "effective_query, source_map_json, candidates_json, "
+                    "managed_snapshot_json, effective_query_digest, "
+                    "source_map_digest, candidate_digest, snapshot_digest, "
+                    "evidence_digest, work_digest, client_fingerprint, "
+                    "execution_fingerprint, policy_digest, plan_digest, "
+                    "created_at, updated_at) "
+                    "SELECT ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                    "?, ?, ?, ?, ?, ?, ? "
+                    "WHERE EXISTS (SELECT 1 FROM runs WHERE runs.run_id = ? "
+                    "AND runs.status NOT IN "
+                    "('succeeded', 'failed', 'cancelled'))",
                     (*values, run_id),
                 )
                 return cursor.rowcount == 1
@@ -245,21 +287,14 @@ class ResearchInputStore:
                 connection.rollback()
                 return None
             cursor = connection.execute(
-                """
-                UPDATE research_work_units
-                SET state = 'leased', lease_owner = ?, lease_expires_at = ?,
-                    attempt = attempt + 1, updated_at = ?,
-                    revision = revision + 1
-                WHERE unit_id = ? AND revision = ?
-                  AND state = ?
-                  AND EXISTS (
-                      SELECT 1 FROM runs
-                      WHERE runs.run_id = research_work_units.run_id
-                        AND runs.status NOT IN (
-                            'succeeded', 'failed', 'cancelled'
-                        )
-                  )
-                """,
+                "UPDATE research_work_units SET state = 'leased', "
+                "lease_owner = ?, lease_expires_at = ?, "
+                "attempt = attempt + 1, "
+                "updated_at = ?, revision = revision + 1 "
+                "WHERE unit_id = ? AND revision = ? AND state = ? "
+                "AND EXISTS (SELECT 1 FROM runs WHERE "
+                "runs.run_id = research_work_units.run_id AND runs.status "
+                "NOT IN ('succeeded', 'failed', 'cancelled'))",
                 (
                     lease_owner,
                     expires_at,
@@ -291,20 +326,12 @@ class ResearchInputStore:
         with sqlite_transaction(self.db_path) as connection:
             connection.row_factory = sqlite3.Row
             cursor = connection.execute(
-                """
-                UPDATE research_work_units
-                SET lease_expires_at = ?, updated_at = ?,
-                    revision = revision + 1
-                WHERE unit_id = ? AND lease_owner = ? AND revision = ?
-                  AND state IN ('leased', 'sent')
-                  AND EXISTS (
-                      SELECT 1 FROM runs
-                      WHERE runs.run_id = research_work_units.run_id
-                        AND runs.status NOT IN (
-                            'succeeded', 'failed', 'cancelled'
-                        )
-                  )
-                """,
+                "UPDATE research_work_units SET lease_expires_at = ?, "
+                "updated_at = ?, revision = revision + 1 "
+                "WHERE unit_id = ? AND lease_owner = ? AND revision = ? "
+                "AND state IN ('leased', 'sent') AND EXISTS (SELECT 1 FROM "
+                "runs WHERE runs.run_id = research_work_units.run_id AND "
+                "runs.status NOT IN ('succeeded', 'failed', 'cancelled'))",
                 (expiry, now_iso, unit_id, lease_owner, revision),
             )
             if cursor.rowcount != 1:
@@ -324,25 +351,15 @@ class ResearchInputStore:
         now_iso = _utc_iso(now)
         with sqlite_transaction(self.db_path) as connection:
             cursor = connection.execute(
-                """
-                UPDATE research_work_units
-                SET state = ?, lease_owner = NULL,
-                    lease_expires_at = CASE
-                        WHEN ? = 'retryable_failed' THEN lease_expires_at
-                        ELSE NULL
-                    END,
-                    updated_at = ?, completed_at = ?,
-                    revision = revision + 1
-                WHERE unit_id = ? AND lease_owner = ? AND revision = ?
-                  AND state IN ('leased', 'sent')
-                  AND EXISTS (
-                      SELECT 1 FROM runs
-                      WHERE runs.run_id = research_work_units.run_id
-                        AND runs.status NOT IN (
-                            'succeeded', 'failed', 'cancelled'
-                        )
-                  )
-                """,
+                "UPDATE research_work_units SET state = ?, "
+                "lease_owner = NULL, lease_expires_at = CASE "
+                "WHEN ? = 'retryable_failed' THEN lease_expires_at "
+                "ELSE NULL END, updated_at = ?, completed_at = ?, "
+                "revision = revision + 1 WHERE unit_id = ? "
+                "AND lease_owner = ? AND revision = ? "
+                "AND state IN ('leased', 'sent') AND EXISTS (SELECT 1 FROM "
+                "runs WHERE runs.run_id = research_work_units.run_id "
+                "AND runs.status NOT IN ('succeeded', 'failed', 'cancelled'))",
                 (
                     state,
                     state,
@@ -432,10 +449,9 @@ def _ensure_indexes(connection: sqlite3.Connection) -> None:
 def _set_schema_version(connection: sqlite3.Connection) -> None:
     """Commit the schema version only after every DDL/index step succeeds."""
     connection.execute(
-        f"""
-        INSERT INTO {RESEARCH_SCHEMA_VERSION_TABLE}(id, version) VALUES (1, ?)
-        ON CONFLICT(id) DO UPDATE SET version = excluded.version
-        """,
+        f"INSERT INTO {RESEARCH_SCHEMA_VERSION_TABLE}(id, version) "
+        "VALUES (1, ?) ON CONFLICT(id) DO UPDATE "
+        "SET version = excluded.version",
         (RESEARCH_SCHEMA_VERSION,),
     )
 
@@ -480,11 +496,9 @@ def _work_row(
 ) -> sqlite3.Row | None:
     """Read the small lease projection needed by one compare-and-set."""
     return connection.execute(
-        """
-        SELECT unit_id, run_id, kind, state, input_digest, policy_digest,
-               lease_owner, lease_expires_at, attempt, revision
-        FROM research_work_units WHERE unit_id = ?
-        """,
+        "SELECT unit_id, run_id, kind, state, input_digest, policy_digest, "
+        "lease_owner, lease_expires_at, attempt, revision "
+        "FROM research_work_units WHERE unit_id = ?",
         (unit_id,),
     ).fetchone()
 
@@ -527,6 +541,176 @@ def _canonical_json(value: object) -> str:
     return json.dumps(
         value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
     )
+
+
+def _read_existing_admission(
+    connection: sqlite3.Connection, request: Mapping[str, Any]
+) -> tuple[bool, ResearchAdmissionReservation | None]:
+    """Read an exact replay, distinguishing it from an absent binding."""
+    row = connection.execute(
+        "SELECT run_id, client_fingerprint "
+        "FROM research_idempotency_bindings "
+        "WHERE owner = ? AND operation = ? AND idempotency_digest = ?",
+        (
+            request["owner"],
+            RESEARCH_OPERATION,
+            request["identity_digest"],
+        ),
+    ).fetchone()
+    if row is None:
+        return False, None
+    if row["client_fingerprint"] != request["client_fingerprint"]:
+        return True, None
+    if not _attach_alias(
+        connection,
+        request["owner"],
+        row["run_id"],
+        request.get("header_alias_digest"),
+    ):
+        return True, None
+    status = connection.execute(
+        "SELECT status FROM runs WHERE run_id = ?", (row["run_id"],)
+    ).fetchone()
+    if status is None:
+        return True, None
+    return True, ResearchAdmissionReservation(row["run_id"], True, status[0])
+
+
+def _insert_admission(
+    connection: sqlite3.Connection, request: Mapping[str, Any], now: str
+) -> None:
+    """Insert the public parent and all private admission rows."""
+    connection.execute(
+        "INSERT INTO runs (run_id, user_id, agent, origin, status, "
+        "result_json, error, created_at, updated_at, expires_at, locale) "
+        "VALUES (?, ?, 'research', 'api', 'running', NULL, NULL, ?, ?, "
+        "NULL, ?)",
+        (
+            request["run_id"],
+            request["owner"],
+            now,
+            now,
+            request["locale"],
+        ),
+    )
+    connection.execute(
+        "INSERT INTO research_idempotency_bindings ("
+        "run_id, idempotency_digest, "
+        "request_digest, schema_version, owner, operation, identity_kind, "
+        "alias_digest, client_fingerprint, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            request["run_id"],
+            request["identity_digest"],
+            request["original_query_digest"],
+            RESEARCH_SCHEMA_VERSION,
+            request["owner"],
+            RESEARCH_OPERATION,
+            request["identity_kind"],
+            request.get("header_alias_digest"),
+            request["client_fingerprint"],
+            now,
+            now,
+        ),
+    )
+    _insert_resolution(connection, request, now)
+    connection.execute(
+        "INSERT INTO research_work_units (unit_id, run_id, kind, state, "
+        "input_digest, policy_digest, attempt, revision, schema_version, "
+        "created_at, updated_at) VALUES (?, ?, 'resolve_root', 'pending', "
+        "?, ?, 0, 0, ?, ?, ?)",
+        (
+            f"{request['run_id']}:resolve_root",
+            request["run_id"],
+            request["root_input_digest"],
+            request["client_fingerprint"],
+            RESEARCH_SCHEMA_VERSION,
+            now,
+            now,
+        ),
+    )
+
+
+def _insert_resolution(
+    connection: sqlite3.Connection, request: Mapping[str, Any], now: str
+) -> None:
+    """Insert private resolution state without copying the raw query."""
+    serialized = (
+        request["effective_query"],
+        *(
+            _canonical_json(request[name])
+            for name in ("source_map", "candidates", "managed_snapshot")
+        ),
+    )
+    digests = tuple(
+        hashlib.sha256(value.encode("utf-8")).hexdigest()
+        for value in serialized
+    )
+    connection.execute(
+        "INSERT INTO research_input_resolutions (run_id, schema_version, "
+        "status, revision, original_query_digest, original_query_length, "
+        "effective_query, source_map_json, candidates_json, "
+        "managed_snapshot_json, effective_query_digest, source_map_digest, "
+        "candidate_digest, snapshot_digest, evidence_digest, work_digest, "
+        "client_fingerprint, created_at, updated_at) VALUES (?, ?, 'pending', "
+        "0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', '', ?, ?, ?)",
+        (
+            request["run_id"],
+            RESEARCH_SCHEMA_VERSION,
+            request["original_query_digest"],
+            request["original_query_length"],
+            *serialized,
+            *digests,
+            request["client_fingerprint"],
+            now,
+            now,
+        ),
+    )
+
+
+def _alias_is_bound(
+    connection: sqlite3.Connection, owner: str, alias_digest: str
+) -> bool:
+    """Return whether an optional header alias belongs to another turn."""
+    return (
+        connection.execute(
+            "SELECT 1 FROM research_idempotency_bindings "
+            "WHERE owner = ? AND operation = ? AND alias_digest = ?",
+            (owner, RESEARCH_OPERATION, alias_digest),
+        ).fetchone()
+        is not None
+    )
+
+
+def _attach_alias(
+    connection: sqlite3.Connection,
+    owner: str,
+    run_id: str,
+    alias_digest: str | None,
+) -> bool:
+    """Attach an optional replay alias only if unbound or identical."""
+    if alias_digest is None:
+        return True
+    row = connection.execute(
+        "SELECT run_id FROM research_idempotency_bindings "
+        "WHERE owner = ? AND operation = ? AND alias_digest = ?",
+        (owner, RESEARCH_OPERATION, alias_digest),
+    ).fetchone()
+    if row is not None and row["run_id"] != run_id:
+        return False
+    if row is None:
+        connection.execute(
+            "UPDATE research_idempotency_bindings SET alias_digest = ?, "
+            "updated_at = ? WHERE run_id = ? AND owner = ? AND operation = ?",
+            (
+                alias_digest,
+                _utc_iso(datetime.now(UTC)),
+                run_id,
+                owner,
+                RESEARCH_OPERATION,
+            ),
+        )
+    return True
 
 
 def _resolution_values(
@@ -635,244 +819,165 @@ def _table_exists(connection: sqlite3.Connection, name: str) -> bool:
     )
 
 
-_CREATE_IDEMPOTENCY_BINDINGS_DDL = """
-CREATE TABLE IF NOT EXISTS research_idempotency_bindings (
-    run_id TEXT NOT NULL,
-    idempotency_digest TEXT NOT NULL,
-    request_digest TEXT NOT NULL,
-    schema_version INTEGER NOT NULL DEFAULT 1,
-    owner TEXT NOT NULL DEFAULT '',
-    operation TEXT NOT NULL DEFAULT 'research_input_resolution_v1',
-    identity_kind TEXT NOT NULL DEFAULT 'header',
-    alias_digest TEXT,
-    client_fingerprint TEXT,
-    conversation_key_digest TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT,
-    expires_at TEXT,
-    PRIMARY KEY (run_id, idempotency_digest),
-    FOREIGN KEY (run_id) REFERENCES runs(run_id)
+_CREATE_IDEMPOTENCY_BINDINGS_DDL = (
+    "CREATE TABLE IF NOT EXISTS research_idempotency_bindings ("
+    "run_id TEXT NOT NULL, idempotency_digest TEXT NOT NULL, "
+    "request_digest TEXT NOT NULL, schema_version INTEGER NOT NULL DEFAULT 1, "
+    "owner TEXT NOT NULL DEFAULT '', "
+    "operation TEXT NOT NULL DEFAULT 'research_input_resolution_v1', "
+    "identity_kind TEXT NOT NULL DEFAULT 'header', alias_digest TEXT, "
+    "client_fingerprint TEXT, conversation_key_digest TEXT, "
+    "created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT, "
+    "expires_at TEXT, PRIMARY KEY (run_id, idempotency_digest), "
+    "FOREIGN KEY (run_id) REFERENCES runs(run_id))"
 )
-"""
-_CREATE_INPUT_RESOLUTIONS_DDL = """
-CREATE TABLE IF NOT EXISTS research_input_resolutions (
-    run_id TEXT PRIMARY KEY,
-    schema_version INTEGER NOT NULL DEFAULT 1,
-    status TEXT NOT NULL DEFAULT 'pending',
-    revision INTEGER NOT NULL DEFAULT 0,
-    cancel_requested INTEGER NOT NULL DEFAULT 0,
-    original_query_digest TEXT,
-    original_query_length INTEGER NOT NULL DEFAULT 0,
-    effective_query TEXT,
-    source_map_json TEXT,
-    candidates_json TEXT,
-    managed_snapshot_json TEXT,
-    inventory_json TEXT,
-    client_fingerprint TEXT,
-    execution_fingerprint TEXT,
-    policy_digest TEXT,
-    model_id TEXT,
-    effective_query_digest TEXT NOT NULL,
-    source_map_digest TEXT NOT NULL,
-    candidate_digest TEXT NOT NULL,
-    snapshot_digest TEXT NOT NULL,
-    evidence_digest TEXT NOT NULL,
-    work_digest TEXT NOT NULL,
-    coverage_total INTEGER NOT NULL DEFAULT 0,
-    coverage_digest TEXT,
-    final_projection_json TEXT,
-    plan_digest TEXT,
-    last_stage TEXT,
-    failure_code TEXT,
-    failure_retryable INTEGER,
-    status_hint TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT,
-    expires_at TEXT,
-    FOREIGN KEY (run_id) REFERENCES runs(run_id)
+_CREATE_INPUT_RESOLUTIONS_DDL = (
+    "CREATE TABLE IF NOT EXISTS research_input_resolutions ("
+    "run_id TEXT PRIMARY KEY, schema_version INTEGER NOT NULL DEFAULT 1, "
+    "status TEXT NOT NULL DEFAULT 'pending', "
+    "revision INTEGER NOT NULL DEFAULT 0, "
+    "cancel_requested INTEGER NOT NULL DEFAULT 0, "
+    "original_query_digest TEXT, "
+    "original_query_length INTEGER NOT NULL DEFAULT 0, "
+    "effective_query TEXT, source_map_json TEXT, candidates_json TEXT, "
+    "managed_snapshot_json TEXT, inventory_json TEXT, "
+    "client_fingerprint TEXT, "
+    "execution_fingerprint TEXT, policy_digest TEXT, model_id TEXT, "
+    "effective_query_digest TEXT NOT NULL, source_map_digest TEXT NOT NULL, "
+    "candidate_digest TEXT NOT NULL, snapshot_digest TEXT NOT NULL, "
+    "evidence_digest TEXT NOT NULL, work_digest TEXT NOT NULL, "
+    "coverage_total INTEGER NOT NULL DEFAULT 0, coverage_digest TEXT, "
+    "final_projection_json TEXT, plan_digest TEXT, last_stage TEXT, "
+    "failure_code TEXT, failure_retryable INTEGER, status_hint TEXT, "
+    "created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT, "
+    "expires_at TEXT, FOREIGN KEY (run_id) REFERENCES runs(run_id))"
 )
-"""
-_CREATE_WORK_UNITS_DDL = """
-CREATE TABLE IF NOT EXISTS research_work_units (
-    unit_id TEXT PRIMARY KEY,
-    run_id TEXT NOT NULL,
-    kind TEXT NOT NULL,
-    state TEXT NOT NULL,
-    input_digest TEXT NOT NULL,
-    policy_digest TEXT NOT NULL,
-    lease_owner TEXT,
-    lease_expires_at TEXT,
-    attempt INTEGER NOT NULL DEFAULT 0,
-    revision INTEGER NOT NULL DEFAULT 0,
-    schema_version INTEGER NOT NULL DEFAULT 1,
-    evidence_ids_json TEXT,
-    provider_request_digest TEXT,
-    provider_idempotency_digest TEXT,
-    output_json TEXT,
-    failure_code TEXT,
-    failure_retryable INTEGER,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TEXT,
-    sent_at TEXT,
-    completed_at TEXT,
-    FOREIGN KEY (run_id) REFERENCES runs(run_id)
+_CREATE_WORK_UNITS_DDL = (
+    "CREATE TABLE IF NOT EXISTS research_work_units ("
+    "unit_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, kind TEXT NOT NULL, "
+    "state TEXT NOT NULL, input_digest TEXT NOT NULL, "
+    "policy_digest TEXT NOT NULL, lease_owner TEXT, lease_expires_at TEXT, "
+    "attempt INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 0, "
+    "schema_version INTEGER NOT NULL DEFAULT 1, evidence_ids_json TEXT, "
+    "provider_request_digest TEXT, provider_idempotency_digest TEXT, "
+    "output_json TEXT, failure_code TEXT, failure_retryable INTEGER, "
+    "created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT, "
+    "sent_at TEXT, completed_at TEXT, "
+    "FOREIGN KEY (run_id) REFERENCES runs(run_id))"
 )
-"""
-_CREATE_OUTBOX_DDL = """
-CREATE TABLE IF NOT EXISTS research_dispatch_outbox (
-    outbox_id TEXT PRIMARY KEY,
-    run_id TEXT NOT NULL,
-    unit_id TEXT NOT NULL,
-    payload_digest TEXT NOT NULL,
-    state TEXT NOT NULL DEFAULT 'pending',
-    attempt INTEGER NOT NULL DEFAULT 0,
-    revision INTEGER NOT NULL DEFAULT 0,
-    schema_version INTEGER NOT NULL DEFAULT 1,
-    child_ordinal INTEGER,
-    dispatch_fingerprint TEXT,
-    payload_json TEXT,
-    output_dir TEXT,
-    grant_ids_json TEXT,
-    snapshot_digest TEXT,
-    lease_owner TEXT,
-    lease_expires_at TEXT,
-    remote_task_id TEXT,
-    failure_code TEXT,
-    failure_retryable INTEGER,
-    updated_at TEXT,
-    sent_at TEXT,
-    completed_at TEXT,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (run_id) REFERENCES runs(run_id),
-    FOREIGN KEY (unit_id) REFERENCES research_work_units(unit_id)
+_CREATE_OUTBOX_DDL = (
+    "CREATE TABLE IF NOT EXISTS research_dispatch_outbox ("
+    "outbox_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, unit_id TEXT NOT NULL, "
+    "payload_digest TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending', "
+    "attempt INTEGER NOT NULL DEFAULT 0, revision INTEGER NOT NULL DEFAULT 0, "
+    "schema_version INTEGER NOT NULL DEFAULT 1, child_ordinal INTEGER, "
+    "dispatch_fingerprint TEXT, payload_json TEXT, output_dir TEXT, "
+    "grant_ids_json TEXT, snapshot_digest TEXT, lease_owner TEXT, "
+    "lease_expires_at TEXT, remote_task_id TEXT, failure_code TEXT, "
+    "failure_retryable INTEGER, updated_at TEXT, sent_at TEXT, "
+    "completed_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+    "FOREIGN KEY (run_id) REFERENCES runs(run_id), "
+    "FOREIGN KEY (unit_id) REFERENCES research_work_units(unit_id))"
 )
-"""
-_CREATE_SCHEMA_VERSION_DDL = f"""
-CREATE TABLE IF NOT EXISTS {RESEARCH_SCHEMA_VERSION_TABLE} (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    version INTEGER NOT NULL
+_CREATE_SCHEMA_VERSION_DDL = (
+    f"CREATE TABLE IF NOT EXISTS {RESEARCH_SCHEMA_VERSION_TABLE} ("
+    "id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)"
 )
-"""
+
+
+def _column_definitions(spec: str) -> tuple[tuple[str, str], ...]:
+    """Decode compact additive-column definitions used by migrations."""
+    return tuple(
+        (name, definition)
+        for name, definition in (
+            part.split(":", 1) for part in spec.split("|")
+        )
+    )
+
+
 _PRIVATE_TABLES = (
     (
         "research_idempotency_bindings",
         _CREATE_IDEMPOTENCY_BINDINGS_DDL,
-        (
-            ("run_id", "TEXT"),
-            ("idempotency_digest", "TEXT"),
-            ("request_digest", "TEXT"),
-            ("schema_version", "INTEGER NOT NULL DEFAULT 1"),
-            ("owner", "TEXT NOT NULL DEFAULT ''"),
-            (
-                "operation",
-                "TEXT NOT NULL DEFAULT 'research_input_resolution_v1'",
-            ),
-            ("identity_kind", "TEXT NOT NULL DEFAULT 'header'"),
-            ("alias_digest", "TEXT"),
-            ("client_fingerprint", "TEXT"),
-            ("conversation_key_digest", "TEXT"),
-            ("created_at", "TEXT NOT NULL DEFAULT ''"),
-            ("updated_at", "TEXT"),
-            ("expires_at", "TEXT"),
+        _column_definitions(
+            "run_id:TEXT|idempotency_digest:TEXT|request_digest:TEXT|"
+            "schema_version:INTEGER NOT NULL DEFAULT 1|"
+            "owner:TEXT NOT NULL DEFAULT ''|"
+            "operation:TEXT NOT NULL DEFAULT 'research_input_resolution_v1'|"
+            "identity_kind:TEXT NOT NULL DEFAULT 'header'|alias_digest:TEXT|"
+            "client_fingerprint:TEXT|conversation_key_digest:TEXT|"
+            "created_at:TEXT NOT NULL DEFAULT ''|updated_at:TEXT|"
+            "expires_at:TEXT"
         ),
     ),
     (
         "research_input_resolutions",
         _CREATE_INPUT_RESOLUTIONS_DDL,
-        (
-            ("run_id", "TEXT"),
-            ("schema_version", "INTEGER NOT NULL DEFAULT 1"),
-            ("status", "TEXT NOT NULL DEFAULT 'pending'"),
-            ("revision", "INTEGER NOT NULL DEFAULT 0"),
-            ("cancel_requested", "INTEGER NOT NULL DEFAULT 0"),
-            ("original_query_digest", "TEXT"),
-            ("original_query_length", "INTEGER NOT NULL DEFAULT 0"),
-            ("effective_query", "TEXT"),
-            ("source_map_json", "TEXT"),
-            ("candidates_json", "TEXT"),
-            ("managed_snapshot_json", "TEXT"),
-            ("inventory_json", "TEXT"),
-            ("client_fingerprint", "TEXT"),
-            ("execution_fingerprint", "TEXT"),
-            ("policy_digest", "TEXT"),
-            ("model_id", "TEXT"),
-            ("effective_query_digest", "TEXT NOT NULL DEFAULT ''"),
-            ("source_map_digest", "TEXT NOT NULL DEFAULT ''"),
-            ("candidate_digest", "TEXT NOT NULL DEFAULT ''"),
-            ("snapshot_digest", "TEXT NOT NULL DEFAULT ''"),
-            ("evidence_digest", "TEXT NOT NULL DEFAULT ''"),
-            ("work_digest", "TEXT NOT NULL DEFAULT ''"),
-            ("coverage_total", "INTEGER NOT NULL DEFAULT 0"),
-            ("coverage_digest", "TEXT"),
-            ("final_projection_json", "TEXT"),
-            ("plan_digest", "TEXT"),
-            ("last_stage", "TEXT"),
-            ("failure_code", "TEXT"),
-            ("failure_retryable", "INTEGER"),
-            ("status_hint", "TEXT"),
-            ("created_at", "TEXT NOT NULL DEFAULT ''"),
-            ("updated_at", "TEXT"),
-            ("expires_at", "TEXT"),
+        _column_definitions(
+            "run_id:TEXT|schema_version:INTEGER NOT NULL DEFAULT 1|"
+            "status:TEXT NOT NULL DEFAULT 'pending'|"
+            "revision:INTEGER NOT NULL DEFAULT 0|"
+            "cancel_requested:INTEGER NOT NULL DEFAULT 0|"
+            "original_query_digest:TEXT|"
+            "original_query_length:INTEGER NOT NULL DEFAULT 0|"
+            "effective_query:TEXT|source_map_json:TEXT|candidates_json:TEXT|"
+            "managed_snapshot_json:TEXT|inventory_json:TEXT|"
+            "client_fingerprint:TEXT|execution_fingerprint:TEXT|"
+            "policy_digest:TEXT|model_id:TEXT|"
+            "effective_query_digest:TEXT NOT NULL DEFAULT ''|"
+            "source_map_digest:TEXT NOT NULL DEFAULT ''|"
+            "candidate_digest:TEXT NOT NULL DEFAULT ''|"
+            "snapshot_digest:TEXT NOT NULL DEFAULT ''|"
+            "evidence_digest:TEXT NOT NULL DEFAULT ''|"
+            "work_digest:TEXT NOT NULL DEFAULT ''|"
+            "coverage_total:INTEGER NOT NULL DEFAULT 0|coverage_digest:TEXT|"
+            "final_projection_json:TEXT|plan_digest:TEXT|last_stage:TEXT|"
+            "failure_code:TEXT|failure_retryable:INTEGER|status_hint:TEXT|"
+            "created_at:TEXT NOT NULL DEFAULT ''|updated_at:TEXT|"
+            "expires_at:TEXT"
         ),
     ),
     (
         "research_work_units",
         _CREATE_WORK_UNITS_DDL,
-        (
-            ("unit_id", "TEXT"),
-            ("run_id", "TEXT"),
-            ("kind", "TEXT NOT NULL DEFAULT ''"),
-            ("state", "TEXT NOT NULL DEFAULT 'pending'"),
-            ("input_digest", "TEXT NOT NULL DEFAULT ''"),
-            ("policy_digest", "TEXT NOT NULL DEFAULT ''"),
-            ("lease_owner", "TEXT"),
-            ("lease_expires_at", "TEXT"),
-            ("attempt", "INTEGER NOT NULL DEFAULT 0"),
-            ("revision", "INTEGER NOT NULL DEFAULT 0"),
-            ("schema_version", "INTEGER NOT NULL DEFAULT 1"),
-            ("evidence_ids_json", "TEXT"),
-            ("provider_request_digest", "TEXT"),
-            ("provider_idempotency_digest", "TEXT"),
-            ("output_json", "TEXT"),
-            ("failure_code", "TEXT"),
-            ("failure_retryable", "INTEGER"),
-            ("created_at", "TEXT"),
-            ("updated_at", "TEXT"),
-            ("sent_at", "TEXT"),
-            ("completed_at", "TEXT"),
+        _column_definitions(
+            "unit_id:TEXT|run_id:TEXT|kind:TEXT NOT NULL DEFAULT ''|"
+            "state:TEXT NOT NULL DEFAULT 'pending'|"
+            "input_digest:TEXT NOT NULL DEFAULT ''|"
+            "policy_digest:TEXT NOT NULL DEFAULT ''|lease_owner:TEXT|"
+            "lease_expires_at:TEXT|attempt:INTEGER NOT NULL DEFAULT 0|"
+            "revision:INTEGER NOT NULL DEFAULT 0|"
+            "schema_version:INTEGER NOT NULL DEFAULT 1|"
+            "evidence_ids_json:TEXT|provider_request_digest:TEXT|"
+            "provider_idempotency_digest:TEXT|output_json:TEXT|"
+            "failure_code:TEXT|failure_retryable:INTEGER|created_at:TEXT|"
+            "updated_at:TEXT|sent_at:TEXT|completed_at:TEXT"
         ),
     ),
     (
         "research_dispatch_outbox",
         _CREATE_OUTBOX_DDL,
-        (
-            ("outbox_id", "TEXT"),
-            ("run_id", "TEXT"),
-            ("unit_id", "TEXT"),
-            ("payload_digest", "TEXT NOT NULL DEFAULT ''"),
-            ("state", "TEXT NOT NULL DEFAULT 'pending'"),
-            ("attempt", "INTEGER NOT NULL DEFAULT 0"),
-            ("revision", "INTEGER NOT NULL DEFAULT 0"),
-            ("schema_version", "INTEGER NOT NULL DEFAULT 1"),
-            ("child_ordinal", "INTEGER"),
-            ("dispatch_fingerprint", "TEXT"),
-            ("payload_json", "TEXT"),
-            ("output_dir", "TEXT"),
-            ("grant_ids_json", "TEXT"),
-            ("snapshot_digest", "TEXT"),
-            ("lease_owner", "TEXT"),
-            ("lease_expires_at", "TEXT"),
-            ("remote_task_id", "TEXT"),
-            ("failure_code", "TEXT"),
-            ("failure_retryable", "INTEGER"),
-            ("updated_at", "TEXT"),
-            ("sent_at", "TEXT"),
-            ("completed_at", "TEXT"),
-            ("created_at", "TEXT NOT NULL DEFAULT ''"),
+        _column_definitions(
+            "outbox_id:TEXT|run_id:TEXT|unit_id:TEXT|"
+            "payload_digest:TEXT NOT NULL DEFAULT ''|"
+            "state:TEXT NOT NULL DEFAULT 'pending'|"
+            "attempt:INTEGER NOT NULL DEFAULT 0|"
+            "revision:INTEGER NOT NULL DEFAULT 0|"
+            "schema_version:INTEGER NOT NULL DEFAULT 1|child_ordinal:INTEGER|"
+            "dispatch_fingerprint:TEXT|payload_json:TEXT|output_dir:TEXT|"
+            "grant_ids_json:TEXT|snapshot_digest:TEXT|lease_owner:TEXT|"
+            "lease_expires_at:TEXT|remote_task_id:TEXT|failure_code:TEXT|"
+            "failure_retryable:INTEGER|updated_at:TEXT|sent_at:TEXT|"
+            "completed_at:TEXT|created_at:TEXT NOT NULL DEFAULT ''"
         ),
     ),
 )
 _INDEX_DDLS = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_research_binding_owner_identity "
+    "ON research_idempotency_bindings(owner, idempotency_digest)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_research_binding_owner_alias "
+    "ON research_idempotency_bindings(owner, alias_digest) "
+    "WHERE alias_digest IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_research_binding_digest "
     "ON research_idempotency_bindings(idempotency_digest)",
     "CREATE INDEX IF NOT EXISTS idx_research_work_claim "
