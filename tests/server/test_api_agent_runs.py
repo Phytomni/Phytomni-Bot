@@ -156,6 +156,8 @@ async def test_list_agents_omits_disabled_context_protocol(
     protocols = response.json()["protocols"]
     assert "conversation_context" not in protocols
     assert protocols["obs-multipart-v2"] == [2]
+    assert protocols["research_input_resolution_v1"] == [1]
+    assert response.json()["research_input_resolution"]["dataset_formats"]
 
 
 async def test_list_agents_requires_auth(
@@ -546,23 +548,6 @@ _BACKGROUND_CASES = [
             expected_task_ids={"T-A"},
         ),
         id="analyst",
-    ),
-    pytest.param(
-        _RemoteCase(
-            slug="research",
-            tool_name=server.PhytomniAgents.IN_SILICO_RESEARCH_AGENT.value,
-            stub_return={
-                "task_ids": ["T-R1", "T-R2"],
-                "output_dir": "/obs/r",
-            },
-            arguments={
-                "user_query": "test",
-                "data_list": {},
-                "obs_file_list": [],
-            },
-            expected_task_ids={"T-R1", "T-R2"},
-        ),
-        id="research",
     ),
     pytest.param(
         _RemoteCase(

@@ -6,20 +6,26 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict, dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 from ..agents.analyst.agent import AnalystAgent
 from ..agents.analyst.defaults import ANALYST_CONFIG
 from ..agents.research.input_contracts import (
     ParsedResearchInput,
+    ResearchInputFailure,
     ResearchInteropMode,
     research_input_failure,
 )
 from ..agents.research.input_coordinator import ResearchInputCoordinator
-from ..agents.research.input_inventory import ManagedResearchAssetSnapshot
+from ..agents.research.input_inventory import (
+    ManagedResearchAssetSnapshot,
+)
+from ..agents.research.input_parser import parse_research_input
 from ..agents.research.recovery import ResearchPreAcceptanceRejected
 from ..agents.research.recovery_support import register_recovery_service
 from ..config.api_limits import ApiLimitsConfig
@@ -36,7 +42,9 @@ __all__ = [
     "ResearchAdmissionOutcome",
     "ResearchAdmissionRequest",
     "ResearchClientFingerprintInput",
+    "ResearchHttpAdmissionInput",
     "ResearchInputStore",
+    "ResearchRoutePreflight",
     "build_research_input_coordinator",
     "ensure_research_input_runtime",
     "ResearchRequestIdentity",
@@ -197,6 +205,342 @@ class ResearchAdmissionOutcome:
     replay: bool
     worker_owner: bool
     status_code: Literal[200, 202]
+
+
+class ResearchHttpAdmissionInput:
+    """Opaque HTTP-owned input passed to Research admission.
+
+    Values stay in one immutable-shaped bag so the flat keyword contract is
+    preserved without duplicating projected legacy input fields.
+    """
+
+    __slots__ = ("_values",)
+
+    def __init__(self, **values: Any) -> None:
+        object.__setattr__(self, "_values", dict(values))
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return self._values[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return a detached mapping for diagnostics and tests."""
+        return dict(self._values)
+
+    def get(self, name: str, default: Any = None) -> Any:
+        """Read one optional value without raising for malformed input."""
+        return self._values.get(name, default)
+
+
+class _ResearchPreflightContext:
+    """Internal bag for the adapter's injected seams."""
+
+    __slots__ = ("_values",)
+
+    def __init__(self, values: Mapping[str, Any]) -> None:
+        self._values = dict(values)
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return self._values[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+    def get(self, name: str, default: Any = None) -> Any:
+        """Read one optional seam without raising for a missing value."""
+        return self._values.get(name, default)
+
+
+type ResearchInputParser = Callable[[str, str], ParsedResearchInput]
+type ManagedSnapshotResolver = Callable[
+    [tuple[str, ...]], tuple[ManagedResearchAssetSnapshot, ...]
+]
+type ResearchWorkerLauncher = Callable[
+    [ResearchHttpAdmissionInput, ResearchAdmissionOutcome],
+    Any | Awaitable[Any],
+]
+type ResearchInventoryValidator = Callable[
+    [ParsedResearchInput, tuple[ManagedResearchAssetSnapshot, ...]],
+    Any | Awaitable[Any],
+]
+
+
+class ResearchRoutePreflight:
+    """Replay-first HTTP adapter for the durable Research coordinator."""
+
+    def __init__(self, **options: Any) -> None:
+        """Bind the durable store and injectable pure/external seams."""
+        self._context = _ResearchPreflightContext(
+            {
+                "store": options.pop("store"),
+                "bucket": options.pop("bucket", "phytomni"),
+                "config": options.pop("config", None) or ApiLimitsConfig(),
+                "parser": options.pop("parser", parse_research_input),
+                "managed_snapshot_resolver": options.pop(
+                    "managed_snapshot_resolver", None
+                ),
+                "inventory_validator": options.pop(
+                    "inventory_validator", None
+                ),
+                "worker_launcher": options.pop("worker_launcher", None),
+                "runtime_ready": options.pop("runtime_ready", None),
+            }
+        )
+        if options:
+            raise TypeError(
+                "unexpected Research preflight options: "
+                + ", ".join(sorted(options))
+            )
+
+    async def admit(
+        self, request: ResearchHttpAdmissionInput
+    ) -> ResearchAdmissionOutcome:
+        """Replay first, then atomically admit fresh work."""
+        self._validate_http_request(request)
+        context = self._context
+        identity = parse_idempotency_identity(
+            request.idempotency_key, request.conversation
+        )
+        query_digest = hashlib.sha256(
+            request.original_query.encode("utf-8")
+        ).hexdigest()
+        query_length = len(request.original_query)
+        locale = cast(SupportedLocale, request.locale or "en-US")
+        fingerprint = compute_research_client_fingerprint(
+            ResearchClientFingerprintInput(
+                original_query_digest=query_digest,
+                original_query_length=query_length,
+                managed_asset_ids=request.managed_asset_ids,
+                locale=locale,
+                interop_mode=request.interop_mode,
+                interop_targets=request.interop_targets,
+                conversation_identity_digest=(
+                    identity.canonical_digest
+                    if identity.kind == "conversation"
+                    else None
+                ),
+            )
+        )
+        replay = lookup_research_admission(
+            owner=request.owner,
+            identity=identity,
+            client_fingerprint=fingerprint,
+            store=context.store,
+        )
+        if replay is not None:
+            return replay
+        self._ensure_runtime_ready()
+        if query_length > context.config.API_MAX_USER_QUERY_CHARS:
+            raise research_input_failure(
+                "research_input_limit_exceeded",
+                "Research query exceeds the allowed limit.",
+            )
+        parsed = self._parse(request.original_query)
+        managed_snapshot = self._resolve_managed_snapshot(
+            request.managed_asset_ids
+        )
+        self._validate_input_counts(parsed, managed_snapshot)
+        await self._validate_inventory(parsed, managed_snapshot)
+        admitted = admit_research_request(
+            ResearchAdmissionRequest(
+                owner=request.owner,
+                identity=identity,
+                client_fingerprint=fingerprint,
+                original_query=request.original_query,
+                managed_asset_ids=request.managed_asset_ids,
+                locale=locale,
+                interop_mode=request.interop_mode,
+                interop_targets=request.interop_targets,
+                route_source=request.route_source,
+                parsed_input=parsed,
+                managed_snapshot=managed_snapshot,
+            ),
+            context.store,
+        )
+        await self._launch_worker(request, admitted)
+        return admitted
+
+    async def preflight(
+        self, request: ResearchHttpAdmissionInput
+    ) -> ResearchAdmissionOutcome:
+        """Alias for callers that name the replay-first boundary explicitly."""
+        return await self.admit(request)
+
+    def _ensure_runtime_ready(self) -> None:
+        """Fail closed when the configured resolver runtime is unavailable."""
+        runtime_ready = self._context.runtime_ready
+        if runtime_ready is not None and not runtime_ready():
+            raise research_input_failure(
+                "research_input_protocol_unavailable",
+                "Research input resolution is unavailable.",
+                http_status_hint=503,
+                retryable=True,
+            )
+
+    def _parse(self, query: str) -> ParsedResearchInput:
+        """Parse query text while projecting only stable domain failures."""
+        try:
+            return self._context.parser(query, self._context.bucket)
+        except ResearchInputFailure:
+            raise
+        except (TypeError, ValueError) as exc:
+            raise research_input_failure(
+                "research_input_resolution_failed",
+                "Research input could not be parsed.",
+            ) from exc
+
+    async def _validate_inventory(
+        self,
+        parsed: ParsedResearchInput,
+        managed_snapshot: tuple[ManagedResearchAssetSnapshot, ...],
+    ) -> None:
+        """Validate pasted references through the configured inventory port."""
+        validator = self._context.inventory_validator
+        if validator is None:
+            return
+        try:
+            validated = validator(parsed, managed_snapshot)
+            if inspect.isawaitable(validated):
+                await validated
+        except ResearchInputFailure:
+            raise
+        except Exception as exc:
+            raise research_input_failure(
+                "research_input_resolution_unavailable",
+                "Research input resolution is unavailable.",
+                http_status_hint=503,
+                retryable=True,
+            ) from exc
+
+    async def _launch_worker(
+        self,
+        request: ResearchHttpAdmissionInput,
+        admitted: ResearchAdmissionOutcome,
+    ) -> None:
+        """Launch only the owner of a newly reserved durable root."""
+        launcher = self._context.worker_launcher
+        if not admitted.worker_owner or launcher is None:
+            return
+        launched = launcher(request, admitted)
+        if inspect.isawaitable(launched):
+            await launched
+
+    def _validate_input_counts(
+        self,
+        parsed: ParsedResearchInput,
+        managed_snapshot: tuple[ManagedResearchAssetSnapshot, ...],
+    ) -> None:
+        """Apply the same lane and hard limits used by the coordinator."""
+        config = self._context.config
+        managed_count = len(managed_snapshot)
+        pasted_count = len(parsed.candidates)
+        total_count = managed_count + pasted_count
+        if (
+            managed_count > config.API_MAX_ATTACHMENTS_PER_REQUEST
+            or pasted_count > config.API_MAX_RESEARCH_DATASET_PATHS
+            or total_count > config.API_MAX_RESEARCH_INPUT_REFERENCES
+            or total_count > 256
+        ):
+            raise research_input_failure(
+                "research_input_limit_exceeded",
+                "Research input count exceeds the allowed limit.",
+                http_status_hint=413,
+            )
+
+    def _resolve_managed_snapshot(
+        self, asset_ids: tuple[str, ...]
+    ) -> tuple[ManagedResearchAssetSnapshot, ...]:
+        """Resolve owner-qualified snapshots without accepting client paths."""
+        if not asset_ids:
+            return ()
+        resolver = self._context.managed_snapshot_resolver
+        if resolver is None:
+            raise research_input_failure(
+                "research_input_resolution_failed",
+                "Research managed attachments could not be verified.",
+            )
+        try:
+            snapshots = resolver(asset_ids)
+        except ResearchInputFailure:
+            raise
+        except (TypeError, ValueError, OSError) as exc:
+            raise research_input_failure(
+                "research_input_resolution_failed",
+                "Research managed attachments could not be verified.",
+            ) from exc
+        if tuple(item.asset_id for item in snapshots) != asset_ids:
+            raise research_input_failure(
+                "research_input_resolution_failed",
+                "Research managed attachments could not be verified.",
+            )
+        return tuple(snapshots)
+
+    def _validate_http_request(
+        self, request: ResearchHttpAdmissionInput
+    ) -> None:
+        """Reject malformed opaque HTTP fields before any store lookup."""
+        if not isinstance(request, ResearchHttpAdmissionInput):
+            raise research_input_failure(
+                "research_input_resolution_failed",
+                "Research request is invalid.",
+            )
+        if not isinstance(request.owner, str) or not request.owner.strip():
+            raise research_input_failure(
+                "research_input_resolution_failed",
+                "Research request is invalid.",
+            )
+        if not isinstance(request.original_query, str):
+            raise research_input_failure(
+                "research_input_resolution_failed",
+                "Research query is invalid.",
+            )
+        if (
+            request.locale is not None
+            and request.locale not in SUPPORTED_LOCALES
+        ):
+            raise research_input_failure(
+                "research_input_resolution_failed",
+                "Research locale is invalid.",
+            )
+        if request.interop_mode not in {"off", "auto", "required"}:
+            raise research_input_failure(
+                "research_input_resolution_failed",
+                "Research request is invalid.",
+            )
+        if request.route_source not in {
+            "native",
+            "dedicated_web",
+            "expert",
+        }:
+            raise research_input_failure(
+                "research_input_resolution_failed",
+                "Research request is invalid.",
+            )
+        if not isinstance(request.managed_asset_ids, tuple) or any(
+            not isinstance(asset_id, str) or not asset_id
+            for asset_id in request.managed_asset_ids
+        ):
+            raise research_input_failure(
+                "research_input_resolution_failed",
+                "Research request is invalid.",
+            )
+        if tuple(dict.fromkeys(request.managed_asset_ids)) != (
+            request.managed_asset_ids
+        ):
+            raise research_input_failure(
+                "research_dataset_duplicate",
+                "Research managed assets are invalid.",
+            )
+        if not isinstance(request.interop_targets, tuple) or any(
+            not isinstance(target, str) or not target
+            for target in request.interop_targets
+        ):
+            raise research_input_failure(
+                "research_input_resolution_failed",
+                "Research request is invalid.",
+            )
 
 
 def parse_idempotency_identity(

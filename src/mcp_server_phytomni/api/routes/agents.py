@@ -18,6 +18,7 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse, Response
 
+from ...config.defaults import ApiConfig
 from ...runtime.conversation_context.adapters import ContextAgentInvocation
 from ...runtime.conversation_context.models import (
     ContextDelta,
@@ -30,6 +31,10 @@ from ...runtime.conversation_context.service import (
 from ...runtime.locale import SupportedLocale, current_effective_locale
 from ...runtime.stage_trace import DataStage, trace_data_stage
 from ..advertised_protocols import serialize_protocols
+from ..advertised_protocols import (
+    serialize_research_input_descriptor as research_descriptor,
+)
+from ..agent_runs import execute_native_research_http
 from ..app_support import (
     build_safe_chat_request_info,
     resolve_http_locale,
@@ -39,6 +44,7 @@ from ..attachments import (
     redact_streaming_attachment_response,
 )
 from ..auth import ApiPrincipal
+from ..research_capabilities import research_input_runtime_capability
 from ..schemas import (
     AgentRunRequest,
     ChatCompletionRequest,
@@ -516,11 +522,13 @@ def _register_native_routes(
     ) -> JSONResponse:
         """List the agents reachable via ``/v1/agents/{slug}/runs``."""
         del principal
+        config = ApiConfig()
+        runtime_capability = research_input_runtime_capability(config, None)
+        file_upload = dependencies.upload.serialize_file_upload_capability()
+        agent_map = dependencies.catalog.agent_slug_to_tool
         payload: dict[str, Any] = {
             "object": "list",
-            "file_upload": (
-                dependencies.upload.serialize_file_upload_capability()
-            ),
+            "file_upload": file_upload,
             "data": [
                 {
                     "slug": slug,
@@ -537,14 +545,15 @@ def _register_native_routes(
                         dependencies.catalog.serialize_capability(slug)
                     ),
                 }
-                for slug, tool in (
-                    dependencies.catalog.agent_slug_to_tool.items()
-                )
+                for slug, tool in agent_map.items()
             ],
             "protocols": serialize_protocols(
-                dependencies.catalog.conversation_context_enabled
+                dependencies.catalog.conversation_context_enabled,
+                research_enabled=lambda: runtime_capability.ready,
             ),
         }
+        if runtime_capability.ready:
+            payload["research_input_resolution"] = research_descriptor(config)
         return JSONResponse(payload)
 
     @app.post(
@@ -593,6 +602,22 @@ def _register_native_routes(
             locale=locale,
             route=agent,
         )
+        if agent == "research":
+            if payload.conversation is not None:
+                if not dependencies.context.enabled():
+                    raise HTTPException(
+                        status_code=404,
+                        detail="conversation context disabled",
+                    )
+                _native_context_tool(agent, payload.conversation, dependencies)
+            return await execute_native_research_http(
+                agent=agent,
+                payload=payload,
+                request=request,
+                arguments=arguments,
+                attachment_owner=attachment_owner,
+                dependencies=dependencies,
+            )
         if payload.conversation is not None:
             if not dependencies.context.enabled():
                 raise HTTPException(

@@ -11,6 +11,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import partial
+from importlib import import_module
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -59,7 +60,7 @@ class ResearchInputRuntimeCapability:
 
     ready: bool
     protocols: MappingProxyType[str, tuple[int, ...]]
-    descriptor: MappingProxyType[str, int] | None
+    descriptor: MappingProxyType[str, object] | None
     unavailable_code: Literal["research_input_protocol_unavailable"] | None
 
 
@@ -181,8 +182,14 @@ def research_input_runtime_capability(
     )
 
 
-def _descriptor(config: ApiConfig) -> MappingProxyType[str, int] | None:
+def _descriptor(config: ApiConfig) -> MappingProxyType[str, object] | None:
     """Copy only the effective numeric limits into an immutable projection."""
+    formats = getattr(
+        import_module(
+            "mcp_server_phytomni.agents.research.scientific_formats"
+        ),
+        "advertised_research_formats",
+    )()
     names = (
         "API_MAX_USER_QUERY_CHARS",
         "API_MAX_ATTACHMENTS_PER_REQUEST",
@@ -207,6 +214,7 @@ def _descriptor(config: ApiConfig) -> MappingProxyType[str, int] | None:
             "max_research_input_references": values[
                 "api_max_research_input_references"
             ],
+            "dataset_formats": tuple(formats),
         }
     )
 

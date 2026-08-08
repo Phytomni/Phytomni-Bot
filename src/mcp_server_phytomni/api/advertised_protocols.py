@@ -68,13 +68,14 @@ class AdvertisedProtocol:
 
 def advertised_protocols(
     context_enabled: Callable[[], bool],
+    research_enabled: Callable[[], bool] | None = None,
 ) -> tuple[AdvertisedProtocol, ...]:
     """Return every protocol the catalog should publish right now.
 
     ``context_enabled`` is supplied by the caller (the route handler) because
     it reads from the live catalog dependency; upload enablement is static.
     """
-    return (
+    entries = [
         AdvertisedProtocol(
             name=UPLOAD_PROTOCOL,
             version=UPLOAD_PROTOCOL_VERSION,
@@ -90,16 +91,26 @@ def advertised_protocols(
             version=RESULT_ARCHIVE_PROTOCOL_VERSION,
             enabled=result_archive_backend_available,
         ),
-    )
+    ]
+    if research_enabled is not None:
+        entries.append(
+            AdvertisedProtocol(
+                name=RESEARCH_INPUT_PROTOCOL,
+                version=RESEARCH_INPUT_PROTOCOL_VERSION,
+                enabled=research_enabled,
+            )
+        )
+    return tuple(entries)
 
 
 def serialize_protocols(
     context_enabled: Callable[[], bool],
+    research_enabled: Callable[[], bool] | None = None,
 ) -> dict[str, list[int]]:
     """Build the top-level ``protocols`` map for ``GET /v1/agents``."""
     return {
         entry.name: [entry.version]
-        for entry in advertised_protocols(context_enabled)
+        for entry in advertised_protocols(context_enabled, research_enabled)
         if entry.enabled()
     }
 

@@ -17,16 +17,24 @@ from collections.abc import Mapping
 from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import asdict, dataclass
+from functools import partial
 from importlib import import_module
 from inspect import Parameter, Signature
 from typing import Any
 
 from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 
 from ..agents.brief_gene.resolve_query import resolve_brief_gene_user_query
 from ..agents.deep_genome.resolve_query import resolve_deep_genome_user_query
 from ..agents.design.resolve_query import resolve_design_user_query
 from ..agents.network.resolve_query import resolve_network_user_query
+from ..agents.research.input_inventory import (
+    ManagedResearchAssetSnapshot,
+    ResearchInventoryRequest,
+    build_research_inventory,
+)
+from ..config.defaults import ApiConfig, ServerConfig
 from ..mcp.app import invoke_tool_enveloped, validate_tool_arguments
 from ..mcp.result_formatting import strip_agent_result
 from ..runtime.background_submission import (
@@ -36,15 +44,21 @@ from ..runtime.background_submission import (
     launch_background_submission,
     reserve_background_submission,
 )
-from ..runtime.run_registry import RunRequestInfo
+from ..runtime.locale import current_effective_locale
+from ..runtime.research_input_store import ResearchInputStore
+from ..runtime.run_registry import RunRegistry, RunRequestInfo
 from ..runtime.stage_trace import DataStage
 from ..runtime.submission_outcome import (
     project_submission_warnings as _project_warnings,
 )
+from ..storage.obs_relay_ops import operator_obs_client
+from ..storage.research_objects import DirectResearchObjectMetadataPort
 from . import run_lifecycle
 from .attachments import (
+    AttachmentContractError,
     ManagedAttachmentEvidence,
     redact_managed_attachment_values,
+    validate_research_attachment_bundle,
 )
 from .lifecycle_contract import (
     SafeApiError,
@@ -53,7 +67,15 @@ from .lifecycle_contract import (
     canonicalize_agent_run_body,
     empty_agent_result,
 )
+from .research_capabilities import research_input_runtime_capability
+from .research_input import (
+    ResearchHttpAdmissionInput,
+    ResearchInventoryValidator,
+    ResearchRoutePreflight,
+)
 from .resolvers import ResolverDispatch, apply_runs_resolver
+from .routes.attachment_inputs import resolve_attachment_input
+from .routes.context_helpers import safe_native_request_json
 
 __all__ = [
     "BackgroundSubmissionLaunchError",
@@ -79,6 +101,8 @@ __all__ = [
     "_remote_agent_run_response",
     "_resolve_remote_run",
     "_sync_agent_run_response",
+    "execute_native_research_http",
+    "invoke_research_http_run",
 ]
 
 
@@ -91,6 +115,208 @@ def _app_attr(name: str) -> Any:
     """Resolve one private compatibility seam without static access
     warnings."""
     return getattr(_app_module(), name)
+
+
+async def execute_native_research_http(**options: Any) -> JSONResponse:
+    """Build one opaque Research request and dispatch its durable adapter."""
+    agent = options["agent"]
+    payload = options["payload"]
+    request = options["request"]
+    arguments = options["arguments"]
+    attachment_owner = options["attachment_owner"]
+    dependencies = options["dependencies"]
+    if any(
+        bool(arguments.get(name)) for name in ("data_list", "obs_file_list")
+    ):
+        raise SafeApiError(
+            status_code=422,
+            code="research_data_block_invalid",
+            message="Research data blocks must use managed attachments.",
+            stage="request_validation",
+            retryable=False,
+        )
+    resolved_input = resolve_attachment_input(
+        payload.attachments,
+        attachment_owner=attachment_owner,
+        resolver=dependencies.upload.asset_resolver,
+    )
+    admission = ResearchHttpAdmissionInput(
+        owner=attachment_owner,
+        idempotency_key=request.headers.get("Idempotency-Key"),
+        conversation=payload.conversation,
+        original_query=next(
+            (
+                value
+                for key in ("user_query", "query", "research_topic")
+                if isinstance(value := arguments.get(key), str)
+                and value.strip()
+            ),
+            "",
+        ),
+        managed_asset_ids=tuple(
+            asset.asset_id for asset in resolved_input.bundle.all_assets
+        ),
+        locale=current_effective_locale(),
+        interop_mode=arguments.get("interop_mode", "off"),
+        interop_targets=tuple(arguments.get("interop_targets", ())),
+        route_source=(
+            "dedicated_web" if payload.conversation is not None else "native"
+        ),
+    )
+    prepared = {
+        key: value
+        for key, value in arguments.items()
+        if key not in {"data_list", "obs_file_list"}
+    }
+    body, status_code = await dependencies.native.invoke_agent_run(
+        agent=agent,
+        arguments=prepared,
+        dialogue_id=payload.dialogue_id,
+        debug=dependencies.chat.projection.resolve_debug(payload.debug),
+        request_json=safe_native_request_json(
+            dialogue_id=payload.dialogue_id,
+            locale=current_effective_locale(),
+            route=agent,
+        ),
+        attachment_evidence=None,
+        research_http_input=admission,
+        research_attachment_bundle=resolved_input.bundle,
+    )
+    return JSONResponse(body, status_code=status_code)
+
+
+async def invoke_research_http_run(
+    request: ResearchHttpAdmissionInput,
+    attachment_bundle: Any,
+    *,
+    config: ApiConfig,
+    db_path: str,
+    debug: bool = False,
+) -> tuple[dict[str, Any], int]:
+    """Admit one Research HTTP request without generic reservation."""
+    del debug
+    try:
+        snapshots = validate_research_attachment_bundle(
+            attachment_bundle, config
+        )
+    except AttachmentContractError as exc:
+        code = (
+            "research_input_limit_exceeded"
+            if exc.code == "attachment_limit_exceeded"
+            else exc.code
+        )
+        status = 413 if code == "research_input_limit_exceeded" else 422
+        raise SafeApiError(
+            status_code=status,
+            code=code,
+            message=str(exc),
+            stage="request_validation",
+            retryable=False,
+        ) from exc
+    RunRegistry(db_path)
+    preflight = ResearchRoutePreflight(
+        store=ResearchInputStore(db_path),
+        config=config,
+        managed_snapshot_resolver=lambda _asset_ids: snapshots,
+        inventory_validator=_direct_inventory_validator(config),
+        runtime_ready=lambda: research_input_runtime_capability(
+            config, None
+        ).ready,
+    )
+    try:
+        outcome = await preflight.admit(request)
+    except ValueError as exc:
+        raise _research_admission_error(exc) from exc
+    if outcome.status_code == 200:
+        return _research_replay_response(
+            outcome.run_id, request.owner, db_path
+        )
+    return (
+        build_agent_run_response(
+            run_id=outcome.run_id,
+            agent="research",
+            status="running",
+            task_ids=(),
+            result=empty_agent_result(),
+            persisted=True,
+        ),
+        202,
+    )
+
+
+def _direct_inventory_validator(
+    config: ApiConfig,
+) -> ResearchInventoryValidator:
+    """Build the direct metadata validator used after pure parsing."""
+
+    async def validate(
+        parsed: Any,
+        snapshots: tuple[ManagedResearchAssetSnapshot, ...],
+    ) -> None:
+        if not parsed.candidates:
+            return
+        source = ServerConfig()
+        port = DirectResearchObjectMetadataPort(
+            bucket=source.BUCKET_NAME,
+            client_factory=partial(operator_obs_client, source.OBS_SERVER),
+        )
+        await build_research_inventory(
+            ResearchInventoryRequest(
+                parsed_input=parsed,
+                managed_assets=snapshots,
+                configured_bucket=source.BUCKET_NAME,
+                max_managed_references=config.API_MAX_ATTACHMENTS_PER_REQUEST,
+                max_pasted_references=config.API_MAX_RESEARCH_DATASET_PATHS,
+                max_combined_references=(
+                    config.API_MAX_RESEARCH_INPUT_REFERENCES
+                ),
+            ),
+            port,
+        )
+
+    return validate
+
+
+def _research_admission_error(exc: ValueError) -> SafeApiError:
+    """Project a domain admission error without exposing private details."""
+    return SafeApiError(
+        status_code=int(getattr(exc, "http_status_hint", 400)),
+        code=str(getattr(exc, "code", "research_input_resolution_failed")),
+        message="Research input resolution failed.",
+        stage=str(getattr(exc, "stage", "input_resolution")),
+        retryable=bool(getattr(exc, "retryable", False)),
+    )
+
+
+def _research_replay_response(
+    run_id: str, owner: str, db_path: str
+) -> tuple[dict[str, Any], int]:
+    """Project an exact terminal replay as a canonical agent.run body."""
+    record = RunRegistry(db_path).get_run(run_id, owner=owner)
+    if record is None:
+        raise SafeApiError(
+            status_code=500,
+            code="run_persistence_failed",
+            message="The completed run could not be persisted.",
+            stage="run_persist",
+            retryable=False,
+        )
+    public = run_lifecycle.run_record_to_dict(record)
+    result = public.get("result")
+    if not isinstance(result, Mapping):
+        result = empty_agent_result()
+    body = build_agent_run_response(
+        run_id=run_id,
+        agent="research",
+        status=str(public.get("status", "running")),
+        task_ids=public.get("task_ids", ()),
+        result=result,
+        persisted=True,
+    )
+    for field in ("stage", "failure"):
+        if field in public:
+            body[field] = public[field]
+    return body, 200
 
 
 @dataclass(frozen=True, slots=True)

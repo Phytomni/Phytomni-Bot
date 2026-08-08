@@ -59,6 +59,7 @@ from . import run_lifecycle
 from . import stage_errors as _stage_errors
 from .a2a.executor import A2AHandlerOptions, A2ARequestHandler
 from .admin_auth import require_service_principal
+from .agent_runs import invoke_research_http_run
 from .app_support import _SAFE_DEFAULT_MESSAGES, _ErrorResponseOptions
 from .auth import (
     ApiPrincipal,
@@ -82,6 +83,7 @@ from .openai_mapping import (
     tool_accepts_obs,
     tool_for_model,
 )
+from .research_input import ResearchHttpAdmissionInput
 from .routes import admin as admin_routes
 from .routes import agents as agent_routes
 from .routes import conversation_context as conversation_context_routes
@@ -388,27 +390,22 @@ class _RouteAdapters:
             raise TypeError(
                 f"missing agent-run option: {exc.args[0]}"
             ) from exc
-        conversation_messages = options.pop("conversation_messages", ())
-        agent_thread_id = options.pop("agent_thread_id", None)
-        private_agent_state = options.pop("private_agent_state", None)
-        dialogue_id = options.pop("dialogue_id", None)
-        request_json = options.pop("request_json", None)
-        attachment_evidence = options.pop("attachment_evidence", None)
-        debug = options.pop("debug", False)
-        if options:
-            raise TypeError(
-                "unexpected agent-run options: " + ", ".join(sorted(options))
+        research_http_input = options.pop("research_http_input", None)
+        research_attachment_bundle = options.pop(
+            "research_attachment_bundle", None
+        )
+        if research_http_input is not None:
+            if not isinstance(research_http_input, ResearchHttpAdmissionInput):
+                raise TypeError("invalid Research HTTP admission input")
+            return await invoke_research_http_run(
+                research_http_input,
+                research_attachment_bundle,
+                config=_api_config(),
+                db_path=_tasks_db_path(),
+                debug=options.pop("debug", False),
             )
         response_body, status_code = await _app_attr("_invoke_agent_run")(
-            agent=agent,
-            arguments=arguments,
-            conversation_messages=conversation_messages,
-            agent_thread_id=agent_thread_id,
-            private_agent_state=private_agent_state,
-            dialogue_id=dialogue_id,
-            request_json=request_json,
-            attachment_evidence=attachment_evidence,
-            debug=debug,
+            agent=agent, arguments=arguments, **options
         )
         return canonicalize_agent_run_body(response_body), status_code
 

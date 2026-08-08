@@ -891,15 +891,16 @@ async def test_native_context_reuses_async_acceptance_for_async_agents(
     body = response.json()
     assert body["status"] == "running"
     assert body["id"] == body["run_id"]
-    assert body["conversation_context"]["route_source"] == (
-        "explicit_selection"
-    )
-    assert len(calls) == 1
-    assert calls[0]["agent"] == agent
-    assert calls[0]["arguments"]["locale"] == "en-US"
     if agent == "research":
-        assert calls[0]["arguments"]["user_query"] == "bounded research"
+        assert "conversation_context" not in body
+        assert not calls
     else:
+        assert body["conversation_context"]["route_source"] == (
+            "explicit_selection"
+        )
+        assert len(calls) == 1
+        assert calls[0]["agent"] == agent
+        assert calls[0]["arguments"]["locale"] == "en-US"
         assert "user_query" not in calls[0]["arguments"]
 
 
@@ -913,14 +914,14 @@ async def test_native_context_dataset_attachments_prepare_once_and_replay(
     agent: str,
     tool_name: str,
 ) -> None:
-    """Native context replays staged 202 without re-preparing attachments."""
+    """Replay staged native context without re-preparing attachments."""
     app, key = _native_context_delegated_setup(monkeypatch, tmp_path)
-    dataset_id, document_id = _install_context_assets(monkeypatch, tmp_path)
+    asset_ids = _install_context_assets(monkeypatch, tmp_path)
     call_state = _patch_context_attachment_invocation(monkeypatch, agent)
     request = _native_attachment_request(
         agent,
         tool_name,
-        attachments=[{"asset_id": dataset_id}, {"asset_id": document_id}],
+        attachments=[{"asset_id": asset_ids[0]}, {"asset_id": asset_ids[1]}],
     )
     request["dataset_description"] = (
         "stale context dataset_description should be dropped"
@@ -932,32 +933,33 @@ async def test_native_context_dataset_attachments_prepare_once_and_replay(
     assert response.status_code == 202, response.text
     assert retry.status_code == 202
     assert retry.json()["run_id"] == response.json()["run_id"]
+    if agent == "research":
+        assert not call_state.invoke_calls
+        rendered = response.text + retry.text
+        assert asset_ids[0] not in rendered
+        assert asset_ids[1] not in rendered
+        return
     assert len(call_state.invoke_calls) == 1
-    arguments = call_state.invoke_calls[0]["arguments"]
-    assert list(arguments["data_list"].values()) == [""]
-    assert len(arguments["obs_file_list"]) == 1
-    assert json.loads(call_state.invoke_calls[0]["request_json"] or "") == {
+    invocation = call_state.invoke_calls[0]
+    assert list(invocation["arguments"]["data_list"].values()) == [""]
+    assert len(invocation["arguments"]["obs_file_list"]) == 1
+    assert json.loads(invocation["request_json"] or "") == {
         "dialogue_id": None,
         "locale": "en-US",
         "route": agent,
     }
-    assert "dataset_description" not in (
-        call_state.invoke_calls[0]["request_json"] or ""
-    )
+    assert "dataset_description" not in (invocation["request_json"] or "")
     assert (
         call_state.invoke_calls[0]["attachment_evidence"].attachment_owner
         == "delegated-owner"
     )
-    rendered = (
-        response.text
-        + retry.text
-        + _context_store_text(tmp_path / "tasks.sqlite")
-    )
+    rendered = response.text + retry.text
+    rendered += _context_store_text(tmp_path / "tasks.sqlite")
     rendered += json.dumps(response.json(), sort_keys=True)
     rendered += json.dumps(retry.json(), sort_keys=True)
     for sentinel in (
-        dataset_id,
-        document_id,
+        asset_ids[0],
+        asset_ids[1],
         "delegated-owner",
         "context-data.csv",
         "stale context dataset_description should be dropped",
@@ -970,7 +972,7 @@ async def test_native_context_unsupported_dataset_returns_attachment_422(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """Unsupported native context Agents keep attachment validation errors."""
+    """Unsupported native context keeps attachment validation errors."""
     app, key = _native_context_delegated_setup(monkeypatch, tmp_path)
     dataset_id, _document_id = _install_context_assets(monkeypatch, tmp_path)
 
