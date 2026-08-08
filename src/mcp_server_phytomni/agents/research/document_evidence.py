@@ -22,7 +22,11 @@ from .input_contracts import (
     SourceSpan,
     research_input_failure,
 )
-from .input_inventory import ResearchInputInventory, ResearchInventoryEntry
+from .input_inventory import (
+    ResearchInputInventory,
+    ResearchInputSnapshot,
+    ResearchInventoryEntry,
+)
 
 __all__ = [
     "ConvertedResearchSection",
@@ -32,6 +36,7 @@ __all__ = [
     "MAX_TOTAL_DOCUMENT_BYTES",
     "ManagedDocumentConverter",
     "ManagedDocumentDownloader",
+    "ManagedDocumentObservation",
     "ResearchEvidenceRequest",
     "ResearchEvidenceUnit",
     "extract_research_evidence",
@@ -73,6 +78,12 @@ class ResearchEvidenceRequest:
 class ManagedDocumentDownloader(Protocol):
     """Download one already owner-authorized managed document."""
 
+    def observe(
+        self, entry: ResearchInventoryEntry
+    ) -> ManagedDocumentObservation:
+        """Return the current owner-bound snapshot before body download."""
+        raise NotImplementedError
+
     async def download(self, entry: ResearchInventoryEntry) -> bytes:
         """Return the immutable bytes for one owner-authorized document."""
         raise NotImplementedError
@@ -100,6 +111,14 @@ class ManagedDocumentConverter(Protocol):
         def contract_name(self) -> str:
             """Identify the runtime-only converter contract."""
             return "managed_document_converter"
+
+
+@dataclass(frozen=True, slots=True)
+class ManagedDocumentObservation:
+    """Current owner-bound identity used to fence a document download."""
+
+    exact_reference: str
+    snapshot: ResearchInputSnapshot
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,11 +170,13 @@ async def extract_research_evidence(
 ) -> ExtractedResearchEvidence:
     """Download each managed document once and preserve every evidence unit."""
     _validate_request(request)
+    _preflight_document_limits(request.inventory.documents)
     datasets = tuple(entry.dataset_id for entry in request.inventory.datasets)
     units = list(_query_units(request, datasets))
     document_digests: list[DocumentEvidenceDigest] = []
     total_bytes = 0
     for document_ordinal, entry in enumerate(request.inventory.documents):
+        _observe_document(entry, downloader)
         payload = await _download_one(entry, downloader)
         total_bytes = _check_document_size(entry, payload, total_bytes)
         sections = _convert_one(entry, payload, converter)
@@ -254,6 +275,21 @@ def _validate_inventory(inventory: ResearchInputInventory) -> None:
         raise _failure()
 
 
+def _preflight_document_limits(
+    documents: Sequence[ResearchInventoryEntry],
+) -> None:
+    """Reject declared document sizes before any provider body is fetched."""
+    total_bytes = 0
+    for entry in documents:
+        _validate_document_entry(entry)
+        declared_size = entry.snapshot.size_bytes
+        if declared_size > MAX_DOCUMENT_BYTES:
+            raise _failure()
+        total_bytes += declared_size
+        if total_bytes > MAX_TOTAL_DOCUMENT_BYTES:
+            raise _failure()
+
+
 def _query_units(
     request: ResearchEvidenceRequest, datasets: tuple[str, ...]
 ) -> tuple[ResearchEvidenceUnit, ...]:
@@ -300,6 +336,29 @@ async def _download_one(
     if not isinstance(payload, bytes) or not payload:
         raise _failure()
     return payload
+
+
+def _observe_document(
+    entry: ResearchInventoryEntry,
+    downloader: ManagedDocumentDownloader,
+) -> ManagedDocumentObservation:
+    """Revalidate owner identity and snapshot before downloading bytes."""
+    try:
+        observation = downloader.observe(entry)
+    except ResearchInputFailure:
+        raise
+    except Exception as error:
+        raise _failure(retryable=True, status=503) from error
+    if not isinstance(observation, ManagedDocumentObservation):
+        raise _failure()
+    if (
+        not isinstance(observation.exact_reference, str)
+        or not isinstance(observation.snapshot, ResearchInputSnapshot)
+        or observation.exact_reference != entry.exact_reference
+        or observation.snapshot != entry.snapshot
+    ):
+        raise _failure()
+    return observation
 
 
 def _validate_document_entry(entry: ResearchInventoryEntry) -> None:

@@ -13,6 +13,7 @@ from mcp_server_phytomni.agents.research.document_evidence import (
     MAX_DOCUMENT_BYTES,
     MAX_TOTAL_DOCUMENT_BYTES,
     ConvertedResearchSection,
+    ManagedDocumentObservation,
     ResearchEvidenceRequest,
     evidence_persistence_metadata,
     extract_research_evidence,
@@ -112,10 +113,24 @@ def _request(
 @dataclass
 class _Downloader:
     payloads: dict[str, bytes]
+    observations: dict[str, ManagedDocumentObservation] | None = None
 
     def __post_init__(self) -> None:
         """Initialize a call ledger for download assertions."""
         self.calls: list[str] = []
+        self.observe_calls: list[str] = []
+
+    def observe(
+        self, entry: ResearchInventoryEntry
+    ) -> ManagedDocumentObservation:
+        """Return the current owner snapshot for one document."""
+        self.observe_calls.append(entry.dataset_id)
+        if self.observations and entry.dataset_id in self.observations:
+            return self.observations[entry.dataset_id]
+        return ManagedDocumentObservation(
+            exact_reference=entry.exact_reference,
+            snapshot=entry.snapshot,
+        )
 
     async def download(self, entry: ResearchInventoryEntry) -> bytes:
         """Return the fixture payload for one document."""
@@ -302,7 +317,67 @@ async def test_document_and_total_limits() -> None:
         await extract_research_evidence(
             _request(entries), downloader, converter
         )
+    assert not downloader.observe_calls
+    assert not downloader.calls
+    assert not converter.calls
     assert MAX_TOTAL_DOCUMENT_BYTES == 2 * MAX_DOCUMENT_BYTES
+
+
+async def test_declared_oversize_fails_before_any_download() -> None:
+    """Trusted size limits reject before the downloader can allocate bytes."""
+    entry = _entry(
+        "document_001", "large.pdf", "document", MAX_DOCUMENT_BYTES + 1
+    )
+    downloader = _Downloader({"document_001": b"x" * (MAX_DOCUMENT_BYTES + 1)})
+    converter = _Converter(
+        {"document_001": (ConvertedResearchSection(0, "page", "x"),)}
+    )
+
+    with pytest.raises(Exception):
+        await extract_research_evidence(
+            _request((entry,)), downloader, converter
+        )
+
+    assert not downloader.observe_calls
+    assert not downloader.calls
+    assert not converter.calls
+
+
+async def test_same_length_observed_snapshot_drift_fails_safely() -> None:
+    """Changed version/reference metadata is rejected before body download."""
+    entry = _entry("document_001", "paper.pdf", "document", 5)
+    changed = ManagedDocumentObservation(
+        exact_reference="obs://bucket/replaced.pdf",
+        snapshot=ResearchInputSnapshot(
+            lane="managed",
+            size_bytes=5,
+            state_version=2,
+            completed_at=entry.snapshot.completed_at,
+            etag="changed-etag",
+            version_id="changed-version",
+            last_modified=entry.snapshot.last_modified,
+            placeholder=False,
+            purpose="document",
+            snapshot_digest="changed-digest",
+        ),
+    )
+    downloader = _Downloader(
+        {"document_001": b"other"}, {"document_001": changed}
+    )
+    converter = _Converter(
+        {"document_001": (ConvertedResearchSection(0, "page", "text"),)}
+    )
+
+    with pytest.raises(Exception) as caught:
+        await extract_research_evidence(
+            _request((entry,)), downloader, converter
+        )
+
+    assert (
+        getattr(caught.value, "code") == "research_document_extraction_failed"
+    )
+    assert not downloader.calls
+    assert not converter.calls
 
 
 async def test_persistence_projection_excludes_plaintext() -> None:
