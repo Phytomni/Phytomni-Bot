@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Protocol
@@ -17,8 +18,16 @@ from pydantic import ValidationError
 from ...runtime.locale import SupportedLocale
 from ...storage.path_policy import PathPolicyError, safe_path_segment
 from .contracts import ResearchGoal, ResearchGoalBatch
-from .document_evidence import ExtractedResearchEvidence
-from .input_contracts import ResearchInputFailure, research_input_failure
+from .document_evidence import (
+    DocumentEvidenceDigest,
+    ExtractedResearchEvidence,
+    ResearchEvidenceUnit,
+)
+from .input_contracts import (
+    ResearchInputFailure,
+    SourceSpan,
+    research_input_failure,
+)
 from .input_preparation import PreparedResearchInput
 
 __all__ = [
@@ -40,6 +49,41 @@ _MAX_DATA_DESCRIPTION_CHARS = 4096
 _MAX_EFFECTIVE_QUERY_CHARS = 131_072
 _PLANNING_SCHEMA_VERSION = 1
 _INTEROP_MODES = frozenset({"off", "auto", "required"})
+_EVIDENCE_SOURCE_KINDS = frozenset(
+    {"query", "pdf_page", "document_section", "user_hint", "dataset_meta"}
+)
+_SOURCE_SPAN_GRAMMARS = frozenset(
+    {"trailing_json", "fenced_json", "standalone_tab", "query"}
+)
+_DIGEST_LENGTH = 64
+
+
+class _ImmutableDataMap(Mapping[str, str]):
+    """A deepcopy/asdict-compatible immutable child dataset map."""
+
+    __slots__ = ("_values",)
+
+    def __init__(self, values: Mapping[str, str] | None = None) -> None:
+        """Copy mapping values into a private immutable-view backing map."""
+        self._values = dict(values or {})
+
+    def __getitem__(self, key: str) -> str:
+        """Return one dataset description by opaque reference."""
+        return self._values[key]
+
+    def __iter__(self):
+        """Iterate over opaque dataset references."""
+        return iter(self._values)
+
+    def __len__(self) -> int:
+        """Return the number of dataset descriptions."""
+        return len(self._values)
+
+    def __deepcopy__(self, memo: dict[int, object]) -> dict[str, str]:
+        """Project to a plain dict for dataclasses.asdict serialization."""
+        copied = dict(self._values)
+        memo[id(self)] = copied
+        return copied
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,7 +118,7 @@ class ResearchGoalProvider(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class _ResearchChildIdentity:
-    """Stable goal identity fields for one child plan."""
+    """First flat fields shared by the public child-plan dataclass."""
 
     ordinal: int
     task_name: str
@@ -83,131 +127,22 @@ class _ResearchChildIdentity:
 
 
 @dataclass(frozen=True, slots=True)
-class _ResearchChildPayload:
-    """Native and local runtime fields for one child plan."""
+class ResearchChildPlan(_ResearchChildIdentity):
+    """One deterministic child dispatch payload before outbox persistence."""
 
-    data_list: MappingProxyType[str, str]
+    data_list: Mapping[str, str]
     output_dir: str
     thread_id: str
-
-
-@dataclass(frozen=True, slots=True)
-class _ResearchChildInterop:
-    """Interop controls and dispatch identity for one child plan."""
-
     interop_mode: str
     interop_targets: tuple[str, ...]
     dispatch_fingerprint: str
 
-
-@dataclass(frozen=True, slots=True, init=False)
-class ResearchChildPlan:
-    """One deterministic child dispatch payload before outbox persistence."""
-
-    _identity: _ResearchChildIdentity
-    _payload: _ResearchChildPayload
-    _interop: _ResearchChildInterop
-
-    def __init__(
-        self,
-        *args: Any,
-        **values: Any,
-    ) -> None:
-        """Build one plan while retaining the public flat field contract."""
-        names = (
-            "ordinal",
-            "task_name",
-            "goal_description",
-            "context",
-            "data_list",
-            "output_dir",
-            "thread_id",
-            "interop_mode",
-            "interop_targets",
-            "dispatch_fingerprint",
-        )
-        if args:
-            if values or len(args) != len(names):
-                raise TypeError("ResearchChildPlan arguments are invalid")
-            values = dict(zip(names, args, strict=True))
-        object.__setattr__(
-            self,
-            "_identity",
-            _ResearchChildIdentity(
-                values["ordinal"],
-                values["task_name"],
-                values["goal_description"],
-                values["context"],
-            ),
-        )
-        object.__setattr__(
-            self,
-            "_payload",
-            _ResearchChildPayload(
-                values["data_list"],
-                values["output_dir"],
-                values["thread_id"],
-            ),
-        )
-        object.__setattr__(
-            self,
-            "_interop",
-            _ResearchChildInterop(
-                values["interop_mode"],
-                values["interop_targets"],
-                values["dispatch_fingerprint"],
-            ),
-        )
-
-    @property
-    def ordinal(self) -> int:
-        """Return the zero-based child ordinal."""
-        return self._identity.ordinal
-
-    @property
-    def task_name(self) -> str:
-        """Return the deterministic Analyst task name."""
-        return self._identity.task_name
-
-    @property
-    def goal_description(self) -> str:
-        """Return the bounded goal prompt part."""
-        return self._identity.goal_description
-
-    @property
-    def context(self) -> str:
-        """Return the bounded context prompt part."""
-        return self._identity.context
-
-    @property
-    def data_list(self) -> MappingProxyType[str, str]:
-        """Return the immutable final native dataset map."""
-        return self._payload.data_list
-
-    @property
-    def output_dir(self) -> str:
-        """Return the deterministic child output key."""
-        return self._payload.output_dir
-
-    @property
-    def thread_id(self) -> str:
-        """Return the deterministic child graph thread ID."""
-        return self._payload.thread_id
-
-    @property
-    def interop_mode(self) -> str:
-        """Return the requested interop mode."""
-        return self._interop.interop_mode
-
-    @property
-    def interop_targets(self) -> tuple[str, ...]:
-        """Return the ordered interop target IDs."""
-        return self._interop.interop_targets
-
-    @property
-    def dispatch_fingerprint(self) -> str:
-        """Return the deterministic child dispatch fingerprint."""
-        return self._interop.dispatch_fingerprint
+    def __post_init__(self) -> None:
+        """Freeze the dataset map without breaking dataclass serialization."""
+        if not isinstance(self.data_list, _ImmutableDataMap):
+            object.__setattr__(
+                self, "data_list", _ImmutableDataMap(self.data_list)
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -340,34 +275,131 @@ def _validate_prepared(prepared: PreparedResearchInput) -> None:
 
 
 def _validate_evidence(evidence: ExtractedResearchEvidence) -> None:
-    """Validate evidence identity without persisting plaintext."""
+    """Validate every evidence identity and its exact coverage boundary."""
     if not isinstance(evidence, ExtractedResearchEvidence):
         raise _planning_failure()
     if not isinstance(evidence.units, tuple) or not evidence.units:
         raise _planning_failure()
     if not isinstance(evidence.document_digests, tuple):
         raise _planning_failure()
-    if (
-        not isinstance(evidence.coverage_digest, str)
-        or not evidence.coverage_digest
+    if not _valid_digest(evidence.coverage_digest):
+        raise _planning_failure()
+    units_by_id = _validated_evidence_units(evidence.units)
+    covered_document_ids = _validated_document_coverage(
+        evidence.document_digests, units_by_id
+    )
+
+    document_unit_ids = {
+        unit.evidence_id
+        for unit in evidence.units
+        if unit.source_kind in {"pdf_page", "document_section"}
+    }
+    if document_unit_ids != set(covered_document_ids):
+        raise _planning_failure()
+    if _evidence_coverage_digest(evidence) != evidence.coverage_digest:
+        raise _planning_failure()
+
+
+def _validated_evidence_units(
+    units: tuple[object, ...],
+) -> dict[str, ResearchEvidenceUnit]:
+    """Validate transient units and index their opaque identities."""
+    units_by_id: dict[str, ResearchEvidenceUnit] = {}
+    for candidate in units:
+        if not isinstance(candidate, ResearchEvidenceUnit):
+            raise _planning_failure()
+        _validate_evidence_unit(candidate, units_by_id)
+        units_by_id[candidate.evidence_id] = candidate
+    return units_by_id
+
+
+def _validate_evidence_unit(
+    unit: ResearchEvidenceUnit,
+    units_by_id: dict[str, ResearchEvidenceUnit],
+) -> None:
+    """Validate one unit's source identity, text digest, and memberships."""
+    if not isinstance(unit.evidence_id, str):
+        raise _planning_failure()
+    if not unit.evidence_id.strip() or unit.evidence_id in units_by_id:
+        raise _planning_failure()
+    if unit.source_kind not in _EVIDENCE_SOURCE_KINDS:
+        raise _planning_failure()
+    if not _valid_non_negative_ordinal(unit.source_ordinal):
+        raise _planning_failure()
+    if not isinstance(unit.text, str) or not unit.text.strip():
+        raise _planning_failure()
+    if not _valid_digest(unit.content_digest):
+        raise _planning_failure()
+    if unit.content_digest != _sha256_text(unit.text):
+        raise _planning_failure()
+    if not isinstance(unit.dataset_ids, tuple):
+        raise _planning_failure()
+    if any(
+        not isinstance(dataset_id, str) or not dataset_id.strip()
+        for dataset_id in unit.dataset_ids
     ):
         raise _planning_failure()
-    identifiers: list[str] = []
-    for unit in evidence.units:
-        if not isinstance(unit.evidence_id, str) or not unit.evidence_id:
-            raise _planning_failure()
-        if not isinstance(unit.text, str) or not unit.text:
-            raise _planning_failure()
-        if not isinstance(unit.dataset_ids, tuple):
-            raise _planning_failure()
-        if any(
-            not isinstance(dataset_id, str) or not dataset_id
-            for dataset_id in unit.dataset_ids
-        ):
-            raise _planning_failure()
-        identifiers.append(unit.evidence_id)
-    if len(identifiers) != len(set(identifiers)):
+    if len(set(unit.dataset_ids)) != len(unit.dataset_ids):
         raise _planning_failure()
+    if _invalid_source_span(unit.source_span):
+        raise _planning_failure()
+
+
+def _validated_document_coverage(
+    documents: tuple[object, ...],
+    units_by_id: dict[str, ResearchEvidenceUnit],
+) -> list[str]:
+    """Validate document records and return their unique covered IDs."""
+    covered_document_ids: list[str] = []
+    document_ids: set[str] = set()
+    for candidate in documents:
+        if not isinstance(candidate, DocumentEvidenceDigest):
+            raise _planning_failure()
+        _validate_document_digest(candidate, document_ids)
+        document_ids.add(candidate.document_id)
+        _append_document_evidence_ids(
+            candidate.evidence_ids, covered_document_ids, units_by_id
+        )
+    return covered_document_ids
+
+
+def _validate_document_digest(
+    document: DocumentEvidenceDigest, document_ids: set[str]
+) -> None:
+    """Validate one document's digest and record identity."""
+    if not isinstance(document.document_id, str):
+        raise _planning_failure()
+    if (
+        not document.document_id.strip()
+        or document.document_id in document_ids
+    ):
+        raise _planning_failure()
+    if not _valid_digest(document.content_digest):
+        raise _planning_failure()
+    if (
+        not isinstance(document.evidence_ids, tuple)
+        or not document.evidence_ids
+    ):
+        raise _planning_failure()
+
+
+def _append_document_evidence_ids(
+    evidence_ids: tuple[object, ...],
+    covered_document_ids: list[str],
+    units_by_id: dict[str, ResearchEvidenceUnit],
+) -> None:
+    """Check document membership and append each covered unit exactly once."""
+    for evidence_id in evidence_ids:
+        if not isinstance(evidence_id, str):
+            raise _planning_failure()
+        if not evidence_id.strip() or evidence_id in covered_document_ids:
+            raise _planning_failure()
+        matched_unit = units_by_id.get(evidence_id)
+        if matched_unit is None:
+            raise _planning_failure()
+        if matched_unit.source_kind not in {"pdf_page", "document_section"}:
+            raise _planning_failure()
+        covered_document_ids.append(evidence_id)
 
 
 def _validated_goals(raw_goals: object) -> tuple[ResearchGoal, ...]:
@@ -386,7 +418,87 @@ def _validated_goals(raw_goals: object) -> tuple[ResearchGoal, ...]:
     descriptions = tuple(goal.goal for goal in goals)
     if len(descriptions) != len(set(descriptions)):
         raise _planning_failure()
+    if goals != tuple(sorted(goals, key=_goal_order_key)):
+        raise _planning_failure()
     return goals
+
+
+def _goal_order_key(goal: ResearchGoal) -> tuple[str, str]:
+    """Return the canonical order required of the provider output."""
+    return goal.goal, goal.context or ""
+
+
+def _valid_digest(value: object) -> bool:
+    """Require the lower-case hexadecimal SHA-256 contract."""
+    return (
+        isinstance(value, str)
+        and len(value) == _DIGEST_LENGTH
+        and value == value.lower()
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
+def _valid_non_negative_ordinal(value: object) -> bool:
+    """Require a real non-negative integer ordinal, not a boolean."""
+    return (
+        isinstance(value, int) and not isinstance(value, bool) and value >= 0
+    )
+
+
+def _invalid_source_span(span: object) -> bool:
+    """Reject malformed source ranges and unknown parser grammars."""
+    if span is None:
+        return False
+    if not isinstance(span, SourceSpan):
+        return True
+    return (
+        not isinstance(span.start, int)
+        or isinstance(span.start, bool)
+        or not isinstance(span.end, int)
+        or isinstance(span.end, bool)
+        or span.start < 0
+        or span.end <= span.start
+        or span.grammar not in _SOURCE_SPAN_GRAMMARS
+    )
+
+
+def _evidence_coverage_digest(evidence: ExtractedResearchEvidence) -> str:
+    """Recompute the extractor's identity-only coverage digest."""
+    return _digest(
+        {
+            "units": [
+                {
+                    "evidence_id": unit.evidence_id,
+                    "source_kind": unit.source_kind,
+                    "source_ordinal": unit.source_ordinal,
+                    "source_span": _source_span_metadata(unit.source_span),
+                    "content_digest": unit.content_digest,
+                    "dataset_ids": unit.dataset_ids,
+                }
+                for unit in evidence.units
+            ],
+            "documents": [
+                {
+                    "document_id": document.document_id,
+                    "content_digest": document.content_digest,
+                    "evidence_ids": document.evidence_ids,
+                }
+                for document in evidence.document_digests
+            ],
+        }
+    )
+
+
+def _source_span_metadata(span: SourceSpan | None) -> dict[str, Any] | None:
+    """Project a source span to the extractor's canonical hash shape."""
+    if span is None:
+        return None
+    return {"start": span.start, "end": span.end, "grammar": span.grammar}
+
+
+def _sha256_text(text: str) -> str:
+    """Hash transient evidence text without retaining it in metadata."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _children(
@@ -401,7 +513,7 @@ def _children(
         context = goal.context or ""
         output_dir = research_child_output_dir(request.run_id, ordinal)
         thread_id = research_child_thread_id(request.run_id, ordinal)
-        data_list = MappingProxyType(dict(data_snapshot))
+        data_list = _ImmutableDataMap(dict(data_snapshot))
         fingerprint = _dispatch_fingerprint(
             request,
             _ResearchChildDraft(

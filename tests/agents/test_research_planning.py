@@ -6,7 +6,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+import json
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, fields, replace
 from types import MappingProxyType
 from typing import Any
 
@@ -14,9 +17,11 @@ import pytest
 
 from mcp_server_phytomni.agents.research.contracts import ResearchGoal
 from mcp_server_phytomni.agents.research.document_evidence import (
+    DocumentEvidenceDigest,
     ExtractedResearchEvidence,
     ResearchEvidenceUnit,
 )
+from mcp_server_phytomni.agents.research.input_contracts import SourceSpan
 from mcp_server_phytomni.agents.research.input_preparation import (
     PreparedResearchInput,
 )
@@ -54,14 +59,61 @@ def _evidence() -> ExtractedResearchEvidence:
         source_kind="query",
         source_ordinal=0,
         source_span=None,
-        content_digest="content-digest",
+        content_digest=_sha256("Drought response in rice."),
         text="Drought response in rice.",
         dataset_ids=("dataset_001",),
     )
+    coverage = _coverage_digest((unit,), ())
     return ExtractedResearchEvidence(
         units=(unit,),
         document_digests=(),
-        coverage_digest="coverage-digest",
+        coverage_digest=coverage,
+    )
+
+
+def _sha256(value: str) -> str:
+    """Return the digest used by the evidence extractor contract."""
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _coverage_digest(
+    units: tuple[ResearchEvidenceUnit, ...],
+    documents: tuple[DocumentEvidenceDigest, ...],
+) -> str:
+    """Build the canonical coverage digest for test evidence."""
+    payload = {
+        "units": [
+            {
+                "evidence_id": unit.evidence_id,
+                "source_kind": unit.source_kind,
+                "source_ordinal": unit.source_ordinal,
+                "source_span": (
+                    None
+                    if unit.source_span is None
+                    else {
+                        "start": unit.source_span.start,
+                        "end": unit.source_span.end,
+                        "grammar": unit.source_span.grammar,
+                    }
+                ),
+                "content_digest": unit.content_digest,
+                "dataset_ids": unit.dataset_ids,
+            }
+            for unit in units
+        ],
+        "documents": [
+            {
+                "document_id": document.document_id,
+                "content_digest": document.content_digest,
+                "evidence_ids": document.evidence_ids,
+            }
+            for document in documents
+        ],
+    }
+    return _sha256(
+        json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
     )
 
 
@@ -136,6 +188,36 @@ async def test_plan_is_ordered_deterministic_and_side_effect_free() -> None:
     assert first.children[0].data_list == _prepared().data_list
     with pytest.raises(TypeError):
         first.children[0].data_list["new"] = "mutation"  # type: ignore[index]
+    assert [item.name for item in fields(first.children[0])] == [
+        "ordinal",
+        "task_name",
+        "goal_description",
+        "context",
+        "data_list",
+        "output_dir",
+        "thread_id",
+        "interop_mode",
+        "interop_targets",
+        "dispatch_fingerprint",
+    ]
+    assert asdict(first.children[0])["goal_description"] == (
+        "Map drought genes"
+    )
+
+
+async def test_provider_order_that_is_not_canonical_fails_closed() -> None:
+    """A provider cannot silently change child identity by changing order."""
+    goals = (
+        ResearchGoal(goal="Prioritize candidates", context="field"),
+        ResearchGoal(goal="Map drought genes", context="rice"),
+    )
+
+    with pytest.raises(Exception) as caught:
+        await build_research_plan(_request(), _GoalProvider(goals))
+
+    assert getattr(caught.value, "code", None) == (
+        "research_input_resolution_failed"
+    )
 
 
 async def test_empty_goal_result_fails_before_any_child_work() -> None:
@@ -180,7 +262,7 @@ async def test_planner_rejects_mutable_or_changed_data_list() -> None:
         _GoalProvider((ResearchGoal(goal="Analyze A"),)),
     )
 
-    assert isinstance(plan.children[0].data_list, MappingProxyType)
+    assert isinstance(plan.children[0].data_list, Mapping)
     assert dict(plan.children[0].data_list) == {"obs://bucket/a.csv": "A"}
 
 
@@ -212,3 +294,69 @@ async def test_planner_rejects_empty_evidence_before_provider() -> None:
         await build_research_plan(invalid, provider)
 
     assert not provider.calls
+
+
+@pytest.mark.parametrize(
+    "invalid_unit",
+    [
+        lambda unit: replace(unit, source_kind="forged"),
+        lambda unit: replace(unit, source_ordinal=-1),
+        lambda unit: replace(unit, content_digest=""),
+        lambda unit: replace(unit, source_span=SourceSpan(-1, 0, "query")),
+        lambda unit: replace(unit, evidence_id="query_span_001"),
+    ],
+)
+async def test_planner_rejects_malformed_evidence(
+    invalid_unit: Any,
+) -> None:
+    """Every forged evidence identity fails before the provider is called."""
+    evidence = _evidence()
+    unit = invalid_unit(evidence.units[0])
+    units: tuple[ResearchEvidenceUnit, ...] = (unit,)
+    if (
+        unit.evidence_id == evidence.units[0].evidence_id
+        and unit is not evidence.units[0]
+    ):
+        units = (evidence.units[0], unit)
+    invalid = ExtractedResearchEvidence(
+        units=units,
+        document_digests=evidence.document_digests,
+        coverage_digest=evidence.coverage_digest,
+    )
+    request = replace(_request(), evidence=invalid)
+    provider = _GoalProvider((ResearchGoal(goal="Analyze"),))
+
+    with pytest.raises(Exception):
+        await build_research_plan(request, provider)
+    assert not provider.calls
+
+
+async def test_planner_rejects_document_coverage_boundary() -> None:
+    """Document records must cover exactly document evidence units."""
+    evidence = _evidence()
+    invalid = replace(
+        evidence,
+        document_digests=(
+            DocumentEvidenceDigest(
+                document_id="document_001",
+                content_digest="0" * 64,
+                evidence_ids=("missing-evidence",),
+            ),
+        ),
+    )
+    with pytest.raises(Exception):
+        await build_research_plan(
+            replace(_request(), evidence=invalid),
+            _GoalProvider((ResearchGoal(goal="Analyze"),)),
+        )
+
+
+async def test_planner_rejects_coverage_digest_mismatch() -> None:
+    """The coverage digest must bind the complete identity projection."""
+    evidence = replace(_evidence(), coverage_digest="0" * 64)
+
+    with pytest.raises(Exception):
+        await build_research_plan(
+            replace(_request(), evidence=evidence),
+            _GoalProvider((ResearchGoal(goal="Analyze"),)),
+        )

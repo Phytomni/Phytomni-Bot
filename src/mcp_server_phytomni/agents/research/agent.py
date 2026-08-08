@@ -111,7 +111,6 @@ from .interop import (
 )
 
 logger = logging.getLogger(__name__)
-
 IN_SILICO_CONFIG = InSilicoResearchConfig()
 
 
@@ -126,7 +125,6 @@ class ResearchTaskInterop:
 @dataclass(frozen=True)
 class ResearchTaskContext:
     """Resolved context for submitting one in-silico research task.
-
     Attributes:
         goal_description: Research objective submitted to AnalystAgent.
         context: Supporting plan or context for the task.
@@ -581,7 +579,6 @@ class InSilicoResearchAgents:
         """
         paper_text = state["paper_text"]
         obs_file_list = state.get("obs_file_list", [])
-
         logger.info("Extracting research goals from paper")
 
         async def extract_goals() -> dict[str, Any]:
