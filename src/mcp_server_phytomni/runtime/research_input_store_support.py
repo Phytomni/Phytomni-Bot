@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from sqlite3 import Row
 from typing import TYPE_CHECKING, Any
 
-from . import research_input_store as _store
 from .research_input_types import ResearchWorkUnitRecord
 from .sqlite import sqlite_transaction
 
@@ -95,12 +95,13 @@ def replace_work_unit_with_children(
         for child in child_rows
     ):
         return False
+    store_module = sys.modules[type(store).__module__]
     now_iso = _utc_iso(now)
     with sqlite_transaction(store.db_path) as connection:
         connection.row_factory = Row
         connection.execute("BEGIN IMMEDIATE")
         row = connection.execute(
-            getattr(_store, "_WORK_SELECT"), (record.unit_id,)
+            getattr(store_module, "_WORK_SELECT"), (record.unit_id,)
         ).fetchone()
         if (
             row is None
@@ -111,8 +112,8 @@ def replace_work_unit_with_children(
             return False
         for child in child_rows:
             inserted = connection.execute(
-                getattr(_store, "_WORK_INSERT_SQL"),
-                getattr(_store, "_work_insert_values")(child, now_iso),
+                getattr(store_module, "_WORK_INSERT_SQL"),
+                getattr(store_module, "_work_insert_values")(child, now_iso),
             )
             if inserted.rowcount != 1:
                 raise sqlite3.IntegrityError("research child collision")
@@ -123,7 +124,7 @@ def replace_work_unit_with_children(
             "failure_retryable = 0, updated_at = ?, completed_at = ?, "
             "revision = revision + 1 WHERE unit_id = ? AND "
             "lease_owner = ? AND revision = ? AND state = 'sent' AND "
-            + getattr(_store, "_PARENT_LIVE"),
+            + getattr(store_module, "_PARENT_LIVE"),
             (now_iso,) * 2
             + (record.unit_id, record.lease_owner, record.revision),
         )
