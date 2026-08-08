@@ -231,6 +231,7 @@ class _RevokePayload(_StrictGrantModel):
         values = [value] if isinstance(value, str) else value
         if any(
             not item
+            or len(item) > _MAX_IDENTIFIER_LENGTH
             or any(
                 ord(character) < 32 or ord(character) == 127
                 for character in item
@@ -367,15 +368,85 @@ def _validate_exact_reference(reference: str, bucket: str) -> None:
         raise ValueError("reference key is empty")
 
 
+def _metadata_snapshot_has_valid_shape(snapshot: object) -> bool:
+    """Return whether untrusted metadata has one complete snapshot shape."""
+    if not isinstance(snapshot, ResearchObjectSnapshot):
+        return False
+    try:
+        required_text = (snapshot.dataset_id, snapshot.snapshot_digest)
+        size_bytes = snapshot.size_bytes
+        optional_text = (
+            snapshot.etag,
+            snapshot.version_id,
+            snapshot.last_modified,
+        )
+        placeholder = snapshot.placeholder
+    except AttributeError:
+        return False
+    required_text_is_valid = all(
+        isinstance(value, str) and value for value in required_text
+    )
+    size_is_valid = (
+        isinstance(size_bytes, int)
+        and not isinstance(size_bytes, bool)
+        and size_bytes >= 0
+    )
+    optional_text_is_valid = all(
+        value is None or isinstance(value, str) for value in optional_text
+    )
+    return (
+        required_text_is_valid
+        and size_is_valid
+        and optional_text_is_valid
+        and isinstance(placeholder, bool)
+    )
+
+
+def _metadata_authority_has_valid_shape(
+    authority: ResearchObjectAuthority,
+) -> bool:
+    """Return whether one typed authority exposes only a valid snapshot."""
+    try:
+        dataset_id = authority.dataset_id
+        authority_id = authority.authority_id
+        snapshot = authority.snapshot
+    except AttributeError:
+        return False
+    if not isinstance(dataset_id, str) or not dataset_id:
+        return False
+    if not isinstance(authority_id, str) or not authority_id:
+        return False
+    return _metadata_snapshot_has_valid_shape(snapshot)
+
+
+def _validated_metadata_port_authorities(
+    authorities: object,
+) -> tuple[ResearchObjectAuthority, ...]:
+    """Require complete authority tuples from the metadata boundary."""
+    if not isinstance(authorities, tuple):
+        raise ResearchObjectMetadataError()
+    validated: list[ResearchObjectAuthority] = []
+    for authority in authorities:
+        if not isinstance(authority, ResearchObjectAuthority):
+            raise ResearchObjectMetadataError()
+        if not _metadata_authority_has_valid_shape(authority):
+            raise ResearchObjectMetadataError()
+        validated.append(authority)
+    return tuple(validated)
+
+
 def _validate_resolved_authorities(
     candidates: tuple[ResearchObjectCandidate, ...],
-    authorities: tuple[ResearchObjectAuthority, ...],
+    authorities: object,
 ) -> tuple[ResearchObjectAuthority, ...]:
     """Require one non-placeholder, unique authority for every candidate."""
-    if len(candidates) != len(authorities):
+    validated_authorities = _validated_metadata_port_authorities(authorities)
+    if len(candidates) != len(validated_authorities):
         raise ResearchObjectMetadataError()
     authority_ids: set[str] = set()
-    for candidate, authority in zip(candidates, authorities, strict=True):
+    for candidate, authority in zip(
+        candidates, validated_authorities, strict=True
+    ):
         if (
             authority.dataset_id != candidate.dataset_id
             or authority.snapshot.dataset_id != candidate.dataset_id
@@ -385,7 +456,19 @@ def _validate_resolved_authorities(
         ):
             raise ResearchObjectMetadataError()
         authority_ids.add(authority.authority_id)
-    return authorities
+    return validated_authorities
+
+
+def _validate_verified_authorities(
+    expected: tuple[ResearchObjectAuthority, ...],
+    authorities: object,
+) -> tuple[ResearchObjectAuthority, ...]:
+    """Require an exact checked authority tuple before grant verification."""
+    expected_authorities = _validated_metadata_port_authorities(expected)
+    verified_authorities = _validated_metadata_port_authorities(authorities)
+    if verified_authorities != expected_authorities:
+        raise ResearchObjectMetadataError()
+    return verified_authorities
 
 
 def _binding_key(
@@ -444,7 +527,10 @@ def _source_authorities_for_verify(
                 grant.grant_id,
             )
         )
-        if authority is None or authority.dataset_id != grant.dataset_id:
+        if authority is None:
+            raise ResearchGrantError()
+        authority = _validated_metadata_port_authorities((authority,))[0]
+        if authority.dataset_id != grant.dataset_id:
             raise ResearchGrantError()
         if authority.snapshot != _snapshot_from_payload(
             grant.expected_snapshot
@@ -468,6 +554,24 @@ def _grant_authorities(
             snapshot=authority.snapshot,
         )
         for grant, authority in zip(grants, source_authorities, strict=True)
+    )
+
+
+def _unreferenced_source_authority_ids(
+    authorities: Iterable[ResearchObjectAuthority],
+) -> tuple[str, ...]:
+    """Return removed sources no remaining in-worker grant binding uses."""
+    remaining_authority_ids = {
+        authority.authority_id
+        for authority in _GRANT_AUTHORITY_BINDINGS.values()
+    }
+    removed_authority_ids = dict.fromkeys(
+        authority.authority_id for authority in authorities
+    )
+    return tuple(
+        authority_id
+        for authority_id in removed_authority_ids
+        if authority_id not in remaining_authority_ids
     )
 
 
@@ -611,15 +715,16 @@ async def _verify_grants(
     payload = await _read_verify_payload(request)
     try:
         source_authorities = _source_authorities_for_verify(principal, payload)
-        verified_source_authorities = await metadata_port.verify(
-            ResearchObjectVerifyRequest(
-                parent_run_id=payload.parent_run_id,
-                execution_fingerprint=payload.execution_fingerprint,
-                authorities=source_authorities,
-            )
+        verified_source_authorities = _validate_verified_authorities(
+            source_authorities,
+            await metadata_port.verify(
+                ResearchObjectVerifyRequest(
+                    parent_run_id=payload.parent_run_id,
+                    execution_fingerprint=payload.execution_fingerprint,
+                    authorities=source_authorities,
+                )
+            ),
         )
-        if tuple(verified_source_authorities) != source_authorities:
-            raise ResearchObjectMetadataError()
         records = grant_store.verify_or_rotate(
             ResearchGrantVerify(
                 principal_key_prefix=principal.key_prefix,
@@ -687,8 +792,8 @@ async def _revoke_grants(
             ),
             datetime.now(UTC),
         )
-        source_authority_ids = tuple(
-            authority.authority_id
+        removed_authorities = tuple(
+            authority
             for grant_id in payload.grant_ids
             if (
                 authority := _GRANT_AUTHORITY_BINDINGS.pop(
@@ -702,6 +807,9 @@ async def _revoke_grants(
                 )
             )
             is not None
+        )
+        source_authority_ids = _unreferenced_source_authority_ids(
+            removed_authorities
         )
         await metadata_port.revoke(
             ResearchObjectRevokeRequest(

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import Mock
 
 import httpx
@@ -42,6 +42,7 @@ pytestmark = pytest.mark.server
 _REFERENCE = "obs://phytomni/research/leaf.tsv"
 _PARENT_RUN_ID = "parent-run-001"
 _EXECUTION_FINGERPRINT = "execution-fingerprint-001"
+_NO_METADATA_OVERRIDE = object()
 
 
 @dataclass(slots=True)
@@ -50,15 +51,17 @@ class _FakeMetadataPort:
 
     calls: list[tuple[str, str]] = field(default_factory=list)
     changed_references: set[str] = field(default_factory=set)
+    resolve_override: object = _NO_METADATA_OVERRIDE
+    verify_override: object = _NO_METADATA_OVERRIDE
     _records: dict[str, tuple[str, str, str, ResearchObjectAuthority]] = field(
         default_factory=dict
     )
     _sequence: int = 0
 
-    async def resolve(
-        self, request: ResearchObjectResolveRequest
-    ) -> tuple[ResearchObjectAuthority, ...]:
+    async def resolve(self, request: ResearchObjectResolveRequest) -> Any:
         """Return one opaque authority per exact, non-placeholder object."""
+        if self.resolve_override is not _NO_METADATA_OVERRIDE:
+            return self.resolve_override
         resolved: list[ResearchObjectAuthority] = []
         for candidate in request.objects:
             self.calls.append(("head", candidate.exact_reference))
@@ -83,10 +86,10 @@ class _FakeMetadataPort:
             resolved.append(authority)
         return tuple(resolved)
 
-    async def verify(
-        self, request: ResearchObjectVerifyRequest
-    ) -> tuple[ResearchObjectAuthority, ...]:
+    async def verify(self, request: ResearchObjectVerifyRequest) -> Any:
         """Re-head only a source authority belonging to its original run."""
+        if self.verify_override is not _NO_METADATA_OVERRIDE:
+            return self.verify_override
         verified: list[ResearchObjectAuthority] = []
         for authority in request.authorities:
             record = self._records.get(authority.authority_id)
@@ -112,6 +115,10 @@ class _FakeMetadataPort:
                 and record[1] == request.execution_fingerprint
             ):
                 self._records.pop(authority_id)
+
+    def recorded_authorities(self) -> tuple[ResearchObjectAuthority, ...]:
+        """Expose source authorities without private test-member access."""
+        return tuple(record[3] for record in self._records.values())
 
 
 def _snapshot(dataset_id: str) -> ResearchObjectSnapshot:
@@ -417,6 +424,71 @@ async def test_resolve_accepts_the_256_object_boundary(
     assert {operation for operation, _ in metadata_port.calls} == {"head"}
 
 
+@pytest.mark.parametrize(
+    "malformed_result",
+    [
+        None,
+        (cast(ResearchObjectAuthority, object()),),
+        (
+            ResearchObjectAuthority(
+                dataset_id="dataset-001",
+                authority_id="source-authority-malformed",
+                snapshot=cast(ResearchObjectSnapshot, object()),
+            ),
+        ),
+    ],
+    ids=["not-a-tuple", "not-an-authority", "not-a-snapshot"],
+)
+async def test_resolve_rejects_malformed_metadata_port_authorities(
+    client: httpx.AsyncClient,
+    metadata_port: _FakeMetadataPort,
+    relay_key: Callable[..., str],
+    malformed_result: object,
+) -> None:
+    """Malformed exact-key authority output remains a fixed safe failure."""
+    metadata_port.resolve_override = malformed_result
+
+    response = await client.post(
+        "/v1/relay/research-input/object-grants",
+        headers={
+            "Authorization": f"Bearer {relay_key('relay:research-input')}"
+        },
+        json=_request_payload(),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "research object grant could not be verified"
+    }
+
+
+async def test_verify_rejects_non_tuple_metadata_port_result(
+    client: httpx.AsyncClient,
+    metadata_port: _FakeMetadataPort,
+    relay_key: Callable[..., str],
+) -> None:
+    """Verification accepts only the metadata port's exact authority tuple."""
+    headers = {"Authorization": f"Bearer {relay_key('relay:research-input')}"}
+    resolved = await client.post(
+        "/v1/relay/research-input/object-grants",
+        headers=headers,
+        json=_request_payload(),
+    )
+    grant = resolved.json()["grants"][0]
+    metadata_port.verify_override = [metadata_port.recorded_authorities()[0]]
+
+    response = await client.post(
+        "/v1/relay/research-input/object-grants/verify",
+        headers=headers,
+        json=_verify_payload(grant),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "research object grant could not be verified"
+    }
+
+
 async def test_verify_rotates_grant_after_rehead(
     client: httpx.AsyncClient,
     metadata_port: _FakeMetadataPort,
@@ -457,6 +529,68 @@ async def test_verify_rotates_grant_after_rehead(
     rotated = verified.json()["grants"][0]
     assert rotated["grant_id"] != original["grant_id"]
     assert metadata_port.calls == [("head", _REFERENCE)] * 2
+
+
+async def test_revoking_rotated_predecessor_preserves_replacement_authority(
+    client: httpx.AsyncClient,
+    metadata_port: _FakeMetadataPort,
+    relay_key: Callable[..., str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Revoking an old version must leave its active replacement verifiable."""
+    monkeypatch.setattr(
+        research_grants,
+        "RESEARCH_GRANT_ROTATE_BEFORE",
+        timedelta(hours=4),
+    )
+    headers = {"Authorization": f"Bearer {relay_key('relay:research-input')}"}
+    resolved = await client.post(
+        "/v1/relay/research-input/object-grants",
+        headers=headers,
+        json=_request_payload(),
+    )
+    original = resolved.json()["grants"][0]
+    rotated_response = await client.post(
+        "/v1/relay/research-input/object-grants/verify",
+        headers=headers,
+        json=_verify_payload(original),
+    )
+    rotated = rotated_response.json()["grants"][0]
+    revoked = await client.post(
+        "/v1/relay/research-input/object-grants/revoke",
+        headers=headers,
+        json=_revoke_payload(original["grant_id"]),
+    )
+    verified_replacement = await client.post(
+        "/v1/relay/research-input/object-grants/verify",
+        headers=headers,
+        json=_verify_payload(rotated),
+    )
+
+    assert rotated_response.status_code == 200
+    assert revoked.status_code == 200
+    assert verified_replacement.status_code == 200
+    assert original["grant_id"] != rotated["grant_id"]
+    assert metadata_port.calls == [("head", _REFERENCE)] * 3
+
+
+async def test_revoke_rejects_grant_id_above_public_identifier_bound(
+    client: httpx.AsyncClient,
+    relay_key: Callable[..., str],
+) -> None:
+    """A revoke grant id has the same bounded public contract as verify."""
+    response = await client.post(
+        "/v1/relay/research-input/object-grants/revoke",
+        headers={
+            "Authorization": f"Bearer {relay_key('relay:research-input')}"
+        },
+        json=_revoke_payload("g" * 513),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "detail": "research object grant could not be verified"
+    }
 
 
 async def test_verify_and_revoke_reject_foreign_and_revoked_grants(
