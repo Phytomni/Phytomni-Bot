@@ -50,6 +50,7 @@ from .run_registry_models import (
     _CREATE_TASKS_RUN_INDEX,
     _NON_POLLABLE_RUN_STATUSES,
     _REQUEST_INFO_COLUMNS,
+    _RESEARCH_COORDINATOR_COLUMNS,
     _TERMINAL_RUN_STATUSES,
     A2ACorrelation,
     A2UIActionAudit,
@@ -199,7 +200,11 @@ class RunRegistry(RunRegistryViewsMixin):
         try:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(_CREATE_RUNS_DDL)
-            for column, column_type in (*_REQUEST_INFO_COLUMNS, *_A2A_COLUMNS):
+            for column, column_type in (
+                *_REQUEST_INFO_COLUMNS,
+                *_A2A_COLUMNS,
+                *_RESEARCH_COORDINATOR_COLUMNS,
+            ):
                 with contextlib.suppress(sqlite3.OperationalError):
                     conn.execute(
                         f"ALTER TABLE runs ADD COLUMN {column} {column_type}"

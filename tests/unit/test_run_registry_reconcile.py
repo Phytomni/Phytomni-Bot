@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -220,6 +221,32 @@ async def test_reconcile_terminal_run_does_not_poll(
     assert record is not None
     assert record.status == "succeeded"
     assert calls["n"] == 0
+
+
+@pytest.mark.asyncio
+async def test_reconcile_cancelled_run_does_not_poll(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A legacy cancelled coordinator run remains terminal during reconcile."""
+    registry, _, _ = _make_registry(tmp_path)
+    registry.create_run(RunSpec("run-cancelled", "alice", "research", "api"))
+    with sqlite3.connect(registry.db_path) as connection:
+        connection.execute(
+            "UPDATE runs SET status = 'cancelled' WHERE run_id = ?",
+            ("run-cancelled",),
+        )
+        connection.commit()
+
+    async def boom(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        """Fail the test if cancellation ever falls through to polling."""
+        _ = (args, kwargs)
+        raise AssertionError("cancelled runs must not be reconciled")
+
+    monkeypatch.setattr(run_registry, "reconcile_task", boom)
+    record = await registry.reconcile("run-cancelled", owner="alice")
+
+    assert record is not None
+    assert record.status == "cancelled"
 
 
 @pytest.mark.asyncio

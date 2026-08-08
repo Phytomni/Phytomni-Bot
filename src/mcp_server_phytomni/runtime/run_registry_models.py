@@ -19,7 +19,7 @@ from .locale import SUPPORTED_LOCALES, SupportedLocale
 
 _SUCCESS_STATUSES = frozenset({"succeeded", "success", "completed", "done"})
 _FAILURE_STATUSES = frozenset({"failed", "error"})
-_TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed"})
+_TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
 _NON_POLLABLE_RUN_STATUSES = _TERMINAL_RUN_STATUSES | {"input_required"}
 
 _CREATE_RUNS_DDL = """
@@ -43,7 +43,10 @@ CREATE TABLE IF NOT EXISTS runs (
     locale TEXT,
     a2a_task_id TEXT,
     a2a_context_id TEXT,
-    a2a_message_id TEXT
+    a2a_message_id TEXT,
+    stage TEXT,
+    failure_json TEXT,
+    revision INTEGER NOT NULL DEFAULT 0
 )
 """
 
@@ -60,6 +63,11 @@ _A2A_COLUMNS = (
     ("a2a_task_id", "TEXT"),
     ("a2a_context_id", "TEXT"),
     ("a2a_message_id", "TEXT"),
+)
+_RESEARCH_COORDINATOR_COLUMNS = (
+    ("stage", "TEXT"),
+    ("failure_json", "TEXT"),
+    ("revision", "INTEGER NOT NULL DEFAULT 0"),
 )
 _CREATE_RUNS_USER_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_runs_user ON runs(user_id)"
@@ -344,7 +352,7 @@ class Timestamps:
 
 
 @dataclass(frozen=True)
-class RunRecord:
+class _RunRecordCore:
     """Read view of one run row plus its child task ids."""
 
     spec: RunSpec
@@ -354,6 +362,15 @@ class RunRecord:
     timestamps: Timestamps
     task_ids: tuple[str, ...]
     request_info: RunRequestInfo = RunRequestInfo()
+
+
+@dataclass(frozen=True)
+class RunRecord(_RunRecordCore):
+    """Read view of one run row plus public coordinator state."""
+
+    stage: str | None = None
+    failure: dict[str, Any] | None = None
+    revision: int = 0
 
     @property
     def a2a(self) -> A2ACorrelation:

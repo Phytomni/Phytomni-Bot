@@ -60,7 +60,8 @@ class RunRegistryViewsMixin:
                        dialogue_id, request_id, query, tool_name, model,
                        request_json,
                        locale,
-                       a2a_task_id, a2a_context_id, a2a_message_id
+                       a2a_task_id, a2a_context_id, a2a_message_id,
+                       stage, failure_json, revision
                 FROM runs WHERE {where}
                 ORDER BY created_at DESC, run_id
                 LIMIT ? OFFSET ?
@@ -241,7 +242,8 @@ class RunRegistryViewsMixin:
                        dialogue_id, request_id, query, tool_name, model,
                        request_json,
                        locale,
-                       a2a_task_id, a2a_context_id, a2a_message_id
+                       a2a_task_id, a2a_context_id, a2a_message_id,
+                       stage, failure_json, revision
                 FROM runs WHERE run_id = ? AND user_id = ?
                 """,
                 (run_id, owner),
@@ -301,7 +303,8 @@ class RunRegistryViewsMixin:
                        dialogue_id, request_id, query, tool_name, model,
                        request_json,
                        locale,
-                       a2a_task_id, a2a_context_id, a2a_message_id
+                       a2a_task_id, a2a_context_id, a2a_message_id,
+                       stage, failure_json, revision
                 FROM runs WHERE a2a_task_id = ? AND user_id = ?
                 ORDER BY updated_at DESC, run_id DESC LIMIT 1
                 """,
@@ -349,6 +352,11 @@ def _row_to_record(row: sqlite3.Row, task_rows: list[Any]) -> RunRecord:
                 message_id=row["a2a_message_id"],
             ),
         ),
+        stage=row["stage"],
+        failure=(
+            json.loads(row["failure_json"]) if row["failure_json"] else None
+        ),
+        revision=row["revision"],
     )
 
 
