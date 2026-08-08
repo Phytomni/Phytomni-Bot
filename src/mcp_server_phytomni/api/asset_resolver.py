@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from ..agents.research.input_inventory import (
+    ManagedResearchAssetResolver,
     ManagedResearchAssetSnapshot,
     managed_research_assets_from_bundle,
 )
@@ -37,6 +38,7 @@ from .schemas import AssetDescriptor, AttachmentAsset
 
 __all__ = [
     "AssetResolver",
+    "bind_research_asset_resolver",
     "normalize_asset_attachments",
     "resolve_managed_research_assets",
 ]
@@ -249,6 +251,26 @@ def resolve_managed_research_assets(
     return managed_research_assets_from_bundle(
         resolver.resolve_bundle(attachments, owner)
     )
+
+
+def bind_research_asset_resolver(
+    *,
+    owner: str,
+    resolver: AssetResolver,
+) -> ManagedResearchAssetResolver:
+    """Bind one owner to current managed Research asset resolution."""
+
+    def resolve(
+        asset_ids: tuple[str, ...],
+    ) -> tuple[ManagedResearchAssetSnapshot, ...]:
+        """Resolve only the original opaque IDs under the bound owner."""
+        return resolve_managed_research_assets(
+            tuple({"asset_id": asset_id} for asset_id in asset_ids),
+            owner=owner,
+            resolver=resolver,
+        )
+
+    return resolve
 
 
 def normalize_asset_attachments(

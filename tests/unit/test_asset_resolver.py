@@ -27,6 +27,7 @@ from tests.support.resumable_asset_fakes import (
 from mcp_server_phytomni.api import asset_resolver as asset_resolver_module
 from mcp_server_phytomni.api.asset_resolver import (
     AssetResolver,
+    bind_research_asset_resolver,
     normalize_asset_attachments,
 )
 from mcp_server_phytomni.api.attachments import (
@@ -161,6 +162,32 @@ def test_historical_chat_attachment_reads_as_document_without_row_update(
     assert bundle.documents[0].purpose == "document"
     assert bundle.documents[0].state_version >= 1
     assert bundle.documents[0].completed_at
+
+
+def test_bound_research_asset_resolver_rechecks_effective_owner(
+    tmp_path: Path,
+) -> None:
+    """A bound Research resolver re-reads current state under its owner."""
+    resolver, asset_id, owner, _content = _build_completed_asset(
+        tmp_path,
+        filename="current.tsv",
+        content=b"value\n",
+    )
+    bound = bind_research_asset_resolver(owner=owner, resolver=resolver)
+
+    snapshots = bound((asset_id,))
+
+    assert [snapshot.asset_id for snapshot in snapshots] == [asset_id]
+    assert snapshots[0].completed
+    assert snapshots[0].state_version >= 1
+    assert snapshots[0].completed_at
+    foreign = bind_research_asset_resolver(
+        owner="foreign-owner",
+        resolver=resolver,
+    )
+    with pytest.raises(UploadContractError) as caught:
+        foreign((asset_id,))
+    assert caught.value.code == "upload_asset_not_found"
 
 
 @pytest.mark.parametrize(

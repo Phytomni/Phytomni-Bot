@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import PurePosixPath
 from typing import Literal
@@ -30,6 +31,7 @@ from .scientific_formats import classify_scientific_reference
 
 __all__ = [
     "ManagedResearchAssetSnapshot",
+    "ManagedResearchAssetResolver",
     "ResearchInputInventory",
     "ResearchInputSnapshot",
     "ResearchInventoryEntry",
@@ -60,6 +62,11 @@ class ManagedResearchAssetSnapshot:
     version_id: str | None
     last_modified: str | None
     snapshot_digest: str
+
+
+type ManagedResearchAssetResolver = Callable[
+    [tuple[str, ...]], tuple[ManagedResearchAssetSnapshot, ...]
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,9 +168,18 @@ async def revalidate_research_inventory(
     request: ResearchInventoryRequest,
     inventory: ResearchInputInventory,
     object_port: ResearchObjectMetadataPort,
+    *,
+    managed_asset_resolver: ManagedResearchAssetResolver | None = None,
 ) -> ResearchInputInventory:
-    """Re-resolve all inputs and reject any immutable snapshot drift."""
-    refreshed = await build_research_inventory(request, object_port)
+    """Re-resolve all inputs and reject any immutable snapshot drift.
+
+    Managed assets require an owner-bound resolver so revalidation never trusts
+    the old request snapshot after an asset was reclaimed or changed.
+    """
+    refreshed_request = _request_with_current_managed_assets(
+        request, managed_asset_resolver
+    )
+    refreshed = await build_research_inventory(refreshed_request, object_port)
     if not _same_inventory_snapshot(inventory, refreshed):
         raise research_input_failure(
             "research_input_resolution_failed",
@@ -178,33 +194,63 @@ def managed_research_assets_from_bundle(
     """Project owner-validated resolved assets into immutable snapshots."""
     snapshots: list[ManagedResearchAssetSnapshot] = []
     for asset in bundle.all_assets:
-        if asset.state_version < 1 or not asset.completed_at:
+        if (
+            asset.state_version < 1
+            or not asset.completed_at
+            or asset.size_bytes <= 0
+        ):
             raise research_input_failure(
                 "research_input_resolution_failed",
                 "Research managed attachment state could not be verified.",
             )
+        snapshot = ManagedResearchAssetSnapshot(
+            asset_id=asset.asset_id,
+            exact_reference=asset.reference,
+            size_bytes=asset.size_bytes,
+            purpose=asset.purpose,
+            completed=True,
+            state_version=asset.state_version,
+            completed_at=asset.completed_at,
+            etag=None,
+            version_id=None,
+            last_modified=None,
+            snapshot_digest="",
+        )
         snapshots.append(
-            ManagedResearchAssetSnapshot(
-                asset_id=asset.asset_id,
-                exact_reference=asset.reference,
-                size_bytes=asset.size_bytes,
-                purpose=asset.purpose,
-                completed=True,
-                state_version=asset.state_version,
-                completed_at=asset.completed_at,
-                etag=None,
-                version_id=None,
-                last_modified=None,
-                snapshot_digest=_digest(
-                    {
-                        "asset_id": asset.asset_id,
-                        "completed_at": asset.completed_at,
-                        "state_version": asset.state_version,
-                    }
-                ),
+            replace(
+                snapshot,
+                snapshot_digest=_managed_snapshot_digest(snapshot),
             )
         )
     return tuple(snapshots)
+
+
+def _request_with_current_managed_assets(
+    request: ResearchInventoryRequest,
+    resolver: ManagedResearchAssetResolver | None,
+) -> ResearchInventoryRequest:
+    """Replace managed snapshots with current owner-qualified resolution."""
+    if not request.managed_assets:
+        return request
+    if resolver is None:
+        raise research_input_failure(
+            "research_input_resolution_failed",
+            "Research managed attachment state could not be revalidated.",
+        )
+    asset_ids = tuple(asset.asset_id for asset in request.managed_assets)
+    try:
+        refreshed_assets = resolver(asset_ids)
+    except Exception:
+        raise research_input_failure(
+            "research_input_resolution_failed",
+            "Research managed attachment state could not be revalidated.",
+        ) from None
+    if tuple(asset.asset_id for asset in refreshed_assets) != asset_ids:
+        raise research_input_failure(
+            "research_input_resolution_failed",
+            "Research managed attachment state could not be revalidated.",
+        )
+    return replace(request, managed_assets=refreshed_assets)
 
 
 def _preflight(request: ResearchInventoryRequest) -> tuple[_DraftEntry, ...]:
@@ -316,7 +362,7 @@ def _managed_state_invalid(asset: ManagedResearchAssetSnapshot) -> bool:
             asset.state_version < 1,
             not asset.completed_at,
             asset.purpose not in ("document", "dataset"),
-            asset.size_bytes < 0,
+            asset.size_bytes <= 0,
             not asset.snapshot_digest,
         )
     )
@@ -396,19 +442,33 @@ async def _resolve_drafts(
             "research_dataset_not_found",
             "Research dataset metadata could not be verified.",
         ) from error
-    if len(authorities) != len(candidates) or {
-        authority.dataset_id for authority in authorities
-    } != {candidate.dataset_id for candidate in candidates}:
+    requested_ids = {candidate.dataset_id for candidate in candidates}
+    authorities_by_dataset: dict[str, ResearchObjectAuthority] = {}
+    for authority in authorities:
+        if (
+            not isinstance(authority.authority_id, str)
+            or not authority.authority_id.strip()
+            or authority.dataset_id not in requested_ids
+            or authority.snapshot.dataset_id != authority.dataset_id
+            or authority.snapshot.placeholder
+            or authority.dataset_id in authorities_by_dataset
+        ):
+            raise research_input_failure(
+                "research_input_resolution_failed",
+                "Research dataset metadata could not be verified.",
+            )
+        authorities_by_dataset[authority.dataset_id] = authority
+    if (
+        len(authorities) != len(candidates)
+        or set(authorities_by_dataset) != requested_ids
+        or len({authority.authority_id for authority in authorities})
+        != len(authorities)
+    ):
         raise research_input_failure(
             "research_input_resolution_failed",
             "Research dataset metadata could not be verified.",
         )
-    if any(authority.snapshot.placeholder for authority in authorities):
-        raise research_input_failure(
-            "research_dataset_not_found",
-            "Research dataset metadata could not be verified.",
-        )
-    return {authority.dataset_id: authority for authority in authorities}
+    return authorities_by_dataset
 
 
 def _entries_from_drafts(
@@ -461,7 +521,7 @@ def _entry_snapshot(
             last_modified=managed.last_modified,
             placeholder=managed.size_bytes == 0,
             purpose=managed.purpose,
-            snapshot_digest=managed.snapshot_digest,
+            snapshot_digest=_managed_snapshot_digest(managed),
         )
     if authority is None:
         raise research_input_failure(
@@ -487,7 +547,16 @@ def _entry_snapshot(
         last_modified=object_snapshot.last_modified,
         placeholder=object_snapshot.placeholder,
         purpose=draft.purpose,
-        snapshot_digest=object_snapshot.snapshot_digest,
+        snapshot_digest=_digest(
+            {
+                "managed": (
+                    None
+                    if managed is None
+                    else _managed_snapshot_digest(managed)
+                ),
+                "object": object_snapshot.snapshot_digest,
+            }
+        ),
     )
 
 
@@ -532,6 +601,25 @@ def _same_inventory_snapshot(
         for before, after in zip(
             previous.entries, refreshed.entries, strict=True
         )
+    )
+
+
+def _managed_snapshot_digest(asset: ManagedResearchAssetSnapshot) -> str:
+    """Digest all managed state used to reject revalidation drift."""
+    return _digest(
+        {
+            "asset_id": asset.asset_id,
+            "completed": asset.completed,
+            "completed_at": asset.completed_at,
+            "etag": asset.etag,
+            "exact_reference": asset.exact_reference,
+            "last_modified": asset.last_modified,
+            "purpose": asset.purpose,
+            "size_bytes": asset.size_bytes,
+            "source_snapshot_digest": asset.snapshot_digest,
+            "state_version": asset.state_version,
+            "version_id": asset.version_id,
+        }
     )
 
 

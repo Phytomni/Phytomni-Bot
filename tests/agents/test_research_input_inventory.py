@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 
 import pytest
@@ -19,6 +20,7 @@ from mcp_server_phytomni.agents.research.input_inventory import (
     ManagedResearchAssetSnapshot,
     ResearchInventoryRequest,
     build_research_inventory,
+    revalidate_research_inventory,
 )
 from mcp_server_phytomni.agents.research.input_parser import (
     parse_research_input,
@@ -39,20 +41,24 @@ class RecordingResearchObjectPort:
 
     def __init__(self) -> None:
         self.resolve_calls: list[ResearchObjectResolveRequest] = []
+        self.authority_override: tuple[ResearchObjectAuthority, ...] | None = (
+            None
+        )
+        self.metadata_etag: str | None = None
 
     async def resolve(
         self, request: ResearchObjectResolveRequest
     ) -> tuple[ResearchObjectAuthority, ...]:
         """Return one immutable non-placeholder authority per candidate."""
         self.resolve_calls.append(request)
-        return tuple(
+        authorities = tuple(
             ResearchObjectAuthority(
                 dataset_id=candidate.dataset_id,
                 authority_id=f"authority-{candidate.dataset_id}",
                 snapshot=ResearchObjectSnapshot(
                     dataset_id=candidate.dataset_id,
                     size_bytes=17,
-                    etag=f"etag-{index}",
+                    etag=self.metadata_etag or f"etag-{index}",
                     version_id=None,
                     last_modified="2026-08-08T00:00:00+00:00",
                     placeholder=False,
@@ -60,6 +66,11 @@ class RecordingResearchObjectPort:
                 ),
             )
             for index, candidate in enumerate(request.objects, start=1)
+        )
+        return (
+            authorities
+            if self.authority_override is None
+            else self.authority_override
         )
 
     async def verify(
@@ -140,6 +151,22 @@ def _request(
         max_pasted_references=max_pasted_references,
         max_combined_references=max_combined_references,
     )
+
+
+def _managed_resolver(
+    snapshots: tuple[ManagedResearchAssetSnapshot, ...],
+) -> Callable[[tuple[str, ...]], tuple[ManagedResearchAssetSnapshot, ...]]:
+    """Bind one deterministic owner-qualified managed resolver fake."""
+    expected_ids = tuple(snapshot.asset_id for snapshot in snapshots)
+
+    def resolve(
+        asset_ids: tuple[str, ...],
+    ) -> tuple[ManagedResearchAssetSnapshot, ...]:
+        """Return only the trusted current snapshots for expected IDs."""
+        assert asset_ids == expected_ids
+        return snapshots
+
+    return resolve
 
 
 async def test_inventory_is_managed_first_and_pasted_source_ordered() -> None:
@@ -294,3 +321,146 @@ async def test_inventory_rejects_invalid_metadata_and_format() -> None:
 
     assert caught.value.code == "research_dataset_format_unsupported"
     assert not port.resolve_calls
+
+
+@pytest.mark.parametrize("purpose", ("document", "dataset"))
+async def test_inventory_rejects_zero_byte_managed_assets(
+    purpose: str,
+) -> None:
+    """Zero-byte managed assets are placeholders, not inputs."""
+    port = RecordingResearchObjectPort()
+    empty = replace(
+        _managed(
+            "file_empty",
+            "obs://dev-bucket/managed.tsv",
+            purpose=purpose,
+        ),
+        size_bytes=0,
+    )
+
+    with pytest.raises(ResearchInputFailure) as caught:
+        await build_research_inventory(
+            _request(parsed_input=_parsed(), managed_assets=(empty,)),
+            port,
+        )
+
+    assert caught.value.code == "research_input_resolution_failed"
+    assert not port.resolve_calls
+
+
+async def test_revalidation_requires_managed_resolver() -> None:
+    """Managed assets never revalidate from their initial request snapshot."""
+    managed = _managed("file_bound", "obs://dev-bucket/managed.tsv")
+    request = _request(parsed_input=_parsed(), managed_assets=(managed,))
+    port = RecordingResearchObjectPort()
+    inventory = await build_research_inventory(request, port)
+
+    with pytest.raises(ResearchInputFailure) as caught:
+        await revalidate_research_inventory(request, inventory, port)
+
+    assert caught.value.code == "research_input_resolution_failed"
+
+
+async def test_revalidation_rejects_current_managed_asset_drift() -> None:
+    """Revalidation fails for immutable current managed state drift."""
+    managed = _managed("file_bound", "obs://dev-bucket/managed.tsv")
+    request = _request(parsed_input=_parsed(), managed_assets=(managed,))
+    port = RecordingResearchObjectPort()
+    inventory = await build_research_inventory(request, port)
+    changed_snapshots = (
+        (replace(managed, completed=False),),
+        (replace(managed, purpose="document"),),
+        (replace(managed, exact_reference="obs://dev-bucket/other.tsv"),),
+        (replace(managed, size_bytes=18),),
+        (replace(managed, state_version=2),),
+        (replace(managed, completed_at="2026-08-09T00:00:00+00:00"),),
+        (replace(managed, etag="changed-etag"),),
+    )
+
+    for refreshed_assets in changed_snapshots:
+        with pytest.raises(ResearchInputFailure) as caught:
+            await revalidate_research_inventory(
+                request,
+                inventory,
+                port,
+                managed_asset_resolver=_managed_resolver(refreshed_assets),
+            )
+        assert caught.value.code == "research_input_resolution_failed"
+
+
+@pytest.mark.parametrize("missing_kind", ("reclaimed", "foreign_owner"))
+async def test_revalidation_rejects_missing_current_managed_asset(
+    missing_kind: str,
+) -> None:
+    """Reclaimed and foreign owner resolution never reuse request snapshots."""
+    managed = _managed("file_bound", "obs://dev-bucket/managed.tsv")
+    request = _request(parsed_input=_parsed(), managed_assets=(managed,))
+    port = RecordingResearchObjectPort()
+    inventory = await build_research_inventory(request, port)
+
+    with pytest.raises(ResearchInputFailure) as caught:
+        await revalidate_research_inventory(
+            request,
+            inventory,
+            port,
+            managed_asset_resolver=_managed_resolver(()),
+        )
+
+    assert caught.value.code == "research_input_resolution_failed"
+
+
+async def test_revalidation_rejects_current_object_metadata_drift() -> None:
+    """Exact-key object metadata is re-resolved with managed snapshots."""
+    managed = _managed("file_bound", "obs://dev-bucket/managed.tsv")
+    request = _request(parsed_input=_parsed(), managed_assets=(managed,))
+    port = RecordingResearchObjectPort()
+    inventory = await build_research_inventory(request, port)
+    port.metadata_etag = "changed-object-etag"
+
+    with pytest.raises(ResearchInputFailure) as caught:
+        await revalidate_research_inventory(
+            request,
+            inventory,
+            port,
+            managed_asset_resolver=_managed_resolver((managed,)),
+        )
+
+    assert caught.value.code == "research_input_resolution_failed"
+
+
+@pytest.mark.parametrize(
+    "invalid_kind",
+    ("empty_authority", "crossed_authority", "crossed_snapshot"),
+)
+async def test_inventory_rejects_malformed_metadata_authorities(
+    invalid_kind: str,
+) -> None:
+    """Authorities bind a nonempty ID to one requested candidate snapshot."""
+    port = RecordingResearchObjectPort()
+    request = _request(parsed_input=_parsed("obs://dev-bucket/pasted.tsv"))
+    authority_dataset_id = (
+        "dataset_999" if invalid_kind == "crossed_authority" else "dataset_001"
+    )
+    snapshot_dataset_id = (
+        "dataset_999" if invalid_kind != "empty_authority" else "dataset_001"
+    )
+    port.authority_override = (
+        ResearchObjectAuthority(
+            dataset_id=authority_dataset_id,
+            authority_id="" if invalid_kind == "empty_authority" else "auth-1",
+            snapshot=ResearchObjectSnapshot(
+                dataset_id=snapshot_dataset_id,
+                size_bytes=17,
+                etag="etag",
+                version_id=None,
+                last_modified="2026-08-08T00:00:00+00:00",
+                placeholder=False,
+                snapshot_digest="bad-snapshot",
+            ),
+        ),
+    )
+
+    with pytest.raises(ResearchInputFailure) as caught:
+        await build_research_inventory(request, port)
+
+    assert caught.value.code == "research_input_resolution_failed"
