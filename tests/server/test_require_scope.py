@@ -47,6 +47,16 @@ def test_relay_scope_exact_service_match() -> None:
     assert not relay_scope_satisfied(frozenset({"relay:llm"}), "retrieve")
 
 
+def test_relay_scope_keeps_research_input_service_isolated() -> None:
+    """Research grant authority needs its own explicit relay service scope."""
+    assert relay_scope_satisfied(
+        frozenset({"relay:research-input"}), "research-input"
+    )
+    assert not relay_scope_satisfied(
+        frozenset({"relay:obs"}), "research-input"
+    )
+
+
 def test_relay_scope_wildcard_covers_any_service() -> None:
     """relay:* authorizes any relay service."""
     assert relay_scope_satisfied(frozenset({"relay:*"}), "llm")

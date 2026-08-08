@@ -41,12 +41,14 @@ __all__ = [
     "require_explicit_scope",
     "scopes_satisfy",
     "relay_scope_satisfied",
+    "RELAY_RESEARCH_INPUT_SERVICE",
 ]
 
 _KEY_PREFIX = "ptm_"
 _PREFIX_LEN = 12
 _PBKDF2_ITERATIONS = 200_000
 _UNAUTHORIZED_HEADERS = {"WWW-Authenticate": "Bearer"}
+RELAY_RESEARCH_INPUT_SERVICE = "research-input"
 
 
 def _now_iso() -> str:

@@ -43,6 +43,7 @@ from .forward import (
     validate_relay_path_segment,
 )
 from .obs import add_obs_routes
+from .research_input import add_research_input_routes
 
 __all__ = [
     "create_relay_router",
@@ -332,6 +333,10 @@ def create_relay_router() -> APIRouter:
     async def relay_healthz() -> dict[str, str]:
         """Return a relay liveness signal when the relay is enabled."""
         return {"status": "ok"}
+
+    # Literal research-grant routes must precede every parameterized relay
+    # registration so capability and object-grant paths cannot be shadowed.
+    add_research_input_routes(router)
 
     for name, path, url_field, key_field in _OPENAI_RELAYS:
         router.add_api_route(

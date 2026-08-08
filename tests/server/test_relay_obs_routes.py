@@ -19,6 +19,7 @@ from unittest.mock import Mock
 
 import httpx
 import pytest
+from fastapi.routing import APIRoute
 from tests.support.relay_fakes import (
     build_relay_app,
     make_relay_client_fixture,
@@ -28,6 +29,7 @@ from tests.support.relay_fakes import (
 
 from mcp_server_phytomni.api.relay import forward as forward_module
 from mcp_server_phytomni.api.relay.audit import RelayAuditStore
+from mcp_server_phytomni.api.relay.routes import create_relay_router
 from mcp_server_phytomni.storage import obs_relay_ops as ops_module
 from mcp_server_phytomni.storage.obs_storage import ObsPathError
 
@@ -52,6 +54,30 @@ def _redirect_relay_audit(
 _OUTPUT_PREFIX = "agent_data/user_data/customer/runs/d/run_x/task/output/"
 _GENE_MD = "gene-examples/md/AT1G01010_result.md"
 _GENE_IMAGE = "gene-examples/img/AT1G01010/AT1G01010_network.png"
+
+
+def test_relay_route_table_keeps_obs_surface_and_research_ops_narrow() -> None:
+    """Research grants add no OBS list/body/write/delete/sign operation."""
+    routes = {
+        (route.path, tuple(sorted(route.methods or ())))
+        for route in create_relay_router().routes
+        if isinstance(route, APIRoute)
+    }
+
+    assert {
+        ("/v1/relay/obs/object", ("GET",)),
+        ("/v1/relay/obs/object", ("PUT",)),
+        ("/v1/relay/obs/dir", ("PUT",)),
+        ("/v1/relay/obs/list", ("GET",)),
+    } <= routes
+    research_routes = {
+        path for path, _methods in routes if "/research-input/" in path
+    }
+    assert research_routes == {
+        "/v1/relay/research-input/object-grants",
+        "/v1/relay/research-input/object-grants/verify",
+        "/v1/relay/research-input/object-grants/revoke",
+    }
 
 
 async def test_obs_put_object_writes_and_returns_path(
