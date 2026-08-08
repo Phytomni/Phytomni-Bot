@@ -26,6 +26,7 @@ from mcp_server_phytomni.api.relay.research_grants import (
 from mcp_server_phytomni.storage.research_objects import (
     ResearchObjectAuthority,
     ResearchObjectCandidate,
+    ResearchObjectSnapshot,
 )
 
 pytestmark = pytest.mark.unit
@@ -34,6 +35,23 @@ pytestmark = pytest.mark.unit
 def _now() -> datetime:
     """Return a fixed UTC time for deterministic grant lifetimes."""
     return datetime(2026, 8, 8, 0, 0, tzinfo=UTC)
+
+
+def _snapshot(
+    *,
+    etag: str = "metadata-etag",
+    snapshot_digest: str = "observed-snapshot-digest",
+) -> ResearchObjectSnapshot:
+    """Build one metadata-port snapshot with independently fixed values."""
+    return ResearchObjectSnapshot(
+        dataset_id="dataset-001",
+        size_bytes=73,
+        etag=etag,
+        version_id="metadata-v1",
+        last_modified="2026-08-08T00:00:00+00:00",
+        placeholder=False,
+        snapshot_digest=snapshot_digest,
+    )
 
 
 def _request() -> ResearchGrantResolve:
@@ -47,6 +65,13 @@ def _request() -> ResearchGrantResolve:
                 dataset_id="dataset-001",
                 exact_reference="obs://private-bucket/inputs/leaf.tsv",
                 compound_suffix=".tsv",
+            ),
+        ),
+        authorities=(
+            ResearchObjectAuthority(
+                dataset_id="dataset-001",
+                authority_id="metadata-port-authority",
+                snapshot=_snapshot(),
             ),
         ),
     )
@@ -93,35 +118,101 @@ def test_resolve_persists_run_bound_grant_with_fixed_lifetime(
     assert grant.parent_run_id == "run-001"
     assert grant.execution_fingerprint == "execution-sha256"
     assert grant.dataset_id == "dataset-001"
-    assert grant.exact_reference == "obs://private-bucket/inputs/leaf.tsv"
+    assert grant.snapshot == _snapshot()
+    assert not hasattr(grant, "exact_reference")
+    assert "obs://" not in repr(grant)
     assert grant.state == "active"
     assert grant.revision == 1
     assert grant.expires_at == now + RESEARCH_GRANT_TTL
 
 
-def test_initialization_is_additive_for_empty_legacy_and_repeated_databases(
+def test_resolve_persists_real_authority_snapshot_without_public_reference(
     tmp_path: Path,
 ) -> None:
-    """Grant initialization preserves legacy rows and can run repeatedly."""
+    """A grant keeps observed metadata while hiding its raw OBS reference."""
+    candidate = ResearchObjectCandidate(
+        dataset_id="dataset-001",
+        exact_reference="obs://private-bucket/inputs/leaf.tsv",
+        compound_suffix=".tsv",
+    )
+    snapshot = _snapshot()
+    request = ResearchGrantResolve(
+        principal_key_prefix="ptm_test",
+        parent_run_id="run-001",
+        execution_fingerprint="execution-sha256",
+        objects=(candidate,),
+        authorities=(
+            ResearchObjectAuthority(
+                dataset_id="dataset-001",
+                authority_id="metadata-port-authority",
+                snapshot=snapshot,
+            ),
+        ),
+    )
+
+    grant = ResearchGrantStore(
+        str(tmp_path / "relay.sqlite3")
+    ).resolve_or_replay(request, _now())[0]
+
+    assert grant.snapshot == snapshot
+    assert not hasattr(grant, "exact_reference")
+    assert "obs://" not in repr(grant)
+
+
+def test_resolve_rejects_candidates_without_real_metadata_authorities(
+    tmp_path: Path,
+) -> None:
+    """The grant store never substitutes zero/null synthetic metadata."""
+    request = _request()
+    missing_authority = ResearchGrantResolve(
+        principal_key_prefix=request.principal_key_prefix,
+        parent_run_id=request.parent_run_id,
+        execution_fingerprint=request.execution_fingerprint,
+        objects=request.objects,
+    )
+
+    with pytest.raises(ResearchGrantError):
+        ResearchGrantStore(str(tmp_path / "relay.sqlite3")).resolve_or_replay(
+            missing_authority, _now()
+        )
+
+
+def test_initialization_additively_upgrades_legacy_grant_table(
+    tmp_path: Path,
+) -> None:
+    """Same-table legacy grants are retained but made safely unusable."""
     database = tmp_path / "relay.sqlite3"
     with sqlite3.connect(database) as connection:
-        connection.execute("CREATE TABLE legacy_marker (value TEXT NOT NULL)")
-        connection.execute("INSERT INTO legacy_marker VALUES ('keep')")
+        connection.execute(
+            "CREATE TABLE research_object_grants (grant_id TEXT PRIMARY KEY)"
+        )
+        connection.execute(
+            "INSERT INTO research_object_grants VALUES ('legacy-grant')"
+        )
 
-    ResearchGrantStore(str(database))
+    store = ResearchGrantStore(str(database))
     ResearchGrantStore(str(database))
 
     with sqlite3.connect(database) as connection:
-        assert connection.execute(
-            "SELECT * FROM legacy_marker"
-        ).fetchall() == [("keep",)]
         columns = {
             row[1]
             for row in connection.execute(
                 "PRAGMA table_info(research_object_grants)"
             )
         }
+        legacy = connection.execute(
+            "SELECT grant_id, state, grant_schema_version "
+            "FROM research_object_grants WHERE grant_id = 'legacy-grant'"
+        ).fetchone()
+        schema_version = connection.execute(
+            "SELECT version FROM research_grant_schema_versions "
+            "WHERE schema_name = 'research_object_grants'"
+        ).fetchone()
+
     assert {"grant_id", "exact_reference", "snapshot_json"} <= columns
+    assert legacy == ("legacy-grant", "expired", 0)
+    assert schema_version == (2,)
+    assert len(store.resolve_or_replay(_request(), _now())) == 1
 
 
 def test_resolve_replays_after_restart_and_under_concurrent_calls(
@@ -188,6 +279,26 @@ def test_verify_enforces_principal_run_execution_and_snapshot_bindings(
             store.verify_or_rotate(request, _now())
 
 
+def test_verify_rejects_changed_real_metadata_port_snapshot(
+    tmp_path: Path,
+) -> None:
+    """A changed real metadata snapshot cannot reuse the original grant."""
+    store = ResearchGrantStore(str(tmp_path / "relay.sqlite3"))
+    grant = store.resolve_or_replay(_request(), _now())[0]
+
+    with pytest.raises(ResearchGrantError):
+        store.verify_or_rotate(
+            _verify(
+                grant.grant_id,
+                snapshot=_snapshot(
+                    etag="changed-etag",
+                    snapshot_digest="changed-snapshot-digest",
+                ),
+            ),
+            _now(),
+        )
+
+
 def test_verify_returns_unchanged_active_grant_before_rotation_window(
     tmp_path: Path,
 ) -> None:
@@ -219,6 +330,8 @@ def test_verify_rotates_only_at_or_inside_the_fifteen_minute_window(
     assert rotated.grant_id != grant.grant_id
     assert rotated.revision == grant.revision + 1
     assert rotated.expires_at == rotation_time + RESEARCH_GRANT_TTL
+    assert not hasattr(rotated, "exact_reference")
+    assert "obs://" not in repr(rotated)
     with pytest.raises(ResearchGrantError):
         store.verify_or_rotate(
             _verify(grant.grant_id, snapshot=grant.snapshot), rotation_time

@@ -26,10 +26,29 @@ from mcp_server_phytomni.api.relay.research_grants import (
 from mcp_server_phytomni.runtime import sqlite as sqlite_policy
 from mcp_server_phytomni.runtime.sqlite import sqlite_connection
 from mcp_server_phytomni.storage.research_objects import (
+    ResearchObjectAuthority,
     ResearchObjectCandidate,
+    ResearchObjectSnapshot,
 )
 
 pytestmark = pytest.mark.unit
+
+
+def _private_authority(dataset_id: str) -> ResearchObjectAuthority:
+    """Build one observed metadata-port authority for audit isolation."""
+    return ResearchObjectAuthority(
+        dataset_id=dataset_id,
+        authority_id="audit-metadata-authority",
+        snapshot=ResearchObjectSnapshot(
+            dataset_id=dataset_id,
+            size_bytes=31,
+            etag="audit-etag",
+            version_id="audit-v1",
+            last_modified="2026-08-08T00:00:00+00:00",
+            placeholder=False,
+            snapshot_digest="audit-observed-snapshot",
+        ),
+    )
 
 
 def test_sqlite_connection_applies_common_policy(tmp_path: Path) -> None:
@@ -177,19 +196,19 @@ def test_relay_audit_queries_never_surface_research_grants(
     """Exact references stay in the private grant table, not audit reads."""
     database = tmp_path / "relay.sqlite3"
     exact_reference = "obs://private-bucket/inputs/leaf.tsv"
+    candidate = ResearchObjectCandidate(
+        dataset_id="audit-dataset",
+        exact_reference=exact_reference,
+        compound_suffix=".tsv",
+    )
     store = ResearchGrantStore(str(database))
     store.resolve_or_replay(
         ResearchGrantResolve(
-            principal_key_prefix="ptm_test",
-            parent_run_id="run-001",
-            execution_fingerprint="execution-sha256",
-            objects=(
-                ResearchObjectCandidate(
-                    dataset_id="dataset-001",
-                    exact_reference=exact_reference,
-                    compound_suffix=".tsv",
-                ),
-            ),
+            principal_key_prefix="ptm_audit",
+            parent_run_id="audit-run",
+            execution_fingerprint="audit-execution",
+            objects=(candidate,),
+            authorities=(_private_authority(candidate.dataset_id),),
         ),
         datetime(2026, 8, 8, tzinfo=UTC),
     )

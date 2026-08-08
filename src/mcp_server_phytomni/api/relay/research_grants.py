@@ -17,7 +17,7 @@ import secrets
 import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -47,7 +47,25 @@ RESEARCH_GRANT_PURGE_GRACE = timedelta(hours=24)
 
 _GRANT_FAILURE = "Research object grant could not be verified."
 _KEY_SCHEMA = "research-object-key/v1"
-_SNAPSHOT_SCHEMA = "research-object-grant-snapshot/v1"
+_GRANT_SCHEMA_VERSION = 2
+_LEGACY_EXPIRES_AT = "1970-01-01T00:00:00+00:00"
+_MIGRATION_COLUMNS = {
+    "principal_key_prefix": "TEXT NOT NULL DEFAULT ''",
+    "parent_run_id": "TEXT NOT NULL DEFAULT ''",
+    "execution_fingerprint": "TEXT NOT NULL DEFAULT ''",
+    "dataset_id": "TEXT NOT NULL DEFAULT ''",
+    "exact_reference": "TEXT NOT NULL DEFAULT ''",
+    "key_digest": "TEXT NOT NULL DEFAULT ''",
+    "snapshot_json": "TEXT NOT NULL DEFAULT '{}'",
+    "snapshot_digest": "TEXT NOT NULL DEFAULT ''",
+    "state": "TEXT NOT NULL DEFAULT 'expired'",
+    "expires_at": ("TEXT NOT NULL DEFAULT '1970-01-01T00:00:00+00:00'"),
+    "revision": "INTEGER NOT NULL DEFAULT 0",
+    "created_at": "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00+00:00'",
+    "updated_at": "TEXT NOT NULL DEFAULT '1970-01-01T00:00:00+00:00'",
+    "revoked_at": "TEXT",
+    "grant_schema_version": "INTEGER NOT NULL DEFAULT 0",
+}
 
 
 class ResearchGrantError(Exception):
@@ -59,12 +77,18 @@ class ResearchGrantError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class ResearchGrantResolve:
-    """Request to create or replay grants for one parent run."""
+    """Private request to create or replay grants for one parent run.
+
+    ``authorities`` comes directly from ``ResearchObjectMetadataPort.resolve``.
+    It is positional with ``objects`` so the store can persist the observed
+    immutable snapshot for each exact private reference.
+    """
 
     principal_key_prefix: str
     parent_run_id: str
     execution_fingerprint: str
     objects: tuple[ResearchObjectCandidate, ...]
+    authorities: tuple[ResearchObjectAuthority, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,19 +115,26 @@ class ResearchGrantRevoke:
 # pylint: disable=too-many-instance-attributes
 @dataclass(frozen=True, slots=True)
 class ResearchGrantRecord:
-    """One durable private grant and its immutable safe snapshot."""
+    """One safe public projection of a durable private grant."""
 
     grant_id: str
     principal_key_prefix: str
     parent_run_id: str
     execution_fingerprint: str
     dataset_id: str
-    exact_reference: str
     key_digest: str
     snapshot: ResearchObjectSnapshot
     state: Literal["active", "revoked", "expired"]
     expires_at: datetime
     revision: int
+
+
+@dataclass(frozen=True, slots=True)
+class _StoredGrantRecord:
+    """Private row projection retaining the exact reference for rotation."""
+
+    record: ResearchGrantRecord
+    exact_reference: str = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,8 +156,16 @@ class ResearchGrantStore:
         """Initialize additive private grant storage at ``db_path``."""
         self.db_path = str(Path(db_path))
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
-            conn.execute("""
+        try:
+            with self._connect() as conn:
+                self._initialize_schema(conn)
+        except sqlite3.Error:
+            raise ResearchGrantError() from None
+
+    @staticmethod
+    def _initialize_schema(conn: sqlite3.Connection) -> None:
+        """Additively initialize or fail-close migrate the private table."""
+        conn.execute("""
                 CREATE TABLE IF NOT EXISTS research_object_grants (
                     grant_id TEXT PRIMARY KEY,
                     principal_key_prefix TEXT NOT NULL,
@@ -142,19 +181,61 @@ class ResearchGrantStore:
                     revision INTEGER NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
-                    revoked_at TEXT
+                    revoked_at TEXT,
+                    grant_schema_version INTEGER NOT NULL DEFAULT 2
                 )
-                """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_research_grants_identity "
-                "ON research_object_grants("
-                "principal_key_prefix, parent_run_id, execution_fingerprint, "
-                "dataset_id, key_digest, snapshot_digest, state)"
+            """)
+        columns = {
+            row["name"]
+            for row in conn.execute(
+                "PRAGMA table_info(research_object_grants)"
             )
+        }
+        if "grant_id" not in columns:
+            raise ResearchGrantError()
+        legacy = False
+        for name, definition in _MIGRATION_COLUMNS.items():
+            if name not in columns:
+                conn.execute(
+                    "ALTER TABLE research_object_grants ADD COLUMN "
+                    f"{name} {definition}"
+                )
+                legacy = True
+        if legacy:
             conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_research_grants_expiry "
-                "ON research_object_grants(expires_at, state)"
+                """
+                UPDATE research_object_grants
+                SET state = 'expired', expires_at = ?, updated_at = ?,
+                    revision = CASE WHEN revision < 1 THEN 1 ELSE revision END,
+                    grant_schema_version = 0
+                """,
+                (_LEGACY_EXPIRES_AT, _LEGACY_EXPIRES_AT),
             )
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS research_grant_schema_versions (
+                schema_name TEXT PRIMARY KEY,
+                version INTEGER NOT NULL
+            )
+            """)
+        conn.execute(
+            """
+            INSERT INTO research_grant_schema_versions (schema_name, version)
+            VALUES ('research_object_grants', ?)
+            ON CONFLICT(schema_name) DO UPDATE SET version = excluded.version
+            """,
+            (_GRANT_SCHEMA_VERSION,),
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_research_grants_v2_identity "
+            "ON research_object_grants("
+            "principal_key_prefix, parent_run_id, execution_fingerprint, "
+            "dataset_id, key_digest, snapshot_digest, state, "
+            "grant_schema_version)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_research_grants_expiry "
+            "ON research_object_grants(expires_at, state)"
+        )
 
     def resolve_or_replay(
         self, request: ResearchGrantResolve, now: datetime
@@ -166,9 +247,7 @@ class ResearchGrantStore:
             request.execution_fingerprint,
         )
         now = _utc(now)
-        candidates = tuple(
-            _candidate_identity(candidate) for candidate in request.objects
-        )
+        candidates = _resolve_identities(request)
         if not candidates:
             return ()
         if len({candidate[0] for candidate in candidates}) != len(candidates):
@@ -183,6 +262,7 @@ class ResearchGrantStore:
                     AND execution_fingerprint = ? AND dataset_id = ?
                     AND key_digest = ? AND snapshot_digest = ?
                     AND state = 'active'
+                    AND grant_schema_version = ?
                     ORDER BY revision DESC LIMIT 1
                     """,
                     (
@@ -192,14 +272,20 @@ class ResearchGrantStore:
                         candidate.dataset_id,
                         key_digest,
                         snapshot.snapshot_digest,
+                        _GRANT_SCHEMA_VERSION,
                     ),
                 ).fetchone()
                 if row is not None:
-                    record = _record_from_row(row)
-                    if record.expires_at > now:
-                        records.append(record)
+                    stored = _stored_record_from_row(row)
+                    if stored.record.expires_at > now:
+                        records.append(stored.record)
                         continue
-                    self._expire(conn, record.grant_id, record.revision, now)
+                    self._expire(
+                        conn,
+                        stored.record.grant_id,
+                        stored.record.revision,
+                        now,
+                    )
                 records.append(
                     self._insert_grant(
                         conn,
@@ -210,7 +296,7 @@ class ResearchGrantStore:
                             snapshot,
                             now,
                         ),
-                    )
+                    ).record
                 )
             return tuple(records)
 
@@ -231,22 +317,28 @@ class ResearchGrantStore:
                 for authority in request.authorities
             ]
             expired = [
-                record for record in records if record.expires_at <= now
+                stored for stored in records if stored.record.expires_at <= now
             ]
             if expired:
-                for record in expired:
-                    self._expire(conn, record.grant_id, record.revision, now)
+                for stored in expired:
+                    self._expire(
+                        conn,
+                        stored.record.grant_id,
+                        stored.record.revision,
+                        now,
+                    )
             else:
-                for authority, record in zip(
+                for authority, stored in zip(
                     request.authorities, records, strict=True
                 ):
+                    record = stored.record
                     if record.expires_at - now > RESEARCH_GRANT_ROTATE_BEFORE:
                         verified.append(record)
                         continue
                     self._revoke(conn, record.grant_id, record.revision, now)
                     candidate = ResearchObjectCandidate(
                         dataset_id=record.dataset_id,
-                        exact_reference=record.exact_reference,
+                        exact_reference=stored.exact_reference,
                         compound_suffix="verified",
                     )
                     verified.append(
@@ -258,6 +350,7 @@ class ResearchGrantStore:
                                     request.parent_run_id,
                                     request.execution_fingerprint,
                                     (candidate,),
+                                    (authority,),
                                 ),
                                 candidate,
                                 record.key_digest,
@@ -265,7 +358,7 @@ class ResearchGrantStore:
                                 now,
                                 record.revision + 1,
                             ),
-                        )
+                        ).record
                     )
         if expired:
             raise ResearchGrantError()
@@ -289,6 +382,7 @@ class ResearchGrantStore:
                     WHERE grant_id = ? AND principal_key_prefix = ?
                     AND parent_run_id = ? AND execution_fingerprint = ?
                     AND state = 'active'
+                    AND grant_schema_version = ?
                     """,
                     (
                         _iso(now),
@@ -297,6 +391,7 @@ class ResearchGrantStore:
                         request.principal_key_prefix,
                         request.parent_run_id,
                         request.execution_fingerprint,
+                        _GRANT_SCHEMA_VERSION,
                     ),
                 )
                 if cursor.rowcount == 0:
@@ -367,7 +462,7 @@ class ResearchGrantStore:
         self,
         conn: sqlite3.Connection,
         insertion: _GrantInsert,
-    ) -> ResearchGrantRecord:
+    ) -> _StoredGrantRecord:
         """Insert one fresh opaque grant under the current transaction."""
         grant_id = secrets.token_urlsafe(24)
         expires_at = insertion.now + RESEARCH_GRANT_TTL
@@ -378,8 +473,8 @@ class ResearchGrantStore:
                 grant_id, principal_key_prefix, parent_run_id,
                 execution_fingerprint, dataset_id, exact_reference, key_digest,
                 snapshot_json, snapshot_digest, state, expires_at, revision,
-                created_at, updated_at, revoked_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, NULL)
+                created_at, updated_at, revoked_at, grant_schema_version
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, NULL, ?)
             """,
             (
                 grant_id,
@@ -395,20 +490,23 @@ class ResearchGrantStore:
                 insertion.revision,
                 _iso(insertion.now),
                 _iso(insertion.now),
+                _GRANT_SCHEMA_VERSION,
             ),
         )
-        return ResearchGrantRecord(
-            grant_id=grant_id,
-            principal_key_prefix=insertion.request.principal_key_prefix,
-            parent_run_id=insertion.request.parent_run_id,
-            execution_fingerprint=insertion.request.execution_fingerprint,
-            dataset_id=insertion.candidate.dataset_id,
-            exact_reference=insertion.candidate.exact_reference,
-            key_digest=insertion.key_digest,
-            snapshot=insertion.snapshot,
-            state="active",
-            expires_at=expires_at,
-            revision=insertion.revision,
+        return _StoredGrantRecord(
+            ResearchGrantRecord(
+                grant_id=grant_id,
+                principal_key_prefix=insertion.request.principal_key_prefix,
+                parent_run_id=insertion.request.parent_run_id,
+                execution_fingerprint=insertion.request.execution_fingerprint,
+                dataset_id=insertion.candidate.dataset_id,
+                key_digest=insertion.key_digest,
+                snapshot=insertion.snapshot,
+                state="active",
+                expires_at=expires_at,
+                revision=insertion.revision,
+            ),
+            insertion.candidate.exact_reference,
         )
 
     def _matching_active_record(
@@ -416,31 +514,34 @@ class ResearchGrantStore:
         conn: sqlite3.Connection,
         request: ResearchGrantVerify,
         authority: ResearchObjectAuthority,
-    ) -> ResearchGrantRecord:
+    ) -> _StoredGrantRecord:
         """Return one matching active grant or fail without revealing scope."""
         row = conn.execute(
             """
             SELECT * FROM research_object_grants
             WHERE grant_id = ? AND principal_key_prefix = ?
             AND parent_run_id = ? AND execution_fingerprint = ?
+            AND grant_schema_version = ?
             """,
             (
                 authority.authority_id,
                 request.principal_key_prefix,
                 request.parent_run_id,
                 request.execution_fingerprint,
+                _GRANT_SCHEMA_VERSION,
             ),
         ).fetchone()
         if row is None:
             raise ResearchGrantError()
-        record = _record_from_row(row)
+        stored = _stored_record_from_row(row)
+        record = stored.record
         if (
             record.state != "active"
             or record.dataset_id != authority.dataset_id
             or record.snapshot != authority.snapshot
         ):
             raise ResearchGrantError()
-        return record
+        return stored
 
     @staticmethod
     def _revoke(
@@ -456,8 +557,9 @@ class ResearchGrantStore:
             SET state = 'revoked', revision = revision + 1,
                 revoked_at = ?, updated_at = ?
             WHERE grant_id = ? AND state = 'active' AND revision = ?
+            AND grant_schema_version = ?
             """,
-            (_iso(now), _iso(now), grant_id, revision),
+            (_iso(now), _iso(now), grant_id, revision, _GRANT_SCHEMA_VERSION),
         )
         if cursor.rowcount != 1:
             raise ResearchGrantError()
@@ -475,37 +577,47 @@ class ResearchGrantStore:
             UPDATE research_object_grants
             SET state = 'expired', revision = revision + 1, updated_at = ?
             WHERE grant_id = ? AND state = 'active' AND revision = ?
+            AND grant_schema_version = ?
             """,
-            (_iso(now), grant_id, revision),
+            (_iso(now), grant_id, revision, _GRANT_SCHEMA_VERSION),
         )
         if cursor.rowcount != 1:
             raise ResearchGrantError()
 
 
-def _candidate_identity(
-    candidate: ResearchObjectCandidate,
-) -> tuple[ResearchObjectCandidate, str, ResearchObjectSnapshot]:
-    """Build a versioned key identity and opaque initial snapshot."""
-    if not candidate.dataset_id or not candidate.exact_reference:
+def _resolve_identities(
+    request: ResearchGrantResolve,
+) -> tuple[tuple[ResearchObjectCandidate, str, ResearchObjectSnapshot], ...]:
+    """Bind each private reference to one real metadata-port authority."""
+    if len(request.objects) != len(request.authorities):
         raise ResearchGrantError()
-    key = _normalized_key(candidate.exact_reference)
-    key_digest = _digest({"key": key, "schema": _KEY_SCHEMA})
-    snapshot = ResearchObjectSnapshot(
-        dataset_id=candidate.dataset_id,
-        size_bytes=0,
-        etag=None,
-        version_id=None,
-        last_modified=None,
-        placeholder=False,
-        snapshot_digest=_digest(
+    identities: list[
+        tuple[ResearchObjectCandidate, str, ResearchObjectSnapshot]
+    ] = []
+    for candidate, authority in zip(
+        request.objects, request.authorities, strict=True
+    ):
+        snapshot = authority.snapshot
+        if not all(
+            (
+                candidate.dataset_id,
+                candidate.exact_reference,
+                authority.authority_id,
+            )
+        ):
+            raise ResearchGrantError()
+        if authority.dataset_id != candidate.dataset_id:
+            raise ResearchGrantError()
+        if snapshot.dataset_id != candidate.dataset_id or snapshot.placeholder:
+            raise ResearchGrantError()
+        key_digest = _digest(
             {
-                "dataset_id": candidate.dataset_id,
-                "key_digest": key_digest,
-                "schema": _SNAPSHOT_SCHEMA,
+                "key": _normalized_key(candidate.exact_reference),
+                "schema": _KEY_SCHEMA,
             }
-        ),
-    )
-    return candidate, key_digest, snapshot
+        )
+        identities.append((candidate, key_digest, snapshot))
+    return tuple(identities)
 
 
 def _normalized_key(reference: str) -> str:
@@ -513,7 +625,11 @@ def _normalized_key(reference: str) -> str:
     if reference[:6].casefold() != "obs://":
         raise ResearchGrantError()
     bucket, separator, key = reference[6:].partition("/")
-    if not bucket or not separator or not key or "?" in key or "#" in key:
+    if not bucket or not separator or not key:
+        raise ResearchGrantError()
+    if "@" in bucket:
+        raise ResearchGrantError()
+    if any(marker in key for marker in ("?", "#")):
         raise ResearchGrantError()
     return key
 
@@ -536,25 +652,28 @@ def _snapshot_json(snapshot: ResearchObjectSnapshot) -> str:
     )
 
 
-def _record_from_row(row: sqlite3.Row) -> ResearchGrantRecord:
-    """Project a private grant row into its typed record representation."""
-    snapshot = json.loads(row["snapshot_json"])
-    state = row["state"]
-    if state not in {"active", "revoked", "expired"}:
-        raise ResearchGrantError()
-    return ResearchGrantRecord(
-        grant_id=row["grant_id"],
-        principal_key_prefix=row["principal_key_prefix"],
-        parent_run_id=row["parent_run_id"],
-        execution_fingerprint=row["execution_fingerprint"],
-        dataset_id=row["dataset_id"],
-        exact_reference=row["exact_reference"],
-        key_digest=row["key_digest"],
-        snapshot=ResearchObjectSnapshot(**snapshot),
-        state=state,
-        expires_at=datetime.fromisoformat(row["expires_at"]),
-        revision=row["revision"],
-    )
+def _stored_record_from_row(row: sqlite3.Row) -> _StoredGrantRecord:
+    """Load one private row while exposing only a safe typed projection."""
+    try:
+        snapshot = json.loads(row["snapshot_json"])
+        state = row["state"]
+        if state not in {"active", "revoked", "expired"}:
+            raise ValueError
+        record = ResearchGrantRecord(
+            grant_id=row["grant_id"],
+            principal_key_prefix=row["principal_key_prefix"],
+            parent_run_id=row["parent_run_id"],
+            execution_fingerprint=row["execution_fingerprint"],
+            dataset_id=row["dataset_id"],
+            key_digest=row["key_digest"],
+            snapshot=ResearchObjectSnapshot(**snapshot),
+            state=state,
+            expires_at=datetime.fromisoformat(row["expires_at"]),
+            revision=row["revision"],
+        )
+        return _StoredGrantRecord(record, row["exact_reference"])
+    except (KeyError, TypeError, ValueError):
+        raise ResearchGrantError() from None
 
 
 def _digest(value: object) -> str:
