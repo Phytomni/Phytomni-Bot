@@ -33,6 +33,7 @@ from .input_contracts import (
 from .input_inventory import ResearchInputInventory
 from .recovery import (
     ResearchRecoveryService,
+    ResearchWorkBinding,
     ResearchWorkExecutor,
     _execute_resolver_work,
 )
@@ -256,12 +257,13 @@ class ResearchDescriptionResolver:
         context: _ResolutionContext,
     ) -> ResearchObservationResponse:
         """Load, send, validate, and persist exactly one work unit."""
-        input_digest = _request_input_digest(request, unit)
-        policy_digest = context.policy_digest
+        binding = _resolver_request_binding(request, unit, context)
         if self.executor is not None:
             return await self._resolve_with_executor(
-                unit, context, input_digest, lease_owner
+                unit, context, binding, lease_owner
             )
+        input_digest = binding.input_digest
+        policy_digest = binding.policy_digest
         try:
             cached = self.repository.load_validated_output(
                 unit.unit_id, input_digest, policy_digest
@@ -301,7 +303,7 @@ class ResearchDescriptionResolver:
         self,
         unit: ResearchResolverObservationUnit,
         context: _ResolutionContext,
-        input_digest: str,
+        binding: ResearchWorkBinding,
         lease_owner: str,
     ) -> ResearchObservationResponse:
         """Project one already-settled durable unit without re-invocation."""
@@ -309,7 +311,8 @@ class ResearchDescriptionResolver:
         status, cached = await _execute_resolver_work(
             executor,
             self.repository,
-            (unit.unit_id, input_digest, context.policy_digest),
+            unit.unit_id,
+            binding,
             lease_owner,
         )
         if status != "ok" or cached is None:
@@ -709,6 +712,9 @@ def _request_input_digest(
     value = {
         "coverage_digest": request.evidence.coverage_digest,
         "evidence": evidence_identity,
+        "effective_query_digest": _digest_bytes(
+            request.effective_query.encode("utf-8")
+        ),
         "inventory_digest": inventory.digest,
         "inventory_entries": inventory_identity,
         "plan_digest": request.work_plan.digest,
@@ -720,6 +726,20 @@ def _request_input_digest(
         },
     }
     return _digest_bytes(canonical_json_bytes(value))
+
+
+def _resolver_request_binding(
+    request: ResearchResolutionRequest,
+    unit: ResearchResolverObservationUnit,
+    context: _ResolutionContext | None = None,
+) -> ResearchWorkBinding:
+    """Compute current input and delegate the remaining binding identity."""
+    return _resolver_support.resolver_request_binding(
+        request,
+        unit,
+        _request_input_digest(request, unit),
+        context.policy_digest if context is not None else None,
+    )
 
 
 def _optional_digest(value: str | None) -> str | None:

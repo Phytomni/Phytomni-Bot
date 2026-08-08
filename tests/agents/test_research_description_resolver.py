@@ -328,8 +328,11 @@ class _ReusingExecutor:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
 
-    async def execute(self, unit_id: str, lease_owner: str) -> object:
+    async def execute(
+        self, unit_id: str, lease_owner: str, **options: object
+    ) -> object:
         """Return a reusable disposition without provider I/O."""
+        del options
         self.calls.append((unit_id, lease_owner))
         return type("Disposition", (), {"state": "reused"})()
 

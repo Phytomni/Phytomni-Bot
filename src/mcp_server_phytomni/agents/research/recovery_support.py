@@ -5,8 +5,9 @@
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 from hashlib import sha256
 from typing import Any
@@ -24,6 +25,110 @@ ContextSubdivider = Callable[
 ]
 
 
+@dataclass(frozen=True, slots=True)
+class ResearchWorkBinding:
+    """Expected resolver identity for one durable work-unit row."""
+
+    input_digest: str
+    policy_digest: str
+    execution_fingerprint: str
+    evidence_digest: str
+    provider_request_digest: str | None = None
+
+
+def bindings_match(
+    record: ResearchWorkUnitRecord | None,
+    expected: ResearchWorkBinding,
+) -> bool:
+    """Compare current resolver bindings with the durable work row."""
+    if record is None:
+        return False
+    if (
+        record.input_digest != expected.input_digest
+        or record.policy_digest != expected.policy_digest
+        or record.execution_fingerprint != expected.execution_fingerprint
+        or record.evidence_digest != expected.evidence_digest
+    ):
+        return False
+    return (
+        expected.provider_request_digest is None
+        or record.provider_request_digest == expected.provider_request_digest
+    )
+
+
+def selected_output_binding(
+    record: ResearchWorkUnitRecord | None,
+    expected: ResearchWorkBinding | None = None,
+) -> ResearchWorkBinding | None:
+    """Return the expected binding only when the durable row agrees."""
+    if record is None or (
+        expected is not None and not bindings_match(record, expected)
+    ):
+        return None
+    binding = expected or ResearchWorkBinding(
+        record.input_digest,
+        record.policy_digest,
+        record.execution_fingerprint or "",
+        record.evidence_digest or "",
+        record.provider_request_digest,
+    )
+    if not binding.execution_fingerprint or not binding.evidence_digest:
+        return None
+    return binding
+
+
+async def execute_resolver_work(
+    executor: Any,
+    repository: Any,
+    unit_id: str,
+    binding: ResearchWorkBinding,
+    lease_owner: str,
+) -> tuple[str, dict[str, Any] | None]:
+    """Project a durable disposition without provider re-invocation."""
+    try:
+        disposition = await executor.execute(
+            unit_id, lease_owner, expected_binding=binding
+        )
+        state = getattr(disposition, "state", None)
+        if state == "terminal_failed":
+            code = getattr(disposition, "failure_code", None)
+            return (
+                ("failed", None)
+                if code == "research_input_resolution_failed"
+                else ("unavailable", None)
+            )
+        if state not in {"reconciled", "reused"}:
+            return "unavailable", None
+        loader = getattr(executor, "load_validated_output", None)
+        if callable(loader):
+            cached = await _maybe_await(loader(unit_id, binding))
+        else:
+            cached = load_output_for_binding(repository, unit_id, binding)
+    except _recovery_failures:
+        return "unavailable", None
+    return (
+        ("ok", cached) if isinstance(cached, dict) else ("unavailable", None)
+    )
+
+
+def load_output_for_binding(
+    repository: Any, unit_id: str, binding: ResearchWorkBinding
+) -> Any:
+    """Read one output through the exact four durable resolver bindings."""
+    return repository.load_validated_output(
+        unit_id,
+        binding.input_digest,
+        binding.policy_digest,
+        binding.execution_fingerprint,
+        binding.evidence_digest,
+    )
+
+
+async def _maybe_await(value: Any) -> Any:
+    """Await a callback result when the injected seam is asynchronous."""
+    return await value if inspect.isawaitable(value) else value
+
+
 class ResearchContextLengthRejectedError(RuntimeError):
     """Provider proof that a request exceeded its context limit."""
 
@@ -33,7 +138,7 @@ class ResearchContextLengthRejectedError(RuntimeError):
 
 
 ResearchContextLengthRejected = ResearchContextLengthRejectedError
-_RECOVERY_FAILURES: tuple[type[Exception], ...] = (Exception,)
+_recovery_failures: tuple[type[Exception], ...] = (Exception,)
 _SERVICES: list[Any] = []
 
 
@@ -48,7 +153,7 @@ async def recover_registered_startup() -> None:
     for service in tuple(_SERVICES):
         try:
             await service.recover_startup()
-        except _RECOVERY_FAILURES:
+        except _recovery_failures:
             continue
 
 
@@ -57,7 +162,7 @@ async def recover_registered_request(now: datetime | None = None) -> None:
     for service in tuple(_SERVICES):
         try:
             await service.recover_request(now)
-        except _RECOVERY_FAILURES:
+        except _recovery_failures:
             continue
 
 

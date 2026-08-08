@@ -31,22 +31,29 @@ from ...runtime.research_input_store import (
     _to_record,
 )
 from ...runtime.sqlite import sqlite_transaction
+from . import recovery_support as _recovery_support
 from .input_contracts import ResearchErrorCode
 from .recovery_support import (
     ContextSubdivider,
     ResearchContextLengthRejected,
     ResearchContextLengthRejectedError,
+    ResearchWorkBinding,
     build_context_subdivider,
     recover_registered_request,
     recover_registered_startup,
     register_recovery_service,
+    selected_output_binding,
 )
+
+_execute_resolver_work = _recovery_support.execute_resolver_work
+_bindings_match = _recovery_support.bindings_match
 
 __all__ = [
     "ResearchRecoveryService",
     "ResearchContextLengthRejected",
     "ResearchPreAcceptanceRejected",
     "ResearchPreAcceptanceRejectedError",
+    "ResearchWorkBinding",
     "ResearchWorkExecutor",
     "ResearchWorkProvider",
     "ResearchRecoverySummary",
@@ -78,14 +85,6 @@ class ResearchRecoverySummary:
     reused: int
     ambiguous: int
     terminal_failed: int
-
-
-@dataclass(frozen=True, slots=True)
-class _OutputBinding:
-    input_digest: str
-    policy_digest: str
-    execution_fingerprint: str
-    evidence_digest: str
 
 
 class ResearchWorkProvider(Protocol):
@@ -206,12 +205,12 @@ def _parent_status(store: ResearchInputStore, run_id: str) -> str | None:
 def _load_validated_output(
     store: ResearchInputStore,
     unit_id: str,
-    binding_or_input: _OutputBinding | str,
+    binding_or_input: ResearchWorkBinding | str,
     *args: object,
     **options: object,
 ) -> dict[str, Any] | None:
     """Read a succeeded output only when every supplied binding matches."""
-    if isinstance(binding_or_input, _OutputBinding):
+    if isinstance(binding_or_input, ResearchWorkBinding):
         binding = binding_or_input
     else:
         policy_value = args[0] if args else options.get("policy_digest")
@@ -225,19 +224,13 @@ def _load_validated_output(
             evidence_digest, str
         ):
             return None
-        binding = _OutputBinding(
+        binding = ResearchWorkBinding(
             binding_or_input,
             cast(str, policy_value),
             execution_fingerprint,
             evidence_digest,
         )
-    return store.load_validated_output(
-        unit_id,
-        binding.input_digest,
-        binding.policy_digest,
-        binding.execution_fingerprint,
-        binding.evidence_digest,
-    )
+    return _recovery_support.load_output_for_binding(store, unit_id, binding)
 
 
 @dataclass(frozen=True, slots=True)
@@ -411,40 +404,6 @@ def _query_payload(value: object) -> dict[str, Any] | None:
         return None
 
 
-async def _execute_resolver_work(
-    executor: Any,
-    repository: Any,
-    binding: tuple[str, str, str],
-    lease_owner: str,
-) -> tuple[str, dict[str, Any] | None]:
-    """Project a durable disposition without provider re-invocation."""
-    unit_id, input_digest, policy_digest = binding
-    try:
-        disposition = await executor.execute(unit_id, lease_owner)
-        state = getattr(disposition, "state", None)
-        if state == "terminal_failed":
-            code = getattr(disposition, "failure_code", None)
-            return (
-                ("failed", None)
-                if code == _RESEARCH_FAILED
-                else ("unavailable", None)
-            )
-        if state not in {"reconciled", "reused"}:
-            return "unavailable", None
-        loader = getattr(executor, "load_validated_output", None)
-        if callable(loader):
-            cached = await _maybe_await(loader(unit_id))
-        else:
-            cached = repository.load_validated_output(
-                unit_id, input_digest, policy_digest
-            )
-    except _RECOVERY_FAILURES:
-        return "unavailable", None
-    return (
-        ("ok", cached) if isinstance(cached, dict) else ("unavailable", None)
-    )
-
-
 class ResearchWorkExecutor:
     """Execute one Research unit across durable lease boundaries."""
 
@@ -468,32 +427,41 @@ class ResearchWorkExecutor:
         """Return whether this executor will renew its lease."""
         return self.options.heartbeat_interval.total_seconds() > 0
 
-    def load_validated_output(self, unit_id: str) -> dict[str, Any] | None:
+    def load_validated_output(
+        self,
+        unit_id: str,
+        expected_binding: ResearchWorkBinding | None = None,
+    ) -> dict[str, Any] | None:
         """Read one output through the executor's complete durable binding."""
-        record = _get_work_unit(self.store, unit_id)
-        if (
-            record is None
-            or not record.execution_fingerprint
-            or not record.evidence_digest
-        ):
+        binding = selected_output_binding(
+            _get_work_unit(self.store, unit_id), expected_binding
+        )
+        if binding is None:
             return None
-        return self.store.load_validated_output(
-            unit_id,
-            record.input_digest,
-            record.policy_digest,
-            record.execution_fingerprint,
-            record.evidence_digest,
+        return _recovery_support.load_output_for_binding(
+            self.store, unit_id, binding
         )
 
-    async def execute(self, unit_id: str, lease_owner: str) -> WorkDisposition:
+    async def execute(
+        self,
+        unit_id: str,
+        lease_owner: str,
+        *,
+        expected_binding: ResearchWorkBinding | None = None,
+    ) -> WorkDisposition:
         """Claim, mark sent, invoke, validate, and CAS-settle one unit."""
-        claimed = self._claim_or_reuse(unit_id, lease_owner)
+        claimed = self._claim_or_reuse(unit_id, lease_owner, expected_binding)
         if isinstance(claimed, WorkDisposition):
             return claimed
-        return await self._execute_claimed(claimed, lease_owner)
+        return await self._execute_claimed(
+            claimed, lease_owner, expected_binding
+        )
 
     def _claim_or_reuse(
-        self, unit_id: str, lease_owner: str
+        self,
+        unit_id: str,
+        lease_owner: str,
+        expected_binding: ResearchWorkBinding | None = None,
     ) -> ResearchWorkUnitRecord | WorkDisposition:
         """Return a reusable row, a new claim, or a safe early disposition."""
         if not unit_id or not lease_owner:
@@ -505,7 +473,7 @@ class ResearchWorkExecutor:
             return WorkDisposition(
                 unit_id, "terminal_failed", _RESEARCH_FAILED
             )
-        if self._has_reusable_output(record):
+        if self._has_reusable_output(record, expected_binding):
             return WorkDisposition(unit_id, "reused", None)
         if _is_terminal(_parent_status(self.store, record.run_id)):
             return WorkDisposition(
@@ -516,12 +484,24 @@ class ResearchWorkExecutor:
         )
         if claimed is not None:
             return claimed
-        return self._after_claim_failure(unit_id)
+        return self._after_claim_failure(unit_id, expected_binding)
 
-    def _after_claim_failure(self, unit_id: str) -> WorkDisposition:
+    def _after_claim_failure(
+        self,
+        unit_id: str,
+        expected_binding: ResearchWorkBinding | None = None,
+    ) -> WorkDisposition:
         """Classify a failed claim using the newest durable row."""
         latest = _get_work_unit(self.store, unit_id)
-        if latest is not None and self._has_reusable_output(latest):
+        if (
+            latest is not None
+            and expected_binding is not None
+            and not _bindings_match(latest, expected_binding)
+        ):
+            return WorkDisposition(unit_id, "ambiguous", _RESEARCH_UNAVAILABLE)
+        if latest is not None and self._has_reusable_output(
+            latest, expected_binding
+        ):
             return WorkDisposition(unit_id, "reused", None)
         if latest is not None and _is_terminal(
             _parent_status(self.store, latest.run_id)
@@ -532,7 +512,10 @@ class ResearchWorkExecutor:
         return WorkDisposition(unit_id, "ambiguous", _RESEARCH_UNAVAILABLE)
 
     async def _execute_claimed(
-        self, claimed: ResearchWorkUnitRecord, lease_owner: str
+        self,
+        claimed: ResearchWorkUnitRecord,
+        lease_owner: str,
+        expected_binding: ResearchWorkBinding | None = None,
     ) -> WorkDisposition:
         """Run preparation and provider I/O under one heartbeat lifecycle."""
         lease = {"revision": claimed.revision, "lost": False}
@@ -547,7 +530,7 @@ class ResearchWorkExecutor:
         )
         try:
             prepared = await self._prepare_and_mark_sent(
-                claimed, lease_owner, lease
+                claimed, lease_owner, lease, expected_binding
             )
             if isinstance(prepared, WorkDisposition):
                 return prepared
@@ -565,6 +548,7 @@ class ResearchWorkExecutor:
         claimed: ResearchWorkUnitRecord,
         lease_owner: str,
         lease: dict[str, int | bool],
+        expected_binding: ResearchWorkBinding | None = None,
     ) -> tuple[object, object] | WorkDisposition:
         """Build provider inputs and durably mark the request as sent."""
         try:
@@ -590,7 +574,12 @@ class ResearchWorkExecutor:
             return WorkDisposition(
                 claimed.unit_id, "terminal_failed", _RESEARCH_FAILED
             )
-        request_identity = _request_identity(claimed)
+        request_identity = (
+            expected_binding.provider_request_digest
+            if expected_binding is not None
+            and expected_binding.provider_request_digest
+            else _request_identity(claimed)
+        )
         sent_revision = self.store.mark_sent(
             claimed.unit_id,
             lease_owner,
@@ -617,8 +606,7 @@ class ResearchWorkExecutor:
     ) -> WorkDisposition:
         """Invoke, validate, and CAS-settle one durably marked request."""
         work_input, policy = prepared
-        # The only operation in this section that can cross a network is
-        # provider.invoke.  Every preceding store call has committed.
+        # Provider I/O occurs only after all preceding store calls commit.
         try:
             raw = await _maybe_await(self.provider.invoke(work_input, policy))
         except ResearchContextLengthRejected as error:
@@ -725,20 +713,20 @@ class ResearchWorkExecutor:
             record.unit_id, "terminal_failed", _RESEARCH_FAILED
         )
 
-    def _has_reusable_output(self, record: ResearchWorkUnitRecord) -> bool:
+    def _has_reusable_output(
+        self,
+        record: ResearchWorkUnitRecord,
+        expected_binding: ResearchWorkBinding | None = None,
+    ) -> bool:
         """Check a cached result against every required row binding."""
-        if not record.execution_fingerprint or not record.evidence_digest:
+        binding = selected_output_binding(record, expected_binding)
+        if binding is None:
             return False
         try:
             output = _load_validated_output(
                 self.store,
                 record.unit_id,
-                _OutputBinding(
-                    record.input_digest,
-                    record.policy_digest,
-                    record.execution_fingerprint,
-                    record.evidence_digest,
-                ),
+                binding,
             )
         except _RECOVERY_FAILURES:
             return False
