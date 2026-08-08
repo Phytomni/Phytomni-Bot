@@ -20,6 +20,7 @@ from pydantic import (
     field_validator,
 )
 
+from . import description_resolver_support as _resolver_support
 from .document_evidence import (
     ExtractedResearchEvidence,
     ResearchEvidenceUnit,
@@ -30,13 +31,19 @@ from .input_contracts import (
     research_input_failure,
 )
 from .input_inventory import ResearchInputInventory
-from .recovery import _execute_resolver_work
+from .recovery import (
+    ResearchRecoveryService,
+    ResearchWorkExecutor,
+    _execute_resolver_work,
+)
 from .resolver_policy import (
     ResearchResolverObservationUnit,
     ResearchResolverPolicy,
     ResearchResolverWorkPlan,
     canonical_json_bytes,
 )
+
+ResearchWorkRepository = _resolver_support.ResearchWorkRepository
 
 __all__ = [
     "ResearchDescriptionResolver",
@@ -48,16 +55,12 @@ __all__ = [
     "ResearchWorkRepository",
     "ResolvedResearchDataset",
 ]
-
 _SAFE_FAILURE_MESSAGE = "Research input resolution failed."
 _SAFE_UNAVAILABLE_MESSAGE = "Research input resolution is unavailable."
 _MAX_ID_CHARS = 256
 _MAX_CLAIM_CHARS = 4096
 _MAX_EVIDENCE_IDS = 256
 _MAX_OBSERVATIONS = 256
-_SUCCESS_STATUSES = frozenset(
-    {"complete", "completed", "success", "succeeded"}
-)
 _EXTERNAL_FAILURES: tuple[type[Exception], ...] = (Exception,)
 _GENERIC_CLAIMS = frozenset(
     {
@@ -86,36 +89,12 @@ _PATH_OR_ARGUMENT = re.compile(
     r")",
     re.IGNORECASE,
 )
-_SUPPORTED_MARKERS = (
-    "supported facts",
-    "known facts",
-    "observed",
-    "evidence shows",
-    "present",
-    "available",
-)
-_UNCERTAINTY_MARKERS = (
-    "missing",
-    "conflict",
-    "conflicting",
-    "ambiguous",
-    "uncertain",
-    "not established",
-    "cannot distinguish",
-    "unknown",
-)
-_CONFIDENCE_RANK: dict[ResearchConfidence, int] = {
-    "high": 2,
-    "medium": 1,
-    "low": 0,
-}
 
 
 class ResearchObservation(BaseModel):
     """One bounded provider observation grounded in one work unit."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
-
     dataset_id: StrictStr = Field(min_length=1, max_length=_MAX_ID_CHARS)
     claim: StrictStr = Field(min_length=1, max_length=_MAX_CLAIM_CHARS)
     confidence: ResearchConfidence
@@ -136,7 +115,6 @@ class ResearchObservationResponse(BaseModel):
     """Strict response envelope returned by one resolver work unit."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
-
     observations: list[ResearchObservation] = Field(
         max_length=_MAX_OBSERVATIONS
     )
@@ -146,7 +124,6 @@ class ResolvedResearchDataset(BaseModel):
     """One final grounded description before the native join removes IDs."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
-
     id: StrictStr = Field(min_length=1, max_length=_MAX_ID_CHARS)
     description: StrictStr = Field(min_length=1, max_length=_MAX_CLAIM_CHARS)
     confidence: ResearchConfidence
@@ -201,32 +178,6 @@ class ResearchResolverProvider(Protocol):
         raise NotImplementedError
 
 
-class ResearchWorkRepository(Protocol):
-    """Storage boundary for validated work output and sent transitions."""
-
-    def load_validated_output(
-        self, unit_id: str, input_digest: str, policy_digest: str
-    ) -> dict[str, Any] | None:
-        """Load output bound to both the exact request and policy."""
-        raise NotImplementedError
-
-    def mark_sent(
-        self, unit_id: str, lease_owner: str, expected_revision: int
-    ) -> int:
-        """Commit the sent state immediately before external invocation."""
-        raise NotImplementedError
-
-    def settle_validated(
-        self,
-        unit_id: str,
-        lease_owner: str,
-        expected_revision: int,
-        output: dict[str, Any],
-    ) -> bool:
-        """CAS-settle one validated provider result."""
-        raise NotImplementedError
-
-
 class _ResolutionContractError(ValueError):
     """Private validation sentinel that never crosses the domain boundary."""
 
@@ -245,7 +196,21 @@ class ResearchDescriptionResolver:
         self.provider = provider
         self.repository = repository
         self.executor = executor
+        if recovery_hook is None and isinstance(
+            executor, ResearchWorkExecutor
+        ):
+            recovery_hook = ResearchRecoveryService(
+                executor.store,
+                executor.provider,
+                now=executor.options.now,
+                result_validator=executor.options.result_validator,
+            )
         self.recovery_hook = recovery_hook
+
+    @property
+    def contract_name(self) -> str:
+        """Identify the strict description-resolution domain seam."""
+        return "research_description_resolver"
 
     def durable_execution_enabled(self) -> bool:
         """Report whether the lease-owning executor seam is enabled."""
@@ -305,14 +270,12 @@ class ResearchDescriptionResolver:
             raise _unavailable() from None
         if cached is not None:
             return _validated_response(cached, unit, context)
-
         try:
             revision = self.repository.mark_sent(unit.unit_id, lease_owner, 0)
         except _EXTERNAL_FAILURES:
             raise _unavailable() from None
         if isinstance(revision, bool) or not isinstance(revision, int):
             raise _unavailable()
-
         request_identity = _request_identity(unit, input_digest, policy_digest)
         try:
             raw = await self.provider.invoke(unit, request.policy)
@@ -793,7 +756,7 @@ def _status_payload(raw: object) -> dict[str, Any] | None:
         return raw
     if (
         not isinstance(status, str)
-        or status.casefold() not in _SUCCESS_STATUSES
+        or status.casefold() not in _resolver_support.SUCCESS_STATUSES
     ):
         return None
     if isinstance(raw.get("observations"), list):
@@ -869,8 +832,12 @@ def _validate_claim(
 
 def _honest_ambiguity(claim: str) -> bool:
     """Require both supported facts and a bounded uncertainty statement."""
-    supported = any(marker in claim for marker in _SUPPORTED_MARKERS)
-    uncertain = any(marker in claim for marker in _UNCERTAINTY_MARKERS)
+    supported = any(
+        marker in claim for marker in _resolver_support.SUPPORTED_MARKERS
+    )
+    uncertain = any(
+        marker in claim for marker in _resolver_support.UNCERTAINTY_MARKERS
+    )
     return supported and uncertain
 
 
@@ -967,7 +934,7 @@ def _as_confidence(value: str) -> ResearchConfidence:
 
 def _confidence_rank(value: ResearchConfidence) -> int:
     """Return the deterministic conservative confidence rank."""
-    return _CONFIDENCE_RANK[value]
+    return _resolver_support.CONFIDENCE_RANK[value]
 
 
 def _ordered_evidence_ids(

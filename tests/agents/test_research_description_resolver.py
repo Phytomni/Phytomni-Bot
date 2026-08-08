@@ -253,11 +253,16 @@ class _RecordingRepository:
         self._latest: dict[str, tuple[str, str]] = {}
 
     def load_validated_output(
-        self, unit_id: str, input_digest: str, policy_digest: str
+        self,
+        unit_id: str,
+        input_digest: str,
+        policy_digest: str,
+        *bindings: str,
     ) -> dict[str, Any] | None:
         """Return only an exact input/policy-bound cached payload."""
         if self.failure is not None:
             raise self.failure
+        del bindings
         self.lookups.append((unit_id, input_digest, policy_digest))
         self._latest[unit_id] = (input_digest, policy_digest)
         if self.cached is None:
@@ -265,12 +270,16 @@ class _RecordingRepository:
         return self.cached.get((unit_id, input_digest, policy_digest))
 
     def mark_sent(
-        self, unit_id: str, lease_owner: str, expected_revision: int
+        self,
+        unit_id: str,
+        lease_owner: str,
+        expected_revision: int,
+        **options: object,
     ) -> int:
         """Record the durable sent transition before provider invocation."""
         if self.failure is not None:
             raise self.failure
-        del lease_owner, expected_revision
+        del lease_owner, expected_revision, options
         self.events.append(("mark", unit_id))
         return 1
 
@@ -280,11 +289,12 @@ class _RecordingRepository:
         lease_owner: str,
         expected_revision: int,
         output: dict[str, Any],
+        **options: object,
     ) -> bool:
         """Persist a validated payload under its exact lookup binding."""
         if self.failure is not None:
             raise self.failure
-        del lease_owner, expected_revision
+        del lease_owner, expected_revision, options
         self.events.append(("settle", unit_id))
         if self.cached is None:
             self.cached = {}
@@ -337,6 +347,15 @@ def _resolver(
     return ResearchDescriptionResolver(provider, repository)
 
 
+def test_resolver_contract_name_remains_compatible() -> None:
+    """The durable options do not remove the existing domain contract."""
+    resolver = ResearchDescriptionResolver(
+        _RecordingProvider(()), _RecordingRepository()
+    )
+    assert resolver.contract_name == "research_description_resolver"
+    assert resolver.durable_execution_enabled() is False
+
+
 def _valid_request(
     policy: ResearchResolverPolicy | None = None,
 ) -> ResearchResolutionRequest:
@@ -352,6 +371,32 @@ def _valid_request(
         _unit("unit_002", ("evidence_002",), ("dataset_002",)),
     )
     return _request(inventory, evidence, units, policy)
+
+
+def _single_dataset_request(
+    policy: ResearchResolverPolicy | None = None,
+) -> ResearchResolutionRequest:
+    """Build the one-unit request shared by durable resolver tests."""
+    return _request(
+        _inventory("dataset_001"),
+        (_evidence("evidence_001", ("dataset_001",)),),
+        (_unit("unit_001", ("evidence_001",), ("dataset_001",)),),
+        policy or _policy(),
+    )
+
+
+def _single_observation_output() -> dict[str, Any]:
+    """Build one valid output for the single-dataset resolver request."""
+    return {
+        "observations": [
+            {
+                "dataset_id": "dataset_001",
+                "claim": "Expression measurements are available.",
+                "confidence": "high",
+                "evidence_ids": ["evidence_001"],
+            }
+        ]
+    }
 
 
 @pytest.mark.asyncio
@@ -571,16 +616,7 @@ async def test_accepts_honest_ambiguity_and_reduces_conflicting_claims() -> (
 @pytest.mark.asyncio
 async def test_mark_before_send_and_validated_output_reuse() -> None:
     """A valid persisted result is reused without another external call."""
-    output = {
-        "observations": [
-            {
-                "dataset_id": "dataset_001",
-                "claim": "Expression measurements are available.",
-                "confidence": "high",
-                "evidence_ids": ["evidence_001"],
-            }
-        ]
-    }
+    output = _single_observation_output()
     request = _valid_request()
     provider = _RecordingProvider((output, output))
     repository = _RecordingRepository()
