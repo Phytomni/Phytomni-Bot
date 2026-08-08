@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Literal, TypedDict, Unpack
 
 __all__ = [
+    "EvidenceSourceKind",
     "ParsedResearchInput",
     "PastedDatasetCandidate",
     "ResearchErrorCode",
@@ -16,6 +17,10 @@ __all__ = [
     "ResearchInputFailure",
     "SourceSpan",
     "research_input_failure",
+]
+
+EvidenceSourceKind = Literal[
+    "query", "pdf_page", "document_section", "user_hint", "dataset_meta"
 ]
 
 ResearchErrorCode = Literal[
@@ -73,11 +78,11 @@ class _ResearchInputFailureArguments(TypedDict):
 
 @dataclass(frozen=True, slots=True)
 class SourceSpan:
-    """One recognized data grammar range in original-query code points."""
+    """One recognized query range in original-query code points."""
 
     start: int
     end: int
-    grammar: Literal["trailing_json", "fenced_json", "standalone_tab"]
+    grammar: Literal["trailing_json", "fenced_json", "standalone_tab", "query"]
 
 
 class ResearchInputFailureError(Exception):
