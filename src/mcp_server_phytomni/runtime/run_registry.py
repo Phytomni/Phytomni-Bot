@@ -13,7 +13,6 @@ Public dataclasses: RunSpec, RunFilter, Timestamps, RunRecord, RunRegistry.
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import sqlite3
 from collections.abc import Sequence
@@ -26,6 +25,7 @@ from .live_tasks import (
     is_live_running,
     register_live_task,
 )
+from .research_input_store import purge_research_children
 from .run_registry_delivery import (
     DeliveryFailure,
     DeliveryRevision,
@@ -129,6 +129,7 @@ def purge_run_children(
     ids = tuple(run_ids)
     if not ids:
         return
+    purge_research_children(connection, ids)
     placeholders = ",".join("?" for _ in ids)
     for table in ("deep_genome_remote_tasks", "deep_genome_sections"):
         exists = connection.execute(
@@ -189,23 +190,25 @@ class RunRegistry(RunRegistryViewsMixin):
         Eagerly initialises the ``tasks`` table via ``TaskManager`` (its
         constructor is idempotent) so the ``idx_tasks_run`` index can be
         created even when the registry is opened before any task write.
-        The request-context columns are added via per-column
-        ``ALTER TABLE`` so a database created before they shipped
-        catches up without losing the existing rows; a fresh database
-        already has them via ``CREATE TABLE`` and the ALTER simply
-        raises ``OperationalError`` which is swallowed.
+        The request-context and coordinator columns are added through
+        introspection so a legacy database catches up without rewriting rows.
         """
         TaskManager(self.db_path)
         conn = sqlite3.connect(self.db_path)
         try:
             conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
+            conn.execute("BEGIN IMMEDIATE")
             conn.execute(_CREATE_RUNS_DDL)
+            existing = {
+                row[1] for row in conn.execute("PRAGMA table_info(runs)")
+            }
             for column, column_type in (
                 *_REQUEST_INFO_COLUMNS,
                 *_A2A_COLUMNS,
                 *_RESEARCH_COORDINATOR_COLUMNS,
             ):
-                with contextlib.suppress(sqlite3.OperationalError):
+                if column not in existing:
                     conn.execute(
                         f"ALTER TABLE runs ADD COLUMN {column} {column_type}"
                     )
@@ -215,6 +218,10 @@ class RunRegistry(RunRegistryViewsMixin):
             conn.execute(_CREATE_A2UI_ACTIONS_DDL)
             conn.execute(_CREATE_A2UI_OWNER_ACTION_INDEX)
             conn.commit()
+        except BaseException:
+            if conn.in_transaction:
+                conn.rollback()
+            raise
         finally:
             conn.close()
 
