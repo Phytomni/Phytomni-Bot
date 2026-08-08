@@ -90,6 +90,7 @@ def test_run_lifecycle_stream_settlement_and_owner_scope(
         "alice",
         "succeeded",
         {"answer": "done"},
+        expected_revision=0,
         context=lifecycle_module.RunLifecycleContext(
             db_path=db_path,
             purge=lambda: purges.append(True),

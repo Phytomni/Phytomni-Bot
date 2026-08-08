@@ -302,6 +302,7 @@ def _settle_interrupt(
         owner=context.owner,
         status="input_required",
         result=result,
+        expected_revision=context.record.revision,
     )
     body["generation"] = next_generation
     return body, 200
@@ -382,6 +383,7 @@ async def resume_task(
         owner=context.owner,
         status="succeeded",
         result=result,
+        expected_revision=context.record.revision,
     )
     return (
         run_lifecycle.agent_run_response(

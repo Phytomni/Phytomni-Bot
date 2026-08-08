@@ -45,14 +45,19 @@ def settle_failed_run(
     owner: str,
     result: dict[str, Any],
     error: str | None = None,
+    **kwargs: Any,
 ) -> bool:
     """Apply one owner-scoped failed A2UI run transition."""
+    expected_revision = kwargs.pop("expected_revision", None)
+    if kwargs:
+        raise TypeError("unexpected review settlement keyword")
     return registry.settle_run(
         run_id,
         owner=owner,
         status="failed",
         result=result,
         error=error,
+        expected_revision=expected_revision,
     )
 
 
@@ -91,14 +96,19 @@ def settle_review_pause(
     run_id: str,
     owner: str,
     result: dict[str, Any],
+    **kwargs: Any,
 ) -> None:
     """Settle a re-interrupted Review run and require durable success."""
+    expected_revision = kwargs.pop("expected_revision", None)
+    if kwargs:
+        raise TypeError("unexpected review settlement keyword")
     try:
         persisted = registry.settle_run(
             run_id,
             owner=owner,
             status="input_required",
             result=result,
+            expected_revision=expected_revision,
         )
     except (sqlite3.Error, OSError) as exc:
         raise review_persistence_error() from exc
@@ -113,9 +123,15 @@ def settle_review_projection_failure(
     owner: str,
     request_info: RunRequestInfo | None = None,
     existing: bool,
+    **kwargs: Any,
 ) -> None:
     """Persist a failed row after Review surface projection fails."""
+    expected_revision = kwargs.pop("expected_revision", None)
+    if kwargs:
+        raise TypeError("unexpected review settlement keyword")
     if existing:
+        if expected_revision is None:
+            raise review_persistence_error()
         try:
             persisted = settle_failed_run(
                 registry,
@@ -123,6 +139,7 @@ def settle_review_projection_failure(
                 owner=owner,
                 result=empty_agent_result(),
                 error=SafeErrorCode.PROJECTION_FAILED.value,
+                expected_revision=expected_revision,
             )
         except (sqlite3.Error, OSError) as exc:
             raise review_persistence_error() from exc

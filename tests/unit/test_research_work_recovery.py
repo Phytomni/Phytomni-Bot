@@ -351,8 +351,15 @@ async def test_recovery_does_not_claim_terminal_parent(tmp_path: Path) -> None:
     """Cancellation/terminalization prevents recovery from reviving work."""
     store = _store(tmp_path)
     store.add_work_unit(_record())
-    RunRegistry(store.db_path).settle_run(
-        "run-1", owner="owner", status="cancelled", result={}
+    registry = RunRegistry(store.db_path)
+    current = registry.get_run("run-1", owner="owner")
+    assert current is not None
+    registry.settle_run(
+        "run-1",
+        owner="owner",
+        status="cancelled",
+        result={},
+        expected_revision=current.revision,
     )
     disposition = await ResearchWorkExecutor(
         store,

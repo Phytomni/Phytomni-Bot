@@ -96,7 +96,7 @@ class StreamingPersistenceDependencies:
     """Run-registry and answer-storage seams."""
 
     create_running_stream_run: Callable[[str, str, str, RunRequestInfo], None]
-    settle_stream_run: Callable[[str, str, str, dict[str, Any]], bool | None]
+    settle_stream_run: Callable[..., bool | None]
     stream_answer_max_bytes: Callable[[], int]
 
 
@@ -116,6 +116,7 @@ class _PreparedStream:
     run_id: str
     owner: str
     agent_slug: str | None
+    expected_revision: int
     accumulator: StreamAnswerAccumulator
     lifecycle_state: StreamLifecycleState
 
@@ -307,6 +308,7 @@ async def _prepare_stream(
                 owner,
                 "failed",
                 failed_stream_result(),
+                expected_revision=0,
             )
         raise stream_setup_error(exc, priming=True) from exc
 
@@ -328,6 +330,7 @@ async def _prepare_stream(
         run_id=run_id,
         owner=owner,
         agent_slug=agent_slug,
+        expected_revision=0,
         accumulator=accumulator,
         lifecycle_state=lifecycle_state,
     )
@@ -697,6 +700,7 @@ async def stream_chat_completion(
                     "truncated": snapshot.truncated,
                     "partial": False,
                 },
+                expected_revision=prepared.expected_revision,
             )
             is True
         )
@@ -716,6 +720,7 @@ async def stream_chat_completion(
                     "truncated": snapshot.truncated,
                     "partial": True,
                 },
+                expected_revision=prepared.expected_revision,
             )
             is True
         )

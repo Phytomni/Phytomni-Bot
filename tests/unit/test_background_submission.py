@@ -409,6 +409,7 @@ async def test_terminal_reconciliation_owns_projection_race(
             owner="alice",
             status="succeeded",
             result={"formatted": {"answer": "reconciled"}},
+            expected_revision=reservation.revision,
         )
         return BackgroundSubmissionOutcome(
             accepted_task_ids=("accepted-race",),

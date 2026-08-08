@@ -155,6 +155,7 @@ def _settle_failed_resume(
     *,
     run_id: str,
     owner: str,
+    expected_revision: int,
 ) -> None:
     """Best-effort failed settlement after a claimed resume breaks."""
     try:
@@ -163,6 +164,7 @@ def _settle_failed_resume(
             owner=owner,
             status="failed",
             result=_failed_resume_result(),
+            expected_revision=expected_revision,
         )
     except _PERSISTENCE_ERRORS as exc:
         _LOGGER.error(
@@ -179,6 +181,7 @@ def _settle_claim_failure(
     registry: RunRegistry,
     owner: str,
     run_id: str,
+    expected_revision: int,
 ) -> None:
     """Best-effort audit and run settlement after a claimed failure."""
     _complete_claim_best_effort(
@@ -187,7 +190,12 @@ def _settle_claim_failure(
         registry=registry,
         outcome="failed",
     )
-    _settle_failed_resume(registry, run_id=run_id, owner=owner)
+    _settle_failed_resume(
+        registry,
+        run_id=run_id,
+        owner=owner,
+        expected_revision=expected_revision,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,6 +227,7 @@ async def _invoke_claimed_graph(
             registry=request.context.registry,
             owner=request.context.owner,
             run_id=request.run_id,
+            expected_revision=request.context.revision,
         )
         raise _checkpoint_error() from exc
     except Exception as exc:
@@ -227,6 +236,7 @@ async def _invoke_claimed_graph(
             registry=request.context.registry,
             owner=request.context.owner,
             run_id=request.run_id,
+            expected_revision=request.context.revision,
         )
         _LOGGER.error(
             "%s for run %s (%s)",
@@ -307,7 +317,7 @@ class _ActionContext:
     resume_payload: dict[str, Any]
     graph: Any
     registry: RunRegistry
-    format_review_result: Any
+    revision: int
 
 
 def _prepare_action_context(
@@ -360,7 +370,7 @@ def _prepare_action_context(
         resume_payload=resume_payload,
         graph=graph,
         registry=registry,
-        format_review_result=dependencies.persistence.format_review_result,
+        revision=record.revision,
     )
 
 
@@ -379,6 +389,7 @@ def _settled_action_interrupt(
                 owner=context.owner,
                 status="input_required",
                 result=chat_interrupt_result(interrupt_dict),
+                expected_revision=context.revision,
             )
         except _PERSISTENCE_ERRORS as exc:
             raise run_lifecycle.RunPersistenceError(
@@ -400,6 +411,7 @@ def _settled_action_interrupt(
             run_id=run_id,
             owner=context.owner,
             result=pause_result,
+            expected_revision=context.revision,
         )
     except ReviewSurfaceProjectionError as exc:
         _settle_review_projection_failure(
@@ -407,6 +419,7 @@ def _settled_action_interrupt(
             run_id=run_id,
             owner=context.owner,
             existing=True,
+            expected_revision=context.revision,
         )
         raise _review_projection_error() from exc
     return (
@@ -419,6 +432,7 @@ def _terminal_action_result(
     *,
     context: _ActionContext,
     final_state: Mapping[str, Any],
+    format_review_result: Any,
 ) -> dict[str, Any]:
     """Format a terminal Chat or Review A2UI resume result."""
     if context.agent == "chat":
@@ -428,7 +442,7 @@ def _terminal_action_result(
             resume_payload=context.resume_payload,
         )
     return {
-        **context.format_review_result(final_state),
+        **format_review_result(final_state),
         "a2ui": submitted_a2ui_value(
             context.surface,
             context.resume_payload,
@@ -452,6 +466,7 @@ def _review_reinterrupt_response(
             run_id=thread_id,
             owner=context.owner,
             result=pause_result,
+            expected_revision=context.revision,
         )
     except ReviewSurfaceProjectionError as exc:
         _settle_review_projection_failure(
@@ -459,6 +474,7 @@ def _review_reinterrupt_response(
             run_id=thread_id,
             owner=context.owner,
             existing=True,
+            expected_revision=context.revision,
         )
         raise _review_projection_error() from exc
     _complete_claim_or_raise(
@@ -542,6 +558,7 @@ async def resume_a2ui_run(
         result = _terminal_action_result(
             context=context,
             final_state=final_state,
+            format_review_result=dependencies.persistence.format_review_result,
         )
         try:
             persisted = context.registry.settle_run(
@@ -549,6 +566,7 @@ async def resume_a2ui_run(
                 owner=context.owner,
                 status="succeeded",
                 result=result,
+                expected_revision=context.revision,
             )
         except _PERSISTENCE_ERRORS as exc:
             raise run_lifecycle.RunPersistenceError(
@@ -580,6 +598,7 @@ async def resume_a2ui_run(
             registry=context.registry,
             owner=context.owner,
             run_id=run_id,
+            expected_revision=context.revision,
         )
         raise
     except run_lifecycle.RunPersistenceError as exc:
@@ -588,6 +607,7 @@ async def resume_a2ui_run(
             registry=context.registry,
             owner=context.owner,
             run_id=run_id,
+            expected_revision=context.revision,
         )
         raise HTTPException(
             status_code=500,
@@ -649,6 +669,7 @@ class _ReviewResumeContext:
     owner: str
     registry: RunRegistry
     prior_surface: Mapping[str, Any] | None
+    revision: int
 
 
 def _prepare_review_resume_context(
@@ -689,6 +710,7 @@ def _prepare_review_resume_context(
         owner=owner,
         registry=registry,
         prior_surface=dict(candidate),
+        revision=record.revision,
     )
 
 
@@ -763,6 +785,7 @@ async def resume_review_run(
                 owner=context.owner,
                 status="succeeded",
                 result=result,
+                expected_revision=context.revision,
             )
         except _PERSISTENCE_ERRORS as exc:
             raise run_lifecycle.RunPersistenceError(
@@ -790,6 +813,7 @@ async def resume_review_run(
             registry=context.registry,
             owner=context.owner,
             run_id=thread_id,
+            expected_revision=context.revision,
         )
         raise
     except run_lifecycle.RunPersistenceError as exc:
@@ -798,6 +822,7 @@ async def resume_review_run(
             registry=context.registry,
             owner=context.owner,
             run_id=thread_id,
+            expected_revision=context.revision,
         )
         raise HTTPException(
             status_code=500,

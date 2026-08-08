@@ -379,8 +379,14 @@ def test_manual_retry_owner_and_ready_checks_fail_closed(
         "report_context_eligible": False,
         "download_ref": f"result-archive:{inventory.digest}",
     }
+    current = registry.get_run("run-1", owner="alice")
+    assert current is not None
     registry.settle_run(
-        "run-1", owner="alice", status="succeeded", result=result
+        "run-1",
+        owner="alice",
+        status="succeeded",
+        result=result,
+        expected_revision=current.revision,
     )
 
     assert registry.begin_delivery_retry("run-1", owner="foreign") is False

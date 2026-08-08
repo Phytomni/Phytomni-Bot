@@ -205,8 +205,14 @@ def test_terminal_parent_rejects_work_and_resolution_mutations(
         work_digest="w" * 64,
     )
     registry = RunRegistry(database)
+    current = registry.get_run("run-1", owner="owner")
+    assert current is not None
     assert registry.settle_run(
-        "run-1", owner="owner", status=status, result={}
+        "run-1",
+        owner="owner",
+        status=status,
+        result={},
+        expected_revision=current.revision,
     )
 
     store.add_work_unit(_work_unit())

@@ -85,7 +85,10 @@ RESEARCH_FAILURE_CONTRACTS: dict[str, frozenset[tuple[int, bool, str]]] = {
         {(413, False, "input_resolution")}
     ),
     "research_document_extraction_failed": frozenset(
-        {(503, True, "input_resolution")}
+        {
+            (422, False, "input_resolution"),
+            (503, True, "input_resolution"),
+        }
     ),
     "research_input_resolution_failed": frozenset(
         {(422, False, "input_resolution")}

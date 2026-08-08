@@ -570,15 +570,22 @@ class RunRegistry(RunRegistryViewsMixin):
         owner: str,
         result: dict[str, Any],
         error: str,
+        **kwargs: Any,
     ) -> bool:
         """Fail an owned run only while it is still running."""
+        expected_revision = kwargs.pop("expected_revision", None)
+        if kwargs:
+            raise TypeError("unexpected fail_running_run keyword")
+        if expected_revision is None:
+            return False
         now = _now_iso()
         with sqlite_transaction(self.db_path) as conn:
             cursor = conn.execute(
                 "UPDATE runs SET status = 'failed', result_json = ?, "
                 "error = ?, stage = NULL, revision = revision + 1, "
                 "updated_at = ?, expires_at = ? "
-                "WHERE run_id = ? AND user_id = ? AND status = 'running'",
+                "WHERE run_id = ? AND user_id = ? AND status = 'running' "
+                "AND revision = ?",
                 (
                     json.dumps(result),
                     error,
@@ -586,6 +593,7 @@ class RunRegistry(RunRegistryViewsMixin):
                     _expires_at_for("failed", now),
                     run_id,
                     owner,
+                    expected_revision,
                 ),
             )
             return cursor.rowcount == 1
@@ -665,6 +673,8 @@ class RunRegistry(RunRegistryViewsMixin):
             True when an owned row was updated, False otherwise.
         """
         request = _bind_settle_run_request(self, *args, **kwargs)
+        if request.expected_revision is None:
+            return False
         now = _now_iso()
         expires_at = _expires_at_for(request.status, now)
         status_where = (
@@ -672,11 +682,6 @@ class RunRegistry(RunRegistryViewsMixin):
             "AND agent IN ('chat', 'review'))"
             if request.status in _TERMINAL_RUN_STATUSES
             else "status IN ('running', 'input_required')"
-        )
-        revision_where = (
-            " AND revision = ?"
-            if request.expected_revision is not None
-            else ""
         )
         parameters: tuple[Any, ...] = (
             request.status,
@@ -690,15 +695,15 @@ class RunRegistry(RunRegistryViewsMixin):
             expires_at,
             request.run_id,
             request.owner,
+            request.expected_revision,
         )
-        if request.expected_revision is not None:
-            parameters += (request.expected_revision,)
         with sqlite_transaction(self.db_path) as conn:
             cursor = conn.execute(
                 "UPDATE runs SET status = ?, result_json = ?, error = ?, "
                 "stage = NULL, revision = revision + 1, "
                 "updated_at = ?, expires_at = ? WHERE run_id = ? "
-                "AND user_id = ? AND (" + status_where + ")" + revision_where,
+                "AND user_id = ? AND (" + status_where + ") "
+                "AND revision = ?",
                 parameters,
             )
             return cursor.rowcount > 0

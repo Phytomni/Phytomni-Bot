@@ -224,6 +224,7 @@ def test_update_running_result_is_owner_and_status_scoped(
         owner="alice",
         status="succeeded",
         result=updated,
+        expected_revision=record.revision,
     )
     assert (
         registry.update_running_result(
@@ -265,6 +266,8 @@ def test_fail_running_run_is_owner_scoped(tmp_path: Path) -> None:
         result=empty_execution_projection(),
     )
     degraded = empty_execution_projection(degraded=True)
+    current = registry.get_run("run-fail", owner="alice")
+    assert current is not None
 
     assert (
         registry.fail_running_run(
@@ -280,6 +283,7 @@ def test_fail_running_run_is_owner_scoped(tmp_path: Path) -> None:
         owner="alice",
         result=degraded,
         error="background_submission_failed",
+        expected_revision=current.revision,
     )
     record = registry.get_run("run-fail", owner="alice")
     assert record is not None

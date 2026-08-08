@@ -773,6 +773,8 @@ def _settle_stream_run(
     owner: str,
     status: str,
     result: dict[str, Any],
+    *,
+    expected_revision: int | None = None,
 ) -> bool:
     """Compatibility seam for streaming run settlement."""
     return run_lifecycle.settle_stream_run(
@@ -780,6 +782,7 @@ def _settle_stream_run(
         owner,
         status,
         result,
+        expected_revision=expected_revision,
         context=run_lifecycle.RunLifecycleContext(
             db_path=resolve_tasks_db_path(),
             purge=_purge_expired_runs_best_effort,

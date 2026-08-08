@@ -147,6 +147,7 @@ def _dependencies(settlements: list[tuple[str, str, str, dict[str, Any]]]):
         owner: str,
         status: str,
         result: dict[str, Any],
+        **_kwargs: Any,
     ) -> bool:
         settlements.append((run_id, owner, status, result))
         return True

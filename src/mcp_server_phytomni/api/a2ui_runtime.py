@@ -112,7 +112,7 @@ type CurrentRequestId = Callable[[], str | None]
 type DbPath = Callable[[], str]
 type HasCheckpoint = Callable[[Any, str], Awaitable[bool]]
 type CreateStreamRun = Callable[[str, str, str, RunRequestInfo], None]
-type SettleStreamRun = Callable[[str, str, str, dict[str, Any]], bool]
+type SettleStreamRun = Callable[..., bool]
 type ReviewFormatter = Callable[..., dict[str, Any]]
 type ReviewValidator = Callable[[dict[str, Any]], ReviewAgentArgs]
 type StreamSetupError = Callable[..., HTTPException]
@@ -335,6 +335,7 @@ class _StreamContext:
     agent_slug: str
     owner: str
     run_id: str
+    expected_revision: int
     request_info: RunRequestInfo
     graph: Any
     initial_state: Mapping[str, Any]
@@ -373,6 +374,7 @@ def _prepare_chat_stream(
         agent_slug=agent_slug,
         owner=owner,
         run_id=run_id,
+        expected_revision=0,
         request_info=request_info,
         graph=graph,
         initial_state=initial_state,
@@ -406,6 +408,7 @@ def _prepare_review_stream(
         agent_slug=agent_slug,
         owner=owner,
         run_id=run_id,
+        expected_revision=0,
         request_info=request_info,
         graph=graph,
         initial_state=initial_state,

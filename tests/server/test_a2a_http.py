@@ -262,14 +262,16 @@ async def test_a2a_resume_checks_generation_and_reuses_resume_kernel(
     assert resumed == [
         {"run_id": "run-a2a-resume", "approved": True, "edits": None}
     ]
-    RunRegistry(db).settle_run(
-        "run-a2a-resume",
-        owner="anonymous",
-        status="input_required",
-        result={
-            "interrupt": {"draft": {"summary": "next"}},
-            "generation": 1,
-        },
+    RunRegistry(db).create_run(
+        RunSpec("run-a2a-resume", "anonymous", "review", "local"),
+        outcome=RunOutcome(
+            status="input_required",
+            result={
+                "interrupt": {"draft": {"summary": "next"}},
+                "generation": 1,
+            },
+        ),
+        a2a=A2ACorrelation(task_id="task-resume", context_id="ctx-resume"),
     )
     with pytest.raises(ValueError, match="generation mismatch"):
         await resume_a2a_task(

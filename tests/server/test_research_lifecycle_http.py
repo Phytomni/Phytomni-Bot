@@ -318,6 +318,29 @@ def test_ambiguous_resolution_failure_may_disable_retry() -> None:
     }
 
 
+def test_document_extraction_user_failure_contract_projects_full_detail() -> (
+    None
+):
+    """Document input failures may use the documented 422 tuple."""
+    _, failure = project_research_lifecycle(
+        "failed",
+        "execution",
+        {
+            "code": "research_document_extraction_failed",
+            "stage": "input_resolution",
+            "retryable": False,
+            "http_status_hint": 422,
+        },
+    )
+    assert failure == {
+        "code": "research_document_extraction_failed",
+        "message": "Research request could not be completed.",
+        "stage": "input_resolution",
+        "retryable": False,
+        "http_status_hint": 422,
+    }
+
+
 async def test_malformed_private_failure_keeps_scalar_only(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -385,11 +408,14 @@ def test_cancelled_terminal_write_clears_stage_and_gets_purge_ttl(
             (run_id,),
         )
 
+    current = registry.get_run(run_id, owner="u1")
+    assert current is not None
     assert registry.settle_run(
         run_id,
         owner="u1",
         status="cancelled",
         result=empty_agent_result(),
+        expected_revision=current.revision,
     )
     record = registry.get_run(run_id, owner="u1")
     assert record is not None
@@ -420,11 +446,14 @@ def test_failed_terminal_write_clears_stage(
             (run_id,),
         )
 
+    current = registry.get_run(run_id, owner="u1")
+    assert current is not None
     assert registry.fail_running_run(
         run_id,
         owner="u1",
         result=empty_agent_result(),
         error="research_input_resolution_failed",
+        expected_revision=current.revision,
     )
     record = registry.get_run(run_id, owner="u1")
     assert record is not None
@@ -463,9 +492,38 @@ def test_late_terminal_callback_cannot_replace_cancelled_run(
         status="failed",
         result=empty_agent_result(),
     )
+    assert not registry.fail_running_run(
+        run_id,
+        owner="u1",
+        result=empty_agent_result(),
+        error="stale_callback",
+    )
     winner = registry.get_run(run_id, owner="u1")
     assert winner is not None
     assert winner.status == "cancelled"
+
+
+def test_terminal_settlement_without_revision_is_rejected(
+    tmp_path: Any,
+) -> None:
+    """A compatibility settlement cannot win without a revision token."""
+    db_path = str(tmp_path / "runs.db")
+    run_id = "run-settle-without-revision"
+    registry = RunRegistry(db_path)
+    registry.create_run(RunSpec(run_id, "u1", "research", "api"))
+    current = registry.get_run(run_id, owner="u1")
+    assert current is not None
+    advanced = registry.transition_research_stage(current, "execution")
+    assert advanced is not None
+
+    assert not registry.settle_run(
+        run_id,
+        owner="u1",
+        status="failed",
+        result=empty_agent_result(),
+    )
+    winner = registry.get_run(run_id, owner="u1")
+    assert winner == advanced
 
 
 def test_research_admission_persists_input_resolution_stage(

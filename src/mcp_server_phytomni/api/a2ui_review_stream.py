@@ -91,6 +91,7 @@ def settle_a2ui_input_required(
             context.owner,
             "input_required",
             result,
+            expected_revision=context.expected_revision,
         ),
         settled,
     )
@@ -113,6 +114,7 @@ def settle_a2ui_stream_failure(
     settled_terminal: list[bool],
     *,
     dependencies: Any,
+    expected_revision: int,
 ) -> None:
     """Settle an A2UI stream failed when no domain terminal was committed."""
     if settled_terminal[0]:
@@ -123,6 +125,7 @@ def settle_a2ui_stream_failure(
             owner,
             "failed",
             dependencies.stream.failed_stream_result(),
+            expected_revision=expected_revision,
         ),
         settled_terminal,
     )
@@ -147,6 +150,7 @@ async def stream_a2ui_events(
             context.owner,
             settled_terminal,
             dependencies=dependencies,
+            expected_revision=context.expected_revision,
         )
         raise dependencies.stream.stream_setup_error(
             exc, priming=True
@@ -170,6 +174,7 @@ async def stream_a2ui_events(
                 context.owner,
                 settled_terminal,
                 dependencies=dependencies,
+                expected_revision=context.expected_revision,
             )
 
     return StreamingResponse(_wrapped(), media_type="text/event-stream")
@@ -220,6 +225,7 @@ async def stream_review_a2ui_pause(
                         context.owner,
                         "failed",
                         empty_agent_result(),
+                        expected_revision=context.expected_revision,
                     ),
                     settled,
                 ):
@@ -247,6 +253,7 @@ async def stream_review_a2ui_pause(
                         context.owner,
                         "failed",
                         empty_agent_result(),
+                        expected_revision=context.expected_revision,
                     ),
                     settled,
                 ):
@@ -277,6 +284,7 @@ async def stream_review_a2ui_pause(
                     context.owner,
                     "succeeded",
                     result,
+                    expected_revision=context.expected_revision,
                 ),
                 settled,
             ):

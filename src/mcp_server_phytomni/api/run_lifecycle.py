@@ -718,8 +718,12 @@ def settle_stream_run(
     result: dict[str, Any],
     *,
     context: RunLifecycleContext | None = None,
+    **kwargs: Any,
 ) -> bool:
     """Settle an owner-scoped stream row and report durable success."""
+    expected_revision = kwargs.pop("expected_revision", None)
+    if kwargs:
+        raise TypeError("unexpected stream settlement keyword")
     configured = context or RunLifecycleContext()
     purge = configured.purge or purge_expired_runs_best_effort
     try:
@@ -728,6 +732,7 @@ def settle_stream_run(
             owner=owner,
             status=status,
             result=result,
+            expected_revision=expected_revision,
         )
     except (sqlite3.Error, OSError) as exc:
         _LOGGER.error(

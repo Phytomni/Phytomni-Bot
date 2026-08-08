@@ -139,6 +139,7 @@ def test_settle_run_preserves_created_at(tmp_path: Path) -> None:
         owner="alice",
         status="succeeded",
         result={"answer": "done"},
+        expected_revision=before.revision,
     )
 
     assert updated is True

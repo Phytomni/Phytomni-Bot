@@ -64,6 +64,7 @@ class BackgroundSubmissionReservation:
     owner: str
     agent: str
     request_info: RunRequestInfo
+    revision: int = 0
 
 
 def _safe_request_info(request_info: RunRequestInfo) -> RunRequestInfo:
@@ -136,6 +137,7 @@ def _settle_failed(
             owner=reservation.owner,
             result=result or empty_execution_projection(degraded=True),
             error=error,
+            expected_revision=reservation.revision,
         )
     except BACKGROUND_RUNTIME_ERRORS as exc:
         _LOGGER.error(
