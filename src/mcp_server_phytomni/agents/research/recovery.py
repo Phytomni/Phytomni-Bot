@@ -33,6 +33,7 @@ from ...runtime.research_input_store import (
 from ...runtime.sqlite import sqlite_transaction
 from . import recovery_support as _recovery_support
 from .dispatch_outbox import recover_dispatch_outbox
+from .dispatch_outbox_storage import recovery_outbox as _out
 from .input_contracts import ResearchErrorCode
 from .recovery_support import (
     ContextSubdivider,
@@ -385,9 +386,8 @@ def _is_terminal(status: str | None) -> bool:
 
 def _query_payload(value: object) -> dict[str, Any] | None:
     """Project a provider status response to a bounded result mapping.
-    Providers may return the result directly or wrap it in a successful
-    status envelope.  Non-success statuses remain unresolved and therefore
-    must be classified as ambiguous by the caller.
+    Providers may return a direct result or successful status envelope.
+    Non-success statuses remain unresolved and are classified as ambiguous.
     """
     if not isinstance(value, Mapping):
         return None
@@ -823,6 +823,7 @@ class ResearchRecoveryService:
         outbox: Any | None = None,
         **option_kwargs: object,
     ) -> None:
+        outbox = outbox or _out(option_kwargs, store)
         if options is not None and option_kwargs:
             raise TypeError("options cannot be combined with option keywords")
         resolved = options or _RecoveryOptions.from_kwargs(option_kwargs)

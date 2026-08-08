@@ -8,9 +8,9 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-import sys
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
+from importlib import import_module
 from sqlite3 import Connection, Cursor, Row
 from typing import Any, cast
 
@@ -154,9 +154,9 @@ class ResearchInputStore(_ResearchInputStoreBindings):
         self, run_id: str, expected_revision: int, **values: Any
     ) -> tuple[dict[str, Any], ...] | None:
         """Atomically enqueue a validated Research child plan."""
-        module = sys.modules[
+        module = import_module(
             "mcp_server_phytomni.agents.research.dispatch_outbox"
-        ]
+        )
         persist = getattr(module, "_persist_plan_in_store")
         return persist(self, run_id, expected_revision, **values)
 
@@ -952,6 +952,7 @@ sent_at:T completed_at:T"""
 _OUTBOX_COLUMNS = _column_definitions(
     """outbox_id:T run_id:T unit_id:T payload_digest:T'' state:T'pending'
 attempt:I0 revision:I0 schema_version:I1 child_ordinal:I dispatch_fingerprint:T
+parent_revision:I0
 payload_json:T output_dir:T grant_ids_json:T snapshot_digest:T lease_owner:T
 lease_expires_at:T remote_task_id:T failure_code:T failure_retryable:I
 updated_at:T sent_at:T completed_at:T created_at:T''"""

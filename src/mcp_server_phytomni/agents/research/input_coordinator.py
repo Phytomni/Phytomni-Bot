@@ -11,7 +11,7 @@ from typing import Any
 
 from ...api.agent_capabilities import agent_supports_attachment_channels
 from ...mcp.schemas import InSilicoResearchAgent
-from .dispatch_outbox import persist_plan_and_outbox
+from .dispatch_outbox import ResearchDispatchOutbox, persist_plan_and_outbox
 from .input_contracts import (
     ResearchCoordinatorDependencies,
     ResearchCoordinatorRequest,
@@ -62,7 +62,26 @@ class ResearchInputCoordinator:
         self.plan = ports.pop("plan", None)
         self.plan_builder = ports.pop("plan_builder", None)
         self.outbox = ports.pop("outbox", None)
+        self._auto_dispatch = False
         self.expected_revision = ports.pop("expected_revision", 0)
+        store = ports.pop("store", None)
+        if self.outbox is None and store is not None:
+            submit = ports.pop("dispatch_submit", None)
+            if submit is None:
+                submit = ports.pop("child_submit", None)
+            if submit is None:
+                submit = ports.pop("submit", None)
+            if callable(submit):
+                self.outbox = ResearchDispatchOutbox(
+                    store,
+                    submit=submit,
+                    remote_query=ports.pop("remote_query", None),
+                    local_lookup=ports.pop("local_lookup", None),
+                    verify=ports.pop("verify", None),
+                    authority_verifier=ports.pop("authority_verifier", None),
+                    attach_task=ports.pop("attach_task", None),
+                )
+                self._auto_dispatch = True
         self._validate_optional_ports()
         self.dependencies = dependencies or (
             request.dependencies
@@ -127,11 +146,11 @@ class ResearchInputCoordinator:
         resumed: bool = False,
     ) -> None:
         """Run one fresh or restart-rebuilt preparation sequence."""
-        del lease_owner
         await recover_registered_request()
         dependencies = self.dependencies
         if dependencies == ResearchCoordinatorDependencies():
             dependencies = request.dependencies
+            self.dependencies = dependencies
         context = request
         inventory = await self._metadata(dependencies, context)
         context = context._replace(inventory_request=inventory)
@@ -151,7 +170,7 @@ class ResearchInputCoordinator:
         if refreshed != inventory:
             raise _snapshot_drift()
         prepared = await self._validate_native(dependencies, prepared, context)
-        await self._persist(dependencies, run_id, prepared, context)
+        await self._persist(run_id, prepared, context, lease_owner)
 
     async def _metadata(
         self,
@@ -249,12 +268,13 @@ class ResearchInputCoordinator:
 
     async def _persist(
         self,
-        dependencies: ResearchCoordinatorDependencies,
         run_id: str,
         prepared: PreparedResearchInput,
         request: ResearchCoordinatorRequest,
+        lease_owner: str,
     ) -> None:
         plan = await self._build_plan(prepared, request)
+        dependencies = self.dependencies
         callback = dependencies.persist_planning
         try:
             if self.outbox is not None and plan is not None:
@@ -277,6 +297,8 @@ class ResearchInputCoordinator:
                     )
                     if inspect.isawaitable(result):
                         await result
+                if self._auto_dispatch:
+                    await self._dispatch_records(records, lease_owner)
             else:
                 if callback is None:
                     raise _failure("planning")
@@ -295,6 +317,26 @@ class ResearchInputCoordinator:
             raise _restate(error, "planning") from None
         except Exception as error:
             raise _stage_failure("planning", error) from None
+
+    async def _dispatch_records(
+        self, records: Sequence[Any], lease_owner: str
+    ) -> None:
+        """Submit committed children only after the enqueue transaction."""
+        if self.outbox is None:
+            return
+        for record in records:
+            outcome = await self.outbox.dispatch_once(
+                record.dispatch_id, lease_owner
+            )
+            if outcome.state not in {"accepted", "reconciled"}:
+                raise research_input_failure(
+                    "research_run_tracking_failed",
+                    "Research child tracking failed.",
+                    http_status_hint=502,
+                    retryable=False,
+                    stage="planning",
+                    last_stage="planning",
+                )
 
     async def _build_plan(
         self,

@@ -8,14 +8,17 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
 import pytest
 
-from mcp_server_phytomni.agents.research import dispatch_outbox
+from mcp_server_phytomni.agents.research import (
+    dispatch_outbox,
+    dispatch_outbox_storage,
+)
 from mcp_server_phytomni.agents.research.dispatch_outbox import (
     ResearchDispatchOutbox,
     ResearchDispatchRecord,
@@ -158,7 +161,7 @@ def test_plan_write_failure_rolls_back_every_private_projection(
         raise sqlite3.OperationalError("injected outbox failure")
 
     monkeypatch.setattr(
-        dispatch_outbox, "_insert_dispatch_row", fail_on_outbox
+        dispatch_outbox_storage, "insert_plan_row", fail_on_outbox
     )
     with pytest.raises(sqlite3.OperationalError):
         persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan())
@@ -179,6 +182,196 @@ def test_plan_write_failure_rolls_back_every_private_projection(
     assert resolution == (None, None, "pending")
     assert outbox == (0,)
     assert work == (0,)
+
+
+def test_claim_persists_new_lease_and_heartbeat_rejects_expiry(
+    tmp_path: Path,
+) -> None:
+    """A claim owns a fresh lease and cannot renew it after expiry."""
+    store = _store(tmp_path)
+    record = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(1))[
+        0
+    ]
+    now = datetime(2026, 8, 9, tzinfo=UTC)
+    claimed = ResearchDispatchOutbox(store).claim(
+        record.dispatch_id, "worker-a", now=now
+    )
+    assert claimed is not None
+    assert claimed.state == "leased"
+    assert claimed.lease_expires_at == now + timedelta(seconds=60)
+    assert (
+        dispatch_outbox.ResearchDispatchOutbox(store).heartbeat(
+            record.dispatch_id,
+            "worker-a",
+            claimed.revision,
+            now=now + timedelta(seconds=61),
+        )
+        is None
+    )
+
+
+@pytest.mark.asyncio
+async def test_recovery_reclaims_expired_leased_outbox(
+    tmp_path: Path,
+) -> None:
+    """A crash after claim is recovered without stranding the child."""
+    store = _store(tmp_path)
+    record = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(1))[
+        0
+    ]
+    now = datetime(2026, 8, 9, tzinfo=UTC)
+    claimed = ResearchDispatchOutbox(store).claim(
+        record.dispatch_id,
+        "dead-worker",
+        now=now - timedelta(minutes=2),
+    )
+    assert claimed is not None
+    calls: list[str] = []
+
+    async def submit(_row: ResearchDispatchRecord) -> object:
+        calls.append("submit")
+        return {"task_id": "task-recovered"}
+
+    outcomes = await dispatch_outbox.recover_dispatch_outbox(
+        ResearchDispatchOutbox(store, submit=submit), now, 1, "recovery"
+    )
+    assert outcomes == ("accepted",)
+    assert calls == ["submit"]
+
+
+@pytest.mark.asyncio
+async def test_first_dispatch_queries_remote_and_ignores_failed_local_task(
+    tmp_path: Path,
+) -> None:
+    """A dead local fingerprint row cannot short-circuit identity lookup."""
+    store = _store(tmp_path)
+    record = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(1))[
+        0
+    ]
+    with sqlite3.connect(store.db_path) as connection:
+        connection.execute(
+            "INSERT INTO tasks(task_id,status,analysis_id,output_dir,run_id,"
+            "input_fingerprint) VALUES(?,?,?,?,?,?)",
+            (
+                "dead-task",
+                "failed",
+                "",
+                "",
+                "run-1",
+                record.dispatch_fingerprint,
+            ),
+        )
+        connection.commit()
+    calls: list[str] = []
+
+    async def remote_query(_row: ResearchDispatchRecord) -> object:
+        calls.append("query")
+        return {"task_id": "remote-existing"}
+
+    async def submit(_row: ResearchDispatchRecord) -> object:
+        calls.append("submit")
+        return {"task_id": "unexpected"}
+
+    disposition = await ResearchDispatchOutbox(
+        store, remote_query=remote_query, submit=submit
+    ).dispatch_once(record.dispatch_id, "worker-a")
+    assert disposition.state == "accepted"
+    assert disposition.remote_task_id == "remote-existing"
+    assert calls == ["query"]
+
+
+@pytest.mark.asyncio
+async def test_authority_verifier_receives_durable_child_bindings(
+    tmp_path: Path,
+) -> None:
+    """Fresh authority verification sees payload, grants, and snapshot."""
+    store = _store(tmp_path)
+    record = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(1))[
+        0
+    ]
+    observed: list[ResearchDispatchRecord] = []
+
+    async def verify(row: ResearchDispatchRecord) -> bool:
+        observed.append(row)
+        return bool(row.payload and row.grant_ids and row.snapshot_digest)
+
+    async def submit(_row: ResearchDispatchRecord) -> object:
+        return {"task_id": "task-authority"}
+
+    disposition = await ResearchDispatchOutbox(
+        store, submit=submit, authority_verifier=verify
+    ).dispatch_once(record.dispatch_id, "worker-a")
+    assert disposition.state == "accepted"
+    assert (
+        observed[0].payload["dispatch_fingerprint"]
+        == record.dispatch_fingerprint
+    )
+    assert observed[0].grant_ids == ("authority-1",)
+
+
+def test_plan_replacement_removes_stale_child_rows(tmp_path: Path) -> None:
+    """A changed deterministic plan cannot retain unrequested children."""
+    store = _store(tmp_path)
+    persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(2))
+    records = persist_plan_and_outbox(store, "run-1", 1, _prepared(), _plan(1))
+    assert tuple(record.child_ordinal for record in records) == (0,)
+    with sqlite3.connect(store.db_path) as connection:
+        rows = connection.execute(
+            "SELECT child_ordinal FROM research_dispatch_outbox "
+            "WHERE run_id='run-1' ORDER BY child_ordinal"
+        ).fetchall()
+        work = connection.execute(
+            "SELECT unit_id FROM research_work_units WHERE run_id='run-1' "
+            "AND kind='dispatch' ORDER BY unit_id"
+        ).fetchall()
+    assert rows == [(0,)]
+    assert len(work) == 1
+
+
+@pytest.mark.asyncio
+async def test_acceptance_requires_parent_revision_and_durable_attachment(
+    tmp_path: Path,
+) -> None:
+    """Parent revision CAS blocks stale acceptance and stores attachment."""
+    store = _store(tmp_path)
+    record = persist_plan_and_outbox(store, "run-1", 0, _prepared(), _plan(1))[
+        0
+    ]
+    with sqlite3.connect(store.db_path) as connection:
+        connection.execute(
+            "UPDATE runs SET revision=revision+1 WHERE run_id='run-1'"
+        )
+        connection.commit()
+
+    async def submit(_row: ResearchDispatchRecord) -> object:
+        return {"task_id": "task-stale"}
+
+    stale = await ResearchDispatchOutbox(store, submit=submit).dispatch_once(
+        record.dispatch_id, "worker-a"
+    )
+    assert stale.state == "ambiguous"
+    assert store is not None
+
+    fresh_dir = tmp_path / "fresh"
+    fresh_dir.mkdir()
+    fresh_store = _store(fresh_dir)
+    fresh = persist_plan_and_outbox(
+        fresh_store, "run-1", 0, _prepared(), _plan(1)
+    )[0]
+
+    def fail_attach(_row: ResearchDispatchRecord, _task_id: str) -> None:
+        raise RuntimeError("attachment failed")
+
+    accepted = await ResearchDispatchOutbox(
+        fresh_store, submit=submit, attach_task=fail_attach
+    ).dispatch_once(fresh.dispatch_id, "worker-a")
+    assert accepted.state == "accepted"
+    with sqlite3.connect(fresh_store.db_path) as connection:
+        task = connection.execute(
+            "SELECT run_id,input_fingerprint,status FROM tasks "
+            "WHERE task_id='task-stale'"
+        ).fetchone()
+    assert task == ("run-1", fresh.dispatch_fingerprint, "submitted")
 
 
 @pytest.mark.asyncio
@@ -289,11 +482,10 @@ async def test_recovery_processes_pending_outbox_without_resolver_provider(
             del request_identity
             return None
 
-    outbox = ResearchDispatchOutbox(store, submit=submit)
     recovery = ResearchRecoveryService(
         store,
         _Provider(),
-        outbox=outbox,
+        dispatch_submit=submit,
         batch_size=1,
         lease_owner="recovery-worker",
     )
@@ -302,4 +494,5 @@ async def test_recovery_processes_pending_outbox_without_resolver_provider(
 
     assert summary.reconciled == 1
     assert calls == ["submit"]
-    assert outbox.load(record.dispatch_id).state == "accepted"
+    assert recovery.outbox is not None
+    assert recovery.outbox.load(record.dispatch_id).state == "accepted"

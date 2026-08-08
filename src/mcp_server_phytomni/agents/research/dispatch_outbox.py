@@ -11,10 +11,10 @@ import inspect
 import json
 import sqlite3
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from sqlite3 import Row
-from typing import Any, Literal, cast
+from typing import Any, Literal, NamedTuple, cast
 
 from ...runtime.research_input_store import ResearchInputStore
 from ...runtime.sqlite import sqlite_transaction
@@ -48,11 +48,15 @@ _DIGEST_SIZE = 64
 _OUTBOX_SELECT = "SELECT * FROM research_dispatch_outbox WHERE outbox_id = ?"
 _OUTBOX_FAILURES = (Exception,)
 _CANCEL_OPTIONS = ("cancelled", _UNAVAILABLE, ("pending", "leased"))
-_AMBIGUOUS_OPTIONS = ("ambiguous", _TRACKING_FAILED, ("sent",))
+_AMBIGUOUS_OPTIONS = (
+    "ambiguous",
+    _TRACKING_FAILED,
+    ("pending", "leased", "sent"),
+)
 
 
 @dataclass(frozen=True, slots=True)
-class ResearchDispatchRecord:
+class _ResearchDispatchIdentity:
     """Stable identity and CAS state for one deterministic child."""
 
     dispatch_id: str
@@ -62,6 +66,18 @@ class ResearchDispatchRecord:
     state: DispatchState
     remote_task_id: str | None
     revision: int
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchDispatchRecord(_ResearchDispatchIdentity):
+    """Stable identity plus durable binding for one deterministic child."""
+
+    lease_expires_at: datetime | None = None
+    payload: Mapping[str, Any] = field(default_factory=dict)
+    output_dir: str = ""
+    grant_ids: tuple[str, ...] = ()
+    snapshot_digest: str = ""
+    parent_revision: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,15 +112,26 @@ class _OutboxRow:
     snapshot_digest: str
 
 
-@dataclass(frozen=True, slots=True)
-class _OutboxOptions:
+class _OutboxOptions(NamedTuple):
+    """Provider callbacks plus lease timing for one outbox."""
+
     submit: Submitter | None = None
     remote_query: Lookup | None = None
     local_lookup: Lookup | None = None
     verify: Verifier | None = None
+    authority_verifier: Verifier | None = None
     attach_task: Callable[[ResearchDispatchRecord, str], object] | None = None
     now: Clock = lambda: datetime.now(UTC)
     lease_ttl: timedelta = _LEASE
+
+
+@dataclass(frozen=True, slots=True)
+class _ClaimRequest:
+    """Immutable claim inputs kept out of the claim helper signature."""
+
+    owner: str
+    now: datetime
+    ttl: timedelta
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,7 +239,7 @@ def _commit_plan(
         connection.row_factory = Row
         connection.execute("BEGIN IMMEDIATE")
         parent = connection.execute(
-            "SELECT status FROM runs WHERE run_id = ?", (run_id,)
+            "SELECT status, revision FROM runs WHERE run_id = ?", (run_id,)
         ).fetchone()
         resolution = connection.execute(
             "SELECT revision, status, cancel_requested, plan_digest FROM "
@@ -233,6 +260,21 @@ def _commit_plan(
             return _existing_enqueue_rows(connection, run_id, payload.children)
         if resolution[0] != expected_revision:
             return None
+        blocked = connection.execute(
+            "SELECT 1 FROM research_dispatch_outbox WHERE run_id=? AND "
+            "state IN ('sent','accepted','ambiguous') LIMIT 1",
+            (run_id,),
+        ).fetchone()
+        if blocked is not None:
+            return None
+        connection.execute(
+            "DELETE FROM research_dispatch_outbox WHERE run_id=?", (run_id,)
+        )
+        connection.execute(
+            "DELETE FROM research_work_units WHERE run_id=? "
+            "AND kind='dispatch'",
+            (run_id,),
+        )
         updated = connection.execute(
             "UPDATE research_input_resolutions SET status='planning', "
             "final_projection_json=?, plan_digest=?, evidence_digest=CASE "
@@ -263,9 +305,19 @@ def _commit_plan(
         )
         if parent_updated.rowcount != 1:
             raise sqlite3.IntegrityError("research parent changed")
+        parent_revision = int(parent[1]) + 1
         for child in payload.children:
-            _insert_dispatch_row(
-                connection, run_id, payload.plan_digest, child, now
+            _storage.insert_plan_row(
+                connection,
+                {
+                    "run_id": run_id,
+                    "plan_digest": payload.plan_digest,
+                    "child": child,
+                    "now": now,
+                    "parent_revision": parent_revision,
+                },
+                _valid_digest,
+                ResearchPlanCommitError,
             )
         return _existing_enqueue_rows(connection, run_id, payload.children)
 
@@ -275,56 +327,9 @@ def _existing_enqueue_rows(
     run_id: str,
     children: Sequence[Mapping[str, Any]],
 ) -> tuple[dict[str, Any], ...] | None:
-    ids = tuple(cast(str, child.get("dispatch_id")) for child in children)
-    if len(ids) != len(set(ids)) or any(not item for item in ids):
-        raise ResearchPlanCommitError()
-    placeholders = ",".join("?" for _ in ids)
-    rows = connection.execute(
-        "SELECT outbox_id, run_id, child_ordinal, dispatch_fingerprint, "
-        "state, "
-        "remote_task_id, revision FROM research_dispatch_outbox "
-        "WHERE run_id=? "
-        f"AND outbox_id IN ({placeholders}) ORDER BY child_ordinal",
-        (run_id, *ids),
-    ).fetchall()
-    if len(rows) != len(children):
-        return None
-    for child, row in zip(children, rows):
-        if (int(row["child_ordinal"]), row["dispatch_fingerprint"]) != (
-            int(child["child_ordinal"]),
-            child["dispatch_fingerprint"],
-        ):
-            return None
-    return tuple(dict(row) for row in rows)
-
-
-def _insert_dispatch_row(
-    connection: sqlite3.Connection,
-    run_id: str,
-    plan_digest: str,
-    child: Mapping[str, Any],
-    now: str,
-) -> None:
-    dispatch_id = child.get("dispatch_id")
-    fingerprint = child.get("dispatch_fingerprint")
-    payload = child.get("payload")
-    if not isinstance(dispatch_id, str) or not dispatch_id:
-        raise ResearchPlanCommitError()
-    if not _valid_digest(fingerprint) or not isinstance(payload, Mapping):
-        raise ResearchPlanCommitError()
-    payload_json = _canonical_json(payload)
-    if len(payload_json) > _MAX_PAYLOAD_CHARS:
-        raise ResearchPlanCommitError()
-    values = dict(child)
-    values.update(
-        run_id=run_id,
-        policy_digest=child.get("policy_digest", plan_digest),
-        payload_json=payload_json,
-        payload_digest=_digest(payload),
-        grant_ids_json=_canonical_json(list(child.get("grant_ids", ()))),
-        now=now,
+    return _storage.existing_plan_rows(
+        connection, run_id, children, ResearchPlanCommitError
     )
-    _storage.insert_dispatch_row(connection, values)
 
 
 class ResearchDispatchOutbox:
@@ -350,6 +355,27 @@ class ResearchDispatchOutbox:
             raise KeyError(dispatch_id)
         return row.record
 
+    def claim(
+        self,
+        dispatch_id: str,
+        lease_owner: str,
+        now: datetime | None = None,
+    ) -> ResearchDispatchRecord | None:
+        """Claim one eligible row and return its durable lease state."""
+        row = _load_row(self.store, dispatch_id)
+        if row is None:
+            return None
+        claimed = _claim_row(
+            self.store,
+            row.record,
+            _ClaimRequest(
+                lease_owner,
+                now or self.options.now(),
+                self.options.lease_ttl,
+            ),
+        )
+        return None if claimed is None else claimed.record
+
     def heartbeat(
         self,
         dispatch_id: str,
@@ -368,47 +394,75 @@ class ResearchDispatchOutbox:
                 "updated_at=?, revision=revision+1 WHERE outbox_id=? "
                 "AND lease_owner=? AND revision=? AND state IN "
                 "('leased','sent') "
+                "AND lease_expires_at IS NOT NULL AND lease_expires_at > ? "
                 "AND " + _parent_live_sql(),
-                (expiry, updated, dispatch_id, lease_owner, revision),
+                (
+                    expiry,
+                    updated,
+                    dispatch_id,
+                    lease_owner,
+                    revision,
+                    updated,
+                ),
             )
         return self.load(dispatch_id) if changed.rowcount == 1 else None
 
     async def dispatch_once(
-        self, dispatch_id: str, lease_owner: str
+        self,
+        dispatch_id: str,
+        lease_owner: str,
+        now: datetime | None = None,
     ) -> ResearchDispatchDisposition:
         """Verify, mark sent, submit once, and CAS-accept one child."""
+        timestamp = now or self.options.now()
         row = _load_row(self.store, dispatch_id)
         terminal = _terminal_disposition(dispatch_id, row)
         if terminal is not None:
             return terminal
         assert row is not None
         if not _parent_live(self.store, row.record.run_id):
-            _mark_row(
-                self.store, row.record, self.options.now(), _CANCEL_OPTIONS
-            )
+            _mark_row(self.store, row.record, timestamp, _CANCEL_OPTIONS)
             return _cancelled(dispatch_id)
-        known = await self._lookup_local(row)
-        if known:
-            return self._accept_known(row, known)
-        return await self._dispatch_claimed(row, dispatch_id, lease_owner)
+        before_claim = await self._reconcile_before_claim(row, timestamp)
+        if before_claim is not None:
+            return before_claim
+        return await self._dispatch_claimed(
+            row, dispatch_id, lease_owner, timestamp
+        )
+
+    async def _reconcile_before_claim(
+        self, row: _OutboxRow, now: datetime
+    ) -> ResearchDispatchDisposition | None:
+        """Reuse only verified local or remote identity before a submit."""
+        task_id = await self._lookup_local(row)
+        if task_id is None:
+            task_id = await self._query_remote(row)
+        if task_id is None:
+            return None
+        if await self._verify_row(row):
+            return self._accept_known(row, task_id, now)
+        _mark_row(self.store, row.record, now, _AMBIGUOUS_OPTIONS)
+        return _ambiguous(row.record.dispatch_id)
 
     async def _dispatch_claimed(
-        self, row: _OutboxRow, dispatch_id: str, lease_owner: str
+        self,
+        row: _OutboxRow,
+        dispatch_id: str,
+        lease_owner: str,
+        now: datetime,
     ) -> ResearchDispatchDisposition:
         claimed = _claim_row(
             self.store,
             row.record,
-            lease_owner,
-            self.options.now(),
-            self.options.lease_ttl,
+            _ClaimRequest(lease_owner, now, self.options.lease_ttl),
         )
         if claimed is None:
-            return await self._after_claim_miss(dispatch_id, lease_owner)
+            return await self._after_claim_miss(dispatch_id, lease_owner, now)
         if not await self._verify_row(claimed):
             _mark_row(
                 self.store,
                 claimed.record,
-                self.options.now(),
+                now,
                 _AMBIGUOUS_OPTIONS,
             )
             return _ambiguous(dispatch_id)
@@ -416,26 +470,26 @@ class ResearchDispatchOutbox:
             self.store,
             claimed,
             lease_owner,
-            self.options.now(),
+            now,
             self.options.lease_ttl,
         )
         if sent is None:
             return _ambiguous(dispatch_id)
-        return await self._submit_sent(sent, dispatch_id)
+        return await self._submit_sent(sent, dispatch_id, now)
 
     async def _after_claim_miss(
-        self, dispatch_id: str, lease_owner: str
+        self, dispatch_id: str, lease_owner: str, now: datetime
     ) -> ResearchDispatchDisposition:
         latest = _load_row(self.store, dispatch_id)
         terminal = _terminal_disposition(dispatch_id, latest)
         if terminal is not None:
             return terminal
         if latest is not None and latest.record.state == "sent":
-            return await self.reconcile_once(dispatch_id, lease_owner)
+            return await self.reconcile_once(dispatch_id, lease_owner, now)
         return _ambiguous(dispatch_id)
 
     async def _submit_sent(
-        self, sent: _OutboxRow, dispatch_id: str
+        self, sent: _OutboxRow, dispatch_id: str, now: datetime
     ) -> ResearchDispatchDisposition:
         try:
             response = await _maybe_await(
@@ -446,32 +500,31 @@ class ResearchDispatchOutbox:
         except _OUTBOX_FAILURES:
             queried = await self._query_remote(sent)
             if queried is not None:
-                return self._accept_known(sent, queried)
-            _mark_row(
-                self.store, sent.record, self.options.now(), _AMBIGUOUS_OPTIONS
-            )
+                return self._accept_known(sent, queried, now)
+            _mark_row(self.store, sent.record, now, _AMBIGUOUS_OPTIONS)
             return _ambiguous(dispatch_id)
-        task_id = _task_id(response)
+        task_id = _storage.task_id(response)
         if task_id is None:
-            _mark_row(
-                self.store, sent.record, self.options.now(), _AMBIGUOUS_OPTIONS
-            )
+            _mark_row(self.store, sent.record, now, _AMBIGUOUS_OPTIONS)
             return _ambiguous(dispatch_id)
-        return self._accept_known(sent, task_id)
+        return self._accept_known(sent, task_id, now)
 
     def _accept_known(
-        self, row: _OutboxRow, task_id: str
+        self, row: _OutboxRow, task_id: str, now: datetime | None = None
     ) -> ResearchDispatchDisposition:
         return _accept_row(
             self.store,
             row.record,
             task_id,
-            self.options.now(),
+            now or self.options.now(),
             self.options.attach_task,
         )
 
     async def reconcile_once(
-        self, dispatch_id: str, lease_owner: str
+        self,
+        dispatch_id: str,
+        lease_owner: str,
+        now: datetime | None = None,
     ) -> ResearchDispatchDisposition:
         """Resolve a sent row without ever resubmitting it."""
         row = _load_row(self.store, dispatch_id)
@@ -480,42 +533,43 @@ class ResearchDispatchOutbox:
             return terminal
         assert row is not None
         if row.record.state != "sent":
-            return await self.dispatch_once(dispatch_id, lease_owner)
-        return await self._reconcile_sent(row, dispatch_id)
+            return await self.dispatch_once(dispatch_id, lease_owner, now)
+        return await self._reconcile_sent(
+            row, dispatch_id, now or self.options.now()
+        )
 
     async def _reconcile_sent(
-        self, row: _OutboxRow, dispatch_id: str
+        self, row: _OutboxRow, dispatch_id: str, now: datetime
     ) -> ResearchDispatchDisposition:
         if not _parent_live(self.store, row.record.run_id):
-            _mark_row(
-                self.store, row.record, self.options.now(), _CANCEL_OPTIONS
-            )
+            _mark_row(self.store, row.record, now, _CANCEL_OPTIONS)
             return _cancelled(dispatch_id)
         known = await self._lookup_local(row)
         if known:
-            return self._accept_known(row, known)
+            if await self._verify_row(row):
+                return self._accept_known(row, known, now)
+            _mark_row(self.store, row.record, now, _AMBIGUOUS_OPTIONS)
+            return _ambiguous(dispatch_id)
         if not await self._verify_row(row):
-            _mark_row(
-                self.store, row.record, self.options.now(), _AMBIGUOUS_OPTIONS
-            )
+            _mark_row(self.store, row.record, now, _AMBIGUOUS_OPTIONS)
             return _ambiguous(dispatch_id)
         queried = await self._query_remote(row)
         if queried is None:
-            _mark_row(
-                self.store, row.record, self.options.now(), _AMBIGUOUS_OPTIONS
-            )
+            _mark_row(self.store, row.record, now, _AMBIGUOUS_OPTIONS)
             return _ambiguous(dispatch_id)
-        return self._accept_known(row, queried)
+        return self._accept_known(row, queried, now)
 
     async def _lookup_local(self, row: _OutboxRow) -> str | None:
         if self.options.local_lookup is not None:
-            return _task_id(
-                await _maybe_await(self.options.local_lookup(row.record))
-            )
+            value = await _maybe_await(self.options.local_lookup(row.record))
+            return _storage.reusable_task_id(value)
         with sqlite_transaction(self.store.db_path) as connection:
             found = connection.execute(
                 "SELECT task_id FROM tasks WHERE run_id = ? AND "
-                "input_fingerprint = ? ORDER BY created_at, task_id LIMIT 1",
+                "input_fingerprint = ? AND (status IS NULL OR lower(status) "
+                "NOT IN ('failed','error','cancelled',"
+                "'failed_at_agent_level')) ORDER BY created_at, task_id "
+                "LIMIT 1",
                 (row.record.run_id, row.record.dispatch_fingerprint),
             ).fetchone()
         return None if found is None else cast(str, found[0])
@@ -529,16 +583,19 @@ class ResearchDispatchOutbox:
             )
         except _OUTBOX_FAILURES:
             return None
-        return _task_id(response)
+        return _storage.task_id(response)
 
     async def _verify_row(self, row: _OutboxRow) -> bool:
-        if self.options.verify is None:
-            return True
-        try:
-            result = await _maybe_await(self.options.verify(row.record))
-        except _OUTBOX_FAILURES:
-            return False
-        return result is not False
+        for verifier in (self.options.verify, self.options.authority_verifier):
+            if verifier is None:
+                continue
+            try:
+                result = await _maybe_await(verifier(row.record))
+            except _OUTBOX_FAILURES:
+                return False
+            if result is False:
+                return False
+        return True
 
 
 async def recover_dispatch_outbox(
@@ -547,7 +604,7 @@ async def recover_dispatch_outbox(
     limit: int,
     lease_owner: str,
 ) -> tuple[DispositionState, ...]:
-    """Reconcile a bounded pending/sent outbox set after a restart."""
+    """Reconcile a bounded pending/expired outbox set after a restart."""
     if limit <= 0:
         return ()
     now_iso = _iso(now)
@@ -555,7 +612,8 @@ async def recover_dispatch_outbox(
         rows = connection.execute(
             "SELECT outbox_id FROM research_dispatch_outbox "
             "WHERE state='pending' "
-            "OR (state='sent' AND lease_expires_at IS NOT NULL AND "
+            "OR (state IN ('leased','sent') AND "
+            "lease_expires_at IS NOT NULL AND "
             "lease_expires_at <= ?) ORDER BY updated_at, outbox_id LIMIT ?",
             (now_iso, limit),
         ).fetchall()
@@ -566,9 +624,13 @@ async def recover_dispatch_outbox(
         if current is None:
             continue
         if current.record.state == "sent":
-            disposition = await outbox.reconcile_once(dispatch_id, lease_owner)
+            disposition = await outbox.reconcile_once(
+                dispatch_id, lease_owner, now
+            )
         else:
-            disposition = await outbox.dispatch_once(dispatch_id, lease_owner)
+            disposition = await outbox.dispatch_once(
+                dispatch_id, lease_owner, now
+            )
         outcomes.append(disposition.state)
     return tuple(outcomes)
 
@@ -576,98 +638,9 @@ async def recover_dispatch_outbox(
 def _validated_children(
     run_id: str, prepared: object, plan: object
 ) -> tuple[dict[str, Any], ...]:
-    if not isinstance(run_id, str) or not run_id.strip():
-        raise ResearchPlanCommitError()
-    digest = getattr(plan, "digest", None)
-    children = getattr(plan, "children", None)
-    if not _valid_digest(digest) or not isinstance(children, tuple):
-        raise ResearchPlanCommitError()
-    values: list[dict[str, Any]] = []
-    seen = cast(
-        dict[str, set[str]],
-        {key: set() for key in ("fingerprints", "task_names", "output_dirs")},
+    return _storage.plan_children(
+        run_id, prepared, plan, _valid_digest, ResearchPlanCommitError
     )
-    for expected, child in enumerate(children):
-        ordinal, fingerprint, task_name, output_dir = _child_identity(
-            child, expected, seen
-        )
-        data = getattr(child, "data_list", None)
-        targets = getattr(child, "interop_targets", ())
-        if not isinstance(data, Mapping) or not isinstance(targets, tuple):
-            raise ResearchPlanCommitError()
-        values.append(
-            {
-                "dispatch_id": f"{run_id}:dispatch:{ordinal}",
-                "child_ordinal": ordinal,
-                "dispatch_fingerprint": fingerprint,
-                "payload": {
-                    "context": getattr(child, "context", ""),
-                    "data_list": list(data.items()),
-                    "dispatch_fingerprint": fingerprint,
-                    "goal_description": getattr(child, "goal_description", ""),
-                    "interop_mode": getattr(child, "interop_mode", "off"),
-                    "interop_targets": targets,
-                    "ordinal": ordinal,
-                    "output_dir": output_dir,
-                    "task_name": task_name,
-                    "thread_id": getattr(child, "thread_id", ""),
-                },
-                "output_dir": output_dir,
-                "grant_ids": tuple(),
-                "snapshot_digest": getattr(prepared, "inventory_digest", ""),
-                "policy_digest": cast(str, digest),
-            }
-        )
-    if not values:
-        raise ResearchPlanCommitError()
-    return tuple(values)
-
-
-def _child_identity(
-    child: object,
-    expected: int,
-    seen: dict[str, set[str]],
-) -> tuple[int, str, str, str]:
-    ordinal = getattr(child, "ordinal", None)
-    fingerprint = getattr(child, "dispatch_fingerprint", None)
-    task_name = getattr(child, "task_name", None)
-    output_dir = getattr(child, "output_dir", None)
-    fingerprints = seen["fingerprints"]
-    task_names = seen["task_names"]
-    output_dirs = seen["output_dirs"]
-    if ordinal != expected or not _valid_digest(fingerprint):
-        raise ResearchPlanCommitError()
-    if not _valid_child_fields(fingerprint, task_name, output_dir, seen):
-        raise ResearchPlanCommitError()
-    fingerprints.add(cast(str, fingerprint))
-    task_names.add(cast(str, task_name))
-    output_dirs.add(cast(str, output_dir))
-    return (
-        cast(int, ordinal),
-        cast(str, fingerprint),
-        cast(str, task_name),
-        cast(str, output_dir),
-    )
-
-
-def _valid_child_fields(
-    fingerprint: object,
-    task_name: object,
-    output_dir: object,
-    seen: dict[str, set[str]],
-) -> bool:
-    fingerprints = seen["fingerprints"]
-    task_names = seen["task_names"]
-    output_dirs = seen["output_dirs"]
-    if fingerprint in fingerprints:
-        return False
-    if not isinstance(task_name, str) or not task_name.strip():
-        return False
-    if task_name in task_names:
-        return False
-    if not isinstance(output_dir, str) or not output_dir.strip():
-        return False
-    return output_dir not in output_dirs
 
 
 def _final_projection(prepared: object) -> dict[str, Any]:
@@ -715,6 +688,12 @@ def _load_row(
             state=cast(DispatchState, row["state"]),
             remote_task_id=row["remote_task_id"],
             revision=int(row["revision"]),
+            lease_expires_at=_parse_iso(row["lease_expires_at"]),
+            payload=payload,
+            output_dir=row["output_dir"] or "",
+            grant_ids=tuple(item for item in grants if isinstance(item, str)),
+            snapshot_digest=row["snapshot_digest"] or "",
+            parent_revision=int(row["parent_revision"] or 0),
         ),
         payload=payload,
         output_dir=row["output_dir"] or "",
@@ -725,24 +704,22 @@ def _load_row(
 
 def _record_from_mapping(row: Mapping[str, Any]) -> ResearchDispatchRecord:
     return ResearchDispatchRecord(
-        dispatch_id=cast(str, row.get("dispatch_id", row.get("outbox_id"))),
-        run_id=cast(str, row["run_id"]),
-        child_ordinal=int(row["child_ordinal"]),
-        dispatch_fingerprint=cast(str, row["dispatch_fingerprint"]),
-        state=cast(DispatchState, row["state"]),
-        remote_task_id=cast(str | None, row.get("remote_task_id")),
-        revision=int(row["revision"]),
+        cast(str, row.get("dispatch_id", row.get("outbox_id"))),
+        cast(str, row["run_id"]),
+        int(row["child_ordinal"]),
+        cast(str, row["dispatch_fingerprint"]),
+        cast(DispatchState, row["state"]),
+        cast(str | None, row.get("remote_task_id")),
+        int(row["revision"]),
     )
 
 
 def _claim_row(
     store: ResearchInputStore,
     record: ResearchDispatchRecord,
-    owner: str,
-    now: datetime,
-    ttl: timedelta,
+    request: _ClaimRequest,
 ) -> _OutboxRow | None:
-    now_iso, expiry = _iso(now), _iso(now + ttl)
+    now_iso, expiry = _iso(request.now), _iso(request.now + request.ttl)
     with sqlite_transaction(store.db_path) as connection:
         connection.row_factory = Row
         connection.execute("BEGIN IMMEDIATE")
@@ -753,9 +730,11 @@ def _claim_row(
             connection, row["run_id"]
         ):
             return None
-        state, expiry = row["state"], row["lease_expires_at"]
+        state, stored_expiry = row["state"], row["lease_expires_at"]
         if state not in {"pending", "leased"} or (
-            state == "leased" and expiry is not None and expiry > now_iso
+            state == "leased"
+            and stored_expiry is not None
+            and stored_expiry > now_iso
         ):
             return None
         changed = connection.execute(
@@ -767,7 +746,7 @@ def _claim_row(
             "(state='pending' OR lease_expires_at <= ?)"
             " AND " + _parent_live_sql(),
             (
-                owner,
+                request.owner,
                 expiry,
                 now_iso,
                 record.dispatch_id,
@@ -798,6 +777,7 @@ def _mark_sent(
             "lease_expires_at=?, sent_at=?, updated_at=?, revision=revision+1 "
             "WHERE outbox_id=? AND lease_owner=? AND revision=? "
             "AND state='leased' "
+            "AND lease_expires_at IS NOT NULL AND lease_expires_at > ? "
             "AND " + _parent_live_sql(),
             (
                 owner,
@@ -807,6 +787,7 @@ def _mark_sent(
                 row.record.dispatch_id,
                 owner,
                 row.record.revision,
+                now_iso,
             ),
         )
     return (
@@ -836,18 +817,41 @@ def _accept_row(
             "failure_code=NULL, failure_retryable=NULL, revision=revision+1 "
             "WHERE outbox_id=? AND revision=? "
             "AND state IN ('sent','leased','pending')"
+            " AND EXISTS (SELECT 1 FROM runs WHERE runs.run_id = "
+            "research_dispatch_outbox.run_id AND runs.revision = "
+            "research_dispatch_outbox.parent_revision)"
             " AND " + _parent_live_sql(),
             (task_id, now_iso, now_iso, record.dispatch_id, record.revision),
         )
         if changed.rowcount == 1:
-            connection.execute(
+            parent = connection.execute(
                 "UPDATE runs SET stage='execution', revision=revision+1, "
                 "updated_at=?"
                 " WHERE run_id=? AND status NOT IN "
                 "('succeeded','failed','cancelled')"
-                " AND stage='planning'",
-                (now_iso, record.run_id),
+                " AND stage='planning' AND revision=?",
+                (now_iso, record.run_id, record.parent_revision),
             )
+            if parent.rowcount != 1:
+                raise sqlite3.IntegrityError("research parent changed")
+            connection.execute(
+                "UPDATE research_dispatch_outbox SET parent_revision=? "
+                "WHERE run_id=? AND state IN ('pending','leased','sent') "
+                "AND parent_revision=?",
+                (
+                    record.parent_revision + 1,
+                    record.run_id,
+                    record.parent_revision,
+                ),
+            )
+            if not _storage.attach_task(
+                connection,
+                record.run_id,
+                record.dispatch_fingerprint,
+                task_id,
+                record.output_dir,
+            ):
+                raise sqlite3.IntegrityError("research task attachment failed")
     latest = _load_row(store, record.dispatch_id)
     if latest is not None and latest.record.state == "accepted":
         if attach_task is not None:
@@ -866,6 +870,7 @@ def _accept_row(
         return _disposition(
             record.dispatch_id, "cancelled", None, _UNAVAILABLE
         )
+    _mark_row(store, record, now, _AMBIGUOUS_OPTIONS)
     return _disposition(
         record.dispatch_id, "ambiguous", None, _TRACKING_FAILED
     )
@@ -941,17 +946,6 @@ def _terminal_disposition(
     return None
 
 
-def _task_id(value: object) -> str | None:
-    if isinstance(value, str) and value.strip():
-        return value
-    if isinstance(value, Mapping):
-        for name in ("task_id", "remote_task_id", "id"):
-            candidate = value.get(name)
-            if isinstance(candidate, str) and candidate.strip():
-                return candidate
-    return None
-
-
 async def _maybe_await(value: object) -> object:
     if inspect.isawaitable(value):
         return await cast(Awaitable[object], value)
@@ -994,3 +988,13 @@ def _digest(value: object) -> str:
 def _iso(value: datetime) -> str:
     normalized = value.replace(tzinfo=UTC) if value.tzinfo is None else value
     return normalized.astimezone(UTC).isoformat()
+
+
+def _parse_iso(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
