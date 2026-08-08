@@ -340,6 +340,83 @@ def test_initialization_additively_upgrades_legacy_grant_table(
     assert len(store.resolve_or_replay(_request(), _now())) == 1
 
 
+def test_initialization_rolls_back_when_index_creation_fails(
+    tmp_path: Path,
+) -> None:
+    """An interrupted migration cannot advertise a partial schema as v3."""
+    database = tmp_path / "relay.sqlite3"
+
+    def deny_expiry_index(
+        action: int,
+        first_argument: str | None,
+        _second_argument: str | None,
+        _database_name: str | None,
+        _trigger_name: str | None,
+    ) -> int:
+        if (
+            action == sqlite3.SQLITE_CREATE_INDEX
+            and first_argument == "idx_research_grants_expiry"
+        ):
+            return sqlite3.SQLITE_DENY
+        return sqlite3.SQLITE_OK
+
+    with sqlite3.connect(database, isolation_level=None) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute(
+            "CREATE TABLE research_object_grants (grant_id TEXT PRIMARY KEY)"
+        )
+        connection.set_authorizer(deny_expiry_index)
+        initialize_schema = getattr(ResearchGrantStore, "_initialize_schema")
+        with pytest.raises(sqlite3.DatabaseError):
+            initialize_schema(connection)
+        connection.set_authorizer(None)
+        columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(research_object_grants)"
+            )
+        }
+        indexes = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA index_list(research_object_grants)"
+            )
+        }
+        version_table = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'research_grant_schema_versions'"
+        ).fetchone()
+
+    assert columns == {"grant_id"}
+    assert (
+        not {
+            "idx_research_grants_v3_identity",
+            "idx_research_grants_expiry",
+        }
+        & indexes
+    )
+    assert version_table is None
+
+    ResearchGrantStore(str(database))
+    with sqlite3.connect(database) as connection:
+        version = connection.execute(
+            "SELECT version FROM research_grant_schema_versions "
+            "WHERE schema_name = 'research_object_grants'"
+        ).fetchone()
+        complete_indexes = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA index_list(research_object_grants)"
+            )
+        }
+
+    assert version == (3,)
+    assert {
+        "idx_research_grants_v3_identity",
+        "idx_research_grants_expiry",
+    } <= complete_indexes
+
+
 def test_resolve_replays_after_restart_and_under_concurrent_calls(
     tmp_path: Path,
 ) -> None:

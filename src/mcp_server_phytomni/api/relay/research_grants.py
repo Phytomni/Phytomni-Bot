@@ -172,6 +172,18 @@ class ResearchGrantStore:
     @staticmethod
     def _initialize_schema(conn: sqlite3.Connection) -> None:
         """Additively initialize or fail-close migrate the private table."""
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            ResearchGrantStore._apply_schema_migration(conn)
+            conn.execute("COMMIT")
+        except (ResearchGrantError, sqlite3.Error):
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+
+    @staticmethod
+    def _apply_schema_migration(conn: sqlite3.Connection) -> None:
+        """Apply every grant-schema change inside one migration transaction."""
         conn.execute("""
                 CREATE TABLE IF NOT EXISTS research_object_grants (
                     grant_id TEXT PRIMARY KEY,
@@ -219,6 +231,17 @@ class ResearchGrantStore:
                 """,
                 (_LEGACY_EXPIRES_AT, _LEGACY_EXPIRES_AT),
             )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_research_grants_v3_identity "
+            "ON research_object_grants("
+            "principal_key_prefix, parent_run_id, execution_fingerprint, "
+            "dataset_id, key_digest, snapshot_digest, state, "
+            "grant_schema_version)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_research_grants_expiry "
+            "ON research_object_grants(expires_at, state)"
+        )
         conn.execute("""
             CREATE TABLE IF NOT EXISTS research_grant_schema_versions (
                 schema_name TEXT PRIMARY KEY,
@@ -232,17 +255,6 @@ class ResearchGrantStore:
             ON CONFLICT(schema_name) DO UPDATE SET version = excluded.version
             """,
             (_GRANT_SCHEMA_VERSION,),
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_research_grants_v3_identity "
-            "ON research_object_grants("
-            "principal_key_prefix, parent_run_id, execution_fingerprint, "
-            "dataset_id, key_digest, snapshot_digest, state, "
-            "grant_schema_version)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_research_grants_expiry "
-            "ON research_object_grants(expires_at, state)"
         )
 
     def resolve_or_replay(
