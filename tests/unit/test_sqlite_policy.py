@@ -8,15 +8,26 @@ from __future__ import annotations
 
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from tests.support.sqlite import closed_sqlite_connection
 
 from mcp_server_phytomni.api.auth import ApiKeyStore
-from mcp_server_phytomni.api.relay.audit import RelayAuditStore
+from mcp_server_phytomni.api.relay.audit import (
+    RelayAuditQuery,
+    RelayAuditStore,
+)
+from mcp_server_phytomni.api.relay.research_grants import (
+    ResearchGrantResolve,
+    ResearchGrantStore,
+)
 from mcp_server_phytomni.runtime import sqlite as sqlite_policy
 from mcp_server_phytomni.runtime.sqlite import sqlite_connection
+from mcp_server_phytomni.storage.research_objects import (
+    ResearchObjectCandidate,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -158,3 +169,49 @@ def test_store_schema_migration_and_boundaries_remain_local(
     assert "scopes" not in audit_columns
     assert "key_hash" not in audit_columns
     assert "request_body" not in auth_columns
+
+
+def test_relay_audit_queries_never_surface_research_grants(
+    tmp_path: Path,
+) -> None:
+    """Exact references stay in the private grant table, not audit reads."""
+    database = tmp_path / "relay.sqlite3"
+    exact_reference = "obs://private-bucket/inputs/leaf.tsv"
+    store = ResearchGrantStore(str(database))
+    store.resolve_or_replay(
+        ResearchGrantResolve(
+            principal_key_prefix="ptm_test",
+            parent_run_id="run-001",
+            execution_fingerprint="execution-sha256",
+            objects=(
+                ResearchObjectCandidate(
+                    dataset_id="dataset-001",
+                    exact_reference=exact_reference,
+                    compound_suffix=".tsv",
+                ),
+            ),
+        ),
+        datetime(2026, 8, 8, tzinfo=UTC),
+    )
+
+    assert (
+        RelayAuditStore(str(database)).query(RelayAuditQuery(limit=100)) == []
+    )
+    with closed_sqlite_connection(database) as connection:
+        grant_columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(research_object_grants)"
+            )
+        }
+        audit_columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(relay_audit)")
+        }
+        grant_row = connection.execute(
+            "SELECT exact_reference FROM research_object_grants"
+        ).fetchone()
+
+    assert grant_row == (exact_reference,)
+    assert not any("credential" in column for column in grant_columns)
+    assert "exact_reference" not in audit_columns
