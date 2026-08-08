@@ -12,6 +12,7 @@ __all__ = [
     "EvidenceSourceKind",
     "ParsedResearchInput",
     "PastedDatasetCandidate",
+    "ResearchConfidence",
     "ResearchErrorCode",
     "ResearchFailureStage",
     "ResearchInputFailure",
@@ -23,6 +24,7 @@ __all__ = [
 EvidenceSourceKind = Literal[
     "query", "pdf_page", "document_section", "user_hint", "dataset_meta"
 ]
+ResearchConfidence = Literal["high", "medium", "low"]
 
 
 class TokenEstimator(Protocol):
