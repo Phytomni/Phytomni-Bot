@@ -14,7 +14,7 @@ import operator
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from time import perf_counter
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, NotRequired, cast
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.types import Command, Send, interrupt
@@ -91,9 +91,12 @@ from ..shared.remote_analysis import (
     rejected_submission,
     submit_remote_analysis,
 )
+from .contracts import ResearchGoal
+from .document_evidence import ExtractedResearchEvidence
 from .goal_extraction import (
     ResearchGoalExtractionDependencies,
     extract_research_goals,
+    extract_research_goals_from_evidence,
 )
 from .interop import (
     RESEARCH_A2A_CAPABILITY,
@@ -170,6 +173,7 @@ class InSilicoResearchState(ParallelDispatchState):
     locale: SupportedLocale
     user_id: str
     obs_file_list: list[str]
+    extracted_evidence: NotRequired[ExtractedResearchEvidence]
     output_dir: str | None
     goals: list[dict[str, str]]  # List of extracted research objectives
     research_tasks: list[dict[str, str]]  # List of research tasks
@@ -359,6 +363,23 @@ class InSilicoResearchAgents:
         return await extract_research_goals(
             user_query,
             obs_file_list,
+            locale=locale,
+            dependencies=ResearchGoalExtractionDependencies(
+                in_silico_config=self.in_silico_config,
+                sensitive_config=self.sensitive_config,
+                prompt_builder=get_prompt,
+                chat_app_factory=_cached_chat_app,
+            ),
+        )
+
+    async def extract_goals_from_evidence(
+        self,
+        evidence: ExtractedResearchEvidence,
+        locale: SupportedLocale | None = None,
+    ) -> tuple[ResearchGoal, ...]:
+        """Extract goals from evidence already retained by the coordinator."""
+        return await extract_research_goals_from_evidence(
+            evidence,
             locale=locale,
             dependencies=ResearchGoalExtractionDependencies(
                 in_silico_config=self.in_silico_config,
@@ -569,11 +590,31 @@ class InSilicoResearchAgents:
             Returns:
                 State update containing extracted goals and no error.
             """
-            goals = await self._extract_goals(
-                paper_text,
-                obs_file_list,
-                state.get("locale"),
-            )
+            extracted_evidence = state.get("extracted_evidence")
+            if not isinstance(extracted_evidence, ExtractedResearchEvidence):
+                evidence_candidate = state.get("evidence")
+                extracted_evidence = (
+                    evidence_candidate
+                    if isinstance(
+                        evidence_candidate, ExtractedResearchEvidence
+                    )
+                    else None
+                )
+            if isinstance(extracted_evidence, ExtractedResearchEvidence):
+                models = await self.extract_goals_from_evidence(
+                    extracted_evidence,
+                    state.get("locale"),
+                )
+                goals = [
+                    {"goal": item.goal, "context": item.context or ""}
+                    for item in models
+                ]
+            else:
+                goals = await self._extract_goals(
+                    paper_text,
+                    obs_file_list,
+                    state.get("locale"),
+                )
             logger.info("Extracted %d research goals", len(goals))
             return {"goals": goals, "error": None}
 

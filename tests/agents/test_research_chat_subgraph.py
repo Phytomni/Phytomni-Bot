@@ -23,9 +23,14 @@ import pytest
 
 from mcp_server_phytomni.agents.analyst.agent import AnalystAgent
 from mcp_server_phytomni.agents.research import agent as research_agent
+from mcp_server_phytomni.agents.research import goal_extraction
 from mcp_server_phytomni.agents.research.agent import (
     InSilicoResearchAgents,
     InSilicoResearchConfig,
+)
+from mcp_server_phytomni.agents.research.document_evidence import (
+    ExtractedResearchEvidence,
+    ResearchEvidenceUnit,
 )
 from mcp_server_phytomni.config.settings import SensitiveConfig
 
@@ -83,3 +88,44 @@ async def test_extract_goals_uses_chat_subgraph(
 
     assert result == [{"goal": "Investigate X", "context": "context-blob"}]
     subgraph_app_mock.ainvoke.assert_awaited_once()
+
+
+async def test_extract_goals_from_evidence_does_not_download(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The evidence seam reuses extracted text and never downloads files."""
+    agent = _build_agent()
+    subgraph_app_mock = _install_chat_app_mock(
+        monkeypatch,
+        subgraph_response={
+            "response": _content(
+                [{"goal": "Investigate X", "context": "context-blob"}]
+            ),
+        },
+    )
+    monkeypatch.setattr(
+        research_agent, "get_prompt", lambda *_a, **_kw: "prompt-stub"
+    )
+    download = AsyncMock(side_effect=AssertionError("downloaded twice"))
+    monkeypatch.setattr(goal_extraction, "download_upload_context", download)
+    evidence = ExtractedResearchEvidence(
+        units=(
+            ResearchEvidenceUnit(
+                evidence_id="query_span_001",
+                source_kind="query",
+                source_ordinal=0,
+                source_span=None,
+                content_digest="digest",
+                text="Paper text body",
+                dataset_ids=(),
+            ),
+        ),
+        document_digests=(),
+        coverage_digest="coverage",
+    )
+
+    result = await agent.extract_goals_from_evidence(evidence, "en-US")
+
+    assert [item.goal for item in result] == ["Investigate X"]
+    subgraph_app_mock.ainvoke.assert_awaited_once()
+    download.assert_not_awaited()
