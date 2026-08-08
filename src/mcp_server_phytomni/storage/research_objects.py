@@ -11,7 +11,7 @@ import json
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from .obs_relay_ops import (
     ObsObjectMetadataError,
@@ -39,6 +39,7 @@ __all__ = [
 
 _SNAPSHOT_SCHEMA = "research-object-snapshot/v1"
 _METADATA_FAILURE = "Research object metadata could not be verified."
+_MAX_RELAY_TEXT_LENGTH = 512
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,7 +148,11 @@ class RelayResearchObjectMetadataPort:
     async def revoke(self, request: ResearchObjectRevokeRequest) -> None:
         """Revoke run-bound grants idempotently through the relay."""
         try:
-            await self._client.revoke_research_objects(request)
+            result = await cast(Any, self._client).revoke_research_objects(
+                request
+            )
+            if result is not None:
+                raise ResearchObjectMetadataError()
         except ResearchObjectMetadataError:
             raise
         except Exception:
@@ -366,7 +371,9 @@ def _validated_relay_authorities(
         expected_dataset_ids
     ):
         raise ResearchObjectMetadataError()
-    if len(set(expected_dataset_ids)) != len(expected_dataset_ids):
+    if len(set(expected_dataset_ids)) != len(expected_dataset_ids) or not all(
+        _valid_relay_text(value) for value in expected_dataset_ids
+    ):
         raise ResearchObjectMetadataError()
     by_dataset: dict[str, ResearchObjectAuthority] = {}
     authority_ids: set[str] = set()
@@ -388,7 +395,9 @@ def _valid_relay_authority(
     authority_ids: set[str],
 ) -> bool:
     """Validate one non-placeholder authority and both identity sets."""
-    if not authority.dataset_id or not authority.authority_id:
+    if not _valid_relay_text(authority.dataset_id) or not _valid_relay_text(
+        authority.authority_id
+    ):
         return False
     if authority.dataset_id in by_dataset:
         return False
@@ -396,7 +405,38 @@ def _valid_relay_authority(
         return False
     if not isinstance(authority.snapshot, ResearchObjectSnapshot):
         return False
+    return _valid_relay_snapshot(authority.dataset_id, authority.snapshot)
+
+
+def _valid_relay_snapshot(
+    dataset_id: str, snapshot: ResearchObjectSnapshot
+) -> bool:
+    """Validate every scalar in one typed relay snapshot."""
     return (
-        authority.snapshot.dataset_id == authority.dataset_id
-        and not authority.snapshot.placeholder
+        snapshot.dataset_id == dataset_id
+        and _valid_relay_text(snapshot.dataset_id)
+        and isinstance(snapshot.size_bytes, int)
+        and not isinstance(snapshot.size_bytes, bool)
+        and snapshot.size_bytes >= 0
+        and _valid_relay_text(snapshot.snapshot_digest)
+        and _valid_relay_text(snapshot.etag, optional=True)
+        and _valid_relay_text(snapshot.version_id, optional=True)
+        and _valid_relay_text(snapshot.last_modified, optional=True)
+        and isinstance(snapshot.placeholder, bool)
+        and not snapshot.placeholder
+    )
+
+
+def _valid_relay_text(value: object, *, optional: bool = False) -> bool:
+    """Validate bounded non-control text in a relay metadata DTO."""
+    if value is None:
+        return optional
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and len(value) <= _MAX_RELAY_TEXT_LENGTH
+        and all(
+            ord(character) >= 32 and ord(character) != 127
+            for character in value
+        )
     )

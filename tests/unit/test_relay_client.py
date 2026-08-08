@@ -500,6 +500,80 @@ async def test_research_grant_methods_preserve_order_and_rotate_ids(
     assert calls[1][0] == "research-input/object-grants/verify"
 
 
+def _grant_response() -> dict[str, Any]:
+    """Return two complete grant records in reverse response order."""
+    return {
+        "grants": [
+            {
+                "dataset_id": "d2",
+                "grant_id": "grant-2",
+                "snapshot": _snapshot("d2"),
+                "expires_at": "2026-08-08T03:00:00+00:00",
+                "revision": 0,
+            },
+            {
+                "dataset_id": "d1",
+                "grant_id": "grant-1",
+                "snapshot": _snapshot("d1"),
+                "expires_at": "2026-08-08T03:00:00+00:00",
+                "revision": 0,
+            },
+        ]
+    }
+
+
+async def test_research_grant_decoder_rejects_duplicate_grant_ids(monkeypatch):
+    """Grant IDs must be unique even when dataset IDs differ."""
+    response = _grant_response()
+    response["grants"][1]["grant_id"] = "grant-2"
+
+    async def fake_post_json(
+        self, path: str, *, json_body: dict[str, Any], message: str, **_kwargs
+    ) -> dict[str, Any]:
+        del self, path, json_body, message
+        return response
+
+    monkeypatch.setattr(rc.RelayClient, "post_json", fake_post_json)
+    with pytest.raises(McpError):
+        await _client("k9").resolve_research_objects(_resolve_request())
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("grant_id", "grant\n2"),
+        ("grant_id", "g" * 513),
+        ("dataset_id", "d" * 513),
+        ("snapshot_digest", ""),
+        ("snapshot_digest", "digest\x00"),
+        ("size_bytes", -1),
+        ("size_bytes", True),
+        ("etag", 17),
+        ("version_id", "v" * 513),
+        ("last_modified", "2026-08-08\x00"),
+    ],
+)
+async def test_research_grant_decoder_rejects_unsafe_response_fields(
+    monkeypatch, field: str, value: object
+):
+    """Grant and snapshot response fields stay bounded and type-safe."""
+    response = _grant_response()
+    if field in {"grant_id", "dataset_id"}:
+        response["grants"][0][field] = value
+    else:
+        response["grants"][0]["snapshot"][field] = value
+
+    async def fake_post_json(
+        self, path: str, *, json_body: dict[str, Any], message: str, **_kwargs
+    ) -> dict[str, Any]:
+        del self, path, json_body, message
+        return response
+
+    monkeypatch.setattr(rc.RelayClient, "post_json", fake_post_json)
+    with pytest.raises(McpError):
+        await _client("k9").resolve_research_objects(_resolve_request())
+
+
 async def test_revoke_research_objects_uses_only_opaque_grant_ids(monkeypatch):
     """Revoke sends no paths or body/list operation through the client."""
     seen: dict[str, Any] = {}

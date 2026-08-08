@@ -7,13 +7,12 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Literal
-
-from mcp.shared.exceptions import McpError
 
 from ..config.defaults import ApiConfig, ServerConfig
 from ..config.relay_mode import relay_mode_enabled
@@ -85,6 +84,7 @@ class ResearchRelayCapabilityCache:
             if task is None or task.done():
                 task = asyncio.create_task(self._refresh(client, now))
                 self._refresh_task = task
+                task.add_done_callback(_observe_refresh_task)
         return await asyncio.shield(task)
 
     def fresh_snapshot(
@@ -116,17 +116,19 @@ class ResearchRelayCapabilityCache:
         except RuntimeError:
             return False
         self._refresh_task = task
+        task.add_done_callback(_observe_refresh_task)
         return True
 
     async def _refresh(
         self, client: RelayClient, now: datetime
     ) -> ResearchRelayCapabilities | None:
         """Perform and normalize one authenticated handshake."""
-        try:
+        received: ResearchRelayCapabilities | None = None
+        with suppress(Exception):
             received = await client.get_research_capabilities()
             if not _compatible_shape(received):
-                raise ValueError("invalid relay capability")
-        except (McpError, OSError, RuntimeError, TypeError, ValueError):
+                received = None
+        if received is None:
             self._snapshot = None
             self._last_failure_at = now
             return None
@@ -141,6 +143,14 @@ class ResearchRelayCapabilityCache:
         self._snapshot = refreshed
         self._last_failure_at = None
         return refreshed
+
+
+def _observe_refresh_task(
+    task: asyncio.Task[ResearchRelayCapabilities | None],
+) -> None:
+    """Consume a detached refresh exception without swallowing cancellation."""
+    if not task.cancelled():
+        task.exception()
 
 
 def research_input_runtime_capability(

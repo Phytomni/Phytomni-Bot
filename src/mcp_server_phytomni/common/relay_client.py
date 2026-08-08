@@ -59,6 +59,7 @@ _MISSING = object()
 _RESEARCH_PROTOCOL = "research_object_grant_v1"
 _RESEARCH_SCHEMA_VERSION = 1
 _MAX_RESEARCH_OBJECTS = 256
+_MAX_RELAY_RESPONSE_TEXT_LENGTH = 512
 _RESEARCH_CAPABILITY_MESSAGE = "relay research capability request failed"
 _RESEARCH_GRANT_MESSAGE = "relay research object grant request failed"
 _SNAPSHOT_FIELDS = frozenset(
@@ -567,6 +568,7 @@ def _decode_grants(
     if len(set(expected_ids)) != len(expected_ids):
         raise ValueError
     by_dataset: dict[str, dict[str, object]] = {}
+    grant_ids: set[str] = set()
     for raw_grant in raw_grants:
         if not isinstance(raw_grant, dict) or set(raw_grant) != _GRANT_FIELDS:
             raise ValueError
@@ -577,6 +579,8 @@ def _decode_grants(
         if not _valid_grant_fields(
             dataset_id, grant_id, expires_at, revision, by_dataset
         ):
+            raise ValueError
+        if grant_id in grant_ids:
             raise ValueError
         parsed_expiry = datetime.fromisoformat(expires_at)
         if parsed_expiry.tzinfo is None or parsed_expiry.utcoffset() is None:
@@ -589,6 +593,7 @@ def _decode_grants(
             "grant_id": grant_id,
             "snapshot": snapshot,
         }
+        grant_ids.add(grant_id)
     if set(by_dataset) != set(expected_ids):
         raise ValueError
     return tuple(by_dataset[dataset_id] for dataset_id in expected_ids)
@@ -650,10 +655,8 @@ def _valid_grant_fields(
 ) -> bool:
     """Validate the scalar fields and uniqueness of one grant DTO."""
     return (
-        isinstance(dataset_id, str)
-        and bool(dataset_id)
-        and isinstance(grant_id, str)
-        and bool(grant_id)
+        _valid_response_text(dataset_id)
+        and _valid_response_text(grant_id)
         and dataset_id not in existing
         and isinstance(expires_at, str)
         and isinstance(revision, int)
@@ -676,18 +679,33 @@ def _valid_snapshot_fields(fields: tuple[object, ...]) -> bool:
         snapshot_digest,
     ) = fields
     return (
-        isinstance(dataset_id, str)
-        and bool(dataset_id)
+        _valid_response_text(dataset_id)
         and isinstance(size_bytes, int)
         and not isinstance(size_bytes, bool)
         and size_bytes >= 0
         and all(
-            value is None or isinstance(value, str)
+            _valid_response_text(value, optional=True, allow_empty=True)
             for value in (etag, version_id, last_modified)
         )
         and isinstance(placeholder, bool)
-        and isinstance(snapshot_digest, str)
-        and bool(snapshot_digest)
+        and _valid_response_text(snapshot_digest)
+    )
+
+
+def _valid_response_text(
+    value: object, *, optional: bool = False, allow_empty: bool = False
+) -> bool:
+    """Validate bounded non-control text in a relay response DTO."""
+    if value is None:
+        return optional
+    return (
+        isinstance(value, str)
+        and (allow_empty or bool(value))
+        and len(value) <= _MAX_RELAY_RESPONSE_TEXT_LENGTH
+        and all(
+            ord(character) >= 32 and ord(character) != 127
+            for character in value
+        )
     )
 
 
