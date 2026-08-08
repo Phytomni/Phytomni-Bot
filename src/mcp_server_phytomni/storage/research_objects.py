@@ -11,7 +11,7 @@ import json
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from .obs_relay_ops import (
     ObsObjectMetadataError,
@@ -20,6 +20,9 @@ from .obs_relay_ops import (
     head_object_metadata,
 )
 from .obs_storage import normalize_obs_object_key
+
+if TYPE_CHECKING:
+    from ..common.relay_client import RelayClient
 
 __all__ = [
     "DirectResearchObjectMetadataPort",
@@ -31,6 +34,7 @@ __all__ = [
     "ResearchObjectRevokeRequest",
     "ResearchObjectSnapshot",
     "ResearchObjectVerifyRequest",
+    "RelayResearchObjectMetadataPort",
 ]
 
 _SNAPSHOT_SCHEMA = "research-object-snapshot/v1"
@@ -100,6 +104,54 @@ class ResearchObjectMetadataError(Exception):
 
     def __init__(self) -> None:
         super().__init__(_METADATA_FAILURE)
+
+
+class RelayResearchObjectMetadataPort:
+    """Implement the shared metadata port through typed relay grant calls."""
+
+    def __init__(self, client: RelayClient) -> None:
+        self._client = client
+
+    async def resolve(
+        self, request: ResearchObjectResolveRequest
+    ) -> tuple[ResearchObjectAuthority, ...]:
+        """Resolve exact references without exposing relay response details."""
+        try:
+            authorities = await self._client.resolve_research_objects(request)
+            return _validated_relay_authorities(
+                authorities,
+                tuple(candidate.dataset_id for candidate in request.objects),
+            )
+        except ResearchObjectMetadataError:
+            raise
+        except Exception:
+            raise ResearchObjectMetadataError() from None
+
+    async def verify(
+        self, request: ResearchObjectVerifyRequest
+    ) -> tuple[ResearchObjectAuthority, ...]:
+        """Verify snapshots and return rotated opaque grant IDs."""
+        try:
+            authorities = await self._client.verify_research_objects(request)
+            return _validated_relay_authorities(
+                authorities,
+                tuple(
+                    authority.dataset_id for authority in request.authorities
+                ),
+            )
+        except ResearchObjectMetadataError:
+            raise
+        except Exception:
+            raise ResearchObjectMetadataError() from None
+
+    async def revoke(self, request: ResearchObjectRevokeRequest) -> None:
+        """Revoke run-bound grants idempotently through the relay."""
+        try:
+            await self._client.revoke_research_objects(request)
+        except ResearchObjectMetadataError:
+            raise
+        except Exception:
+            raise ResearchObjectMetadataError() from None
 
 
 class ResearchObjectMetadataPort(Protocol):
@@ -303,4 +355,48 @@ def _matches_scope(
     return (
         record.parent_run_id == parent_run_id
         and record.execution_fingerprint == execution_fingerprint
+    )
+
+
+def _validated_relay_authorities(
+    authorities: object, expected_dataset_ids: tuple[str, ...]
+) -> tuple[ResearchObjectAuthority, ...]:
+    """Validate a typed relay result while retaining request ordering."""
+    if not isinstance(authorities, tuple) or len(authorities) != len(
+        expected_dataset_ids
+    ):
+        raise ResearchObjectMetadataError()
+    if len(set(expected_dataset_ids)) != len(expected_dataset_ids):
+        raise ResearchObjectMetadataError()
+    by_dataset: dict[str, ResearchObjectAuthority] = {}
+    authority_ids: set[str] = set()
+    for authority in authorities:
+        if not isinstance(authority, ResearchObjectAuthority):
+            raise ResearchObjectMetadataError()
+        if not _valid_relay_authority(authority, by_dataset, authority_ids):
+            raise ResearchObjectMetadataError()
+        by_dataset[authority.dataset_id] = authority
+        authority_ids.add(authority.authority_id)
+    if set(by_dataset) != set(expected_dataset_ids):
+        raise ResearchObjectMetadataError()
+    return tuple(by_dataset[dataset_id] for dataset_id in expected_dataset_ids)
+
+
+def _valid_relay_authority(
+    authority: ResearchObjectAuthority,
+    by_dataset: dict[str, ResearchObjectAuthority],
+    authority_ids: set[str],
+) -> bool:
+    """Validate one non-placeholder authority and both identity sets."""
+    if not authority.dataset_id or not authority.authority_id:
+        return False
+    if authority.dataset_id in by_dataset:
+        return False
+    if authority.authority_id in authority_ids:
+        return False
+    if not isinstance(authority.snapshot, ResearchObjectSnapshot):
+        return False
+    return (
+        authority.snapshot.dataset_id == authority.dataset_id
+        and not authority.snapshot.placeholder
     )

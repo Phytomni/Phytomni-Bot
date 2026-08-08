@@ -27,6 +27,12 @@ from mcp_server_phytomni.config.settings import (
     SensitiveConfig,
     get_sensitive_config,
 )
+from mcp_server_phytomni.storage.research_objects import (
+    ResearchObjectCandidate,
+    ResearchObjectResolveRequest,
+    ResearchObjectRevokeRequest,
+    ResearchObjectVerifyRequest,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -368,3 +374,150 @@ async def test_get_obs_object_to_path_raises_on_error_status(
 
     assert "super-secret" not in str(excinfo.value)
     assert not dest.exists()
+
+
+def _snapshot(dataset_id: str) -> dict[str, object]:
+    """Return one safe relay snapshot DTO."""
+    return {
+        "dataset_id": dataset_id,
+        "size_bytes": 17,
+        "etag": "etag-17",
+        "version_id": "version-1",
+        "last_modified": "2026-08-08T00:00:00Z",
+        "placeholder": False,
+        "snapshot_digest": f"digest-{dataset_id}",
+    }
+
+
+def _resolve_request() -> ResearchObjectResolveRequest:
+    """Return two ordered candidate objects for relay client tests."""
+    return ResearchObjectResolveRequest(
+        parent_run_id="run-1",
+        execution_fingerprint="execution-1",
+        objects=(
+            ResearchObjectCandidate("d1", "obs://bucket/a.vcf", ".vcf"),
+            ResearchObjectCandidate("d2", "obs://bucket/b.vcf", ".vcf"),
+        ),
+    )
+
+
+async def test_get_research_capabilities_decodes_scoped_handshake(monkeypatch):
+    """The capability method uses the exact authenticated relay endpoint."""
+    seen: list[tuple[str, str]] = []
+
+    async def fake_get_json(self, path, *, message, **_kwargs):
+        del self
+        seen.append((path, message))
+        return {
+            "protocols": {"research_object_grant_v1": [1]},
+            "research_object_grant": {"max_objects": 256},
+        }
+
+    monkeypatch.setattr(rc.RelayClient, "get_json", fake_get_json)
+    capability = await _client("k9").get_research_capabilities()
+
+    assert seen == [
+        ("capabilities", "relay research capability request failed")
+    ]
+    assert capability.protocol_versions == (1,)
+    assert capability.max_objects == 256
+    assert capability.authorized_scope == "relay:research-input"
+    assert capability.expires_at > capability.obtained_at
+
+
+async def test_research_grant_methods_preserve_order_and_rotate_ids(
+    monkeypatch,
+):
+    """Typed resolve/verify calls retain dataset order and accept rotation."""
+    responses = [
+        {
+            "grants": [
+                {
+                    "dataset_id": "d2",
+                    "grant_id": "grant-2",
+                    "snapshot": _snapshot("d2"),
+                    "expires_at": "2026-08-08T03:00:00+00:00",
+                    "revision": 0,
+                },
+                {
+                    "dataset_id": "d1",
+                    "grant_id": "grant-1",
+                    "snapshot": _snapshot("d1"),
+                    "expires_at": "2026-08-08T03:00:00+00:00",
+                    "revision": 0,
+                },
+            ]
+        },
+        {
+            "grants": [
+                {
+                    "dataset_id": "d2",
+                    "grant_id": "grant-2-new",
+                    "snapshot": _snapshot("d2"),
+                    "expires_at": "2026-08-08T03:00:00+00:00",
+                    "revision": 1,
+                },
+                {
+                    "dataset_id": "d1",
+                    "grant_id": "grant-1-new",
+                    "snapshot": _snapshot("d1"),
+                    "expires_at": "2026-08-08T03:00:00+00:00",
+                    "revision": 1,
+                },
+            ]
+        },
+    ]
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    async def fake_post_json(
+        self, path: str, *, json_body: dict[str, Any], message: str, **_kwargs
+    ) -> dict[str, Any]:
+        del self, message
+        calls.append((path, json_body))
+        return responses.pop(0)
+
+    monkeypatch.setattr(rc.RelayClient, "post_json", fake_post_json)
+    client = _client("k9")
+    request = _resolve_request()
+    resolved = await client.resolve_research_objects(request)
+    assert tuple(item.dataset_id for item in resolved) == ("d1", "d2")
+    assert calls[0][0] == "research-input/object-grants"
+    assert [item["dataset_id"] for item in calls[0][1]["objects"]] == [
+        "d1",
+        "d2",
+    ]
+    verified = await client.verify_research_objects(
+        ResearchObjectVerifyRequest(
+            parent_run_id="run-1",
+            execution_fingerprint="execution-1",
+            authorities=resolved,
+        )
+    )
+    assert tuple(item.authority_id for item in verified) == (
+        "grant-1-new",
+        "grant-2-new",
+    )
+    assert calls[1][0] == "research-input/object-grants/verify"
+
+
+async def test_revoke_research_objects_uses_only_opaque_grant_ids(monkeypatch):
+    """Revoke sends no paths or body/list operation through the client."""
+    seen: dict[str, Any] = {}
+
+    async def fake_post_json(
+        self, path: str, *, json_body: dict[str, Any], message: str, **_kwargs
+    ) -> dict[str, int]:
+        del self, message
+        seen.update(path=path, body=json_body)
+        return {"revoked": 2}
+
+    monkeypatch.setattr(rc.RelayClient, "post_json", fake_post_json)
+    await _client("k9").revoke_research_objects(
+        ResearchObjectRevokeRequest(
+            parent_run_id="run-1",
+            execution_fingerprint="execution-1",
+            authority_ids=("grant-1", "grant-2"),
+        )
+    )
+    assert seen["path"] == "research-input/object-grants/revoke"
+    assert seen["body"]["grant_ids"] == ["grant-1", "grant-2"]
