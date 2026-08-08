@@ -5,14 +5,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal, Protocol, TypedDict, Unpack
+from typing import Any, Literal, NamedTuple, Protocol, TypedDict, Unpack
 
 __all__ = [
     "EvidenceSourceKind",
     "ParsedResearchInput",
     "PastedDatasetCandidate",
     "ResearchConfidence",
+    "ResearchCoordinatorDependencies",
+    "ResearchCoordinatorRequest",
     "ResearchErrorCode",
     "ResearchFailureStage",
     "ResearchInputFailure",
@@ -130,15 +133,50 @@ def research_input_failure(
     *,
     http_status_hint: int = 400,
     retryable: bool = False,
+    stage: ResearchFailureStage = "input_resolution",
 ) -> ResearchInputFailure:
     """Create one stable non-disclosing Research input failure."""
     return ResearchInputFailure(
         code=code,
         safe_message=safe_message,
         http_status_hint=http_status_hint,
-        stage="input_resolution",
+        stage=stage,
         retryable=retryable,
     )
+
+
+class ResearchCoordinatorDependencies(NamedTuple):
+    """Injected side-effect ports for one Research preparation run.
+
+    The coordinator deliberately knows only the order and failure boundary of
+    these callbacks.  Storage, document conversion, resolver execution, and
+    the native dispatch validator remain independently replaceable ports.
+    """
+
+    build_inventory: Callable[[Any], Awaitable[Any]] | None = None
+    extract_evidence: Callable[[Any], Awaitable[Any]] | None = None
+    resolve_descriptions: Callable[[Any], Awaitable[Any]] | None = None
+    revalidate_inventory: Callable[[Any], Awaitable[Any]] | None = None
+    validate_native: Callable[[Any], Any] | None = None
+    persist_planning: Callable[..., Any] | None = None
+    join_prepared: Callable[[Any, Any], Any] | None = None
+    submit_children: Callable[..., Awaitable[Any]] | None = None
+
+
+class ResearchCoordinatorRequest(NamedTuple):
+    """Immutable inputs and dependency ports for coordinator execution."""
+
+    run_id: str
+    inventory_request: Any
+    evidence: Any = None
+    resolution: Any = None
+    dependencies: ResearchCoordinatorDependencies = (
+        ResearchCoordinatorDependencies()
+    )
+    effective_query: str = ""
+    evidence_digest: str = ""
+    work_digest: str = ""
+    policy_fingerprint: str = ""
 
 
 @dataclass(frozen=True, slots=True)
