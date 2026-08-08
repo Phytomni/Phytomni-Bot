@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 
 import pytest
+from tests.support.attachment_fakes import EXPERT_ATTACHMENT_ALLOWED_TOOLS
 
 from mcp_server_phytomni.agents.research.scientific_formats import (
     advertised_research_formats,
@@ -278,13 +279,7 @@ def test_attachment_channel_filter_discards_unknown_without_synthesis() -> (
 
 def test_expert_attachment_filter_intersects_capability() -> None:
     """Managed and legacy Expert requirements remain independent facts."""
-    allowed = (
-        "DataAgent",
-        "DigitalDesignAgent",
-        "AnalystAgent",
-        "BriefGeneAgent",
-        "ChatAgent",
-    )
+    allowed = EXPERT_ATTACHMENT_ALLOWED_TOOLS
 
     assert filter_tools_for_expert_attachments(
         allowed_tools=allowed,

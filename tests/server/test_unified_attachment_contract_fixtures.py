@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 import pytest
 from pydantic import BaseModel, ConfigDict, ValidationError
+from tests.support.attachment_fakes import EXPERT_ATTACHMENT_ALLOWED_TOOLS
 
 from mcp_server_phytomni.api.agent_capabilities import (
     AttachmentCapability,
@@ -46,13 +47,6 @@ _SCENARIO_IDS = (
     "dataset_only_mixed_classes",
     "zero_channel_rejected",
     "expert_authorized_capability_intersection",
-)
-_EXPERT_ALLOWED_TOOLS = (
-    "DataAgent",
-    "DigitalDesignAgent",
-    "AnalystAgent",
-    "BriefGeneAgent",
-    "ChatAgent",
 )
 _MANIFEST_FILES = ("request.json", "expected-channel-projection.json")
 _PROVING_TEST = (
@@ -299,7 +293,7 @@ def test_unified_attachment_contract_matches_real_projector() -> None:
         eligible_tools: tuple[str, ...] = ()
         if expected_scenario.id == "expert_authorized_capability_intersection":
             eligible_tools = filter_tools_for_expert_attachments(
-                allowed_tools=_EXPERT_ALLOWED_TOOLS,
+                allowed_tools=EXPERT_ATTACHMENT_ALLOWED_TOOLS,
                 requirement=ExpertAttachmentRequirement(managed_assets=True),
             )
         assert list(eligible_tools) == expected_scenario.eligible_tools

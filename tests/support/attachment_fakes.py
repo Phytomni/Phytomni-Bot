@@ -15,10 +15,19 @@ from mcp_server_phytomni.runtime.attachment_assets import (
 )
 
 __all__ = [
+    "EXPERT_ATTACHMENT_ALLOWED_TOOLS",
     "managed_dataset_evidence_item",
     "managed_document_evidence_item",
     "managed_attachment_evidence_item",
 ]
+
+EXPERT_ATTACHMENT_ALLOWED_TOOLS = (
+    "DataAgent",
+    "DigitalDesignAgent",
+    "AnalystAgent",
+    "BriefGeneAgent",
+    "ChatAgent",
+)
 
 _STANDARD_EVIDENCE_FIELDS: dict[
     EffectiveAssetPurpose,
