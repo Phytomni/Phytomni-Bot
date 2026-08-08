@@ -5,8 +5,11 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
+from mcp_server_phytomni.agents.research import input_preparation
 from mcp_server_phytomni.agents.research.description_resolver import (
     ResearchResolutionResponse,
     ResolvedResearchDataset,
@@ -19,6 +22,7 @@ from mcp_server_phytomni.agents.research.input_inventory import (
 from mcp_server_phytomni.agents.research.input_preparation import (
     PreparedResearchInput,
     join_prepared_research_input,
+    with_execution_fingerprint,
 )
 
 pytestmark = pytest.mark.agent
@@ -81,6 +85,7 @@ def _inventory(*entries: ResearchInventoryEntry) -> ResearchInputInventory:
 def _resolution(*items: tuple[str, str]) -> ResearchResolutionResponse:
     """Build a strict resolver result with opaque IDs only."""
     response = ResearchResolutionResponse(
+        effective_query="find differential expression",
         datasets=[
             ResolvedResearchDataset(
                 id=dataset_id,
@@ -91,9 +96,7 @@ def _resolution(*items: tuple[str, str]) -> ResearchResolutionResponse:
             for dataset_id, description in items
         ],
     )
-    return response.model_copy(
-        update={"effective_query": "find differential expression"}
-    )
+    return response
 
 
 def test_join_keeps_inventory_order_and_frozen_trusted_references() -> None:
@@ -164,3 +167,83 @@ def test_join_does_not_use_internal_evidence_ids_as_native_keys() -> None:
     prepared = join_prepared_research_input(inventory, resolution)
     assert "internal-evidence-001" not in prepared.data_list
     assert "internal-evidence-001" not in prepared.data_list.values()
+
+
+def test_execution_fingerprint_changes_for_every_reuse_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inventory, policy, evidence, work, query, and schema all bind reuse."""
+    entry = _entry("dataset_002", 0)
+    inventory = _inventory(entry)
+    resolution = _resolution(("dataset_002", "grounded description"))
+    prepared = join_prepared_research_input(inventory, resolution)
+    bound = with_execution_fingerprint(
+        prepared,
+        effective_query="find differential expression",
+        evidence_digest="evidence-1",
+        work_digest="work-1",
+        policy_fingerprint="policy-1",
+    )
+
+    changed_snapshot = replace(
+        entry,
+        snapshot=replace(entry.snapshot, snapshot_digest="snapshot-changed"),
+    )
+    changed_inventory = join_prepared_research_input(
+        _inventory(changed_snapshot), resolution
+    )
+    assert (
+        changed_inventory.execution_fingerprint
+        != prepared.execution_fingerprint
+    )
+
+    variants = (
+        with_execution_fingerprint(
+            prepared,
+            effective_query="a different query",
+            evidence_digest="evidence-1",
+            work_digest="work-1",
+            policy_fingerprint="policy-1",
+        ),
+        with_execution_fingerprint(
+            prepared,
+            effective_query="find differential expression",
+            evidence_digest="evidence-2",
+            work_digest="work-1",
+            policy_fingerprint="policy-1",
+        ),
+        with_execution_fingerprint(
+            prepared,
+            effective_query="find differential expression",
+            evidence_digest="evidence-1",
+            work_digest="work-2",
+            policy_fingerprint="policy-1",
+        ),
+        with_execution_fingerprint(
+            prepared,
+            effective_query="find differential expression",
+            evidence_digest="evidence-1",
+            work_digest="work-1",
+            policy_fingerprint="policy-2",
+        ),
+    )
+    assert all(
+        variant.execution_fingerprint != bound.execution_fingerprint
+        for variant in variants
+    )
+
+    monkeypatch.setattr(
+        input_preparation,
+        "PREPARATION_SCHEMA_VERSION",
+        input_preparation.PREPARATION_SCHEMA_VERSION + 1,
+    )
+    assert (
+        with_execution_fingerprint(
+            prepared,
+            effective_query="find differential expression",
+            evidence_digest="evidence-1",
+            work_digest="work-1",
+            policy_fingerprint="policy-1",
+        ).execution_fingerprint
+        != bound.execution_fingerprint
+    )

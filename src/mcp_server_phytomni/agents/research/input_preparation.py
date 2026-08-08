@@ -75,9 +75,7 @@ def join_prepared_research_input(
     authority_ids = tuple(
         entry.authority_id for entry in inventory.entries if entry.authority_id
     )
-    query = getattr(resolution, "effective_query", "")
-    if not isinstance(query, str):
-        raise _failure()
+    query = resolution.effective_query
     fingerprint = _join_fingerprint(inventory, resolution, query)
     return PreparedResearchInput(
         effective_query=query,

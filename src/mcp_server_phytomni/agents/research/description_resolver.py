@@ -168,6 +168,7 @@ class ResearchResolutionResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
+    effective_query: StrictStr = ""
     datasets: list[ResolvedResearchDataset] = Field(
         max_length=_MAX_OBSERVATIONS
     )
@@ -181,6 +182,7 @@ class ResearchResolutionRequest:
     evidence: ExtractedResearchEvidence
     work_plan: ResearchResolverWorkPlan
     policy: ResearchResolverPolicy
+    effective_query: str = ""
 
 
 class ResearchResolverProvider(Protocol):
@@ -276,6 +278,7 @@ class ResearchDescriptionResolver:
                 request.inventory,
                 request.work_plan.required_evidence_ids,
                 request.policy.max_description_chars,
+                request.effective_query,
             )
         except _ResolutionContractError:
             raise _failure() from None
@@ -884,6 +887,7 @@ def _reconcile(
     inventory: ResearchInputInventory,
     evidence_order: tuple[str, ...],
     max_description_chars: int,
+    effective_query: str,
 ) -> ResearchResolutionResponse:
     """Reduce all valid observations into one ordered result per dataset."""
     by_dataset: dict[str, list[ResearchObservation]] = {}
@@ -912,7 +916,10 @@ def _reconcile(
             )
         )
     try:
-        return ResearchResolutionResponse(datasets=datasets)
+        return ResearchResolutionResponse(
+            effective_query=effective_query,
+            datasets=datasets,
+        )
     except ValidationError:
         raise _failure() from None
 

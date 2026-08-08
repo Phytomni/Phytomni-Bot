@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
 from ...api.agent_capabilities import agent_supports_attachment_channels
@@ -22,8 +23,13 @@ from .input_preparation import (
     join_prepared_research_input,
     with_execution_fingerprint,
 )
+from .recovery import recover_registered_request
 
-__all__ = ["ResearchInputCoordinator"]
+__all__ = ["ResearchInputCoordinator", "ResearchInputResumeLoader"]
+
+ResearchInputResumeLoader = Callable[
+    [str], Awaitable[ResearchCoordinatorRequest | None]
+]
 
 _FAILURE_MESSAGE = "Research input resolution failed."
 _UNAVAILABLE_MESSAGE = "Research input resolution is unavailable."
@@ -69,19 +75,63 @@ class ResearchInputCoordinator:
             raise _failure("request_validation")
         if request.run_id != run_id or not lease_owner:
             raise _failure("request_validation")
+        await self._run_request(request, run_id, lease_owner)
+
+    async def resume_after_restart(
+        self,
+        run_id: str,
+        lease_owner: str,
+        loader: ResearchInputResumeLoader,
+    ) -> None:
+        """Reload only private metadata and rebuild all transient evidence."""
+        if not run_id or not lease_owner or not callable(loader):
+            raise _failure("request_validation", last_stage="restart")
+        try:
+            request = await loader(run_id)
+        except ResearchInputFailure:
+            raise
+        except Exception as error:
+            raise _stage_failure(
+                "input_resolution", error, last_stage="restart"
+            ) from None
+        if not isinstance(request, ResearchCoordinatorRequest):
+            raise _failure("request_validation", last_stage="restart")
+        if request.run_id != run_id:
+            raise _failure("request_validation", last_stage="restart")
+        await self._run_request(request, run_id, lease_owner, resumed=True)
+
+    async def _run_request(
+        self,
+        request: ResearchCoordinatorRequest,
+        run_id: str,
+        lease_owner: str,
+        *,
+        resumed: bool = False,
+    ) -> None:
+        """Run one fresh or restart-rebuilt preparation sequence."""
+        del lease_owner
+        await recover_registered_request()
         dependencies = self.dependencies
+        if dependencies == ResearchCoordinatorDependencies():
+            dependencies = request.dependencies
         context = request
         inventory = await self._metadata(dependencies, context)
         context = context._replace(inventory_request=inventory)
         evidence = await self._extract(dependencies, context)
+        if resumed:
+            _compare_resumed_evidence(request.evidence, evidence)
         context = context._replace(evidence=evidence)
         resolution = await self._resolve(dependencies, context)
         context = context._replace(resolution=resolution)
         prepared = self._join(dependencies, inventory, resolution)
+        if request.effective_query and (
+            prepared.effective_query != request.effective_query
+        ):
+            raise _failure("input_resolution", last_stage="join")
         prepared = _bind_request_identity(prepared, context)
         refreshed = await self._revalidate(dependencies, context)
         if refreshed != inventory:
-            raise _failure("input_resolution")
+            raise _snapshot_drift()
         prepared = await self._validate_native(dependencies, prepared, context)
         await self._persist(dependencies, run_id, prepared, context)
 
@@ -98,7 +148,7 @@ class ResearchInputCoordinator:
         except ResearchInputFailure as error:
             raise _restage(error, "input_resolution") from None
         except Exception as error:
-            raise _stage_failure("input_resolution", error) from None
+            raise _metadata_failure(error) from None
 
     async def _extract(
         self,
@@ -113,7 +163,7 @@ class ResearchInputCoordinator:
         except ResearchInputFailure as error:
             raise _restage(error, "input_resolution") from None
         except Exception as error:
-            raise _stage_failure("input_resolution", error) from None
+            raise _extraction_failure(error) from None
 
     async def _resolve(
         self,
@@ -128,7 +178,7 @@ class ResearchInputCoordinator:
         except ResearchInputFailure as error:
             raise _restage(error, "input_resolution") from None
         except Exception as error:
-            raise _stage_failure("input_resolution", error) from None
+            raise _resolver_failure(error) from None
 
     def _join(
         self,
@@ -141,8 +191,8 @@ class ResearchInputCoordinator:
             prepared = callback(inventory, resolution)
         except ResearchInputFailure:
             raise
-        except Exception as error:
-            raise _stage_failure("input_resolution", error) from None
+        except Exception:
+            raise _failure("input_resolution", last_stage="join") from None
         if not isinstance(prepared, PreparedResearchInput):
             raise _failure("input_resolution")
         return prepared
@@ -160,7 +210,7 @@ class ResearchInputCoordinator:
         except ResearchInputFailure as error:
             raise _restage(error, "input_resolution") from None
         except Exception as error:
-            raise _stage_failure("input_resolution", error) from None
+            raise _snapshot_failure(error) from None
 
     async def _validate_native(
         self,
@@ -173,8 +223,8 @@ class ResearchInputCoordinator:
             validated = callback(prepared)
         except ResearchInputFailure as error:
             raise _restage(error, "input_resolution") from None
-        except Exception:
-            raise _failure("input_resolution") from None
+        except Exception as error:
+            raise _native_failure(error) from None
         del validated
         del request
         return prepared
@@ -276,6 +326,78 @@ def _bind_request_identity(
     )
 
 
+def _compare_resumed_evidence(previous: Any, current: Any) -> None:
+    """Compare restart metadata without reading persisted document text."""
+    if previous is None:
+        return
+    before = _evidence_identity(previous)
+    after = _evidence_identity(current)
+    if before is None or after is None or before != after:
+        raise _snapshot_drift()
+
+
+def _evidence_identity(value: Any) -> tuple[Any, ...] | None:
+    """Project only IDs/content/coverage digests from extracted evidence."""
+    units = _field(value, "units")
+    documents = _field(value, "document_digests")
+    coverage = _field(value, "coverage_digest")
+    if (
+        not isinstance(units, Sequence)
+        or isinstance(units, (str, bytes))
+        or not isinstance(documents, Sequence)
+        or isinstance(documents, (str, bytes))
+        or not isinstance(coverage, str)
+    ):
+        return None
+    unit_identity: list[tuple[Any, ...]] = []
+    for unit in units:
+        span = _field(unit, "source_span")
+        span_identity = None
+        if span is not None:
+            span_identity = (
+                _field(span, "start"),
+                _field(span, "end"),
+                _field(span, "grammar"),
+            )
+        dataset_ids = _field(unit, "dataset_ids")
+        if not isinstance(dataset_ids, Sequence) or isinstance(
+            dataset_ids, (str, bytes)
+        ):
+            return None
+        unit_identity.append(
+            (
+                _field(unit, "evidence_id"),
+                _field(unit, "source_kind"),
+                _field(unit, "source_ordinal"),
+                span_identity,
+                _field(unit, "content_digest"),
+                tuple(dataset_ids),
+            )
+        )
+    document_identity: list[tuple[Any, ...]] = []
+    for document in documents:
+        evidence_ids = _field(document, "evidence_ids")
+        if not isinstance(evidence_ids, Sequence) or isinstance(
+            evidence_ids, (str, bytes)
+        ):
+            return None
+        document_identity.append(
+            (
+                _field(document, "document_id"),
+                _field(document, "content_digest"),
+                tuple(evidence_ids),
+            )
+        )
+    return coverage, tuple(unit_identity), tuple(document_identity)
+
+
+def _field(value: Any, name: str, default: Any = None) -> Any:
+    """Read one metadata field from a DTO or a private persisted mapping."""
+    if isinstance(value, Mapping):
+        return value.get(name, default)
+    return getattr(value, name, default)
+
+
 def _persistence_metadata(value: Any) -> Any:
     """Project evidence/resolution objects before crossing storage boundary."""
     for method_name in ("to_persisted_metadata", "persistence_metadata"):
@@ -312,27 +434,103 @@ def _validate_native_payload(prepared: PreparedResearchInput) -> None:
         )
 
 
-def _failure(stage: ResearchFailureStage) -> ResearchInputFailure:
+def _failure(
+    stage: ResearchFailureStage, *, last_stage: str | None = None
+) -> ResearchInputFailure:
     return research_input_failure(
         "research_input_resolution_failed",
         _FAILURE_MESSAGE,
         http_status_hint=422,
         retryable=False,
         stage=stage,
+        last_stage=last_stage or stage,
     )
 
 
 def _stage_failure(
-    stage: ResearchFailureStage, error: Exception
+    stage: ResearchFailureStage,
+    error: Exception,
+    *,
+    retryable: bool = True,
+    last_stage: str | None = None,
 ) -> ResearchInputFailure:
     del error
     return research_input_failure(
         "research_input_resolution_unavailable",
         _UNAVAILABLE_MESSAGE,
         http_status_hint=503,
-        retryable=True,
+        retryable=retryable,
         stage=stage,
+        last_stage=last_stage or stage,
     )
+
+
+def _metadata_failure(error: Exception) -> ResearchInputFailure:
+    """Normalize metadata absence/placeholder versus infrastructure errors."""
+    if isinstance(error, (FileNotFoundError, LookupError, ValueError)):
+        return research_input_failure(
+            "research_dataset_not_found",
+            "Research dataset metadata could not be verified.",
+            http_status_hint=422,
+            retryable=False,
+            last_stage="metadata",
+        )
+    return _stage_failure("input_resolution", error, last_stage="metadata")
+
+
+def _extraction_failure(error: Exception) -> ResearchInputFailure:
+    """Normalize user-invalid document input and extractor outages."""
+    if isinstance(error, (ValueError, UnicodeError, LookupError)):
+        return research_input_failure(
+            "research_document_extraction_failed",
+            "Research document extraction failed.",
+            http_status_hint=422,
+            retryable=False,
+            last_stage="extraction",
+        )
+    return research_input_failure(
+        "research_document_extraction_failed",
+        "Research document extraction failed.",
+        http_status_hint=503,
+        retryable=True,
+        last_stage="extraction",
+    )
+
+
+def _resolver_failure(error: Exception) -> ResearchInputFailure:
+    """Normalize provider ambiguity, timeout, and invalid model output."""
+    if isinstance(error, (TimeoutError, RuntimeError)):
+        return _stage_failure(
+            "input_resolution", error, retryable=False, last_stage="resolver"
+        )
+    if isinstance(error, ValueError):
+        return _failure("input_resolution", last_stage="resolver")
+    return _stage_failure(
+        "input_resolution", error, retryable=False, last_stage="resolver"
+    )
+
+
+def _snapshot_failure(error: Exception) -> ResearchInputFailure:
+    """Normalize snapshot drift while retaining safe infrastructure retry."""
+    if isinstance(error, ValueError):
+        return _snapshot_drift()
+    return _stage_failure("input_resolution", error, last_stage="revalidation")
+
+
+def _snapshot_drift() -> ResearchInputFailure:
+    return research_input_failure(
+        "research_input_resolution_failed",
+        "Research input metadata changed before execution.",
+        http_status_hint=422,
+        retryable=False,
+        last_stage="revalidation",
+    )
+
+
+def _native_failure(error: Exception) -> ResearchInputFailure:
+    """Convert native Pydantic/capability details to a safe terminal error."""
+    del error
+    return _failure("input_resolution", last_stage="native_validation")
 
 
 def _restate(
@@ -347,6 +545,7 @@ def _restate(
         http_status_hint=error.http_status_hint,
         retryable=error.retryable,
         stage=stage,
+        last_stage=getattr(error, "last_stage", stage),
     )
 
 

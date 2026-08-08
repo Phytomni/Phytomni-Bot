@@ -7,7 +7,15 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Literal, NamedTuple, Protocol, TypedDict, Unpack
+from typing import (
+    Any,
+    Literal,
+    NamedTuple,
+    NotRequired,
+    Protocol,
+    TypedDict,
+    Unpack,
+)
 
 __all__ = [
     "EvidenceSourceKind",
@@ -96,6 +104,7 @@ class _ResearchInputFailureArguments(TypedDict):
     http_status_hint: int
     stage: ResearchFailureStage
     retryable: bool
+    last_stage: NotRequired[str | None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +131,7 @@ class ResearchInputFailureError(ValueError):
         self.http_status_hint = arguments["http_status_hint"]
         self.stage = arguments["stage"]
         self.retryable = arguments["retryable"]
+        self.last_stage = arguments.get("last_stage") or self.stage
 
 
 ResearchInputFailure = ResearchInputFailureError
@@ -134,15 +144,20 @@ def research_input_failure(
     http_status_hint: int = 400,
     retryable: bool = False,
     stage: ResearchFailureStage = "input_resolution",
+    **metadata: str | None,
 ) -> ResearchInputFailure:
     """Create one stable non-disclosing Research input failure."""
-    return ResearchInputFailure(
+    failure = ResearchInputFailure(
         code=code,
         safe_message=safe_message,
         http_status_hint=http_status_hint,
         stage=stage,
         retryable=retryable,
     )
+    last_stage = metadata.get("last_stage")
+    if last_stage:
+        failure.last_stage = last_stage
+    return failure
 
 
 class ResearchCoordinatorDependencies(NamedTuple):
