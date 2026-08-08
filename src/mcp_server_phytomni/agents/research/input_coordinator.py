@@ -483,7 +483,7 @@ def _bind_request_identity(
 def _compare_resumed_evidence(previous: Any, current: Any) -> None:
     """Compare restart metadata without reading persisted document text."""
     if previous is None:
-        return
+        raise _snapshot_drift()
     before = _evidence_identity(previous)
     after = _evidence_identity(current)
     if before is None or after is None or before != after:

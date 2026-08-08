@@ -705,6 +705,53 @@ async def test_restart_rejects_document_digest_drift_before_reusing_resolution(
 
 
 @pytest.mark.asyncio
+async def test_restart_requires_persisted_evidence_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Restart cannot reuse resolver work without the old evidence digest."""
+    harness = _Harness(
+        prepared_query="trusted query",
+        values={"extracted_value": _evidence_metadata("content-1")},
+    )
+
+    async def loader(run_id: str) -> ResearchCoordinatorRequest:
+        """Return a private request whose evidence was not persisted."""
+        return ResearchCoordinatorRequest(
+            run_id=run_id,
+            inventory_request="persisted-inventory",
+            evidence=None,
+            resolution=object(),
+            effective_query="trusted query",
+            dependencies=ResearchCoordinatorDependencies(
+                build_inventory=harness.metadata,
+                extract_evidence=harness.extract,
+                resolve_descriptions=harness.resolve,
+                revalidate_inventory=harness.revalidate,
+                validate_native=harness.validate_native,
+                persist_planning=harness.persist_planning,
+                join_prepared=harness.join,
+            ),
+        )
+
+    async def recover() -> None:
+        """Keep the restart test independent of registered recovery state."""
+        return None
+
+    monkeypatch.setattr(
+        input_coordinator, "recover_registered_request", recover
+    )
+    with pytest.raises(Exception) as caught:
+        await ResearchInputCoordinator().resume_after_restart(
+            "run-001", "lease-001", loader
+        )
+
+    error = caught.value
+    assert getattr(error, "code") == "research_input_resolution_failed"
+    assert getattr(error, "last_stage") == "revalidation"
+    assert "persist_planning" not in harness.calls
+
+
+@pytest.mark.asyncio
 async def test_restart_rejects_pasted_head_snapshot_drift(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
