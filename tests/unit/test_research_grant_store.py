@@ -624,3 +624,28 @@ def test_purge_keeps_terminal_grants_for_twenty_four_hour_grace(
         )
         == 1
     )
+
+
+def test_purge_deletes_unobserved_active_grant_after_expiry_grace(
+    tmp_path: Path,
+) -> None:
+    """A never-revisited grant still expires after its retention grace."""
+    database = tmp_path / "relay.sqlite3"
+    store = ResearchGrantStore(str(database))
+    grant = store.resolve_or_replay(_request(), _now())[0]
+
+    assert (
+        store.purge_expired(
+            grant.expires_at
+            + RESEARCH_GRANT_PURGE_GRACE
+            + timedelta(microseconds=1)
+        )
+        == 1
+    )
+    with sqlite3.connect(database) as connection:
+        remaining = connection.execute(
+            "SELECT grant_id FROM research_object_grants WHERE grant_id = ?",
+            (grant.grant_id,),
+        ).fetchone()
+
+    assert remaining is None

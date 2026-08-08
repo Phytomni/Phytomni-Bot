@@ -455,14 +455,15 @@ class ResearchGrantStore:
                         raise ResearchGrantError()
 
     def purge_expired(self, now: datetime) -> int:
-        """Delete grants expired or revoked beyond the bounded grace period."""
+        """Delete stale grants after their bounded retention grace."""
         cutoff = _utc(now) - RESEARCH_GRANT_PURGE_GRACE
         with self._immediate_transaction() as conn:
             cursor = conn.execute(
                 "DELETE FROM research_object_grants WHERE "
+                "(state = 'active' AND expires_at < ?) OR "
                 "(state = 'revoked' AND revoked_at < ?) OR "
                 "(state = 'expired' AND expires_at < ?)",
-                (_iso(cutoff), _iso(cutoff)),
+                (_iso(cutoff), _iso(cutoff), _iso(cutoff)),
             )
             return cursor.rowcount
 
