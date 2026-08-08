@@ -142,6 +142,9 @@ _SETTLE_RUN_SIGNATURE = inspect.Signature(
         inspect.Parameter(
             "error", inspect.Parameter.KEYWORD_ONLY, default=None
         ),
+        inspect.Parameter(
+            "expected_revision", inspect.Parameter.KEYWORD_ONLY, default=None
+        ),
     )
 )
 _RECONCILE_SIGNATURE = inspect.Signature(

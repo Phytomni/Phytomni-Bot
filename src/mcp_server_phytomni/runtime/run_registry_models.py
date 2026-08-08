@@ -59,6 +59,72 @@ RESEARCH_FAILURE_MESSAGES = {
     code: "Research request could not be completed."
     for code in RESEARCH_FAILURE_CODES
 }
+RESEARCH_FAILURE_CONTRACTS: dict[str, frozenset[tuple[int, bool, str]]] = {
+    "research_idempotency_key_required": frozenset(
+        {(400, False, "input_resolution")}
+    ),
+    "research_idempotency_conflict": frozenset(
+        {(409, False, "input_resolution")}
+    ),
+    "research_data_block_invalid": frozenset(
+        {(422, False, "input_resolution")}
+    ),
+    "research_dataset_path_invalid": frozenset(
+        {(422, False, "input_resolution")}
+    ),
+    "research_dataset_not_found": frozenset(
+        {(422, False, "input_resolution")}
+    ),
+    "research_dataset_duplicate": frozenset(
+        {(422, False, "input_resolution")}
+    ),
+    "research_dataset_format_unsupported": frozenset(
+        {(422, False, "input_resolution")}
+    ),
+    "research_input_limit_exceeded": frozenset(
+        {(413, False, "input_resolution")}
+    ),
+    "research_document_extraction_failed": frozenset(
+        {(503, True, "input_resolution")}
+    ),
+    "research_input_resolution_failed": frozenset(
+        {(422, False, "input_resolution")}
+    ),
+    "research_input_resolution_unavailable": frozenset(
+        {
+            (503, True, "input_resolution"),
+            (503, False, "input_resolution"),
+        }
+    ),
+    "research_run_tracking_failed": frozenset({(502, True, "execution")}),
+    "research_input_protocol_unavailable": frozenset(
+        {(503, True, "input_resolution")}
+    ),
+    "research_cancel_conflict": frozenset({(409, False, "execution")}),
+}
+
+
+def research_failure_contract_values(
+    code: str, failure: Mapping[str, object]
+) -> dict[str, object] | None:
+    """Return validated private fields for one stable public tuple."""
+    expected = RESEARCH_FAILURE_CONTRACTS.get(code)
+    stage = failure.get("stage")
+    retryable = failure.get("retryable")
+    status_hint = failure.get("http_status_hint")
+    values = (status_hint, retryable, stage)
+    if (
+        expected is None
+        or tuple(type(value) for value in values) != (int, bool, str)
+        or values not in expected
+    ):
+        return None
+    return {
+        "stage": stage,
+        "retryable": retryable,
+        "http_status_hint": status_hint,
+    }
+
 
 _CREATE_RUNS_DDL = """
 CREATE TABLE IF NOT EXISTS runs (

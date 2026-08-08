@@ -17,6 +17,7 @@ from tests.support.sqlite import closed_sqlite_connection
 from mcp_server_phytomni.api.lifecycle_contract import (
     ResearchFailureDetail,
     empty_agent_result,
+    project_research_lifecycle,
 )
 from mcp_server_phytomni.api.run_lifecycle import project_public_run_record
 from mcp_server_phytomni.mcp.formatting.models import ReportExecution
@@ -40,16 +41,16 @@ _STATUSES = ("succeeded", "failed", "cancelled")
 _FAILURES = {
     "research_idempotency_key_required": (400, False, "input_resolution"),
     "research_idempotency_conflict": (409, False, "input_resolution"),
-    "research_data_block_invalid": (400, False, "input_resolution"),
-    "research_dataset_path_invalid": (400, False, "input_resolution"),
+    "research_data_block_invalid": (422, False, "input_resolution"),
+    "research_dataset_path_invalid": (422, False, "input_resolution"),
     "research_dataset_not_found": (422, False, "input_resolution"),
-    "research_dataset_duplicate": (400, False, "input_resolution"),
-    "research_dataset_format_unsupported": (400, False, "input_resolution"),
-    "research_input_limit_exceeded": (400, False, "input_resolution"),
+    "research_dataset_duplicate": (422, False, "input_resolution"),
+    "research_dataset_format_unsupported": (422, False, "input_resolution"),
+    "research_input_limit_exceeded": (413, False, "input_resolution"),
     "research_document_extraction_failed": (503, True, "input_resolution"),
     "research_input_resolution_failed": (422, False, "input_resolution"),
     "research_input_resolution_unavailable": (503, True, "input_resolution"),
-    "research_run_tracking_failed": (503, True, "execution"),
+    "research_run_tracking_failed": (502, True, "execution"),
     "research_input_protocol_unavailable": (503, True, "input_resolution"),
     "research_cancel_conflict": (409, False, "execution"),
 }
@@ -116,6 +117,37 @@ def test_running_research_projection_exposes_one_stage(
     assert projected["status"] == "running"
     assert projected["stage"] == stage
     assert "failure" not in projected
+
+
+def test_research_stage_transition_is_strictly_monotonic(
+    tmp_path: Any,
+) -> None:
+    """A fresh stage may advance but never move back to an earlier rank."""
+    db_path = str(tmp_path / "runs.db")
+    run_id = "run-monotonic-stage"
+    registry = RunRegistry(db_path)
+    registry.create_run(RunSpec(run_id, "u1", "research", "api"))
+    with closed_sqlite_connection(db_path) as connection:
+        connection.execute(
+            "UPDATE runs SET stage = 'input_resolution' WHERE run_id = ?",
+            (run_id,),
+        )
+
+    first = registry.get_run(run_id, owner="u1")
+    assert first is not None
+    advanced = registry.transition_research_stage(first, "execution")
+    assert advanced is not None
+    assert advanced.stage == "execution"
+    assert advanced.revision == first.revision + 1
+
+    assert (
+        registry.transition_research_stage(advanced, "input_resolution")
+        is None
+    )
+    winner = registry.get_run(run_id, owner="u1")
+    assert winner is not None
+    assert winner.stage == "execution"
+    assert winner.revision == advanced.revision
 
 
 @pytest.mark.parametrize("status", _STATUSES)
@@ -237,6 +269,55 @@ def test_research_failure_detail_is_strict_and_bounded() -> None:
         )
 
 
+@pytest.mark.parametrize("case", _FAILURE_CASES)
+def test_wrong_stable_failure_contract_projects_scalar_only(
+    case: _FailureCase,
+) -> None:
+    """A known code cannot smuggle a mismatched public failure tuple."""
+    source = {
+        "code": case.code,
+        "stage": case.stage,
+        "retryable": case.retryable,
+        "http_status_hint": case.status_hint,
+    }
+    wrong_stage = (
+        "execution" if case.stage != "execution" else "input_resolution"
+    )
+    wrong_fields: list[tuple[str, object]] = [("stage", wrong_stage)]
+    if case.code != "research_input_resolution_unavailable":
+        wrong_fields.append(("retryable", not case.retryable))
+    wrong_fields.append(
+        ("http_status_hint", 599 if case.status_hint != 599 else 598)
+    )
+    for field, value in wrong_fields:
+        candidate = {**source, field: value}
+        _, failure = project_research_lifecycle(
+            "failed", "execution", candidate
+        )
+        assert failure is None
+
+
+def test_ambiguous_resolution_failure_may_disable_retry() -> None:
+    """An ambiguous provider outcome remains safe with retry disabled."""
+    _, failure = project_research_lifecycle(
+        "failed",
+        "execution",
+        {
+            "code": "research_input_resolution_unavailable",
+            "stage": "input_resolution",
+            "retryable": False,
+            "http_status_hint": 503,
+        },
+    )
+    assert failure == {
+        "code": "research_input_resolution_unavailable",
+        "message": "Research request could not be completed.",
+        "stage": "input_resolution",
+        "retryable": False,
+        "http_status_hint": 503,
+    }
+
+
 async def test_malformed_private_failure_keeps_scalar_only(
     api_client: httpx.AsyncClient,
     issued_api_key: str,
@@ -349,6 +430,42 @@ def test_failed_terminal_write_clears_stage(
     assert record is not None
     assert record.status == "failed"
     assert record.stage is None
+
+
+def test_late_terminal_callback_cannot_replace_cancelled_run(
+    tmp_path: Any,
+) -> None:
+    """Terminal settlement is a running-row and revision compare-and-set."""
+    db_path = str(tmp_path / "runs.db")
+    run_id = "run-late-terminal-callback"
+    registry = RunRegistry(db_path)
+    registry.create_run(RunSpec(run_id, "u1", "research", "api"))
+    current = registry.get_run(run_id, owner="u1")
+    assert current is not None
+
+    assert registry.settle_run(
+        run_id,
+        owner="u1",
+        status="cancelled",
+        result=empty_agent_result(),
+        expected_revision=current.revision,
+    )
+    assert not registry.settle_run(
+        run_id,
+        owner="u1",
+        status="failed",
+        result=empty_agent_result(),
+        expected_revision=current.revision,
+    )
+    assert not registry.settle_run(
+        run_id,
+        owner="u1",
+        status="failed",
+        result=empty_agent_result(),
+    )
+    winner = registry.get_run(run_id, owner="u1")
+    assert winner is not None
+    assert winner.status == "cancelled"
 
 
 def test_research_admission_persists_input_resolution_stage(

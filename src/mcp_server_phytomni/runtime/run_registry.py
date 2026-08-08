@@ -16,7 +16,7 @@ import asyncio
 import json
 import sqlite3
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from ..mcp.formatting.models import ResultDelivery
 from .background_policy import is_detached_background_run
@@ -105,6 +105,46 @@ _ZERO_OWNED_CHILD_SQL = (
     " AND NOT EXISTS (SELECT 1 FROM tasks WHERE tasks.run_id = runs.run_id "
     "AND tasks.user_id = runs.user_id AND tasks.agent = runs.agent)"
 )
+_RESEARCH_STAGE_RANK = {
+    "input_resolution": 0,
+    "planning": 1,
+    "execution": 2,
+    "report_assembly": 3,
+}
+
+
+class _SettleRunRequest(NamedTuple):
+    """Validated arguments for one compatibility settlement call."""
+
+    run_id: str
+    owner: str
+    status: str
+    result: dict[str, Any] | None
+    error: str | None
+    expected_revision: int | None
+
+
+def _bind_settle_run_request(
+    registry: Any, *args: Any, **kwargs: Any
+) -> _SettleRunRequest:
+    """Bind the historical settlement signature and validate its CAS key."""
+    bound = _SETTLE_RUN_SIGNATURE.bind(registry, *args, **kwargs)
+    bound.apply_defaults()
+    expected_revision = bound.arguments["expected_revision"]
+    if expected_revision is not None and (
+        isinstance(expected_revision, bool)
+        or not isinstance(expected_revision, int)
+        or expected_revision < 0
+    ):
+        raise ValueError("expected_revision must be non-negative")
+    return _SettleRunRequest(
+        run_id=bound.arguments["run_id"],
+        owner=bound.arguments["owner"],
+        status=bound.arguments["status"],
+        result=bound.arguments["result"],
+        error=bound.arguments["error"],
+        expected_revision=expected_revision,
+    )
 
 
 def _expires_at_for(status: str, now_iso: str) -> str | None:
@@ -496,6 +536,15 @@ class RunRegistry(RunRegistryViewsMixin):
             "report_assembly",
         }:
             raise ValueError("unsupported Research lifecycle stage")
+        if (
+            current.stage is not None
+            and current.stage not in _RESEARCH_STAGE_RANK
+        ):
+            return None
+        if _RESEARCH_STAGE_RANK[stage] <= _RESEARCH_STAGE_RANK.get(
+            current.stage or "", -1
+        ):
+            return None
         now = _now_iso()
         with sqlite_transaction(self.db_path) as conn:
             cursor = conn.execute(
@@ -527,7 +576,8 @@ class RunRegistry(RunRegistryViewsMixin):
         with sqlite_transaction(self.db_path) as conn:
             cursor = conn.execute(
                 "UPDATE runs SET status = 'failed', result_json = ?, "
-                "error = ?, stage = NULL, updated_at = ?, expires_at = ? "
+                "error = ?, stage = NULL, revision = revision + 1, "
+                "updated_at = ?, expires_at = ? "
                 "WHERE run_id = ? AND user_id = ? AND status = 'running'",
                 (
                     json.dumps(result),
@@ -614,29 +664,42 @@ class RunRegistry(RunRegistryViewsMixin):
         Returns:
             True when an owned row was updated, False otherwise.
         """
-        bound = _SETTLE_RUN_SIGNATURE.bind(self, *args, **kwargs)
-        bound.apply_defaults()
-        run_id = bound.arguments["run_id"]
-        owner = bound.arguments["owner"]
-        status = bound.arguments["status"]
-        result = bound.arguments["result"]
-        error = bound.arguments["error"]
+        request = _bind_settle_run_request(self, *args, **kwargs)
         now = _now_iso()
-        expires_at = _expires_at_for(status, now)
+        expires_at = _expires_at_for(request.status, now)
+        status_where = (
+            "status = 'running' OR (status = 'input_required' "
+            "AND agent IN ('chat', 'review'))"
+            if request.status in _TERMINAL_RUN_STATUSES
+            else "status IN ('running', 'input_required')"
+        )
+        revision_where = (
+            " AND revision = ?"
+            if request.expected_revision is not None
+            else ""
+        )
+        parameters: tuple[Any, ...] = (
+            request.status,
+            (
+                json.dumps(request.result)
+                if request.result is not None
+                else None
+            ),
+            request.error,
+            now,
+            expires_at,
+            request.run_id,
+            request.owner,
+        )
+        if request.expected_revision is not None:
+            parameters += (request.expected_revision,)
         with sqlite_transaction(self.db_path) as conn:
             cursor = conn.execute(
                 "UPDATE runs SET status = ?, result_json = ?, error = ?, "
-                "stage = NULL, updated_at = ?, expires_at = ? "
-                "WHERE run_id = ? AND user_id = ?",
-                (
-                    status,
-                    json.dumps(result) if result is not None else None,
-                    error,
-                    now,
-                    expires_at,
-                    run_id,
-                    owner,
-                ),
+                "stage = NULL, revision = revision + 1, "
+                "updated_at = ?, expires_at = ? WHERE run_id = ? "
+                "AND user_id = ? AND (" + status_where + ")" + revision_where,
+                parameters,
             )
             return cursor.rowcount > 0
 
@@ -871,8 +934,9 @@ class RunRegistry(RunRegistryViewsMixin):
         expires_at = _expires_at_for(outcome.status, now)
         query = (
             "UPDATE runs SET status = ?, result_json = ?, error = ?, "
-            "stage = NULL, updated_at = ?, expires_at = ? "
-            "WHERE run_id = ? AND user_id = ? AND status = 'running'"
+            "stage = NULL, revision = revision + 1, updated_at = ?, "
+            "expires_at = ? WHERE run_id = ? AND user_id = ? "
+            "AND status = 'running' AND revision = ?"
             + (_ZERO_OWNED_CHILD_SQL if require_zero_child else "")
         )
         with sqlite_transaction(self.db_path) as conn:
@@ -890,6 +954,7 @@ class RunRegistry(RunRegistryViewsMixin):
                     expires_at,
                     current.spec.run_id,
                     current.spec.user_id,
+                    current.revision,
                 ),
             )
         return self.get_run(current.spec.run_id, owner=current.spec.user_id)

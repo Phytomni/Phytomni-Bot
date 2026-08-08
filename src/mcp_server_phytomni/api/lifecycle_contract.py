@@ -32,6 +32,7 @@ from ..runtime.run_registry_models import (
     RESEARCH_FAILURE_CODES,
     RESEARCH_FAILURE_MESSAGES,
     ResearchFailureCode,
+    research_failure_contract_values,
 )
 
 __all__ = [
@@ -220,15 +221,13 @@ def project_research_lifecycle(
     code = failure.get("code")
     if not isinstance(code, str) or code not in RESEARCH_FAILURE_CODES:
         return stage, None
-    candidate_stage = failure.get("stage")
-    if candidate_stage not in _STAGES:
-        candidate_stage = current_stage
+    contract = research_failure_contract_values(code, failure)
+    if contract is None:
+        return stage, None
     candidate = {
         "code": code,
         "message": RESEARCH_FAILURE_MESSAGES[code],
-        "stage": candidate_stage,
-        "retryable": failure.get("retryable"),
-        "http_status_hint": failure.get("http_status_hint"),
+        **contract,
     }
     try:
         detail = ResearchFailureDetail.model_validate(candidate)
