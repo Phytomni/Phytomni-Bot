@@ -10,6 +10,7 @@ import sqlite3
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -39,12 +40,13 @@ def _now() -> datetime:
 
 def _snapshot(
     *,
+    dataset_id: str = "dataset-001",
     etag: str = "metadata-etag",
     snapshot_digest: str = "observed-snapshot-digest",
 ) -> ResearchObjectSnapshot:
     """Build one metadata-port snapshot with independently fixed values."""
     return ResearchObjectSnapshot(
-        dataset_id="dataset-001",
+        dataset_id=dataset_id,
         size_bytes=73,
         etag=etag,
         version_id="metadata-v1",
@@ -159,6 +161,124 @@ def test_resolve_persists_real_authority_snapshot_without_public_reference(
     assert "obs://" not in repr(grant)
 
 
+def test_resolve_rejects_duplicate_source_authority_ids(
+    tmp_path: Path,
+) -> None:
+    """One metadata-port authority cannot authorize two distinct datasets."""
+    database = tmp_path / "relay.sqlite3"
+    first = ResearchObjectCandidate(
+        dataset_id="dataset-001",
+        exact_reference="obs://private-bucket/inputs/leaf.tsv",
+        compound_suffix=".tsv",
+    )
+    second = ResearchObjectCandidate(
+        dataset_id="dataset-002",
+        exact_reference="obs://private-bucket/inputs/root.tsv",
+        compound_suffix=".tsv",
+    )
+    duplicate_authority_id = "metadata-port-authority"
+    request = ResearchGrantResolve(
+        principal_key_prefix="ptm_test",
+        parent_run_id="run-001",
+        execution_fingerprint="execution-sha256",
+        objects=(first, second),
+        authorities=(
+            ResearchObjectAuthority(
+                dataset_id=first.dataset_id,
+                authority_id=duplicate_authority_id,
+                snapshot=_snapshot(),
+            ),
+            ResearchObjectAuthority(
+                dataset_id=second.dataset_id,
+                authority_id=duplicate_authority_id,
+                snapshot=_snapshot(
+                    dataset_id=second.dataset_id,
+                    snapshot_digest="observed-snapshot-digest-2",
+                ),
+            ),
+        ),
+    )
+
+    with pytest.raises(ResearchGrantError):
+        ResearchGrantStore(str(database)).resolve_or_replay(request, _now())
+
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM research_object_grants"
+        ).fetchone() == (0,)
+
+
+@pytest.mark.parametrize(
+    "authority",
+    (
+        cast(ResearchObjectAuthority, object()),
+        ResearchObjectAuthority(
+            dataset_id="dataset-001",
+            authority_id="metadata-port-authority",
+            snapshot=cast(ResearchObjectSnapshot, object()),
+        ),
+        ResearchObjectAuthority(
+            dataset_id="dataset-001",
+            authority_id="metadata-port-authority",
+            snapshot=ResearchObjectSnapshot(
+                dataset_id="dataset-001",
+                size_bytes=cast(int, "invalid-size"),
+                etag="metadata-etag",
+                version_id="metadata-v1",
+                last_modified="2026-08-08T00:00:00+00:00",
+                placeholder=False,
+                snapshot_digest="observed-snapshot-digest",
+            ),
+        ),
+    ),
+)
+def test_resolve_rejects_malformed_authority_shapes(
+    tmp_path: Path,
+    authority: ResearchObjectAuthority,
+) -> None:
+    """Malformed metadata-port inputs fail through the one safe exception."""
+    request = _request()
+    malformed = ResearchGrantResolve(
+        principal_key_prefix=request.principal_key_prefix,
+        parent_run_id=request.parent_run_id,
+        execution_fingerprint=request.execution_fingerprint,
+        objects=request.objects,
+        authorities=(authority,),
+    )
+
+    with pytest.raises(ResearchGrantError):
+        ResearchGrantStore(str(tmp_path / "relay.sqlite3")).resolve_or_replay(
+            malformed, _now()
+        )
+
+
+def test_rotation_preserves_private_source_authority_binding(
+    tmp_path: Path,
+) -> None:
+    """Rotation retains private source identity without exposing it."""
+    database = tmp_path / "relay.sqlite3"
+    store = ResearchGrantStore(str(database))
+    grant = store.resolve_or_replay(_request(), _now())[0]
+    rotation_time = _now() + RESEARCH_GRANT_TTL - RESEARCH_GRANT_ROTATE_BEFORE
+    rotated = store.verify_or_rotate(
+        _verify(grant.grant_id, snapshot=grant.snapshot), rotation_time
+    )[0]
+
+    assert not hasattr(grant, "source_authority_id")
+    assert not hasattr(rotated, "source_authority_id")
+    assert "metadata-port-authority" not in repr(rotated)
+    with sqlite3.connect(database) as connection:
+        bindings = connection.execute(
+            "SELECT source_authority_id, state "
+            "FROM research_object_grants ORDER BY revision"
+        ).fetchall()
+
+    assert bindings == [
+        ("metadata-port-authority", "revoked"),
+        ("metadata-port-authority", "active"),
+    ]
+
+
 def test_resolve_rejects_candidates_without_real_metadata_authorities(
     tmp_path: Path,
 ) -> None:
@@ -209,9 +329,14 @@ def test_initialization_additively_upgrades_legacy_grant_table(
             "WHERE schema_name = 'research_object_grants'"
         ).fetchone()
 
-    assert {"grant_id", "exact_reference", "snapshot_json"} <= columns
+    assert {
+        "grant_id",
+        "exact_reference",
+        "snapshot_json",
+        "source_authority_id",
+    } <= columns
     assert legacy == ("legacy-grant", "expired", 0)
-    assert schema_version == (2,)
+    assert schema_version == (3,)
     assert len(store.resolve_or_replay(_request(), _now())) == 1
 
 
@@ -314,6 +439,26 @@ def test_verify_returns_unchanged_active_grant_before_rotation_window(
     )
 
     assert verified == (grant,)
+
+
+def test_verify_rejects_duplicate_grant_authorities(tmp_path: Path) -> None:
+    """One bearer cannot be verified or rotated twice in one request."""
+    store = ResearchGrantStore(str(tmp_path / "relay.sqlite3"))
+    grant = store.resolve_or_replay(_request(), _now())[0]
+    authority = ResearchObjectAuthority(
+        dataset_id=grant.dataset_id,
+        authority_id=grant.grant_id,
+        snapshot=grant.snapshot,
+    )
+    duplicate = ResearchGrantVerify(
+        principal_key_prefix="ptm_test",
+        parent_run_id="run-001",
+        execution_fingerprint="execution-sha256",
+        authorities=(authority, authority),
+    )
+
+    with pytest.raises(ResearchGrantError):
+        store.verify_or_rotate(duplicate, _now())
 
 
 def test_verify_rotates_only_at_or_inside_the_fifteen_minute_window(
